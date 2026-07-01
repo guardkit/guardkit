@@ -235,7 +235,7 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_returns_empty_when_graphiti_none(self):
         """Should return empty context when get_graphiti() returns None."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=None):
             context = await load_critical_context()
             assert context.system_context == []
             assert context.architecture_decisions == []
@@ -246,7 +246,7 @@ class TestGracefulDegradation:
         mock_client = MagicMock()
         mock_client.enabled = False
         
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             context = await load_critical_context()
             assert context.system_context == []
             assert context.architecture_decisions == []
@@ -258,7 +258,7 @@ class TestGracefulDegradation:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Connection failed"))
         
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_client):
             context = await load_critical_context()
             assert context.system_context == []
             assert context.architecture_decisions == []
@@ -274,7 +274,7 @@ class TestLoadCriticalContext:
     @pytest.mark.asyncio
     async def test_loads_all_sections(self, mock_graphiti):
         """Should load all context sections when Graphiti available."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context()
             
             assert len(context.system_context) > 0
@@ -285,7 +285,7 @@ class TestLoadCriticalContext:
     @pytest.mark.asyncio
     async def test_feature_build_loads_extra_context(self, mock_graphiti):
         """Feature-build command should load additional context."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context(command="feature-build")
             
             # System context should include feature-build specific items
@@ -294,7 +294,7 @@ class TestLoadCriticalContext:
     @pytest.mark.asyncio
     async def test_task_work_command(self, mock_graphiti):
         """task-work command should load standard context."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context(command="task-work")
             
             assert len(context.architecture_decisions) > 0
@@ -303,7 +303,7 @@ class TestLoadCriticalContext:
     @pytest.mark.asyncio
     async def test_with_task_id(self, mock_graphiti):
         """Should accept task_id parameter (future functionality)."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context(task_id="TASK-001")
             
             # Currently just loads standard context
@@ -312,7 +312,7 @@ class TestLoadCriticalContext:
     @pytest.mark.asyncio
     async def test_with_feature_id(self, mock_graphiti):
         """Should accept feature_id parameter (future functionality)."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context(feature_id="FEAT-001")
             
             # Currently just loads standard context
@@ -498,7 +498,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_mixed_valid_invalid_results(self, mock_graphiti):
         """Should handle mix of valid and invalid results."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             context = await load_critical_context()
             
             # All results should be dicts
@@ -516,7 +516,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_full_workflow(self, mock_graphiti):
         """Test complete load and format workflow."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             # Load context
             context = await load_critical_context(command="feature-build")
             
@@ -530,7 +530,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_graceful_degradation_preserves_functionality(self):
         """Commands should work even without Graphiti."""
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=None):
             context = await load_critical_context(command="task-work")
             formatted = format_context_for_injection(context)
             

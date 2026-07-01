@@ -56,13 +56,18 @@ tasks:
   complexity: 5
   dependencies:
   - TASK-MEM09-002
-  status: backlog
+  status: in_progress
   implementation_mode: task-work
   wave: 2
   note: >-
-    Run WS-1 for guardkit's 5 graphs (chunk-level). WS-2b: one-time offline cloud-LLM
-    distillation of project_decisions + task_outcomes (~274 nodes) → DocumentPayload.
-    Build-time exact diff of the ~10-15 unique-at-risk nodes; promote valuable ones to disk.
+    LIVE MIGRATION DONE (2026-07-01): `migrate-graph --project guardkit` published 499
+    documents; relay drained 301→499, DLQ=0. Store now 1184 rows (679 chunk + 499 document
+    + 5 build_outcome + 1 adr). Scoped reads VERIFIED live returning real project knowledge
+    (project_decisions/architecture/overview/patterns) — letterbox closed. Read-side landed
+    in 68507414. REMAINING: (1) repoint the "keep" consumers to get_memory_client() per the
+    disposition map (context_loader, job_context_retriever, etc.; feature_plan_context +
+    coach_context_builder already on FM); (2) WS-2b optional distillation of ~274 high-value
+    nodes; (3) build-time exact diff + promote the ~10-15 unique-at-risk nodes to disk.
 - id: TASK-MEM09-004
   name: WS-3 — fleet consumer migration (forge, study-tutor, specialist-agent, jarvis, fleet-gateway)
   file_path: tasks/backlog/feat-mem-09/TASK-MEM09-004-fleet-consumer-migration.md

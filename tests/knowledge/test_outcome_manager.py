@@ -763,7 +763,7 @@ class TestFindSimilarTaskOutcomes:
             {"id": "2", "content": "Authentication setup", "score": 0.87},
         ])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Implement OAuth2 authentication",
                 limit=5
@@ -783,7 +783,7 @@ class TestFindSimilarTaskOutcomes:
             for i in range(10)
         ])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Test query",
                 limit=3
@@ -798,7 +798,7 @@ class TestFindSimilarTaskOutcomes:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Test query",
                 limit=5
@@ -811,7 +811,7 @@ class TestFindSimilarTaskOutcomes:
     @pytest.mark.asyncio
     async def test_find_similar_task_outcomes_graphiti_none(self):
         """Test graceful degradation when Graphiti client is None."""
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=None):
             results = await find_similar_task_outcomes(
                 task_requirements="Test query",
                 limit=5
@@ -827,7 +827,7 @@ class TestFindSimilarTaskOutcomes:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="",
                 limit=5
@@ -843,7 +843,7 @@ class TestFindSimilarTaskOutcomes:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Very unique task requirements",
                 limit=5
@@ -858,7 +858,7 @@ class TestFindSimilarTaskOutcomes:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Search error"))
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Test query",
                 limit=5
@@ -874,7 +874,7 @@ class TestFindSimilarTaskOutcomes:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             await find_similar_task_outcomes(
                 task_requirements="Test query",
                 limit=5
@@ -984,7 +984,7 @@ class TestEdgeCases:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Test",
                 limit=0
@@ -1003,7 +1003,7 @@ class TestEdgeCases:
             for i in range(50)
         ])
 
-        with patch('guardkit.knowledge.outcome_queries.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_queries.get_memory_client', return_value=mock_client):
             results = await find_similar_task_outcomes(
                 task_requirements="Test",
                 limit=1000

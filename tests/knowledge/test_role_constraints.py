@@ -555,7 +555,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Should have called search
@@ -582,7 +582,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             assert isinstance(result, str)
@@ -608,7 +608,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             for item in must_do:
@@ -631,7 +631,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             for item in must_not_do:
@@ -643,7 +643,7 @@ class TestLoadRoleContext:
         mock_graphiti = AsyncMock()
         mock_graphiti.enabled = False
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             assert result is None
@@ -655,7 +655,7 @@ class TestLoadRoleContext:
         mock_graphiti.enabled = True
         mock_graphiti.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             assert result is None
@@ -675,7 +675,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player")
 
             # Should use default context "feature-build"
@@ -697,7 +697,7 @@ class TestLoadRoleContext:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("coach", "feature-build")
 
             assert "COACH Role Constraints" in result
@@ -753,7 +753,7 @@ class TestEdgeCases:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             # Should handle gracefully
             result = await load_role_context("player", "feature-build")
 
@@ -769,7 +769,7 @@ class TestEdgeCases:
             {}  # No 'body' key
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             # Should handle gracefully
             result = await load_role_context("player", "feature-build")
 
@@ -845,7 +845,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Must_do items should have ✓ emoji
@@ -867,7 +867,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Must_not_do items should have ✗ emoji
@@ -891,7 +891,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Ask_before section should be present
@@ -915,7 +915,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Ask_before items should have ❓ emoji
@@ -939,7 +939,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # All items should be present
@@ -962,7 +962,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             # When context is autobuild, should have emphasis
             result = await load_role_context("player", "autobuild")
 
@@ -987,7 +987,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             # feature-build is standard, should have normal formatting
             result = await load_role_context("player", "feature-build")
 
@@ -1011,7 +1011,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Empty ask_before should not produce ASK BEFORE header with no items
@@ -1043,7 +1043,7 @@ class TestEnhancedRoleConstraintsFormatting:
             }
         ])
 
-        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+        with patch('guardkit.knowledge.context_loader.get_memory_client', return_value=mock_graphiti):
             result = await load_role_context("player", "feature-build")
 
             # Verify structure matches acceptance criteria format:
