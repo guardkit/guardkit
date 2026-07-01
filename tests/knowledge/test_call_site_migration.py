@@ -263,13 +263,17 @@ class TestProjectCallSitesWithFactory:
 class TestLazyPropertiesWithFactory:
     """Verify lazy properties in feature_plan_context.py and interactive_capture.py."""
 
-    def test_feature_plan_context_lazy_property_calls_get_graphiti(self, mock_client):
-        """FeaturePlanContextBuilder.graphiti_client calls get_graphiti()."""
+    def test_feature_plan_context_lazy_property_calls_get_memory_client(self, mock_client):
+        """FeaturePlanContextBuilder.graphiti_client calls get_memory_client().
+
+        Migrated to the memory-client factory (FEAT-MEM-08); the property does a
+        local import of get_memory_client, so patch it at its source module.
+        """
         from guardkit.knowledge.feature_plan_context import FeaturePlanContextBuilder
 
         # Patch at source module (local import in property, not module-level)
         with patch(
-            'guardkit.knowledge.graphiti_client.get_graphiti',
+            'guardkit.knowledge.fleet_memory_client.get_memory_client',
             return_value=mock_client
         ) as mock_get:
             builder = FeaturePlanContextBuilder.__new__(FeaturePlanContextBuilder)
@@ -287,7 +291,7 @@ class TestLazyPropertiesWithFactory:
 
         # Patch at source module (local import in property, not module-level)
         with patch(
-            'guardkit.knowledge.graphiti_client.get_graphiti',
+            'guardkit.knowledge.fleet_memory_client.get_memory_client',
             return_value=mock_client
         ) as mock_get:
             builder = FeaturePlanContextBuilder.__new__(FeaturePlanContextBuilder)
@@ -296,7 +300,7 @@ class TestLazyPropertiesWithFactory:
 
             # First access
             _ = builder.graphiti_client
-            # Second access - should not call get_graphiti again
+            # Second access - should not call get_memory_client again
             _ = builder.graphiti_client
 
         mock_get.assert_called_once()
@@ -476,10 +480,12 @@ class TestLowRiskCallSitesPattern:
         from guardkit.knowledge.template_sync import get_graphiti as ts_get
         assert ts_get is gc_module.get_graphiti
 
-    def test_outcome_manager_imports_get_graphiti(self):
-        """outcome_manager.py imports get_graphiti from graphiti_client."""
-        from guardkit.knowledge.outcome_manager import get_graphiti as om_get
-        assert om_get is gc_module.get_graphiti
+    def test_outcome_manager_imports_get_memory_client(self):
+        """outcome_manager.py imports get_memory_client (migrated to the memory-client
+        factory in FEAT-MEM-08, TASK-MEM08-004)."""
+        from guardkit.knowledge.outcome_manager import get_memory_client as om_get
+        from guardkit.knowledge.fleet_memory_client import get_memory_client as fmc_get
+        assert om_get is fmc_get
 
     def test_failed_approach_manager_imports_get_graphiti(self):
         """failed_approach_manager.py imports get_graphiti from graphiti_client."""
