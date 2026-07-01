@@ -173,6 +173,29 @@ latency to every autobuild run by default.
 
   The promotion commit references the runs that satisfy P-1…P-5.
 
+---
+
+## Promotion track — CLOSED, not pursued (2026-07-01)
+
+TASK-OPS-COACHMOE01 (2026-06-11) ran B-full (`GATHER=1`) on both substrates (the 26B-A4B MoE
+and dense g31) and found **P-2 and P-5 violated**: the Phase-A gather hit `recursion_limit=12`
+and **degraded to B-min on 6/6 turns for both substrates** (never genuinely exercised — P-2),
+and the wasted gather overhead pushed approve-turns to 124–293s vs the 24–40s B-min synthesis
+(P-5). TASK-PERF-COACHGATHER01's analysis (2026-07-01) shows the decision is
+**over-determined independent of the gather's (i)/(ii) classification**: **B-min alone
+produced 3/3 correct, honest, fully-enriched verdicts** — it caught a real Player honesty
+discrepancy on IA03 via the **deterministic** honesty check, not the gather — so the
+tool-using LLM gather is **redundant**; the deterministic evidence bundle already carries the
+verdict-relevant signal.
+
+**Decision: promotion NOT pursued. `GATHER=0` (B-min-only) is the permanent shipped default.**
+The B-full code path stays behind the flag — **dormant and reversible**. A *directed*
+converging gather may become viable post-fine-tune, and the wiring-detection value B-full was
+meant to add is routed instead to **directed deterministic gather-probes** (reachability
+probe, glue mock-scan, scenario↔test mapping — findings §3.1), not the undirected gather.
+
+Evidence + full rationale: `TASK-PERF-COACHGATHER01` Decision (2026-07-01).
+
 ## Notes / sequencing
 
 - Best done **after** TASK-FIX-COACHTESTTO (restores the deterministic
