@@ -58,15 +58,54 @@ The class-of-defect recurs:
    path-mismatch mechanism of the false-red sibling. See "Prior art" for the
    supersession of TASK-FIX-64EE and the grep fingerprint.
 
+5. **2026-06-17** — absent BDD feature-collection **false-red**
+   (TASK-AB-BDDNEUTRAL01, commit `fb1696d15`). An uncollectable task-scoped
+   `.feature` (pytest exit 4 with a "not found" collection signature and zero
+   parsed testcases) is an **absent** BDD input, not a failure. The prior
+   synthetic exit-4 failure (TASK-FIX-F584's runner-error surfacing) was too
+   broad — it false-red'd every task in a repo whose `.feature` files lacked a
+   `features/conftest.py` bridge, stacking into `unrecoverable_stall`. Fix:
+   `bdd_runner` returns `None` on the "not found" collection signature, leaving
+   `bdd_results` out of `task_work_results` so Coach's `_check_bdd_results`
+   ([`coach_validator.py`](../../guardkit/orchestrator/quality_gates/coach_validator.py))
+   treats the gate as not-applicable. The neutral verdict is paired with a
+   positive-evidence precondition (the pytest "not found" signature via
+   `_is_absent_feature_collection`,
+   [`bdd_runner.py:520`](../../guardkit/orchestrator/quality_gates/bdd_runner.py#L520))
+   plus a `"while loading conftest"` veto
+   ([`bdd_runner.py:94`](../../guardkit/orchestrator/quality_gates/bdd_runner.py#L94))
+   that preserves F584's protection for genuine runner errors (conftest
+   ImportError, exit 2/3, empty-stream exit-4); an ambiguous exit-4 with no
+   diagnostic output biases to failure, not neutral.
+
+6. **2026-06** — Coach-narrative fabrication (TASK-FIX-COACHNARR01, FEAT-C332
+   run 2). A toolless/B-min Coach synthesis model narrated two tracked,
+   present-on-disk test files as "do not exist on disk" — asserting a
+   `file_existence` cause the deterministic discrepancy records did **not**
+   support, handing the Player unactionable feedback. Same meta-frame (a
+   low-fidelity oracle that cannot distinguish "no evidence" from a
+   positive/negative signal), applied to the *narrative* rather than a counter.
+   Fix: `guardkit/orchestrator/coach_narrative_reconciler.py` +
+   `AgentInvoker._reconcile_coach_narrative_with_records`
+   ([`agent_invoker.py:5804`](../../guardkit/orchestrator/agent_invoker.py#L5804))
+   — a narrative-only sibling of `_reconcile_absent_independent_test_signal`
+   that embeds the structured record fields verbatim into feedback and
+   strips/corrects any claim the records do not support. Unlike its verdict-flipping
+   siblings it **corrects the narrative only and never flips the verdict**.
+
 The unifying observation across the first three: a "lightweight" /
 "deterministic" validator path was added in parallel to an LLM-with-tools
 verification path, and the lightweight path silently dropped the
 verification step. From outside, both paths look like they enforce the same
 contract; from inside, the lightweight path interprets *absence of evidence*
 as *evidence of absence of failure*, which is the false-green generator.
-(The fourth instance generalises the family to the false-red direction: the
-same "absent ≠ negative" confusion, read the other way — a rejection gate
-that stalls a healthy run because no oracle signal was present that turn.)
+(The fourth through sixth instances generalise the family beyond false-green:
+the fourth and fifth are false-red — the same "absent ≠ negative" confusion read
+the other way, a rejection gate that stalls a healthy run because no oracle signal
+was present (item 4), or a neutral/absent BDD input synthesised into a failure
+(item 5); the sixth applies the confusion to a synthesized *narrative* rather than
+a counter — a low-fidelity oracle asserting a cause the deterministic records do
+not support.)
 
 ## Symptom
 
