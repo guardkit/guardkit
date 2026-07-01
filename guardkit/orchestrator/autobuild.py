@@ -152,6 +152,9 @@ from guardkit.knowledge.graphiti_client import (
     _suppress_httpx_cleanup_errors,
     _install_graphiti_unraisable_hook,
 )
+# FEAT-MEM-09 WS-2: fleet-memory per-thread factory (preferred when the backend
+# flag selects fleet_memory; graphiti factory remains the rollback path).
+from guardkit.knowledge.fleet_memory_client import get_memory_factory
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -1345,30 +1348,51 @@ class AutoBuildOrchestrator:
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
-        # Per-thread Graphiti client storage (TASK-FIX-GTP2)
-        self._factory: Optional[GraphitiClientFactory] = None
+        # Per-thread memory client storage (TASK-FIX-GTP2). FEAT-MEM-09 WS-2:
+        # may hold a GraphitiClientFactory OR a FleetMemoryClientFactory — both
+        # expose get_thread_client() and hand out clients with the same
+        # initialize()/is_initialized/close() lifecycle, so the per-thread
+        # machinery below is duck-typed and substrate-agnostic.
+        self._factory: Optional[Any] = None
         # TASK-ACR-005: Store event loop reference with each loader for proper cleanup
         self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
         # TASK-GLF-002: Suppress Graphiti operations during shutdown
         self._shutting_down: bool = False
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
-        # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode
+        # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode.
+        # FEAT-MEM-09 WS-2: prefer the fleet-memory factory when the backend flag
+        # selects fleet_memory; fall back to the graphiti factory for the rollback /
+        # backend=graphiti path. Both hand out per-thread, loop-affine clients.
         if self.enable_context and self._context_loader is None:
             try:
-                self._factory = get_factory()
-                if self._factory is None:
-                    # Trigger lazy-init by calling get_graphiti(), then re-fetch factory
-                    get_graphiti()
-                    self._factory = get_factory()
+                # get_memory_factory() returns None unless backend == fleet_memory,
+                # so this is a no-op on the graphiti/rollback path.
+                self._factory = get_memory_factory()
                 if self._factory is not None:
-                    logger.info("Stored Graphiti factory for per-thread context loading")
+                    logger.info(
+                        "Stored fleet-memory factory for per-thread context loading"
+                    )
                 else:
-                    logger.info("Graphiti factory not available, context retrieval disabled")
+                    self._factory = get_factory()
+                    if self._factory is None:
+                        # Trigger lazy-init by calling get_graphiti(), then re-fetch factory
+                        get_graphiti()
+                        self._factory = get_factory()
+                    if self._factory is not None:
+                        logger.info(
+                            "Stored Graphiti factory for per-thread context loading"
+                        )
+                    else:
+                        logger.info(
+                            "Memory factory not available, context retrieval disabled"
+                        )
             except ImportError:
-                logger.info("Graphiti dependencies not installed, context retrieval disabled")
+                logger.info(
+                    "Memory dependencies not installed, context retrieval disabled"
+                )
             except Exception as e:
-                logger.info(f"Could not obtain Graphiti factory: {e}")
+                logger.info(f"Could not obtain memory factory: {e}")
 
         # Log warning if ablation mode is active
         if self.ablation_mode:
