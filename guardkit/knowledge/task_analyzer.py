@@ -182,11 +182,11 @@ class TaskAnalyzer:
         graphiti: GraphitiClient instance for querying knowledge graph
 
     Example:
-        from guardkit.knowledge import get_graphiti
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
         from guardkit.knowledge.task_analyzer import TaskAnalyzer, TaskPhase
 
-        graphiti = get_graphiti()
-        analyzer = TaskAnalyzer(graphiti)
+        client = get_memory_client()
+        analyzer = TaskAnalyzer(client)
 
         task = {
             "id": "TASK-001",
