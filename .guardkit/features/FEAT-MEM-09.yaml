@@ -23,14 +23,15 @@ tasks:
   file_path: tasks/backlog/feat-mem-09/TASK-MEM09-001-per-project-scoping-foundation.md
   complexity: 3
   dependencies: []
-  status: in_progress
+  status: in_review
   implementation_mode: task-work
   wave: 0
   note: >-
-    guardkit-side DONE (project threaded through fleet_memory_payloads.build_memory_episode +
-    FleetMemoryConfig.project + env factory + unhardcoded search/healthcheck; 9 tests green).
-    REMAINING: fleet-memory retrieval/core.py LIKE-prefix trailing-delimiter guard;
-    optional removal of the static GroupMapping.project field once callers thread project.
+    CODE-COMPLETE both repos. guardkit (0de43a86): project threaded through
+    build_memory_episode + FleetMemoryConfig.project + env factory + unhardcoded
+    search/healthcheck; 9 tests. fleet-memory (7945d9d): exact-project post-filter guard
+    in retrieval/core.py; 3 tests, 516 unit green. Deferred (optional): drop static
+    GroupMapping.project field once all callers thread project.
 - id: TASK-MEM09-002
   name: WS-1 — graph_export one-shot pipeline (FalkorDB Episodic → fleet-memory)
   file_path: tasks/backlog/feat-mem-09/TASK-MEM09-002-graph-export-pipeline.md

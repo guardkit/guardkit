@@ -1,7 +1,7 @@
 ---
 id: TASK-MEM09-001
 title: WS-0 — per-project + per-group scoping foundation for fleet-memory
-status: in_progress
+status: in_review
 created: '2026-07-01'
 updated: '2026-07-01'
 priority: high
@@ -40,10 +40,10 @@ namespace, with group-scoped retrieval preserved.
 - [x] Unit tests prove: explicit project scopes natural_key/project_id; `None` → back-compat
       `"guardkit"`; env override; client threads config.project into the write path.
       (`tests/unit/knowledge/test_fleet_memory_project_scoping.py`, 9 tests green; existing 65 green.)
-- [ ] **fleet-memory (sibling repo):** add a trailing-delimiter guard to `retrieval/core.py`
-      `namespace_prefix` so `project="jarvis"` cannot `LIKE`-prefix-match `jarvis_v2`
-      (a latent cross-project bleed once ≥2 projects share a name-prefix). Localised, single
-      call site. Not blocking single-project guardkit today.
+- [x] **fleet-memory (sibling repo):** add an exact-project post-filter (`_matches_project`)
+      in `retrieval/core.py` so `project="guardkit"` cannot `LIKE`-prefix-match
+      `guardkit_factory` (namespace-segment exact match, langgraph-independent, covers chunk
+      + typed records). Done in fleet-memory commit `7945d9d`; 3 tests, 516 unit tests green.
 - [ ] (optional, cleanup) remove the static `GroupMapping.project` field entirely once all
       callers thread `project` — currently retained for back-compat and as the default.
 
@@ -60,8 +60,12 @@ namespace, with group-scoped retrieval preserved.
 
 ## Remaining before this WS is "done"
 
-1. fleet-memory `retrieval/core.py` delimiter guard (in `../fleet-memory`, its own tests/CI).
-2. (defer) drop the static `GroupMapping.project` field.
+WS-0 is **code-complete** across both repos (guardkit `0de43a86`, fleet-memory `7945d9d`).
+Only an OPTIONAL cleanup is deferred:
+
+1. (optional, deferred) drop the static `GroupMapping.project` field once all callers thread
+   `project` explicitly — currently retained as the back-compat default. Not required for the
+   scoping behaviour, which is fully working and tested.
 
 ## Notes
 
