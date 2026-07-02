@@ -1826,6 +1826,6 @@ class TestTurnContinuationWiring:
 
             # Verify logging for similar outcomes
             mock_logger.info.assert_any_call(
-                "[Graphiti] Similar outcomes found: %d matches",
+                "[Memory] Similar outcomes found: %d matches",
                 1,
             )

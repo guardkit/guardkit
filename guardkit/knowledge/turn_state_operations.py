@@ -4,10 +4,10 @@ Turn state operations for cross-turn learning.
 This module provides functions for capturing turn state at the end of each
 feature-build turn and loading previous turn context for turn continuation.
 These operations enable cross-turn learning by storing and retrieving
-structured turn data from Graphiti.
+structured turn data from the memory backend (fleet-memory; formerly Graphiti).
 
 Public API:
-    capture_turn_state: Store turn state in Graphiti
+    capture_turn_state: Store turn state in the memory backend
     load_turn_continuation_context: Load previous turn summary for context
     load_turn_context: Load context from previous turns for cross-turn learning
 
@@ -51,12 +51,12 @@ async def capture_turn_state(
 ) -> None:
     """Capture turn state at end of feature-build turn.
 
-    Stores the turn state entity in Graphiti for later retrieval.
-    Supports graceful degradation - if Graphiti is unavailable or
+    Stores the turn state entity in the memory backend for later retrieval.
+    Supports graceful degradation - if the memory backend is unavailable or
     an error occurs, the function returns without raising exceptions.
 
     Args:
-        graphiti_client: Graphiti client instance (can be None)
+        graphiti_client: memory client instance (can be None)
         entity: TurnStateEntity containing the turn state to capture
 
     Returns:
@@ -88,12 +88,12 @@ async def capture_turn_state(
     """
     # Graceful degradation: return early if client is None
     if graphiti_client is None:
-        logger.debug("[Graphiti] Client unavailable, skipping turn state capture")
+        logger.debug("[Memory] Client unavailable, skipping turn state capture")
         return
 
     # Graceful degradation: return early if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("[Graphiti] Client disabled, skipping turn state capture")
+        logger.debug("[Memory] Client disabled, skipping turn state capture")
         return
 
     try:
@@ -105,7 +105,7 @@ async def capture_turn_state(
         # turn_{feature_id}_{task_id}_turn{N}
         episode_name = f"turn_{entity.feature_id}_{entity.task_id}_turn{entity.turn_number}"
 
-        # Add episode to Graphiti
+        # Add episode to the memory backend
         await graphiti_client.add_episode(
             name=episode_name,
             episode_body=episode_body_json,
@@ -114,11 +114,11 @@ async def capture_turn_state(
             entity_type="turn_state"
         )
 
-        logger.info(f"[Graphiti] Captured turn state: {entity.id}")
+        logger.info(f"[Memory] Captured turn state: {entity.id}")
 
     except Exception as e:
         # Graceful degradation: log and continue
-        logger.warning(f"[Graphiti] Failed to capture turn state {entity.id}: {e}")
+        logger.warning(f"[Memory] Failed to capture turn state {entity.id}: {e}")
 
 
 async def load_turn_continuation_context(
@@ -131,10 +131,10 @@ async def load_turn_continuation_context(
     """Load context for Turn N when N > 1.
 
     Tries local turn state files first (fast, <1ms), then falls back to
-    Graphiti query if local files are not found (TASK-RFX-5FED).
+    a memory backend query if local files are not found (TASK-RFX-5FED).
 
     Args:
-        graphiti_client: Graphiti client instance (can be None)
+        graphiti_client: memory client instance (can be None)
         feature_id: Feature identifier (e.g., "FEAT-GE")
         task_id: Task identifier (e.g., "TASK-GE-001")
         current_turn: Current turn number (1-indexed)
@@ -144,7 +144,7 @@ async def load_turn_continuation_context(
     Returns:
         Formatted markdown string with previous turn summary, or None if:
         - current_turn is 1 (no previous turn)
-        - No local file found AND Graphiti is unavailable
+        - No local file found AND the memory backend is unavailable
         - No previous turn found
         - An error occurs during retrieval
 
@@ -178,7 +178,7 @@ async def load_turn_continuation_context(
         if local_result is not None:
             return local_result
 
-    # Fallback: Graphiti query (backward compatibility)
+    # Fallback: memory backend query (backward compatibility)
     return await _load_from_graphiti(graphiti_client, task_id, prev_turn_num)
 
 
@@ -227,10 +227,10 @@ async def _load_from_graphiti(
     task_id: str,
     prev_turn_num: int,
 ) -> Optional[str]:
-    """Load turn state from Graphiti (fallback path).
+    """Load turn state from the memory backend (fallback path).
 
     Args:
-        graphiti_client: Graphiti client instance (can be None)
+        graphiti_client: memory client instance (can be None)
         task_id: Task identifier
         prev_turn_num: Previous turn number to load
 
@@ -239,12 +239,12 @@ async def _load_from_graphiti(
     """
     # Graceful degradation: return None if client is None
     if graphiti_client is None:
-        logger.debug("[Graphiti] Client unavailable, returning None for turn context")
+        logger.debug("[Memory] Client unavailable, returning None for turn context")
         return None
 
     # Graceful degradation: return None if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("[Graphiti] Client disabled, returning None for turn context")
+        logger.debug("[Memory] Client disabled, returning None for turn context")
         return None
 
     try:
@@ -256,20 +256,20 @@ async def _load_from_graphiti(
         )
 
         if not results:
-            logger.debug(f"[Graphiti] No previous turn found for {task_id} turn {prev_turn_num}")
+            logger.debug(f"[Memory] No previous turn found for {task_id} turn {prev_turn_num}")
             return None
 
         result = results[0]
         body = result.get("body", {})
 
         if not body or not isinstance(body, dict):
-            logger.debug(f"[Graphiti] Malformed turn state result for {task_id}")
+            logger.debug(f"[Memory] Malformed turn state result for {task_id}")
             return None
 
         return _format_turn_state_body(body, prev_turn_num)
 
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to load turn continuation context: {e}")
+        logger.warning(f"[Memory] Failed to load turn continuation context: {e}")
         return None
 
 
@@ -277,7 +277,7 @@ def _format_turn_state_body(body: dict, turn_number: int) -> str:
     """Format turn state body dict as actionable markdown context.
 
     Args:
-        body: Turn state data dictionary (from local file or Graphiti)
+        body: Turn state data dictionary (from local file or the memory backend)
         turn_number: Turn number for display
 
     Returns:
@@ -327,7 +327,7 @@ def _format_turn_state_body(body: dict, turn_number: int) -> str:
 async def load_turn_context(feature_id: str, task_id: str) -> str:
     """Load context from previous turns for cross-turn learning.
 
-    Queries Graphiti for the last 5 turns and formats them as context
+    Queries the memory backend for the last 5 turns and formats them as context
     for the current turn. Emphasizes feedback from the last turn if it
     was REJECTED, to ensure the Player addresses the Coach's concerns.
 
@@ -339,7 +339,7 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
         Formatted string with previous turn summary, or
         "First turn - no previous context." if:
         - No previous turns exist
-        - Graphiti is unavailable or disabled
+        - The memory backend is unavailable or disabled
         - An error occurs during retrieval
 
     Example:
@@ -358,17 +358,17 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
         # Last Turn Feedback (MUST ADDRESS):
         # Missing error handling and validation logic
     """
-    # Get Graphiti client
+    # Get memory client
     graphiti_client = get_memory_client()
 
     # Graceful degradation: return first turn message if client is None
     if graphiti_client is None:
-        logger.debug("[Graphiti] Client unavailable, returning first turn message")
+        logger.debug("[Memory] Client unavailable, returning first turn message")
         return "First turn - no previous context."
 
     # Graceful degradation: return first turn message if client is disabled
     if not graphiti_client.enabled:
-        logger.debug("[Graphiti] Client disabled, returning first turn message")
+        logger.debug("[Memory] Client disabled, returning first turn message")
         return "First turn - no previous context."
 
     try:
@@ -405,7 +405,7 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
         return "\n".join(context_lines)
 
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to load turn context: {e}")
+        logger.warning(f"[Memory] Failed to load turn context: {e}")
         return "First turn - no previous context."
 
 

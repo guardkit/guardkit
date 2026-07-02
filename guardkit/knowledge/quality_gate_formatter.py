@@ -2,7 +2,7 @@
 Quality Gate Formatter for GuardKit.
 
 This module provides formatting functions for quality gate configurations
-retrieved from Graphiti, specifically for AutoBuild workflows. The formatted
+retrieved from the memory backend, specifically for AutoBuild workflows. The formatted
 output includes clear thresholds and "do NOT adjust" messaging to prevent
 threshold drift during execution.
 

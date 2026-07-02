@@ -2,7 +2,7 @@
 Architecture spec parser for /system-plan command.
 
 Parses structured architecture markdown files (e.g., guardkit-system-spec.md)
-into entity instances for Graphiti persistence and markdown generation.
+into entity instances for memory-backend persistence and markdown generation.
 
 Supports heading patterns:
     ## 1. System Context   -> SystemContextDef

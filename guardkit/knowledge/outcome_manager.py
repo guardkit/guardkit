@@ -2,8 +2,9 @@
 Task outcome capture and management.
 
 This module provides functionality for capturing task outcomes
-as episodes in Graphiti. All operations are designed for graceful
-degradation - they will succeed even when Graphiti is unavailable.
+as episodes in the knowledge-memory backend (fleet-memory; formerly
+Graphiti). All operations are designed for graceful degradation - they
+will succeed even when the memory backend is unavailable.
 
 Public API:
     capture_task_outcome: Capture a task outcome as an episode
@@ -34,7 +35,7 @@ from guardkit.knowledge.entities.outcome import OutcomeType, TaskOutcome
 
 logger = logging.getLogger(__name__)
 
-# Group ID for task outcomes in Graphiti
+# Group ID for task outcomes in the memory backend
 TASK_OUTCOMES_GROUP_ID = "task_outcomes"
 
 
@@ -67,11 +68,11 @@ async def capture_task_outcome(
     feature_id: Optional[str] = None,
     related_adr_ids: Optional[List[str]] = None,
 ) -> str:
-    """Capture a task outcome as an episode in Graphiti.
+    """Capture a task outcome as an episode in the memory backend.
 
-    Creates a TaskOutcome instance and stores it in Graphiti as an episode.
-    Gracefully degrades if Graphiti is unavailable - still returns the
-    generated outcome ID.
+    Creates a TaskOutcome instance and stores it in the memory backend as an
+    episode. Gracefully degrades if the memory backend is unavailable - still
+    returns the generated outcome ID.
 
     Args:
         outcome_type: Type of outcome from OutcomeType enum

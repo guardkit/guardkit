@@ -88,11 +88,11 @@ class CrosscuttingConcernDef:
         return f"XC-{slug}"
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body. Returns only domain data;
-        metadata fields are injected by GraphitiClient.
+        in the memory backend as an episode body. Returns only domain data;
+        metadata fields are injected by the memory client.
 
         Returns:
             Dictionary containing crosscutting concern fields (no _metadata).

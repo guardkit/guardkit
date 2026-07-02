@@ -5,7 +5,7 @@ contexts and managing project configuration. It supports:
 - Loading and saving project configuration from .guardkit/config.yaml
 - Switching active project context
 - Finding active tasks in a project
-- Querying Graphiti for architecture overview (graceful degradation)
+- Querying the memory backend for architecture overview (graceful degradation)
 
 Example Usage:
     from guardkit.planning.context_switch import (
@@ -250,18 +250,18 @@ def _find_active_tasks(project_path: Optional[str]) -> List[Dict[str, Any]]:
 
 
 async def execute_context_switch(
-    client: Optional[Any],  # GraphitiClient or None
+    client: Optional[Any],  # memory client or None
     target_project: str,
     config: GuardKitConfig,
 ) -> Dict[str, Any]:
     """Switch active project context and display orientation.
 
     Validates the target project exists, updates the config,
-    queries Graphiti for architecture overview (if available),
+    queries the memory backend for architecture overview (if available),
     and finds active tasks.
 
     Args:
-        client: GraphitiClient instance or None (graceful degradation).
+        client: memory client instance or None (graceful degradation).
         target_project: The project ID to switch to.
         config: GuardKitConfig instance for managing configuration.
 
@@ -271,7 +271,7 @@ async def execute_context_switch(
         - message: Human-readable message (for errors)
         - project_id: The target project ID
         - project_path: The project path
-        - architecture: Architecture info from Graphiti (empty if unavailable)
+        - architecture: Architecture info from the memory backend (empty if unavailable)
         - active_tasks: List of in-progress and backlog tasks
     """
     # Check if project exists

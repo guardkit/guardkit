@@ -1,6 +1,6 @@
-"""Tests for [Graphiti] structured logging across integration points.
+"""Tests for [Memory] structured logging across integration points.
 
-Verifies TASK-FIX-GCI5: consistent [Graphiti] prefixed log messages at all
+Verifies TASK-FIX-GCI5: consistent [Memory] prefixed log messages at all
 Graphiti integration points with correct log levels.
 """
 
@@ -17,7 +17,7 @@ import pytest
 
 
 class TestFeaturePlanContextLogging:
-    """Tests for [Graphiti] logging in FeaturePlanContextBuilder.build_context."""
+    """Tests for [Memory] logging in FeaturePlanContextBuilder.build_context."""
 
     @pytest.fixture
     def builder(self, tmp_path):
@@ -47,7 +47,7 @@ class TestFeaturePlanContextLogging:
         with caplog.at_level(logging.INFO, logger="guardkit.knowledge.feature_plan_context"):
             await builder.build_context(description="Test feature")
 
-        assert any("[Graphiti] Loading context for feature planning..." in r.message for r in caplog.records)
+        assert any("[Memory] Loading context for feature planning..." in r.message for r in caplog.records)
 
     async def test_logs_context_loaded_with_category_count(
         self, builder, mock_graphiti_enabled, caplog
@@ -55,7 +55,7 @@ class TestFeaturePlanContextLogging:
         with caplog.at_level(logging.INFO, logger="guardkit.knowledge.feature_plan_context"):
             await builder.build_context(description="Test feature")
 
-        assert any("[Graphiti] Context loaded:" in r.message for r in caplog.records)
+        assert any("[Memory] Context loaded:" in r.message for r in caplog.records)
 
     async def test_logs_context_unavailable_when_disabled(
         self, builder, mock_graphiti_disabled, caplog
@@ -64,7 +64,7 @@ class TestFeaturePlanContextLogging:
             await builder.build_context(description="Test feature")
 
         assert any(
-            "[Graphiti] Context unavailable, continuing without enrichment" in r.message
+            "[Memory] Context unavailable, continuing without enrichment" in r.message
             for r in caplog.records
         )
 
@@ -76,7 +76,7 @@ class TestFeaturePlanContextLogging:
             await builder.build_context(description="Test feature")
 
         assert any(
-            "[Graphiti] Context unavailable" in r.message
+            "[Memory] Context unavailable" in r.message
             for r in caplog.records
         )
 
@@ -88,7 +88,7 @@ class TestFeaturePlanContextLogging:
         with caplog.at_level(logging.INFO, logger="guardkit.knowledge.feature_plan_context"):
             await builder.build_context(description="Test feature")
 
-        graphiti_messages = [r for r in caplog.records if "[Graphiti]" in r.message]
+        graphiti_messages = [r for r in caplog.records if "[Memory]" in r.message]
         # Should only have the unavailable message, not loading
         assert len(graphiti_messages) == 1
         assert "unavailable" in graphiti_messages[0].message
@@ -101,7 +101,7 @@ class TestFeaturePlanContextLogging:
 
         loading_records = [
             r for r in caplog.records
-            if "[Graphiti] Loading context" in r.message
+            if "[Memory] Loading context" in r.message
         ]
         assert len(loading_records) == 1
         assert loading_records[0].levelno == logging.INFO
@@ -114,7 +114,7 @@ class TestFeaturePlanContextLogging:
 
         unavailable_records = [
             r for r in caplog.records
-            if "[Graphiti] Context unavailable" in r.message
+            if "[Memory] Context unavailable" in r.message
         ]
         assert len(unavailable_records) == 1
         assert unavailable_records[0].levelno == logging.INFO
@@ -126,7 +126,7 @@ class TestFeaturePlanContextLogging:
 
 
 class TestAutoBuildContextLoaderLogging:
-    """Tests for [Graphiti] logging in AutoBuildContextLoader."""
+    """Tests for [Memory] logging in AutoBuildContextLoader."""
 
     @pytest.fixture
     def mock_retriever(self):
@@ -176,7 +176,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=3, description="Test",
             )
 
-        assert any("[Graphiti] Loading Player context (turn 3)..." in r.message for r in caplog.records)
+        assert any("[Memory] Loading Player context (turn 3)..." in r.message for r in caplog.records)
 
     async def test_player_logs_context_summary(
         self, loader_with_retriever, caplog
@@ -187,7 +187,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=1, description="Test",
             )
 
-        assert any("[Graphiti] Player context:" in r.message for r in caplog.records)
+        assert any("[Memory] Player context:" in r.message for r in caplog.records)
 
     async def test_coach_logs_loading_with_turn_number(
         self, loader_with_retriever, caplog
@@ -198,7 +198,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=2, description="Test",
             )
 
-        assert any("[Graphiti] Loading Coach context (turn 2)..." in r.message for r in caplog.records)
+        assert any("[Memory] Loading Coach context (turn 2)..." in r.message for r in caplog.records)
 
     async def test_coach_logs_context_summary(
         self, loader_with_retriever, caplog
@@ -209,7 +209,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=1, description="Test",
             )
 
-        assert any("[Graphiti] Coach context:" in r.message for r in caplog.records)
+        assert any("[Memory] Coach context:" in r.message for r in caplog.records)
 
     async def test_no_loading_log_when_retriever_none(
         self, loader_no_graphiti, caplog
@@ -220,7 +220,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=1, description="Test",
             )
 
-        assert not any("[Graphiti] Loading Player" in r.message for r in caplog.records)
+        assert not any("[Memory] Loading Player" in r.message for r in caplog.records)
 
     async def test_player_context_summary_includes_tokens(
         self, loader_with_retriever, caplog
@@ -231,7 +231,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=1, description="Test",
             )
 
-        summary_records = [r for r in caplog.records if "[Graphiti] Player context:" in r.message]
+        summary_records = [r for r in caplog.records if "[Memory] Player context:" in r.message]
         assert len(summary_records) == 1
         assert "3200/4000" in summary_records[0].message
 
@@ -244,7 +244,7 @@ class TestAutoBuildContextLoaderLogging:
                 turn_number=1, description="Test",
             )
 
-        graphiti_records = [r for r in caplog.records if "[Graphiti]" in r.message]
+        graphiti_records = [r for r in caplog.records if "[Memory]" in r.message]
         for record in graphiti_records:
             assert record.levelno == logging.INFO
 
@@ -256,10 +256,10 @@ class TestAutoBuildContextLoaderLogging:
 
 
 class TestConsistentGraphitiLogFormat:
-    """Verify all [Graphiti] logs use consistent prefix format."""
+    """Verify all [Memory] logs use consistent prefix format."""
 
     async def test_all_graphiti_logs_use_bracket_prefix(self):
-        """Every Graphiti log message must start with [Graphiti]."""
+        """Every Graphiti log message must start with [Memory]."""
         # This is a structural test - verified by the individual tests above
         # asserting exact message prefixes. Kept for documentation.
         pass

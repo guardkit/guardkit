@@ -338,7 +338,7 @@ class StallClassification:
     The top-level ``final_decision`` label stays ``"unrecoverable_stall"`` for
     backward compatibility. This dataclass carries the finer-grained sub-type
     information that the summary renderer, review-summary-per-task renderer,
-    and Graphiti seeding hook all consume (TASK-FIX-7A07).
+    and memory seeding hook all consume (TASK-FIX-7A07).
 
     Attributes
     ----------
@@ -358,7 +358,7 @@ class StallClassification:
         Actual invocation count (only populated for the agent-invocations case).
     co_fires : List[str]
         All sub-type labels that co-fired on this task. Useful for the
-        review-summary per-task table and Graphiti seeding.
+        review-summary per-task table and memory seeding.
     """
 
     decision_label: str
@@ -856,7 +856,7 @@ class ContextStatus:
     """
     Context retrieval status for a single agent invocation.
 
-    Captures whether Graphiti context was retrieved, skipped, disabled, or failed,
+    Captures whether memory context was retrieved, skipped, disabled, or failed,
     along with token usage and category counts for observability.
 
     Attributes
@@ -1160,7 +1160,7 @@ class AutoBuildOrchestrator:
             Automatically rollback when context pollution detected (default: True).
             Triggers on 2+ consecutive test failures.
         enable_context : bool, optional
-            Enable job-specific context retrieval from Graphiti (default: True).
+            Enable job-specific context retrieval from the memory backend (default: True).
             When enabled, retrieves role_constraints, quality_gates, and turn_states
             for Player and Coach turns (TASK-GR6-006).
         verbose : bool, optional
@@ -1628,7 +1628,7 @@ class AutoBuildOrchestrator:
             # Build result
             success = final_decision == "approved"
             # TASK-FIX-7A07: Compute stall sub-classification for the result
-            # so downstream consumers (review-summary, Graphiti seeding) can
+            # so downstream consumers (review-summary, memory seeding) can
             # surface the per-task decision_subtype without re-walking the
             # turn_history each.
             stall_classification = classify_stall(
@@ -3746,7 +3746,7 @@ class AutoBuildOrchestrator:
         except Exception as exc:
             logger.warning("Failed to flush emitter during finalize: %s", exc)
 
-        # Clean up per-thread Graphiti clients (TASK-FIX-GTP2)
+        # Clean up per-thread memory clients (TASK-FIX-GTP2)
         self._cleanup_thread_loaders()
 
         logger.info(
@@ -4706,7 +4706,7 @@ class AutoBuildOrchestrator:
 
         Creates a TurnStateEntity from the completed turn and saves it to a
         local JSON file for instant cross-turn context loading. The blocking
-        Graphiti write has been replaced with local file persistence.
+        The memory-backend write has been replaced with local file persistence.
 
         Parameters
         ----------
@@ -4723,7 +4723,7 @@ class AutoBuildOrchestrator:
 
         Notes
         -----
-        TASK-RFX-5FED: Replaced blocking Graphiti capture (30s timeout per turn)
+        TASK-RFX-5FED: Replaced blocking memory-backend capture (30s timeout per turn)
         with local file write (<1ms). This saves ~30s per turn (~3.5 minutes on
         a 7-turn run). Local files are read by load_turn_continuation_context().
         """
@@ -4850,7 +4850,7 @@ class AutoBuildOrchestrator:
                 what_to_try_next=what_to_try_next,
             )
 
-            # TASK-RFX-5FED: Write turn state to local file (<1ms, replaces 30s Graphiti timeout)
+            # TASK-RFX-5FED: Write turn state to local file (<1ms, replaces 30s memory-backend timeout)
             if worktree_path is not None:
                 try:
                     autobuild_dir = worktree_path / ".guardkit" / "autobuild" / current_task_id
@@ -5218,7 +5218,7 @@ class AutoBuildOrchestrator:
     ) -> Optional[AutoBuildContextLoader]:
         """Get or create a context loader for the current thread (TASK-FIX-GTP2).
 
-        Creates a fresh GraphitiClient initialized on this thread's event loop,
+        Creates a fresh memory client initialized on this thread's event loop,
         then wraps it in an AutoBuildContextLoader. Thread-local storage ensures
         each parallel worker gets its own independent client, avoiding the
         cross-loop Neo4j errors that caused hangs in FEAT-6EDD.
@@ -5226,7 +5226,7 @@ class AutoBuildOrchestrator:
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
-            The event loop for the current thread. The Graphiti client's Neo4j
+            The event loop for the current thread. The memory client's Neo4j
             driver will be bound to this loop.
 
         Returns
@@ -5252,7 +5252,7 @@ class AutoBuildOrchestrator:
             client = self._factory.get_thread_client()
             if client is None:
                 self._thread_loaders[thread_id] = (None, loop)
-                logger.info(f"Per-thread Graphiti client not available for thread {thread_id}")
+                logger.info(f"Per-thread memory client not available for thread {thread_id}")
                 return None
 
             # Lazy initialization: if pending, initialize on THIS loop
@@ -5261,14 +5261,14 @@ class AutoBuildOrchestrator:
                 client._pending_init = False
                 if not success:
                     self._thread_loaders[thread_id] = (None, loop)
-                    logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                    logger.info(f"Per-thread memory client init failed for thread {thread_id}")
                     return None
             elif not client.is_initialized:
                 # Client exists but not initialized and not pending — try to init
                 success = loop.run_until_complete(client.initialize())
                 if not success:
                     self._thread_loaders[thread_id] = (None, loop)
-                    logger.info(f"Per-thread Graphiti client init failed for thread {thread_id}")
+                    logger.info(f"Per-thread memory client init failed for thread {thread_id}")
                     return None
 
             loader = AutoBuildContextLoader(
@@ -5284,17 +5284,17 @@ class AutoBuildOrchestrator:
             return None
 
     def _cleanup_thread_loaders(self) -> None:
-        """Close all per-thread Graphiti clients (TASK-FIX-GTP2, TASK-ACR-005, TASK-ACR-006).
+        """Close all per-thread memory clients (TASK-FIX-GTP2, TASK-ACR-005, TASK-ACR-006).
 
         Called during finalization to clean up resources. Each thread-local
-        GraphitiClient has its own Neo4j driver that must be closed.
+        memory client has its own Neo4j driver that must be closed.
 
         TASK-ACR-005: Uses stored event loop reference to avoid cross-loop errors.
         TASK-ACR-006: Three-branch cleanup based on loop state to prevent
         RuntimeError when locks are bound to different event loops.
-        TASK-GLF-002: Sets _shutting_down flag to suppress late Graphiti operations.
+        TASK-GLF-002: Sets _shutting_down flag to suppress late memory operations.
         """
-        self._shutting_down = True  # TASK-GLF-002: Prevent late Graphiti ops
+        self._shutting_down = True  # TASK-GLF-002: Prevent late memory ops
         for thread_id, (loader, stored_loop) in list(self._thread_loaders.items()):
             if loader is None or loader.graphiti is None:
                 continue
@@ -5311,13 +5311,13 @@ class AutoBuildOrchestrator:
                 else:
                     # Loop already closed — use fresh loop
                     asyncio.run(loader.graphiti.close())
-                logger.debug(f"Closed per-thread Graphiti client for thread {thread_id}")
+                logger.debug(f"Closed per-thread memory client for thread {thread_id}")
             except RuntimeError as e:
                 logger.debug(f"Thread {thread_id} cleanup RuntimeError (suppressed): {e}")
             except concurrent.futures.TimeoutError:
                 logger.warning(f"Thread {thread_id} cleanup timed out after 30s (suppressed)")
             except Exception as e:
-                logger.warning(f"Error closing per-thread Graphiti client for thread {thread_id}: {e}")
+                logger.warning(f"Error closing per-thread memory client for thread {thread_id}: {e}")
         self._thread_loaders.clear()
 
     # ========================================================================
@@ -5451,7 +5451,7 @@ class AutoBuildOrchestrator:
         Passes max_turns to enable escape hatch pattern when approaching limit.
 
         Context Retrieval (TASK-GR6-006):
-        When enable_context=True, retrieves job-specific context from Graphiti
+        When enable_context=True, retrieves job-specific context from the memory backend
         including role_constraints, quality_gates, turn_states, and more.
         Context is formatted as prompt text and passed to the Player agent.
         """
@@ -5680,7 +5680,7 @@ class AutoBuildOrchestrator:
 
         Context Retrieval (TASK-GR6-006):
         When enable_context=True, retrieves quality_gate_configs and turn_states
-        from Graphiti to inform Coach validation decisions.
+        from the memory backend to inform Coach validation decisions.
         """
         import time
         import asyncio
@@ -5908,7 +5908,7 @@ class AutoBuildOrchestrator:
 
             if context_prompt:
                 logger.info(
-                    f"[Graphiti] Coach context provided: {len(context_prompt)} chars"
+                    f"[Memory] Coach context provided: {len(context_prompt)} chars"
                 )
 
             duration = time.time() - start_time
@@ -6017,7 +6017,7 @@ class AutoBuildOrchestrator:
         logger.info("Using LLM Coach (primary) for %s turn %s", task_id, turn)
         if context_prompt:
             logger.info(
-                f"[Graphiti] Coach context provided: {len(context_prompt)} chars"
+                f"[Memory] Coach context provided: {len(context_prompt)} chars"
             )
 
         coach_cfg = self._load_coach_config()

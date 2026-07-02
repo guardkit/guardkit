@@ -1,8 +1,8 @@
-"""Knowledge Gap Analyzer for Graphiti Integration.
+"""Knowledge Gap Analyzer for the knowledge-memory backend.
 
 This module identifies gaps in project knowledge by analyzing existing
-knowledge in Graphiti and comparing it against a comprehensive question
-template set.
+knowledge in the memory backend (fleet-memory; formerly Graphiti) and
+comparing it against a comprehensive question template set.
 
 The analyzer supports 9 knowledge categories including AutoBuild workflow
 customization (role constraints, quality gates, workflow preferences).
@@ -69,8 +69,8 @@ class KnowledgeGap:
 class KnowledgeGapAnalyzer:
     """Analyzes existing knowledge to identify gaps.
 
-    The analyzer queries Graphiti for existing project knowledge and compares
-    it against question templates to identify what information is missing.
+    The analyzer queries the memory backend for existing project knowledge and
+    compares it against question templates to identify what information is missing.
 
     Supports focusing on specific categories and limiting the number of questions
     returned. Results are always sorted by importance (high → medium → low).
@@ -251,8 +251,8 @@ class KnowledgeGapAnalyzer:
     ) -> List[KnowledgeGap]:
         """Analyze existing knowledge and identify gaps.
 
-        Queries Graphiti for existing project knowledge and compares it against
-        question templates to find missing information.
+        Queries the memory backend for existing project knowledge and compares it
+        against question templates to find missing information.
 
         Args:
             focus: Optional category to focus on. If None, checks all categories.
@@ -264,7 +264,7 @@ class KnowledgeGapAnalyzer:
             List of KnowledgeGap objects sorted by importance (high first).
             Empty list if:
             - max_questions <= 0
-            - Graphiti is disabled or unavailable
+            - the memory backend is disabled or unavailable
             - No gaps found
 
         Example:
@@ -285,7 +285,7 @@ class KnowledgeGapAnalyzer:
         try:
             existing = await self._get_existing_knowledge()
         except Exception:
-            # Graceful degradation - if Graphiti fails, return all gaps
+            # Graceful degradation - if the memory backend fails, return all gaps
             existing = {}
 
         # Determine which categories to check
@@ -322,11 +322,11 @@ class KnowledgeGapAnalyzer:
         return gaps[:max_questions]
 
     async def _get_existing_knowledge(self) -> Dict[str, Any]:
-        """Query Graphiti for existing project knowledge.
+        """Query the memory backend for existing project knowledge.
 
         Returns:
             Dictionary mapping check_fields to knowledge presence.
-            Empty dict if Graphiti is unavailable or query fails.
+            Empty dict if the memory backend is unavailable or query fails.
         """
         # Get memory client (fleet-memory backend post-FEAT-MEM-09)
         graphiti = get_memory_client()

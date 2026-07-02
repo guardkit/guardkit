@@ -1,6 +1,6 @@
-"""Tests for [Graphiti] structured logging in write-path files.
+"""Tests for [Memory] structured logging in write-path files.
 
-Verifies TASK-FIX-GG03: consistent [Graphiti] prefixed log messages in
+Verifies TASK-FIX-GG03: consistent [Memory] prefixed log messages in
 turn_state_operations.py, outcome_manager.py, failed_approach_manager.py,
 and template_sync.py.
 
@@ -22,7 +22,7 @@ import pytest
 
 
 class TestTurnStateOperationsLogging:
-    """Tests for [Graphiti] logging in turn_state_operations."""
+    """Tests for [Memory] logging in turn_state_operations."""
 
     @pytest.fixture
     def mock_entity(self):
@@ -54,7 +54,7 @@ class TestTurnStateOperationsLogging:
             await capture_turn_state(client, mock_entity)
 
         assert any(
-            "[Graphiti] Captured turn state:" in r.message
+            "[Memory] Captured turn state:" in r.message
             for r in caplog.records
         )
 
@@ -65,7 +65,7 @@ class TestTurnStateOperationsLogging:
             await capture_turn_state(None, mock_entity)
 
         assert any(
-            "[Graphiti] Client unavailable" in r.message
+            "[Memory] Client unavailable" in r.message
             for r in caplog.records
         )
 
@@ -80,7 +80,7 @@ class TestTurnStateOperationsLogging:
             await capture_turn_state(client, mock_entity)
 
         assert any(
-            "[Graphiti] Failed to capture turn state" in r.message
+            "[Memory] Failed to capture turn state" in r.message
             for r in caplog.records
         )
 
@@ -95,7 +95,7 @@ class TestTurnStateOperationsLogging:
             await load_turn_continuation_context(client, "FEAT-1", "TASK-001", 2)
 
         assert any(
-            "[Graphiti] Failed to load turn continuation context" in r.message
+            "[Memory] Failed to load turn continuation context" in r.message
             for r in caplog.records
         )
 
@@ -106,7 +106,7 @@ class TestTurnStateOperationsLogging:
 
 
 class TestOutcomeManagerLogging:
-    """Tests for [Graphiti] logging in outcome_manager."""
+    """Tests for [Memory] logging in outcome_manager."""
 
     async def test_capture_logs_graphiti_prefix_on_success(self, caplog):
         from guardkit.knowledge.outcome_manager import capture_task_outcome
@@ -163,7 +163,7 @@ class TestOutcomeManagerLogging:
 
 
 class TestFailedApproachManagerLogging:
-    """Tests for [Graphiti] logging in failed_approach_manager."""
+    """Tests for [Memory] logging in failed_approach_manager."""
 
     async def test_capture_logs_graphiti_prefix_on_success(self, caplog):
         from guardkit.knowledge.failed_approach_manager import capture_failed_approach
@@ -185,7 +185,7 @@ class TestFailedApproachManagerLogging:
                 )
 
         assert any(
-            "[Graphiti] Captured failed approach" in r.message
+            "[Memory] Captured failed approach" in r.message
             for r in caplog.records
         )
 
@@ -208,7 +208,7 @@ class TestFailedApproachManagerLogging:
                 )
 
         assert any(
-            "[Graphiti] Failed to store failed approach" in r.message
+            "[Memory] Failed to store failed approach" in r.message
             for r in caplog.records
         )
 

@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 class FeaturePlanContext:
     """Rich context for feature planning.
 
-    This dataclass holds comprehensive context gathered from Graphiti during
-    feature planning, including the feature specification, related features,
-    patterns, and AutoBuild support context.
+    This dataclass holds comprehensive context gathered from the memory backend
+    (fleet-memory; formerly Graphiti) during feature planning, including the
+    feature specification, related features, patterns, and AutoBuild support context.
 
     Attributes:
         feature_spec: Primary feature specification
-        related_features: Related features from Graphiti
+        related_features: Related features from the memory backend
         relevant_patterns: Recommended patterns for this feature
         similar_implementations: Past implementations of similar features
         project_architecture: Project architecture context
@@ -38,7 +38,7 @@ class FeaturePlanContext:
     # Primary feature
     feature_spec: Dict[str, Any]
 
-    # Enrichment from Graphiti
+    # Enrichment from the memory backend
     related_features: List[Dict[str, Any]]
     relevant_patterns: List[Dict[str, Any]]
     similar_implementations: List[Dict[str, Any]]
@@ -268,14 +268,15 @@ from typing import List, Optional
 class FeaturePlanContextBuilder:
     """Builds rich context for feature planning.
 
-    This class gathers comprehensive context from Graphiti and local feature
-    specifications to support feature planning. It provides graceful degradation
-    when Graphiti is unavailable or queries fail.
+    This class gathers comprehensive context from the memory backend
+    (fleet-memory; formerly Graphiti) and local feature specifications to
+    support feature planning. It provides graceful degradation when the
+    memory backend is unavailable or queries fail.
 
     Attributes:
         project_root: Path to the project root directory
         feature_detector: FeatureDetector instance for finding feature specs
-        graphiti_client: GraphitiClient instance for knowledge queries
+        graphiti_client: memory client instance for knowledge queries
 
     Example:
         builder = FeaturePlanContextBuilder(project_root=Path("/path/to/project"))
@@ -337,7 +338,7 @@ class FeaturePlanContextBuilder:
 
         Gathers context from:
         - Feature specification files (via FeatureDetector)
-        - Related features from Graphiti
+        - Related features from the memory backend
         - Relevant patterns for the tech stack
         - Warnings from past failed approaches
         - Role constraints (AutoBuild support)
@@ -380,9 +381,9 @@ class FeaturePlanContextBuilder:
                 if not feature_spec.get("id"):
                     feature_spec["id"] = feature_id
 
-        # Step 3: Query Graphiti for enrichment (with graceful degradation)
+        # Step 3: Query the memory backend for enrichment (with graceful degradation)
         if self.graphiti_client is not None and self.graphiti_client.enabled:
-            logger.info("[Graphiti] Loading context for feature planning...")
+            logger.info("[Memory] Loading context for feature planning...")
             # Query related features
             related_features = await self._safe_search(
                 query=f"features related to {description}",
@@ -443,12 +444,12 @@ class FeaturePlanContextBuilder:
             if similar_implementations:
                 category_count += 1
             logger.info(
-                "[Graphiti] Context loaded: %d categories",
+                "[Memory] Context loaded: %d categories",
                 category_count,
             )
         else:
             if self.graphiti_client is None or not self.graphiti_client.enabled:
-                logger.info("[Graphiti] Context unavailable, continuing without enrichment")
+                logger.info("[Memory] Context unavailable, continuing without enrichment")
 
         return FeaturePlanContext(
             feature_spec=feature_spec,
@@ -596,7 +597,7 @@ class FeaturePlanContextBuilder:
         feature_spec: Dict[str, Any],
         description: str,
     ) -> bool:
-        """Seed generated feature spec to Graphiti knowledge graph.
+        """Seed generated feature spec to the memory backend knowledge store.
 
         Uses upsert_episode() so re-running /feature-plan updates rather than
         duplicating the spec. The episode body follows ADR-GBF-001: domain data only.
@@ -639,10 +640,10 @@ class FeaturePlanContextBuilder:
 
             if result:
                 action = "created" if result.was_created else ("updated" if result.was_updated else "skipped")
-                logger.info(f"[Graphiti] Feature spec {feature_id}: {action}")
+                logger.info(f"[Memory] Feature spec {feature_id}: {action}")
                 return True
             return False
 
         except Exception as e:
-            logger.warning(f"[Graphiti] Failed to seed feature spec {feature_id}: {e}")
+            logger.warning(f"[Memory] Failed to seed feature spec {feature_id}: {e}")
             return False

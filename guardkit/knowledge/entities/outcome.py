@@ -41,7 +41,7 @@ class TaskOutcome:
 
     This captures comprehensive information about a task's completion,
     including approach used, patterns applied, problems encountered,
-    and lessons learned. Used for episode capture in Graphiti.
+    and lessons learned. Used for episode capture in the memory backend.
 
     Attributes:
         id: Unique outcome ID in format OUT-XXXXXXXX
@@ -102,8 +102,8 @@ class TaskOutcome:
         """Convert outcome to episode body dictionary.
 
         Creates a structured dictionary representation suitable for
-        storage in Graphiti as an episode body. Returns only domain data;
-        metadata fields like entity_type are injected by GraphitiClient.
+        storage in the memory backend as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by the memory client.
 
         Returns:
             Dictionary with all outcome fields suitable for JSON serialization

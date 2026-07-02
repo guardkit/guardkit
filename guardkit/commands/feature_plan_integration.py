@@ -1,7 +1,7 @@
-"""Feature Plan Integration with Graphiti Context.
+"""Feature Plan Integration with memory-backend context.
 
 This module provides integration between the /feature-plan command and
-the Graphiti knowledge graph for enhanced context retrieval.
+the knowledge-memory backend (fleet-memory; formerly Graphiti) for enhanced context retrieval.
 """
 
 from pathlib import Path
@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class FeaturePlanIntegration:
-    """Integrates /feature-plan command with Graphiti context enhancement.
+    """Integrates /feature-plan command with memory-backend context enhancement.
 
     This class orchestrates the enrichment of feature planning prompts
-    with context retrieved from the Graphiti knowledge graph.
+    with context retrieved from the memory backend.
     """
 
     def __init__(self, project_root: Path, enable_context: bool = True):
@@ -25,9 +25,9 @@ class FeaturePlanIntegration:
 
         Args:
             project_root: Path to the project root directory
-            enable_context: Enable Graphiti context enrichment (default: True).
+            enable_context: Enable memory context enrichment (default: True).
                 When False, build_enriched_prompt returns the description without
-                Graphiti context, useful for debugging or offline work.
+                memory context, useful for debugging or offline work.
 
         Raises:
             TypeError: If project_root is None
@@ -47,7 +47,7 @@ class FeaturePlanIntegration:
         context_files: Optional[List[Path]] = None,
         tech_stack: str = "python"
     ) -> str:
-        """Build enriched prompt with Graphiti context.
+        """Build enriched prompt with memory-backend context.
 
         Args:
             description: Feature description (may contain FEAT-XXX-NNN)
@@ -57,10 +57,10 @@ class FeaturePlanIntegration:
         Returns:
             Enriched prompt string with context injection.
             When enable_context is False, returns description without
-            Graphiti context enrichment.
+            memory context enrichment.
         """
         if not self.enable_context:
-            logger.info("Graphiti context disabled (--no-context), skipping enrichment")
+            logger.info("Memory context disabled (--no-context), skipping enrichment")
             return f"""## Feature to Plan
 
 {description}
@@ -81,7 +81,7 @@ class FeaturePlanIntegration:
         # Format context as prompt
         context_text = context.to_prompt_context()
 
-        # Seed feature spec back to Graphiti (write path)
+        # Seed feature spec back to the memory backend (write path)
         feature_id = context.feature_spec.get("id") if context.feature_spec else None
         if feature_id:
             try:
@@ -91,7 +91,7 @@ class FeaturePlanIntegration:
                     description=description,
                 )
             except Exception as e:
-                logger.warning(f"[Graphiti] Failed to seed feature spec: {e}")
+                logger.warning(f"[Memory] Failed to seed feature spec: {e}")
 
         logger.info("Feature plan context built successfully")
 

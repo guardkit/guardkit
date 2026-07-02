@@ -224,7 +224,7 @@ class TestLogQuery:
             group_ids=["decisions"],
             result_count=1,
             first_result_preview="Episode content here...",
-            source="graphiti_client",
+            source="memory_client",
             base_dir=str(tmp_path),
         )
         log_path = tmp_path / ".guardkit" / _DEFAULT_LOG_FILENAME
@@ -268,7 +268,7 @@ class TestLogQuery:
             )
 
     def test_default_source(self, tmp_path):
-        """Default source is 'graphiti_client'."""
+        """Default source is 'memory_client'."""
         log_query(
             operation="search",
             query="test",
@@ -277,7 +277,7 @@ class TestLogQuery:
         )
         log_path = tmp_path / ".guardkit" / _DEFAULT_LOG_FILENAME
         entry = json.loads(log_path.read_text().strip())
-        assert entry["source"] == "graphiti_client"
+        assert entry["source"] == "memory_client"
 
 
 # ============================================================================

@@ -2,8 +2,9 @@
 Task outcome query functions.
 
 This module provides functionality for querying task outcomes
-from Graphiti. All operations are designed for graceful degradation -
-they will return empty results when Graphiti is unavailable.
+from the knowledge-memory backend (fleet-memory; formerly Graphiti). All
+operations are designed for graceful degradation - they will return empty
+results when the memory backend is unavailable.
 
 Public API:
     find_similar_task_outcomes: Search for similar task outcomes
@@ -33,10 +34,10 @@ async def find_similar_task_outcomes(
     task_requirements: str,
     limit: int = 5,
 ) -> List[Dict[str, Any]]:
-    """Search for similar task outcomes in Graphiti.
+    """Search for similar task outcomes in the memory backend.
 
     Performs semantic search to find outcomes from similar tasks.
-    Returns empty list if Graphiti is unavailable or search fails.
+    Returns empty list if the memory backend is unavailable or search fails.
 
     Args:
         task_requirements: Task requirements to search for
@@ -82,7 +83,7 @@ async def find_similar_task_outcomes(
         return results[:limit] if results else []
 
     except Exception as e:
-        logger.warning(f"Failed to search outcomes in Graphiti: {e}")
+        logger.warning(f"Failed to search outcomes in the memory backend: {e}")
         return []
 
 

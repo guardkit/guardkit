@@ -1,8 +1,9 @@
 """
 ADR Service for creating and managing Architecture Decision Records.
 
-Provides a service layer for CRUD operations on ADRs stored in Graphiti.
-All operations include graceful degradation for when Graphiti is unavailable.
+Provides a service layer for CRUD operations on ADRs stored in the
+knowledge-memory backend (fleet-memory; formerly Graphiti). All operations
+include graceful degradation for when the memory backend is unavailable.
 
 Public API:
     ADRService: Main service class for ADR management
@@ -10,9 +11,9 @@ Public API:
 Example:
     from guardkit.knowledge.adr_service import ADRService
     from guardkit.knowledge.adr import ADREntity, ADRTrigger
-    from guardkit.knowledge.graphiti_client import GraphitiClient
+    from guardkit.knowledge.fleet_memory_client import get_memory_client
 
-    client = GraphitiClient()
+    client = get_memory_client()
     service = ADRService(client)
 
     adr = ADREntity(
@@ -40,18 +41,18 @@ logger = logging.getLogger(__name__)
 
 
 class ADRService:
-    """Service for creating and managing ADRs in Graphiti.
+    """Service for creating and managing ADRs in the memory backend.
 
     Provides methods for creating, searching, superseding, and deprecating
     Architecture Decision Records. All operations gracefully degrade when
-    Graphiti is unavailable.
+    the memory backend is unavailable.
 
     Attributes:
-        client: GraphitiClient instance for storage operations
+        client: memory client instance for storage operations
         significance_threshold: Minimum significance score for auto-creating ADRs
 
     Example:
-        client = GraphitiClient()
+        client = get_memory_client()
         service = ADRService(client)
 
         adr = ADREntity(id="ADR-0001", title="Use PostgreSQL")
@@ -73,10 +74,10 @@ class ADRService:
         client: Any,
         significance_threshold: float = 0.4
     ):
-        """Initialize ADRService with a GraphitiClient.
+        """Initialize ADRService with a memory client.
 
         Args:
-            client: GraphitiClient instance for storage operations.
+            client: memory client instance for storage operations.
                    Must be provided (not optional).
             significance_threshold: Minimum significance score (0-1) for
                    auto-creating ADRs via record_decision(). Default is 0.4.
@@ -228,10 +229,10 @@ class ADRService:
         )
 
     async def create_adr(self, adr: ADREntity) -> Optional[str]:
-        """Create a new ADR in Graphiti.
+        """Create a new ADR in the memory backend.
 
         Generates an ID if not provided, then stores the ADR as an episode
-        in Graphiti with group_id="adrs".
+        in the memory backend with group_id="adrs".
 
         Args:
             adr: ADREntity to create
@@ -243,9 +244,9 @@ class ADRService:
             adr = ADREntity(id="ADR-0001", title="Use PostgreSQL")
             adr_id = await service.create_adr(adr)
         """
-        # Check if Graphiti is enabled
+        # Check if the memory backend is enabled
         if not self.client.enabled:
-            logger.debug("Graphiti disabled, skipping ADR creation")
+            logger.debug("Memory backend disabled, skipping ADR creation")
             return None
 
         try:
@@ -279,7 +280,7 @@ class ADRService:
     ) -> List[ADREntity]:
         """Search for ADRs by topic.
 
-        Searches Graphiti for ADRs matching the query. Optionally filters
+        Searches the memory backend for ADRs matching the query. Optionally filters
         by status after retrieval.
 
         Args:
@@ -413,7 +414,7 @@ class ADRService:
             adr.status = ADRStatus.DEPRECATED
             adr.deprecated_at = datetime.now()
 
-            # Note: In a full implementation, we would update the ADR in Graphiti
+            # Note: In a full implementation, we would update the ADR in the memory backend
             # For now, the status is updated in-memory on the returned object
 
             return True
@@ -459,9 +460,9 @@ class ADRService:
             )
         """
         try:
-            # Check if Graphiti is enabled
+            # Check if the memory backend is enabled
             if not self.client.enabled:
-                logger.debug("Graphiti disabled, skipping decision recording")
+                logger.debug("Memory backend disabled, skipping decision recording")
                 return None
 
             # Use detector to create ADR from Q&A
