@@ -463,7 +463,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Using subprocess for task-work",
                 symptom="Command not found",
@@ -484,7 +484,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Using subprocess for task-work",
                 symptom="Command not found",
@@ -507,7 +507,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Test approach",
                 symptom="Test symptom",
@@ -534,7 +534,7 @@ class TestCaptureFailedApproach:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Test approach",
                 symptom="Test symptom",
@@ -552,7 +552,7 @@ class TestCaptureFailedApproach:
     @pytest.mark.asyncio
     async def test_capture_graphiti_none(self):
         """Test graceful degradation when Graphiti client is None."""
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=None):
             failure = await capture_failed_approach(
                 approach="Test approach",
                 symptom="Test symptom",
@@ -573,7 +573,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(side_effect=Exception("Graphiti error"))
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Test approach",
                 symptom="Test symptom",
@@ -594,7 +594,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             await capture_failed_approach(
                 approach="Test",
                 symptom="Test",
@@ -616,7 +616,7 @@ class TestCaptureFailedApproach:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach="Using subprocess for task-work",
                 symptom="Test",
@@ -650,7 +650,7 @@ class TestLoadRelevantFailures:
             {"body": {"symptom": "Path not found", "prevention": "Use feature ID"}}
         ])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(
                 query_context="subprocess task-work invocation"
             )
@@ -669,7 +669,7 @@ class TestLoadRelevantFailures:
             for i in range(10)
         ])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(
                 query_context="test",
                 limit=3
@@ -691,7 +691,7 @@ class TestLoadRelevantFailures:
             }}
         ])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(query_context="subprocess")
 
             assert len(results) > 0
@@ -705,7 +705,7 @@ class TestLoadRelevantFailures:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(query_context="test")
 
             assert results == []
@@ -714,7 +714,7 @@ class TestLoadRelevantFailures:
     @pytest.mark.asyncio
     async def test_load_relevant_failures_graphiti_none(self):
         """Test graceful degradation when Graphiti client is None."""
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=None):
             results = await load_relevant_failures(query_context="test")
 
             assert results == []
@@ -726,7 +726,7 @@ class TestLoadRelevantFailures:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(query_context="very unique query")
 
             assert results == []
@@ -738,7 +738,7 @@ class TestLoadRelevantFailures:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Search error"))
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(query_context="test")
 
             # Should handle error gracefully
@@ -751,7 +751,7 @@ class TestLoadRelevantFailures:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             await load_relevant_failures(query_context="test")
 
             call_args = mock_client.search.call_args
@@ -789,7 +789,7 @@ class TestIncrementOccurrence:
         ])
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             updated = await increment_occurrence(failure.id)
 
             assert updated is not None
@@ -802,7 +802,7 @@ class TestIncrementOccurrence:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             result = await increment_occurrence("FAIL-NOTFOUND")
 
             assert result is None
@@ -831,7 +831,7 @@ class TestIncrementOccurrence:
         ])
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             before = datetime.now()
             updated = await increment_occurrence(failure.id)
             after = datetime.now()
@@ -846,7 +846,7 @@ class TestIncrementOccurrence:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             result = await increment_occurrence("FAIL-TEST001")
 
             assert result is None
@@ -872,7 +872,7 @@ class TestFailedApproachManagerClass:
 
         manager = FailedApproachManager()
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await manager.capture(
                 approach="Test",
                 symptom="Test",
@@ -894,7 +894,7 @@ class TestFailedApproachManagerClass:
 
         manager = FailedApproachManager()
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await manager.load_relevant(query_context="test")
 
             assert isinstance(results, list)
@@ -916,7 +916,7 @@ class TestEdgeCases:
 
         long_approach = "x" * 10000
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach=long_approach,
                 symptom="Test",
@@ -935,7 +935,7 @@ class TestEdgeCases:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             failure = await capture_failed_approach(
                 approach='Test with "quotes" and <tags>',
                 symptom="Error: Can't find file",
@@ -991,7 +991,7 @@ class TestEdgeCases:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.failed_approach_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.failed_approach_manager.get_memory_client', return_value=mock_client):
             results = await load_relevant_failures(query_context="")
 
             # Should handle empty query gracefully
