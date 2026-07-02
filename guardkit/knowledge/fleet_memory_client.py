@@ -56,148 +56,6 @@ class FleetMemoryConfig:
     project: str = "guardkit"
 
 
-class DualWriteClient:
-    """Dual-write client that writes to both Graphiti and fleet-memory.
-
-    Under `backend=dual`, writes go to both Graphiti (authoritative) and
-    fleet-memory. Graphiti failures propagate; fleet-memory failures are
-    logged but do not fail the operation (graceful degradation).
-
-    Args:
-        graphiti_client: GraphitiClient instance
-        fleet_client: FleetMemoryClient instance
-
-    Example:
-        >>> from guardkit.knowledge.graphiti_client import get_graphiti
-        >>> dual = DualWriteClient(get_graphiti(), FleetMemoryClient(config))
-        >>> await dual.add_episode(name="...", episode_body="...", group_id="task_outcomes")
-    """
-
-    def __init__(self, graphiti_client: Any, fleet_client: "FleetMemoryClient"):
-        """Initialize dual-write client.
-
-        Args:
-            graphiti_client: GraphitiClient instance (authoritative)
-            fleet_client: FleetMemoryClient instance (secondary)
-        """
-        self.graphiti_client = graphiti_client
-        self.fleet_client = fleet_client
-
-    @property
-    def enabled(self) -> bool:
-        """Check if client is enabled (delegates to Graphiti)."""
-        return self.graphiti_client.enabled if self.graphiti_client else False
-
-    async def search(
-        self,
-        query: str,
-        group_ids: Optional[list[str]] = None,
-        num_results: int = 10,
-        scope: Optional[str] = None,
-    ) -> list[dict[str, Any]]:
-        """Search for knowledge (delegates to Graphiti for now).
-
-        Reads are not yet migrated to fleet-memory, so this delegates
-        to Graphiti.
-
-        Args:
-            query: Search query string
-            group_ids: Optional list of group IDs to search
-            num_results: Maximum number of results
-            scope: Optional scope filter
-
-        Returns:
-            List of search results from Graphiti
-        """
-        if self.graphiti_client is None:
-            return []
-        return await self.graphiti_client.search(
-            query=query,
-            group_ids=group_ids,
-            num_results=num_results,
-            scope=scope,
-        )
-
-    async def add_episode(
-        self,
-        name: str,
-        episode_body: str,
-        group_id: str,
-        source: str = "user_added",
-        entity_type: str = "generic",
-        scope: Optional[str] = None,
-        metadata: Optional[Any] = None,
-        timeout_override: Optional[float] = None,
-    ) -> Optional[str]:
-        """Add episode to both Graphiti and fleet-memory.
-
-        Writes to Graphiti first (authoritative). If successful, also
-        writes to fleet-memory (fail-open). Retired groups skip
-        fleet-memory write.
-
-        Args:
-            name: Episode name
-            episode_body: Episode content
-            group_id: Graphiti group identifier
-            source: Episode source
-            entity_type: Entity type
-            scope: Optional scope
-            metadata: Optional metadata
-            timeout_override: Optional timeout
-
-        Returns:
-            Graphiti UUID if successful, None if Graphiti write failed
-
-        Raises:
-            Exception: If Graphiti write fails (it's authoritative)
-        """
-        # Write to Graphiti first (authoritative)
-        graphiti_uuid = await self.graphiti_client.add_episode(
-            name=name,
-            episode_body=episode_body,
-            group_id=group_id,
-            source=source,
-            entity_type=entity_type,
-            scope=scope,
-            metadata=metadata,
-            timeout_override=timeout_override,
-        )
-
-        # Check if group should be written to fleet-memory
-        from guardkit.knowledge.fleet_memory_mapping import resolve
-
-        mapping = resolve(group_id)
-
-        # Skip fleet-memory for retired or unmapped groups
-        if mapping is None or mapping.disposition == "retire":
-            logger.debug(
-                f"Group {group_id!r} retired/unmapped, skipping fleet-memory write"
-            )
-            return graphiti_uuid
-
-        # Write to fleet-memory (fail-open - don't propagate errors)
-        try:
-            await self.fleet_client.add_episode(
-                name=name,
-                episode_body=episode_body,
-                group_id=group_id,
-                source=source,
-                entity_type=entity_type,
-                scope=scope,
-                metadata=metadata,
-                timeout_override=timeout_override,
-            )
-            logger.info(f"Dual-write to fleet-memory succeeded for {group_id!r}")
-        except Exception as e:
-            # Log but don't fail - Graphiti is authoritative
-            logger.warning(
-                f"Fleet-memory write failed for {group_id!r}: {e} "
-                "(Graphiti write succeeded, continuing)"
-            )
-
-        return graphiti_uuid
-
-
 class FleetMemoryClient:
     """Fleet-memory client with graphiti-client-shaped interface.
 
@@ -648,194 +506,106 @@ class FleetMemoryClientFactory:
 # Module-level factory state
 _memory_client: Optional[FleetMemoryClient | Any] = None
 _memory_factory: Optional[FleetMemoryClientFactory] = None
-_backend: Literal["graphiti", "fleet_memory", "dual"] = "graphiti"
+# FEAT-MEM-09 WS-2c: fleet-memory is the only backend. The graphiti/dual routing
+# and the .guardkit/graphiti.yaml ``backend:`` flag reader were retired.
+_backend: Literal["fleet_memory"] = "fleet_memory"
 # Whether the backend has been initialized (explicitly via init_memory_client, or
-# lazily from config on first get_memory_client). Guards the one-time auto-init so an
-# explicit init always wins and tests that set _backend directly are not disrupted.
+# lazily on first get_memory_client). Guards the one-time auto-init so an explicit
+# init always wins and tests that set state directly are not disrupted.
 _backend_initialized: bool = False
 
 
-def _resolve_backend_from_config() -> Literal["graphiti", "fleet_memory", "dual"]:
-    """Resolve the memory backend from configuration.
-
-    Precedence: ``GUARDKIT_MEMORY_BACKEND`` env var → ``.guardkit/graphiti.yaml``
-    ``backend:`` key → ``"graphiti"`` (back-compat default). This is the producer the
-    FEAT-MEM-08 cutover needs: 009 flipped ``backend: fleet_memory`` in the YAML, but
-    without something reading it the flag is inert and every call routes to graphiti.
-    """
-    env = os.getenv("GUARDKIT_MEMORY_BACKEND")
-    if env:
-        env = env.strip().lower()
-        if env in ("graphiti", "fleet_memory", "dual"):
-            return env  # type: ignore[return-value]
-        logger.warning("Ignoring invalid GUARDKIT_MEMORY_BACKEND=%r", env)
-    try:
-        from guardkit.knowledge.config import get_config_path
-        import yaml
-
-        config_path = get_config_path()
-        if config_path.exists():
-            with open(config_path, "r") as f:
-                data = yaml.safe_load(f) or {}
-            backend = str(data.get("backend", "graphiti")).strip().lower()
-            if backend in ("graphiti", "fleet_memory", "dual"):
-                return backend  # type: ignore[return-value]
-            logger.warning("Ignoring invalid backend %r in %s", backend, config_path)
-    except Exception as e:  # pragma: no cover - config read is best-effort
-        logger.debug("Could not resolve backend from config: %s", e)
-    return "graphiti"
-
-
 def _ensure_backend_initialized() -> None:
-    """Lazily initialize the backend from config on first use (idempotent).
+    """Lazily initialize the fleet-memory backend on first use (idempotent).
 
-    Called by ``get_memory_client`` so every call site (readers and writers) honours the
-    configured backend without each needing to call ``init_memory_client`` explicitly.
-    A prior explicit ``init_memory_client`` sets ``_backend_initialized`` and short-circuits.
+    Called by ``get_memory_client`` / ``get_memory_factory`` so every call site honours
+    the fleet-memory backend without each needing to call ``init_memory_client``
+    explicitly. A prior explicit ``init_memory_client`` sets ``_backend_initialized``
+    and short-circuits.
     """
     global _backend_initialized
     if _backend_initialized:
         return
-    backend = _resolve_backend_from_config()
-    init_memory_client(backend=backend)  # sets _backend_initialized = True
+    init_memory_client()  # sets _backend_initialized = True
 
 
 def init_memory_client(
-    backend: Literal["graphiti", "fleet_memory", "dual"] = "graphiti",
+    backend: str = "fleet_memory",
     fleet_config: Optional[FleetMemoryConfig] = None,
     graphiti_config: Optional[Any] = None,
 ) -> bool:
-    """Initialize memory client factory.
+    """Initialize the fleet-memory client factory.
 
-    Sets the global backend routing and initializes the appropriate
-    client(s) based on configuration.
+    FEAT-MEM-09 WS-2c: fleet-memory is the only backend. The ``backend`` and
+    ``graphiti_config`` parameters are retained for backwards compatibility and
+    are ignored.
 
     Args:
-        backend: Backend to use (graphiti | fleet_memory | dual)
-        fleet_config: Fleet-memory configuration (required if backend != graphiti)
-        graphiti_config: Graphiti configuration (required if backend != fleet_memory)
+        backend: Deprecated / ignored (fleet-memory is always used).
+        fleet_config: Fleet-memory configuration; loaded from env when None.
+        graphiti_config: Deprecated / ignored.
 
     Returns:
-        True if initialization succeeded, False otherwise
+        True if initialization succeeded, False otherwise.
 
     Example:
-        >>> init_memory_client(backend="fleet_memory",
-        ...                    fleet_config=FleetMemoryConfig())
+        >>> init_memory_client(fleet_config=FleetMemoryConfig())
         True
     """
     global _memory_client, _memory_factory, _backend, _backend_initialized
 
-    _backend = backend
-    # An explicit init wins over (and disables) lazy config-driven auto-init.
+    _backend = "fleet_memory"
+    # An explicit init wins over (and disables) lazy auto-init.
     _backend_initialized = True
-    # Drop any per-thread factory built for a prior backend/config.
+    # Drop any per-thread factory built for a prior config.
     _memory_factory = None
 
     try:
-        if backend == "graphiti":
-            # Use existing graphiti client
-            from guardkit.knowledge.graphiti_client import (
-                init_graphiti,
-            )
-
-            # Note: init_graphiti is async, would need to handle that
-            _memory_client = None  # Lazy init via get_memory_client()
-            return True
-
-        elif backend == "fleet_memory":
-            # Initialize fleet-memory client
-            if fleet_config is None:
-                fleet_config = _load_fleet_config_from_env()
-            _memory_client = FleetMemoryClient(fleet_config)
-            return True
-
-        elif backend == "dual":
-            # Initialize both clients (dual-write mode)
-            from guardkit.knowledge.graphiti_client import get_graphiti
-
-            graphiti_client = get_graphiti()
-            if graphiti_client is None:
-                logger.error("Cannot initialize dual mode: Graphiti client unavailable")
-                return False
-
-            if fleet_config is None:
-                fleet_config = _load_fleet_config_from_env()
-
-            fleet_client = FleetMemoryClient(fleet_config)
-            _memory_client = DualWriteClient(graphiti_client, fleet_client)
-            logger.info("Dual-write mode initialized (Graphiti + fleet-memory)")
-            return True
-
-        else:
-            logger.error(f"Unknown backend: {backend!r}")
-            return False
-
+        if fleet_config is None:
+            fleet_config = _load_fleet_config_from_env()
+        _memory_client = FleetMemoryClient(fleet_config)
+        return True
     except Exception as e:
         logger.error(f"Memory client initialization failed: {e}", exc_info=True)
         return False
 
 
 def get_memory_client() -> Optional[FleetMemoryClient | Any]:
-    """Get memory client for current backend.
+    """Get the fleet-memory client.
 
-    Returns the appropriate client based on the configured backend:
-    - graphiti: Returns GraphitiClient
-    - fleet_memory: Returns FleetMemoryClient
-    - dual: Returns DualWriteClient (future)
+    Fleet-memory is the only backend post-cutover (FEAT-MEM-09); returns the
+    singleton ``FleetMemoryClient`` (lazily initialized on first use).
 
     Returns:
-        Memory client instance, or None if not initialized
+        FleetMemoryClient instance, or None if not initialized
 
     Example:
         >>> client = get_memory_client()
         >>> if client:
         ...     hits = await client.search("query")
     """
-    global _memory_client, _backend
+    global _memory_client
 
-    # First call (no explicit init): select the backend from config (the cutover flag).
+    # First call (no explicit init): lazily initialize the fleet-memory backend.
     _ensure_backend_initialized()
 
-    if _backend == "graphiti":
-        # Lazy init graphiti if needed
-        if _memory_client is None:
-            from guardkit.knowledge.graphiti_client import get_graphiti
-
-            _memory_client = get_graphiti()
-        return _memory_client
-
-    elif _backend == "fleet_memory":
-        return _memory_client
-
-    elif _backend == "dual":
-        return _memory_client
-
-    return None
+    return _memory_client
 
 
 def get_memory_factory() -> Optional[FleetMemoryClientFactory]:
-    """Get a per-thread fleet-memory client factory when the backend selects it.
+    """Get a per-thread fleet-memory client factory.
 
-    Returns a ``FleetMemoryClientFactory`` only when the configured backend is
-    ``fleet_memory``; otherwise ``None``, so callers (autobuild) fall back to the
-    graphiti factory (``graphiti_client.get_factory``) for the rollback /
-    ``backend=graphiti`` path.
-
-    Analogue of ``graphiti_client.get_factory()``: hands out per-thread clients so
-    parallel autobuild waves don't share a loop-affine store. Encapsulates the
-    backend decision (via ``_ensure_backend_initialized``) so autobuild does not
-    duplicate the flag read.
+    Hands out per-thread clients so parallel autobuild waves don't share a
+    loop-affine store. Encapsulates the one-time backend initialization (via
+    ``_ensure_backend_initialized``). Fleet-memory is the only backend
+    post-cutover (FEAT-MEM-09).
 
     Returns:
-        FleetMemoryClientFactory when ``backend == "fleet_memory"``, else None.
+        FleetMemoryClientFactory.
     """
     global _memory_factory
 
-    # Honour the configured backend (reads .guardkit/graphiti.yaml `backend:` on
-    # first use, same producer get_memory_client relies on).
     _ensure_backend_initialized()
-    if _backend != "fleet_memory":
-        return None
 
     if _memory_factory is None:
         # Reuse the singleton client's config (single source of truth) when the

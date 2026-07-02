@@ -487,10 +487,12 @@ class TestLowRiskCallSitesPattern:
         from guardkit.knowledge.fleet_memory_client import get_memory_client as fmc_get
         assert om_get is fmc_get
 
-    def test_failed_approach_manager_imports_get_graphiti(self):
-        """failed_approach_manager.py imports get_graphiti from graphiti_client."""
-        from guardkit.knowledge.failed_approach_manager import get_graphiti as fam_get
-        assert fam_get is gc_module.get_graphiti
+    def test_failed_approach_manager_imports_get_memory_client(self):
+        """failed_approach_manager.py imports get_memory_client (migrated to fleet-memory,
+        FEAT-MEM-09 WS-2 consumer repoint)."""
+        from guardkit.knowledge.failed_approach_manager import get_memory_client as fam_get
+        from guardkit.knowledge.fleet_memory_client import get_memory_client as fmc_get
+        assert fam_get is fmc_get
 
     def test_context_loader_imports_get_memory_client(self):
         """context_loader.py imports get_memory_client (migrated to fleet-memory,
