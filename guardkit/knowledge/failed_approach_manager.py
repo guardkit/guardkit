@@ -43,7 +43,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.fleet_memory_client import get_memory_client
 from guardkit.knowledge.entities.failed_approach import (
     FailedApproachEpisode,
     Severity,
@@ -155,7 +155,7 @@ async def capture_failed_approach(
     episode_name = f"failed_approach_{failure.id}"
 
     # Attempt to store in Graphiti (graceful degradation)
-    client = get_graphiti()
+    client = get_memory_client()
 
     if client is None:
         logger.debug("[Graphiti] Client unavailable, skipping failed approach capture")
@@ -205,7 +205,7 @@ async def load_relevant_failures(
             print(f"Warning: {warning['symptom']}")
             print(f"Prevention: {warning['prevention']}")
     """
-    client = get_graphiti()
+    client = get_memory_client()
 
     if client is None:
         logger.debug("[Graphiti] Client unavailable, returning empty failure list")
@@ -264,7 +264,7 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
         if updated:
             print(f"Occurrence count: {updated.occurrences}")
     """
-    client = get_graphiti()
+    client = get_memory_client()
 
     if client is None:
         logger.debug("[Graphiti] Client unavailable, cannot increment occurrence")

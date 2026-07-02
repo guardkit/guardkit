@@ -937,15 +937,19 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given enable_context=True, no context_loader, and Graphiti factory available
+        Given enable_context=True, no context_loader, no fleet-memory factory
+            (get_memory_factory -> None), and a Graphiti factory available
         When AutoBuildOrchestrator is initialized
-        Then _factory is stored for per-thread client creation.
+        Then _factory falls back to the Graphiti factory (rollback path).
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
         mock_factory = MagicMock()
 
-        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory):
+        # FEAT-MEM-09 WS-2: get_memory_factory() is consulted first; None here
+        # forces the graphiti fallback (backend=graphiti / rollback).
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -958,6 +962,49 @@ class TestAutoInitContextLoader:
             )
 
         assert orchestrator._factory is mock_factory
+
+    def test_auto_init_prefers_fleet_memory_factory(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """
+        Given enable_context=True and get_memory_factory() returns a factory
+            (backend=fleet_memory)
+        When AutoBuildOrchestrator is initialized
+        Then _factory is the fleet-memory factory and get_factory() is NOT consulted.
+        """
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        mock_fleet_factory = MagicMock()
+        mock_graphiti_factory = MagicMock()
+
+        with patch(
+            "guardkit.orchestrator.autobuild.get_memory_factory",
+            return_value=mock_fleet_factory,
+        ), patch(
+            "guardkit.orchestrator.autobuild.get_factory",
+            return_value=mock_graphiti_factory,
+        ) as mock_get_factory, patch(
+            "guardkit.orchestrator.autobuild.logger"
+        ) as mock_logger:
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/repo"),
+                max_turns=3,
+                enable_context=True,
+                context_loader=None,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+                enable_checkpoints=False,
+            )
+
+        assert orchestrator._factory is mock_fleet_factory
+        mock_get_factory.assert_not_called()
+        mock_logger.info.assert_any_call(
+            "Stored fleet-memory factory for per-thread context loading"
+        )
 
     def test_auto_init_skipped_when_context_loader_provided(
         self,
@@ -1175,7 +1222,8 @@ class TestAutoInitContextLoader:
 
         mock_factory = MagicMock()
 
-        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory), \
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_factory", return_value=mock_factory), \
              patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
@@ -1199,13 +1247,14 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given get_factory() returns None
+        Given get_memory_factory() and get_factory() both return None
         When AutoBuildOrchestrator is initialized
-        Then an INFO log 'Graphiti factory not available' is emitted.
+        Then an INFO log 'Memory factory not available' is emitted.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        with patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory", return_value=None), \
+             patch("guardkit.orchestrator.autobuild.get_factory", return_value=None), \
              patch("guardkit.orchestrator.autobuild.get_graphiti", return_value=None), \
              patch("guardkit.orchestrator.autobuild.logger") as mock_logger:
             orchestrator = AutoBuildOrchestrator(
@@ -1220,7 +1269,7 @@ class TestAutoInitContextLoader:
             )
 
         mock_logger.info.assert_any_call(
-            "Graphiti factory not available, context retrieval disabled"
+            "Memory factory not available, context retrieval disabled"
         )
 
 
