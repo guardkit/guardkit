@@ -116,7 +116,7 @@ class TestOutcomeManagerLogging:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        with patch("guardkit.knowledge.outcome_manager.get_graphiti", return_value=mock_client):
+        with patch("guardkit.knowledge.outcome_manager.get_memory_client", return_value=mock_client):
             with caplog.at_level(logging.INFO, logger="guardkit.knowledge.outcome_manager"):
                 await capture_task_outcome(
                     outcome_type=OutcomeType.TASK_COMPLETED,
@@ -128,7 +128,7 @@ class TestOutcomeManagerLogging:
                 )
 
         assert any(
-            "[Graphiti] Captured task outcome" in r.message
+            "[Memory] Captured task outcome" in r.message
             for r in caplog.records
         )
 
@@ -140,7 +140,7 @@ class TestOutcomeManagerLogging:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(side_effect=Exception("fail"))
 
-        with patch("guardkit.knowledge.outcome_manager.get_graphiti", return_value=mock_client):
+        with patch("guardkit.knowledge.outcome_manager.get_memory_client", return_value=mock_client):
             with caplog.at_level(logging.WARNING, logger="guardkit.knowledge.outcome_manager"):
                 await capture_task_outcome(
                     outcome_type=OutcomeType.TASK_COMPLETED,
@@ -152,7 +152,7 @@ class TestOutcomeManagerLogging:
                 )
 
         assert any(
-            "[Graphiti] Failed to store outcome" in r.message
+            "[Memory] Failed to store outcome" in r.message
             for r in caplog.records
         )
 
@@ -212,44 +212,3 @@ class TestFailedApproachManagerLogging:
             for r in caplog.records
         )
 
-
-# ---------------------------------------------------------------------------
-# template_sync.py logging
-# ---------------------------------------------------------------------------
-
-
-class TestTemplateSyncLogging:
-    """Tests for [Graphiti] logging in template_sync."""
-
-    async def test_sync_template_logs_graphiti_prefix_on_success(self, tmp_path, caplog):
-        from guardkit.knowledge.template_sync import sync_template_to_graphiti
-
-        manifest = {"name": "test-template", "display_name": "Test", "language": "python"}
-        manifest_path = tmp_path / "manifest.json"
-        manifest_path.write_text(json.dumps(manifest))
-
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock()
-
-        with patch("guardkit.knowledge.template_sync.get_graphiti", return_value=mock_client):
-            with caplog.at_level(logging.INFO, logger="guardkit.knowledge.template_sync"):
-                await sync_template_to_graphiti(tmp_path)
-
-        assert any(
-            "[Graphiti] Template sync complete:" in r.message
-            for r in caplog.records
-        )
-
-    async def test_sync_template_logs_graphiti_prefix_on_client_none(self, tmp_path, caplog):
-        from guardkit.knowledge.template_sync import sync_template_to_graphiti
-
-        with patch("guardkit.knowledge.template_sync.get_graphiti", return_value=None):
-            with caplog.at_level(logging.WARNING, logger="guardkit.knowledge.template_sync"):
-                result = await sync_template_to_graphiti(tmp_path)
-
-        assert result is False
-        assert any(
-            "[Graphiti] Template sync skipped" in r.message
-            for r in caplog.records
-        )

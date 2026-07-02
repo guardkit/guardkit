@@ -137,20 +137,7 @@ Example:
     )
 """
 
-from guardkit.knowledge.graphiti_client import (
-    GraphitiConfig,
-    GraphitiClient,
-    GraphitiClientFactory,
-    init_graphiti,
-    get_graphiti,
-    get_factory,
-)
 
-from guardkit.knowledge.config import (
-    GraphitiSettings,
-    load_graphiti_config,
-    get_config_path,
-)
 
 from guardkit.knowledge.context_loader import (
     CriticalContext,
@@ -166,32 +153,6 @@ from guardkit.knowledge.context_formatter import (
     ContextFormatterConfig,
 )
 
-from guardkit.knowledge.seeding import (
-    # Marker management
-    is_seeded,
-    mark_seeded,
-    clear_seeding_marker,
-    get_state_dir,
-    # Individual seeding functions
-    seed_product_knowledge,
-    seed_command_workflows,
-    seed_quality_gate_phases,
-    seed_technology_stack,
-    seed_feature_build_architecture,
-    seed_architecture_decisions,
-    seed_failure_patterns,
-    seed_component_status,
-    seed_integration_points,
-    seed_templates,
-    seed_agents,
-    seed_patterns,
-    seed_rules,
-    # Project-level seeding (TASK-CR-005)
-    seed_project_overview,
-    seed_project_architecture,
-    # Orchestrator
-    seed_all_system_context,
-)
 
 from guardkit.knowledge.adr import (
     ADRStatus,
@@ -217,20 +178,8 @@ from guardkit.knowledge.entities.feature_overview import (
     FeatureOverviewEntity,
 )
 
-from guardkit.knowledge.seed_feature_overviews import (
-    seed_feature_overview,
-    seed_all_feature_overviews,
-    FEATURE_BUILD_OVERVIEW,
-)
 
-from guardkit.knowledge.seed_role_constraints import (
-    seed_role_constraints,
-)
 
-from guardkit.knowledge.seed_feature_build_adrs import (
-    FEATURE_BUILD_ADRS,
-    seed_feature_build_adrs,
-)
 
 from guardkit.knowledge.facts.role_constraint import (
     RoleConstraintFact,
@@ -273,14 +222,7 @@ from guardkit.knowledge.failed_approach_manager import (
     FAILED_APPROACHES_GROUP_ID,
 )
 
-from guardkit.knowledge.seed_failed_approaches import (
-    seed_failed_approaches,
-    get_initial_failed_approaches,
-)
 
-from guardkit.knowledge.seed_pattern_examples import (
-    seed_pattern_examples,
-)
 
 from guardkit.knowledge.feature_detector import (
     FeatureDetector,
@@ -292,10 +234,6 @@ from guardkit.knowledge.gap_analyzer import (
     KnowledgeGapAnalyzer,
 )
 
-from guardkit.knowledge.interactive_capture import (
-    CapturedKnowledge,
-    InteractiveCaptureSession,
-)
 
 # Task analysis (TASK-GR6-001)
 from guardkit.knowledge.task_analyzer import (
@@ -336,17 +274,8 @@ from guardkit.knowledge.role_constraint_formatter import (
 
 __all__ = [
     # Client classes
-    "GraphitiConfig",
-    "GraphitiClient",
-    "GraphitiClientFactory",
     # Factory functions
-    "init_graphiti",
-    "get_graphiti",
-    "get_factory",
     # Configuration
-    "GraphitiSettings",
-    "load_graphiti_config",
-    "get_config_path",
     # Context loading (TASK-GI-003)
     "CriticalContext",
     "load_critical_context",
@@ -355,26 +284,8 @@ __all__ = [
     "format_context_for_injection",
     "ContextFormatterConfig",
     # Seeding - Marker management
-    "is_seeded",
-    "mark_seeded",
-    "clear_seeding_marker",
-    "get_state_dir",
     # Seeding - Individual functions
-    "seed_product_knowledge",
-    "seed_command_workflows",
-    "seed_quality_gate_phases",
-    "seed_technology_stack",
-    "seed_feature_build_architecture",
-    "seed_architecture_decisions",
-    "seed_failure_patterns",
-    "seed_component_status",
-    "seed_integration_points",
-    "seed_templates",
-    "seed_agents",
-    "seed_patterns",
-    "seed_rules",
     # Seeding - Orchestrator
-    "seed_all_system_context",
     # ADR Lifecycle (TASK-GI-004)
     "ADRStatus",
     "ADRTrigger",
@@ -390,17 +301,11 @@ __all__ = [
     "OutcomeQueries",
     # Feature overview (TASK-GE-001)
     "FeatureOverviewEntity",
-    "seed_feature_overview",
-    "seed_all_feature_overviews",
-    "FEATURE_BUILD_OVERVIEW",
     # Role constraints (TASK-GE-003)
     "RoleConstraintFact",
     "PLAYER_CONSTRAINTS",
     "COACH_CONSTRAINTS",
-    "seed_role_constraints",
     # Feature-build ADRs (TASK-GE-007)
-    "FEATURE_BUILD_ADRS",
-    "seed_feature_build_adrs",
     "load_critical_adrs",
     # Turn state operations (TASK-GE-002)
     "TurnMode",
@@ -416,11 +321,8 @@ __all__ = [
     "increment_occurrence",
     "FailedApproachManager",
     "FAILED_APPROACHES_GROUP_ID",
-    "seed_failed_approaches",
-    "get_initial_failed_approaches",
     "load_failed_approaches",
     # Pattern code examples (TASK-CR-006-FIX)
-    "seed_pattern_examples",
     # Feature detection (TASK-GR3-001)
     "FeatureDetector",
     # Knowledge gap analysis (TASK-GR4-001)
@@ -428,8 +330,6 @@ __all__ = [
     "KnowledgeGap",
     "KnowledgeGapAnalyzer",
     # Interactive knowledge capture (TASK-GR4-002)
-    "CapturedKnowledge",
-    "InteractiveCaptureSession",
     # Task analysis (TASK-GR6-001)
     "TaskType",
     "TaskPhase",

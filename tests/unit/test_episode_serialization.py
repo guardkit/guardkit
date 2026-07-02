@@ -271,44 +271,6 @@ class TestTaskOutcomeReturnsDict:
 
 
 # ============================================================================
-# 4. Seed Helpers Function Signature
-# ============================================================================
-
-class TestSeedHelpersPassesEntityType:
-    """Test that _add_episodes accepts entity_type parameter."""
-
-    def test_add_episodes_accepts_entity_type(self):
-        """Test that _add_episodes function signature accepts entity_type."""
-        from guardkit.knowledge.seed_helpers import _add_episodes
-        import inspect
-
-        sig = inspect.signature(_add_episodes)
-        params = list(sig.parameters.keys())
-
-        # Should have entity_type parameter
-        assert "entity_type" in params, \
-            "_add_episodes should accept 'entity_type' parameter"
-
-    def test_add_episodes_has_entity_type_default(self):
-        """Test that _add_episodes has default value for entity_type."""
-        from guardkit.knowledge.seed_helpers import _add_episodes
-        import inspect
-
-        sig = inspect.signature(_add_episodes)
-
-        # Should have entity_type parameter with default
-        assert "entity_type" in sig.parameters, \
-            "_add_episodes should have 'entity_type' parameter"
-
-        # Verify it has a default value
-        entity_type_param = sig.parameters["entity_type"]
-        assert entity_type_param.default != inspect.Parameter.empty, \
-            "'entity_type' should have a default value"
-        assert entity_type_param.default == "generic", \
-            "'entity_type' default should be 'generic'"
-
-
-# ============================================================================
 # 5. Entity Body Contains Only Domain Data
 # ============================================================================
 

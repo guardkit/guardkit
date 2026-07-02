@@ -30,9 +30,6 @@ try:
         PLAYER_CONSTRAINTS,
         COACH_CONSTRAINTS,
     )
-    from guardkit.knowledge.seed_role_constraints import (
-        seed_role_constraints,
-    )
     from guardkit.knowledge.context_loader import (
         load_role_context,
     )
@@ -436,102 +433,6 @@ class TestPredefinedConstraints:
         assert len(COACH_CONSTRAINTS.ask_before) > 0
 
 
-# ============================================================================
-# 4. seed_role_constraints() Function Tests (7 tests)
-# ============================================================================
-
-class TestSeedRoleConstraints:
-    """Test seed_role_constraints seeding function."""
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_creates_episodes(self):
-        """Test that seeding creates episodes for both roles."""
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
-
-        await seed_role_constraints(mock_client)
-
-        # Should create 2 episodes (player and coach)
-        assert mock_client.add_episode.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_uses_correct_group_id(self):
-        """Test that seeding uses 'role_constraints' group ID."""
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
-
-        await seed_role_constraints(mock_client)
-
-        # Verify all calls used correct group_id
-        for call_obj in mock_client.add_episode.call_args_list:
-            kwargs = call_obj.kwargs
-            assert kwargs['group_id'] == 'role_constraints'
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_episode_names_descriptive(self):
-        """Test that episode names are descriptive."""
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
-
-        await seed_role_constraints(mock_client)
-
-        # Names should include role and context
-        assert mock_client.add_episode.call_count == 2
-        for call_obj in mock_client.add_episode.call_args_list:
-            name = call_obj.kwargs["name"]
-            assert "role_constraint" in name
-            assert any(role in name for role in ["player", "coach"])
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_episode_bodies_valid_json(self):
-        """Test that episode bodies are valid JSON."""
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
-
-        await seed_role_constraints(mock_client)
-
-        # All bodies should be valid JSON strings
-        assert mock_client.add_episode.call_count == 2
-        for call_obj in mock_client.add_episode.call_args_list:
-            body = call_obj.kwargs["episode_body"]
-            assert isinstance(body, str)
-            # Should parse without exception
-            parsed = json.loads(body)
-            assert isinstance(parsed, dict)
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_graceful_degradation_when_disabled(self):
-        """Test graceful degradation when Graphiti is disabled."""
-        mock_client = AsyncMock()
-        mock_client.enabled = False
-
-        # Should not raise exception
-        await seed_role_constraints(mock_client)
-
-        # Should not attempt to add episodes
-        mock_client.add_episode.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_handles_none_client(self):
-        """Test that seeding handles None client gracefully."""
-        # Should not raise exception
-        result = await seed_role_constraints(None)
-        # Implementation should handle this gracefully
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_handles_add_episode_failure(self):
-        """Test that seeding handles add_episode failures gracefully."""
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("API error"))
-
-        # Should handle exception gracefully
-        await seed_role_constraints(mock_client)
-
 
 # ============================================================================
 # 5. load_role_context() Function Tests (8 tests)
@@ -775,26 +676,6 @@ class TestEdgeCases:
 
             # Should not raise exception
             assert result is not None or result is None
-
-    @pytest.mark.asyncio
-    async def test_seed_role_constraints_with_custom_constraints(self):
-        """Test seeding with custom constraint objects."""
-        custom_constraint = RoleConstraintFact(
-            role="reviewer",
-            context="code-review",
-            primary_responsibility="Review code quality",
-            must_do=["Check style", "Verify tests"],
-            must_not_do=["Modify code"],
-            ask_before=["Reject PR"]
-        )
-
-        mock_client = AsyncMock()
-        mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(return_value="episode_id")
-
-        # This tests that the seeding function can handle additional constraints
-        # Implementation might not support this in initial version
-        # await seed_role_constraints(mock_client, [custom_constraint])
 
     def test_role_constraint_fact_is_hashable(self):
         """Test that RoleConstraintFact instances can be compared."""

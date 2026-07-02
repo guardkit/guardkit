@@ -986,7 +986,7 @@ class TestAutoInitContextLoader:
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        with patch("guardkit.knowledge.get_graphiti") as mock_get:
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory") as mock_get:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -999,6 +999,7 @@ class TestAutoInitContextLoader:
 
         # DI takes precedence: auto-init should not have fired
         assert orchestrator._context_loader is mock_context_loader
+        mock_get.assert_not_called()
 
     def test_auto_init_skipped_when_context_disabled(
         self,
@@ -1013,7 +1014,7 @@ class TestAutoInitContextLoader:
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        with patch("guardkit.knowledge.get_graphiti") as mock_get:
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory") as mock_get:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -1034,13 +1035,13 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given enable_context=True and get_graphiti() returns None
+        Given enable_context=True and get_memory_factory() returns None
         When AutoBuildOrchestrator is initialized
         Then _context_loader remains None (graceful degradation).
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        with patch("guardkit.knowledge.get_graphiti", return_value=None):
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory", return_value=None):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -1053,23 +1054,22 @@ class TestAutoInitContextLoader:
 
         assert orchestrator._context_loader is None
 
-    def test_auto_init_graceful_when_graphiti_not_enabled(
+    def test_auto_init_graceful_when_memory_factory_disabled(
         self,
         mock_worktree_manager,
         mock_agent_invoker,
         mock_progress_display,
     ):
         """
-        Given enable_context=True and get_graphiti() returns client with enabled=False
+        Given enable_context=True and get_memory_factory() returns None
+        (fleet-memory disabled — the post-cutover equivalent of a
+        disabled knowledge backend)
         When AutoBuildOrchestrator is initialized
         Then _context_loader remains None (graceful degradation).
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
-        mock_graphiti = MagicMock()
-        mock_graphiti.enabled = False
-
-        with patch("guardkit.knowledge.get_graphiti", return_value=mock_graphiti):
+        with patch("guardkit.orchestrator.autobuild.get_memory_factory", return_value=None):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
                 max_turns=3,
@@ -1089,15 +1089,15 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given enable_context=True but graphiti dependencies not installed
+        Given enable_context=True but memory dependencies not installed
         When AutoBuildOrchestrator is initialized
         Then _context_loader remains None with no crash.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
         with patch(
-            "guardkit.knowledge.get_graphiti",
-            side_effect=ImportError("No module named 'graphiti_core'"),
+            "guardkit.orchestrator.autobuild.get_memory_factory",
+            side_effect=ImportError("No module named 'fleet_memory'"),
         ):
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/repo"),
@@ -1118,14 +1118,14 @@ class TestAutoInitContextLoader:
         mock_progress_display,
     ):
         """
-        Given enable_context=True and get_graphiti() raises unexpected error
+        Given enable_context=True and get_memory_factory() raises unexpected error
         When AutoBuildOrchestrator is initialized
         Then _context_loader remains None with no crash.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
         with patch(
-            "guardkit.knowledge.get_graphiti",
+            "guardkit.orchestrator.autobuild.get_memory_factory",
             side_effect=RuntimeError("Connection refused"),
         ):
             orchestrator = AutoBuildOrchestrator(
