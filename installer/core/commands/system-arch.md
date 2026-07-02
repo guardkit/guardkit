@@ -22,19 +22,19 @@ The command instructs Claude directly (Pattern A: command-spec-only) through a s
 
 ## Mode Auto-Detection
 
-The command automatically detects the appropriate mode based on existing architecture context in Graphiti:
+The command automatically detects the appropriate mode based on whether architecture context already exists (fleet-memory and/or `docs/architecture/`):
 
-| Graphiti State | Detected Mode | Purpose |
-|----------------|---------------|---------|
+| Architecture State | Detected Mode | Purpose |
+|--------------------|---------------|---------|
 | No architecture context | `setup` | First-time architecture definition |
 | Architecture exists | `refine` | Update existing architecture decisions |
 
 **Transparent Display**: The command always shows which mode was selected and why.
 
-**Graceful Degradation**: If Graphiti is unavailable, defaults to `setup` mode without persistence.
+**Graceful Degradation**: If fleet-memory is unavailable, mode is detected via local file existence and the command runs markdown-only without persistence.
 
-**Check Graphiti availability** (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 1):
-Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly. If neither is reachable, set `memory_available = false` and display the unavailability warning — continue without persistence, never block.
 
 **Auto-detect mode via local file existence:**
 Use the Glob tool to check whether `docs/architecture/` contains `.md` files:
@@ -49,8 +49,8 @@ Apply user `--mode` override if provided.
 
 **Load existing architecture context and validate prerequisites:**
 
-**Check Graphiti availability** (see `docs/internals/commands-lib/graphiti-preamble.md` Tier 1):
-Use the Read tool to read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — continue without persistence.
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`). If neither is reachable, set `memory_available = false` and display the unavailability warning — continue without persistence, never block.
 
 **Detect mode via local file existence:**
 Use the Glob tool to check whether `docs/architecture/*.md` files exist.
@@ -68,7 +68,7 @@ Use the Read tool to load each specified context file and incorporate the conten
 
 The interactive session walks through 6 structured categories. After each category, the user sees a checkpoint: `[C]ontinue / [R]evise / [S]kip / [A]DR?`
 
-All captured entities are upserted to Graphiti immediately after each category checkpoint (not batched).
+All captured entities are seeded to fleet-memory immediately after each category checkpoint (not batched).
 
 #### Category 1: Domain & Structural Pattern
 
@@ -124,14 +124,21 @@ Captured:
 Your choice [C/R/S/A]:
 ```
 
-**Graphiti Persistence (after checkpoint):**
+**Fleet-Memory Persistence (after checkpoint):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured domain context:
+If `memory_available` is true, build the domain-model payload (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
-```bash
-guardkit graphiti add-context docs/architecture/domain-model.md \
-  --group project_architecture
 ```
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "domain_model",
+  "content": "<the domain-model.md markdown>",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/domain-model.md"
+})
+```
+
+(If `memory_access = "cli"`, note writes require the MCP tools connected and skip.)
 
 Each pattern selection is automatically recorded as an ADR (using `ADR-ARCH-NNN` prefix).
 
@@ -176,13 +183,18 @@ Domain events: DonorCreated, LPAFiled, TransactionFlagged
 [C]ontinue | [R]evise | [S]kip | [A]DR?
 ```
 
-**Graphiti Persistence:**
+**Fleet-Memory Persistence:**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured components context:
+If `memory_available` is true, build the components/domain-model payload (see `docs/internals/commands-lib/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
-```bash
-guardkit graphiti add-context docs/architecture/domain-model.md \
-  --group project_architecture
+```
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "domain_model",
+  "content": "<the domain-model.md markdown>",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/domain-model.md"
+})
 ```
 
 #### Category 3: Technology & Infrastructure
@@ -284,13 +296,18 @@ Captured 4 concerns:
 [C]ontinue | [R]evise | [S]kip | [A]DR?
 ```
 
-**Graphiti Persistence:**
+**Fleet-Memory Persistence:**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then seed the captured cross-cutting concerns:
+If `memory_available` is true, build the architecture-summary payload (see `docs/internals/commands-lib/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
-```bash
-guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
-  --group project_architecture
+```
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "architecture_summary",
+  "content": "<the ARCHITECTURE.md markdown>",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/ARCHITECTURE.md"
+})
 ```
 
 #### Category 6: Constraints & NFRs
@@ -501,50 +518,58 @@ assumptions:
     related_adr: ADR-ARCH-003
 ```
 
-### Phase 4: Graphiti Seeding
+### Phase 4: Fleet-Memory Seeding
 
-Seed all artefacts into Graphiti knowledge graph for downstream command consumption.
+Seed all artefacts into fleet-memory as typed payloads for downstream command consumption.
 
-**Group Assignments:**
+**Payload Assignments** (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference):
 
-| Entity Type | Graphiti Group |
-|-------------|---------------|
-| System context, components, bounded contexts | `project_architecture` |
-| ADRs | `architecture_decisions` |
-| Technology decisions | `project_decisions` |
-| Cross-cutting concerns | `project_architecture` |
-| Assumptions | `project_architecture` |
+| Entity Type | `payload_type` | `domain_tags` |
+|-------------|----------------|---------------|
+| System context, components, bounded contexts | `document` | `["architecture"]` |
+| ADRs | `adr` | `["architecture"]` |
+| Technology decisions (Category 3 ADRs) | `adr` | `["architecture"]` |
+| Cross-cutting concerns | `document` | `["architecture"]` |
+| Assumptions | `document` | `["architecture"]` |
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the following seeding commands:
+If `memory_available` is true, build one typed payload per artefact, **display** them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note writes require the MCP tools connected and skip.)
 
-```bash
-# Bounded contexts, components, cross-cutting concerns, assumptions → project_architecture
-guardkit graphiti add-context docs/architecture/domain-model.md \
-  --group project_architecture
-
-guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
-  --group project_architecture
-
-# ADRs → architecture_decisions
-guardkit graphiti add-context docs/architecture/decisions/ \
-  --group architecture_decisions
-
-# Technology decisions (Category 3 ADRs) → project_decisions
-# Note: technology-specific ADRs (language, framework, database choices)
-# may also be seeded separately to the project_decisions group
 ```
+# Domain model / bounded contexts, cross-cutting concerns, assumptions → document / ["architecture"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "domain_model",
+  "content": "<the domain-model.md markdown>",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/domain-model.md"})
 
-Ask the user: "Run these seeding commands now? [Y/n]". If yes, execute each via the Bash tool.
+# Architecture summary → document / ["architecture"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "architecture_summary",
+  "content": "<the ARCHITECTURE.md markdown>",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/ARCHITECTURE.md"})
+
+# Each ADR (including technology-decision ADRs) → adr / ["architecture"]
+# identifier uses underscores only: ADR-ARCH-001 → ADR_ARCH_001
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_ARCH_001",
+  "decision": "<the decision>", "status": "accepted",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/ADR-ARCH-001-{slug}.md"})
+```
 
 Display a summary after seeding completes (use Glob to count files created in `docs/architecture/`).
 
 **Security — ADR Sanitisation:**
 
-The `guardkit graphiti add-context` CLI handles sanitisation of free-text content internally before seeding. No manual pre-processing is required. When constructing ADR content during the interactive session, avoid embedding raw user input verbatim in rationale fields — paraphrase or summarise instead.
+When constructing ADR content during the interactive session, avoid embedding raw user input verbatim in `decision`/rationale fields — paraphrase or summarise instead before building the payload. No untrusted free text should be persisted verbatim.
 
 ### Phase 5: Refine Mode Flow
 
-When architecture context already exists in Graphiti, the command enters refine mode.
+When architecture context already exists (fleet-memory and/or `docs/architecture/`), the command enters refine mode.
 
 ```
 Mode: refine (existing architecture found)
@@ -574,7 +599,7 @@ Your choice:
 **Targeted refinement:**
 - Show current state for selected area
 - Ask what's changed conversationally (not full questionnaire)
-- Update Graphiti entities
+- Update fleet-memory payloads — supersession is idempotent on the natural key: re-write the affected artefact's payload with the updated content. For a decision that replaces an earlier one, write the NEW payload with a `"supersedes": ["<natural_key_of_old>"]` field (natural key = `"<payload_type>:guardkit:<identifier>"`, e.g. `"adr:guardkit:ADR_ARCH_001"`) and re-write the OLD payload with `"status": "superseded"`.
 - Regenerate affected markdown files and C4 diagrams
 
 ## Error Handling
@@ -596,16 +621,16 @@ if not description or not description.strip():
     exit(1)
 ```
 
-### Graphiti Unavailable
+### Fleet-Memory Unavailable
 
-Display the standard unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
+Display the standard unavailability warning from `docs/internals/commands-lib/memory-preamble.md`:
 
 ```
-⚠️  Graphiti unavailable — continuing without knowledge graph context.
-    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+⚠️  Fleet-memory unavailable — continuing without knowledge capture.
+    Reason: MCP tools not connected and CLI not reachable
 
-    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
-    FalkorDB is reachable at the configured host.
+    Artefacts are written to markdown only. Re-run with the fleet_memory
+    MCP server connected (see .mcp.json) to seed the knowledge store.
 ```
 
 Then display:
@@ -672,17 +697,17 @@ if checkpoint_choice.lower() == "s":
     break
 ```
 
-### Graphiti Connection Drop Mid-Session
+### Fleet-Memory Unavailable Mid-Session
 
-If a `guardkit graphiti add-context` seeding command fails during the session, display:
+If a `mcp__fleet_memory__memory_write_payload` seeding write fails during the session, display:
 
 ```
-WARNING: Graphiti seeding failed for this category.
+WARNING: Fleet-memory seeding failed for this category.
 Remaining categories will be captured in markdown artefacts only.
-Re-seed unpersisted artefacts when Graphiti is restored.
+Re-seed unpersisted artefacts when fleet-memory is restored.
 ```
 
-Set `graphiti_available = false` and continue the interactive session without further seeding attempts. All markdown artefacts are still generated regardless.
+Set `memory_available = false` and continue the interactive session without further seeding attempts. All markdown artefacts are still generated regardless.
 
 ### --no-questions Flag
 
@@ -720,7 +745,7 @@ Status: [A]ccepted / [P]roposed / [D]eprecated / [S]uperseded
 
 **ADR file written to:** `docs/architecture/decisions/ADR-ARCH-{NNN}-{slug}.md` using the `adr.md.j2` template.
 
-**Sanitisation**: ADR rationale and free-text fields are sanitised before Graphiti seeding to prevent injection (see Security section above).
+**Sanitisation**: ADR rationale and free-text fields are sanitised (paraphrased/summarised) before fleet-memory seeding to prevent injection (see Security section above).
 
 ## Examples
 
@@ -799,11 +824,11 @@ Created: docs/architecture/
       ├── ADR-ARCH-002-postgresql-data-store.md
       └── ADR-ARCH-003-fastapi-framework.md
 
-Graphiti context:
-  4 bounded contexts persisted
-  4 cross-cutting concerns persisted
-  3 ADRs persisted
-  1 system context persisted
+Fleet-memory:
+  4 bounded contexts seeded (document, domain_tags=[architecture])
+  4 cross-cutting concerns seeded (document, domain_tags=[architecture])
+  3 ADRs seeded (adr, domain_tags=[architecture])
+  1 system context seeded (document, domain_tags=[architecture])
 
 Next steps:
   1. Review: docs/architecture/ARCHITECTURE.md
@@ -833,10 +858,10 @@ Created: docs/architecture/
   └── decisions/
       └── ADR-ARCH-001-modular-monolith.md
 
-Graphiti context:
-  1 module persisted
-  1 ADR persisted
-  1 system context persisted
+Fleet-memory:
+  1 module seeded (document, domain_tags=[architecture])
+  1 ADR seeded (adr, domain_tags=[architecture])
+  1 system context seeded (document, domain_tags=[architecture])
 ```
 
 ### Example 3: Refine Mode
@@ -862,7 +887,7 @@ Updated: docs/architecture/domain-model.md
 Updated: docs/architecture/system-context.md (new context added)
 New: docs/architecture/decisions/ADR-ARCH-004-new-notification-context.md
 
-Graphiti: 1 bounded context added, 1 ADR persisted
+Fleet-memory: 1 bounded context seeded, 1 ADR seeded (adr, domain_tags=[architecture])
 ```
 
 ---
@@ -896,12 +921,12 @@ if no_questions:
     exit(1)
 ```
 
-### Step 2: Check Graphiti Availability
+### Step 2: Check Fleet-Memory Availability
 
-Follow the Tier 1 check from `docs/internals/commands-lib/graphiti-preamble.md`:
-Use the Read tool to read `.guardkit/graphiti.yaml`.
-- IF the file exists and `enabled: true`: set `graphiti_available = true`
-- ELSE: set `graphiti_available = false`, display the unavailability warning, and ask:
+Follow the Tier 0 → Tier 1 check from `docs/internals/commands-lib/memory-preamble.md`:
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`.
+- IF reachable: set `memory_available = true` (and `memory_access = "mcp"` or `"cli"`)
+- ELSE: set `memory_available = false`, display the unavailability warning, and ask:
 
 ```
 Architecture definition will continue WITHOUT persistence.
@@ -939,14 +964,14 @@ Walk through all 6 categories in order:
 After each category:
 - Display what was captured
 - Show checkpoint: `[C]ontinue / [R]evise / [S]kip / [A]DR?`
-- If `[A]DR?`: Capture ADR inline, sanitise rationale, persist to Graphiti
+- If `[A]DR?`: Capture ADR inline, sanitise rationale, seed to fleet-memory (`adr` payload)
 - If `[R]evise`: Re-ask the category questions
-- If `[S]kip`: Break out of the loop, persist completed categories, inform about skipped ones
-- If `[C]ontinue`: Upsert entities to Graphiti, move to next category
+- If `[S]kip`: Break out of the loop, seed completed categories, inform about skipped ones
+- If `[C]ontinue`: Seed entities to fleet-memory (offer the payloads for review), move to next category
 
 **If mode == "refine":**
 
-Show current architecture summary. Ask which area to refine. Run targeted conversational refinement (not full questionnaire). Update Graphiti and regenerate affected files.
+Show current architecture summary. Ask which area to refine. Run targeted conversational refinement (not full questionnaire). Update fleet-memory (re-write the affected payloads; use `"supersedes"` + `"status": "superseded"` for replaced decisions) and regenerate affected files.
 
 ### Step 5: Generate C4 Diagrams (Mandatory Review Gate)
 
@@ -969,29 +994,34 @@ Use the Write tool to create all mandatory artefacts under `docs/architecture/`:
 
 Use the Glob tool to scan `docs/architecture/decisions/ADR-ARCH-*.md` to determine the next available ADR number before writing new ADRs.
 
-### Step 7: Seed to Graphiti
+### Step 7: Seed to Fleet-Memory
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands:
-
-```bash
-# Bounded contexts, components, cross-cutting concerns → project_architecture
-guardkit graphiti add-context docs/architecture/domain-model.md \
-  --group project_architecture
-
-guardkit graphiti add-context docs/architecture/ARCHITECTURE.md \
-  --group project_architecture
-
-# ADRs and technology decisions → architecture_decisions
-guardkit graphiti add-context docs/architecture/decisions/ \
-  --group architecture_decisions
-```
-
-Ask the user: "Run these seeding commands now? [Y/n]". If yes, execute each via the Bash tool.
-
-If `graphiti_available` is false, display:
+If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), **display** them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note writes require the MCP tools connected and skip.)
 
 ```
-NOTE: Artefacts NOT seeded to Graphiti (unavailable).
+# Domain model / bounded contexts / cross-cutting concerns → document / ["architecture"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "domain_model",
+  "content": "<the domain-model.md markdown>", "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/domain-model.md"})
+
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "architecture_summary",
+  "content": "<the ARCHITECTURE.md markdown>", "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/ARCHITECTURE.md"})
+
+# Each ADR (incl. technology decisions) → adr / ["architecture"]
+# identifier underscores only: ADR-ARCH-001 → ADR_ARCH_001
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit", "identifier": "ADR_ARCH_001",
+  "decision": "<the decision>", "status": "accepted", "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/ADR-ARCH-001-{slug}.md"})
+```
+
+If `memory_available` is false, display:
+
+```
+NOTE: Artefacts NOT seeded to fleet-memory (unavailable).
 Markdown artefacts still generated in docs/architecture/
 ```
 
@@ -1023,16 +1053,17 @@ Next steps:
 
 DO NOT:
 - Skip the interactive question flow (this is an interactive command)
-- Batch all Graphiti upserts at the end (upsert after each category)
+- Batch all fleet-memory writes at the end (seed after each category)
+- Seed fleet-memory via Python — always use the `mcp__fleet_memory__memory_write_payload` tool
 - Skip diagram review gates (user must explicitly approve each diagram)
 - Skip checkpoints (user must review each category)
 - Proceed without user confirmation at decision points
 - Generate code implementations (this is an architecture definition command)
 - Skip mode auto-detection (always detect unless overridden)
-- Ignore Graphiti unavailability (warn user, offer to continue)
+- Ignore fleet-memory unavailability (warn user, offer to continue)
 - Allow empty descriptions (error with usage examples)
 - Accept invalid pattern choices (re-prompt with valid options)
-- Seed unsanitised free-text content to Graphiti
+- Seed unsanitised free-text content to fleet-memory
 
 ### Example Execution Trace
 
@@ -1041,23 +1072,23 @@ User: /system-arch "CLI task workflow tool"
 
 Claude executes:
   1. Parse arguments → description = "CLI task workflow tool"
-  2. Check Graphiti availability → Read .guardkit/graphiti.yaml (Tier 1)
+  2. Check fleet-memory availability → mcp__fleet_memory__* tools; else guardkit memory status (Tier 0 → Tier 1)
   3. Auto-detect mode → Glob docs/architecture/*.md → none found → "setup"
   4. Display: "Mode: setup"
   5. Category 1: Domain & Structural Pattern → ask Q1-Q4, checkpoint
-  6. If graphiti_available: seed domain-model.md → project_architecture
+  6. If memory_available: seed domain-model (document, domain_tags=[architecture])
   7. Category 2: Bounded Contexts → adapt to pattern, checkpoint
-  8. If graphiti_available: seed domain-model.md → project_architecture
+  8. If memory_available: seed domain-model (document, domain_tags=[architecture])
   9. Category 3: Technology & Infrastructure → ask Q8-Q12, checkpoint
-  10. If graphiti_available: seed decisions/ → architecture_decisions + project_decisions
+  10. If memory_available: seed technology ADRs (adr, domain_tags=[architecture])
   11. Category 4: Multi-Consumer API Strategy → ask Q13-Q16, checkpoint
   12. Category 5: Cross-Cutting Concerns → ask Q17-Q21, checkpoint
-  13. If graphiti_available: seed ARCHITECTURE.md → project_architecture
+  13. If memory_available: seed ARCHITECTURE.md (document, domain_tags=[architecture])
   14. Category 6: Constraints & NFRs → ask Q22-Q27, checkpoint
   15. Generate C4 Context diagram → present for approval
   16. Generate C4 Container diagram → present for approval
   17. Write all output artefacts to docs/architecture/ (Write tool)
-  18. Offer seeding commands to Graphiti (Tier 2 check + guardkit graphiti add-context)
+  18. Offer typed payloads for review, then write each via mcp__fleet_memory__memory_write_payload
   19. Display summary with file locations and next steps
 ```
 

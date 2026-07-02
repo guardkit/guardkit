@@ -193,7 +193,7 @@ This command ensures high-quality task completion while maintaining accurate pro
 
 **Non-blocking**: Task completion MUST succeed even if Graphiti write fails. All errors are logged as warnings.
 
-See: `docs/internals/commands-lib/graphiti-preamble.md` for availability check tiers.
+See: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers.
 
 ### Step 1: Extract Task Outcome Data
 

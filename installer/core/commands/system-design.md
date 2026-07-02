@@ -37,26 +37,26 @@ Designs API contracts, data models, and multi-protocol surfaces per bounded cont
 - `/system-arch` outputs to `docs/architecture/`
 - `/system-design` outputs to `docs/design/`
 
-## Graphiti Integration Reference
+## Fleet-Memory Integration Reference
 
-When Graphiti is available, `/system-design` uses these APIs for knowledge graph operations:
+When fleet-memory is available, `/system-design` captures and reads design knowledge via the tool-native patterns in `docs/internals/commands-lib/memory-preamble.md`:
 
-- **Client**: `get_graphiti()` to obtain the Graphiti client instance
-- **Prerequisite check**: `has_architecture_context()` via `SystemPlanGraphiti` to verify architecture exists
-- **Context loading**: Read from `project_architecture` group for bounded contexts and structural decisions
-- **Design seeding**: `SystemDesignGraphiti` class for persisting design artefacts:
-  - `upsert_design_decision()` for DDRs
-  - `upsert_api_contract()` for API contracts
-  - `upsert_data_model()` for data models
-- **Contradiction detection**: Query `project_decisions` group to detect conflicts with existing decisions
+- **Availability**: Tier 0 (`mcp__fleet_memory__*` tools in-session) → Tier 1 (`guardkit memory status`) → markdown-only fallback
+- **Prerequisite check**: search fleet-memory for architecture context (`payload_types=["adr","document"]`, `domain_tags=["architecture"]`) and/or Glob `docs/architecture/**` — either source satisfies the gate
+- **Context loading**: `mcp__fleet_memory__memory_search` with `domain_tags=["architecture"]` for bounded contexts and structural decisions
+- **Design seeding**: `mcp__fleet_memory__memory_write_payload` per the memory-preamble mapping table:
+  - DDRs → `adr` payload, `domain_tags=["design"]`
+  - API contracts → `document` payload, `domain_tags=["design","api_contract"]`
+  - Data models → `document` payload, `domain_tags=["design","data_model"]`
+- **Contradiction detection**: search `payload_types=["adr"]` (`domain_tags=["architecture","design"]`) to detect conflicts with existing decisions
 
 ## Prerequisite Gate
 
 Before starting the interactive session, `/system-design` MUST verify that architecture context exists. This ensures the design phase builds on established structural decisions rather than assumptions.
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`. If the file exists and `enabled: true`, set `graphiti_available = true`. Otherwise set `graphiti_available = false` and display the unavailability warning — do **not** block the command.
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly. If neither is reachable, set `memory_available = false` and display the unavailability warning — do **not** block the command.
 
 **Check for local architecture context:**
 
@@ -78,9 +78,9 @@ Use the Read tool to read files from `docs/architecture/`:
 - Read any `docs/architecture/ADR-*.md` files to collect existing architecture decisions — store as `existing_adrs` for contradiction detection in Phase 2
 - Apply the `--focus` filter if specified to limit to one bounded context
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Read `.guardkit/graphiti.yaml`. If `enabled: true`, set `graphiti_available = true`. Otherwise display the unavailability warning and continue with markdown artefacts only.
+Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available`. If unavailable, display the unavailability warning and continue with markdown artefacts only.
 
 Display:
 - `🏗️ Architecture loaded: {N} bounded contexts`
@@ -360,7 +360,7 @@ all_decisions.append(decision)
 # Write DDR immediately
 writer.write_ddr(decision, output_dir)
 
-# Note: Graphiti seeding is deferred to Step 8 (guardkit graphiti add-context)
+# Note: fleet-memory seeding is deferred to Step 8 (mcp__fleet_memory__memory_write_payload)
 print(f"\n✓ {decision.entity_id} captured. Continuing...")
 ```
 
@@ -526,7 +526,7 @@ for bc in bounded_contexts:
 
 ### Phase 3.5: Mandatory C4 L3 Review Gate
 
-**C4 Component diagrams MUST be reviewed and approved by the user before proceeding to Graphiti seeding. This is a mandatory review gate — design output cannot be finalised without explicit approval.**
+**C4 Component diagrams MUST be reviewed and approved by the user before proceeding to fleet-memory seeding. This is a mandatory review gate — design output cannot be finalised without explicit approval.**
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -638,33 +638,46 @@ if openapi_path.exists():
             print("  Manual review required: docs/design/openapi.yaml")
 ```
 
-### Phase 5: Graphiti Seeding
+### Phase 5: Fleet-Memory Seeding
 
-**Seed design artefacts into the knowledge graph (if available):**
+**Seed design artefacts into fleet-memory (if available):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`.
-
-If Graphiti is reachable, generate the following seeding commands and ask: `"Run these seeding commands now? [Y/n]"`. If yes, execute each via the Bash tool.
-
-```bash
-# Seed API contracts (one command per contract file generated)
-guardkit graphiti add-context docs/design/contracts/{contract-slug}.md \
-  --group project_design
-
-# Seed data models (one command per model file generated)
-guardkit graphiti add-context docs/design/models/{model-slug}.md \
-  --group project_design
-
-# Seed design decisions / DDRs (one command per DDR captured)
-guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
-  --group architecture_decisions
-```
-
-If Graphiti is unavailable, display the standard warning from `docs/internals/commands-lib/graphiti-preamble.md` and continue:
+If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. If yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note that writes require the MCP tools connected and skip.)
 
 ```
-⚠️  Graphiti unavailable — artefacts written to markdown only.
-    Re-run /system-design with Graphiti enabled to seed knowledge graph.
+# API contracts → document payload, domain_tags ["design","api_contract"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "<contract_slug>",              # underscores only
+  "content": "<contract markdown>",
+  "domain_tags": ["design", "api_contract"],
+  "source_ref": "docs/design/contracts/<contract-slug>.md"
+})
+
+# Data models → document payload, domain_tags ["design","data_model"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "<model_slug>",
+  "content": "<data-model markdown>",
+  "domain_tags": ["design", "data_model"],
+  "source_ref": "docs/design/models/<model-slug>.md"
+})
+
+# Design decisions / DDRs → adr payload, domain_tags ["design"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "DDR_{NNN}",
+  "decision": "<the decision>", "status": "accepted",
+  "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{NNN}.md"
+})
+```
+
+If fleet-memory is unavailable, display the standard warning from `docs/internals/commands-lib/memory-preamble.md` and continue:
+
+```
+⚠️  Fleet-memory unavailable — artefacts written to markdown only.
+    Re-run /system-design with the fleet_memory MCP server connected to seed the store.
 ```
 
 ### Phase 6: Summary Output
@@ -696,10 +709,10 @@ Created: docs/design/
       ├── DDR-002.md
       └── ...
 
-Graphiti context:
-  ✓ {len(all_contracts)} API contracts seeded (api_contracts)
-  ✓ {len(all_models)} data models seeded (project_design)
-  ✓ {len(all_decisions)} DDRs seeded (project_design)
+Fleet-memory:
+  ✓ {len(all_contracts)} API contracts seeded (document, domain_tags=[design,api_contract])
+  ✓ {len(all_models)} data models seeded (document, domain_tags=[design,data_model])
+  ✓ {len(all_decisions)} DDRs seeded (adr, domain_tags=[design])
 
 Next steps:
   1. Review: docs/design/openapi.yaml
@@ -738,36 +751,35 @@ next_number = scan_next_ddr_number(decisions_dir)
 
 ## Graceful Degradation
 
-### Graphiti Unavailable
+### Fleet-Memory Unavailable
 
-Follow the unavailability pattern from `docs/internals/commands-lib/graphiti-preamble.md` — **do not block the command**.
+Follow the unavailability pattern from `docs/internals/commands-lib/memory-preamble.md` — **do not block the command**.
 
 Display the standard warning and continue:
 
 ```
-⚠️  Graphiti unavailable — continuing without knowledge graph context.
-    Reason: Config disabled / file not found
+⚠️  Fleet-memory unavailable — continuing without knowledge capture.
+    Reason: MCP tools not connected and CLI not reachable
 
-    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
-    FalkorDB is reachable at the configured host.
+    Artefacts are written to markdown only. Re-run with the fleet_memory
+    MCP server connected (see .mcp.json) to seed the knowledge store.
 ```
 
 System design will continue and generate all markdown artefacts. Design context won't be queryable by `/feature-spec` or `/feature-plan` until seeded.
 
 Ask: `"Continue without persistence? [Y/n]:"` — default Yes.
 
-### Partial Graphiti Failure
+### Partial Seeding Failure
 
-If a `guardkit graphiti add-context` command fails during Phase 5 seeding:
+If a `mcp__fleet_memory__memory_write_payload` write fails during Phase 5 seeding:
 
 ```
-⚠️  Graphiti seeding failed for {artefact}
+⚠️  Fleet-memory seeding failed for {artefact}
     Markdown artefact was still written successfully.
-    Re-run the command manually:
-    guardkit graphiti add-context {path} --group {group}
+    Re-run /system-design with the fleet_memory MCP server connected to retry.
 ```
 
-Markdown artefacts are still complete. Re-run the failed seeding command manually to retry.
+Markdown artefacts are still complete. Re-run the failed seeding write to retry.
 
 ### Missing Architecture Context
 
@@ -831,15 +843,14 @@ if invalid:
     # Re-prompt
 ```
 
-### Graphiti Error During Seeding
+### Fleet-Memory Error During Seeding
 
-If a `guardkit graphiti add-context` command exits non-zero:
+If a `mcp__fleet_memory__memory_write_payload` write returns an error:
 
 ```
-⚠️  Graphiti error seeding {artefact}
+⚠️  Fleet-memory error seeding {artefact}
     Markdown artefact was still written successfully.
-    Re-run the command manually:
-    guardkit graphiti add-context {path} --group {group}
+    Re-run /system-design with the fleet_memory MCP server connected to retry.
 ```
 
 ### OpenAPI Validator Not Installed
@@ -985,7 +996,7 @@ Created: docs/design/
   ├── diagrams/ (2 files)
   └── decisions/ (3 DDRs)
 
-Graphiti: 8 contracts + 4 models + 3 DDRs seeded
+Fleet-memory: 8 contracts + 4 models + 3 DDRs seeded
 ```
 
 ### Example 2: Single Bounded Context with Focus Flag
@@ -1067,9 +1078,9 @@ When the user runs `/system-design`, you MUST execute these steps in order:
 
 ### Step 1: Prerequisite Check
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`. Set `graphiti_available = true` if `enabled: true`, otherwise `false` — display the unavailability warning and continue.
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available = true` if reachable, otherwise `false` — display the unavailability warning and continue.
 
 **Check for local architecture context:**
 
@@ -1160,45 +1171,49 @@ for bc in bounded_contexts:
 # Retry up to 2 times on failure
 ```
 
-### Step 8: Graphiti Seeding
+### Step 8: Fleet-Memory Seeding
 
-If `graphiti_available` is true, run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`.
+If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern):
 
-If Graphiti is reachable, generate and offer the seeding commands (see `docs/internals/commands-lib/graphiti-preamble.md` — Seeding Commands Template):
+```
+# For each API contract file generated → document / ["design","api_contract"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "<contract_slug>",
+  "content": "<contract markdown>", "domain_tags": ["design", "api_contract"],
+  "source_ref": "docs/design/contracts/<contract-slug>.md"})
 
-```bash
-# For each API contract file generated
-guardkit graphiti add-context docs/design/contracts/{contract-slug}.md \
-  --group project_design
+# For each data model file generated → document / ["design","data_model"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "<model_slug>",
+  "content": "<data-model markdown>", "domain_tags": ["design", "data_model"],
+  "source_ref": "docs/design/models/<model-slug>.md"})
 
-# For each data model file generated
-guardkit graphiti add-context docs/design/models/{model-slug}.md \
-  --group project_design
-
-# For each DDR captured
-guardkit graphiti add-context docs/design/decisions/DDR-{NNN}.md \
-  --group architecture_decisions
+# For each DDR captured → adr / ["design"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit", "identifier": "DDR_{NNN}",
+  "decision": "<the decision>", "status": "accepted", "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{NNN}.md"})
 ```
 
-Ask the user: `"Run these seeding commands now? [Y/n]"`. If yes, execute each via the Bash tool.
+Ask the user: `"Seed these to fleet-memory now? [Y/n]"`. If yes and `memory_access = "mcp"`, write each via the MCP tool. If `memory_access = "cli"`, note writes need the MCP tools connected and skip.
 
-If Graphiti is unavailable, skip seeding and display the standard warning from the preamble.
+If fleet-memory is unavailable, skip seeding and display the standard warning from the preamble.
 
 ### Step 9: Summary
 
-Display file tree, Graphiti status, and next steps.
+Display file tree, fleet-memory status, and next steps.
 
 ### What NOT to Do
 
 - **DO NOT** skip the prerequisite gate — always check for architecture context first
 - **DO NOT** proceed without user confirmation at design checkpoints
 - **DO NOT** skip the C4 L3 review gate — diagrams require explicit approval
-- **DO NOT** seed Graphiti directly via Python — always use `guardkit graphiti add-context` CLI commands in Step 8
+- **DO NOT** seed fleet-memory via Python — always use the `mcp__fleet_memory__memory_write_payload` tool in Step 8
 - **DO NOT** generate code implementations — this is a design command, not an implementation command
 - **DO NOT** assume protocols — always ask the user which protocols to support
 - **DO NOT** skip contradiction detection — always check proposed contracts against existing ADRs
 - **DO NOT** ignore OpenAPI validation failures — attempt to fix or clearly report errors
-- **DO NOT** silently swallow Graphiti errors — always inform the user
+- **DO NOT** silently swallow fleet-memory errors — always inform the user
 
 ### Message Constants
 
@@ -1215,18 +1230,18 @@ and technology choices that /system-design builds upon.
 Run /system-arch first to establish architecture context.
 """
 
-GRAPHITI_UNAVAILABLE_MESSAGE = """
+MEMORY_UNAVAILABLE_MESSAGE = """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ WARNING: Graphiti unavailable
+⚠️ WARNING: Fleet-memory unavailable
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 System design will continue WITHOUT persistence.
 Markdown artefacts will be generated, but design context
 won't be queryable by /feature-spec or /feature-plan.
 
-To enable Graphiti:
-  1. Install: pip install guardkit-py[graphiti]
-  2. Configure: Set `enabled: true` in .guardkit/graphiti.yaml
+To enable fleet-memory:
+  1. Connect the `fleet_memory` MCP server (see .mcp.json), or
+  2. Ensure `guardkit memory status` reports REACHABLE (FLEET_MEMORY_* in .env)
 """
 
 SESSION_CANCELLED_MESSAGE = """
