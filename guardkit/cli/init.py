@@ -2,7 +2,12 @@
 GuardKit init CLI command.
 
 This module provides the `guardkit init` command for initializing GuardKit
-in a project directory with optional template and Graphiti seeding.
+in a project directory by applying a template.
+
+Knowledge capture is provided by the fleet-memory backend, which is entirely
+env-driven (``FLEET_MEMORY_*`` / ``GUARDKIT_MEMORY_BACKEND``) and needs no
+init-time configuration. (The former Graphiti seed-on-init / MCP-config /
+``graphiti.yaml`` writing was retired in FEAT-MEM-09.)
 
 Usage:
     guardkit init [TEMPLATE] [OPTIONS]
@@ -11,14 +16,13 @@ Arguments:
     TEMPLATE    Template to apply (default: 'default')
 
 Options:
-    --skip-graphiti    Skip Graphiti project seeding
     --project-name     Override project name (defaults to directory name)
-    --interactive      Interactive setup mode for project knowledge
+    --interactive      Interactive setup mode (collects project info -> CLAUDE.md)
+    --base-only        Install only the base template when extends is used
 
 Example:
     guardkit init                          # Initialize with default template
     guardkit init fastapi-python           # Initialize with FastAPI template
-    guardkit init --skip-graphiti          # Skip Graphiti seeding
     guardkit init react-typescript -n myapp  # With custom project name
     guardkit init --interactive            # Interactive setup mode
 
@@ -31,7 +35,7 @@ import asyncio
 import json
 import logging
 import shutil
-import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,10 +43,6 @@ import click
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
-from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-from guardkit.knowledge.config import _find_project_root, load_graphiti_config
-from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
-from guardkit.knowledge.project_seeding import estimate_episode_count, seed_project_knowledge
 from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 from guardkit.templates.resolver import (
     _get_templates_base_dir as _get_templates_base_dir,
@@ -57,122 +57,6 @@ logger = logging.getLogger(__name__)
 _SKIP_DIRS = {"templates", "config", "docker"}
 
 
-async def _check_llm_reachable(config: GraphitiConfig, timeout: float = 5.0) -> bool:
-    """Check if the configured LLM endpoint is reachable.
-
-    Sends a lightweight GET request to the LLM's /models endpoint.
-    Returns True immediately for OpenAI cloud provider (assumed always available).
-
-    Args:
-        config: Graphiti configuration with LLM provider details.
-        timeout: Maximum seconds to wait for a response (default 5).
-
-    Returns:
-        True if the LLM endpoint responds within the timeout, False otherwise.
-    """
-    if config.llm_provider not in ("vllm", "ollama"):
-        return True
-
-    if not config.llm_base_url:
-        return False
-
-    url = f"{config.llm_base_url.rstrip('/')}/models"
-
-    try:
-        import httpx
-    except ImportError:
-        # httpx unavailable — fall back to urllib
-        import urllib.request
-        import urllib.error
-
-        try:
-            req = urllib.request.Request(url, method="GET")
-            urllib.request.urlopen(req, timeout=timeout)
-            return True
-        except Exception:
-            return False
-
-    try:
-        async with httpx.AsyncClient() as http_client:
-            resp = await http_client.get(url, timeout=timeout)
-            return resp.status_code == 200
-    except Exception:
-        return False
-
-
-class _ProgressClient:
-    """Wraps a GraphitiClient to display per-episode progress during seeding.
-
-    Intercepts ``add_episode`` calls to print elapsed time and N/M counters
-    to the console. All other attribute access delegates to the wrapped client.
-    """
-
-    def __init__(self, client, total: int, console_obj):
-        self._client = client
-        self._total = total
-        self._console = console_obj
-        self._current = 0
-
-    async def _episode_with_progress(self, method, *args, **kwargs):
-        self._current += 1
-        self._console.print(
-            f"  Seeding episode {self._current}/{self._total}...",
-            end="",
-        )
-        start = time.monotonic()
-        try:
-            result = await method(*args, **kwargs)
-            elapsed = time.monotonic() - start
-            self._console.print(f" done ({elapsed:.1f}s)")
-            return result
-        except Exception as e:
-            elapsed = time.monotonic() - start
-            self._console.print(
-                f" [yellow]warning ({elapsed:.1f}s): {e}[/yellow]"
-            )
-            raise
-
-    async def add_episode(self, *args, **kwargs):
-        return await self._episode_with_progress(
-            self._client.add_episode, *args, **kwargs
-        )
-
-    async def upsert_episode(self, *args, **kwargs):
-        return await self._episode_with_progress(
-            self._client.upsert_episode, *args, **kwargs
-        )
-
-    async def initialize(self):
-        return await self._client.initialize()
-
-    async def close(self):
-        return await self._client.close()
-
-    @property
-    def enabled(self):
-        return self._client.enabled
-
-    def __getattr__(self, name):
-        return getattr(self._client, name)
-
-
-# ---------------------------------------------------------------------------
-# MCP configuration helpers
-# ---------------------------------------------------------------------------
-
-_MCP_SERVER_PATH_CONFIG = Path.home() / ".guardkit" / "mcp-server-path"
-_GRAPHITI_MCP_PATH_ENV = "GRAPHITI_MCP_PATH"
-
-# Default entity types for Graphiti MCP server config
-_DEFAULT_ENTITY_TYPES = [
-    {"name": "Preference", "description": "User preferences, choices, opinions, or selections"},
-    {"name": "Requirement", "description": "Specific needs, features, or functionality that must be fulfilled"},
-    {"name": "Procedure", "description": "Standard operating procedures and sequential instructions"},
-    {"name": "Topic", "description": "Subject of conversation, interest, or knowledge domain"},
-    {"name": "Document", "description": "Information content in various forms (books, articles, reports, etc.)"},
-]
-
-
 def _find_uv_command() -> str:
     """Return the absolute path to the uv command, or 'uv' if not found.
 
@@ -181,324 +65,6 @@ def _find_uv_command() -> str:
     """
     uv_path = shutil.which("uv")
     return uv_path if uv_path else "uv"
-
-
-def discover_graphiti_mcp_path(prompt_if_missing: bool = True) -> Optional[Path]:
-    """Discover the Graphiti MCP server installation path.
-
-    Discovery order:
-    1. GRAPHITI_MCP_PATH environment variable
-    2. ~/.guardkit/mcp-server-path config file
-    3. Prompt user if prompt_if_missing is True
-
-    If the path is discovered via prompt, stores it to the config file for
-    future use.
-
-    Args:
-        prompt_if_missing: If True, prompt the user when path not found.
-
-    Returns:
-        Path to the Graphiti MCP server directory, or None if not found.
-    """
-    import os
-
-    # Strategy 1: environment variable
-    env_val = os.environ.get(_GRAPHITI_MCP_PATH_ENV)
-    if env_val:
-        candidate = Path(env_val).expanduser().resolve()
-        if candidate.is_dir():
-            logger.debug(f"Graphiti MCP path from env: {candidate}")
-            return candidate
-        logger.warning(f"GRAPHITI_MCP_PATH={env_val} does not exist, ignoring")
-
-    # Strategy 2: config file
-    if _MCP_SERVER_PATH_CONFIG.is_file():
-        try:
-            stored = _MCP_SERVER_PATH_CONFIG.read_text().strip()
-            if stored:
-                candidate = Path(stored).expanduser().resolve()
-                if candidate.is_dir():
-                    logger.debug(f"Graphiti MCP path from config: {candidate}")
-                    return candidate
-                logger.warning(f"Stored MCP path {stored} does not exist, ignoring")
-        except Exception as e:
-            logger.debug(f"Could not read mcp-server-path config: {e}")
-
-    # Strategy 3: prompt user
-    if prompt_if_missing:
-        try:
-            user_input = Prompt.ask(
-                "Enter path to Graphiti MCP server directory",
-                default="",
-            )
-            if user_input:
-                candidate = Path(user_input).expanduser().resolve()
-                if candidate.is_dir():
-                    # Store for future use
-                    try:
-                        _MCP_SERVER_PATH_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-                        _MCP_SERVER_PATH_CONFIG.write_text(str(candidate))
-                        logger.info(f"Stored Graphiti MCP path to {_MCP_SERVER_PATH_CONFIG}")
-                    except Exception as e:
-                        logger.debug(f"Could not store MCP path: {e}")
-                    return candidate
-                else:
-                    console.print(f"  [yellow]Warning: Path does not exist: {candidate}[/yellow]")
-        except Exception as e:
-            logger.debug(f"Prompt failed: {e}")
-
-    return None
-
-
-def _resolve_embedding_dimensions(settings: Any) -> int:
-    """Resolve the embedding dimension to use for MCP config.
-
-    Precedence:
-      1. Explicit ``settings.embedding_dimensions`` if not None.
-      2. ``KNOWN_EMBEDDING_DIMS.get(settings.embedding_model)`` if the model
-         is known.
-      3. ``1536`` (OpenAI ada-002 / text-embedding-3-small default, which
-         matches the default model assumed when ``settings.embedding_model``
-         is unset).
-
-    Pure function — no logging, no I/O. Callers that need to warn the
-    operator when the tier-3 fallback fires should do so at the call site.
-    """
-    from guardkit.knowledge.graphiti_client import KNOWN_EMBEDDING_DIMS
-
-    explicit = getattr(settings, "embedding_dimensions", None)
-    if explicit is not None:
-        return explicit
-
-    model = getattr(settings, "embedding_model", None) or ""
-    known = KNOWN_EMBEDDING_DIMS.get(model)
-    if known is not None:
-        return known
-
-    return 1536
-
-
-def generate_mcp_server_config(
-    project_id: str,
-    settings: Any,
-) -> Dict[str, Any]:
-    """Generate the per-project Graphiti MCP server YAML config as a dict.
-
-    Reads LLM/embedding/database settings from the guardkit graphiti settings
-    object and produces a config dict compatible with the Graphiti MCP server.
-
-    Args:
-        project_id: Normalized project ID for namespace.
-        settings: GraphitiSettings instance loaded from .guardkit/graphiti.yaml.
-
-    Returns:
-        Dict representing the MCP server YAML config.
-    """
-    llm_base_url = getattr(settings, "llm_base_url", None) or "http://localhost:8000/v1"
-    llm_model = getattr(settings, "llm_model", None) or "gpt-4o"
-    llm_max_tokens = getattr(settings, "llm_max_tokens", None) or 4096
-    embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
-    embedding_model = getattr(settings, "embedding_model", None) or "text-embedding-ada-002"
-    embedding_dimensions = _resolve_embedding_dimensions(settings)
-    falkordb_host = getattr(settings, "falkordb_host", None) or "localhost"
-    falkordb_port = getattr(settings, "falkordb_port", None) or 6379
-
-    return {
-        "server": {"transport": "stdio"},
-        "llm": {
-            "provider": "openai",
-            "model": llm_model,
-            "max_tokens": llm_max_tokens,
-            "providers": {
-                "openai": {
-                    "api_key": "${OPENAI_API_KEY}",
-                    "api_url": f"${{LLM_API_URL:{llm_base_url}}}",
-                }
-            },
-        },
-        "embedder": {
-            "provider": "openai",
-            "model": embedding_model,
-            "dimensions": embedding_dimensions,
-            "providers": {
-                "openai": {
-                    "api_key": "${OPENAI_API_KEY}",
-                    "api_url": f"${{EMBEDDING_API_URL:{embedding_base_url}}}",
-                }
-            },
-        },
-        "database": {
-            "provider": "falkordb",
-            "providers": {
-                "falkordb": {
-                    "uri": f"redis://{falkordb_host}:{falkordb_port}",
-                    "password": "",
-                    "database": "default_db",
-                }
-            },
-        },
-        "graphiti": {
-            "group_id": project_id,
-            "user_id": "user",
-            "entity_types": _DEFAULT_ENTITY_TYPES,
-        },
-    }
-
-
-def write_mcp_server_config(
-    project_id: str,
-    mcp_server_path: Path,
-    settings: Any,
-) -> Optional[Path]:
-    """Write the per-project MCP server config YAML to {mcp_server_path}/config/.
-
-    Args:
-        project_id: Normalized project ID.
-        mcp_server_path: Path to the Graphiti MCP server directory.
-        settings: GraphitiSettings instance.
-
-    Returns:
-        Path to the written config file, or None on failure.
-    """
-    try:
-        try:
-            import yaml
-        except ImportError:
-            logger.warning("PyYAML not installed, cannot write MCP server config")
-            return None
-
-        config_dir = mcp_server_path / "config"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_file = config_dir / f"config-{project_id}.yaml"
-
-        config_data = generate_mcp_server_config(project_id, settings)
-
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
-
-        logger.info(f"Written MCP server config to {config_file}")
-        return config_file
-
-    except Exception as e:
-        logger.warning(f"Failed to write MCP server config: {e}")
-        return None
-
-
-def generate_mcp_json_entry(
-    project_id: str,
-    mcp_server_path: Path,
-    config_path: Path,
-    settings: Any,
-) -> Dict[str, Any]:
-    """Generate the mcpServers entry dict for .mcp.json.
-
-    Args:
-        project_id: Normalized project ID (used as server key).
-        mcp_server_path: Absolute path to Graphiti MCP server directory.
-        config_path: Absolute path to the per-project config YAML.
-        settings: GraphitiSettings instance for endpoint env vars.
-
-    Returns:
-        Dict with the mcpServers entry for this project.
-    """
-    uv_cmd = _find_uv_command()
-    llm_base_url = getattr(settings, "llm_base_url", None) or "http://localhost:8000/v1"
-    embedding_base_url = getattr(settings, "embedding_base_url", None) or "http://localhost:8001/v1"
-    embedding_dimensions = _resolve_embedding_dimensions(settings)
-
-    return {
-        "type": "stdio",
-        "command": uv_cmd,
-        "args": [
-            "--directory",
-            str(mcp_server_path),
-            "run",
-            "main.py",
-            "--transport",
-            "stdio",
-            "--config",
-            str(config_path),
-        ],
-        "env": {
-            "CONFIG_PATH": str(config_path),
-            "OPENAI_API_KEY": "not-needed-vllm-local",
-            "LLM_API_URL": llm_base_url,
-            "EMBEDDING_API_URL": embedding_base_url,
-            "EMBEDDING_DIM": str(embedding_dimensions),
-        },
-    }
-
-
-def write_mcp_json(
-    target_dir: Path,
-    mcp_server_path: Path,
-    project_id: str,
-    settings: Any,
-    server_key: str = "graphiti",
-) -> bool:
-    """Write or merge the Graphiti MCP entry into .mcp.json.
-
-    If .mcp.json already exists, reads it and merges the graphiti entry under
-    mcpServers, preserving all other server entries. If it does not exist,
-    creates it fresh.
-
-    Args:
-        target_dir: Project directory where .mcp.json should be written.
-        mcp_server_path: Path to the Graphiti MCP server directory.
-        project_id: Normalized project ID.
-        settings: GraphitiSettings instance.
-        server_key: Key to use in mcpServers (default: "graphiti").
-
-    Returns:
-        True if written successfully, False otherwise.
-    """
-    mcp_json_path = target_dir / ".mcp.json"
-
-    try:
-        # Write the per-project server config YAML first
-        config_path = write_mcp_server_config(project_id, mcp_server_path, settings)
-        if config_path is None:
-            logger.warning("Could not write MCP server config, skipping .mcp.json")
-            return False
-
-        # Generate the mcpServers entry
-        entry = generate_mcp_json_entry(project_id, mcp_server_path, config_path, settings)
-
-        # Load existing .mcp.json or start fresh
-        existing: Dict[str, Any] = {}
-        if mcp_json_path.is_file():
-            try:
-                with open(mcp_json_path, "r") as f:
-                    loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    existing = loaded
-            except Exception as e:
-                logger.warning(f"Could not parse existing .mcp.json: {e}, overwriting")
-
-        # Merge: add/update mcpServers.graphiti
-        if "mcpServers" not in existing or not isinstance(existing["mcpServers"], dict):
-            existing["mcpServers"] = {}
-        existing["mcpServers"][server_key] = entry
-
-        # Write back
-        with open(mcp_json_path, "w") as f:
-            json.dump(existing, f, indent=2)
-            f.write("\n")
-
-        logger.info(f"Written MCP config to {mcp_json_path}")
-        return True
-
-    except Exception as e:
-        logger.warning(f"Failed to write .mcp.json: {e}")
-        return False
-
-
-# Template resolution is now provided by guardkit.templates.resolver.
-# The wrapper below delegates to the module-level _get_templates_base_dir
-# and _get_user_templates_dir names so that existing test mocks which
-# patch "guardkit.cli.init._get_templates_base_dir" etc. continue to
-# control behaviour.  The canonical, public API lives in
-# guardkit.templates.resolver.resolve_template_source_dir.
 
 
 def _resolve_template_source_dir(template_name: str) -> Optional[Path]:
@@ -687,159 +253,6 @@ def _copy_manifest(template_dir: Path, target_dir: Path) -> bool:
         target_dir / ".claude" / "manifest.json",
         label="manifest.json",
     )
-
-
-def write_graphiti_config(project_name: str, target_dir: Path) -> bool:
-    """Write project_id to .guardkit/graphiti.yaml configuration file.
-
-    Creates or updates the graphiti.yaml file with the project_id field.
-    This ensures explicit project_id is used instead of auto-detection.
-
-    Args:
-        project_name: The project name to normalize and write as project_id.
-        target_dir: Target directory containing .guardkit folder.
-
-    Returns:
-        True if config written successfully, False otherwise.
-    """
-    try:
-        # Import yaml here to handle optional dependency
-        try:
-            import yaml
-        except ImportError:
-            logger.warning("PyYAML not installed, cannot write graphiti.yaml")
-            return False
-
-        config_dir = target_dir / ".guardkit"
-        config_file = config_dir / "graphiti.yaml"
-
-        # Normalize project_id using the same logic as GraphitiClient
-        project_id = normalize_project_id(project_name)
-
-        # Load existing config if present
-        config_data = {}
-        if config_file.exists():
-            try:
-                with open(config_file, 'r') as f:
-                    existing_data = yaml.safe_load(f)
-                    if existing_data and isinstance(existing_data, dict):
-                        config_data = existing_data
-            except Exception as e:
-                logger.debug(f"Could not load existing graphiti.yaml: {e}")
-
-        # Update project_id
-        config_data['project_id'] = project_id
-
-        # Write config file
-        config_dir.mkdir(parents=True, exist_ok=True)
-        with open(config_file, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-        logger.info(f"Written project_id '{project_id}' to {config_file}")
-        return True
-
-    except Exception as e:
-        logger.warning(f"Failed to write graphiti.yaml: {e}")
-        return False
-
-
-def _find_source_graphiti_config(copy_graphiti: str) -> Optional[Path]:
-    """Find the source graphiti.yaml to copy from.
-
-    If an explicit path is given, looks for .guardkit/graphiti.yaml under that path.
-    If ``copy_graphiti`` is "auto", uses a two-strategy approach:
-      1. Walk up from the parent of cwd to find an ancestor project's config.
-      2. Scan sibling directories of cwd for a .guardkit/graphiti.yaml.
-    Skips cwd itself to avoid finding the target project's own config.
-
-    Args:
-        copy_graphiti: Either "auto" for auto-discovery or an explicit directory path.
-
-    Returns:
-        Path to the source graphiti.yaml if found, or None.
-    """
-    if copy_graphiti == "auto":
-        cwd = Path.cwd().resolve()
-        parent_dir = cwd.parent
-
-        # Strategy 1: Walk up from the parent of cwd (finds ancestor projects)
-        project_root = _find_project_root(parent_dir)
-        if project_root is not None:
-            candidate = project_root / ".guardkit" / "graphiti.yaml"
-            if candidate.is_file():
-                return candidate
-
-        # Strategy 2: Scan sibling directories (finds peer projects like guardkit/)
-        # Resolve both sides when comparing to handle macOS /var -> /private/var symlinks.
-        try:
-            for sibling in sorted(parent_dir.iterdir()):
-                if not sibling.is_dir() or sibling.resolve() == cwd:
-                    continue
-                candidate = sibling / ".guardkit" / "graphiti.yaml"
-                if candidate.is_file():
-                    return candidate
-        except PermissionError:
-            pass
-
-        return None
-    else:
-        # Explicit path provided
-        source_dir = Path(copy_graphiti).expanduser().resolve()
-        candidate = source_dir / ".guardkit" / "graphiti.yaml"
-        return candidate if candidate.is_file() else None
-
-
-def copy_graphiti_config(
-    project_name: str,
-    target_dir: Path,
-    source_config: Path,
-) -> bool:
-    """Copy a source graphiti.yaml to the target, replacing project_id.
-
-    Loads the full source config, replaces the ``project_id`` field with the
-    normalized version of ``project_name``, and writes the result to
-    ``target_dir/.guardkit/graphiti.yaml``.
-
-    Args:
-        project_name: The new project name; will be normalized to a valid project_id.
-        target_dir: Target directory containing .guardkit folder.
-        source_config: Path to the source graphiti.yaml to copy from.
-
-    Returns:
-        True if config written successfully, False otherwise.
-    """
-    try:
-        try:
-            import yaml
-        except ImportError:
-            logger.warning("PyYAML not installed, cannot copy graphiti.yaml")
-            return False
-
-        # Load source config
-        with open(source_config, "r") as f:
-            config_data = yaml.safe_load(f)
-
-        if not config_data or not isinstance(config_data, dict):
-            logger.warning(f"Source graphiti.yaml is empty or invalid: {source_config}")
-            return False
-
-        # Replace project_id with the normalized new project name
-        project_id = normalize_project_id(project_name)
-        config_data["project_id"] = project_id
-
-        # Write to target
-        config_dir = target_dir / ".guardkit"
-        config_file = config_dir / "graphiti.yaml"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-        logger.info(f"Copied graphiti config with project_id '{project_id}' to {config_file}")
-        return True
-
-    except Exception as e:
-        logger.warning(f"Failed to copy graphiti.yaml: {e}")
-        return False
 
 
 def _load_manifest(template_dir: Path) -> Optional[Dict[str, Any]]:
@@ -1207,22 +620,39 @@ def apply_template(
     return True
 
 
-async def interactive_setup(project_name: str) -> ProjectOverviewEpisode:
-    """Run interactive setup for project knowledge.
+# ---------------------------------------------------------------------------
+# Interactive project setup (optional; renders CLAUDE.md, no knowledge graph)
+# ---------------------------------------------------------------------------
 
-    Prompts the user for project information including purpose, tech stack,
-    frameworks, and key goals.
+
+@dataclass
+class _ProjectInfo:
+    """Lightweight project metadata collected during ``--interactive`` init.
+
+    Replaces the retired Graphiti ``ProjectOverviewEpisode`` (FEAT-MEM-09); used
+    only to render CLAUDE.md and carries no knowledge-graph coupling.
+    """
+
+    project_name: str
+    purpose: str
+    primary_language: str
+    frameworks: List[str]
+    key_goals: List[str]
+
+
+async def interactive_setup(project_name: str) -> _ProjectInfo:
+    """Prompt for project purpose, primary language, frameworks, and key goals.
 
     Args:
         project_name: Name of the project.
 
     Returns:
-        ProjectOverviewEpisode populated with user-provided information.
+        A ``_ProjectInfo`` populated with the user-provided information.
     """
     default_purpose = "A software project"
     purpose = Prompt.ask(
         "What is the purpose of this project?",
-        default=default_purpose
+        default=default_purpose,
     )
     # Handle empty response (e.g., when mocked in tests)
     if not purpose:
@@ -1232,19 +662,18 @@ async def interactive_setup(project_name: str) -> ProjectOverviewEpisode:
     primary_language = Prompt.ask(
         "What is the primary programming language?",
         choices=["python", "typescript", "go", "rust", "java", "other"],
-        default=default_language
+        default=default_language,
     )
-    # Handle empty response
     if not primary_language:
         primary_language = default_language
 
     frameworks_input = Prompt.ask(
         "What frameworks are you using? (comma-separated)",
-        default=""
+        default="",
     )
     frameworks = [f.strip() for f in frameworks_input.split(",") if f.strip()]
 
-    key_goals = []
+    key_goals: List[str] = []
     console.print("Enter key goals (empty line to finish):")
     while True:
         goal = Prompt.ask("Goal", default="")
@@ -1252,7 +681,7 @@ async def interactive_setup(project_name: str) -> ProjectOverviewEpisode:
             break
         key_goals.append(goal)
 
-    return ProjectOverviewEpisode(
+    return _ProjectInfo(
         project_name=project_name,
         purpose=purpose,
         primary_language=primary_language,
@@ -1261,26 +690,27 @@ async def interactive_setup(project_name: str) -> ProjectOverviewEpisode:
     )
 
 
-def generate_claude_md(episode: ProjectOverviewEpisode, target_dir: Path) -> None:
-    """Generate CLAUDE.md from ProjectOverviewEpisode.
-
-    Creates a CLAUDE.md file in the target directory with project information
-    extracted from the episode.
+def generate_claude_md(info: _ProjectInfo, target_dir: Path) -> None:
+    """Generate CLAUDE.md from collected project information.
 
     Args:
-        episode: ProjectOverviewEpisode containing project information.
+        info: Project metadata gathered by :func:`interactive_setup`.
         target_dir: Directory where CLAUDE.md should be created.
     """
-    frameworks_text = ', '.join(episode.frameworks) if episode.frameworks else 'None specified'
-    goals_text = '\n'.join(f'- {goal}' for goal in episode.key_goals) if episode.key_goals else 'None specified'
+    frameworks_text = ", ".join(info.frameworks) if info.frameworks else "None specified"
+    goals_text = (
+        "\n".join(f"- {goal}" for goal in info.key_goals)
+        if info.key_goals
+        else "None specified"
+    )
 
-    content = f"""# {episode.project_name}
+    content = f"""# {info.project_name}
 
 ## Purpose
-{episode.purpose}
+{info.purpose}
 
 ## Technology Stack
-- **Primary Language**: {episode.primary_language}
+- **Primary Language**: {info.primary_language}
 - **Frameworks**: {frameworks_text}
 
 ## Key Goals
@@ -1291,37 +721,31 @@ def generate_claude_md(episode: ProjectOverviewEpisode, target_dir: Path) -> Non
 
 async def _cmd_init(
     template: str,
-    skip_graphiti: bool,
-    project_name: Optional[str],
+    project_name: Optional[str] = None,
     interactive: bool = False,
-    copy_graphiti: Optional[str] = None,
     verbose: bool = False,
-    no_questions: bool = False,
-    with_mcp: bool = False,
     base_only: bool = False,
 ) -> int:
-    """Async implementation of init command.
+    """Async implementation of the init command.
+
+    Applies a template and, optionally, runs interactive project setup. Knowledge
+    capture is provided by the fleet-memory backend, which is env-driven
+    (``FLEET_MEMORY_*`` / ``GUARDKIT_MEMORY_BACKEND``) and needs no init-time
+    configuration.
 
     Args:
         template: Template name to apply.
-        skip_graphiti: If True, skip Graphiti seeding.
-        project_name: Override project name.
-        interactive: If True, run interactive setup mode.
-        copy_graphiti: If set, copy graphiti config from an existing project.
-            Use "auto" for auto-discovery or an explicit directory path.
+        project_name: Override project name (defaults to directory name).
+        interactive: If True, run interactive setup and offer to write CLAUDE.md.
         verbose: If True, show all log output including third-party DEBUG/INFO.
-        no_questions: If True, skip the auto-offer prompt and use project_id-only.
-        with_mcp: If True, generate .mcp.json and per-project MCP server config.
         base_only: If True, install only the base template when extends is used.
 
     Returns:
         Exit code (0 for success).
     """
-    # Suppress noisy third-party loggers (same pattern as graphiti.py:598-599)
     if not verbose:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
-        logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.WARNING)
 
     project_dir = Path.cwd()
     project_name = project_name or project_dir.name
@@ -1335,7 +759,9 @@ async def _cmd_init(
     if apply_template(template, project_dir, base_only=base_only):
         console.print(f"  [green]Applied template: {template}[/green]")
     else:
-        console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
+        console.print(
+            f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]"
+        )
 
     # Step 1.0b: Auto-install the features/conftest.py pytest-bdd bridge when the
     # project already has tagged ``.feature`` files but no bridge
@@ -1344,335 +770,28 @@ async def _cmd_init(
     if install_features_conftest_bridge(project_dir):
         console.print("  [green]Installed features/conftest.py BDD bridge[/green]")
 
-    # Step 1.1: Write Graphiti config with project_id
-    # Track whether we obtained a full config (with connection details).
-    # If only project_id was written, seeding would fail with default Neo4j settings.
-    graphiti_config_complete = False
-
-    if copy_graphiti is not None:
-        # --copy-graphiti flag: try to copy config from existing project
-        source_config = _find_source_graphiti_config(copy_graphiti)
-        if source_config is not None:
-            if copy_graphiti_config(project_name, project_dir, source_config):
-                console.print(
-                    f"  [green]Copied Graphiti config from {source_config} "
-                    f"to .guardkit/graphiti.yaml[/green]"
-                )
-                graphiti_config_complete = True
-            else:
-                console.print(
-                    f"  [yellow]Warning: Could not copy graphiti.yaml, "
-                    f"falling back to project_id only[/yellow]"
-                )
-                write_graphiti_config(project_name, project_dir)
-        else:
-            console.print(
-                f"  [yellow]Warning: No source graphiti.yaml found "
-                f"(--copy-graphiti), falling back to project_id only[/yellow]"
-            )
-            console.print(
-                f"  [dim]Tip: Use --copy-graphiti-from /path/to/project "
-                f"to specify the source project explicitly[/dim]"
-            )
-            write_graphiti_config(project_name, project_dir)
-    else:
-        # No explicit --copy-graphiti flag: auto-offer if a parent/sibling config exists
-        source_config = None if no_questions else _find_source_graphiti_config("auto")
-        if source_config is not None:
-            console.print(f"\nFound existing graphiti.yaml at {source_config}")
-            try:
-                should_copy = Confirm.ask(
-                    "Copy infrastructure config to this project?", default=True
-                )
-            except Exception:
-                should_copy = True
-            if should_copy:
-                if copy_graphiti_config(project_name, project_dir, source_config):
-                    console.print(
-                        f"  [green]Copied Graphiti config from {source_config} "
-                        f"to .guardkit/graphiti.yaml[/green]"
-                    )
-                    graphiti_config_complete = True
-                else:
-                    console.print(
-                        f"  [yellow]Warning: Could not copy graphiti.yaml, "
-                        f"falling back to project_id only[/yellow]"
-                    )
-                    write_graphiti_config(project_name, project_dir)
-            else:
-                if write_graphiti_config(project_name, project_dir):
-                    console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
-                else:
-                    console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
-        elif write_graphiti_config(project_name, project_dir):
-            console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
-        else:
-            console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
-
-    # Step 1.5: Interactive setup (if requested)
-    project_overview_episode = None
+    # Step 2 (optional): Interactive project setup -> CLAUDE.md
     if interactive:
         console.print("\n[bold]Interactive Setup[/bold]")
-        project_overview_episode = await interactive_setup(project_name)
-
-        # Ask about CLAUDE.md generation
+        info = await interactive_setup(project_name)
         try:
-            should_generate = Confirm.ask("Save this information to CLAUDE.md?", default=True)
+            should_generate = Confirm.ask(
+                "Save this information to CLAUDE.md?", default=True
+            )
             if should_generate:
-                generate_claude_md(project_overview_episode, project_dir)
+                generate_claude_md(info, project_dir)
                 console.print("  [green]Generated CLAUDE.md[/green]")
         except Exception:
-            # In non-interactive contexts (e.g., tests without mock), skip CLAUDE.md prompt
+            # In non-interactive contexts (e.g., tests without mock), skip prompt.
             pass
-
-    # Track whether system seeding ran (for summary)
-    system_seeded = False
-
-    # Step 2: Seed Graphiti (if not skipped)
-    # Also skip if --copy-graphiti was used but failed — seeding with default
-    # Neo4j settings would just produce connection errors for minutes.
-    if not skip_graphiti and copy_graphiti is not None and not graphiti_config_complete:
-        skip_graphiti = True
-        console.print(
-            "\n[bold]Step 2: Skipping Graphiti seeding "
-            "(no valid config found)[/bold]"
-        )
-        console.print(
-            "  [dim]Run 'guardkit graphiti seed' after configuring "
-            ".guardkit/graphiti.yaml[/dim]"
-        )
-    elif skip_graphiti:
-        console.print("\n[bold]Step 2: Skipping Graphiti seeding (--skip-graphiti)[/bold]")
-    else:
-        console.print("\n[bold]Step 2: Seeding project knowledge to Graphiti...[/bold]")
-
-        # Initialize Graphiti client from .guardkit/graphiti.yaml
-        client = None
-        try:
-            settings = load_graphiti_config()
-            config = GraphitiConfig(
-                enabled=settings.enabled,
-                neo4j_uri=settings.neo4j_uri,
-                neo4j_user=settings.neo4j_user,
-                neo4j_password=settings.neo4j_password,
-                timeout=settings.timeout,
-                project_id=project_name,
-                graph_store=settings.graph_store,
-                falkordb_host=settings.falkordb_host,
-                falkordb_port=settings.falkordb_port,
-                host=settings.host,
-                port=settings.port,
-                llm_provider=settings.llm_provider,
-                llm_base_url=settings.llm_base_url,
-                llm_model=settings.llm_model,
-                llm_max_tokens=settings.llm_max_tokens,
-                embedding_provider=settings.embedding_provider,
-                embedding_base_url=settings.embedding_base_url,
-                embedding_model=settings.embedding_model,
-                embedding_dimensions=getattr(settings, "embedding_dimensions", None),
-            )
-            client = GraphitiClient(config)
-            initialized = await client.initialize()
-
-            if not initialized or not client.enabled:
-                console.print("  [yellow]Warning: Graphiti unavailable, skipping seeding[/yellow]")
-            else:
-                # Estimate total episodes for progress display
-                total_episodes = estimate_episode_count(
-                    skip_overview=False,
-                    project_dir=project_dir,
-                    project_overview_episode=project_overview_episode,
-                )
-
-                # Wrap client with progress proxy
-                progress_client = _ProgressClient(client, total_episodes, console)
-
-                # Seed project knowledge with progress
-                seed_start = time.monotonic()
-                result = await seed_project_knowledge(
-                    project_name=project_name,
-                    client=progress_client,
-                    project_dir=project_dir,
-                    project_overview_episode=project_overview_episode,
-                )
-                seed_elapsed = time.monotonic() - seed_start
-
-                if result.success:
-                    console.print(
-                        f"  [green]Project knowledge seeded successfully"
-                        f" ({seed_elapsed:.1f}s total)[/green]"
-                    )
-                    for component_result in result.results:
-                        status = "[green]OK[/green]" if component_result.success else "[yellow]WARN[/yellow]"
-                        console.print(f"    {status} {component_result.component}: {component_result.message}")
-                    # Step 2.5: Offer system seeding after successful project seeding
-                    if client and client.enabled:
-                        try:
-                            if no_questions:
-                                should_seed_system = True
-                            else:
-                                should_seed_system = Confirm.ask(
-                                    "Seed system knowledge now? (recommended for AutoBuild)",
-                                    default=True,
-                                )
-                        except Exception:
-                            should_seed_system = True  # Non-interactive fallback
-
-                        if should_seed_system:
-                            # Pre-flight: check LLM reachability before spending
-                            # ~32s on retries if the endpoint is down.
-                            llm_reachable = await _check_llm_reachable(config)
-                            if not llm_reachable:
-                                llm_url = config.llm_base_url or "(not configured)"
-                                console.print(
-                                    f"\n  [yellow]LLM at {llm_url} is unreachable."
-                                    " System knowledge seeding requires an LLM.[/yellow]"
-                                )
-                                try:
-                                    if no_questions:
-                                        skip_system_seed = True
-                                    else:
-                                        skip_system_seed = Confirm.ask(
-                                            "Skip system seeding?",
-                                            default=True,
-                                        )
-                                except Exception:
-                                    skip_system_seed = True
-
-                                if skip_system_seed:
-                                    console.print(
-                                        "  [dim]Skipping system seeding."
-                                        " Run 'guardkit graphiti seed-system'"
-                                        " when the LLM is available.[/dim]"
-                                    )
-                                    should_seed_system = False
-                                else:
-                                    console.print(
-                                        "\n  [red]Cannot proceed without LLM.[/red]"
-                                    )
-                                    console.print(
-                                        "  [dim]Check that the LLM server is running at"
-                                        f" {llm_url}\n"
-                                        "  and update .guardkit/graphiti.yaml if the"
-                                        " URL has changed.[/dim]"
-                                    )
-                                    return  # Exit init early
-
-                        if should_seed_system:
-                            console.print(
-                                "\n[bold]Step 3: Seeding system knowledge...[/bold]"
-                            )
-                            try:
-                                from guardkit.knowledge.system_seeding import (
-                                    seed_system_content,
-                                )
-
-                                sys_result = await seed_system_content(
-                                    client, template_name=template
-                                )
-                                if sys_result.success:
-                                    console.print(
-                                        "  [green]System knowledge seeded"
-                                        " successfully[/green]"
-                                    )
-                                    for comp in sys_result.results:
-                                        status = (
-                                            "[green]OK[/green]"
-                                            if comp.success
-                                            else "[yellow]WARN[/yellow]"
-                                        )
-                                        console.print(
-                                            f"    {status} {comp.component}:"
-                                            f" {comp.message}"
-                                        )
-                                    system_seeded = True
-                                else:
-                                    console.print(
-                                        "  [yellow]Warning: Some system seeding"
-                                        " components failed[/yellow]"
-                                    )
-                            except Exception as e:
-                                console.print(
-                                    f"  [yellow]Warning: System seeding"
-                                    f" error: {e}[/yellow]"
-                                )
-                                logger.debug(
-                                    f"System seeding error: {e}", exc_info=True
-                                )
-
-                else:
-                    console.print(
-                        f"  [yellow]Warning: Some seeding components failed"
-                        f" ({seed_elapsed:.1f}s total)[/yellow]"
-                    )
-
-        except Exception as e:
-            console.print(f"  [yellow]Warning: Graphiti seeding error: {e}[/yellow]")
-            logger.debug(f"Graphiti error: {e}", exc_info=True)
-        finally:
-            if client:
-                try:
-                    await client.close()
-                except Exception:
-                    pass
-
-    # Step 3 (optional): Generate MCP configuration
-    mcp_configured = False
-    if with_mcp:
-        console.print("\n[bold]Step 3: Generating MCP configuration...[/bold]")
-        try:
-            settings = load_graphiti_config()
-            project_id = normalize_project_id(project_name)
-            mcp_server_path = discover_graphiti_mcp_path(prompt_if_missing=not no_questions)
-            if mcp_server_path is not None:
-                if write_mcp_json(project_dir, mcp_server_path, project_id, settings):
-                    config_path = mcp_server_path / "config" / f"config-{project_id}.yaml"
-                    console.print(f"  [green]Generated .mcp.json with Graphiti MCP config[/green]")
-                    console.print(f"  [green]Written MCP server config: {config_path}[/green]")
-                    mcp_configured = True
-                    # Warn only when the resolver fell back to the tier-3
-                    # default (1536) because the model is unknown. Tier 1
-                    # (explicit) and tier 2 (known model) cases are silent.
-                    explicit_dims = getattr(settings, "embedding_dimensions", None)
-                    if explicit_dims is None:
-                        model = getattr(settings, "embedding_model", None) or ""
-                        from guardkit.knowledge.graphiti_client import KNOWN_EMBEDDING_DIMS
-                        if model and model not in KNOWN_EMBEDDING_DIMS:
-                            console.print(
-                                f"  [yellow]Warning: embedding model '{model}' not in KNOWN_EMBEDDING_DIMS; "
-                                f"defaulting to 1536.[/yellow]\n"
-                                f"  [dim]Add 'embedding_dimensions: <dim>' to .guardkit/graphiti.yaml, "
-                                f"or extend KNOWN_EMBEDDING_DIMS, to silence this warning.[/dim]"
-                            )
-                else:
-                    console.print("  [yellow]Warning: Could not write .mcp.json[/yellow]")
-            else:
-                console.print(
-                    "  [yellow]Warning: Graphiti MCP server path not found.[/yellow]\n"
-                    "  [dim]Set GRAPHITI_MCP_PATH env var or re-run with --with-mcp "
-                    "after cloning the Graphiti repo.[/dim]"
-                )
-        except Exception as e:
-            console.print(f"  [yellow]Warning: MCP config error: {e}[/yellow]")
-            logger.debug(f"MCP config error: {e}", exc_info=True)
 
     # Summary
     console.print("\n[bold green]GuardKit initialized successfully![/bold green]")
-    if not skip_graphiti:
-        console.print(
-            "\n  [green]Seeded:[/green] project knowledge "
-            "(project overview from CLAUDE.md/README.md)"
-        )
-        if system_seeded:
-            console.print(
-                "  [green]Seeded:[/green] system knowledge "
-                "(templates, rules, role constraints, implementation modes)"
-            )
-        else:
-            console.print(
-                "  [yellow]Not yet seeded:[/yellow] system knowledge "
-                "(templates, rules, role constraints, implementation modes)"
-            )
+    console.print(
+        "\n  [dim]Memory: knowledge capture is env-driven (fleet-memory). Set "
+        "FLEET_MEMORY_* / GUARDKIT_MEMORY_BACKEND to enable; no init-time "
+        "config is written.[/dim]"
+    )
 
     try:
         pattern_chain = _resolve_extends_chain(template)
@@ -1694,36 +813,16 @@ async def _cmd_init(
             "         see docs/guides/template-two-layer-model.md[/dim]"
         )
 
-    console.print(f"\nNext steps:")
-    if not skip_graphiti and not system_seeded:
-        console.print(f"  1. Seed system knowledge: guardkit graphiti seed-system")
-        console.print(f"  2. Create a task: /task-create \"Your first task\"")
-        console.print(f"  3. Work on it: /task-work TASK-XXX")
-        console.print(f"  4. Complete it: /task-complete TASK-XXX")
-        console.print(
-            "\n  [dim]Tip: For multi-project FalkorDB setups, use --copy-graphiti "
-            "to share config across projects.[/dim]"
-        )
-        console.print(
-            "  [dim]Tip: If using a local LLM (~2x slower than GB10 vLLM), use "
-            "--timeout to increase per-episode timeout "
-            "(e.g., guardkit graphiti seed-system --timeout 300).[/dim]"
-        )
-    else:
-        console.print(f"  1. Create a task: /task-create \"Your first task\"")
-        console.print(f"  2. Work on it: /task-work TASK-XXX")
-        console.print(f"  3. Complete it: /task-complete TASK-XXX")
+    console.print("\nNext steps:")
+    console.print('  1. Create a task: /task-create "Your first task"')
+    console.print("  2. Work on it: /task-work TASK-XXX")
+    console.print("  3. Complete it: /task-complete TASK-XXX")
 
     return 0
 
 
 @click.command()
 @click.argument("template", default="default")
-@click.option(
-    "--skip-graphiti",
-    is_flag=True,
-    help="Skip Graphiti project knowledge seeding",
-)
 @click.option(
     "--project-name",
     "-n",
@@ -1734,41 +833,13 @@ async def _cmd_init(
     "--interactive",
     "-i",
     is_flag=True,
-    help="Interactive setup mode for project knowledge",
-)
-@click.option(
-    "--copy-graphiti",
-    is_flag=True,
-    default=False,
-    help="Auto-discover and copy Graphiti config from a parent directory project. Recommended for multi-project setups sharing a FalkorDB instance to prevent embedding dimension mismatches.",
-)
-@click.option(
-    "--copy-graphiti-from",
-    default=None,
-    type=click.Path(exists=True, file_okay=False, resolve_path=True),
-    help="Copy Graphiti config from an explicit project path.",
+    help="Interactive setup mode (collects project info into CLAUDE.md)",
 )
 @click.option(
     "--verbose",
     "-v",
     is_flag=True,
     help="Show all log output including third-party DEBUG/INFO messages.",
-)
-@click.option(
-    "--no-questions",
-    is_flag=True,
-    default=False,
-    help="Skip prompts and use project_id-only graphiti.yaml (backward compatible).",
-)
-@click.option(
-    "--with-mcp",
-    is_flag=True,
-    default=False,
-    help=(
-        "Generate .mcp.json and per-project MCP server config for Claude Code "
-        "Graphiti integration. Discovers the Graphiti MCP server path via "
-        "GRAPHITI_MCP_PATH env var, ~/.guardkit/mcp-server-path, or user prompt."
-    ),
 )
 @click.option(
     "--base-only",
@@ -1781,36 +852,29 @@ async def _cmd_init(
 )
 def init(
     template: str,
-    skip_graphiti: bool,
     project_name: Optional[str],
     interactive: bool,
-    copy_graphiti: bool,
-    copy_graphiti_from: Optional[str],
     verbose: bool,
-    no_questions: bool,
-    with_mcp: bool,
     base_only: bool,
 ):
     """Initialize GuardKit in the current directory.
 
-    Applies a template and optionally seeds project knowledge to Graphiti.
+    Applies a template. Knowledge capture is provided by the fleet-memory
+    backend and is env-driven (``FLEET_MEMORY_*`` / ``GUARDKIT_MEMORY_BACKEND``),
+    so no init-time memory configuration is written.
 
     TEMPLATE is the name of the template to apply (default: 'default').
     Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation, dotnet-railway-fastendpoints.
     """
-    # Merge the two options into a single value for _cmd_init
-    copy_graphiti_value: Optional[str] = None
-    if copy_graphiti_from:
-        copy_graphiti_value = copy_graphiti_from
-    elif copy_graphiti:
-        copy_graphiti_value = "auto"
-
     exit_code = asyncio.run(
         _cmd_init(
-            template, skip_graphiti, project_name, interactive,
-            copy_graphiti_value, verbose, no_questions, with_mcp,
+            template,
+            project_name,
+            interactive,
+            verbose,
             base_only=base_only,
         )
     )
     if exit_code != 0:
         raise SystemExit(exit_code)
+

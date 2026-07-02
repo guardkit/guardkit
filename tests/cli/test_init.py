@@ -1,21 +1,24 @@
 """
-Tests for guardkit init CLI command with project seeding.
+Tests for guardkit init CLI command.
+
+Post-FEAT-MEM-09 graphiti-code cutover: `guardkit init` no longer seeds
+Graphiti / writes graphiti.yaml / writes MCP config / performs LLM-reachability
+checks. It ONLY: applies the template, installs the features/conftest.py bridge,
+optionally runs interactive CLAUDE.md generation, and prints a summary.
 
 Test Coverage:
 - Init command registration and basic functionality
-- Project knowledge seeding to Graphiti
-- Graceful degradation when Graphiti unavailable
-- --skip-graphiti flag behavior
-- Template initialization
-- Interactive setup (--interactive flag)
+- Template application (apply_template, extends chain, pattern layer, base-only)
+- Template source resolution
+- Interactive setup (--interactive flag) -> _ProjectInfo -> CLAUDE.md
+- Logger suppression (httpx/httpcore)
 
 Coverage Target: >=85%
-Test Count: 20+ tests
 """
 
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from click.testing import CliRunner
 
 # Import will succeed once implemented
@@ -47,266 +50,69 @@ class TestInitCommandRegistration:
         assert "init" in result.output.lower() or "Initialize" in result.output
 
     def test_init_shows_help_text(self):
-        """Test that init --help shows expected options."""
+        """Test that init --help shows the surviving options."""
         runner = CliRunner()
         result = runner.invoke(cli, ["init", "--help"])
         assert result.exit_code == 0
-        # Should show --skip-graphiti option
-        assert "skip-graphiti" in result.output.lower() or "skip" in result.output.lower()
+        # Should show the kept options
+        assert "--interactive" in result.output
+        assert "--base-only" in result.output
 
 
 # ============================================================================
-# 2. Project Knowledge Seeding Tests
+# 2. Plain init invocation
 # ============================================================================
 
 
-class TestInitSeedsProjectKnowledge:
-    """Test that init seeds project knowledge to Graphiti."""
+class TestInitInvocation:
+    """Test the plain `guardkit init [template]` invocation."""
 
-    def test_init_seeds_project_knowledge_to_graphiti(self, tmp_path, monkeypatch):
-        """Test that init command invokes project seeding functions."""
+    def test_init_succeeds(self, tmp_path, monkeypatch):
+        """Test that `guardkit init` succeeds (exit code 0)."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        # Create CLAUDE.md for project overview detection
-        (tmp_path / "CLAUDE.md").write_text("# My Project\n\n## Overview\nTest project")
+        result = runner.invoke(cli, ["init"])
 
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
+        assert result.exit_code == 0
+        # Scaffold should be created
+        assert (tmp_path / ".claude").exists()
+        assert (tmp_path / "tasks").exists()
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should have called project seeding
-            mock_seed.assert_called_once()
-            assert result.exit_code == 0
-
-    def test_init_seeds_project_overview_from_claudemd(self, tmp_path, monkeypatch):
-        """Test that init parses CLAUDE.md for project overview."""
+    def test_init_prints_success_summary(self, tmp_path, monkeypatch):
+        """Test that init prints its success summary and next steps."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        # Create CLAUDE.md with project overview
-        claude_md_content = """# My Test Project
+        result = runner.invoke(cli, ["init"])
 
-## Overview
-This is a test project for demonstrating project seeding.
+        assert result.exit_code == 0
+        assert "initialized successfully" in result.output.lower()
+        assert "task-create" in result.output
 
-## Technology Stack
-- Python 3.11
-- FastAPI
-- pytest
-"""
-        (tmp_path / "CLAUDE.md").write_text(claude_md_content)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should have called seeding
-            assert mock_seed.called
-            # Check that project_name was passed (from directory name)
-            call_args = mock_seed.call_args
-            assert call_args is not None
-
-    def test_init_seeds_project_overview_from_readme_fallback(self, tmp_path, monkeypatch):
-        """Test that init falls back to README.md when CLAUDE.md not found."""
+    def test_init_does_not_write_graphiti_yaml(self, tmp_path, monkeypatch):
+        """Test that init no longer writes .guardkit/graphiti.yaml."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        # Create only README.md (no CLAUDE.md)
-        readme_content = """# My Fallback Project
+        result = runner.invoke(cli, ["init"])
 
-This is the readme file used for fallback.
+        assert result.exit_code == 0
+        assert not (tmp_path / ".guardkit" / "graphiti.yaml").exists()
 
-## Features
-- Feature 1
-- Feature 2
-"""
-        (tmp_path / "README.md").write_text(readme_content)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should still call seeding (using README.md)
-            assert mock_seed.called
-
-    def test_init_does_not_seed_role_constraints(self, tmp_path, monkeypatch):
-        """Test that init does NOT seed role constraints (system-scoped, handled by seed-system)."""
+    def test_init_does_not_write_mcp_json(self, tmp_path, monkeypatch):
+        """Test that init no longer writes .mcp.json."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
+        result = runner.invoke(cli, ["init"])
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            seed_result = MagicMock()
-            seed_result.success = True
-            seed_result.role_constraints_seeded = False
-            mock_seed.return_value = seed_result
-
-            result = runner.invoke(cli, ["init"])
-
-            assert mock_seed.called
-            # Role constraints are NOT seeded during init (system-scoped)
-            assert seed_result.role_constraints_seeded is False
-
-    def test_init_does_not_seed_implementation_modes(self, tmp_path, monkeypatch):
-        """Test that init does NOT seed implementation modes (system-scoped, handled by seed-system)."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            seed_result = MagicMock()
-            seed_result.success = True
-            seed_result.implementation_modes_seeded = False
-            mock_seed.return_value = seed_result
-
-            result = runner.invoke(cli, ["init"])
-
-            assert mock_seed.called
-            # Implementation modes are NOT seeded during init (system-scoped)
-            assert seed_result.implementation_modes_seeded is False
-
-    def test_init_offers_system_seeding_after_project_seeding(self, tmp_path, monkeypatch):
-        """Test that init offers system seeding after project seeding succeeds.
-
-        Previously this test checked for 'seed-system' in Next steps.
-        After TASK-IGP-001, system seeding is offered inline, so when accepted
-        (default), 'seed-system' is no longer in Next steps.
-        """
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            # System seeding prompt should have been shown
-            assert "system knowledge" in result.output.lower()
+        assert result.exit_code == 0
+        assert not (tmp_path / ".mcp.json").exists()
 
 
 # ============================================================================
-# 3. Graceful Degradation Tests
-# ============================================================================
-
-
-class TestInitGracefulDegradation:
-    """Test graceful degradation when Graphiti unavailable."""
-
-    def test_init_graceful_degradation_graphiti_unavailable(self, tmp_path, monkeypatch):
-        """Test that init succeeds even when Graphiti is unavailable."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.enabled = False
-            mock_client.initialize = AsyncMock(return_value=False)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should succeed (exit code 0) even without Graphiti
-            assert result.exit_code == 0
-            # Should indicate Graphiti was skipped
-            assert "graphiti" in result.output.lower() or "skipped" in result.output.lower() or \
-                   "unavailable" in result.output.lower() or "warning" in result.output.lower()
-
-    def test_init_handles_graphiti_connection_error(self, tmp_path, monkeypatch):
-        """Test that init handles Graphiti connection errors gracefully."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.initialize = AsyncMock(side_effect=Exception("Connection refused"))
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should still succeed - graceful degradation
-            assert result.exit_code == 0
-
-
-# ============================================================================
-# 4. Skip Flag Tests
-# ============================================================================
-
-
-class TestInitSkipGraphitiFlag:
-    """Test --skip-graphiti flag behavior."""
-
-    def test_init_skip_graphiti_flag(self, tmp_path, monkeypatch):
-        """Test that --skip-graphiti flag skips Graphiti seeding entirely."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
-
-            # Should NOT call project seeding
-            assert not mock_seed.called
-            assert result.exit_code == 0
-
-
-# ============================================================================
-# 5. Template Initialization Tests
+# 3. Template Initialization Tests
 # ============================================================================
 
 
@@ -318,20 +124,12 @@ class TestInitWithTemplate:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.apply_template') as mock_apply_template:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
+        with patch("guardkit.cli.init.apply_template") as mock_apply_template:
             mock_apply_template.return_value = True
 
             result = runner.invoke(cli, ["init", "fastapi-python"])
 
+            assert result.exit_code == 0
             # Should apply template
             mock_apply_template.assert_called_once()
             call_args = mock_apply_template.call_args
@@ -342,20 +140,12 @@ class TestInitWithTemplate:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.apply_template') as mock_apply_template:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
+        with patch("guardkit.cli.init.apply_template") as mock_apply_template:
             mock_apply_template.return_value = True
 
             result = runner.invoke(cli, ["init"])
 
+            assert result.exit_code == 0
             # Should apply default template
             mock_apply_template.assert_called_once()
             call_args = mock_apply_template.call_args
@@ -363,102 +153,7 @@ class TestInitWithTemplate:
 
 
 # ============================================================================
-# 6. Project Seeding Module Tests
-# ============================================================================
-
-
-class TestProjectSeedingModule:
-    """Test the project seeding module directly."""
-
-    @pytest.mark.asyncio
-    async def test_seed_project_knowledge_seeds_project_overview_only(self):
-        """Test that seed_project_knowledge only seeds project-specific content.
-
-        After TASK-ISF-006, system-scoped content (role constraints, impl modes,
-        arch decisions) is handled by `guardkit graphiti seed-system`.
-        """
-        try:
-            from guardkit.knowledge.project_seeding import seed_project_knowledge, SeedResult
-        except ImportError:
-            pytest.skip("project_seeding module not yet implemented")
-
-        mock_client = MagicMock()
-        mock_client.enabled = True
-        mock_client.upsert_episode = AsyncMock(return_value=None)
-
-        result = await seed_project_knowledge(
-            project_name="test-project",
-            client=mock_client
-        )
-
-        assert isinstance(result, SeedResult)
-        assert result.success is True
-        # System-scoped flags should be False (no longer seeded here)
-        assert result.role_constraints_seeded is False
-        assert result.implementation_modes_seeded is False
-        assert result.architectural_decisions_seeded is False
-
-    @pytest.mark.asyncio
-    async def test_seed_project_knowledge_returns_seed_result(self):
-        """Test that seed_project_knowledge returns proper SeedResult."""
-        try:
-            from guardkit.knowledge.project_seeding import seed_project_knowledge, SeedResult
-        except ImportError:
-            pytest.skip("project_seeding module not yet implemented")
-
-        mock_client = MagicMock()
-        mock_client.enabled = True
-        mock_client.upsert_episode = AsyncMock(return_value=None)
-
-        result = await seed_project_knowledge(
-            project_name="test-project",
-            client=mock_client
-        )
-
-        # Should have results list
-        assert hasattr(result, 'results')
-        assert hasattr(result, 'success')
-
-    @pytest.mark.asyncio
-    async def test_seed_project_knowledge_handles_none_client(self):
-        """Test that seed_project_knowledge handles None client gracefully."""
-        try:
-            from guardkit.knowledge.project_seeding import seed_project_knowledge
-        except ImportError:
-            pytest.skip("project_seeding module not yet implemented")
-
-        # Should not raise, should return graceful result
-        result = await seed_project_knowledge(
-            project_name="test-project",
-            client=None
-        )
-
-        # Should indicate it was skipped, not failed
-        assert result is not None
-        assert result.success is True  # Graceful degradation
-
-    @pytest.mark.asyncio
-    async def test_seed_project_knowledge_handles_disabled_client(self):
-        """Test seed_project_knowledge with disabled client."""
-        try:
-            from guardkit.knowledge.project_seeding import seed_project_knowledge
-        except ImportError:
-            pytest.skip("project_seeding module not yet implemented")
-
-        mock_client = MagicMock()
-        mock_client.enabled = False
-
-        result = await seed_project_knowledge(
-            project_name="test-project",
-            client=mock_client
-        )
-
-        # Should succeed (graceful degradation)
-        assert result.success is True
-
-
-# ============================================================================
-# 7. Interactive Setup Tests (NEW - TASK-GR-001-I)
+# 4. Interactive Setup Tests
 # ============================================================================
 
 
@@ -469,18 +164,14 @@ class TestInteractiveSetup:
     async def test_interactive_setup_function_exists(self):
         """Test that interactive_setup function exists in guardkit.cli.init."""
         try:
-            from guardkit.cli.init import interactive_setup
+            from guardkit.cli.init import interactive_setup  # noqa: F401
         except ImportError:
             pytest.fail("interactive_setup function does not exist in guardkit.cli.init")
 
     @pytest.mark.asyncio
-    async def test_interactive_setup_returns_project_overview_episode(self):
-        """Test that interactive_setup returns ProjectOverviewEpisode."""
-        try:
-            from guardkit.cli.init import interactive_setup
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+    async def test_interactive_setup_returns_project_info(self):
+        """Test that interactive_setup returns a _ProjectInfo dataclass."""
+        from guardkit.cli.init import interactive_setup, _ProjectInfo
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             # Mock user inputs
@@ -493,8 +184,8 @@ class TestInteractiveSetup:
 
             result = await interactive_setup("test-project")
 
-            # Should return ProjectOverviewEpisode
-            assert isinstance(result, ProjectOverviewEpisode)
+            # Should return the local _ProjectInfo dataclass (FEAT-MEM-09)
+            assert isinstance(result, _ProjectInfo)
             assert result.project_name == "test-project"
             assert result.purpose == "A test project"
             assert result.primary_language == "python"
@@ -502,10 +193,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_prompts_for_purpose(self):
         """Test that interactive_setup prompts for project purpose."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -515,7 +203,7 @@ class TestInteractiveSetup:
                 "",  # goals
             ]
 
-            result = await interactive_setup("test-project")
+            await interactive_setup("test-project")
 
             # Verify Prompt.ask was called with purpose question
             calls = [str(call) for call in mock_prompt.call_args_list]
@@ -524,10 +212,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_prompts_for_primary_language(self):
         """Test that interactive_setup prompts for primary language with choices."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -537,7 +222,7 @@ class TestInteractiveSetup:
                 "",  # goals
             ]
 
-            result = await interactive_setup("test-project")
+            await interactive_setup("test-project")
 
             # Verify language choices offered
             calls = mock_prompt.call_args_list
@@ -547,10 +232,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_prompts_for_frameworks(self):
         """Test that interactive_setup prompts for frameworks."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -570,10 +252,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_prompts_for_key_goals(self):
         """Test that interactive_setup prompts for key goals (multi-line)."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -597,10 +276,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_handles_empty_frameworks(self):
         """Test that interactive_setup handles empty frameworks gracefully."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -618,10 +294,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_handles_empty_goals(self):
         """Test that interactive_setup handles empty goals gracefully."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             mock_prompt.side_effect = [
@@ -639,10 +312,7 @@ class TestInteractiveSetup:
     @pytest.mark.asyncio
     async def test_interactive_setup_uses_defaults(self):
         """Test that interactive_setup provides sensible defaults."""
-        try:
-            from guardkit.cli.init import interactive_setup
-        except ImportError:
-            pytest.skip("interactive_setup not yet implemented")
+        from guardkit.cli.init import interactive_setup
 
         with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
             # User accepts all defaults (empty inputs)
@@ -679,37 +349,22 @@ class TestInitWithInteractiveFlag:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+             patch('guardkit.cli.init.Confirm.ask', return_value=True):
 
-            # Mock interactive inputs
-            mock_prompt.side_effect = [
-                "Test purpose",
-                "python",
-                "",
-                "",
-            ]
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            # Mock ProjectOverviewEpisode
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Test purpose",
-                primary_language="python"
+                primary_language="python",
+                frameworks=[],
+                key_goals=[],
             )
-            mock_interactive.return_value = mock_episode
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
+            assert result.exit_code == 0
             # Should have called interactive_setup
             assert mock_interactive.called
 
@@ -718,58 +373,13 @@ class TestInitWithInteractiveFlag:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive:
 
             result = runner.invoke(cli, ["init"])
 
+            assert result.exit_code == 0
             # Should NOT call interactive_setup (default is non-interactive)
             assert not mock_interactive.called
-            # Should still call seed_project_knowledge (with parsed data)
-            assert mock_seed.called
-
-    def test_init_interactive_creates_project_overview_episode(self, tmp_path, monkeypatch):
-        """Test that interactive mode creates ProjectOverviewEpisode."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
-                project_name="test-project",
-                purpose="Interactive purpose",
-                primary_language="typescript",
-                frameworks=["react", "vite"],
-                key_goals=["Build fast UI", "Maintain quality"]
-            )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--interactive"])
-
-            # Should have passed episode to seed_project_knowledge
-            assert mock_seed.called
-            call_kwargs = mock_seed.call_args.kwargs
-            # Should include project_overview_episode parameter
-            assert 'project_overview_episode' in call_kwargs or \
-                   call_kwargs.get('project_overview') == mock_episode
 
 
 class TestInteractiveCLAUDEmdGeneration:
@@ -780,31 +390,25 @@ class TestInteractiveCLAUDEmdGeneration:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
              patch('guardkit.cli.init.Confirm.ask') as mock_confirm:
 
             # User confirms CLAUDE.md generation
             mock_confirm.return_value = True
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Test purpose",
-                primary_language="python"
+                primary_language="python",
+                frameworks=[],
+                key_goals=[],
             )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
+            assert result.exit_code == 0
             # Should have asked about CLAUDE.md generation
             assert mock_confirm.called
 
@@ -813,137 +417,107 @@ class TestInteractiveCLAUDEmdGeneration:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
              patch('guardkit.cli.init.Confirm.ask', return_value=True):
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Build an awesome CLI tool",
-                primary_language="python"
+                primary_language="python",
+                frameworks=[],
+                key_goals=[],
             )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
-            # Check if CLAUDE.md was created
+            assert result.exit_code == 0
+            # CLAUDE.md should be created with the purpose
             claude_md = tmp_path / "CLAUDE.md"
-            if claude_md.exists():
-                content = claude_md.read_text()
-                assert "awesome CLI tool" in content
+            assert claude_md.exists()
+            assert "awesome CLI tool" in claude_md.read_text()
 
     def test_interactive_claudemd_includes_tech_stack(self, tmp_path, monkeypatch):
         """Test that generated CLAUDE.md includes tech stack."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
              patch('guardkit.cli.init.Confirm.ask', return_value=True):
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Test",
                 primary_language="typescript",
-                frameworks=["react", "tailwind"]
+                frameworks=["react", "tailwind"],
+                key_goals=[],
             )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
-            # Check if CLAUDE.md was created with stack info
+            assert result.exit_code == 0
             claude_md = tmp_path / "CLAUDE.md"
-            if claude_md.exists():
-                content = claude_md.read_text()
-                assert "typescript" in content.lower()
-                assert "react" in content.lower()
+            assert claude_md.exists()
+            content = claude_md.read_text()
+            assert "typescript" in content.lower()
+            assert "react" in content.lower()
 
     def test_interactive_claudemd_includes_goals(self, tmp_path, monkeypatch):
         """Test that generated CLAUDE.md includes key goals."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
              patch('guardkit.cli.init.Confirm.ask', return_value=True):
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Test",
                 primary_language="python",
-                key_goals=["Achieve 100% test coverage", "Deploy to production"]
+                frameworks=[],
+                key_goals=["Achieve 100% test coverage", "Deploy to production"],
             )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
-            # Check if CLAUDE.md was created with goals
+            assert result.exit_code == 0
             claude_md = tmp_path / "CLAUDE.md"
-            if claude_md.exists():
-                content = claude_md.read_text()
-                assert "100% test coverage" in content
+            assert claude_md.exists()
+            assert "100% test coverage" in claude_md.read_text()
 
     def test_interactive_skips_claudemd_if_declined(self, tmp_path, monkeypatch):
         """Test that CLAUDE.md is not created if user declines."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
+        from guardkit.cli.init import _ProjectInfo
+
         with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
-             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
              patch('guardkit.cli.init.Confirm.ask', return_value=False):
 
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-
-            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-            mock_episode = ProjectOverviewEpisode(
+            mock_interactive.return_value = _ProjectInfo(
                 project_name="test-project",
                 purpose="Test",
-                primary_language="python"
+                primary_language="python",
+                frameworks=[],
+                key_goals=[],
             )
-            mock_interactive.return_value = mock_episode
-            mock_seed.return_value = MagicMock(success=True)
 
             result = runner.invoke(cli, ["init", "--interactive"])
 
+            assert result.exit_code == 0
             # CLAUDE.md should NOT be created
             claude_md = tmp_path / "CLAUDE.md"
             assert not claude_md.exists()
 
 
 # ============================================================================
-# 8. Template Content Copying Tests (TASK-INST-010)
+# 5. Template Content Copying Tests (TASK-INST-010)
 # ============================================================================
 
 
@@ -1365,59 +939,6 @@ class TestApplyTemplateNoArgs:
         assert (target / ".guardkit").exists()
 
 
-# ============================================================================
-# 9. TASK-INST-011: Template Sync Wiring Tests
-# ============================================================================
-
-
-class TestInitDoesNotCallTemplateSyncToGraphiti:
-    """Test that guardkit init does NOT call sync_template_to_graphiti (TASK-ISF-006).
-
-    Template sync is now system-scoped and handled by `guardkit graphiti seed-system`.
-    """
-
-    def test_init_does_not_call_template_sync(self, tmp_path, monkeypatch):
-        """AC: guardkit init no longer calls sync_template_to_graphiti."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "fastapi-python"])
-
-            assert result.exit_code == 0
-            # sync_template_to_graphiti is no longer imported or called in init.py
-
-    def test_init_output_does_not_mention_step_2_5(self, tmp_path, monkeypatch):
-        """AC: Init output should not mention Step 2.5 (template sync removed)."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            assert "Step 2.5" not in result.output
-            assert "Syncing template content" not in result.output
-
-
 class TestResolveTemplateSourceDir:
     """Test template source resolution."""
 
@@ -1641,616 +1162,175 @@ class TestApplyTemplateAllTemplates:
 
 
 # ============================================================================
-# 10. --copy-graphiti Flag Tests (TASK-4B7F)
+# 6. Base-Only Tests
 # ============================================================================
 
-_SAMPLE_GRAPHITI_CONFIG = {
-    "project_id": "original-project",
-    "enabled": True,
-    "graph_store": "falkordb",
-    "falkordb_host": "myhost",
-    "falkordb_port": 6379,
-    "timeout": 30.0,
-    "llm_provider": "vllm",
-    "llm_base_url": "http://llmhost:8000/v1",
-    "llm_model": "claude-sonnet-4-6",
-    "embedding_provider": "vllm",
-    "embedding_base_url": "http://embhost:8001/v1",
-    "embedding_model": "nomic-embed-text-v1.5",
-    "group_ids": ["product_knowledge", "command_workflows"],
-    "host": "localhost",
-    "port": 8000,
-}
 
-
-def _write_graphiti_yaml(directory: Path, config: dict) -> Path:
-    """Write a graphiti.yaml file into directory/.guardkit/graphiti.yaml."""
-    try:
-        import yaml
-    except ImportError:
-        pytest.skip("PyYAML not installed")
-
-    guardkit_dir = directory / ".guardkit"
-    guardkit_dir.mkdir(parents=True, exist_ok=True)
-    config_path = guardkit_dir / "graphiti.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-    return config_path
-
-
-class TestFindSourceGraphitiConfig:
-    """Unit tests for _find_source_graphiti_config()."""
-
-    def test_auto_finds_config_in_parent_directory(self, tmp_path):
-        """Auto-discovery finds graphiti.yaml in a parent directory."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        # Create a parent project with graphiti.yaml
-        parent_project = tmp_path / "parent-project"
-        parent_project.mkdir()
-        _write_graphiti_yaml(parent_project, _SAMPLE_GRAPHITI_CONFIG)
-
-        # cwd would be a subdirectory of parent_project; we search from its parent
-        # Simulate: cwd = parent_project/child, so cwd.parent = parent_project
-        child_dir = parent_project / "child"
-        child_dir.mkdir()
-
-        with patch("guardkit.cli.init._find_project_root") as mock_find_root:
-            mock_find_root.return_value = parent_project
-            with patch("pathlib.Path.cwd", return_value=child_dir):
-                result = _find_source_graphiti_config("auto")
-
-        assert result is not None
-        assert result == parent_project / ".guardkit" / "graphiti.yaml"
-
-    def test_auto_returns_none_when_no_parent_config(self, tmp_path):
-        """Auto-discovery returns None when no parent has .guardkit/graphiti.yaml."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        with patch("guardkit.cli.init._find_project_root", return_value=None):
-            with patch("pathlib.Path.cwd", return_value=tmp_path / "myproject"):
-                result = _find_source_graphiti_config("auto")
-
-        assert result is None
-
-    def test_explicit_path_finds_config(self, tmp_path):
-        """Explicit path finds graphiti.yaml in the specified directory."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        source_dir = tmp_path / "source-project"
-        source_dir.mkdir()
-        _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        result = _find_source_graphiti_config(str(source_dir))
-
-        assert result is not None
-        assert result == source_dir / ".guardkit" / "graphiti.yaml"
-
-    def test_explicit_path_returns_none_when_config_missing(self, tmp_path):
-        """Explicit path returns None when graphiti.yaml does not exist there."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        source_dir = tmp_path / "source-project"
-        source_dir.mkdir()
-        # .guardkit dir exists but no graphiti.yaml
-        (source_dir / ".guardkit").mkdir()
-
-        result = _find_source_graphiti_config(str(source_dir))
-
-        assert result is None
-
-    def test_explicit_path_expands_home_tilde(self, tmp_path):
-        """Explicit path with ~ is expanded correctly (uses real home dir)."""
-        from guardkit.cli.init import _find_source_graphiti_config
-        import os
-
-        # Use the real home directory for tilde expansion test
-        home_dir = Path.home()
-        # Create a uniquely-named temp project inside the real home dir
-        unique_name = f"_guardkit_test_{tmp_path.name}"
-        source_dir = home_dir / unique_name
-        try:
-            source_dir.mkdir(parents=True, exist_ok=True)
-            _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-            result = _find_source_graphiti_config(f"~/{unique_name}")
-
-            assert result is not None
-            assert result == source_dir / ".guardkit" / "graphiti.yaml"
-        finally:
-            # Clean up
-            import shutil as _shutil
-            if source_dir.exists():
-                _shutil.rmtree(source_dir)
-
-    def test_auto_searches_from_parent_not_cwd(self, tmp_path):
-        """Auto-discovery starts from cwd.parent, not cwd itself."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        # Create an isolated parent so sibling scan doesn't pick up temp artifacts
-        parent_dir = tmp_path / "workspace"
-        parent_dir.mkdir()
-        project_dir = parent_dir / "my-project"
-        project_dir.mkdir()
-
-        # Put a graphiti.yaml in the project dir (which IS cwd) — should be skipped
-        _write_graphiti_yaml(project_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        # _find_project_root is called with parent_dir, not project_dir itself
-        with patch("guardkit.cli.init._find_project_root", return_value=None) as mock_find:
-            with patch("pathlib.Path.cwd", return_value=project_dir):
-                result = _find_source_graphiti_config("auto")
-
-        # Should have been called with parent_dir
-        mock_find.assert_called_once_with(parent_dir)
-        # No ancestor config found and no siblings have .guardkit/ either
-        assert result is None
-
-    def test_auto_finds_config_in_sibling_directory(self, tmp_path):
-        """Auto-discovery finds graphiti.yaml in a sibling directory."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        # Simulate: workspace/guardkit has config, workspace/new-project is cwd
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-
-        sibling_project = workspace / "guardkit"
-        sibling_project.mkdir()
-        _write_graphiti_yaml(sibling_project, _SAMPLE_GRAPHITI_CONFIG)
-
-        new_project = workspace / "new-project"
-        new_project.mkdir()
-
-        with patch("guardkit.cli.init._find_project_root", return_value=None):
-            with patch("pathlib.Path.cwd", return_value=new_project):
-                result = _find_source_graphiti_config("auto")
-
-        assert result is not None
-        assert result == sibling_project / ".guardkit" / "graphiti.yaml"
-
-    def test_auto_skips_cwd_in_sibling_scan(self, tmp_path):
-        """Sibling scan skips the cwd directory to avoid finding target's own config."""
-        from guardkit.cli.init import _find_source_graphiti_config
-
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-
-        # Only cwd has a config — no sibling projects
-        new_project = workspace / "new-project"
-        new_project.mkdir()
-        _write_graphiti_yaml(new_project, _SAMPLE_GRAPHITI_CONFIG)
-
-        with patch("guardkit.cli.init._find_project_root", return_value=None):
-            with patch("pathlib.Path.cwd", return_value=new_project):
-                result = _find_source_graphiti_config("auto")
-
-        assert result is None
-
-
-class TestCopyGraphitiConfig:
-    """Unit tests for copy_graphiti_config()."""
-
-    def test_copies_full_config_with_replaced_project_id(self, tmp_path):
-        """Copies all fields from source, replacing project_id."""
-        from guardkit.cli.init import copy_graphiti_config
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        target_dir = tmp_path / "target"
-        target_dir.mkdir()
-
-        result = copy_graphiti_config("my-new-project", target_dir, source_config)
-
-        assert result is True
-        target_config = target_dir / ".guardkit" / "graphiti.yaml"
-        assert target_config.exists()
-
-        import yaml
-        with open(target_config) as f:
-            written = yaml.safe_load(f)
-
-        # project_id should be replaced with normalized new name
-        assert written["project_id"] == "my-new-project"
-        # All other fields from source should be present
-        assert written["graph_store"] == "falkordb"
-        assert written["falkordb_host"] == "myhost"
-        assert written["llm_provider"] == "vllm"
-        assert written["llm_model"] == "claude-sonnet-4-6"
-        assert written["embedding_model"] == "nomic-embed-text-v1.5"
-
-    def test_project_id_is_normalized(self, tmp_path):
-        """project_id in the copied config is normalized (hyphens, lowercase)."""
-        from guardkit.cli.init import copy_graphiti_config
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        target_dir = tmp_path / "target"
-        target_dir.mkdir()
-
-        # Project name with spaces and uppercase should be normalized
-        result = copy_graphiti_config("My New Project", target_dir, source_config)
-
-        assert result is True
-
-        import yaml
-        with open(target_dir / ".guardkit" / "graphiti.yaml") as f:
-            written = yaml.safe_load(f)
-
-        # normalize_project_id converts spaces to hyphens and lowercases
-        assert written["project_id"] == "my-new-project"
-
-    def test_creates_target_guardkit_dir_if_missing(self, tmp_path):
-        """Creates .guardkit/ in target if it does not exist yet."""
-        from guardkit.cli.init import copy_graphiti_config
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        target_dir = tmp_path / "target"
-        target_dir.mkdir()
-        # Do NOT create .guardkit in target
-
-        result = copy_graphiti_config("new-project", target_dir, source_config)
-
-        assert result is True
-        assert (target_dir / ".guardkit" / "graphiti.yaml").exists()
-
-    def test_returns_false_on_invalid_source(self, tmp_path):
-        """Returns False when the source config file is invalid/empty YAML."""
-        from guardkit.cli.init import copy_graphiti_config
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-        (source_dir / ".guardkit").mkdir()
-        source_config = source_dir / ".guardkit" / "graphiti.yaml"
-        # Write invalid content (not a dict)
-        source_config.write_text("- just\n- a\n- list\n")
-
-        target_dir = tmp_path / "target"
-        target_dir.mkdir()
-
-        result = copy_graphiti_config("new-project", target_dir, source_config)
-
-        assert result is False
-
-    def test_preserves_group_ids_list(self, tmp_path):
-        """group_ids list from source is preserved in copied config."""
-        from guardkit.cli.init import copy_graphiti_config
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-        source_config = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        target_dir = tmp_path / "target"
-        target_dir.mkdir()
-
-        copy_graphiti_config("new-project", target_dir, source_config)
-
-        import yaml
-        with open(target_dir / ".guardkit" / "graphiti.yaml") as f:
-            written = yaml.safe_load(f)
-
-        assert written["group_ids"] == ["product_knowledge", "command_workflows"]
-
-
-class TestCopyGraphitiFlagCLI:
-    """Integration tests for --copy-graphiti CLI flag."""
-
-    def test_copy_graphiti_flag_in_help(self, tmp_path, monkeypatch):
-        """--copy-graphiti option appears in init --help output."""
+class TestBaseOnlyFlag:
+    """Test the --base-only flag and apply_template(base_only=...) behavior."""
+
+    def _create_extends_chain(self, templates_dir: Path):
+        """Create a base template and an extension template that extends it."""
+        base = templates_dir / "base-template"
+        base.mkdir(parents=True)
+        (base / "manifest.json").write_text('{"name": "base-template"}')
+        (base / "agents").mkdir()
+        (base / "agents" / "base-specialist.md").write_text("# base agent")
+
+        ext = templates_dir / "ext-template"
+        ext.mkdir(parents=True)
+        (ext / "manifest.json").write_text(
+            '{"name": "ext-template", "extends": "base-template"}'
+        )
+        (ext / "agents").mkdir()
+        (ext / "agents" / "ext-specialist.md").write_text("# ext agent")
+        return base, ext
+
+    def test_base_only_flag_in_help(self):
+        """--base-only option appears in init --help output."""
         runner = CliRunner()
         result = runner.invoke(cli, ["init", "--help"])
         assert result.exit_code == 0
-        assert "copy-graphiti" in result.output
+        assert "--base-only" in result.output
 
-    def test_copy_graphiti_auto_copies_config(self, tmp_path, monkeypatch):
-        """--copy-graphiti auto copies config from auto-discovered source."""
+    def test_base_only_installs_only_base(self, tmp_path):
+        """apply_template(base_only=True) installs only the base of an extends chain."""
+        from guardkit.cli.init import apply_template
+
+        templates_dir = tmp_path / "templates"
+        base, ext = self._create_extends_chain(templates_dir)
+
+        target = tmp_path / "project"
+        target.mkdir()
+
+        def _resolve(name):
+            return templates_dir / name if (templates_dir / name).is_dir() else None
+
+        with patch(
+            "guardkit.cli.init._resolve_template_source_dir",
+            side_effect=_resolve,
+        ):
+            result = apply_template("ext-template", target, base_only=True)
+
+        assert result is True
+        agents_target = target / ".claude" / "agents"
+        # Only the base agent should be installed
+        assert (agents_target / "base-specialist.md").exists()
+        assert not (agents_target / "ext-specialist.md").exists()
+
+    def test_without_base_only_installs_full_chain(self, tmp_path):
+        """apply_template without base_only installs base + extension."""
+        from guardkit.cli.init import apply_template
+
+        templates_dir = tmp_path / "templates"
+        base, ext = self._create_extends_chain(templates_dir)
+
+        target = tmp_path / "project"
+        target.mkdir()
+
+        def _resolve(name):
+            return templates_dir / name if (templates_dir / name).is_dir() else None
+
+        with patch(
+            "guardkit.cli.init._resolve_template_source_dir",
+            side_effect=_resolve,
+        ):
+            result = apply_template("ext-template", target)
+
+        assert result is True
+        agents_target = target / ".claude" / "agents"
+        # Both agents should be installed
+        assert (agents_target / "base-specialist.md").exists()
+        assert (agents_target / "ext-specialist.md").exists()
+
+
+class TestResolveExtendsChain:
+    """Test _resolve_extends_chain."""
+
+    def test_single_template_no_extends(self, tmp_path):
+        """A template with no extends field returns [template_name]."""
+        from guardkit.cli.init import _resolve_extends_chain
+
+        templates_dir = tmp_path / "templates"
+        tpl = templates_dir / "solo"
+        tpl.mkdir(parents=True)
+        (tpl / "manifest.json").write_text('{"name": "solo"}')
+
+        with patch(
+            "guardkit.cli.init._resolve_template_source_dir",
+            return_value=tpl,
+        ):
+            chain = _resolve_extends_chain("solo")
+
+        assert chain == ["solo"]
+
+    def test_extends_chain_ordered_base_first(self, tmp_path):
+        """A template that extends another returns [base, extension]."""
+        from guardkit.cli.init import _resolve_extends_chain
+
+        templates_dir = tmp_path / "templates"
+        base = templates_dir / "base-template"
+        base.mkdir(parents=True)
+        (base / "manifest.json").write_text('{"name": "base-template"}')
+        ext = templates_dir / "ext-template"
+        ext.mkdir(parents=True)
+        (ext / "manifest.json").write_text(
+            '{"name": "ext-template", "extends": "base-template"}'
+        )
+
+        def _resolve(name):
+            return templates_dir / name if (templates_dir / name).is_dir() else None
+
+        with patch(
+            "guardkit.cli.init._resolve_template_source_dir",
+            side_effect=_resolve,
+        ):
+            chain = _resolve_extends_chain("ext-template")
+
+        assert chain == ["base-template", "ext-template"]
+
+
+# ============================================================================
+# 7. conftest bridge Tests
+# ============================================================================
+
+
+class TestInitConftestBridge:
+    """Test that init installs the features/conftest.py BDD bridge when applicable."""
+
+    def test_init_installs_conftest_bridge_when_reported(self, tmp_path, monkeypatch):
+        """When install_features_conftest_bridge returns True, init reports it."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        source_config_path = tmp_path / "source" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path) as mock_find, \
-             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--copy-graphiti"])
-
-            assert result.exit_code == 0
-            mock_find.assert_called_once_with("auto")
-            mock_copy.assert_called_once()
-
-    def test_copy_graphiti_explicit_path_copies_config(self, tmp_path, monkeypatch):
-        """--copy-graphiti-from /path copies config from that explicit path."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        source_dir = tmp_path / "source-project"
-        source_dir.mkdir()
-        source_config_path = _write_graphiti_yaml(source_dir, _SAMPLE_GRAPHITI_CONFIG)
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path) as mock_find, \
-             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--copy-graphiti-from", str(source_dir)])
-
-            assert result.exit_code == 0
-            mock_find.assert_called_once_with(str(source_dir))
-            mock_copy.assert_called_once()
-
-    def test_copy_graphiti_fallback_when_source_not_found(self, tmp_path, monkeypatch):
-        """--copy-graphiti falls back to write_graphiti_config when source not found."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config", return_value=None), \
-             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write, \
-             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--copy-graphiti"])
-
-            assert result.exit_code == 0
-            # copy_graphiti_config should NOT have been called
-            mock_copy.assert_not_called()
-            # Fallback: write_graphiti_config should have been called
-            mock_write.assert_called_once()
-
-    def test_copy_graphiti_fallback_when_copy_fails(self, tmp_path, monkeypatch):
-        """--copy-graphiti falls back to write_graphiti_config when copy fails."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        source_config_path = tmp_path / "source" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path), \
-             patch("guardkit.cli.init.copy_graphiti_config", return_value=False), \
-             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--copy-graphiti"])
-
-            assert result.exit_code == 0
-            # Fallback should have been called
-            mock_write.assert_called_once()
-
-    def test_no_copy_graphiti_flag_uses_existing_behavior(self, tmp_path, monkeypatch):
-        """Without --copy-graphiti and no parent config found, write_graphiti_config is used."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write, \
-             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
-             patch("guardkit.cli.init._find_source_graphiti_config", return_value=None) as mock_find:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
+        with patch(
+            "guardkit.cli.init.install_features_conftest_bridge",
+            return_value=True,
+        ) as mock_bridge:
             result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
-            # Auto-offer: _find_source_graphiti_config is called with "auto"
-            mock_find.assert_called_once_with("auto")
-            # No parent config found: copy_graphiti_config NOT called
-            mock_copy.assert_not_called()
-            # write_graphiti_config IS called
-            mock_write.assert_called_once()
+            mock_bridge.assert_called_once()
+            assert "features/conftest.py BDD bridge" in result.output
 
-    def test_auto_offer_prompt_shown_when_parent_config_found(self, tmp_path, monkeypatch):
-        """Without --copy-graphiti, a prompt is shown when a parent config is found."""
+    def test_init_silent_when_bridge_not_installed(self, tmp_path, monkeypatch):
+        """When the bridge is a no-op (returns False), no bridge line is printed."""
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path), \
-             patch("guardkit.cli.init.copy_graphiti_config", return_value=True):
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            # Provide 'Y' to accept the prompt
-            result = runner.invoke(cli, ["init"], input="Y\n")
+        with patch(
+            "guardkit.cli.init.install_features_conftest_bridge",
+            return_value=False,
+        ) as mock_bridge:
+            result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
-            assert "Found existing graphiti.yaml" in result.output
-            assert "Copy infrastructure config" in result.output
-
-    def test_auto_offer_y_accepted_copies_config(self, tmp_path, monkeypatch):
-        """When user accepts auto-offer prompt, config is copied."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path), \
-             patch("guardkit.cli.init.copy_graphiti_config", return_value=True) as mock_copy, \
-             patch("guardkit.cli.init.write_graphiti_config") as mock_write:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"], input="Y\n")
-
-            assert result.exit_code == 0
-            mock_copy.assert_called_once()
-            mock_write.assert_not_called()
-
-    def test_auto_offer_n_declined_uses_project_id_only(self, tmp_path, monkeypatch):
-        """When user declines auto-offer prompt, write_graphiti_config is used."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path), \
-             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
-             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init"], input="n\n")
-
-            assert result.exit_code == 0
-            mock_copy.assert_not_called()
-            mock_write.assert_called_once()
-
-    def test_no_questions_skips_auto_offer_prompt(self, tmp_path, monkeypatch):
-        """--no-questions skips the auto-offer prompt and uses project_id-only."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        source_config_path = tmp_path / "parent" / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config") as mock_find, \
-             patch("guardkit.cli.init.copy_graphiti_config") as mock_copy, \
-             patch("guardkit.cli.init.write_graphiti_config", return_value=True) as mock_write:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_find.return_value = source_config_path
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--no-questions"])
-
-            assert result.exit_code == 0
-            # _find_source_graphiti_config NOT called (--no-questions skips auto-offer)
-            mock_find.assert_not_called()
-            # copy_graphiti_config NOT called
-            mock_copy.assert_not_called()
-            # write_graphiti_config IS called (project_id-only)
-            mock_write.assert_called_once()
-
-    def test_no_questions_flag_in_help(self):
-        """--no-questions option appears in init --help output."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--help"])
-        assert result.exit_code == 0
-        assert "no-questions" in result.output
-
-    def test_copy_graphiti_end_to_end(self, tmp_path, monkeypatch):
-        """End-to-end: --copy-graphiti copies real config with replaced project_id."""
-        runner = CliRunner()
-
-        # Create target project directory
-        target_project = tmp_path / "new-project"
-        target_project.mkdir()
-        monkeypatch.chdir(target_project)
-
-        # Create source project with graphiti.yaml in parent
-        source_project = tmp_path / "existing-project"
-        source_project.mkdir()
-        _write_graphiti_yaml(source_project, _SAMPLE_GRAPHITI_CONFIG)
-        source_config_path = source_project / ".guardkit" / "graphiti.yaml"
-
-        with patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class, \
-             patch("guardkit.cli.init._find_source_graphiti_config",
-                   return_value=source_config_path):
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True)
-
-            result = runner.invoke(cli, ["init", "--copy-graphiti-from", str(source_project)])
-
-        assert result.exit_code == 0
-
-        # Check the written config
-        target_yaml = target_project / ".guardkit" / "graphiti.yaml"
-        assert target_yaml.exists()
-
-        import yaml
-        with open(target_yaml) as f:
-            written = yaml.safe_load(f)
-
-        # project_id replaced with directory name
-        assert written["project_id"] == "new-project"
-        # Other fields from source preserved
-        assert written["graph_store"] == "falkordb"
-        assert written["llm_provider"] == "vllm"
-        assert written["llm_model"] == "claude-sonnet-4-6"
+            mock_bridge.assert_called_once()
+            assert "features/conftest.py BDD bridge" not in result.output
 
 
 # ============================================================================
-# Logger Suppression Tests (TASK-IGR-001)
+# 8. Logger Suppression Tests (TASK-IGR-001)
 # ============================================================================
 
 
@@ -2265,7 +1345,7 @@ class TestLoggerSuppression:
         runner = CliRunner()
 
         with patch("guardkit.cli.init.apply_template", return_value=True):
-            runner.invoke(cli, ["init", "--skip-graphiti"])
+            runner.invoke(cli, ["init"])
 
         assert logging.getLogger("httpx").level >= logging.WARNING
 
@@ -2277,21 +1357,9 @@ class TestLoggerSuppression:
         runner = CliRunner()
 
         with patch("guardkit.cli.init.apply_template", return_value=True):
-            runner.invoke(cli, ["init", "--skip-graphiti"])
+            runner.invoke(cli, ["init"])
 
         assert logging.getLogger("httpcore").level >= logging.WARNING
-
-    def test_falkordb_logger_suppressed_in_non_verbose_mode(self, tmp_path, monkeypatch):
-        """graphiti_core.driver.falkordb_driver INFO logs should be suppressed."""
-        import logging
-
-        monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-
-        with patch("guardkit.cli.init.apply_template", return_value=True):
-            runner.invoke(cli, ["init", "--skip-graphiti"])
-
-        assert logging.getLogger("graphiti_core.driver.falkordb_driver").level >= logging.WARNING
 
     def test_verbose_flag_preserves_log_levels(self, tmp_path, monkeypatch):
         """With --verbose, third-party loggers should NOT be suppressed."""
@@ -2300,18 +1368,16 @@ class TestLoggerSuppression:
         # Reset loggers to default (NOTSET = 0) before test
         logging.getLogger("httpx").setLevel(logging.NOTSET)
         logging.getLogger("httpcore").setLevel(logging.NOTSET)
-        logging.getLogger("graphiti_core.driver.falkordb_driver").setLevel(logging.NOTSET)
 
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
 
         with patch("guardkit.cli.init.apply_template", return_value=True):
-            runner.invoke(cli, ["init", "--skip-graphiti", "--verbose"])
+            runner.invoke(cli, ["init", "--verbose"])
 
         # Loggers should remain at their default level (NOTSET = 0, allows all)
         assert logging.getLogger("httpx").level < logging.WARNING
         assert logging.getLogger("httpcore").level < logging.WARNING
-        assert logging.getLogger("graphiti_core.driver.falkordb_driver").level < logging.WARNING
 
     def test_warning_and_error_logs_still_visible(self, tmp_path, monkeypatch):
         """WARNING and ERROR level logs should pass through even when suppressed."""
@@ -2321,7 +1387,7 @@ class TestLoggerSuppression:
         runner = CliRunner()
 
         with patch("guardkit.cli.init.apply_template", return_value=True):
-            runner.invoke(cli, ["init", "--skip-graphiti"])
+            runner.invoke(cli, ["init"])
 
         # Level is WARNING, so WARNING and above pass through
         httpx_logger = logging.getLogger("httpx")
@@ -2337,232 +1403,7 @@ class TestLoggerSuppression:
 
 
 # ============================================================================
-# System Seeding Auto-Offer Tests (TASK-IGP-001)
-# ============================================================================
-
-
-class TestInitSystemSeedingAutoOffer:
-    """Test auto-offer of system seeding after project seeding."""
-
-    def test_system_seeding_offered_after_project_seeding(self, tmp_path, monkeypatch):
-        """Test that user is prompted for system seeding after project seeding succeeds."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        mock_sys_result = MagicMock()
-        mock_sys_result.success = True
-        mock_sys_result.results = []
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', return_value=True) as mock_confirm, \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-            mock_sys_seed.return_value = mock_sys_result
-
-            result = runner.invoke(cli, ["init"])
-
-            # Should have asked about system seeding
-            confirm_calls = [str(c) for c in mock_confirm.call_args_list]
-            assert any("system" in c.lower() for c in confirm_calls)
-
-    def test_system_seeding_runs_when_accepted(self, tmp_path, monkeypatch):
-        """Test that system seeding runs when user accepts the offer."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        mock_sys_result = MagicMock()
-        mock_sys_result.success = True
-        mock_sys_result.results = []
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-            mock_sys_seed.return_value = mock_sys_result
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            # seed-system should NOT appear in next steps (already done)
-            assert "seed-system" not in result.output
-            mock_sys_seed.assert_called_once()
-
-    def test_system_seeding_skipped_when_declined(self, tmp_path, monkeypatch):
-        """Test that system seeding is skipped when user declines."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        # Confirm.ask returns False for system seeding, True for graphiti config offer
-        confirm_responses = []
-
-        def confirm_side_effect(*args, **kwargs):
-            question = str(args[0]) if args else ""
-            if "system" in question.lower():
-                return False
-            return True  # Accept other prompts
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', side_effect=confirm_side_effect), \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            # seed-system SHOULD appear in next steps (not done)
-            assert "seed-system" in result.output
-            # system seeding should NOT have been called
-            mock_sys_seed.assert_not_called()
-
-    def test_no_questions_auto_accepts_system_seeding(self, tmp_path, monkeypatch):
-        """Test that --no-questions flag auto-accepts system seeding."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        mock_sys_result = MagicMock()
-        mock_sys_result.success = True
-        mock_sys_result.results = []
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-            mock_sys_seed.return_value = mock_sys_result
-
-            result = runner.invoke(cli, ["init", "--no-questions"])
-
-            assert result.exit_code == 0
-            # System seeding should have run without prompting
-            mock_sys_seed.assert_called_once()
-
-    def test_skip_graphiti_skips_system_seeding(self, tmp_path, monkeypatch):
-        """Test that --skip-graphiti skips both project AND system seeding."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
-
-            assert result.exit_code == 0
-            mock_seed.assert_not_called()
-            mock_sys_seed.assert_not_called()
-
-    def test_system_seeding_error_does_not_fail_init(self, tmp_path, monkeypatch):
-        """Test that exception in system seeding does not fail overall init."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-            # System seeding raises an exception
-            mock_sys_seed.side_effect = Exception("FalkorDB connection refused")
-
-            result = runner.invoke(cli, ["init"])
-
-            # Init should still succeed (graceful degradation)
-            assert result.exit_code == 0
-            assert "warning" in result.output.lower() or "error" in result.output.lower()
-
-    def test_next_steps_omit_seed_system_when_already_seeded(self, tmp_path, monkeypatch):
-        """Test that 'Next steps' omits seed-system when system seeding already ran."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        mock_sys_result = MagicMock()
-        mock_sys_result.success = True
-        mock_sys_result.results = []
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', return_value=True), \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-            mock_sys_seed.return_value = mock_sys_result
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            # "seed-system" should NOT be in next steps
-            assert "seed-system" not in result.output
-            # But task creation steps should still appear
-            assert "task-create" in result.output
-
-    def test_next_steps_include_seed_system_when_not_seeded(self, tmp_path, monkeypatch):
-        """Test that 'Next steps' includes seed-system when system seeding was declined."""
-        runner = CliRunner()
-        monkeypatch.chdir(tmp_path)
-
-        def confirm_side_effect(*args, **kwargs):
-            question = str(args[0]) if args else ""
-            if "system" in question.lower():
-                return False
-            return True
-
-        with patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
-             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
-             patch('guardkit.cli.init.Confirm.ask', side_effect=confirm_side_effect), \
-             patch('guardkit.knowledge.system_seeding.seed_system_content', new_callable=AsyncMock) as mock_sys_seed:
-
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client_class.return_value = mock_client
-            mock_seed.return_value = MagicMock(success=True, results=[])
-
-            result = runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            # "seed-system" SHOULD be in next steps
-            assert "seed-system" in result.output
-
-
-# ============================================================================
-# Pattern-Layer Summary Tests (TASK-INIT-D4E7)
+# 9. Pattern-Layer Summary Tests (TASK-INIT-D4E7)
 # ============================================================================
 
 
@@ -2698,15 +1539,6 @@ class TestPatternLayerCount:
 class TestInitPatternLayerSummary:
     """Test that `guardkit init` summary surfaces pattern-layer count."""
 
-    def _setup_graphiti_mocks(self, patches):
-        """Helper to set up standard Graphiti mocks."""
-        patches["seed"].return_value = MagicMock(success=True, results=[])
-        client = MagicMock()
-        client.enabled = True
-        client.initialize = AsyncMock(return_value=True)
-        client.close = AsyncMock()
-        patches["client_class"].return_value = client
-
     def test_summary_emits_line_when_pattern_layer_present(
         self, tmp_path, monkeypatch
     ):
@@ -2714,12 +1546,8 @@ class TestInitPatternLayerSummary:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=7), \
-             patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class:
-
-            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=7):
+            result = runner.invoke(cli, ["init"])
 
             # Collapse whitespace to tolerate rich-console line wrapping.
             normalized = " ".join(result.output.split())
@@ -2735,12 +1563,8 @@ class TestInitPatternLayerSummary:
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
 
-        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=0), \
-             patch("guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock) as mock_seed, \
-             patch("guardkit.cli.init.GraphitiClient") as mock_client_class:
-
-            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+        with patch("guardkit.cli.init._count_pattern_layer_files", return_value=0):
+            result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
             assert "Pattern layer:" not in result.output
@@ -2753,14 +1577,8 @@ class TestInitPatternLayerSummary:
         with patch(
             "guardkit.cli.init._count_pattern_layer_files",
             side_effect=RuntimeError("boom"),
-        ), patch(
-            "guardkit.cli.init.seed_project_knowledge", new_callable=AsyncMock
-        ) as mock_seed, patch(
-            "guardkit.cli.init.GraphitiClient"
-        ) as mock_client_class:
-
-            self._setup_graphiti_mocks({"seed": mock_seed, "client_class": mock_client_class})
-            result = runner.invoke(cli, ["init", "--skip-graphiti"])
+        ):
+            result = runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
             assert "Pattern layer:" not in result.output

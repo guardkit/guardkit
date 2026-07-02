@@ -1,26 +1,22 @@
 """
 Tests for guardkit review CLI command.
 
-Verifies:
-- --capture-knowledge / -ck flag parsing
-- Flag triggers run_review_capture() after review
-- Review findings passed to run_review_capture()
-- Capture results displayed (captured count or skipped/failed)
-- Flag optional, defaults to False
-- Graceful handling when Graphiti unavailable
+Verifies (post-FEAT-MEM-09 graphiti-code cutover; knowledge capture removed):
+- Review loads the task (exit code 1 if not found)
+- Mode / depth options parse and validate
+- --enable-context/--no-context flag behavior
 - CLI registration in main app
 
 Coverage Target: >=85%
 """
 
-import asyncio
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
-from guardkit.cli.review import review, _run_capture
+from guardkit.cli.review import review
 
 
 # ============================================================================
@@ -51,273 +47,62 @@ def mock_task_data():
     }
 
 
-@pytest.fixture
-def mock_capture_result_success():
-    """Successful capture result."""
-    return {
-        "capture_executed": True,
-        "task_id": "TASK-REV-001",
-        "task_context": {"task_id": "TASK-REV-001"},
-        "review_mode": "architectural",
-        "findings_count": 2,
-    }
-
-
-@pytest.fixture
-def mock_capture_result_skipped():
-    """Skipped capture result (Graphiti unavailable)."""
-    return {
-        "capture_executed": False,
-        "task_id": "TASK-REV-001",
-        "task_context": {"task_id": "TASK-REV-001"},
-        "review_mode": "architectural",
-        "findings_count": 0,
-        "error": "Graphiti not connected",
-    }
-
-
 # ============================================================================
-# Test 1: Flag Parsing
+# Test 1: Task Loading
 # ============================================================================
 
 
-class TestFlagParsing:
-    """Test --capture-knowledge flag is parsed correctly by Click."""
+class TestTaskLoading:
+    """Test that review loads the task and displays context."""
 
-    def test_capture_knowledge_long_flag(self, runner, mock_task_data):
-        """--capture-knowledge flag is accepted."""
+    def test_review_loads_task(self, runner, mock_task_data):
+        """review loads the task and exits 0 when found."""
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
             return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            result = runner.invoke(
-                review, ["TASK-REV-001", "--capture-knowledge"]
-            )
-            assert result.exit_code == 0, result.output
-            mock_capture.assert_called_once()
-
-    def test_capture_knowledge_short_flag(self, runner, mock_task_data):
-        """-ck short flag is accepted."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert result.exit_code == 0, result.output
-            mock_capture.assert_called_once()
-
-    def test_capture_knowledge_default_false(self, runner, mock_task_data):
-        """Flag defaults to False (no capture triggered)."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
+        ) as mock_load:
             result = runner.invoke(review, ["TASK-REV-001"])
             assert result.exit_code == 0, result.output
-            mock_capture.assert_not_called()
+            mock_load.assert_called_once()
 
-
-# ============================================================================
-# Test 2: Capture Triggering
-# ============================================================================
-
-
-class TestCaptureTrigger:
-    """Test that capture is triggered with correct arguments."""
-
-    def test_capture_receives_task_context(self, runner, mock_task_data):
-        """run_capture receives task_context with task_id and review_mode."""
+    def test_review_displays_task_id(self, runner, mock_task_data):
+        """review displays the task id in its output."""
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
             return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(review, ["TASK-REV-001", "-ck"])
+        ):
+            result = runner.invoke(review, ["TASK-REV-001"])
+            assert result.exit_code == 0, result.output
+            assert "TASK-REV-001" in result.output
 
-            call_args = mock_capture.call_args
-            task_context = call_args[0][0]
-            assert task_context["task_id"] == "TASK-REV-001"
-            assert task_context["review_mode"] == "architectural"
-
-    def test_capture_receives_review_findings(self, runner, mock_task_data):
-        """run_capture receives review_findings with mode."""
+    def test_review_displays_mode_and_depth(self, runner, mock_task_data):
+        """review displays the review mode and depth."""
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
             return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(
-                review, ["TASK-REV-001", "--mode=security", "-ck"]
+        ):
+            result = runner.invoke(
+                review,
+                ["TASK-REV-001", "--mode=security", "--depth=comprehensive"],
             )
+            assert result.exit_code == 0, result.output
+            assert "security" in result.output
+            assert "comprehensive" in result.output
 
-            call_args = mock_capture.call_args
-            review_findings = call_args[0][1]
-            assert review_findings["mode"] == "security"
-
-    def test_capture_receives_correct_mode(self, runner, mock_task_data):
-        """Different --mode values pass through to capture."""
-        modes = [
-            "architectural",
-            "code-quality",
-            "decision",
-            "technical-debt",
-            "security",
-        ]
-        for mode in modes:
-            with patch(
-                "guardkit.cli.review.TaskLoader.load_task",
-                return_value=mock_task_data,
-            ), patch(
-                "guardkit.cli.review._run_capture"
-            ) as mock_capture:
-                runner.invoke(
-                    review, ["TASK-REV-001", f"--mode={mode}", "-ck"]
-                )
-
-                call_args = mock_capture.call_args
-                task_ctx = call_args[0][0]
-                findings = call_args[0][1]
-                assert task_ctx["review_mode"] == mode
-                assert findings["mode"] == mode
-
-
-# ============================================================================
-# Test 3: Capture Result Display
-# ============================================================================
-
-
-class TestCaptureDisplay:
-    """Test capture result display output."""
-
-    def test_displays_success_message(
-        self, runner, mock_task_data, mock_capture_result_success
-    ):
-        """Successful capture shows captured count."""
-        async def mock_run_review(*args, **kwargs):
-            return mock_capture_result_success
+    def test_review_task_not_found_exits_1(self, runner):
+        """review exits with code 1 when the task cannot be loaded."""
+        from guardkit.tasks.task_loader import TaskNotFoundError
 
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.knowledge.review_knowledge_capture.InteractiveCaptureSession"
-        ), patch(
-            "guardkit.cli.review.asyncio.run",
-            return_value=mock_capture_result_success,
+            side_effect=TaskNotFoundError("Task TASK-REV-999 not found"),
         ):
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert "Knowledge Capture" in result.output
-            assert "Captured" in result.output
-
-    def test_displays_skipped_message_on_error(
-        self, runner, mock_task_data, mock_capture_result_skipped
-    ):
-        """Failed capture shows skipped message."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review.asyncio.run",
-            return_value=mock_capture_result_skipped,
-        ):
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert "Knowledge Capture" in result.output
-            assert "Skipped" in result.output
-
-    def test_displays_skipped_on_exception(self, runner, mock_task_data):
-        """Exception during capture shows skipped message."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review.asyncio.run",
-            side_effect=Exception("Connection refused"),
-        ):
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert "Knowledge Capture" in result.output
-            assert "Skipped" in result.output
-            assert "Connection refused" in result.output
+            result = runner.invoke(review, ["TASK-REV-999"])
+            assert result.exit_code == 1
 
 
 # ============================================================================
-# Test 4: Graceful Degradation
-# ============================================================================
-
-
-class TestGracefulDegradation:
-    """Test graceful handling when Graphiti unavailable."""
-
-    def test_no_crash_on_import_error(self, runner, mock_task_data):
-        """Import error for review_knowledge_capture doesn't crash."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review.asyncio.run",
-            side_effect=ImportError("No module named 'graphiti_core'"),
-        ):
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert result.exit_code == 0
-            assert "Knowledge Capture" in result.output
-            assert "Skipped" in result.output
-
-    def test_no_crash_on_runtime_error(self, runner, mock_task_data):
-        """Runtime errors during capture don't crash."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review.asyncio.run",
-            side_effect=RuntimeError("Event loop closed"),
-        ):
-            result = runner.invoke(review, ["TASK-REV-001", "-ck"])
-            assert result.exit_code == 0
-            assert "Skipped" in result.output
-
-
-# ============================================================================
-# Test 5: _run_capture Unit Tests
-# ============================================================================
-
-
-class TestRunCaptureFunction:
-    """Test _run_capture helper function directly."""
-
-    def test_calls_run_review_capture(self, mock_capture_result_success):
-        """_run_capture calls run_review_capture with correct args."""
-        task_ctx = {"task_id": "TASK-001", "review_mode": "architectural"}
-        findings = {"mode": "architectural", "findings": []}
-
-        with patch(
-            "guardkit.cli.review.asyncio.run",
-            return_value=mock_capture_result_success,
-        ) as mock_run:
-            _run_capture(task_ctx, findings)
-            mock_run.assert_called_once()
-
-    def test_handles_exception_gracefully(self):
-        """_run_capture catches exceptions without raising."""
-        task_ctx = {"task_id": "TASK-001", "review_mode": "architectural"}
-        findings = {"mode": "architectural", "findings": []}
-
-        with patch(
-            "guardkit.cli.review.asyncio.run",
-            side_effect=Exception("Graphiti unavailable"),
-        ):
-            # Should not raise
-            _run_capture(task_ctx, findings)
-
-
-# ============================================================================
-# Test 6: CLI Registration
+# Test 2: CLI Registration
 # ============================================================================
 
 
@@ -333,15 +118,9 @@ class TestCLIRegistration:
             f"'review' not found in CLI commands: {list(commands.keys())}"
         )
 
-    def test_review_help_shows_capture_flag(self, runner):
-        """--help output shows --capture-knowledge flag."""
-        result = runner.invoke(review, ["--help"])
-        assert "--capture-knowledge" in result.output
-        assert "-ck" in result.output
-
 
 # ============================================================================
-# Test 7: Mode and Depth Options
+# Test 3: Mode and Depth Options
 # ============================================================================
 
 
@@ -370,56 +149,34 @@ class TestModeAndDepthOptions:
             )
             assert result.exit_code != 0
 
-    def test_depth_passed_to_context(self, runner, mock_task_data):
-        """--depth value passes through to task context."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(
-                review,
-                ["TASK-REV-001", "--depth=comprehensive", "-ck"],
-            )
-            call_args = mock_capture.call_args
-            task_ctx = call_args[0][0]
-            assert task_ctx["depth"] == "comprehensive"
-
     def test_default_mode_is_architectural(self, runner, mock_task_data):
-        """Default mode is architectural."""
+        """Default mode is architectural (shown in output)."""
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
             return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(review, ["TASK-REV-001", "-ck"])
-            call_args = mock_capture.call_args
-            task_ctx = call_args[0][0]
-            assert task_ctx["review_mode"] == "architectural"
+        ):
+            result = runner.invoke(review, ["TASK-REV-001"])
+            assert result.exit_code == 0, result.output
+            assert "architectural" in result.output
 
     def test_default_depth_is_standard(self, runner, mock_task_data):
-        """Default depth is standard."""
+        """Default depth is standard (shown in output)."""
         with patch(
             "guardkit.cli.review.TaskLoader.load_task",
             return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(review, ["TASK-REV-001", "-ck"])
-            call_args = mock_capture.call_args
-            task_ctx = call_args[0][0]
-            assert task_ctx["depth"] == "standard"
+        ):
+            result = runner.invoke(review, ["TASK-REV-001"])
+            assert result.exit_code == 0, result.output
+            assert "standard" in result.output
 
 
 # ============================================================================
-# Test 8: Enable Context Flag (TASK-FIX-GCI7)
+# Test 4: Enable Context Flag (TASK-FIX-GCI7)
 # ============================================================================
 
 
 class TestEnableContextFlag:
-    """Test --enable-context/--no-context flag for Graphiti context control."""
+    """Test --enable-context/--no-context flag for memory context control."""
 
     def test_enable_context_defaults_to_true(self, runner, mock_task_data):
         """--enable-context defaults to True."""
@@ -459,50 +216,6 @@ class TestEnableContextFlag:
             return_value=mock_task_data,
         ):
             result = runner.invoke(review, ["TASK-REV-001", "--no-context"])
-            assert "Disabled" in result.output
-
-    def test_no_context_suppresses_capture_knowledge(
-        self, runner, mock_task_data
-    ):
-        """--no-context suppresses --capture-knowledge (can't write without Graphiti)."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            result = runner.invoke(
-                review, ["TASK-REV-001", "--no-context", "-ck"]
-            )
-            assert result.exit_code == 0, result.output
-            # _run_capture should NOT be called when context is disabled
-            mock_capture.assert_not_called()
-
-    def test_enable_context_stored_in_task_context(
-        self, runner, mock_task_data
-    ):
-        """enable_context value is stored in task_context for downstream use."""
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ), patch(
-            "guardkit.cli.review._run_capture"
-        ) as mock_capture:
-            runner.invoke(review, ["TASK-REV-001", "-ck"])
-            call_args = mock_capture.call_args
-            task_ctx = call_args[0][0]
-            assert task_ctx["enable_context"] is True
-
-    def test_no_context_stored_in_task_context(self, runner, mock_task_data):
-        """enable_context=False is stored in task_context when --no-context used."""
-        # Since --no-context suppresses capture, we need to check via the
-        # display output instead
-        with patch(
-            "guardkit.cli.review.TaskLoader.load_task",
-            return_value=mock_task_data,
-        ):
-            result = runner.invoke(review, ["TASK-REV-001", "--no-context"])
-            assert result.exit_code == 0
             assert "Disabled" in result.output
 
     def test_help_shows_enable_context_flag(self, runner):
