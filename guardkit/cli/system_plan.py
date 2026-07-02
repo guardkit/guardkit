@@ -2,7 +2,7 @@
 System-plan CLI command.
 
 This module provides the Click command for architecture planning with
-optional Graphiti knowledge context integration.
+optional memory-backend knowledge context integration.
 
 Example:
     $ guardkit system-plan "Build payment processing system"
@@ -103,7 +103,7 @@ def validate_mutually_exclusive(ctx, no_questions: bool, defaults: bool) -> None
     "--enable-context/--no-context",
     "enable_context",
     default=True,
-    help="Enable/disable Graphiti context retrieval (default: enabled)",
+    help="Enable/disable memory context retrieval (default: enabled)",
 )
 @click.pass_context
 @handle_cli_errors
@@ -191,7 +191,7 @@ async def _run_system_plan(
         no_questions: Skip clarifying questions
         defaults: Use sensible defaults
         context_file: Path to additional context file
-        enable_context: Whether to enable Graphiti context
+        enable_context: Whether to enable memory context
         ctx_obj: Click context object
     """
     from guardkit.planning.system_plan import run_system_plan

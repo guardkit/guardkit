@@ -2,7 +2,7 @@
 ADR (Architecture Decision Record) Entity Model.
 
 Provides dataclasses and enums for representing Architecture Decision Records
-that are stored in Graphiti for knowledge graph persistence.
+that are stored in the memory backend (fleet-memory; formerly Graphiti).
 
 Public API:
     ADRStatus: Enum for ADR lifecycle states
@@ -67,10 +67,10 @@ class ADRTrigger(Enum):
 
 @dataclass
 class ADREntity:
-    """Architecture Decision Record stored in Graphiti.
+    """Architecture Decision Record stored in the memory backend.
 
     Represents a complete ADR with all metadata, context, and relationships.
-    Designed for storage in Graphiti as episodes with the "adrs" group.
+    Designed for storage in the memory backend as episodes with the "adrs" group.
 
     Attributes:
         id: ADR identifier (format: ADR-XXXX)

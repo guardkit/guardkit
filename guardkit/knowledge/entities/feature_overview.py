@@ -95,12 +95,12 @@ class FeatureOverviewEntity:
     updated_at: datetime = field(default_factory=datetime.now)
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body. Returns only domain data;
+        in the memory backend as an episode body. Returns only domain data;
         metadata fields like entity_type, created_at, and updated_at
-        are injected by GraphitiClient.
+        are injected by the memory client.
 
         Returns:
             Dictionary containing all feature overview fields.

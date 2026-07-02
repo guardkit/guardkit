@@ -1,8 +1,9 @@
 """
-GuardKit Knowledge Graph Integration Module.
+GuardKit Knowledge Memory Integration Module.
 
-This module provides integration with Graphiti, a temporal knowledge graph
-for AI systems. It enables GuardKit to maintain persistent memory of:
+This module provides GuardKit's persistent knowledge memory surface, backed by
+the fleet-memory pure-embeddings backend (formerly Graphiti). It enables
+GuardKit to maintain persistent memory of:
 - Product knowledge and domain concepts
 - Command workflows and patterns
 - Architecture decisions and rationale
@@ -12,16 +13,9 @@ for AI systems. It enables GuardKit to maintain persistent memory of:
 - Failed approach episodes for prevention (TASK-GE-004)
 
 All components are designed for graceful degradation - the system continues
-to function normally when Graphiti is unavailable.
+to function normally when the memory backend is unavailable.
 
 Public API:
-    GraphitiConfig: Configuration dataclass for client connection
-    GraphitiClient: Main client wrapper with graceful degradation
-    GraphitiSettings: Settings loaded from YAML configuration
-    init_graphiti: Initialize the global client singleton
-    get_graphiti: Get the global client instance
-    load_graphiti_config: Load configuration from YAML file
-    get_config_path: Get the path to the config file
     CriticalContext: Dataclass for session context (TASK-GI-003)
     load_critical_context: Load context at session/command start
     load_feature_overview: Load feature overview for context injection (TASK-GE-001)
@@ -62,20 +56,10 @@ Public API:
     format_quality_gates: Format quality gate configs for prompts (TASK-GR6-008)
 
 Example:
-    from guardkit.knowledge import (
-        GraphitiConfig,
-        GraphitiClient,
-        init_graphiti,
-        get_graphiti,
-    )
+    from guardkit.knowledge.fleet_memory_client import get_memory_client
 
-    # Initialize with default config
-    await init_graphiti()
-
-    # Or with custom config
-    config = GraphitiConfig(host="graphiti.example.com", port=9000)
-    client = GraphitiClient(config)
-    await client.initialize()
+    # Acquire the memory client through the factory
+    client = get_memory_client()
 
     if client.enabled:
         results = await client.search("authentication patterns")
@@ -125,7 +109,7 @@ Example:
         coach_decision="approved",
     )
 
-    # Capture turn state to Graphiti
+    # Capture turn state to the memory backend
     await capture_turn_state(graphiti, entity)
 
     # Load previous turn context for Turn N

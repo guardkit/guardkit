@@ -2,15 +2,16 @@
 Context loading module for GuardKit session initialization.
 
 This module provides the critical context loading functionality that injects
-relevant knowledge from Graphiti at the start of Claude Code sessions and commands.
-This is THE feature that fixes the memory problem by ensuring sessions have
-knowledge of architectural decisions, failure patterns, and quality gates.
+relevant knowledge from the fleet-memory backend (formerly Graphiti) at the
+start of Claude Code sessions and commands. This is THE feature that fixes the
+memory problem by ensuring sessions have knowledge of architectural decisions,
+failure patterns, and quality gates.
 
 Instrumentation (TASK-INST-006):
-    When an EventEmitter is provided, every Graphiti query emits a
+    When an EventEmitter is provided, every memory-backend query emits a
     ``graphiti.query`` event (GraphitiQueryEvent) with query_type,
     items_returned, tokens_injected, latency_ms, and status fields.
-    When Graphiti is unreachable, an error event is emitted and a
+    When the memory backend is unreachable, an error event is emitted and a
     warning is logged; the run continues with digest-only context.
 
 Example Usage:
@@ -135,7 +136,7 @@ def _filter_valid_results(results: List[Any]) -> List[Dict[str, Any]]:
     """Filter search results to only include valid dict entries.
 
     Args:
-        results: Raw search results from Graphiti
+        results: Raw search results from the memory backend
 
     Returns:
         List of valid dictionary results with 'body' field.
@@ -229,15 +230,15 @@ async def load_critical_context(
 ) -> CriticalContext:
     """Load must-know context at session/command start.
 
-    This function queries Graphiti for critical knowledge that should be
-    injected into Claude Code sessions. It ensures sessions have knowledge of:
+    This function queries the memory backend for critical knowledge that should
+    be injected into Claude Code sessions. It ensures sessions have knowledge of:
     - What GuardKit is and how it works
     - Quality gates and their requirements
     - Architecture decisions that MUST be followed
     - Failure patterns to avoid
 
     When *emitter* is provided, a ``graphiti.query`` event is emitted for
-    every internal Graphiti search call (TASK-INST-006).
+    every internal memory-backend search call (TASK-INST-006).
 
     Args:
         task_id: Optional task ID for task-specific context
@@ -250,7 +251,7 @@ async def load_critical_context(
 
     Returns:
         CriticalContext with all loaded knowledge, or empty context if
-        Graphiti is unavailable (graceful degradation).
+        the memory backend is unavailable (graceful degradation).
 
     Example:
         # Load context for feature-build command
@@ -271,13 +272,13 @@ async def load_critical_context(
 
     graphiti = get_memory_client()
 
-    # Graceful degradation: return empty context if Graphiti unavailable
+    # Graceful degradation: return empty context if the memory backend unavailable
     if graphiti is None:
-        logger.debug("Graphiti client is None, returning empty context")
+        logger.debug("Memory client is None, returning empty context")
         return _create_empty_context()
 
     if not graphiti.enabled:
-        logger.debug("Graphiti is disabled, returning empty context")
+        logger.debug("Memory backend is disabled, returning empty context")
         return _create_empty_context()
 
     # Event-emission kwargs shared across all _load_* calls
@@ -330,7 +331,7 @@ async def load_critical_context(
         )
 
     except Exception as e:
-        logger.warning(f"Error loading context from Graphiti: {e}")
+        logger.warning(f"Error loading context from the memory backend: {e}")
         return _create_empty_context()
 
 
@@ -355,7 +356,7 @@ async def _instrumented_load(
     continue with digest-only context.
 
     Args:
-        graphiti: GraphitiClient instance.
+        graphiti: memory client instance.
         load_fn: One of the ``_load_*`` coroutine functions.
         query_type: Event query_type value.
         emitter: Optional EventEmitter.
@@ -411,7 +412,7 @@ async def _load_system_context(graphiti: Any) -> List[Dict[str, Any]]:
     """Load system context (what GuardKit is).
 
     Args:
-        graphiti: GraphitiClient instance
+        graphiti: memory client instance
 
     Returns:
         List of system context results.
@@ -428,7 +429,7 @@ async def _load_quality_gates(graphiti: Any) -> List[Dict[str, Any]]:
     """Load quality gate definitions.
 
     Args:
-        graphiti: GraphitiClient instance
+        graphiti: memory client instance
 
     Returns:
         List of quality gate results.
@@ -445,7 +446,7 @@ async def _load_architecture_decisions(graphiti: Any) -> List[Dict[str, Any]]:
     """Load architecture decisions (MUST FOLLOW).
 
     Args:
-        graphiti: GraphitiClient instance
+        graphiti: memory client instance
 
     Returns:
         List of architecture decision results.
@@ -462,7 +463,7 @@ async def _load_failure_patterns(graphiti: Any) -> List[Dict[str, Any]]:
     """Load failure patterns (DO NOT REPEAT).
 
     Args:
-        graphiti: GraphitiClient instance
+        graphiti: memory client instance
 
     Returns:
         List of failure pattern results.
@@ -479,7 +480,7 @@ async def _load_feature_build_context(graphiti: Any) -> List[Dict[str, Any]]:
     """Load feature-build specific context.
 
     Args:
-        graphiti: GraphitiClient instance
+        graphiti: memory client instance
 
     Returns:
         List of feature-build specific results.
@@ -495,8 +496,8 @@ async def _load_feature_build_context(graphiti: Any) -> List[Dict[str, Any]]:
 async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewEntity"]:
     """Load feature overview for context injection.
 
-    Queries Graphiti for the feature overview entity matching the given
-    feature name. Returns the first matching result.
+    Queries the memory backend for the feature overview entity matching the
+    given feature name. Returns the first matching result.
 
     Args:
         feature_name: Name/ID of the feature (e.g., "feature-build")
@@ -515,13 +516,13 @@ async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewE
 
     graphiti = get_memory_client()
 
-    # Graceful degradation: return None if Graphiti unavailable
+    # Graceful degradation: return None if the memory backend unavailable
     if graphiti is None:
-        logger.debug("Graphiti client is None, returning None for feature overview")
+        logger.debug("Memory client is None, returning None for feature overview")
         return None
 
     if not graphiti.enabled:
-        logger.debug("Graphiti is disabled, returning None for feature overview")
+        logger.debug("Memory backend is disabled, returning None for feature overview")
         return None
 
     try:
@@ -606,8 +607,8 @@ async def load_critical_adrs(
 ) -> List[Dict[str, Any]]:
     """Load critical Architecture Decision Records for context injection.
 
-    Queries Graphiti for ADRs in the architecture_decisions group and
-    returns them formatted for injection into Claude Code sessions.
+    Queries the memory backend for ADRs in the architecture_decisions group
+    and returns them formatted for injection into Claude Code sessions.
 
     When *emitter* is provided, emits a ``graphiti.query`` event with
     ``query_type="adr_lookup"`` (TASK-INST-006).
@@ -621,7 +622,7 @@ async def load_critical_adrs(
 
     Returns:
         List of ADR dictionaries with id, title, decision, violation_symptoms, etc.
-        Returns empty list if Graphiti is unavailable (graceful degradation).
+        Returns empty list if the memory backend is unavailable (graceful degradation).
 
     Example:
         adrs = await load_critical_adrs()
@@ -630,13 +631,13 @@ async def load_critical_adrs(
     """
     graphiti = get_memory_client()
 
-    # Graceful degradation: return empty list if Graphiti unavailable
+    # Graceful degradation: return empty list if the memory backend unavailable
     if graphiti is None:
-        logger.debug("Graphiti client is None, returning empty list for critical ADRs")
+        logger.debug("Memory client is None, returning empty list for critical ADRs")
         return []
 
     if not graphiti.enabled:
-        logger.debug("Graphiti is disabled, returning empty list for critical ADRs")
+        logger.debug("Memory backend is disabled, returning empty list for critical ADRs")
         return []
 
     t0 = time.monotonic()
@@ -649,7 +650,7 @@ async def load_critical_adrs(
         latency_ms = (time.monotonic() - t0) * 1000.0
 
         if not results:
-            logger.debug("No critical ADRs found in Graphiti")
+            logger.debug("No critical ADRs found in the memory backend")
             await _emit_graphiti_event(
                 emitter,
                 query_type="adr_lookup",
@@ -724,7 +725,7 @@ async def load_failed_approaches(
 
     Returns:
         List of warning dictionaries with symptom, prevention, and related_adrs.
-        Returns empty list if Graphiti is unavailable (graceful degradation).
+        Returns empty list if the memory backend is unavailable (graceful degradation).
 
     Example:
         warnings = await load_failed_approaches("subprocess task-work")
@@ -744,8 +745,8 @@ async def load_failed_approaches(
 async def load_role_context(role: str, context: str = "feature-build") -> Optional[str]:
     """Load role constraints for injection into session.
 
-    Queries Graphiti for role constraints and formats them as markdown
-    for injection into Player or Coach agent context.
+    Queries the memory backend for role constraints and formats them as
+    markdown for injection into Player or Coach agent context.
 
     Args:
         role: Role name ("player" | "coach")
@@ -753,7 +754,7 @@ async def load_role_context(role: str, context: str = "feature-build") -> Option
 
     Returns:
         Formatted markdown string with role constraints, or None if
-        Graphiti is unavailable or no results found.
+        the memory backend is unavailable or no results found.
 
     Example:
         context = await load_role_context("player", "feature-build")
@@ -762,13 +763,13 @@ async def load_role_context(role: str, context: str = "feature-build") -> Option
     """
     graphiti = get_memory_client()
 
-    # Graceful degradation: return None if Graphiti unavailable
+    # Graceful degradation: return None if the memory backend unavailable
     if graphiti is None:
-        logger.debug("Graphiti client is None, returning None for role context")
+        logger.debug("Memory client is None, returning None for role context")
         return None
 
     if not graphiti.enabled:
-        logger.debug("Graphiti is disabled, returning None for role context")
+        logger.debug("Memory backend is disabled, returning None for role context")
         return None
 
     try:

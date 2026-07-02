@@ -55,13 +55,13 @@ class RoleConstraintFact:
     created_at: datetime = field(default_factory=datetime.now)
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Returns only domain data; metadata fields like entity_type
-        and created_at are injected by GraphitiClient.
+        and created_at are injected by the memory client.
 
         Returns:
-            Dictionary suitable for Graphiti episode storage.
+            Dictionary suitable for memory-backend episode storage.
         """
         return {
             "role": self.role,

@@ -28,7 +28,7 @@ Example:
         completed_at=datetime.now()
     )
 
-    # Store in Graphiti
+    # Store in the memory backend
     episode_body = turn_state.to_episode_body()
 """
 
@@ -165,11 +165,11 @@ class TurnStateEntity:
     what_to_try_next: Optional[str] = None
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body. Returns only domain data;
-        metadata fields like entity_type are injected by GraphitiClient.
+        in the memory backend as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by the memory client.
 
         Returns:
             Dictionary containing all turn state fields.

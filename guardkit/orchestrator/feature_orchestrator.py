@@ -642,7 +642,7 @@ class FeatureOrchestrator:
             Enable/disable pre-loop quality gates. If None, uses cascade:
             task frontmatter > feature YAML > default (True).
         enable_context : bool, optional
-            Enable/disable Graphiti context retrieval (default: True).
+            Enable/disable memory context retrieval (default: True).
         task_timeout : int, optional
             Per-task timeout in seconds for wave execution (default: 2400, i.e. 40 min).
             Prevents any single task from blocking an entire wave indefinitely.
@@ -3597,7 +3597,7 @@ The detailed specifications are in the task markdown file.
             ]
 
             # TASK-FIX-7A07: Hoist stall sub-classification into the
-            # TaskExecutionResult so the review-summary renderer and Graphiti
+            # TaskExecutionResult so the review-summary renderer and memory
             # seeding hook can surface per-task decision_subtype without
             # re-walking the turn_history.
             decision_subtype: Optional[str] = None

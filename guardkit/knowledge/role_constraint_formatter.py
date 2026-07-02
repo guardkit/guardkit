@@ -2,7 +2,7 @@
 Role Constraint Formatter for GuardKit.
 
 This module provides formatting functions for role constraint configurations
-retrieved from Graphiti, specifically for AutoBuild workflows. The formatted
+retrieved from the memory backend, specifically for AutoBuild workflows. The formatted
 output includes emoji markers for boundaries:
 - ✓ for must_do items
 - ✗ for must_not_do items

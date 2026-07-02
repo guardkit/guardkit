@@ -2,7 +2,7 @@
 Quality Gate Configuration Facts for task-type and complexity-based thresholds.
 
 This module defines versioned, queryable quality gate configurations that
-can be stored in Graphiti and retrieved based on task type and complexity.
+can be stored in the memory backend and retrieved based on task type and complexity.
 
 Public API:
     QualityGateConfigFact: Dataclass for quality gate configurations
@@ -63,13 +63,13 @@ class QualityGateConfigFact:
     supersedes: Optional[str] = None  # Previous version ID
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Returns only domain data; metadata fields like entity_type
-        are injected by GraphitiClient.
+        are injected by the memory client.
 
         Returns:
-            Dictionary suitable for Graphiti episode storage.
+            Dictionary suitable for memory-backend episode storage.
         """
         return {
             "id": self.id,

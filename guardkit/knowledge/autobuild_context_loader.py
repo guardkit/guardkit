@@ -15,7 +15,7 @@ Architecture:
 Example:
     from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
 
-    # Initialize with optional Graphiti client
+    # Initialize with optional memory client
     loader = AutoBuildContextLoader(graphiti=graphiti_client)
 
     # Get Player context for turn
@@ -210,7 +210,7 @@ class AutoBuildContextLoader:
         - Role constraints for Coach responsibilities
 
     Attributes:
-        graphiti: Optional GraphitiClient for knowledge queries
+        graphiti: Optional memory client for knowledge queries
         retriever: JobContextRetriever instance (created lazily)
         verbose: Whether to include detailed context information
 
@@ -248,11 +248,12 @@ class AutoBuildContextLoader:
         """Initialize AutoBuildContextLoader.
 
         Args:
-            graphiti: Optional GraphitiClient instance for knowledge queries.
+            graphiti: Optional memory client instance for knowledge queries.
                 If not provided, context loading is a no-op (graceful degradation).
             verbose: If True, include detailed context information in results.
             worktree_path: Optional worktree path for local turn state file reads
-                (TASK-RFX-5FED). Enables fast local file reads instead of Graphiti.
+                (TASK-RFX-5FED). Enables fast local file reads instead of the
+                memory backend.
         """
         self.graphiti = graphiti
         self.verbose = verbose
@@ -264,7 +265,7 @@ class AutoBuildContextLoader:
         """Get or create JobContextRetriever instance.
 
         Returns:
-            JobContextRetriever if Graphiti is available, None otherwise.
+            JobContextRetriever if the memory backend is available, None otherwise.
         """
         if self._retriever is None and self.graphiti is not None:
             self._retriever = JobContextRetriever(self.graphiti)
@@ -305,13 +306,13 @@ class AutoBuildContextLoader:
         """
         if self.retriever is None:
             # Graceful degradation - return empty context
-            logger.debug(f"Graphiti not available, skipping Player context for {task_id}")
+            logger.debug(f"Memory backend not available, skipping Player context for {task_id}")
             result = self._empty_result(task_id)
-            # Still attempt template pattern injection (does not require Graphiti)
+            # Still attempt template pattern injection (does not require the memory backend)
             self._append_template_patterns(result, tech_stack=tech_stack)
             return result
 
-        logger.info("[Graphiti] Loading Player context (turn %d)...", turn_number)
+        logger.info("[Memory] Loading Player context (turn %d)...", turn_number)
         context_start = time.monotonic()
 
         # Build task dict for JobContextRetriever
@@ -370,14 +371,14 @@ class AutoBuildContextLoader:
             # Log similar outcomes count
             similar_outcomes_count = len(context.similar_outcomes) if context.similar_outcomes else 0
             if similar_outcomes_count > 0:
-                logger.info("[Graphiti] Similar outcomes found: %d matches", similar_outcomes_count)
+                logger.info("[Memory] Similar outcomes found: %d matches", similar_outcomes_count)
 
             # TASK-VOPT-002: Per-turn context loading timing
             context_duration = time.monotonic() - context_start
-            logger.info("[Graphiti] Context loaded in %.1fs", context_duration)
+            logger.info("[Memory] Context loaded in %.1fs", context_duration)
 
             logger.info(
-                "[Graphiti] Player context: %d categories, %d/%d tokens",
+                "[Memory] Player context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
                 result.budget_used,
                 result.budget_total,
@@ -425,10 +426,10 @@ class AutoBuildContextLoader:
         """
         if self.retriever is None:
             # Graceful degradation - return empty context
-            logger.debug(f"Graphiti not available, skipping Coach context for {task_id}")
+            logger.debug(f"Memory backend not available, skipping Coach context for {task_id}")
             return self._empty_result(task_id)
 
-        logger.info("[Graphiti] Loading Coach context (turn %d)...", turn_number)
+        logger.info("[Memory] Loading Coach context (turn %d)...", turn_number)
         context_start = time.monotonic()
 
         # Build task dict for JobContextRetriever
@@ -480,14 +481,14 @@ class AutoBuildContextLoader:
             result = self._build_result(context, actor="coach", turn_continuation=turn_continuation)
 
             # Log coach context categories
-            logger.info("[Graphiti] Coach context categories: %s", result.categories_populated)
+            logger.info("[Memory] Coach context categories: %s", result.categories_populated)
 
             # TASK-VOPT-002: Per-turn context loading timing
             context_duration = time.monotonic() - context_start
-            logger.info("[Graphiti] Context loaded in %.1fs", context_duration)
+            logger.info("[Memory] Context loaded in %.1fs", context_duration)
 
             logger.info(
-                "[Graphiti] Coach context: %d categories, %d/%d tokens",
+                "[Memory] Coach context: %d categories, %d/%d tokens",
                 len(result.categories_populated),
                 result.budget_used,
                 result.budget_total,

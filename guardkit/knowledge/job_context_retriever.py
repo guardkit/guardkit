@@ -2,7 +2,8 @@
 Job-Specific Context Retriever for GuardKit.
 
 This module provides the JobContextRetriever class for retrieving job-specific
-context from Graphiti based on task characteristics and budget allocation.
+context from the memory backend (fleet-memory; formerly Graphiti) based on task
+characteristics and budget allocation.
 It integrates TaskAnalyzer and DynamicBudgetCalculator to make smart decisions
 about what context to load.
 
@@ -68,7 +69,7 @@ from .relevance_tuning import (
 
 @dataclass
 class RetrievedContext:
-    """Retrieved context data from Graphiti.
+    """Retrieved context data from the memory backend.
 
     Contains task-specific context organized by category, along with
     budget tracking information and optional quality metrics.
@@ -289,12 +290,12 @@ class RetrievedContext:
 
 
 class JobContextRetriever:
-    """Retrieves job-specific context from Graphiti.
+    """Retrieves job-specific context from the memory backend.
 
     The JobContextRetriever uses TaskAnalyzer to understand task characteristics
     and DynamicBudgetCalculator to determine appropriate context allocation.
-    It then queries Graphiti for each context category, filters by relevance,
-    and trims results to fit the budget.
+    It then queries the memory backend for each context category, filters by
+    relevance, and trims results to fit the budget.
 
     Supports configurable relevance thresholds via RelevanceConfig (TASK-GR6-011)
     and optional quality metrics collection.
@@ -305,7 +306,7 @@ class JobContextRetriever:
     - Early termination when budget exhausted
 
     Attributes:
-        graphiti: GraphitiClient instance for querying knowledge graph
+        graphiti: memory client instance for querying the knowledge store
         relevance_config: Configuration for relevance thresholds (optional)
         cache_ttl: Cache time-to-live in seconds (default: 300)
 
@@ -385,10 +386,10 @@ class JobContextRetriever:
         relevance_config: Optional[RelevanceConfig] = None,
         cache_ttl: float = 300.0,
     ) -> None:
-        """Initialize JobContextRetriever with Graphiti client.
+        """Initialize JobContextRetriever with a memory client.
 
         Args:
-            graphiti: GraphitiClient instance for knowledge graph queries
+            graphiti: memory client instance for knowledge store queries
             relevance_config: Optional RelevanceConfig for custom thresholds.
                 If not provided, default thresholds are used.
             cache_ttl: Cache time-to-live in seconds (default: 300).
@@ -483,8 +484,8 @@ class JobContextRetriever:
         """Retrieve job-specific context for a task.
 
         Analyzes task characteristics, calculates budget allocation,
-        queries Graphiti for each context category, filters by relevance,
-        and trims results to fit budget.
+        queries the memory backend for each context category, filters by
+        relevance, and trims results to fit budget.
 
         Supports caching for repeated queries (TASK-GR6-012).
 
@@ -971,11 +972,11 @@ class JobContextRetriever:
         metrics_collector: Optional[MetricsCollector] = None,
         category: str = "",
     ) -> tuple[List[Dict[str, Any]], int]:
-        """Query a single context category from Graphiti.
+        """Query a single context category from the memory backend.
 
         Args:
             query: Search query (typically task description)
-            group_ids: Graphiti group IDs to search
+            group_ids: memory group IDs to search
             budget_allocation: Maximum token budget for this category
             threshold: Minimum relevance score to include
             metrics_collector: Optional MetricsCollector for tracking quality
@@ -985,7 +986,7 @@ class JobContextRetriever:
             Tuple of (filtered_results, tokens_used)
         """
         try:
-            # Query Graphiti
+            # Query the memory backend
             results = await self.graphiti.search(query, group_ids=group_ids)
 
             # Handle None or empty results
@@ -1011,7 +1012,7 @@ class JobContextRetriever:
 
         except Exception as e:
             logger.warning(
-                "[Graphiti] Category '%s' query failed: %s", category, e
+                "[Memory] Category '%s' query failed: %s", category, e
             )
             return [], 0
 
@@ -1042,7 +1043,7 @@ class JobContextRetriever:
             # Build query with feature_id and task_id format
             query = f"turn {feature_id} {task_id}"
 
-            # Query Graphiti with num_results=5 for last 5 turns
+            # Query the memory backend with num_results=5 for last 5 turns
             results = await self.graphiti.search(
                 query,
                 group_ids=["turn_states"],
@@ -1079,7 +1080,7 @@ class JobContextRetriever:
 
         except Exception as e:
             logger.warning(
-                "[Graphiti] turn_states query failed (feature=%s, task=%s): %s",
+                "[Memory] turn_states query failed (feature=%s, task=%s): %s",
                 feature_id,
                 task_id,
                 e,

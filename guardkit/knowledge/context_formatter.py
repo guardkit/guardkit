@@ -56,7 +56,7 @@ def format_context_for_injection(
     failure patterns as these are the most critical.
 
     Args:
-        context: CriticalContext loaded from Graphiti
+        context: CriticalContext loaded from the memory backend
         config: Optional ContextFormatterConfig for customization
 
     Returns:
@@ -110,7 +110,7 @@ def _format_architecture_decisions_section(
     """Format architecture decisions section.
 
     Args:
-        decisions: List of architecture decision results from Graphiti
+        decisions: List of architecture decision results from the memory backend
 
     Returns:
         Formatted markdown section, or empty string if no decisions.
@@ -159,7 +159,7 @@ def _format_failure_patterns_section(
     """Format failure patterns section.
 
     Args:
-        patterns: List of failure pattern results from Graphiti
+        patterns: List of failure pattern results from the memory backend
 
     Returns:
         Formatted markdown section, or empty string if no patterns.
@@ -201,7 +201,7 @@ def _format_quality_gates_section(
     """Format quality gates section.
 
     Args:
-        gates: List of quality gate results from Graphiti
+        gates: List of quality gate results from the memory backend
 
     Returns:
         Formatted markdown section, or empty string if no gates.
@@ -251,7 +251,7 @@ def _format_system_context_section(
     """Format system context section.
 
     Args:
-        context_items: List of system context results from Graphiti
+        context_items: List of system context results from the memory backend
 
     Returns:
         Formatted markdown section, or empty string if no items.

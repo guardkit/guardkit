@@ -1815,7 +1815,7 @@ class AgentInvoker:
                 Used to calculate approaching_limit flag for escape hatch pattern.
             documentation_level: Documentation level for file count constraint validation
                 ("minimal", "standard", or "comprehensive"). Default: "minimal" for AutoBuild.
-            context: Job-specific context from Graphiti (role constraints, quality gates,
+            context: Job-specific context from the memory backend (role constraints, quality gates,
                 turn states). Included in Player prompt but kept separate from requirements.
                 Default: "" (empty string, no context).
             remaining_budget: Optional remaining wall-clock budget in seconds.
@@ -2086,7 +2086,7 @@ class AgentInvoker:
                 prompt as structured evidence so the LLM Coach can read
                 deterministic gate outputs (coverage, plan_audit, bdd,
                 arch_review, tests) without re-deriving them.
-            coach_context: Optional Graphiti / coach context string. Passed
+            coach_context: Optional memory / coach context string. Passed
                 through to ``_build_coach_prompt`` for inclusion in the prompt.
             acceptance_criteria: Optional structured ACs (``[{"id","text"}]``)
                 threaded into the Coach prompt so the synthesis verdict can
@@ -2650,7 +2650,7 @@ JSON verdict.
             requirements: Task requirements
             feedback: Optional feedback from previous Coach turn
             acceptance_criteria: Optional list of acceptance criteria with id and text
-            context: Job-specific context from Graphiti (role constraints, quality gates,
+            context: Job-specific context from the memory backend (role constraints, quality gates,
                 turn states). Included before requirements for prompt context.
             design_context: Optional design context for UI implementation tasks
 
@@ -2667,7 +2667,7 @@ JSON verdict.
 Please address all feedback points in this turn.
 """
 
-        # Build context section if provided (Graphiti job-specific context)
+        # Build context section if provided (memory-backend job-specific context)
         context_section = ""
         if context:
             context_section = f"""
@@ -2880,7 +2880,7 @@ Follow the report format specified in your agent definition.
                 so the Coach has explicit instructions for treating absent
                 evidence as ABSENT SIGNAL rather than approving on
                 absence-of-failure.
-            coach_context: Optional Graphiti / coach context string. When
+            coach_context: Optional memory / coach context string. When
                 provided, surfaced in a ``## Coach Context`` section.
             synthesis: When ``True`` (TASK-ARCH-COACHSPLIT D-3), render the
                 TOOLLESS synthesis variant: the Coach has NO tools and bases
@@ -2942,7 +2942,7 @@ Follow the report format specified in your agent definition.
             )
             guards_section = self._render_absence_of_failure_guards()
 
-        # Coach context section (Graphiti / external context).
+        # Coach context section (memory / external context).
         coach_context_section = ""
         if coach_context:
             coach_context_section = f"""
@@ -6399,7 +6399,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             requirements: Task requirements from markdown
             feedback: Optional Coach feedback from previous turn
             max_turns: Maximum turns allowed
-            context: Job-specific context from Graphiti
+            context: Job-specific context from the memory backend
 
         Returns:
             AgentInvocationResult with Player's report
@@ -6867,7 +6867,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         TASK-ACO-002: Replaces _build_inline_implement_protocol() with a
         prompt that loads the execution protocol from autobuild_execution_protocol.md
         via load_protocol(), and injects task requirements, coach feedback,
-        graphiti context, and turn context inline.
+        memory context, and turn context inline.
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
@@ -6878,7 +6878,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             requirements: Task requirements from task markdown
             feedback: Optional Coach feedback from previous turn
             max_turns: Maximum turns allowed for this orchestration
-            context: Job-specific context from Graphiti
+            context: Job-specific context from the memory backend
 
         Returns:
             Assembled prompt string with protocol and all context sections
@@ -6933,7 +6933,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"Address ALL must_fix items before proceeding.\n"
             )
 
-        # --- Section 5: Graphiti context (inline when available) ---
+        # --- Section 5: memory context (inline when available) ---
         context_section = ""
         if context:
             context_section = (
@@ -7214,7 +7214,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
         TASK-ACO-002: Uses _build_autobuild_implementation_prompt() which loads
         the execution protocol from autobuild_execution_protocol.md and injects
-        task requirements, coach feedback, graphiti context, and turn context
+        task requirements, coach feedback, memory context, and turn context
         inline into the prompt.
 
         Uses setting_sources=["project"] instead of ["user", "project"],
@@ -7230,7 +7230,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             requirements: Task requirements from task markdown. Default: "".
             feedback: Optional Coach feedback from previous turn. Default: None.
             max_turns: Maximum turns allowed. Default: 5.
-            context: Job-specific context from Graphiti. Default: "".
+            context: Job-specific context from the memory backend. Default: "".
 
         Returns:
             TaskWorkResult with success status and output/error

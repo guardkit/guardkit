@@ -2,11 +2,12 @@
 Failed approach capture and management.
 
 This module provides functionality for capturing failed approaches
-as episodes in Graphiti. All operations are designed for graceful
-degradation - they will succeed even when Graphiti is unavailable.
+as episodes in the memory backend (fleet-memory; formerly Graphiti). All
+operations are designed for graceful degradation - they will succeed even
+when the memory backend is unavailable.
 
 Public API:
-    FAILED_APPROACHES_GROUP_ID: Group ID for failed approaches in Graphiti
+    FAILED_APPROACHES_GROUP_ID: Group ID for failed approaches in the memory backend
     capture_failed_approach: Capture a failed approach as an episode
     load_relevant_failures: Load failures relevant to current context
     increment_occurrence: Increment occurrence count for a failure
@@ -51,7 +52,7 @@ from guardkit.knowledge.entities.failed_approach import (
 
 logger = logging.getLogger(__name__)
 
-# Group ID for failed approaches in Graphiti
+# Group ID for failed approaches in the memory backend
 FAILED_APPROACHES_GROUP_ID = "failed_approaches"
 
 
@@ -86,11 +87,11 @@ async def capture_failed_approach(
     severity: Severity = Severity.MEDIUM,
     time_to_fix_minutes: Optional[int] = None,
 ) -> FailedApproachEpisode:
-    """Capture a failed approach as an episode in Graphiti.
+    """Capture a failed approach as an episode in the memory backend.
 
-    Creates a FailedApproachEpisode instance and stores it in Graphiti
-    as an episode. Gracefully degrades if Graphiti is unavailable -
-    still returns the created FailedApproachEpisode.
+    Creates a FailedApproachEpisode instance and stores it in the memory
+    backend as an episode. Gracefully degrades if the memory backend is
+    unavailable - still returns the created FailedApproachEpisode.
 
     Args:
         approach: What was tried (the failed approach)
@@ -154,15 +155,15 @@ async def capture_failed_approach(
     # Create episode name
     episode_name = f"failed_approach_{failure.id}"
 
-    # Attempt to store in Graphiti (graceful degradation)
+    # Attempt to store in the memory backend (graceful degradation)
     client = get_memory_client()
 
     if client is None:
-        logger.debug("[Graphiti] Client unavailable, skipping failed approach capture")
+        logger.debug("[Memory] Client unavailable, skipping failed approach capture")
         return failure
 
     if not client.enabled:
-        logger.debug("[Graphiti] Client disabled, skipping failed approach capture")
+        logger.debug("[Memory] Client disabled, skipping failed approach capture")
         return failure
 
     try:
@@ -173,9 +174,9 @@ async def capture_failed_approach(
             source="auto_captured",
             entity_type="failed_approach"
         )
-        logger.info(f"[Graphiti] Captured failed approach {failure_id}")
+        logger.info(f"[Memory] Captured failed approach {failure_id}")
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to store failed approach {failure_id}: {e}")
+        logger.warning(f"[Memory] Failed to store failed approach {failure_id}: {e}")
 
     return failure
 
@@ -186,8 +187,8 @@ async def load_relevant_failures(
 ) -> List[Dict[str, Any]]:
     """Load failed approaches relevant to current context.
 
-    Queries Graphiti for failed approaches that match the given context
-    and formats them as warnings with symptom, prevention, and related ADRs.
+    Queries the memory backend for failed approaches that match the given
+    context and formats them as warnings with symptom, prevention, and related ADRs.
 
     Args:
         query_context: Context to search for (e.g., "subprocess task-work")
@@ -195,7 +196,7 @@ async def load_relevant_failures(
 
     Returns:
         List of warning dictionaries with symptom, prevention, and related_adrs.
-        Returns empty list if Graphiti is unavailable (graceful degradation).
+        Returns empty list if the memory backend is unavailable (graceful degradation).
 
     Example:
         warnings = await load_relevant_failures(
@@ -208,11 +209,11 @@ async def load_relevant_failures(
     client = get_memory_client()
 
     if client is None:
-        logger.debug("[Graphiti] Client unavailable, returning empty failure list")
+        logger.debug("[Memory] Client unavailable, returning empty failure list")
         return []
 
     if not client.enabled:
-        logger.debug("[Graphiti] Client disabled, returning empty failure list")
+        logger.debug("[Memory] Client disabled, returning empty failure list")
         return []
 
     try:
@@ -241,7 +242,7 @@ async def load_relevant_failures(
         return warnings[:limit]
 
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to load relevant failures: {e}")
+        logger.warning(f"[Memory] Failed to load relevant failures: {e}")
         return []
 
 
@@ -250,14 +251,14 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
 
     Searches for an existing failure by ID, increments its occurrence
     count, updates the last_occurred timestamp, and stores the updated
-    version in Graphiti.
+    version in the memory backend.
 
     Args:
         failure_id: The failure ID to increment (e.g., "FAIL-A1B2C3D4")
 
     Returns:
         Updated FailedApproachEpisode with incremented count, or None if
-        the failure was not found or Graphiti is unavailable.
+        the failure was not found or the memory backend is unavailable.
 
     Example:
         updated = await increment_occurrence("FAIL-A1B2C3D4")
@@ -267,11 +268,11 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
     client = get_memory_client()
 
     if client is None:
-        logger.debug("[Graphiti] Client unavailable, cannot increment occurrence")
+        logger.debug("[Memory] Client unavailable, cannot increment occurrence")
         return None
 
     if not client.enabled:
-        logger.debug("[Graphiti] Client disabled, cannot increment occurrence")
+        logger.debug("[Memory] Client disabled, cannot increment occurrence")
         return None
 
     try:
@@ -283,7 +284,7 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
         )
 
         if not results:
-            logger.debug(f"[Graphiti] Failure {failure_id} not found")
+            logger.debug(f"[Memory] Failure {failure_id} not found")
             return None
 
         # Parse the body
@@ -292,7 +293,7 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
             try:
                 body = json.loads(body)
             except json.JSONDecodeError:
-                logger.warning(f"[Graphiti] Failed to parse body for {failure_id}")
+                logger.warning(f"[Memory] Failed to parse body for {failure_id}")
                 return None
 
         # Parse severity
@@ -349,11 +350,11 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
             entity_type="failed_approach"
         )
 
-        logger.info(f"[Graphiti] Incremented occurrence for {failure_id} to {updated_failure.occurrences}")
+        logger.info(f"[Memory] Incremented occurrence for {failure_id} to {updated_failure.occurrences}")
         return updated_failure
 
     except Exception as e:
-        logger.warning(f"[Graphiti] Failed to increment occurrence for {failure_id}: {e}")
+        logger.warning(f"[Memory] Failed to increment occurrence for {failure_id}: {e}")
         return None
 
 

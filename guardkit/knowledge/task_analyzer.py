@@ -3,7 +3,8 @@ Task Analyzer for context retrieval decisions.
 
 This module provides the TaskAnalyzer class for analyzing task characteristics
 to inform job-specific context retrieval. It classifies tasks by type, detects
-novelty and refinement status, and queries historical performance from Graphiti.
+novelty and refinement status, and queries historical performance from the
+knowledge-memory backend (fleet-memory; formerly Graphiti).
 
 Public API:
     TaskType: Enum for task classification
@@ -174,12 +175,12 @@ class TaskCharacteristics:
 class TaskAnalyzer:
     """Analyzes task characteristics for context retrieval decisions.
 
-    The TaskAnalyzer examines task metadata and queries Graphiti for
+    The TaskAnalyzer examines task metadata and queries the memory backend for
     historical information to build a complete picture of task characteristics.
     This information is used to make smart decisions about what context to load.
 
     Attributes:
-        graphiti: GraphitiClient instance for querying knowledge graph
+        graphiti: memory client instance for querying the knowledge store
 
     Example:
         from guardkit.knowledge.fleet_memory_client import get_memory_client
@@ -225,10 +226,10 @@ class TaskAnalyzer:
     }
 
     def __init__(self, graphiti: Any) -> None:
-        """Initialize TaskAnalyzer with Graphiti client.
+        """Initialize TaskAnalyzer with a memory client.
 
         Args:
-            graphiti: GraphitiClient instance for knowledge graph queries
+            graphiti: memory client instance for knowledge-store queries
         """
         self.graphiti = graphiti
 
@@ -239,8 +240,8 @@ class TaskAnalyzer:
     ) -> TaskCharacteristics:
         """Analyze task to determine characteristics.
 
-        Examines task metadata and queries Graphiti for historical information
-        to build a complete TaskCharacteristics object.
+        Examines task metadata and queries the memory backend for historical
+        information to build a complete TaskCharacteristics object.
 
         Args:
             task: Task dictionary with fields like id, description, tech_stack
@@ -360,7 +361,7 @@ class TaskAnalyzer:
         description: str,
         task_type: TaskType,
     ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Query Graphiti for similar tasks and historical outcomes.
+        """Query the memory backend for similar tasks and historical outcomes.
 
         Args:
             description: Task description for similarity search

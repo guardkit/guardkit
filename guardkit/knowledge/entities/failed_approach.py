@@ -70,7 +70,7 @@ class FailedApproachEpisode:
 
     This captures comprehensive information about an approach that was
     tried and failed, including how to prevent making the same mistake
-    in the future. Used for episode capture in Graphiti.
+    in the future. Used for episode capture in the memory backend.
 
     Attributes:
         id: Unique failure ID in format FAIL-{hash} or FAIL-{descriptive_name}
@@ -133,8 +133,8 @@ class FailedApproachEpisode:
         """Convert failed approach to episode body dictionary.
 
         Creates a structured dictionary representation suitable for
-        storage in Graphiti as an episode body. Returns only domain data;
-        metadata fields like entity_type are injected by GraphitiClient.
+        storage in the memory backend as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by the memory client.
 
         Returns:
             Dictionary with all failure fields suitable for JSON serialization

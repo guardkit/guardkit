@@ -1773,7 +1773,7 @@ class CoachValidator:
 
         # Log context if provided
         if context:
-            logger.debug(f"[Graphiti] Coach context provided: {len(context)} chars")
+            logger.debug(f"[Memory] Coach context provided: {len(context)} chars")
 
         # Resolve task type and get quality gate profile
         try:
@@ -2641,7 +2641,7 @@ class CoachValidator:
             of the profile setting. Used for ``--implement-only`` mode where
             Phase 2.5B did not run. Default: ``False``.
         context : Optional[str], optional
-            Optional Graphiti / coach context string. Not currently consumed
+            Optional memory / coach context string. Not currently consumed
             by gather_evidence itself; threaded through for symmetry with
             ``validate()``'s signature so the legacy shim (when AC-003 is
             completed in a follow-up) can pass it forward.

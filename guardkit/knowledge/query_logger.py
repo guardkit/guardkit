@@ -1,11 +1,11 @@
 """
-Lightweight JSONL logger for Graphiti query results.
+Lightweight JSONL logger for memory query results.
 
 Tracks what queries return (empty vs populated, result count, relevance)
 to validate data quality over time. Designed for debugging data quality,
 not production telemetry.
 
-Log file: .guardkit/graphiti-query-log.jsonl (append-only, 1MB rotation)
+Log file: .guardkit/memory-query-log.jsonl (append-only, 1MB rotation)
 
 Usage:
     from guardkit.knowledge.query_logger import log_query
@@ -16,7 +16,7 @@ Usage:
         group_ids=["architecture_decisions"],
         result_count=3,
         first_result_preview="JWT-based auth is recommended for...",
-        source="graphiti_client",
+        source="memory_client",
     )
 """
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Default log file location (relative to project root)
 _DEFAULT_LOG_DIR = ".guardkit"
-_DEFAULT_LOG_FILENAME = "graphiti-query-log.jsonl"
+_DEFAULT_LOG_FILENAME = "memory-query-log.jsonl"
 _MAX_FILE_SIZE_BYTES = 1_048_576  # 1 MB
 _PREVIEW_LENGTH = 50
 
@@ -91,7 +91,7 @@ def _build_entry(
         group_ids: Group IDs used in the query.
         result_count: Number of results returned.
         first_result_preview: Preview of the first result (truncated to 50 chars).
-        source: Calling context identifier (e.g., "graphiti_client", "task-work").
+        source: Calling context identifier (e.g., "memory_client", "task-work").
 
     Returns:
         Dictionary ready for JSON serialization.
@@ -117,10 +117,10 @@ def log_query(
     group_ids: Optional[List[str]] = None,
     result_count: int = 0,
     first_result_preview: Optional[str] = None,
-    source: str = "graphiti_client",
+    source: str = "memory_client",
     base_dir: Optional[str] = None,
 ) -> None:
-    """Log a Graphiti query result to the JSONL log file.
+    """Log a memory query result to the JSONL log file.
 
     Thread-safe, append-only, with automatic 1MB rotation.
     Failures are silently logged at DEBUG level — never raises.

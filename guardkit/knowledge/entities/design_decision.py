@@ -88,11 +88,11 @@ class DesignDecision:
         return f"DDR-{self.number:03d}"
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body.
+        """Convert to a memory-backend episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body. Returns only domain data;
-        metadata fields are injected by GraphitiClient.
+        in the memory backend as an episode body. Returns only domain data;
+        metadata fields are injected by the memory client.
 
         Optional fields (alternatives_considered, superseded_by, supersedes)
         are excluded when empty/None to keep the body compact.

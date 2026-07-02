@@ -300,7 +300,7 @@ def autobuild():
     "--enable-context/--no-context",
     "enable_context",
     default=True,
-    help="Enable/disable Graphiti context retrieval (default: enabled)",
+    help="Enable/disable memory context retrieval (default: enabled)",
 )
 @click.option(
     "--timeout-multiplier",
@@ -750,7 +750,7 @@ def status(ctx, task_id: str, verbose: bool):
     "--enable-context/--no-context",
     "enable_context",
     default=True,
-    help="Enable/disable Graphiti context retrieval (default: enabled)",
+    help="Enable/disable memory context retrieval (default: enabled)",
 )
 @click.option(
     "--task-timeout",
