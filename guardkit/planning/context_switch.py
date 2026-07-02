@@ -296,20 +296,11 @@ async def execute_context_switch(
     # Get project path
     project_path = project.get("path")
 
-    # Query Graphiti for architecture overview (graceful degradation)
+    # Architecture-overview graph reads were retired in the fleet-memory
+    # cutover (FEAT-MEM-09); project architecture now lives in
+    # docs/architecture/. The ``client`` parameter is retained for
+    # backwards compatibility and is ignored.
     architecture = []
-    if client is not None and hasattr(client, "enabled") and client.enabled:
-        try:
-            # Search for architecture info
-            results = await client.search(
-                query="architecture overview",
-                group_ids=["project_architecture"],
-                num_results=5,
-            )
-            architecture = results if results else []
-        except Exception as e:
-            logger.debug(f"Graphiti search failed: {e}")
-            architecture = []
 
     # Find active tasks
     active_tasks = _find_active_tasks(project_path)

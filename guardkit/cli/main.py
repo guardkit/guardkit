@@ -23,11 +23,7 @@ from guardkit.cli.init import init
 from guardkit.cli.memory import memory
 from guardkit.cli.review import review
 from guardkit.cli.system_plan import system_plan
-from guardkit.cli.system_context import (
-    system_overview,
-    impact_analysis,
-    context_switch,
-)
+from guardkit.cli.system_context import context_switch
 from guardkit.cli.task import task
 
 # Load .env files automatically
@@ -127,9 +123,7 @@ cli.add_command(review)
 # Add System-Plan command
 cli.add_command(system_plan)
 
-# Add System Context Read commands
-cli.add_command(system_overview)
-cli.add_command(impact_analysis)
+# Add System Context navigation command
 cli.add_command(context_switch)
 
 # Add Task command group
