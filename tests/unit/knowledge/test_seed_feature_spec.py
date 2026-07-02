@@ -13,11 +13,36 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from types import SimpleNamespace
+
 from guardkit.knowledge.feature_plan_context import (
     FeaturePlanContextBuilder,
 )
-from guardkit.knowledge.graphiti_client import GraphitiClient
-from guardkit.integrations.graphiti.upsert_result import UpsertResult
+
+
+# =========================================================================
+# UPSERT RESULT STAND-IN
+# =========================================================================
+#
+# The graphiti UpsertResult type has been removed in the fleet-memory cutover.
+# seed_feature_spec() only reads truthiness + .was_created / .was_updated on
+# the object returned by upsert_episode(), so a lightweight SimpleNamespace
+# stand-in is sufficient for these tests.
+
+
+def _upsert_created(uuid: str = "new-uuid-123") -> SimpleNamespace:
+    """Truthy stand-in mimicking a 'created' upsert result."""
+    return SimpleNamespace(was_created=True, was_updated=False, uuid=uuid)
+
+
+def _upsert_updated(uuid: str = "updated-uuid") -> SimpleNamespace:
+    """Truthy stand-in mimicking an 'updated' upsert result."""
+    return SimpleNamespace(was_created=False, was_updated=True, uuid=uuid)
+
+
+def _upsert_skipped(uuid: str = "existing-uuid") -> SimpleNamespace:
+    """Truthy stand-in mimicking a 'skipped' upsert result."""
+    return SimpleNamespace(was_created=False, was_updated=False, uuid=uuid)
 
 
 # =========================================================================
@@ -35,15 +60,10 @@ def project_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mock_graphiti_client() -> MagicMock:
-    """Create a mock GraphitiClient with upsert_episode support."""
-    client = MagicMock(spec=GraphitiClient)
+    """Create a mock memory client with upsert_episode support."""
+    client = MagicMock()
     client.enabled = True
-    client.upsert_episode = AsyncMock(
-        return_value=UpsertResult.created(
-            episode={"uuid": "new-uuid-123", "content": "test"},
-            uuid="new-uuid-123",
-        )
-    )
+    client.upsert_episode = AsyncMock(return_value=_upsert_created())
     return client
 
 
@@ -263,11 +283,7 @@ class TestSeedFeatureSpecUpsertBehavior:
     ):
         """Test returns True when upsert updates existing episode."""
         mock_graphiti_client.upsert_episode = AsyncMock(
-            return_value=UpsertResult.updated(
-                episode={"uuid": "updated-uuid", "content": "updated"},
-                uuid="updated-uuid",
-                previous_uuid="old-uuid",
-            )
+            return_value=_upsert_updated(uuid="updated-uuid")
         )
 
         builder = FeaturePlanContextBuilder(project_root=project_root)
@@ -287,10 +303,7 @@ class TestSeedFeatureSpecUpsertBehavior:
     ):
         """Test returns True when upsert skips (content unchanged)."""
         mock_graphiti_client.upsert_episode = AsyncMock(
-            return_value=UpsertResult.skipped(
-                episode={"uuid": "existing-uuid", "content": "same"},
-                uuid="existing-uuid",
-            )
+            return_value=_upsert_skipped(uuid="existing-uuid")
         )
 
         builder = FeaturePlanContextBuilder(project_root=project_root)

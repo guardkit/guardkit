@@ -18,7 +18,7 @@ import json
 # EXPECTED TO PASS - modules now exist (TDD GREEN phase)
 from guardkit.knowledge.adr import ADRStatus, ADRTrigger, ADREntity
 from guardkit.knowledge.adr_service import ADRService
-from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
+from types import SimpleNamespace
 
 
 # ============================================================================
@@ -28,9 +28,9 @@ from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
 
 @pytest.fixture
 def mock_graphiti_client():
-    """Create a mock GraphitiClient for testing."""
-    client = MagicMock(spec=GraphitiClient)
-    client.config = GraphitiConfig(enabled=True)
+    """Create a mock memory client for testing."""
+    client = MagicMock()
+    client.config = SimpleNamespace(enabled=True)
     client.enabled = True
     client.add_episode = AsyncMock(return_value="episode-123")
     client.search = AsyncMock(return_value=[])
@@ -170,9 +170,9 @@ async def test_create_adr_graceful_degradation(adr_service, sample_adr, mock_gra
 @pytest.mark.asyncio
 async def test_create_adr_when_graphiti_disabled(sample_adr):
     """Test create_adr when Graphiti is disabled."""
-    disabled_client = MagicMock(spec=GraphitiClient)
+    disabled_client = MagicMock()
     disabled_client.enabled = False
-    disabled_client.config = GraphitiConfig(enabled=False)
+    disabled_client.config = SimpleNamespace(enabled=False)
 
     service = ADRService(disabled_client)
     adr_id = await service.create_adr(sample_adr)
@@ -529,9 +529,9 @@ async def test_record_decision_implementation_trigger(adr_service, mock_graphiti
 @pytest.mark.asyncio
 async def test_record_decision_when_graphiti_disabled(sample_adr):
     """Test record_decision when Graphiti is disabled."""
-    disabled_client = MagicMock(spec=GraphitiClient)
+    disabled_client = MagicMock()
     disabled_client.enabled = False
-    disabled_client.config = GraphitiConfig(enabled=False)
+    disabled_client.config = SimpleNamespace(enabled=False)
 
     service = ADRService(disabled_client)
     adr_id = await service.record_decision(

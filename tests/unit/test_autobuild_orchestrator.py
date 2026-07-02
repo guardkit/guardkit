@@ -3292,7 +3292,7 @@ class TestTurnStateCapture:
         AC-001: When a stored loop is available and not closed, it should be used
         instead of creating a new one.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_thread_client = AsyncMock()
         mock_thread_client.enabled = True
@@ -3300,7 +3300,7 @@ class TestTurnStateCapture:
         mock_loader = Mock()
         mock_loader.graphiti = mock_thread_client
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
@@ -3362,7 +3362,7 @@ class TestTurnStateCapture:
         AC-002: When the stored loop is closed (after worker cleanup), a fresh loop
         should be created with asyncio.new_event_loop() scoped to the operation.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_thread_client = AsyncMock()
         mock_thread_client.enabled = True
@@ -3370,7 +3370,7 @@ class TestTurnStateCapture:
         mock_loader = Mock()
         mock_loader.graphiti = mock_thread_client
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
@@ -3427,7 +3427,7 @@ class TestTurnStateCapture:
         closing the stored loop. _capture_turn_state should detect the closed loop,
         create a fresh one, and still capture successfully.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_thread_client = AsyncMock()
         mock_thread_client.enabled = True
@@ -3435,7 +3435,7 @@ class TestTurnStateCapture:
         mock_loader = Mock()
         mock_loader.graphiti = mock_thread_client
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp/test"),
@@ -3563,12 +3563,12 @@ class TestPerThreadGraphiti:
 
     def test_get_thread_local_loader_creates_per_thread_client(self):
         """Test _get_thread_local_loader creates per-thread client via factory."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_client = AsyncMock()
         mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=True)
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
         mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
@@ -3590,12 +3590,12 @@ class TestPerThreadGraphiti:
 
     def test_get_thread_local_loader_caches_per_thread(self):
         """Test _get_thread_local_loader caches loader per thread ID."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_client = AsyncMock()
         mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=True)
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
         mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
@@ -3617,12 +3617,12 @@ class TestPerThreadGraphiti:
 
     def test_get_thread_local_loader_returns_none_when_init_fails(self):
         """Test _get_thread_local_loader returns None when client init fails."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_client = AsyncMock()
         mock_client._pending_init = True
         mock_client.initialize = AsyncMock(return_value=False)
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
         mock_factory.get_thread_client.return_value = mock_client
 
         orch = AutoBuildOrchestrator(
@@ -3658,9 +3658,9 @@ class TestPerThreadGraphiti:
 
     def test_get_thread_local_loader_graceful_on_exception(self):
         """Test _get_thread_local_loader handles exceptions gracefully."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
         mock_factory.create_client.side_effect = RuntimeError("Connection failed")
 
         orch = AutoBuildOrchestrator(
@@ -3755,7 +3755,7 @@ class TestPerThreadGraphiti:
         calling self._factory.get_thread_client() which uses independent threading.local()
         storage and creates a redundant client bound to a dead event loop.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
         mock_thread_client = AsyncMock()
         mock_thread_client.enabled = True
@@ -3763,7 +3763,7 @@ class TestPerThreadGraphiti:
         mock_loader = Mock()
         mock_loader.graphiti = mock_thread_client
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3831,9 +3831,9 @@ class TestPerThreadGraphiti:
         while _get_thread_local_loader() uses self._thread_loaders dict. After the fix,
         _capture_turn_state should only use _thread_loaders.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3873,9 +3873,9 @@ class TestPerThreadGraphiti:
 
     def test_capture_turn_state_thread_loader_with_none_graphiti(self):
         """Test _capture_turn_state falls back when thread loader has None graphiti (TASK-FIX-FD02)."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         # Loader exists but graphiti is None (init failed)
         mock_loader = Mock()
@@ -3927,9 +3927,9 @@ class TestPerThreadGraphiti:
         When _get_thread_local_loader fails, it stores None in _thread_loaders.
         _capture_turn_state should handle this gracefully.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
@@ -3977,9 +3977,9 @@ class TestPerThreadGraphiti:
         In a different thread (e.g., not yet initialized), _thread_loaders won't
         have an entry for the current thread ID.
         """
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
+        from guardkit.knowledge.fleet_memory_client import FleetMemoryClientFactory
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock(spec=FleetMemoryClientFactory)
 
         orch = AutoBuildOrchestrator(
             repo_root=Path.cwd(),

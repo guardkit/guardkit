@@ -9,7 +9,6 @@ import pytest
 from click.testing import CliRunner
 
 from guardkit.cli.memory import memory
-from guardkit.cli.graphiti import graphiti
 
 
 @pytest.fixture
@@ -171,72 +170,3 @@ Test description
 
         # Should not fail but warn
         assert "unavailable" in result.output.lower() or "not captured" in result.output.lower()
-
-
-class TestGraphitiDeprecation:
-    """Tests for guardkit graphiti deprecation warnings."""
-
-    def test_graphiti_search_warns_and_delegates(self, runner):
-        """Test graphiti search emits deprecation warning and delegates."""
-        with patch("guardkit.cli.graphiti._get_client_and_config") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client.search = AsyncMock(return_value=[])
-
-            mock_settings = MagicMock()
-            mock_settings.enabled = True
-            mock_get.return_value = (mock_client, mock_settings)
-
-            result = runner.invoke(graphiti, ["search", "test query"])
-
-            assert "deprecat" in result.output.lower()
-            # Should still work
-            assert result.exit_code == 0
-
-    def test_graphiti_status_warns_and_delegates(self, runner):
-        """Test graphiti status emits deprecation warning."""
-        with patch("guardkit.cli.graphiti._get_client_and_config") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client.search = AsyncMock(return_value=[])
-
-            mock_settings = MagicMock()
-            mock_settings.enabled = True
-            mock_get.return_value = (mock_client, mock_settings)
-
-            result = runner.invoke(graphiti, ["status"])
-
-            assert "deprecat" in result.output.lower()
-
-    def test_graphiti_capture_outcome_warns_and_delegates(self, runner, tmp_path):
-        """Test graphiti capture-outcome emits deprecation warning."""
-        task_file = tmp_path / "TASK-XXX.md"
-        task_file.write_text("""---
-id: TASK-XXX
-title: Test Task
----
-
-## Description
-Test description
-""")
-
-        with patch("guardkit.cli.graphiti.get_graphiti") as mock_get:
-            mock_client = MagicMock()
-            mock_client.enabled = True
-            mock_client.initialize = AsyncMock(return_value=True)
-            mock_client.close = AsyncMock()
-            mock_client.default_timeout_override = None
-            mock_get.return_value = mock_client
-
-            with patch("guardkit.knowledge.outcome_manager.capture_task_outcome") as mock_capture:
-                mock_capture.return_value = AsyncMock(return_value="OUT-12345")
-
-                result = runner.invoke(
-                    graphiti, ["capture-outcome", "--from-task-file", str(task_file)]
-                )
-
-                assert "deprecat" in result.output.lower()

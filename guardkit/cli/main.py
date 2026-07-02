@@ -18,7 +18,6 @@ from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
 from guardkit.cli.feature import feature
-from guardkit.cli.graphiti import graphiti
 from guardkit.cli.init import init
 from guardkit.cli.memory import memory
 from guardkit.cli.review import review
@@ -107,9 +106,6 @@ cli.add_command(autobuild)
 
 # Add Feature command group
 cli.add_command(feature)
-
-# Add Graphiti command group
-cli.add_command(graphiti)
 
 # Add Init command
 cli.add_command(init)

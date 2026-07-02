@@ -21,7 +21,6 @@ from guardkit.knowledge.feature_plan_context import (
     FeaturePlanContextBuilder,
 )
 from guardkit.knowledge.feature_detector import FeatureDetector
-from guardkit.knowledge.graphiti_client import GraphitiClient
 
 
 # =========================================================================
@@ -63,8 +62,8 @@ Enhance feature planning with rich context from Graphiti.
 
 @pytest.fixture
 def mock_graphiti_client() -> MagicMock:
-    """Create a mock GraphitiClient."""
-    client = MagicMock(spec=GraphitiClient)
+    """Create a mock memory client."""
+    client = MagicMock()
     client.enabled = True
     client.search = AsyncMock(return_value=[])
     client.add_episode = AsyncMock(return_value="episode-uuid-123")
