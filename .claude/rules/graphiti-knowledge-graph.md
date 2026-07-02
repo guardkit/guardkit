@@ -1,22 +1,26 @@
-# Graphiti Knowledge Graph — MCP Usage Guide
+# Knowledge Capture — MCP Usage Guide (fleet-memory)
 
-> ## ⚠️ Cutover in progress: Graphiti → fleet-memory (FEAT-MEM-08, 2026-06-29)
+> ## 🛑 REMOVED: the Graphiti MCP path is gone (FEAT-MEM-09 WS-2c, 2026-07-02)
 >
-> GuardKit knowledge capture is being cut over from **Graphiti/FalkorDB** to the
-> **fleet-memory** pure-embeddings backend. The Graphiti path documented below is
-> **legacy** — retained for the dual-write soak and as the rollback target.
+> The `mcp__graphiti__*` tools and the Graphiti/FalkorDB server **no longer exist**.
+> Knowledge capture runs on the **fleet-memory** pure-embeddings backend.
+> **Everything below this banner is historical** (the `mcp__graphiti__search_nodes`
+> / `search_memory_facts` / `add_memory` tools are gone) — kept for the group-id and
+> no-hyphens conventions, which still apply to fleet-memory.
 >
-> - **Backend flag** — `.guardkit/graphiti.yaml` → `backend: fleet_memory`. The soak
->   keeps `enabled: false`; the flag-controlled code path stays dual until the
->   operator signs off (TASK-MEM08-010).
-> - **MCP tools** — `mcp__graphiti__add_memory` → `mcp__fleet_memory__memory_write_payload`;
->   `mcp__graphiti__search_*` → `mcp__fleet_memory__memory_search` (payload-shaped args,
->   not free text). `.mcp.json` server key is `fleet_memory` (stdio: `python -m fleet_memory.mcp`).
-> - **CLI** — `guardkit graphiti *` is **deprecated**; use `guardkit memory *`.
-> - **Rollback** — set `backend: graphiti` + `enabled: true` in `.guardkit/graphiti.yaml`
->   and restore the `graphiti` HTTP server in `.mcp.json`.
+> **Use instead:**
+> - **MCP tools** — `mcp__fleet_memory__memory_write_payload` (write) and
+>   `mcp__fleet_memory__memory_search` (search; payload-shaped args, not free text).
+>   `.mcp.json` server key is `fleet_memory` (stdio: `uv run --project ../fleet-memory
+>   python -m fleet_memory.mcp`).
+> - **CLI** — `guardkit memory *` (`status` / `search` / `capture-outcome` /
+>   `migrate-graph`); the `guardkit graphiti *` group is gone.
+> - **Config** — env-driven (`FLEET_MEMORY_*` in `.env`) + `.mcp.json`;
+>   `.guardkit/graphiti.yaml` is retired.
+> - **Rollback** — revert the FEAT-MEM-09 WS-2c commits and reinstall `graphiti-core`;
+>   there is no runtime flag.
 
-## Overview
+## Overview (historical — Graphiti MCP removed)
 
 This project has a Graphiti MCP server connected to a FalkorDB knowledge graph.
 The graph contains seeded project knowledge about GuardKit architecture, workflows,
