@@ -72,8 +72,8 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 ```bash
 /debug                                 # Troubleshoot issues
 guardkit autobuild task TASK-XXX       # CLI autobuild
-guardkit graphiti capture --interactive # Knowledge capture
-guardkit graphiti search "query"       # Search knowledge
+guardkit memory search "query"         # Search fleet-memory knowledge
+guardkit memory status                 # Memory store reachability + stats
 guardkit feature audit [--fix]         # Audit feature YAML statuses (declared vs task locations); non-zero exit code when stale features exist, unless --fix reconciles them
 ```
 
@@ -211,27 +211,30 @@ For agentic systems requiring formal behavior specs: `/task-work TASK-XXX --mode
 Requires: [require-kit](https://github.com/requirekit/require-kit)
 See: [BDD Workflow Guide](docs/guides/bdd-workflow-for-agentic-systems.md)
 
-## Knowledge Capture (fleet-memory; Graphiti deprecated)
+## Knowledge Capture (fleet-memory)
 
-> **Cutover in progress (FEAT-MEM-08, 2026-06-29):** knowledge capture is moving from
-> Graphiti/FalkorDB to the **fleet-memory** pure-embeddings backend. The backend is
-> selected by `.guardkit/graphiti.yaml` `backend:` (`fleet_memory` | `graphiti` | `dual`);
-> the soak keeps `enabled: false` until operator sign-off (TASK-MEM08-010).
+> **Cutover complete (FEAT-MEM-09 WS-2c, 2026-07-02):** the Graphiti/FalkorDB
+> *implementation* has been **removed** from guardkit — the `graphiti_client` /
+> seeding / `guardkit graphiti` CLI / `integrations.graphiti` code and the
+> `graphiti-core` dependency are gone. Knowledge capture runs entirely on the
+> **fleet-memory** pure-embeddings backend. `.guardkit/graphiti.yaml` is retired
+> (no longer read by any code). Rolling the *code* back means restoring the deleted
+> modules from git history (the FEAT-MEM-09 WS-2c commits), not flipping a flag.
+> The FalkorDB *data* is untouched (its decommission is WS-6, separate + one-way).
 
-Persistent knowledge capture across sessions. Two access methods coexist:
+Persistent knowledge capture across sessions. Two access methods:
 - **MCP server** (Claude Code sessions): `mcp__fleet_memory__*` tools
   (`memory_write_payload`, `memory_search`) — see `.claude/rules/graphiti-knowledge-graph.md`.
-  Legacy: `mcp__graphiti__*`.
-- **Python client / CLI** (CLI / AutoBuild): `guardkit memory *` — see
-  `.claude/rules/graphiti-knowledge.md`. Legacy: `guardkit graphiti *` (**deprecated**).
+- **Python client / CLI** (CLI / AutoBuild): `guardkit memory *` (`status`, `search`,
+  `capture-outcome`, `migrate-graph`) — see `.claude/rules/graphiti-knowledge.md`.
 
-**Rollback:** set `backend: graphiti` + `enabled: true` in `.guardkit/graphiti.yaml` and
-restore the `graphiti` server in `.mcp.json`. See
-`docs/guides/graphiti-claude-code-integration.md` for architecture and troubleshooting.
+The `guardkit graphiti *` CLI group and the `mcp__graphiti__*` MCP tools **no longer
+exist**. `guardkit memory migrate-graph` still reads FalkorDB (via the direct
+`falkordb` client) to export legacy Episodic prose into fleet-memory.
 
 ## MCP Integration
 
-Optional MCP servers: **context7** (library docs) | **design-patterns** (pattern recommendations) | **graphiti** (knowledge graph — see above)
+Optional MCP servers: **context7** (library docs) | **design-patterns** (pattern recommendations) | **fleet_memory** (knowledge capture — see above)
 All MCPs are optional - falls back gracefully to training data.
 See: `docs/deep-dives/mcp-integration/` for setup and optimization.
 

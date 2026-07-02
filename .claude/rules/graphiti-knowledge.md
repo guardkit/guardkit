@@ -2,29 +2,38 @@
 paths: config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*
 ---
 
-# Graphiti Knowledge Capture
+# Knowledge Capture (fleet-memory)
 
-> ## ⚠️ Cutover in progress: Graphiti → fleet-memory (FEAT-MEM-08, 2026-06-29)
+> ## 🛑 REMOVED: the Graphiti code path is gone (FEAT-MEM-09 WS-2c, 2026-07-02)
 >
-> GuardKit knowledge capture is being cut over from **Graphiti/FalkorDB** to the
-> **fleet-memory** pure-embeddings backend. The Graphiti path documented below is
-> **legacy** — retained for the dual-write soak and as the rollback target.
+> GuardKit's Graphiti/FalkorDB **implementation was deleted** — `guardkit.knowledge`
+> no longer has a `graphiti_client` / `config` / seeding stack, the `guardkit graphiti`
+> CLI group is gone, and the `graphiti-core` dependency was dropped. Knowledge capture
+> runs entirely on the **fleet-memory** pure-embeddings backend. **Everything below
+> this banner is historical** — the `graphiti-check`, `guardkit graphiti *`, and
+> `guardkit.knowledge.GraphitiClient` references no longer exist. Kept for the
+> group-id / no-hyphens conventions (which still apply to fleet-memory) and history.
 >
-> - **Backend flag** — `.guardkit/graphiti.yaml` → `backend: fleet_memory`. The soak
->   keeps `enabled: false`; the flag-controlled code path stays dual until the
->   operator signs off (TASK-MEM08-010).
-> - **CLI** — `guardkit graphiti *` is **deprecated**; use `guardkit memory *`.
-> - **MCP tools** — `mcp__graphiti__add_memory` → `mcp__fleet_memory__memory_write_payload`;
->   `mcp__graphiti__search_*` → `mcp__fleet_memory__memory_search` (payload-shaped args).
-> - **Rollback** — set `backend: graphiti` + `enabled: true` in `.guardkit/graphiti.yaml`
->   and restore the `graphiti` HTTP server in `.mcp.json`.
+> **Use instead:**
+> - **CLI** — `guardkit memory *` (`status`, `search`, `capture-outcome`,
+>   `migrate-graph`). Run `guardkit memory --help`.
+> - **MCP tools** — `mcp__fleet_memory__memory_write_payload` (write),
+>   `mcp__fleet_memory__memory_search` (search, payload-shaped args). The
+>   `mcp__graphiti__*` tools no longer exist.
+> - **Config** — fleet-memory is env-driven (`FLEET_MEMORY_*` in a gitignored `.env`)
+>   plus the `fleet_memory` server in `.mcp.json`; `.guardkit/graphiti.yaml` is retired.
+> - **Rollback** — revert the FEAT-MEM-09 WS-2c commits and reinstall `graphiti-core`;
+>   there is no runtime flag.
+> - `guardkit memory migrate-graph` still reads FalkorDB (via the direct `falkordb`
+>   client) to export legacy Episodic prose into fleet-memory.
 
-## ⚠️ Access Method
+## ⚠️ Access Method (historical — Graphiti code removed)
 
-This file covers **Python client** access. For **MCP access** (when `mcp__graphiti__*`
-tools are available in your session), see `.claude/rules/graphiti-knowledge-graph.md`.
+This file *used to* cover **Python client** access to Graphiti/FalkorDB. That code path
+no longer exists (FEAT-MEM-09). The content below is retained for historical context
+and the still-applicable naming conventions.
 
-Graphiti is accessed via the `guardkit.knowledge` Python client library, connecting
+Graphiti *was* accessed via the `guardkit.knowledge` Python client library, connecting
 directly to FalkorDB.
 
 - Use `graphiti-check --status` to check Python client availability
