@@ -91,7 +91,6 @@ def test_no_smoke_gates_key_runs_unchanged(tmp_path: Path) -> None:
 
     with (
         patch.object(orchestrator, "_preflight_check"),
-        patch.object(orchestrator, "_pre_init_graphiti"),
         patch.object(orchestrator, "_bootstrap_environment"),
         patch.object(orchestrator, "_mark_wave_completed") as mock_mark,
         patch.object(

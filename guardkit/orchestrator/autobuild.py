@@ -145,15 +145,7 @@ from guardkit.knowledge.turn_state_operations import (
     create_turn_state_from_autobuild,
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
-from guardkit.knowledge.graphiti_client import (
-    get_graphiti,
-    get_factory,
-    GraphitiClientFactory,
-    _suppress_httpx_cleanup_errors,
-    _install_graphiti_unraisable_hook,
-)
-# FEAT-MEM-09 WS-2: fleet-memory per-thread factory (preferred when the backend
-# flag selects fleet_memory; graphiti factory remains the rollback path).
+# FEAT-MEM-09 WS-2c: fleet-memory per-thread factory (graphiti factory retired).
 from guardkit.knowledge.fleet_memory_client import get_memory_factory
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
@@ -1221,15 +1213,6 @@ class AutoBuildOrchestrator:
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
 
-        # TASK-FIX-FALK01: Install sys.unraisablehook once per process so the
-        # cosmetic "no running event loop" traceback from graphiti-core's
-        # FalkorDB driver (edge_fulltext_search GCed after the loop closes)
-        # never reaches stderr. Idempotent — safe to call from every
-        # AutoBuildOrchestrator(); also no-op when Graphiti is disabled, since
-        # the hook only suppresses errors whose coroutine source lives in
-        # graphiti_core / falkordb / redis.asyncio.
-        _install_graphiti_unraisable_hook()
-
         self.repo_root = Path(repo_root).resolve()
         self.max_turns = max_turns
         self.resume = resume
@@ -1348,45 +1331,32 @@ class AutoBuildOrchestrator:
         # Per-turn context status tracking for progress display (TASK-FIX-GCW5)
         self._last_player_context_status: Optional[ContextStatus] = None
         self._last_coach_context_status: Optional[ContextStatus] = None
-        # Per-thread memory client storage (TASK-FIX-GTP2). FEAT-MEM-09 WS-2:
-        # may hold a GraphitiClientFactory OR a FleetMemoryClientFactory — both
-        # expose get_thread_client() and hand out clients with the same
-        # initialize()/is_initialized/close() lifecycle, so the per-thread
-        # machinery below is duck-typed and substrate-agnostic.
+        # Per-thread memory client storage (TASK-FIX-GTP2). FEAT-MEM-09 WS-2c:
+        # holds a FleetMemoryClientFactory, which exposes get_thread_client() and
+        # hands out clients with an initialize()/is_initialized/close() lifecycle,
+        # so the per-thread machinery below is duck-typed.
         self._factory: Optional[Any] = None
         # TASK-ACR-005: Store event loop reference with each loader for proper cleanup
         self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
-        # TASK-GLF-002: Suppress Graphiti operations during shutdown
+        # TASK-GLF-002: Suppress memory operations during shutdown
         self._shutting_down: bool = False
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
         # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode.
-        # FEAT-MEM-09 WS-2: prefer the fleet-memory factory when the backend flag
-        # selects fleet_memory; fall back to the graphiti factory for the rollback /
-        # backend=graphiti path. Both hand out per-thread, loop-affine clients.
+        # FEAT-MEM-09 WS-2c: fleet-memory is the only backend; get_memory_factory()
+        # returns None when fleet-memory is disabled, in which case context
+        # retrieval is disabled for this run.
         if self.enable_context and self._context_loader is None:
             try:
-                # get_memory_factory() returns None unless backend == fleet_memory,
-                # so this is a no-op on the graphiti/rollback path.
                 self._factory = get_memory_factory()
                 if self._factory is not None:
                     logger.info(
                         "Stored fleet-memory factory for per-thread context loading"
                     )
                 else:
-                    self._factory = get_factory()
-                    if self._factory is None:
-                        # Trigger lazy-init by calling get_graphiti(), then re-fetch factory
-                        get_graphiti()
-                        self._factory = get_factory()
-                    if self._factory is not None:
-                        logger.info(
-                            "Stored Graphiti factory for per-thread context loading"
-                        )
-                    else:
-                        logger.info(
-                            "Memory factory not available, context retrieval disabled"
-                        )
+                    logger.info(
+                        "Memory factory not available, context retrieval disabled"
+                    )
             except ImportError:
                 logger.info(
                     "Memory dependencies not installed, context retrieval disabled"

@@ -2910,24 +2910,14 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        # Mock Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
-        # Capture turn state (we verify the entity creation logic)
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
-
-        # If Graphiti is enabled, asyncio.create_task is called
-        # We verify the entity extraction logic worked correctly
+        # We verify the entity extraction logic worked correctly (no exception)
 
     def test_capture_turn_state_extracts_blockers(
         self,
@@ -2958,20 +2948,12 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        # Mock Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
         # Verify no exception raised (graceful degradation)
 
@@ -3005,20 +2987,12 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        # Mock Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
         # Verify no exception raised
 
@@ -3052,153 +3026,14 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        # Mock Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
         # Verify no exception raised
-
-    def test_capture_turn_state_graceful_degradation_disabled_graphiti(
-        self,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-    ):
-        """Test that _capture_turn_state gracefully degrades when Graphiti is disabled."""
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
-            max_turns=5,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
-
-        player_result = make_player_result()
-        coach_result = make_coach_result(decision="approve")
-
-        turn_record = TurnRecord(
-            turn=1,
-            player_result=player_result,
-            coach_result=coach_result,
-            decision="approve",
-            feedback=None,
-            timestamp="2025-01-29T10:00:00Z",
-        )
-
-        # Mock disabled Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = False
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            # Should not raise exception
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
-
-    def test_capture_turn_state_graceful_degradation_none_graphiti(
-        self,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-    ):
-        """Test that _capture_turn_state gracefully degrades when Graphiti is None."""
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
-            max_turns=5,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-        )
-
-        player_result = make_player_result()
-        coach_result = make_coach_result(decision="approve")
-
-        turn_record = TurnRecord(
-            turn=1,
-            player_result=player_result,
-            coach_result=coach_result,
-            decision="approve",
-            feedback=None,
-            timestamp="2025-01-29T10:00:00Z",
-        )
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=None,
-        ):
-            # Should not raise exception
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
-
-    def test_capture_turn_state_respects_enable_context_false(
-        self,
-        mock_worktree_manager,
-        mock_agent_invoker,
-        mock_progress_display,
-    ):
-        """Test that _capture_turn_state skips Graphiti ops when enable_context=False.
-
-        TASK-GLF-001: When health check fails and sets enable_context=False,
-        _capture_turn_state should skip all Graphiti operations instead of
-        producing unnecessary 'Episode creation request failed' warnings.
-        """
-        orchestrator = AutoBuildOrchestrator(
-            repo_root=Path("/tmp/test"),
-            max_turns=5,
-            worktree_manager=mock_worktree_manager,
-            agent_invoker=mock_agent_invoker,
-            progress_display=mock_progress_display,
-            enable_context=False,
-        )
-
-        player_result = make_player_result()
-        coach_result = make_coach_result(decision="approve")
-
-        turn_record = TurnRecord(
-            turn=1,
-            player_result=player_result,
-            coach_result=coach_result,
-            decision="approve",
-            feedback=None,
-            timestamp="2025-01-29T10:00:00Z",
-        )
-
-        # Mock an enabled Graphiti client — should still be skipped
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
-
-        # Graphiti add_episode should NOT have been called
-        mock_graphiti.add_episode.assert_not_called()
 
     def test_capture_turn_state_handles_error_turn(
         self,
@@ -3228,21 +3063,13 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        # Mock Graphiti client
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            # Should not raise exception even on error turn
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        # Should not raise exception even on error turn
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
     def test_capture_turn_state_determines_correct_turn_mode(
         self,
@@ -3272,19 +3099,12 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record_1,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record_1,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
         # Test Turn 2 -> CONTINUING_WORK
         turn_record_2 = TurnRecord(
@@ -3296,15 +3116,11 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:15:00Z",
         )
 
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record_2,
-                acceptance_criteria=["AC-001: Test criterion"],
-                task_id="TASK-TEST-001",
-            )
+        orchestrator._capture_turn_state(
+            turn_record=turn_record_2,
+            acceptance_criteria=["AC-001: Test criterion"],
+            task_id="TASK-TEST-001",
+        )
 
     def test_capture_turn_state_extracts_feature_id_from_task_id(
         self,
@@ -3364,19 +3180,12 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ):
-            orchestrator._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001", "AC-002", "AC-003"],
-                task_id="TASK-TEST-001",
-            )
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
+        orchestrator._capture_turn_state(
+            turn_record=turn_record,
+            acceptance_criteria=["AC-001", "AC-002", "AC-003"],
+            task_id="TASK-TEST-001",
+        )
 
     def test_capture_turn_state_uses_run_until_complete(
         self,
@@ -3411,15 +3220,9 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-        mock_graphiti.add_episode = AsyncMock()
-
-        # No factory set, so no stored loop — code should create a fresh one
+        # No factory set, so no stored loop — code should create a fresh one.
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
             "guardkit.orchestrator.autobuild.capture_turn_state",
             new_callable=AsyncMock,
         ) as mock_capture:
@@ -3464,13 +3267,8 @@ class TestTurnStateCapture:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
             "guardkit.orchestrator.autobuild.capture_turn_state",
             new_callable=AsyncMock,
             side_effect=RuntimeError("event loop is closed"),
@@ -3701,40 +3499,15 @@ class TestPerThreadGraphiti:
     """
 
     def test_init_stores_factory_when_available(self):
-        """Test __init__ stores factory reference when get_factory() returns one."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory, GraphitiConfig
+        """Test __init__ stores factory reference when get_memory_factory() returns one.
 
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        FEAT-MEM-09 WS-2c: fleet-memory is the only backend; the orchestrator
+        acquires its factory via get_memory_factory() (no Graphiti fallback).
+        """
+        mock_factory = Mock()
         with patch(
-            "guardkit.orchestrator.autobuild.get_factory",
+            "guardkit.orchestrator.autobuild.get_memory_factory",
             return_value=mock_factory,
-        ):
-            orch = AutoBuildOrchestrator(
-                repo_root=Path.cwd(),
-                max_turns=5,
-                enable_context=True,
-            )
-        assert orch._factory is mock_factory
-
-    def test_init_triggers_lazy_init_when_factory_none(self):
-        """Test __init__ calls get_graphiti() to trigger lazy-init when factory is None."""
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
-
-        mock_factory = Mock(spec=GraphitiClientFactory)
-        call_count = [0]
-
-        def mock_get_factory():
-            call_count[0] += 1
-            # First call returns None (not yet initialized)
-            # Second call returns factory (after get_graphiti triggers lazy-init)
-            return None if call_count[0] == 1 else mock_factory
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_factory",
-            side_effect=mock_get_factory,
-        ), patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=None,
         ):
             orch = AutoBuildOrchestrator(
                 repo_root=Path.cwd(),
@@ -3746,7 +3519,7 @@ class TestPerThreadGraphiti:
     def test_init_no_factory_when_context_disabled(self):
         """Test __init__ does not attempt factory when enable_context=False."""
         with patch(
-            "guardkit.orchestrator.autobuild.get_factory",
+            "guardkit.orchestrator.autobuild.get_memory_factory",
         ) as mock_gf:
             orch = AutoBuildOrchestrator(
                 repo_root=Path.cwd(),
@@ -3760,7 +3533,7 @@ class TestPerThreadGraphiti:
         """Test __init__ skips factory when DI context_loader is provided."""
         mock_loader = Mock()
         with patch(
-            "guardkit.orchestrator.autobuild.get_factory",
+            "guardkit.orchestrator.autobuild.get_memory_factory",
         ) as mock_gf:
             orch = AutoBuildOrchestrator(
                 repo_root=Path.cwd(),
@@ -4034,62 +3807,14 @@ class TestPerThreadGraphiti:
         finally:
             mock_loop.close()
 
-    def test_capture_turn_state_falls_back_to_get_graphiti(self):
-        """Test _capture_turn_state falls back to get_graphiti when factory is None."""
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_factory",
-            return_value=None,
-        ):
-            orch = AutoBuildOrchestrator(
-                repo_root=Path.cwd(),
-                max_turns=5,
-                enable_context=True,
-            )
-        # No factory available
-        assert orch._factory is None
-
-        player_result = make_player_result()
-        coach_result = make_coach_result(decision="approve")
-        turn_record = TurnRecord(
-            turn=1,
-            player_result=player_result,
-            coach_result=coach_result,
-            decision="approve",
-            feedback=None,
-            timestamp="2025-01-29T10:00:00Z",
-        )
-
-        with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
-            "guardkit.orchestrator.autobuild.capture_turn_state",
-            new_callable=AsyncMock,
-        ) as mock_capture:
-            orch._capture_turn_state(
-                turn_record=turn_record,
-                acceptance_criteria=["AC-001: Test"],
-                task_id="TASK-TEST-001",
-            )
-            # Should fall back to get_graphiti
-            # TASK-RFX-5FED: Graphiti capture replaced by local file write
-            pass  # method completes without error
-            # TASK-RFX-5FED: Graphiti capture replaced by local file write
-            pass  # mock_capture no longer called
-
     def test_init_log_includes_factory_status(self, caplog):
         """Test init log includes factory availability status."""
         import logging
 
-        from guardkit.knowledge.graphiti_client import GraphitiClientFactory
-
-        mock_factory = Mock(spec=GraphitiClientFactory)
+        mock_factory = Mock()
         with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
             with patch(
-                "guardkit.orchestrator.autobuild.get_factory",
+                "guardkit.orchestrator.autobuild.get_memory_factory",
                 return_value=mock_factory,
             ):
                 AutoBuildOrchestrator(
@@ -4116,7 +3841,7 @@ class TestPerThreadGraphiti:
             enable_context=True,
         )
         orch._factory = mock_factory
-        # No thread loader registered — should fall back to get_graphiti()
+        # No thread loader registered
 
         player_result = make_player_result()
         coach_result = make_coach_result(decision="approve")
@@ -4129,13 +3854,8 @@ class TestPerThreadGraphiti:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
             "guardkit.orchestrator.autobuild.capture_turn_state",
             new_callable=AsyncMock,
         ) as mock_capture:
@@ -4146,7 +3866,6 @@ class TestPerThreadGraphiti:
             )
             # get_thread_client should NEVER be called after FD02 fix
             mock_factory.get_thread_client.assert_not_called()
-            # Falls back to get_graphiti() since no thread loader
             # TASK-RFX-5FED: Graphiti capture replaced by local file write
             pass  # method completes without error
             # TASK-RFX-5FED: Graphiti capture replaced by local file write
@@ -4184,14 +3903,9 @@ class TestPerThreadGraphiti:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         try:
             with patch(
-                "guardkit.orchestrator.autobuild.get_graphiti",
-                return_value=mock_graphiti,
-            ), patch(
                 "guardkit.orchestrator.autobuild.capture_turn_state",
                 new_callable=AsyncMock,
             ) as mock_capture:
@@ -4200,7 +3914,6 @@ class TestPerThreadGraphiti:
                     acceptance_criteria=["AC-001: Test"],
                     task_id="TASK-TEST-001",
                 )
-                # Should fall back to get_graphiti() since loader.graphiti is None
                 # TASK-RFX-5FED: Graphiti capture replaced by local file write
                 pass  # method completes without error
                 # TASK-RFX-5FED: Graphiti capture replaced by local file write
@@ -4240,14 +3953,9 @@ class TestPerThreadGraphiti:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         try:
             with patch(
-                "guardkit.orchestrator.autobuild.get_graphiti",
-                return_value=mock_graphiti,
-            ), patch(
                 "guardkit.orchestrator.autobuild.capture_turn_state",
                 new_callable=AsyncMock,
             ) as mock_capture:
@@ -4256,7 +3964,6 @@ class TestPerThreadGraphiti:
                     acceptance_criteria=["AC-001: Test"],
                     task_id="TASK-TEST-001",
                 )
-                # Should fall back to get_graphiti() since loader is None
                 # TASK-RFX-5FED: Graphiti capture replaced by local file write
                 pass  # method completes without error
                 # TASK-RFX-5FED: Graphiti capture replaced by local file write
@@ -4294,13 +4001,8 @@ class TestPerThreadGraphiti:
             timestamp="2025-01-29T10:00:00Z",
         )
 
-        mock_graphiti = AsyncMock()
-        mock_graphiti.enabled = True
-
+        # FEAT-MEM-09 WS-2c: capture is now local-file persistence (no Graphiti).
         with patch(
-            "guardkit.orchestrator.autobuild.get_graphiti",
-            return_value=mock_graphiti,
-        ), patch(
             "guardkit.orchestrator.autobuild.capture_turn_state",
             new_callable=AsyncMock,
         ) as mock_capture:
@@ -4311,7 +4013,6 @@ class TestPerThreadGraphiti:
             )
             # No get_thread_client call
             mock_factory.get_thread_client.assert_not_called()
-            # Falls back to get_graphiti()
             # TASK-RFX-5FED: Graphiti capture replaced by local file write
             pass  # method completes without error
             # TASK-RFX-5FED: Graphiti capture replaced by local file write
