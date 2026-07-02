@@ -988,4 +988,3 @@ Claude executes:
 - **`/system-design`** — Design API contracts; detects and reports stale decisions flagged by `/arch-refine`
 - **`/design-refine`** — Refine design-level decisions (DDRs); shares the same disambiguation flow as `/arch-refine`
 - **`/system-plan`** — Feature-level planning that consumes architecture context
-- **`/impact-analysis`** — Standalone impact analysis (similar to Phase 4 of `/arch-refine`)

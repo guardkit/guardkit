@@ -1263,4 +1263,3 @@ Run /system-design again to complete remaining contexts.
 - `/feature-spec` — Generate BDD specifications grounded in design artefacts
 - `/feature-plan` — Plan feature implementation using design and architecture context
 - `/design-refine` — Update existing design decisions and API contracts
-- `/impact-analysis` — Assess impact of changes on existing design artefacts
