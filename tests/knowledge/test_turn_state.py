@@ -976,7 +976,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1005,7 +1005,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1031,7 +1031,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1058,7 +1058,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1090,7 +1090,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[{"body": mock_result}])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1124,7 +1124,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Search error"))
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1141,7 +1141,7 @@ class TestLoadTurnContinuationContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1166,7 +1166,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1187,7 +1187,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[mock_result])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1221,7 +1221,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1257,7 +1257,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1277,7 +1277,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=[])
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1303,7 +1303,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1328,7 +1328,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1353,7 +1353,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(return_value=mock_results)
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1369,7 +1369,7 @@ class TestLoadTurnContext:
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1381,7 +1381,7 @@ class TestLoadTurnContext:
     @pytest.mark.asyncio
     async def test_load_turn_context_graceful_degradation_none_client(self):
         """Test graceful degradation when client is None."""
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=None):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=None):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1396,7 +1396,7 @@ class TestLoadTurnContext:
         mock_client.enabled = True
         mock_client.search = AsyncMock(side_effect=Exception("Search error"))
 
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             result = await load_turn_context(
                 feature_id="FEAT-GE",
                 task_id="TASK-GE-001"
@@ -1459,7 +1459,7 @@ class TestIntegrationRoundTrip:
         captured_data["parsed_content"] = entity.to_episode_body()
 
         # Load context for turn 2
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             context = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",
@@ -1557,7 +1557,7 @@ class TestIntegrationRoundTrip:
         turns_storage[-1]["parsed"] = entity1.to_episode_body()
 
         # Load context for turn 2 should reference turn 1
-        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.turn_state_operations.get_memory_client', return_value=mock_client):
             context = await load_turn_continuation_context(
                 mock_client,
                 feature_id="FEAT-GE",

@@ -29,13 +29,12 @@ import logging
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from guardkit.knowledge.decision_detector import DecisionDetector
 
 from guardkit.knowledge.adr import ADREntity, ADRStatus, ADRTrigger
-from guardkit.knowledge.graphiti_client import GraphitiClient
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ class ADRService:
 
     def __init__(
         self,
-        client: GraphitiClient,
+        client: Any,
         significance_threshold: float = 0.4
     ):
         """Initialize ADRService with a GraphitiClient.

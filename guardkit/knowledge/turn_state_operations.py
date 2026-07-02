@@ -17,10 +17,10 @@ Example:
         load_turn_continuation_context
     )
     from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
-    from guardkit.knowledge.graphiti_client import get_graphiti
+    from guardkit.knowledge.fleet_memory_client import get_memory_client
 
     # Capture turn state
-    graphiti = get_graphiti()
+    graphiti = get_memory_client()
     turn_state = TurnStateEntity(...)
     await capture_turn_state(graphiti, turn_state)
 
@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
-from guardkit.knowledge.graphiti_client import get_graphiti
+from guardkit.knowledge.fleet_memory_client import get_memory_client
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,11 @@ async def capture_turn_state(
         No exceptions are raised - all errors are caught and logged.
 
     Example:
-        from guardkit.knowledge.graphiti_client import get_graphiti
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
         from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
         from datetime import datetime
 
-        graphiti = get_graphiti()
+        graphiti = get_memory_client()
         entity = TurnStateEntity(
             id="TURN-FEAT-GE-1",
             feature_id="FEAT-GE",
@@ -149,10 +149,10 @@ async def load_turn_continuation_context(
         - An error occurs during retrieval
 
     Example:
-        from guardkit.knowledge.graphiti_client import get_graphiti
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
         from pathlib import Path
 
-        graphiti = get_graphiti()
+        graphiti = get_memory_client()
         context = await load_turn_continuation_context(
             graphiti,
             feature_id="FEAT-GE",
@@ -359,7 +359,7 @@ async def load_turn_context(feature_id: str, task_id: str) -> str:
         # Missing error handling and validation logic
     """
     # Get Graphiti client
-    graphiti_client = get_graphiti()
+    graphiti_client = get_memory_client()
 
     # Graceful degradation: return first turn message if client is None
     if graphiti_client is None:
@@ -470,7 +470,7 @@ def create_turn_state_from_autobuild(
             capture_turn_state,
         )
         from guardkit.knowledge.entities.turn_state import TurnMode
-        from guardkit.knowledge.graphiti_client import get_graphiti
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
 
         # After AutoBuild turn completes
         entity = create_turn_state_from_autobuild(
@@ -484,7 +484,7 @@ def create_turn_state_from_autobuild(
             mode=TurnMode.FRESH_START,
         )
 
-        graphiti = get_graphiti()
+        graphiti = get_memory_client()
         await capture_turn_state(graphiti, entity)
     """
     now = datetime.now()

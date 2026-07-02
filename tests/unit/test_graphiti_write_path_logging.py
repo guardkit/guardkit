@@ -173,7 +173,7 @@ class TestFailedApproachManagerLogging:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        with patch("guardkit.knowledge.failed_approach_manager.get_graphiti", return_value=mock_client):
+        with patch("guardkit.knowledge.failed_approach_manager.get_memory_client", return_value=mock_client):
             with caplog.at_level(logging.INFO, logger="guardkit.knowledge.failed_approach_manager"):
                 await capture_failed_approach(
                     approach="bad approach",
@@ -196,7 +196,7 @@ class TestFailedApproachManagerLogging:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(side_effect=Exception("fail"))
 
-        with patch("guardkit.knowledge.failed_approach_manager.get_graphiti", return_value=mock_client):
+        with patch("guardkit.knowledge.failed_approach_manager.get_memory_client", return_value=mock_client):
             with caplog.at_level(logging.WARNING, logger="guardkit.knowledge.failed_approach_manager"):
                 await capture_failed_approach(
                     approach="bad approach",
