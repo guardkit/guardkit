@@ -101,7 +101,6 @@ def _common_patches(orchestrator):
     """The side-effecting deps every wave-phase test must stub."""
     return (
         patch.object(orchestrator, "_preflight_check"),
-        patch.object(orchestrator, "_pre_init_graphiti"),
         patch.object(orchestrator, "_bootstrap_environment"),
         patch(
             "guardkit.orchestrator.feature_orchestrator.FeatureLoader.find_task",
@@ -327,7 +326,6 @@ def test_failing_smoke_stops_feature_build(tmp_path: Path) -> None:
 
     with (
         patch.object(orchestrator, "_preflight_check"),
-        patch.object(orchestrator, "_pre_init_graphiti"),
         patch.object(orchestrator, "_bootstrap_environment"),
         patch.object(orchestrator, "_mark_wave_completed"),
         patch.object(

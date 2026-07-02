@@ -39,7 +39,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from guardkit.knowledge import get_graphiti
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
 from guardkit.orchestrator.feature_loader import (
     Feature,
@@ -2014,178 +2013,10 @@ The detailed specifications are in the task markdown file.
         bool
             True if FalkorDB is reachable, False otherwise
         """
-        if not self.enable_context:
-            return True  # Context already disabled, nothing to check
-
-        try:
-            # TASK-GLF-003: Use lightweight TCP ping instead of full Graphiti
-            # client initialization. Creating a temporary event loop for
-            # client.initialize() or _check_health() leaves FalkorDB asyncio.Lock
-            # objects bound to a dead loop, causing "Lock bound to different
-            # event loop" errors when the client is later used on the worker's loop.
-            from guardkit.knowledge.graphiti_client import get_factory, get_graphiti
-            factory = get_factory()
-            if factory is None:
-                # Trigger lazy initialization — loads config from
-                # .guardkit/graphiti.yaml, creates GraphitiClientFactory.
-                # This is synchronous and does NOT create asyncio objects
-                # (GLF-003: thread clients have pending_init=True).
-                get_graphiti()
-                factory = get_factory()
-            if factory is None or not factory.config.enabled:
-                logger.info("Graphiti factory not available or disabled, disabling context loading")
-                console.print(
-                    "[yellow]⚠[/yellow] Graphiti not available — "
-                    "context loading disabled for this run"
-                )
-                self.enable_context = False
-                return False
-
-            # Delegate to factory's lightweight connectivity check
-            # (no FalkorDB Lock creation, no asyncio required)
-            if not factory.check_connectivity():
-                logger.warning(
-                    "FalkorDB connectivity check failed (%s:%d) — "
-                    "disabling Graphiti context for this run",
-                    factory.config.falkordb_host, factory.config.falkordb_port,
-                )
-                console.print(
-                    "[yellow]⚠[/yellow] FalkorDB not reachable — "
-                    "disabling Graphiti context for this run"
-                )
-                self.enable_context = False
-                return False
-
-            logger.info("FalkorDB pre-flight TCP check passed")
-            console.print("[green]✓[/green] FalkorDB pre-flight check passed")
-            return True
-
-        except Exception as e:
-            logger.warning(
-                f"FalkorDB pre-flight check failed: {e} — disabling Graphiti context for this run"
-            )
-            console.print(
-                f"[yellow]⚠[/yellow] FalkorDB pre-flight check failed — "
-                f"disabling Graphiti context for this run"
-            )
-            self.enable_context = False
-            return False
-
-    def _seed_stall_episodes_to_graphiti(
-        self,
-        orchestration_result: "FeatureOrchestrationResult",
-    ) -> None:
-        """Seed Graphiti with stall-classification observations from this run.
-
-        TASK-FIX-7A07 AC-8: When the feature run produced any task with a
-        ``coach_agent_invocations_stall`` sub-type, persist a single episode
-        to the ``guardkit__project_decisions`` group naming the affected
-        tasks. One episode per feature run — not per task — to avoid
-        spamming the graph with near-duplicate observations.
-
-        Silent no-op when Graphiti is disabled or unavailable; callers must
-        not rely on this seeding for correctness. Exceptions are caught by
-        the caller (``orchestrate``) so they never affect the feature
-        orchestration result.
-        """
-        if not self.enable_context:
-            return
-        client = get_graphiti()
-        if client is None:
-            return
-
-        # Filter to tasks that exhibited the coach_agent_invocations_stall
-        # sub-type. Defensive against older TaskExecutionResult shapes that
-        # predate the decision_subtype field.
-        affected: List[TaskExecutionResult] = []
-        for wave in orchestration_result.wave_results:
-            for task_result in wave.results:
-                subtype = getattr(task_result, "decision_subtype", None) or ""
-                if "coach_agent_invocations_stall" in subtype:
-                    affected.append(task_result)
-        if not affected:
-            return
-
-        lines = [
-            "Observed coach_agent_invocations_stall classification "
-            f"(TASK-FIX-7A07) in feature run {orchestration_result.feature_id}.",
-            "",
-            "Affected tasks (task_id → decision_subtype → total_turns):",
-        ]
-        for t in affected:
-            subtype = getattr(t, "decision_subtype", None) or "coach_agent_invocations_stall"
-            lines.append(f"- {t.task_id} → {subtype} → {t.total_turns} turns")
-        lines.extend([
-            "",
-            "Mechanism: Coach's agent-invocations gate rejected the Player's "
-            "task-work results for the stall threshold (3) consecutive turns "
-            "with identical missing-phases signature. The Player completed "
-            "the work inline without invoking sub-agents via the Task tool.",
-            "",
-            "Remediation options: (a) ensure Player's system prompt mandates "
-            "Task-tool invocation for the missing phases, "
-            "(b) set implementation_mode: direct for tasks that do not "
-            "warrant the specialist pipeline.",
-        ])
-        episode_body = "\n".join(lines)
-
-        # Best-effort async add. Many orchestrate() contexts already have an
-        # event loop; isolate the seeding into a fresh loop to avoid
-        # interfering with the caller.
-        try:
-            import asyncio as _asyncio
-
-            async def _add() -> None:
-                await client.add_episode(
-                    name=f"coach_agent_invocations_stall_{orchestration_result.feature_id}",
-                    episode_body=episode_body,
-                    source_description=(
-                        "Autobuild feature-run observation (TASK-FIX-7A07)"
-                    ),
-                    group_id="guardkit__project_decisions",
-                )
-
-            try:
-                loop = _asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is None:
-                _asyncio.run(_add())
-            else:
-                # If a loop is already running (unexpected from orchestrate)
-                # schedule as task without blocking.
-                loop.create_task(_add())
-            logger.info(
-                "Seeded Graphiti stall episode for feature %s (%d tasks)",
-                orchestration_result.feature_id,
-                len(affected),
-            )
-        except Exception as exc:
-            logger.debug("Graphiti episode add failed (non-fatal): %s", exc)
-
-    def _pre_init_graphiti(self) -> None:
-        """
-        Pre-initialize Graphiti factory before parallel task dispatch.
-
-        Ensures the global GraphitiClientFactory is created on the main thread
-        before any worker threads call get_graphiti(). Without this, there is a
-        race condition where the first task's AutoBuildOrchestrator.__init__()
-        triggers lazy initialization while other parallel tasks see factory=None.
-
-        This is a no-op when enable_context is False or when Graphiti is
-        unavailable/disabled.
-        """
-        if not self.enable_context:
-            return
-
-        try:
-            client = get_graphiti()
-            if client is not None:
-                logger.info("Pre-initialized Graphiti factory for parallel execution")
-            else:
-                logger.info("Graphiti not available, parallel tasks will run without context")
-        except Exception as e:
-            logger.warning(f"Failed to pre-initialize Graphiti: {e}")
+        # FEAT-MEM-09 WS-2c: the FalkorDB/Graphiti connectivity pre-flight is
+        # retired. Fleet-memory availability is env-driven and degrades to
+        # no-context internally, so there is no connectivity gate to run here.
+        return True
 
     def _wave_phase(
         self,
@@ -2242,12 +2073,6 @@ The detailed specifications are in the task markdown file.
         # Pre-flight FalkorDB connectivity check (TASK-ASF-002)
         # Detect unreachable FalkorDB upfront to avoid per-task retry latency
         self._preflight_check()
-
-        # Pre-initialize Graphiti factory before any parallel dispatch
-        # to avoid race condition where first task triggers lazy init
-        # while other tasks see factory=None (BUG-4 from TASK-REV-B9E1)
-        # Only runs if pre-flight check passed (enable_context still True)
-        self._pre_init_graphiti()
 
         console.print()
         console.print(
@@ -4148,14 +3973,6 @@ The detailed specifications are in the task markdown file.
                 )
         except Exception as exc:
             logger.warning("Review summary generation failed: %s", exc)
-
-        # TASK-FIX-7A07 AC-8: Seed coach_agent_invocations_stall observations
-        # into Graphiti so the next review-of-review pass can cite prior
-        # incidents. One episode per feature run — do not spam per-task.
-        try:
-            self._seed_stall_episodes_to_graphiti(orchestration_result)
-        except Exception as exc:
-            logger.warning("Graphiti stall episode seeding failed: %s", exc)
 
         return orchestration_result
 

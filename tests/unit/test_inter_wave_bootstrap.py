@@ -140,7 +140,6 @@ class TestInterWaveBootstrapHook:
 
         with (
             patch.object(orchestrator, "_preflight_check"),
-            patch.object(orchestrator, "_pre_init_graphiti"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
@@ -176,7 +175,6 @@ class TestInterWaveBootstrapHook:
 
         with (
             patch.object(orchestrator, "_preflight_check"),
-            patch.object(orchestrator, "_pre_init_graphiti"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
@@ -210,7 +208,6 @@ class TestInterWaveBootstrapHook:
 
         with (
             patch.object(orchestrator, "_preflight_check"),
-            patch.object(orchestrator, "_pre_init_graphiti"),
             patch.object(orchestrator, "_bootstrap_environment") as mock_bootstrap,
             patch.object(
                 orchestrator,
