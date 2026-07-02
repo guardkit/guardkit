@@ -185,15 +185,15 @@ Ready for deployment: ✅
 
 This command ensures high-quality task completion while maintaining accurate progress tracking across the **Epic → Feature → Task hierarchy**.
 
-## Graphiti Knowledge Capture (Write Path)
+## Fleet-Memory Knowledge Capture (Write Path)
 
-**Purpose**: Capture task outcome to the Graphiti knowledge graph so future tasks benefit from lessons learned. This is the learning flywheel — every completed task enriches the context available to `/task-work`, `/task-review`, and `/feature-plan` read paths.
+**Purpose**: Capture task outcome to fleet-memory so future tasks benefit from lessons learned. This is the learning flywheel — every completed task enriches the context available to `/task-work`, `/task-review`, and `/feature-plan` read paths.
 
-**Trigger**: Always execute after file organization and state updates, before git commit. Fast no-op if Graphiti unavailable.
+**Trigger**: Always execute after file organization and state updates, before git commit. Fast no-op if fleet-memory is unavailable.
 
-**Non-blocking**: Task completion MUST succeed even if Graphiti write fails. All errors are logged as warnings.
+**Non-blocking**: Task completion MUST succeed even if the fleet-memory write fails. All errors are logged as warnings.
 
-See: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers.
+See: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers and the write-payload contract.
 
 ### Step 1: Extract Task Outcome Data
 
@@ -209,26 +209,92 @@ lessons:     {from Notes section if present, or "No specific lessons recorded"}
 decisions:   {any architectural decisions noted in task content}
 ```
 
-Format the task outcome as a narrative episode:
+These fields map to the typed `build_outcome` payload that the `guardkit memory capture-outcome` CLI constructs when it parses the task file (Step 2) — you do **not** hand-build a payload or a narrative episode:
 
+| Extracted field | `build_outcome` payload field |
+|---|---|
+| `task_id` | `task_id` (also derives the natural key `build_outcome:guardkit:{task_id}`) |
+| `outcome` (acceptance-criteria pass/fail) | `status` — `"success"` or `"failure"` |
+| `approach` | `approach` (embedded for retrieval) |
+| `lessons` | `lessons` (embedded for retrieval) |
+| `title` / summary | embedded for retrieval |
+
+Any architectural `decisions` are captured separately as `adr` payloads in Step 2a.
+
+### Step 2: Write the Task Outcome (CLI-first)
+
+The **task outcome** is a `build_outcome` payload written by the dedicated
+`guardkit memory capture-outcome` CLI (the only fleet-memory write CLI). It parses
+the just-moved task file directly — no temp files, no manual payload construction —
+so it is the preferred path for the outcome write whether or not the MCP tools are
+in-session.
+
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md`
+Tier 0 → Tier 1): check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`.
+Set `memory_available` accordingly. If neither is reachable, set `memory_available = false`,
+display the unavailability warning (see `docs/internals/commands-lib/memory-preamble.md` —
+Warning Message Template) and continue — **do not block completion**.
+
+**IF** `memory_available` is true, write the outcome:
+
+```bash
+# Frontmatter-driven (preferred): pulls task_id, title, requirements,
+# summary, lessons, related ADRs from the task file's frontmatter +
+# `## Implementation Summary` / `## Implementation Notes` / `## Notes`
+# sections. CLI flags override anything that's parsed.
+# Writes a build_outcome payload (payload_type "build_outcome") to fleet-memory.
+guardkit memory capture-outcome \
+  --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
+  --success \
+  --timeout 300
 ```
-episode_name = "Task Completion: {task_id}"
 
-episode_body = "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}."
+The `--timeout 300` sizes the per-write timeout for the embedding step
+(60-300 s typical on local embedders). Pass `--failure` instead of `--success`
+if the task completed but did not meet its acceptance criteria.
+
+**IF** the task file lacks an `## Implementation Summary` section, fall
+back to the explicit-flag form:
+
+```bash
+guardkit memory capture-outcome \
+  --task-id {task_id} \
+  --task-title "{title}" \
+  --summary "{one-paragraph outcome summary}" \
+  --approach "{approach used}" \
+  --lessons "{lesson 1}" --lessons "{lesson 2}" \
+  --success \
+  --timeout 300
 ```
 
-**Example**:
+**IF** the CLI write succeeds, it prints:
 ```
-episode_name = "Task Completion: TASK-042"
-
-episode_body = "TASK-042: Implement user authentication API. Complexity: 7/10. Approach: Used JWT with bcrypt password hashing, FastAPI dependency injection for auth middleware. Result: All acceptance criteria met, 92% test coverage, architectural review 85/100. Lessons: Redis session storage required careful connection pooling configuration for test isolation."
+✅ Outcome captured: OUT-XXXXXXXX
+   Payload: build_outcome:guardkit:{task_id}
 ```
+A non-zero natural-key confirms the payload was persisted (content-hash upsert,
+so re-running is idempotent).
 
-### Step 2: Check Fleet Memory Availability and Write
+**IF** fleet-memory is unavailable or disabled (default non-blocking behaviour):
+```
+DISPLAY (yellow): "Fleet-memory unavailable or disabled — outcome NOT captured"
+                   "  (use --strict to exit non-zero in this case)"
+```
+Task completion proceeds. To make this case fail-fast (e.g. in CI), pass
+`--strict` to the subcommand.
 
-**Tier 0 — MCP Tools (Preferred)**:
+---
 
-Check whether `mcp__fleet_memory__memory_write_payload` is available in the current session's tool list.
+### Step 2a: Capture Architectural Decisions (MCP write, if any)
+
+If the task content records **architectural decisions**, capture each as an `adr`
+payload via the MCP write tool. There is no `guardkit memory` write CLI for
+arbitrary knowledge — only `capture-outcome` — so decision writes require the
+fleet-memory MCP tools to be connected.
+
+**Check for the MCP write tool** (see `docs/internals/commands-lib/memory-preamble.md`
+Tier 0): check whether `mcp__fleet_memory__memory_write_payload` is available in the
+current session's tool list.
 
 **IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often listed
 in the system reminder as "deferred" (loadable via `ToolSearch`) rather than appearing
@@ -242,226 +308,43 @@ If present, load it via:
 ToolSearch(query: "select:mcp__fleet_memory__memory_write_payload")
 ```
 
-Only fall through to Tier 1/2 if the tool is absent from BOTH the immediate tool
-list AND the deferred-tool list (i.e., the fleet_memory MCP server is not configured
-for this session at all).
-
-**IF** MCP tool is available (either immediately or after ToolSearch load):
-
-**Write 1 — Task Outcome** (always):
-```
-mcp__fleet_memory__memory_write_payload(
-  payload: {
-    "project": "guardkit",
-    "payload_type": "task_outcome",
-    "domain_tags": ["task_outcomes"],
-    "name": "Task Completion: {task_id}",
-    "content": "{task_id}: {title}. Complexity: {complexity}/10. Approach: {approach}. Result: {outcome}. Lessons: {lessons}.",
-    "source_type": "text",
-    "source_description": "GuardKit task completion"
-  }
-)
-```
-
-**Write 2 — Architectural Decisions** (only if task content contains architectural decisions):
-```
-mcp__fleet_memory__memory_write_payload(
-  payload: {
-    "project": "guardkit",
-    "payload_type": "project_decision",
-    "domain_tags": ["project_decisions"],
-    "name": "Decision: {task_id} - {decision_summary}",
-    "content": "{decision_description}. Context: {task_id} ({title}). Rationale: {rationale}.",
-    "source_type": "text",
-    "source_description": "GuardKit task architectural decision"
-  }
-)
-```
-
-**IF** MCP writes succeed:
-```
-DISPLAY: "[Fleet Memory] Task outcome captured to knowledge graph"
-```
-
-**IF** MCP writes fail (error from tool call):
-```
-DISPLAY: "[Fleet Memory] Warning: Could not capture task outcome ({error})"
-         "  (Non-critical — task completion continues)"
-```
-
-**DO NOT** block or fail task completion. Continue to git state commit.
-
----
-
-### Step 2a: Detect group_id Override and Fall Back to CLI (DEPRECATED for fleet_memory)
-
-> **Status (TASK-MEM08-009, 2026-06-29):** This step was specific to the
-> legacy Graphiti HTTP MCP server's group_id override behavior (TASK-FIX-B1F7).
-> The fleet_memory stdio MCP server uses payload-based routing and does not
-> have this issue. **This step is skipped when using `mcp__fleet_memory__*` tools.**
->
-> For rollback scenarios where `.mcp.json` is reverted to graphiti, this
-> fallback logic remains available but is not invoked under normal fleet_memory
-> operation.
-
-> **Historical context (TASK-INF-5053, 2026-05-02):** the override that motivated
-> this step was investigated against the graphiti server and **could not
-> be reproduced** — the source correctly honours client-supplied `group_id`.
-> See `docs/state/TASK-INF-5053/audit.md` for the audit trail.
-
-**This step only applies when using the legacy `mcp__graphiti__add_memory` tools.**
-
-The Graphiti MCP HTTP server reports the actual group used in the
-response message: `Episode '...' queued for processing in group
-'<actual>'`. If `<actual>` ever differs from the requested `group_id`,
-project-specific knowledge (task outcomes, project decisions) would
-leak into a shared namespace and be lost to future scoped searches.
-Step 2a parses the message and falls back to the CLI on divergence.
-
-After **Write 1** completes, parse the response message and check for
-override using the parser at
-`installer/core/commands/lib/graphiti_response_parser.py`:
-
-```python
-from installer.core.commands.lib.graphiti_response_parser import detect_group_override
-
-result = detect_group_override(
-    requested_group_id="guardkit__task_outcomes",
-    response_message=write_1_response.message,
-)
-```
-
-**IF** `result.overridden` is True:
+**IF** the MCP write tool is available (either immediately or after ToolSearch load) AND
+the task recorded architectural decisions — for each decision write an `adr` payload
+(`identifier` sanitised to underscores only, e.g. `DECISION_045`):
 
 ```
-DISPLAY (yellow): "[Graphiti] {result.warning}"
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr",
+  "project": "guardkit",
+  "identifier": "DECISION_{NNN}",
+  "decision": "{decision_description}. Context: {task_id} ({title}). Rationale: {rationale}.",
+  "status": "accepted",
+  "domain_tags": ["project"],
+  "source_ref": "tasks/completed/{YYYY-MM}/{task_id}-{slug}.md"
+})
 ```
 
-Then re-issue the same task-outcome write via the CLI (which uses the
-Python `GraphitiClient` directly and respects `group_id`):
-
-```bash
-guardkit graphiti capture-outcome \
-  --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
-  --timeout 300
+**IF** the write succeeds:
+```
+DISPLAY: "[Fleet-Memory] Architectural decision captured (adr:guardkit:DECISION_{NNN})"
 ```
 
+**IF** the write fails (error from the tool call):
 ```
-DISPLAY: "[Graphiti] MCP group overridden → re-sent via CLI to correct group"
-```
-
-**IF** the CLI re-issue itself fails:
-```
-DISPLAY (yellow): "[Graphiti] CLI fallback also failed ({error})"
+DISPLAY (yellow): "[Fleet-Memory] Warning: could not capture decision ({error})"
                   "  (Non-critical — task completion continues)"
 ```
 
-**IF** `result.overridden` is False (or `result.actual` is None — the
-response did not match the expected pattern, treated as a safe no-op):
-proceed normally.
-
-**Same check for Write 2** (architectural decisions →
-`guardkit__project_decisions`):
-
-```python
-result = detect_group_override(
-    requested_group_id="guardkit__project_decisions",
-    response_message=write_2_response.message,
-)
+**IF** the MCP write tool is absent from BOTH the immediate and deferred tool lists,
+skip decision capture (the CLI cannot write arbitrary payloads):
+```
+DISPLAY (yellow): "[Fleet-Memory] MCP write tool not connected — architectural"
+                  "  decisions NOT captured. Connect the fleet_memory MCP server"
+                  "  (see .mcp.json) to persist decisions."
 ```
 
-**IF** `result.overridden` is True for Write 2:
-
-```
-DISPLAY (yellow): "[Graphiti] {result.warning}"
-                  "  (No CLI equivalent for inline architectural-decision writes —"
-                  "   decision episode is misfiled in '{result.actual}'. Manual"
-                  "   re-capture required if this decision must be queryable in"
-                  "   '{result.requested}'.)"
-```
-
-There is no `guardkit graphiti capture-decision` subcommand today, so
-Write 2 cannot auto-fall-back. The warning is the surface for the user
-to decide whether to file a follow-up.
-
-**Step 2a is non-blocking** — any failure (parse error, CLI failure,
-override-with-no-fallback) emits a warning and continues. Task
-completion is not affected.
-
-**See also**: `.claude/rules/graphiti-knowledge-graph.md` "HTTP MCP
-transport: `group_id` is honoured (TASK-INF-5053)",
-TASK-FIX-B1F7 (original mitigation), and TASK-INF-5053
-(`docs/state/TASK-INF-5053/audit.md`, scope revision).
-
----
-
-**Tier 1/2 — CLI Fallback** (when MCP not available):
-
-**IF** `mcp__fleet_memory__memory_write_payload` is NOT available:
-
-Check memory backend availability via Read tool (Tier 1):
-Read `.guardkit/graphiti.yaml` — if file exists and `enabled: true`, proceed to CLI write.
-The CLI uses the configured `backend` flag (graphiti/fleet_memory/dual) from `graphiti.yaml`.
-
-**IF** memory backend is enabled:
-
-Use the dedicated `capture-outcome` subcommand which wraps the
-`capture_task_outcome` Python API and writes to the configured backend
-(fleet_memory/graphiti/dual) with structured fields (TASK-FIX-CLI7, TASK-MEM08-009).
-The subcommand parses the just-moved task file directly — no temp files needed:
-
-```bash
-# Frontmatter-driven (preferred): pulls task_id, title, requirements,
-# summary, lessons, related ADRs from the task file's frontmatter +
-# `## Implementation Summary` / `## Implementation Notes` / `## Notes`
-# sections. CLI flags override anything that's parsed.
-guardkit memory capture-outcome \
-  --from-task-file tasks/completed/{YYYY-MM}/{task_id}-{slug}.md \
-  --timeout 300
-```
-
-**Note**: `guardkit graphiti capture-outcome` is deprecated but remains as an
-alias for backward compatibility. Use `guardkit memory capture-outcome`.
-
-The `--timeout 300` sizes the per-episode timeout for local-LLM entity
-extraction (60-300 s typical on local LLMs).
-
-**IF** the task file lacks an `## Implementation Summary` section, fall
-back to the explicit-flag form:
-
-```bash
-guardkit memory capture-outcome \
-  --task-id {task_id} \
-  --task-title "{title}" \
-  --summary "{one-paragraph outcome summary}" \
-  --approach "{approach used}" \
-  --lessons "{lesson 1}" --lessons "{lesson 2}" \
-  --related-adr {parent_review_or_adr_id} \
-  --timeout 300
-```
-
-**IF** CLI write succeeds:
-The subcommand prints:
-```
-✅ Outcome captured: OUT-XXXXXXXX
-   Group: task_outcomes
-```
-plus the inner client's `Episode profile [...]: nodes=N, edges=M,
-invalidated=K` log line. A non-zero `nodes`/`edges` count confirms the
-LLM extraction actually ran (not just a queued raw episode).
-
-**IF** memory backend is unavailable or disabled (default non-blocking
-behaviour):
-```
-DISPLAY (yellow): "Memory backend unavailable or disabled — outcome NOT captured"
-                   "  (use --strict to exit non-zero in this case)"
-```
-Task completion proceeds. To make this case fail-fast (e.g. in CI), pass
-`--strict` to the subcommand.
-
-**IF** memory backend is not enabled (config missing or `enabled: false`):
-The subcommand reaches the same "unavailable or disabled" branch above
-and emits the same warning. Task completion proceeds.
+**Step 2a is non-blocking** — any failure (missing tool, write error) emits a
+warning and continues. Task completion is not affected.
 
 ### Step 3: Summary
 
@@ -483,8 +366,9 @@ Status: IN_PROGRESS → COMPLETED
 📊 Progress Rollup Calculation
 ...
 
-📝 Graphiti Knowledge Capture
-[Graphiti] Task outcome captured to knowledge graph
+📝 Fleet-Memory Knowledge Capture
+✅ Outcome captured: OUT-XXXXXXXX
+   Payload: build_outcome:guardkit:TASK-042
 
 ✅ Task state committed to git
 
@@ -494,8 +378,8 @@ Status: IN_PROGRESS → COMPLETED
 
 **Example Flow (unavailable)**:
 ```
-📝 Graphiti Knowledge Capture
-[Graphiti] Knowledge capture skipped (not configured)
+📝 Fleet-Memory Knowledge Capture
+[Fleet-Memory] Knowledge capture skipped (not configured)
 
 ✅ Task state committed to git
 ```

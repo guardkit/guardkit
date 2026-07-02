@@ -9,13 +9,13 @@ This command supports **graceful degradation** based on installed packages:
 - Executes full workflow with architectural review and quality gates
 - No requirements/epic loading (require-kit features)
 
-### GuardKit + Graphiti (Knowledge-Enhanced Workflow)
+### GuardKit + Fleet-Memory (Knowledge-Enhanced Workflow)
 - All core features PLUS:
-- Loads job-specific context from knowledge graph during Phase 1.7
-- **MCP-first**: Uses `mcp__graphiti__search_nodes` and `mcp__graphiti__search_memory_facts` when available (zero CLI overhead)
-- **CLI fallback**: Falls back to `graphiti-check` CLI wrapper when MCP tools not in session
+- Loads job-specific context from the fleet-memory knowledge store during Phase 1.7
+- **MCP-first**: Uses `mcp__fleet_memory__memory_search` when available (zero CLI overhead)
+- **CLI fallback**: Falls back to `guardkit memory search` when MCP tools not in session
 - Injects feature context, similar outcomes, relevant patterns, warnings into planning prompt
-- Graceful degradation: works identically when Graphiti is unavailable
+- Graceful degradation: works identically when fleet-memory is unavailable
 
 ### GuardKit + Require-Kit (Enhanced Workflow)
 - All core features PLUS:
@@ -631,7 +631,7 @@ The task-work command now supports a `--micro` flag for streamlined execution of
 - Phase 5: Quick Review (lint only, skip SOLID/DRY/YAGNI)
 
 **Phases skipped**:
-- Phase 1.7: Graphiti Context Loading
+- Phase 1.7: Fleet-Memory Context Loading
 - Phase 2: Implementation Planning
 - Phase 2.1: Library Context Gathering
 - Phase 2.5A: Pattern Suggestion
@@ -1632,27 +1632,28 @@ Feature: {feature or 'None'}
 Acceptance Criteria: {len(acceptance_criteria)} items
 ```
 
-**PROCEED** to Phase 1.7 (Graphiti Context Loading)
+**PROCEED** to Phase 1.7 (Fleet-Memory Context Loading)
 
-#### Phase 1.7: Graphiti Context Loading (Knowledge Graph)
+#### Phase 1.7: Fleet-Memory Context Loading (Knowledge Store)
 
-**Purpose**: Load job-specific context from the Graphiti knowledge graph to enrich implementation planning with historical patterns, similar outcomes, and domain knowledge.
+**Purpose**: Load job-specific context from the fleet-memory knowledge store to enrich implementation planning with historical patterns, similar outcomes, and domain knowledge.
 
-**Trigger**: Always execute after Phase 1.5 (fast no-op if Graphiti unavailable)
+**Trigger**: Always execute after Phase 1.5 (fast no-op if fleet-memory unavailable)
 
 **Skip Conditions**:
 - `--implement-only` flag is set (uses saved design)
 - `--no-context` flag is set
 
-**⚠️ IMPORTANT: Prefer MCP tools (`mcp__graphiti__search_nodes`, `mcp__graphiti__search_memory_facts`)
-when available in the current session.** If MCP tools are not available, fall back to the Python
-check script via bash as described below.
+**⚠️ IMPORTANT: Prefer the MCP tool (`mcp__fleet_memory__memory_search`)
+when available in the current session.** If the MCP tool is not available, fall back to the
+`guardkit memory search` CLI via bash as described below. This is READ-ONLY context loading —
+task-work performs no fleet-memory writes.
 
 **Workflow**:
 
 **STEP 0: Check for MCP Tools (Preferred Path — Zero Overhead)**
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session
+Check whether `mcp__fleet_memory__memory_search` is available in the current session
 (see `docs/internals/commands-lib/memory-preamble.md` Tier 0).
 
 **IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
@@ -1660,46 +1661,32 @@ listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
 than appearing directly in the immediate tool list. Treat deferred tools as
 **available**.
 
-If `mcp__graphiti__search_nodes` is **not** in the immediate tool list, scan
+If `mcp__fleet_memory__memory_search` is **not** in the immediate tool list, scan
 the session's deferred-tool list (system reminder block). If present there,
-load schemas first:
+load its schema first:
 
 ```
-ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts")
+ToolSearch(query: "select:mcp__fleet_memory__memory_search")
 ```
 
-Only fall through to Tier 1 if the tools are absent from BOTH the immediate
+Only fall through to Tier 1 if the tool is absent from BOTH the immediate
 tool list AND the deferred-tool list.
 
-**IF** MCP tools are available (immediately or after ToolSearch load):
+**IF** the MCP tool is available (immediately or after ToolSearch load):
 
-SET `graphiti_access_method = "mcp"`
+SET `memory_access = "mcp"`
 
-Execute both searches in parallel:
+Run a single fleet-memory search covering decisions, architecture, and prior task outcomes.
+(The old two-tool node+fact graph search collapses into one `memory_search` call — the
+payload-type/domain-tag filters do the group scoping.)
 
-**Search 1 — Entities** (nodes relevant to this task):
 ```
-mcp__graphiti__search_nodes(
-  query: "{task_title} {key_terms_from_description}",
-  group_ids: [
-    "product_knowledge",
-    "architecture_decisions",
-    "guardkit__project_architecture",
-    "guardkit__project_decisions",
-    "guardkit__task_outcomes"
-  ]
-)
-```
-
-**Search 2 — Facts** (relationships and decisions):
-```
-mcp__graphiti__search_memory_facts(
-  query: "{task_title}",
-  group_ids: [
-    "architecture_decisions",
-    "guardkit__project_decisions",
-    "guardkit__task_outcomes"
-  ]
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="{task_title} {key_terms_from_description}",
+  payload_types=["adr", "document", "build_outcome"],
+  domain_tags=["project", "architecture", "task"],
+  token_budget=2000
 )
 ```
 
@@ -1710,171 +1697,139 @@ mcp__graphiti__search_memory_facts(
 - Example: title="Implement auth middleware" → query="Implement auth middleware session JWT"
 
 **Result Formatting**:
-Combine MCP results into a context block for Phase 2 injection:
+`memory_search` returns `{context_block, coverage_score, contributing_types, tokens_used}`.
+Use the returned `context_block` directly as the Phase 2 injection context:
 
 ```python
-graphiti_context = ""
-
-# From search_nodes results
-if nodes_returned:
-    graphiti_context += "## Relevant Entities\n"
-    for node in search_nodes_results:
-        graphiti_context += f"- **{node.name}**: {node.summary}\n"
-
-# From search_memory_facts results
-if facts_returned:
-    graphiti_context += "\n## Relevant Facts & Decisions\n"
-    for fact in search_facts_results:
-        graphiti_context += f"- {fact.fact}\n"
+result = memory_search(...)  # dict above
+if result.get("context_block"):
+    memory_context = result["context_block"]
+else:
+    memory_context = None
 ```
 
-SET `task_context["graphiti_context"] = graphiti_context`
+SET `task_context["memory_context"] = memory_context`
 
 **DISPLAY**:
 ```
-[Graphiti] Context loaded via MCP: {node_count} entities, {fact_count} facts
+[Fleet-Memory] Context loaded via MCP: coverage {coverage_score}, {tokens_used}/2000 tokens
 ```
 
-**IF** MCP search calls fail (error or empty results from both searches):
+**IF** the MCP search call fails (error or empty `context_block`):
 ```
-DISPLAY: "[Graphiti] MCP search returned no results (continuing without)"
-SET task_context["graphiti_context"] = None
+DISPLAY: "[Fleet-Memory] MCP search returned no results (continuing without)"
+SET task_context["memory_context"] = None
 ```
 
 **PROCEED** to Step 3 (skip Steps 1-2)
 
-**IF** MCP tools are NOT available:
-- Fall through to Steps 1-2 (CLI wrapper fallback)
+**IF** the MCP tool is NOT available:
+- Fall through to Steps 1-2 (CLI fallback)
 
-**STEP 1: Check Graphiti Availability via CLI Wrapper (Fallback)**
+**STEP 1: Check Fleet-Memory Availability via CLI (Fallback)**
 
-Run the graphiti check wrapper:
+Check store reachability (see `docs/internals/commands-lib/memory-preamble.md` Tier 1):
 
 ```bash
-graphiti-check --status --quiet
+guardkit memory status
 ```
 
-This script checks:
-1. `GRAPHITI_ENABLED` environment variable (not set to "false")
-2. `graphiti-core` Python library is installed
-3. `.guardkit/graphiti.yaml` configuration exists and is enabled
-4. FalkorDB is reachable at the configured host (whitestocks:6379)
-
-The script outputs JSON to stdout:
-```json
-{"available": true, "error": null, "context": null, ...}
+**IF** the output does NOT report `Status: REACHABLE` (i.e. `UNAVAILABLE`, `DISABLED`,
+`DEGRADED`, or an error):
 ```
-
-**IF** available == false:
-```
-DISPLAY: "[Graphiti] Context: unavailable via CLI (continuing without)"
-         "  Reason: {error from JSON}"
-SET task_context["graphiti_context"] = None
+DISPLAY: "[Fleet-Memory] Context: unavailable via CLI (continuing without)"
+         "  Reason: {status output}"
+SET task_context["memory_context"] = None
 PROCEED to Step 3
 ```
 
-**STEP 2: Load Context from Knowledge Graph via CLI**
+**STEP 2: Load Context from Fleet-Memory via CLI**
 
-**IF** Graphiti is available (available == true from Step 1):
+**IF** the store is reachable (`Status: REACHABLE` from Step 1):
 
-Run the context loader with task details:
+SET `memory_access = "cli"`
+
+Run the search with task details (same query as the MCP path):
 
 ```bash
-graphiti-check \
-    --status --task-context --quiet \
-    --task-id "{task_id}" \
-    --description "{task_description}" \
-    --stack "{detected_stack}" \
-    --complexity {complexity_score} \
-    --phase plan \
-    {--feature-id "{feature_id}" if feature_id else ""}
+guardkit memory search "{task_title} {key_terms_from_description}" \
+    --payload-types adr --payload-types document --payload-types build_outcome \
+    --domain-tags project --domain-tags architecture --domain-tags task \
+    --token-budget 2000
 ```
 
-Parse the JSON output:
-```json
-{
-    "available": true,
-    "error": null,
-    "context": "## Knowledge Graph Context\n...",
-    "categories": 4,
-    "tokens_used": 2800,
-    "tokens_budget": 4000
-}
+**IF** the command returns a non-empty context block:
+```
+SET task_context["memory_context"] = context_from_output
+DISPLAY: "[Fleet-Memory] Context loaded via CLI ({token_budget} token budget)"
 ```
 
-**IF** context field is not null:
+**IF** the output is empty (no matching knowledge):
 ```
-SET task_context["graphiti_context"] = context_from_json
-DISPLAY: "[Graphiti] Context loaded via CLI: {categories} categories, {tokens_used}/{tokens_budget} tokens"
-```
-
-**IF** context is null (loading failed):
-```
-DISPLAY: "[Graphiti] Context: loading failed via CLI (continuing without)"
-         "  Error: {error from JSON}"
-SET task_context["graphiti_context"] = None
+DISPLAY: "[Fleet-Memory] Context: no results via CLI (continuing without)"
+SET task_context["memory_context"] = None
 ```
 
 **STEP 3: Store for Phase 2 Injection**
 
-Both the MCP path (Step 0) and CLI path (Steps 1-2) produce `task_context["graphiti_context"]`
-as a text string (or None), and `task_context["graphiti_access_method"]` as `"mcp"`, `"cli"`,
+Both the MCP path (Step 0) and CLI path (Steps 1-2) produce `task_context["memory_context"]`
+as a text string (or None), and `task_context["memory_access"]` as `"mcp"`, `"cli"`,
 or `None`. These values are injected into the Phase 2 planning prompt. See Phase 2 for the
 injection template.
 
 Store the access method alongside the context:
 ```python
 # Already set during Step 0 or Steps 1-2:
-# task_context["graphiti_access_method"] = "mcp" | "cli" | None
-# task_context["graphiti_context"] = context_string | None
+# task_context["memory_access"] = "mcp" | "cli" | None
+# task_context["memory_context"] = context_string | None
 ```
 
 **ERROR HANDLING**:
 
-All Graphiti operations follow the 3-tier graceful degradation pattern
+All fleet-memory operations follow the graceful degradation pattern
 (see `docs/internals/commands-lib/memory-preamble.md`):
 
-1. **Tier 0 — MCP** (preferred): Direct tool calls with zero CLI overhead.
-   If MCP tools are not in the session, fall through to Tier 1/2.
-   If MCP calls return errors or empty results, set context to None and continue.
-2. **Tier 1/2 — CLI wrapper** (fallback): Python script handles errors internally,
-   returns JSON. Non-zero exit code = unavailable.
+1. **Tier 0 — MCP** (preferred): Direct `memory_search` call with zero CLI overhead.
+   If the MCP tool is not in the session, fall through to Tier 1.
+   If the call returns an error or empty `context_block`, set context to None and continue.
+2. **Tier 1 — CLI** (fallback): `guardkit memory status` gates reachability, then
+   `guardkit memory search` loads context. Unreachable = unavailable.
 3. If both paths fail, treat as unavailable and continue without context.
 
-Task-work NEVER blocks or fails due to Graphiti errors.
+Task-work NEVER blocks or fails due to fleet-memory errors.
 
 **Example Flows**:
 
-MCP path (preferred — when Graphiti MCP tools are in session):
+MCP path (preferred — when the fleet-memory MCP tool is in session):
 ```
 /task-work TASK-a3f8
 
 Phase 1.5: Loading context...
-Phase 1.7: Graphiti Context Loading
+Phase 1.7: Fleet-Memory Context Loading
 
-[Graphiti] Context loaded via MCP: 5 entities, 3 facts
+[Fleet-Memory] Context loaded via MCP: coverage 0.82, 1450/2000 tokens
 
 Phase 2: Planning implementation with knowledge context...
 ```
 
-CLI fallback path (when MCP tools not available):
+CLI fallback path (when the MCP tool is not available):
 ```
 /task-work TASK-a3f8
 
 Phase 1.5: Loading context...
-Phase 1.7: Graphiti Context Loading
+Phase 1.7: Fleet-Memory Context Loading
 
-[Graphiti] Context loaded via CLI: 4 categories, 2800/4000 tokens
+[Fleet-Memory] Context loaded via CLI (2000 token budget)
 
 Phase 2: Planning implementation with knowledge context...
 ```
 
 When unavailable (both paths fail):
 ```
-Phase 1.7: Graphiti Context Loading
+Phase 1.7: Fleet-Memory Context Loading
 
-[Graphiti] Context: unavailable (continuing without)
-  Reason: MCP tools not in session; CLI: Connection failed
+[Fleet-Memory] Context: unavailable (continuing without)
+  Reason: MCP tool not in session; CLI: store not reachable
 
 Phase 2: Planning implementation...
 ```
@@ -2188,7 +2143,7 @@ Phase 1.6 is skipped when:
 Skip to Phase 2.1
 ```
 
-**ELSE IF** task complexity >= 7 AND Graphiti has architecture context:
+**ELSE IF** task complexity >= 7 AND fleet-memory has architecture context:
 
 **DISPLAY** (informational only):
 ```
@@ -2198,8 +2153,8 @@ Skip to Phase 2.1
 
 This is a high-complexity task. Architecture context available:
 
-  /impact-analysis TASK-XXX - see what this task affects
-  /system-overview - review current architecture
+  docs/architecture/ - review current architecture (ADRs, bounded contexts)
+  guardkit memory search "<area>" --domain-tags architecture - related decisions
 
 Proceeding with task-work...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2213,7 +2168,7 @@ Skip to Phase 2.1
 **Key Characteristics**:
 - Non-blocking - does not wait for user input
 - Informational only - does not require action
-- Graceful degradation - skips if Graphiti unavailable
+- Graceful degradation - skips if fleet-memory unavailable
 - No timeout - immediately proceeds to next phase
 
 **Example**:
@@ -2229,8 +2184,8 @@ Phase 1.7: Pre-Implementation Architecture Check
 
 This is a high-complexity task. Architecture context available:
 
-  /impact-analysis TASK-ABC-789 - see what this task affects
-  /system-overview - review current architecture
+  docs/architecture/ - review current architecture (ADRs, bounded contexts)
+  guardkit memory search "auth" --domain-tags architecture - related decisions
 
 Proceeding with task-work...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2371,8 +2326,8 @@ phase: 2
 {if clarification_context:}
 clarification_context: {clarification_context}
 {endif}
-{if task_context.graphiti_context:}
-graphiti_context: available ({task_context.graphiti_access_method or "cli"})
+{if task_context.memory_context:}
+memory_context: available ({task_context.memory_access or "cli"})
 {endif}
 </AGENT_CONTEXT>
 
@@ -2395,21 +2350,21 @@ Defaults applied (user did not override):
 Use these clarifications to inform your implementation plan.
 {endif}
 
-{if task_context.graphiti_context:}
-KNOWLEDGE GRAPH CONTEXT (from Phase 1.7 - Graphiti, source: {task_context.graphiti_access_method}):
-The following context was retrieved from the project knowledge graph.
+{if task_context.memory_context:}
+KNOWLEDGE CONTEXT (from Phase 1.7 - Fleet-Memory, source: {task_context.memory_access}):
+The following context was retrieved from the project knowledge store.
 Use this to inform architectural decisions, avoid known pitfalls, and
 build on successful patterns from previous tasks:
 
-{task_context.graphiti_context}
+{task_context.memory_context}
 
 IMPORTANT: In your plan output, include a "Context Used" section listing
-which knowledge graph items above influenced your plan decisions. Example:
+which knowledge items above influenced your plan decisions. Example:
   ## Context Used
-  - Entity "AuthMiddleware": informed session management approach
-  - Fact "JWT preferred over sessions": guided token strategy
+  - Decision "AuthMiddleware": informed session management approach
+  - Outcome "JWT preferred over sessions": guided token strategy
 {else:}
-No knowledge graph context available — planning from task description only.
+No fleet-memory context available — planning from task description only.
 {endif}
 
 {if mode == 'bdd':}
@@ -2446,7 +2401,7 @@ Duration: {phase_2_duration_seconds}s
 Files to create: {planned_file_count}
 Architecture patterns identified: {pattern_count}
 Risk factors: {risk_level}
-Knowledge context: {if task_context.graphiti_context:}used (source: {task_context.graphiti_access_method}){else:}none{endif}
+Knowledge context: {if task_context.memory_context:}used (source: {task_context.memory_access}){else:}none{endif}
 Status: Implementation plan generated successfully
 
 Proceeding to Phase 2.5A...

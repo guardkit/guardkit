@@ -98,9 +98,9 @@ Use `--context` when auto-detection isn't sufficient or you want to explicitly s
 - Paths can be relative (to project root) or absolute
 - Nonexistent files are handled gracefully (warning logged)
 
-### Graphiti Context Integration (FEAT-GR-003)
+### Fleet-Memory Context Integration (FEAT-GR-003)
 
-When `/feature-plan` executes with context (auto-detected or explicit), it queries Graphiti's knowledge graph to enrich planning with:
+When `/feature-plan` executes with context (auto-detected or explicit), it searches fleet-memory to enrich planning with:
 
 **1. Feature-Related Context:**
 - Related features and their outcomes
@@ -116,15 +116,15 @@ When `/feature-plan` executes with context (auto-detected or explicit), it queri
 **Example Context Query Flow:**
 
 ```bash
-/feature-plan "implement FEAT-GR-003 feature spec integration" --context docs/research/graphiti-refinement/FEAT-GR-003.md
+/feature-plan "implement FEAT-GR-003 feature spec integration" --context docs/research/memory-refinement/FEAT-GR-003.md
 
-# Internal Graphiti queries:
-# 1. Seed feature spec to knowledge graph
-# 2. Query related features: FEAT-GR-002, FEAT-GR-004
-# 3. Query relevant patterns: "repository pattern", "context builder pattern"
-# 4. Query role constraints: player_must_implement, coach_must_validate
-# 5. Query quality gates: scaffolding_threshold=skip_arch, feature_threshold=60
-# 6. Query implementation modes: task-work (>= complexity 4), direct (< complexity 4)
+# Internal fleet-memory searches:
+# 1. Load the feature spec context file (--context)
+# 2. Search related features: FEAT-GR-002, FEAT-GR-004
+# 3. Search relevant patterns: "repository pattern", "context builder pattern"
+# 4. Search role constraints: player_must_implement, coach_must_validate
+# 5. Search quality gates: scaffolding_threshold=skip_arch, feature_threshold=60
+# 6. Search implementation modes: task-work (>= complexity 4), direct (< complexity 4)
 #
 # Planning prompt enriched with:
 # - Feature spec details (success criteria, technical requirements)
@@ -145,27 +145,23 @@ When `/feature-plan` executes with context (auto-detected or explicit), it queri
 | Pattern inconsistency | Planning references proven patterns from past features |
 | Knowledge loss | Related features inform current implementation approach |
 
-**Queried Group IDs:**
+**Searched payload types / domain tags:**
 
 ```python
 # Feature context
-"feature_specs"          # Seeded feature specifications
-"feature_completions"    # Past feature outcomes
-"task_outcomes"          # Individual task learnings
+payload_types=["document"], domain_tags=["feature", "spec"]   # Feature specifications
+payload_types=["build_outcome"], domain_tags=["task"]          # Past feature/task outcomes & learnings
 
 # Pattern context
-"patterns_{tech_stack}"  # Stack-specific patterns (e.g., patterns_python)
-"patterns"               # Generic design patterns
+payload_types=["pattern"]                                      # Design patterns (stack-relevant filtered by query)
 
 # AutoBuild context
-"role_constraints"       # Player/Coach responsibilities
-"quality_gate_configs"   # Task-type quality thresholds
-"implementation_modes"   # Direct vs task-work guidance
+payload_types=["document"], domain_tags=["architecture"]       # Role constraints, quality-gate configs,
+                                                               # implementation-mode guidance
 
 # Architecture context
-"project_overview"       # CLAUDE.md insights
-"project_architecture"   # Key components, entry points
-"failure_patterns"       # Things that failed before
+payload_types=["adr", "document"], domain_tags=["architecture"]  # Project overview, key components,
+                                                                 # failure patterns
 ```
 
 **Token Budget Allocation:**
@@ -187,11 +183,10 @@ Total budget: ~4000 tokens
 ```bash
 $ /feature-plan "implement FEAT-SKEL-001 walking skeleton" --context docs/features/FEAT-SKEL-001.md
 
-[Graphiti] Found feature spec: docs/features/FEAT-SKEL-001-walking-skeleton.md
-[Graphiti] Seeded feature spec to knowledge graph
-[Graphiti] Querying for enriched context...
+[Fleet-Memory] Loaded feature spec: docs/features/FEAT-SKEL-001-walking-skeleton.md
+[Fleet-Memory] Searching for enriched context...
 
-[Graphiti] Context loaded:
+[Fleet-Memory] Context loaded:
   ✓ Related features: 2 (FEAT-SETUP-001, FEAT-PING-002)
   ✓ Relevant patterns: 3 (mcp-tool-pattern, docker-setup, healthcheck-pattern)
   ✓ Role constraints: 2 (player, coach)
@@ -205,7 +200,7 @@ TECHNICAL OPTIONS ANALYSIS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Option 1: FastAPI + MCP SDK (Recommended)
-  Based on: mcp-tool-pattern (from Graphiti)
+  Based on: mcp-tool-pattern (from Fleet-Memory)
   Complexity: Low (3/10)
   Effort: 2-3 hours
   Quality gate: scaffolding (architectural review skipped)
@@ -220,7 +215,7 @@ Option 1: FastAPI + MCP SDK (Recommended)
 ✅ **Context continuity** - Feature specs persist across planning → implementation → completion
 ✅ **Pattern reuse** - Proven approaches from past features inform new work
 ✅ **Consistent workflows** - AutoBuild constraints prevent common mistakes
-✅ **Knowledge accumulation** - Each feature enriches the knowledge graph
+✅ **Knowledge accumulation** - Each feature enriches fleet-memory
 ✅ **Reduced rework** - Warnings from past failures prevent repeated errors
 
 ### Feature YAML Schema Reference
@@ -435,14 +430,14 @@ The `/feature-plan` command orchestrates `/task-review` under the hood, so clari
         │
         ▼
 ┌─────────────────────────────┐
-│ 2.5 Graphiti Pre-Planning   │◀── Knowledge Graph (MCP-first)
+│ 2.5 Fleet-Memory Pre-Planning│◀── Fleet-Memory (MCP-first)
 │     Context Loading         │    Similar features, architecture,
 │     (graceful degradation)  │    past outcomes
 └─────────────────────────────┘
         │
         ▼
 ┌─────────────────────────────┐
-│ 3. Execute Decision Review  │◀── context_a + graphiti_context
+│ 3. Execute Decision Review  │◀── context_a + memory_context
 │    with --mode=decision     │
 └─────────────────────────────┘
         │
@@ -852,138 +847,138 @@ Return ClarificationContext with review preferences."""
 **ELSE**:
   **DISPLAY**: "Review scope clarification skipped (--no-questions)"
 
-### Step 2.5: Graphiti Pre-Planning Context Loading (TASK-GMR-006)
+### Step 2.5: Fleet-Memory Pre-Planning Context Loading (TASK-GMR-006)
 
-**Purpose**: Query the knowledge graph for similar past features, architecture constraints, and domain patterns BEFORE generating the plan. This ensures the review analysis is informed by historical context.
+**Purpose**: Search fleet-memory for similar past features, architecture constraints, and domain patterns BEFORE generating the plan. This ensures the review analysis is informed by historical context.
 
-**Trigger**: Always execute after Step 2 (fast no-op if Graphiti unavailable)
+**Trigger**: Always execute after Step 2 (fast no-op if fleet-memory unavailable)
 
 **Skip Conditions**:
 - `--no-context` flag is set
 
 **See**: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers
 
-**STEP 1: Check Graphiti Availability (MCP-First — Tier 0)**
+**STEP 1: Check Fleet-Memory Availability (MCP-First — Tier 0 → Tier 1)**
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session.
+Follow `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1: check
+for the `mcp__fleet_memory__*` tools (immediate tool list AND the deferred-tool
+list in system reminders — deferred tools are loadable via `ToolSearch`; if
+present there, load their schemas first with
+`ToolSearch(query: "select:mcp__fleet_memory__memory_search,mcp__fleet_memory__memory_write_payload")`).
 
-**IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
-listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
-than appearing directly in the immediate tool list. Treat deferred tools as
-**available**.
+**IF** the `mcp__fleet_memory__*` tools are available (immediately or after ToolSearch load):
+  - SET `memory_available = true`, `memory_access = "mcp"`
 
-If `mcp__graphiti__search_nodes` is **not** in the immediate tool list, scan
-the session's deferred-tool list (system reminder block). If present there,
-load schemas first:
+**IF** the MCP tools are absent from BOTH the immediate AND deferred-tool lists:
+  - Fall through to Tier 1: run `guardkit memory status` via the Bash tool
+  - **IF** the output reports `Status: REACHABLE`: SET `memory_available = true`, `memory_access = "cli"`
+  - **IF** it reports `UNAVAILABLE` / `DISABLED` / `DEGRADED` / errors: SET `memory_available = false`
 
+**IF** `memory_available == false`:
 ```
-ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts")
-```
-
-**IF** MCP tools are available (immediately or after ToolSearch load):
-  - SET `graphiti_available = true`
-  - SET `graphiti_access_method = "mcp"`
-  - **Skip Tier 1 and Tier 2** — proceed directly to Step 2
-
-**IF** MCP tools are absent from BOTH the immediate AND deferred-tool lists:
-  - Fall through to Tier 1: Read `.guardkit/graphiti.yaml` using the Read tool
-  - **IF** file exists and `enabled: true`: SET `graphiti_available = true`, `graphiti_access_method = "cli"`
-  - **IF** file does not exist or `enabled: false`: SET `graphiti_available = false`
-
-**IF** `graphiti_available == false`:
-```
-DISPLAY: "[Graphiti] Feature context: unavailable (continuing without)"
+DISPLAY: "[Fleet-Memory] Feature context: unavailable (continuing without)"
 PROCEED to Step 3
 ```
 
 **STEP 2: Load Pre-Planning Context**
 
-**IF** `graphiti_access_method == "mcp"` (Preferred Path):
+**IF** `memory_access == "mcp"` (Preferred Path):
 
-Run both MCP search tools in parallel with feature-relevant group_ids:
+Run one `memory_search` per context category (or a single broad search filtered
+by `payload_types` / `domain_tags`):
 
 ```
-mcp__graphiti__search_nodes(
-  query: "{feature_description}",
-  group_ids: [
-    "guardkit__feature_specs",
-    "architecture_decisions",
-    "guardkit__project_architecture"
-  ]
+# Similar features
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="{feature_description}",
+  payload_types=["document"],
+  domain_tags=["feature", "spec"],
+  token_budget=2000
 )
 
-mcp__graphiti__search_memory_facts(
-  query: "{feature_description}",
-  group_ids: [
-    "guardkit__task_outcomes",
-    "guardkit__project_decisions",
-    "architecture_decisions"
-  ]
+# Architecture context
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="{feature_description}",
+  payload_types=["adr", "document"],
+  domain_tags=["architecture"],
+  token_budget=2000
+)
+
+# Past outcomes
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="{feature_description}",
+  payload_types=["build_outcome"],
+  domain_tags=["task"],
+  token_budget=2000
 )
 ```
 
-Parse results into three categories:
+Each call returns `{context_block, coverage_score, contributing_types, tokens_used}`.
+A non-empty `context_block` (or `coverage_score > 0`) means matching knowledge exists.
+Map the results into three categories:
 
-| Category | Source | Purpose |
-|----------|--------|---------|
-| Similar features | `guardkit__feature_specs` nodes | Avoid repeating failed approaches |
-| Architecture context | `architecture_decisions`, `guardkit__project_architecture` nodes + facts | Ensure feature fits current architecture |
-| Past outcomes | `guardkit__task_outcomes` facts | Learn from what worked/didn't |
+| Category | Search filter | Purpose |
+|----------|---------------|---------|
+| Similar features | `payload_types=["document"]`, `domain_tags=["feature","spec"]` | Avoid repeating failed approaches |
+| Architecture context | `payload_types=["adr","document"]`, `domain_tags=["architecture"]` | Ensure feature fits current architecture |
+| Past outcomes | `payload_types=["build_outcome"]`, `domain_tags=["task"]` | Learn from what worked/didn't |
 
-**ELSE IF** `graphiti_access_method == "cli"` (Fallback Path):
+**ELSE IF** `memory_access == "cli"` (Fallback Path):
 
-Run via Bash tool:
+Run via Bash tool (one search per category):
 
 ```bash
-/Users/richardwoollcott/.agentecflow/bin/graphiti-check \
-    --status --task-context --quiet \
-    --description "{feature_description}" \
-    --phase plan
+guardkit memory search "{feature_description}" --payload-types document --domain-tags feature --domain-tags spec --token-budget 2000
+guardkit memory search "{feature_description}" --payload-types adr --payload-types document --domain-tags architecture --token-budget 2000
+guardkit memory search "{feature_description}" --payload-types build_outcome --domain-tags task --token-budget 2000
 ```
 
-Parse the JSON output for context.
+Parse each command's context block for the matching category.
 
 **STEP 3: Store and Display**
 
-**IF** context was loaded (any results from either path):
+**IF** context was loaded (any non-empty `context_block` from either path):
 
 ```python
-# Combine results into feature_graphiti_context
-feature_graphiti_context = {
-    "similar_features": [...],      # From guardkit__feature_specs
-    "architecture_context": [...],  # From architecture_decisions + project_architecture
-    "past_outcomes": [...]          # From guardkit__task_outcomes
+# Combine results into feature_memory_context
+feature_memory_context = {
+    "similar_features": [...],      # From payload_types=["document"], domain_tags=["feature","spec"]
+    "architecture_context": [...],  # From payload_types=["adr","document"], domain_tags=["architecture"]
+    "past_outcomes": [...]          # From payload_types=["build_outcome"], domain_tags=["task"]
 }
 
 total_items = (
-    len(feature_graphiti_context["similar_features"])
-    + len(feature_graphiti_context["architecture_context"])
-    + len(feature_graphiti_context["past_outcomes"])
+    len(feature_memory_context["similar_features"])
+    + len(feature_memory_context["architecture_context"])
+    + len(feature_memory_context["past_outcomes"])
 )
 ```
 
 **DISPLAY**:
 ```
-[Graphiti] Feature context loaded: {total_items} items
+[Fleet-Memory] Feature context loaded: {total_items} items
   - Similar features: {count}
   - Architecture context: {count}
   - Past outcomes: {count}
 ```
 
-**STORE** `feature_graphiti_context` for injection into Step 3 review analysis.
+**STORE** `feature_memory_context` for injection into Step 3 review analysis.
 
 **IF** no results returned:
 ```
-DISPLAY: "[Graphiti] Feature context: no relevant items found (continuing without)"
-SET feature_graphiti_context = None
+DISPLAY: "[Fleet-Memory] Feature context: no relevant items found (continuing without)"
+SET feature_memory_context = None
 ```
 
 **ERROR HANDLING**:
 
-All Graphiti operations follow graceful degradation:
+All fleet-memory operations follow graceful degradation:
 - MCP tool call fails → fall back to CLI path
 - CLI path fails → continue without context
-- `/feature-plan` NEVER blocks or fails due to Graphiti errors
+- `/feature-plan` NEVER blocks or fails due to fleet-memory errors
 
 ### Step 3: Execute Decision Review
 
@@ -994,31 +989,31 @@ Internally executes:
 
 **PASS** context_a to review analysis (via task frontmatter or inline)
 
-**PASS** feature_graphiti_context to review analysis (if loaded in Step 2.5):
+**PASS** feature_memory_context to review analysis (if loaded in Step 2.5):
 
 ```
-{if feature_graphiti_context:}
-KNOWLEDGE GRAPH CONTEXT (from Step 2.5 - Graphiti):
-The following context was retrieved from the project knowledge graph.
+{if feature_memory_context:}
+FLEET-MEMORY CONTEXT (from Step 2.5):
+The following context was retrieved from the project's fleet-memory store.
 Use this to inform feature scope, risk assessment, and architecture decisions:
 
-{if feature_graphiti_context.similar_features:}
+{if feature_memory_context.similar_features:}
 SIMILAR FEATURES:
-{for feature in feature_graphiti_context.similar_features:}
+{for feature in feature_memory_context.similar_features:}
   - {feature.name}: {feature.summary}
 {endfor}
 {endif}
 
-{if feature_graphiti_context.architecture_context:}
+{if feature_memory_context.architecture_context:}
 ARCHITECTURE CONTEXT:
-{for item in feature_graphiti_context.architecture_context:}
+{for item in feature_memory_context.architecture_context:}
   - {item.name}: {item.fact}
 {endfor}
 {endif}
 
-{if feature_graphiti_context.past_outcomes:}
+{if feature_memory_context.past_outcomes:}
 PAST OUTCOMES:
-{for outcome in feature_graphiti_context.past_outcomes:}
+{for outcome in feature_memory_context.past_outcomes:}
   - {outcome.name}: {outcome.fact}
 {endfor}
 {endif}

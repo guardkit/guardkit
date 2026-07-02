@@ -84,11 +84,11 @@ If `--stack` is provided, use that value regardless of auto-detection.
 - API definitions: `src/api/`, `openapi.yaml`, `schema.graphql`, or equivalent
 - Configuration files for limits/thresholds (e.g., `settings.py`, `config.ts`, `.env.example`)
 
-**1c. Graphiti context** — if Graphiti is available, query for:
+**1c. Fleet-memory context** — if fleet-memory is available (see `docs/internals/commands-lib/memory-preamble.md`), search for:
 
-- ADRs (architectural decisions relevant to this feature)
-- Domain warnings from past implementations
-- Feature outcomes for related areas
+- ADRs — `memory_search(payload_types=["adr"], domain_tags=["architecture"])`
+- Domain warnings from past implementations — `memory_search(payload_types=["warning"])`
+- Feature outcomes for related areas — `memory_search(payload_types=["build_outcome"], domain_tags=["task"])`
 
 **1d. Read --context files** — read all files passed via `--context` in order.
 

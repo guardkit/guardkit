@@ -21,7 +21,7 @@ Switches the active project context and displays an orientation summary. Enables
 The `/context-switch` command enables developers and AI agents to navigate between multiple projects managed by GuardKit. It:
 
 - **Switches** the active project context in `.guardkit/config.yaml`
-- **Loads** the target project's architecture summary from Graphiti
+- **Points** to the target project's architecture summary in `docs/architecture/`
 - **Displays** an orientation summary (active tasks, key components)
 - **Updates** the `last_accessed` timestamp for tracking
 
@@ -156,8 +156,8 @@ ACTIVE TASKS (3):
 
 ======================================================================
 Commands:
-  - Overview: /system-overview
-  - Impact: /impact-analysis TASK-XXX
+  - Architecture: docs/architecture/
+  - Tasks: /task-status
   - Switch: /context-switch <project>
 ======================================================================
 ```
@@ -197,8 +197,8 @@ ORIENTATION COMPLETE
 
 Ready to work. Suggested next steps:
   1. Review active task: /task-status TASK-POA-018
-  2. Check architecture: /system-overview
-  3. Analyze impact: /impact-analysis TASK-POA-018
+  2. Review architecture: docs/architecture/
+  3. Start work: /task-work TASK-POA-018
 ======================================================================
 ```
 
@@ -275,9 +275,9 @@ Or add manually to .guardkit/config.yaml
 ======================================================================
 ```
 
-### Graphiti Unavailable
+### No Architecture Docs
 
-When Graphiti is not available (architecture context won't load):
+When `docs/architecture/` is absent (no architecture summary to point to):
 
 ```
 ======================================================================
@@ -288,15 +288,14 @@ PROJECT: power-of-attorney
 PATH: /Users/dev/projects/poa-platform
 
 ARCHITECTURE:
-  [Graphiti unavailable - architecture context not loaded]
-  Check docs/architecture/ARCHITECTURE.md manually
+  [No docs/architecture/ found - run /system-arch to establish it]
 
 ACTIVE TASKS (2):
   - TASK-POA-018: Implement Moneyhub integration (in_progress)
   - TASK-POA-019: Add audit logging (backlog)
 
 ======================================================================
-Note: Architecture context unavailable. Run /system-plan when ready.
+Note: No architecture context. Run /system-arch, then /system-plan when ready.
 ======================================================================
 ```
 
@@ -324,8 +323,8 @@ Note: Architecture context unavailable. Run /system-plan when ready.
 # 2. Switch to target project
 /context-switch power-of-attorney
 
-# 3. Get full architecture overview
-/system-overview
+# 3. Review architecture
+cat docs/architecture/ARCHITECTURE.md
 
 # 4. Start working
 /task-work TASK-POA-018
@@ -410,8 +409,7 @@ if mode == "current":
     print(f"PATH: {current.get('path', 'N/A')}")
     print()
 
-    # Try to get architecture from Graphiti
-    # (graceful if unavailable)
+    # Architecture summary lives in docs/architecture/ (read locally if present)
 
     print("ACTIVE TASKS:")
     if active_tasks:
@@ -442,11 +440,11 @@ if mode == "switch":
         print("Add with: cd /path/to/project && guardkit init")
         return
 
-    # Check Graphiti availability (see docs/internals/commands-lib/memory-preamble.md Tier 1)
-    # Read .guardkit/graphiti.yaml — if enabled: true, graphiti_available = true
-    # Otherwise graphiti_available = false (display warning, continue)
+    # The architecture-graph read was retired in FEAT-MEM-09; execute_context_switch
+    # surfaces config + active tasks, and the architecture summary is read locally
+    # from docs/architecture/ if present (the client parameter is unused).
 
-    result = execute_context_switch(graphiti_available, target_project, config)
+    result = execute_context_switch(client=None, target_project=target_project, config=config)
 
     # Display orientation
     print("=" * 70)
@@ -457,7 +455,7 @@ if mode == "switch":
     print(f"PATH: {target.get('path', 'N/A')}")
     print()
 
-    # Architecture section (from Graphiti or N/A)
+    # Architecture section (from docs/architecture/ if present)
     if result.get("architecture"):
         arch = result["architecture"]
         print("ARCHITECTURE:")
@@ -466,7 +464,7 @@ if mode == "switch":
         print(f"  ADRs: {len(arch.get('decisions', []))}")
     else:
         print("ARCHITECTURE:")
-        print("  [Graphiti unavailable - check docs/architecture/ manually]")
+        print("  [No docs/architecture/ found - run /system-arch to establish it]")
 
     print()
 
@@ -485,7 +483,7 @@ if mode == "switch":
     print("=" * 70)
     print()
     print("Ready to work. Suggested next steps:")
-    print("  1. Review architecture: /system-overview")
+    print("  1. Review architecture: docs/architecture/")
     print("  2. Check task status: /task-status")
     print("  3. Start working: /task-work TASK-XXX")
     print("=" * 70)
@@ -494,7 +492,7 @@ if mode == "switch":
 ### What NOT to Do
 
 - **DO NOT** switch to a project that doesn't exist in config
-- **DO NOT** crash if Graphiti is unavailable - degrade gracefully
+- **DO NOT** crash if `docs/architecture/` is absent - degrade gracefully
 - **DO NOT** modify config without updating `last_accessed` timestamp
 - **DO NOT** skip the orientation summary after switching
 - **DO NOT** assume task directories exist - check before reading
@@ -533,7 +531,6 @@ TO ADD A NEW PROJECT:
 
 ## Related Commands
 
-- `/system-overview` - Architecture summary for current project
-- `/impact-analysis` - Pre-task architecture validation
+- `/system-arch` - Establish or refine project architecture (writes `docs/architecture/`)
 - `/system-plan` - Interactive architecture planning
 - `/task-status` - View task status across projects

@@ -1203,4 +1203,3 @@ Run /design-refine again to start a new refinement session.
 - `/feature-spec` — Generate BDD specifications grounded in design artefacts
 - `/feature-plan` — Plan feature implementation using design and architecture context
 - `/system-plan` — System-level planning that consumes design context
-- `/impact-analysis` — Assess impact of changes on existing design artefacts

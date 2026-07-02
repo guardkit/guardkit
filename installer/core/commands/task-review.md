@@ -658,186 +658,190 @@ The `/task-review` command executes these phases automatically:
 - Load relevant codebase files/modules
 - Load related design documents and ADRs
 
-### Phase 1.5: Graphiti Review Context Loading (Knowledge Graph)
+### Phase 1.5: Fleet-Memory Review Context Loading (Knowledge Store)
 
-**Purpose**: Load review-relevant context from the Graphiti knowledge graph to enrich review analysis with historical patterns, past review findings, and ADR rationale.
+**Purpose**: Load review-relevant context from the fleet-memory knowledge store to enrich review analysis with historical patterns, past review findings, and ADR rationale.
 
-**Trigger**: Always execute after Phase 1 context loading (fast no-op if Graphiti unavailable)
+**Trigger**: Always execute after Phase 1 context loading (fast no-op if fleet-memory unavailable)
 
 **Skip Conditions**:
 - `--no-context` flag is set
 
 **Reference**: See `docs/internals/commands-lib/memory-preamble.md` for the shared availability check pattern.
 
-**STEP 1: Check Graphiti Availability (Tier 0 → Tier 1 Fallback)**
+**STEP 1: Check Fleet-Memory Availability (Tier 0 → Tier 1 Fallback)**
 
 Follow the tiered availability check from `docs/internals/commands-lib/memory-preamble.md`:
 
 **Tier 0 — MCP Tools (Preferred)**:
 
-Check whether `mcp__graphiti__search_nodes` is available in the current session.
+Check whether `mcp__fleet_memory__memory_search` is available in the current session.
 
 **IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
 listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
 than appearing directly in the immediate tool list. Treat deferred tools as
 **available**.
 
-If `mcp__graphiti__search_nodes` is **not** in the immediate tool list, scan
+If `mcp__fleet_memory__memory_search` is **not** in the immediate tool list, scan
 the session's deferred-tool list (system reminder block). If present there,
 load schemas first:
 
 ```
-ToolSearch(query: "select:mcp__graphiti__search_nodes,mcp__graphiti__search_memory_facts")
+ToolSearch(query: "select:mcp__fleet_memory__memory_search,mcp__fleet_memory__memory_write_payload")
 ```
 
 - **IF** available (immediately or after ToolSearch load):
-  - SET `graphiti_available = true`
-  - SET `graphiti_access_method = "mcp"`
+  - SET `memory_available = true`
+  - SET `memory_access = "mcp"`
   - Skip to Step 2 (MCP Query)
 
 - **IF** absent from BOTH the immediate AND deferred-tool lists:
   - Fall through to Tier 1
 
-**Tier 1 — Read-Based Check**:
+**Tier 1 — CLI Availability Check (Bash Fallback)**:
 
-Use the Read tool to read `.guardkit/graphiti.yaml`.
+Run via the Bash tool:
 
-- **IF** the file exists and contains `enabled: true`:
-  - SET `graphiti_available = true`
-  - SET `graphiti_access_method = "cli"`
+```bash
+guardkit memory status
+```
 
-- **IF** the file does not exist, or `enabled:` is `false` or missing:
-  - SET `graphiti_available = false`
-  - DISPLAY: `[Graphiti] Review context: unavailable (continuing without)`
-  - SET `review_graphiti_context = None`
+- **IF** the output reports `Status: REACHABLE`:
+  - SET `memory_available = true`
+  - SET `memory_access = "cli"`
+
+- **IF** the output reports `UNAVAILABLE`, `DISABLED`, `DEGRADED`, or errors:
+  - SET `memory_available = false`
+  - DISPLAY: `[Fleet-Memory] Review context: unavailable (continuing without)`
+  - SET `review_memory_context = None`
   - PROCEED to Phase 2
 
-**STEP 2: Load Review Context from Knowledge Graph**
+**STEP 2: Load Review Context from Fleet-Memory**
 
-**IF** `graphiti_access_method == "mcp"` (Tier 0):
+Fleet-memory collapses the old paired node+fact searches into a single
+`memory_search` call per concern. The old group_ids map to `payload_types` /
+`domain_tags` (see `docs/internals/commands-lib/memory-preamble.md`):
+`project_decisions` → `adr` / `["project"]`, `task_outcomes` → `build_outcome` /
+`["task"]`.
 
-Execute three MCP queries in parallel to gather review-relevant context:
+**IF** `memory_access == "mcp"` (Tier 0):
+
+Execute three `memory_search` calls to gather review-relevant context:
 
 ```
-# Query 1: Architecture decisions related to review scope
-mcp__graphiti__search_nodes(
-  query: "architecture decisions related to {task_title} {review_mode}",
-  group_ids: ["architecture_decisions", "guardkit__project_decisions"]
+# Query 1: Architecture / project decisions related to review scope
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="architecture decisions related to {task_title} {review_mode}",
+  payload_types=["adr", "document"],
+  domain_tags=["architecture", "project"],
+  token_budget=2000
 )
 
 # Query 2: Past failure patterns and outcomes
-mcp__graphiti__search_memory_facts(
-  query: "past failures patterns issues related to {task_description_keywords}",
-  group_ids: ["guardkit__task_outcomes"]
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="past failures patterns issues related to {task_description_keywords}",
+  payload_types=["build_outcome"],
+  domain_tags=["task"],
+  token_budget=2000
 )
 
 # Query 3: Similar past reviews and findings
-mcp__graphiti__search_memory_facts(
-  query: "previous review findings recommendations for {review_scope_keywords}",
-  group_ids: ["guardkit__task_outcomes"]
+mcp__fleet_memory__memory_search(
+  project="guardkit",
+  query="previous review findings recommendations for {review_scope_keywords}",
+  payload_types=["review_report", "build_outcome"],
+  domain_tags=["review", "task"],
+  token_budget=2000
 )
 ```
+
+Each call returns `{context_block, coverage_score, contributing_types, tokens_used}`.
+A non-empty `context_block` (or `coverage_score > 0`) means matching knowledge exists.
 
 Parse results and assemble context:
 
 ```python
-review_graphiti_context = {
-    "architecture_decisions": [],  # ADRs and design decisions relevant to scope
-    "past_failures": [],           # Known failure patterns to check for recurrence
-    "similar_reviews": [],         # Previous review findings on similar topics
-    "total_items": 0               # Total context items loaded
+review_memory_context = {
+    "architecture_decisions": "",  # context_block from Query 1 (ADRs / project decisions)
+    "past_failures": "",           # context_block from Query 2 (failure patterns to check)
+    "similar_reviews": "",         # context_block from Query 3 (previous review findings)
+    "total_items": 0               # count of non-empty context blocks loaded
 }
 
-# Populate from MCP query results
-for node in query_1_results:
-    review_graphiti_context["architecture_decisions"].append({
-        "name": node.name,
-        "summary": node.summary
-    })
+# Populate from memory_search results (each result carries a context_block)
+if query_1_results.get("context_block"):
+    review_memory_context["architecture_decisions"] = query_1_results["context_block"]
 
-for fact in query_2_results:
-    review_graphiti_context["past_failures"].append({
-        "fact": fact.fact,
-        "source": fact.source_node_name,
-        "target": fact.target_node_name
-    })
+if query_2_results.get("context_block"):
+    review_memory_context["past_failures"] = query_2_results["context_block"]
 
-for fact in query_3_results:
-    review_graphiti_context["similar_reviews"].append({
-        "fact": fact.fact,
-        "source": fact.source_node_name,
-        "target": fact.target_node_name
-    })
+if query_3_results.get("context_block"):
+    review_memory_context["similar_reviews"] = query_3_results["context_block"]
 
-review_graphiti_context["total_items"] = (
-    len(review_graphiti_context["architecture_decisions"]) +
-    len(review_graphiti_context["past_failures"]) +
-    len(review_graphiti_context["similar_reviews"])
+review_memory_context["total_items"] = sum(
+    1 for key in ("architecture_decisions", "past_failures", "similar_reviews")
+    if review_memory_context[key]
 )
 ```
 
-**ELSE IF** `graphiti_access_method == "cli"` (Tier 1 fallback):
+**ELSE IF** `memory_access == "cli"` (Tier 1 fallback):
 
-Run the CLI wrapper via Bash tool:
+Run the same three searches via the Bash tool (writes still require the MCP tool,
+but search works over the CLI):
 
 ```bash
-/Users/richardwoollcott/.agentecflow/bin/graphiti-check \
-    --status --task-context --quiet \
-    --task-id "{task_id}" \
-    --description "{task_description}" \
-    --phase review
+guardkit memory search "architecture decisions related to {task_title} {review_mode}" \
+    --payload-types adr --payload-types document \
+    --domain-tags architecture --domain-tags project --token-budget 2000
+
+guardkit memory search "past failures patterns issues related to {task_description_keywords}" \
+    --payload-types build_outcome --domain-tags task --token-budget 2000
+
+guardkit memory search "previous review findings recommendations for {review_scope_keywords}" \
+    --payload-types review_report --payload-types build_outcome \
+    --domain-tags review --domain-tags task --token-budget 2000
 ```
 
-Parse the JSON output:
-```json
-{
-    "available": true,
-    "error": null,
-    "context": "## Knowledge Graph Context\n...",
-    "categories": 3,
-    "tokens_used": 1800,
-    "tokens_budget": 4000
-}
-```
-
-- **IF** `context` field is not null:
-  - SET `review_graphiti_context = context_from_json`
-- **IF** `context` is null:
-  - SET `review_graphiti_context = None`
-  - DISPLAY: `[Graphiti] Review context: loading failed (continuing without)`
+- **IF** any search returns a non-empty context block:
+  - SET the corresponding `review_memory_context` field to that block
+- **IF** all searches return empty:
+  - SET `review_memory_context = None`
+  - DISPLAY: `[Fleet-Memory] Review context: loading failed (continuing without)`
 
 **STEP 3: Display and Store Context**
 
-**IF** `review_graphiti_context` is not None and has items:
+**IF** `review_memory_context` is not None and has items:
 
 ```
 DISPLAY:
-[Graphiti] Review context loaded via {graphiti_access_method}: {total_items} items
-  - Architecture decisions: {len(architecture_decisions)} ADRs
-  - Past failure patterns: {len(past_failures)} patterns
-  - Similar past reviews: {len(similar_reviews)} findings
+[Fleet-Memory] Review context loaded via {memory_access}: {total_items} context blocks
+  - Architecture / project decisions: {"present" if architecture_decisions else "none"}
+  - Past failure patterns: {"present" if past_failures else "none"}
+  - Similar past reviews: {"present" if similar_reviews else "none"}
 ```
 
-Store `review_graphiti_context` and `graphiti_access_method` for injection into Phase 2 agent prompts.
+Store `review_memory_context` and `memory_access` for injection into Phase 2 agent prompts.
 
 **ELSE**:
 
 ```
 DISPLAY:
-[Graphiti] Review context: unavailable (continuing without)
+[Fleet-Memory] Review context: unavailable (continuing without)
 ```
 
-SET `review_graphiti_context = None`
-SET `graphiti_access_method = None`
+SET `review_memory_context = None`
+SET `memory_access = None`
 
 **ERROR HANDLING**:
 
-All Graphiti operations follow the 3-layer graceful degradation pattern:
+All fleet-memory operations follow the graceful degradation pattern:
 1. MCP tools handle errors internally and return empty results
-2. CLI wrapper returns JSON with error details
+2. The CLI reports `UNAVAILABLE`/`DEGRADED`/errors via `guardkit memory status`
 3. Any exception → treat as unavailable, continue without blocking
 
-Task-review NEVER blocks or fails due to Graphiti errors.
+Task-review NEVER blocks or fails due to fleet-memory errors.
 
 ### Phase 2: Execute Review Analysis
 
@@ -854,43 +858,37 @@ Task-review NEVER blocks or fails due to Graphiti errors.
 Prioritize analysis based on these preferences.
 {endif}
 
-{if review_graphiti_context:}
-**KNOWLEDGE GRAPH CONTEXT** (from Phase 1.5 — Graphiti, source: {graphiti_access_method}):
-The following context was retrieved from the project knowledge graph.
+{if review_memory_context:}
+**KNOWLEDGE CONTEXT** (from Phase 1.5 — Fleet-Memory, source: {memory_access}):
+The following context was retrieved from the project knowledge store.
 Use this to inform review criteria, check for recurrence of known issues,
 and validate against existing architectural decisions:
 
-{if review_graphiti_context.architecture_decisions:}
-**Architecture Decisions (ADRs)**:
-{for decision in review_graphiti_context.architecture_decisions:}
-  - {decision.name}: {decision.summary}
-{endfor}
+{if review_memory_context.architecture_decisions:}
+**Architecture / Project Decisions (ADRs)**:
+{review_memory_context.architecture_decisions}
 Validate that the code under review conforms to these decisions.
 {endif}
 
-{if review_graphiti_context.past_failures:}
+{if review_memory_context.past_failures:}
 **Past Failure Patterns**:
-{for failure in review_graphiti_context.past_failures:}
-  - {failure.source} → {failure.target}: {failure.fact}
-{endfor}
+{review_memory_context.past_failures}
 Check for recurrence of these known issues in the current review scope.
 {endif}
 
-{if review_graphiti_context.similar_reviews:}
+{if review_memory_context.similar_reviews:}
 **Similar Past Reviews**:
-{for review in review_graphiti_context.similar_reviews:}
-  - {review.source} → {review.target}: {review.fact}
-{endfor}
+{review_memory_context.similar_reviews}
 Consider whether previous review findings still apply or have been addressed.
 {endif}
 
 IMPORTANT: In your review output, include a "Context Used" section listing
-which knowledge graph items above influenced your findings. Example:
+which knowledge items above influenced your findings. Example:
   ## Context Used
   - ADR "Use repository pattern": validated compliance in data access layer
   - Past failure "N+1 queries in UserService": checked for recurrence
 {else:}
-No knowledge graph context available — reviewing from codebase analysis only.
+No knowledge context available — reviewing from codebase analysis only.
 {endif}
 
 - Perform analysis using specialized prompts
@@ -961,66 +959,81 @@ Your answer: _
 - Abbreviated session (3-5 questions max)
 - Captured knowledge linked to task_id for searchability
 - Supports all review modes (architectural, security, decision, code-quality, technical-debt)
-- Graceful degradation if Graphiti unavailable
+- Graceful degradation if fleet-memory unavailable
 
-**STEP 2: Write captured knowledge to Graphiti**
+**STEP 2: Write captured knowledge to Fleet-Memory**
 
-After the interactive capture session completes, persist the captured knowledge to the Graphiti knowledge graph. This step is non-blocking — capture session success is not affected by Graphiti write outcome.
+After the interactive capture session completes, persist the captured knowledge to the fleet-memory knowledge store. This step is non-blocking — capture session success is not affected by the fleet-memory write outcome.
 
-**Check Graphiti availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1). Writes require the `mcp__fleet_memory__memory_write_payload` tool (there is no `guardkit memory` write CLI other than `capture-outcome`).
 
-**IF** `mcp__graphiti__add_memory` tool is available in the current session:
+**IF** `mcp__fleet_memory__memory_write_payload` tool is available in the current session:
 
-Write captured knowledge as two episodes:
+Write captured knowledge as two typed payloads. Sanitise `{task_id}` to underscores only for the `identifier` (e.g. `TASK-REV-A3F2` → `TASK_REV_A3F2`):
 
-1. **Review findings → `guardkit__project_decisions`**:
+1. **Review findings → `review_report` payload** (`domain_tags=["review"]`):
 
-Use `mcp__graphiti__add_memory` with:
+Use `mcp__fleet_memory__memory_write_payload` with:
 ```
-group_id: "guardkit__project_decisions"
-name: "Review findings: {task_id} ({review_mode})"
-content: "Task {task_id} ({title}) - {review_mode} review.\n\nKey findings:\n{findings_summary}\n\nScore: {score}/100\n\nCaptured insights:\n{captured_answers_summary}"
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "review_report",
+  "project": "guardkit",
+  "identifier": "REVIEW_{task_id}",
+  "verdict": "Task {task_id} ({title}) - {review_mode} review. Score: {score}/100.\n\nKey findings:\n{findings_summary}\n\nCaptured insights:\n{captured_answers_summary}",
+  "domain_tags": ["review"],
+  "source_ref": ".claude/reviews/{task_id}-review-report.md"
+})
 ```
 
-2. **Review outcome → `guardkit__task_outcomes`**:
+2. **Review outcome → `build_outcome` payload** (`domain_tags=["task"]`):
 
-Use `mcp__graphiti__add_memory` with:
+Prefer the real CLI (writes a `build_outcome` payload directly) via the Bash tool:
+```bash
+guardkit memory capture-outcome \
+  --task-id "{task_id}" \
+  --task-title "{title}" \
+  --summary "Review {task_id} completed. Mode: {review_mode}. Score: {score}/100. Recommendations: {recommendations_summary}" \
+  --success
 ```
-group_id: "guardkit__task_outcomes"
-name: "Review outcome: {task_id}"
-content: "Review {task_id} completed. Mode: {review_mode}. Score: {score}/100.\n\nRecommendations:\n{recommendations_summary}"
+
+If the CLI is not reachable but the MCP tool is, write the outcome via `mcp__fleet_memory__memory_write_payload` instead:
+```
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "build_outcome",
+  "project": "guardkit",
+  "identifier": "REVIEW_OUTCOME_{task_id}",
+  "status": "accepted",
+  "duration_seconds": 0,
+  "domain_tags": ["task"],
+  "source_ref": "{task_id}",
+  "lessons": "Mode: {review_mode}. Score: {score}/100.\n\nRecommendations:\n{recommendations_summary}"
+})
 ```
 
 **DISPLAY** on success:
 ```
-[Graphiti] ✅ Knowledge captured to graph (2 episodes: project_decisions, task_outcomes)
+[Fleet-Memory] ✅ Knowledge captured (review_report + build_outcome payloads)
 ```
 
-**ELSE IF** MCP not available, **fall through to CLI**:
+**ELSE IF** MCP write tool not available, **fall through to the CLI outcome write**:
 
 ```bash
-/Users/richardwoollcott/.agentecflow/bin/graphiti-check --status --quiet
+guardkit memory status
 ```
 
-If available, write via CLI:
-```bash
-guardkit graphiti add-context --inline \
-  --group guardkit__project_decisions \
-  --content "Review findings: {task_id} ({review_mode}) - {findings_summary}"
+If `Status: REACHABLE`, write the review outcome via `guardkit memory capture-outcome`
+(as shown above). Note the `review_report` findings payload requires the MCP write
+tool — if `memory_access = "cli"`, offer it for review but note it can only be
+persisted when the fleet-memory MCP tools are connected, and skip it.
 
-guardkit graphiti add-context --inline \
-  --group guardkit__task_outcomes \
-  --content "Review outcome: {task_id}. Mode: {review_mode}. Score: {score}/100. Recommendations: {rec_summary}"
-```
-
-**IF** both MCP and CLI fail:
+**IF** both the MCP write tool and the CLI are unavailable:
 
 ```
-[Graphiti] ⚠️ Write failed — continuing without knowledge graph persistence
+[Fleet-Memory] ⚠️ Write failed — continuing without knowledge persistence
   Reason: {error}
 ```
 
-**Non-blocking** — Phase 4.5 succeeds regardless of Graphiti write outcome.
+**Non-blocking** — Phase 4.5 succeeds regardless of the fleet-memory write outcome.
 
 ### Phase 5: Human Decision Checkpoint (with Optional Implementation Preferences)
 Present findings to user with decision options:
@@ -1783,8 +1796,8 @@ def handle_decision_checkpoint(findings: dict, task: dict, flags: dict):
         )
 
     elif decision == "accept":
-        # Write review findings to Graphiti knowledge graph (non-blocking)
-        await capture_review_to_graphiti(task, findings)
+        # Write review findings to the fleet-memory knowledge store (non-blocking)
+        await capture_review_to_memory(task, findings)
         complete_review_task(task)
 
     elif decision == "revise":
@@ -1794,25 +1807,29 @@ def handle_decision_checkpoint(findings: dict, task: dict, flags: dict):
         cancel_review(task)
 ```
 
-**Phase 5 Graphiti Write: `capture_review_to_graphiti`**
+**Phase 5 Fleet-Memory Write: `capture_review_to_memory`**
 
 ```python
-async def capture_review_to_graphiti(task: dict, findings: dict):
-    """Write review findings and outcome to Graphiti knowledge graph.
+async def capture_review_to_memory(task: dict, findings: dict):
+    """Write review findings and outcome to the fleet-memory knowledge store.
 
     Called automatically on [A]ccept at Phase 5 decision checkpoint.
-    Non-blocking — review acceptance succeeds even if Graphiti write fails.
+    Non-blocking — review acceptance succeeds even if the fleet-memory write fails.
 
-    Writes two episodes:
-    1. Review findings → guardkit__project_decisions (architectural decisions, patterns)
-    2. Review outcome → guardkit__task_outcomes (score, recommendation summary)
+    Writes two typed payloads:
+    1. Review findings → review_report payload (verdict, domain_tags=["review"])
+    2. Review outcome → build_outcome payload (via `guardkit memory capture-outcome`,
+       domain_tags=["task"])
 
     Access method priority:
-    - Tier 0: MCP tools (mcp__graphiti__add_memory) — preferred, zero overhead
-    - Tier 1: CLI fallback (guardkit graphiti add-context) — if MCP unavailable
+    - Tier 0: MCP write tool (mcp__fleet_memory__memory_write_payload) — preferred
+    - Tier 1: CLI fallback (guardkit memory capture-outcome) — outcome only; the
+      review_report findings payload requires the MCP write tool
     - Tier 2: Skip silently — if both unavailable
     """
     task_id = task.get("task_id", task.get("id", "unknown"))
+    # Sanitise the task id for the payload identifier (underscores only)
+    safe_id = task_id.replace("-", "_").replace(":", "_").lstrip("@")
     title = task.get("title", "")
     review_mode = findings.get("mode", findings.get("review_mode", "unknown"))
     score = findings.get("score", "N/A")
@@ -1838,95 +1855,110 @@ async def capture_review_to_graphiti(task: dict, findings: dict):
         rec_lines.append(f"{i}. {rec_text}")
     rec_summary = "\n".join(rec_lines) if rec_lines else "No recommendations."
 
-    # Episode 1: Review findings → project_decisions
-    findings_content = (
+    # Payload 1: Review findings → review_report (verdict field)
+    findings_verdict = (
         f"Task {task_id} ({title}) - {review_mode} review.\n\n"
         f"Key findings:\n{findings_summary}\n\n"
         f"Score: {score}/100"
     )
 
-    # Episode 2: Review outcome → task_outcomes
-    outcome_content = (
+    # Payload 2: Review outcome → build_outcome (summary/lessons)
+    outcome_summary = (
         f"Review {task_id} completed. Mode: {review_mode}. "
-        f"Score: {score}/100.\n\n"
-        f"Recommendations:\n{rec_summary}"
+        f"Score: {score}/100.\n\nRecommendations:\n{rec_summary}"
     )
 
     try:
-        # Tier 0: Try MCP tools (preferred — zero overhead)
-        # Check if mcp__graphiti__add_memory is available in current session
-        # IF available:
-        mcp__graphiti__add_memory(
-            group_id="guardkit__project_decisions",
-            name=f"Review findings: {task_id} ({review_mode})",
-            content=findings_content
-        )
-        mcp__graphiti__add_memory(
-            group_id="guardkit__task_outcomes",
-            name=f"Review outcome: {task_id}",
-            content=outcome_content
-        )
-        print(f"[Graphiti] ✅ Review captured to graph "
-              f"(2 episodes: project_decisions, task_outcomes)")
+        # Tier 0: Try the MCP write tool (preferred)
+        # Check if mcp__fleet_memory__memory_write_payload is available; IF available:
+        mcp__fleet_memory__memory_write_payload(payload={
+            "payload_type": "review_report",
+            "project": "guardkit",
+            "identifier": f"REVIEW_{safe_id}",
+            "verdict": findings_verdict,
+            "domain_tags": ["review"],
+            "source_ref": f".claude/reviews/{task_id}-review-report.md",
+        })
+        mcp__fleet_memory__memory_write_payload(payload={
+            "payload_type": "build_outcome",
+            "project": "guardkit",
+            "identifier": f"REVIEW_OUTCOME_{safe_id}",
+            "status": "accepted",
+            "duration_seconds": 0,
+            "domain_tags": ["task"],
+            "source_ref": task_id,
+            "lessons": f"Mode: {review_mode}. Score: {score}/100.\n\nRecommendations:\n{rec_summary}",
+        })
+        print(f"[Fleet-Memory] ✅ Review captured "
+              f"(review_report + build_outcome payloads)")
 
     except Exception:
-        # Tier 1: Fall back to CLI
+        # Tier 1: Fall back to the outcome CLI (build_outcome only)
         try:
             import subprocess
             subprocess.run([
-                "guardkit", "graphiti", "add-context", "--inline",
-                "--group", "guardkit__project_decisions",
-                "--content", findings_content
+                "guardkit", "memory", "capture-outcome",
+                "--task-id", task_id,
+                "--task-title", title,
+                "--summary", outcome_summary,
+                "--success",
             ], timeout=30, capture_output=True)
-            subprocess.run([
-                "guardkit", "graphiti", "add-context", "--inline",
-                "--group", "guardkit__task_outcomes",
-                "--content", outcome_content
-            ], timeout=30, capture_output=True)
-            print(f"[Graphiti] ✅ Review captured via CLI")
+            print(f"[Fleet-Memory] ✅ Review outcome captured via CLI "
+                  f"(build_outcome; review_report payload needs the MCP write tool)")
         except Exception as e:
             # Tier 2: Both failed — continue without blocking
-            print(f"[Graphiti] ⚠️ Write failed — continuing without knowledge capture")
+            print(f"[Fleet-Memory] ⚠️ Write failed — continuing without knowledge capture")
             print(f"  Reason: {e}")
 ```
 
-**LLM Execution Instructions for Phase 5 [A]ccept Graphiti Write**:
+**LLM Execution Instructions for Phase 5 [A]ccept Fleet-Memory Write**:
 
 When the user selects **[A]ccept** at the Phase 5 decision checkpoint, the LLM must:
 
-1. **Check if `mcp__graphiti__add_memory` tool is available** in the current session's tool list
+1. **Check if `mcp__fleet_memory__memory_write_payload` tool is available** in the current session's tool list (sanitise `{task_id}` to underscores only for the `identifier`)
 
-2. **IF MCP available** — execute two `mcp__graphiti__add_memory` calls:
+2. **IF the MCP write tool is available** — execute two `mcp__fleet_memory__memory_write_payload` calls:
 
-   **Call 1 — Review findings**:
+   **Call 1 — Review findings (`review_report`)**:
    ```
-   Tool: mcp__graphiti__add_memory
-   Parameters:
-     group_id: "guardkit__project_decisions"
-     name: "Review findings: {task_id} ({review_mode})"
-     content: "{findings_content built from review data}"
-   ```
-
-   **Call 2 — Review outcome**:
-   ```
-   Tool: mcp__graphiti__add_memory
-   Parameters:
-     group_id: "guardkit__task_outcomes"
-     name: "Review outcome: {task_id}"
-     content: "{outcome_content built from review data}"
+   mcp__fleet_memory__memory_write_payload(payload={
+     "payload_type": "review_report",
+     "project": "guardkit",
+     "identifier": "REVIEW_{safe_task_id}",
+     "verdict": "{findings_verdict built from review data}",
+     "domain_tags": ["review"],
+     "source_ref": ".claude/reviews/{task_id}-review-report.md"
+   })
    ```
 
-   **Display**: `[Graphiti] ✅ Review captured to graph (2 episodes: project_decisions, task_outcomes)`
+   **Call 2 — Review outcome (`build_outcome`)**:
+   ```
+   mcp__fleet_memory__memory_write_payload(payload={
+     "payload_type": "build_outcome",
+     "project": "guardkit",
+     "identifier": "REVIEW_OUTCOME_{safe_task_id}",
+     "status": "accepted",
+     "duration_seconds": 0,
+     "domain_tags": ["task"],
+     "source_ref": "{task_id}",
+     "lessons": "Mode: {review_mode}. Score: {score}/100. Recommendations: {rec_summary}"
+   })
+   ```
 
-3. **IF MCP not available** — check CLI availability via Bash:
+   **Display**: `[Fleet-Memory] ✅ Review captured (review_report + build_outcome payloads)`
+
+3. **IF the MCP write tool is not available** — check CLI availability via Bash:
    ```bash
-   /Users/richardwoollcott/.agentecflow/bin/graphiti-check --status --quiet
+   guardkit memory status
    ```
-   If available, run CLI commands. If not, display warning and continue.
+   If `Status: REACHABLE`, write the review outcome via `guardkit memory capture-outcome`
+   (`--task-id`, `--task-title`, `--summary`, `--success`). The `review_report` findings
+   payload needs the MCP write tool — skip it if only the CLI is reachable. If neither is
+   reachable, display the warning and continue.
 
 4. **IF both fail** — display warning and continue:
    ```
-   [Graphiti] ⚠️ Write failed — continuing without knowledge capture
+   [Fleet-Memory] ⚠️ Write failed — continuing without knowledge capture
      Reason: {error}
    ```
 

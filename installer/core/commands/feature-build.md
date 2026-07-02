@@ -169,7 +169,7 @@ Execute Player-Coach adversarial turns until approval or max turns:
 
 **Job-Specific Context Loading** (NEW - FEAT-GR-006):
 
-Each Player turn automatically receives job-specific context from Graphiti, ensuring the AI has precisely the knowledge it needs:
+Each Player turn automatically receives job-specific context from fleet-memory, ensuring the AI has precisely the knowledge it needs:
 
 *Standard Context*:
 - **Similar Outcomes**: What worked for similar tasks (patterns, approaches, successful fixes)

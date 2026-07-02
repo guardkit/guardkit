@@ -238,7 +238,7 @@ test_results:
 
 ### library_context Field (Optional)
 
-The `library_context` frontmatter field allows manual specification of library API documentation. This resolves via **Context7 MCP** (library documentation service), not the Graphiti knowledge graph. Any library available in Context7 can be referenced here.
+The `library_context` frontmatter field allows manual specification of library API documentation. This resolves via **Context7 MCP** (library documentation service), not the fleet-memory knowledge store. Any library available in Context7 can be referenced here.
 
 This is useful when:
 - Libraries are internal/proprietary and not available in Context7
