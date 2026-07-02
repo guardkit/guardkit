@@ -93,15 +93,9 @@ from guardkit.orchestrator.harness import (
 from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
 from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
-# Optional coach context integration (TASK-SC-009)
-try:
-    from guardkit.planning.coach_context_builder import build_coach_context
-    from guardkit.knowledge.graphiti_client import get_graphiti
-    ARCH_CONTEXT_AVAILABLE = True
-except ImportError:
-    ARCH_CONTEXT_AVAILABLE = False
-    build_coach_context = None
-    get_graphiti = None
+# Coach architecture-context integration (TASK-SC-009) was retired in the
+# fleet-memory cutover (FEAT-MEM-09): build_coach_context was never invoked and
+# was built on the now-removed graphiti planning stack.
 
 logger = logging.getLogger(__name__)
 
