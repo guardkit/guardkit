@@ -38,7 +38,6 @@ dependencies = [
     "Jinja2>=3.1.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
-    "graphiti-core @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
     "gherkin-official>=29.0.0",
 ]
 
@@ -57,15 +56,12 @@ autobuild = [
     # pick up whichever release matches the version contract.
     "guardkitfactory>=0.1,<1",
 ]
-# FalkorDB graph store backend (alternative to Neo4j)
-# Installs graphiti-core with FalkorDB support
+# FalkorDB Python client. Used by `guardkit memory migrate-graph`
+# (guardkit/memory/graph_export.py reads Episodic nodes directly). Formerly
+# arrived transitively via graphiti-core[falkordb]; now a direct dependency
+# since FEAT-MEM-09 removed graphiti-core.
 falkordb = [
-    "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
-]
-# Google Gemini LLM client for Graphiti entity extraction
-# Required when .guardkit/graphiti.yaml sets llm_provider: gemini
-gemini = [
-    "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
+    "falkordb>=1.6,<2",
 ]
 dev = [
     "pytest>=7.4.3",
@@ -104,8 +100,7 @@ all = [
     "guardkitfactory>=0.1,<1",
     "nats-core>=0.4,<1",
     "fleet-memory>=0.1,<1",
-    "graphiti-core[falkordb] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
-    "graphiti-core[google-genai] @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1",
+    "falkordb>=1.6,<2",
     "pytest>=7.4.3",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
@@ -147,13 +142,6 @@ Homepage = "https://github.com/guardkit/guardkit"
 Documentation = "https://github.com/guardkit/guardkit/tree/main/docs"
 Repository = "https://github.com/guardkit/guardkit"
 Issues = "https://github.com/guardkit/guardkit/issues"
-
-[tool.hatch.metadata]
-# Allow direct git+ URL references for the graphiti-core fork pin
-# (graphiti-core @ git+https://github.com/guardkit/graphiti.git@v0.29.5-guardkit.1).
-# Required by hatchling 2.4+ metadata spec; without this the build backend
-# refuses to construct project metadata when dependencies use direct URLs.
-allow-direct-references = true
 
 [tool.hatch.version]
 path = "guardkit/__init__.py"
