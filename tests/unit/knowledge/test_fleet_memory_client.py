@@ -420,56 +420,21 @@ class TestFactoryRouting:
         # (depends on graphiti_client being available)
         # This is acceptable graceful degradation
 
-    def test_init_memory_client_unknown_backend_fails(self):
-        """init_memory_client() with unknown backend returns False."""
-        # When: initializing with invalid backend
-        result = init_memory_client(backend="invalid")  # type: ignore
-
-        # Then: initialization fails
-        assert result is False
-
 
 class TestBackendAutoInit:
-    """get_memory_client() lazily selects the backend from config.
-
-    Without this producer the FEAT-MEM-08 cutover flag (graphiti.yaml ``backend:
-    fleet_memory``, flipped by 009) is inert — ``_backend`` stays "graphiti" and every
-    call routes to the (now-disabled) graphiti client. These tests pin the wiring.
-    """
+    """get_memory_client() lazily initializes the fleet-memory backend on first use."""
 
     @pytest.fixture(autouse=True)
     def _reset_factory(self):
         from guardkit.knowledge import fleet_memory_client as fmc
 
-        for _ in (None,):
-            fmc._memory_client = None
-            fmc._backend = "graphiti"
-            fmc._backend_initialized = False
+        fmc._memory_client = None
+        fmc._backend = "fleet_memory"
+        fmc._backend_initialized = False
         yield
         fmc._memory_client = None
-        fmc._backend = "graphiti"
+        fmc._backend = "fleet_memory"
         fmc._backend_initialized = False
-
-    def test_resolve_backend_env_override(self, monkeypatch):
-        from guardkit.knowledge import fleet_memory_client as fmc
-
-        monkeypatch.setenv("GUARDKIT_MEMORY_BACKEND", "fleet_memory")
-        assert fmc._resolve_backend_from_config() == "fleet_memory"
-
-    def test_resolve_backend_invalid_env_falls_back(self, monkeypatch, tmp_path):
-        from guardkit.knowledge import fleet_memory_client as fmc
-
-        monkeypatch.setenv("GUARDKIT_MEMORY_BACKEND", "bogus")
-        monkeypatch.setenv("GUARDKIT_CONFIG_DIR", str(tmp_path))  # no yaml → default
-        assert fmc._resolve_backend_from_config() == "graphiti"
-
-    def test_resolve_backend_from_yaml(self, monkeypatch, tmp_path):
-        from guardkit.knowledge import fleet_memory_client as fmc
-
-        monkeypatch.delenv("GUARDKIT_MEMORY_BACKEND", raising=False)
-        (tmp_path / "graphiti.yaml").write_text("backend: fleet_memory\n")
-        monkeypatch.setenv("GUARDKIT_CONFIG_DIR", str(tmp_path))
-        assert fmc._resolve_backend_from_config() == "fleet_memory"
 
     def test_get_memory_client_auto_inits_fleet_from_env(self, monkeypatch):
         from guardkit.knowledge import fleet_memory_client as fmc
@@ -479,17 +444,14 @@ class TestBackendAutoInit:
         assert isinstance(client, FleetMemoryClient)
         assert fmc._backend_initialized is True
 
-    def test_get_memory_client_defaults_to_graphiti(self, monkeypatch, tmp_path):
+    def test_get_memory_client_defaults_to_fleet_memory(self, monkeypatch, tmp_path):
         from guardkit.knowledge import fleet_memory_client as fmc
 
         monkeypatch.delenv("GUARDKIT_MEMORY_BACKEND", raising=False)
-        monkeypatch.setenv("GUARDKIT_CONFIG_DIR", str(tmp_path))  # no yaml → graphiti
-        with patch(
-            "guardkit.knowledge.graphiti_client.get_graphiti", return_value="GRAPHITI"
-        ):
-            client = get_memory_client()
-        assert fmc._backend == "graphiti"
-        assert client == "GRAPHITI"
+        monkeypatch.setenv("GUARDKIT_CONFIG_DIR", str(tmp_path))
+        client = get_memory_client()
+        assert fmc._backend == "fleet_memory"
+        assert isinstance(client, FleetMemoryClient)
 
     def test_explicit_init_disables_auto_init(self, monkeypatch, fleet_config):
         """An explicit init wins; a later config change does not re-route."""
