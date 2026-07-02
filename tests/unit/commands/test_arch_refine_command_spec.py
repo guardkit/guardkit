@@ -6,6 +6,10 @@ from TASK-SAD-008, follows structural patterns from system-arch.md and task-refi
 and covers refinement-specific scenarios including temporal superseding, disambiguation,
 impact analysis, and staleness flagging.
 
+Knowledge capture runs on fleet-memory (FEAT-MEM-09): seeding via the
+mcp__fleet_memory__memory_write_payload MCP tool, reads via
+mcp__fleet_memory__memory_search, per docs/internals/commands-lib/memory-preamble.md.
+
 TDD Phase: RED → GREEN
 Coverage Target: >=85%
 Test Count: 45+ tests
@@ -113,8 +117,8 @@ class TestDisambiguationFlow:
     """Verify disambiguation flow via semantic search."""
 
     def test_semantic_search_documented(self, spec_content: str):
-        """Must document semantic search via get_relevant_context_for_topic()."""
-        assert "get_relevant_context_for_topic" in spec_content
+        """Must document semantic search via fleet-memory memory_search."""
+        assert "memory_search" in spec_content or "mcp__fleet_memory__memory_search" in spec_content
 
     def test_presents_top_matches(self, spec_content: str):
         """Must present top 3-5 matches grouped by relevance."""
@@ -156,19 +160,28 @@ class TestTemporalSuperseding:
         """New ADR must have supersedes reference to old ADR."""
         assert "supersedes" in spec_content.lower()
 
-    def test_prior_adr_remains_queryable(self, spec_content: str):
-        """Prior ADR must remain queryable in Graphiti with its history."""
+    def test_new_payload_carries_supersedes_natural_key(self, spec_content: str):
+        """New adr payload must carry a supersedes link to the old ADR's natural key."""
+        # Natural key form: adr:guardkit:ADR_ARCH_NNN (underscores only)
+        assert "adr:guardkit:" in spec_content, (
+            "New adr payload must reference the old ADR's fleet-memory natural key "
+            "(adr:guardkit:<identifier>) in its supersedes field"
+        )
+
+    def test_prior_adr_remains_searchable(self, spec_content: str):
+        """Prior ADR must remain searchable in fleet-memory (both versions coexist)."""
         content_lower = spec_content.lower()
-        assert "queryable" in content_lower or "remain" in content_lower or "preserved" in content_lower
+        assert "searchable" in content_lower or "queryable" in content_lower or "coexist" in content_lower
 
     def test_new_adr_gets_next_number(self, spec_content: str):
         """New ADR gets next available number in sequence."""
         content_lower = spec_content.lower()
         assert "next" in content_lower and ("number" in content_lower or "available" in content_lower)
 
-    def test_upsert_episode_mechanism(self, spec_content: str):
-        """Must reference upsert_episode mechanism from TASK-SAD-001 spike."""
-        assert "upsert_episode" in spec_content or "upsert" in spec_content.lower()
+    def test_supersession_upserts_on_natural_key(self, spec_content: str):
+        """Must document idempotent upsert on the natural key (old payload re-written, not deleted)."""
+        content_lower = spec_content.lower()
+        assert "upsert" in content_lower and "natural key" in content_lower
 
     def test_superseded_by_field(self, spec_content: str):
         """Must reference superseded_by field from TASK-SAD-002."""
@@ -255,10 +268,12 @@ class TestC4DiagramReReviewGate:
 class TestStalenessFlagging:
     """Verify staleness flagging documentation."""
 
-    def test_stale_metadata_tag(self, spec_content: str):
-        """Affected downstream Graphiti nodes must be tagged with stale: true."""
-        assert "stale" in spec_content.lower()
-        assert "true" in spec_content.lower()
+    def test_stale_status_written(self, spec_content: str):
+        """Affected downstream documents must be re-written with a stale status."""
+        content_lower = spec_content.lower()
+        assert "stale" in content_lower
+        # Fleet-memory flags staleness by re-writing the document payload with status "stale"
+        assert '"status": "stale"' in spec_content or 'status: "stale"' in spec_content
 
     def test_system_design_detects_stale(self, spec_content: str):
         """Must document that /system-design detects and reports stale decisions."""
@@ -269,52 +284,66 @@ class TestStalenessFlagging:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# AC-006: Graphiti integration
+# AC-006: Fleet-memory integration
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-class TestGraphitiIntegration:
-    """Verify Graphiti integration documentation."""
+class TestFleetMemoryIntegration:
+    """Verify fleet-memory integration documentation (FEAT-MEM-09)."""
 
-    def test_upsert_superseded_episodes(self, spec_content: str):
-        """Must document upserting superseded and new episodes."""
+    def test_writes_superseded_and_new_payloads(self, spec_content: str):
+        """Must document writing the superseded and new ADR payloads to fleet-memory."""
         content_lower = spec_content.lower()
-        assert "upsert" in content_lower
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content
         assert "superseded" in content_lower
 
-    def test_project_decisions_group(self, spec_content: str):
-        """Must update group: project_decisions."""
-        assert "project_decisions" in spec_content
+    def test_uses_adr_payload_type(self, spec_content: str):
+        """ADRs must be seeded as adr-typed payloads."""
+        assert '"payload_type": "adr"' in spec_content, (
+            "Spec must seed ADRs via the adr payload_type"
+        )
 
-    def test_project_architecture_group_or_design(self, spec_content: str):
-        """Must reference project_architecture or project_design group for staleness."""
-        has_arch = "project_architecture" in spec_content
-        has_design = "project_design" in spec_content
-        assert has_arch or has_design
+    def test_architecture_domain_tag(self, spec_content: str):
+        """Must tag ADR payloads with the architecture domain tag."""
+        assert '"architecture"' in spec_content, (
+            "Spec must reference the architecture domain_tag for ADR seeding"
+        )
+
+    def test_design_domain_tag_for_staleness(self, spec_content: str):
+        """Must reference the design domain tag for downstream (staleness) documents."""
+        assert '"design"' in spec_content, (
+            "Spec must reference the design domain_tag for downstream document staleness"
+        )
+
+    def test_references_memory_preamble(self, spec_content: str):
+        """Must reference the fleet-memory preamble as the write/read contract."""
+        assert "memory-preamble" in spec_content, (
+            "Spec must cite docs/internals/commands-lib/memory-preamble.md"
+        )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# AC-007: Graceful degradation when Graphiti unavailable
+# AC-007: Graceful degradation when fleet-memory unavailable
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 class TestGracefulDegradation:
     """Verify graceful degradation documentation."""
 
-    def test_graphiti_unavailable_handling(self, spec_content: str):
-        """Must document behavior when Graphiti is unavailable."""
+    def test_fleet_memory_unavailable_handling(self, spec_content: str):
+        """Must document behavior when fleet-memory is unavailable."""
         content_lower = spec_content.lower()
         assert "unavailable" in content_lower
-        assert "graphiti" in content_lower
+        assert "fleet-memory" in content_lower or "fleet_memory" in content_lower
 
     def test_markdown_artefacts_still_generated(self, spec_content: str):
-        """Must state markdown artefacts are generated even without Graphiti."""
+        """Must state markdown artefacts are generated even without fleet-memory."""
         content_lower = spec_content.lower()
         assert "markdown" in content_lower
         assert "without" in content_lower or "still" in content_lower
 
     def test_warns_user(self, spec_content: str):
-        """Must warn user when Graphiti is unavailable."""
+        """Must warn user when fleet-memory is unavailable."""
         content_lower = spec_content.lower()
         assert "warn" in content_lower
 
@@ -337,7 +366,7 @@ class TestSecurity:
         assert "confirm" in content_lower
 
     def test_sanitise_documented(self, spec_content: str):
-        """Must document sanitising content before Graphiti seeding."""
+        """Must document identifier sanitisation for fleet-memory seeding (hyphens → underscores)."""
         assert "saniti" in spec_content.lower()
 
 
@@ -384,10 +413,10 @@ class TestErrorHandling:
         content_lower = spec_content.lower()
         assert "no match" in content_lower or "not found" in content_lower
 
-    def test_graphiti_connection_error(self, spec_content: str):
-        """Must document Graphiti connection error handling."""
+    def test_fleet_memory_error_handling(self, spec_content: str):
+        """Must document fleet-memory unavailability / write-failure handling."""
         content_lower = spec_content.lower()
-        assert "connection" in content_lower or "unavailable" in content_lower
+        assert "unavailable" in content_lower or "write failed" in content_lower
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

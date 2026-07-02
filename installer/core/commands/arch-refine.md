@@ -2,7 +2,7 @@
 
 Enables iterative refinement of architecture decisions with temporal superseding, downstream impact analysis, and staleness flagging. This command sits alongside `/system-arch` in the architecture pipeline: while `/system-arch` defines or broadly refines architecture, `/arch-refine` targets specific existing ADRs for precise updates.
 
-The disambiguation flow used by `/arch-refine` is identical to that used by `/design-refine` — both use semantic search via `get_relevant_context_for_topic()` to locate the decision to refine, present the top 3-5 matches for user selection, and require explicit confirmation before applying changes.
+The disambiguation flow used by `/arch-refine` is identical to that used by `/design-refine` — both use semantic search (fleet-memory `mcp__fleet_memory__memory_search`, or a local ADR scan when fleet-memory is unavailable) to locate the decision to refine, present the top 3-5 matches for user selection, and require explicit confirmation before applying changes.
 
 ## Command Syntax
 
@@ -26,9 +26,9 @@ The disambiguation flow used by `/arch-refine` is identical to that used by `/de
 - Semantic search disambiguation to locate the ADR to refine
 - Temporal superseding of existing ADRs with full version history
 - Downstream impact analysis across feature specs, C4 diagrams, and API contracts
-- Staleness flagging on affected downstream Graphiti nodes
+- Staleness flagging on affected downstream artefacts
 - Mandatory C4 diagram re-review gate after architectural changes
-- Graceful degradation when Graphiti is unavailable
+- Graceful degradation when fleet-memory is unavailable
 
 **When to use `/arch-refine` vs `/system-arch --mode=refine`:**
 - `/arch-refine` → Targeted refinement of a **specific ADR** (e.g., changing database choice)
@@ -40,17 +40,15 @@ The disambiguation flow used by `/arch-refine` is identical to that used by `/de
 
 Before starting the refinement session, `/arch-refine` MUST verify that architecture context exists. The command requires existing ADRs from `/system-arch` to refine.
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`.
-- If the file exists and `enabled: true`: set `graphiti_available = true`
-- Otherwise: set `graphiti_available = false` and display the unavailability warning from the preamble
+Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`). If neither is reachable, set `memory_available = false` and display the unavailability warning from the preamble — never block the command.
 
-Check for architecture context:
-- If `graphiti_available = true`: verify ADR files exist in `docs/architecture/decisions/`
-- If `graphiti_available = false`: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`
-  - If no local ADRs found: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit
-  - If local ADRs found: display `"WARNING: Graphiti unavailable — reading ADRs from local files"` and continue
+Check for architecture context (follow the memory-preamble "Prerequisite Check Pattern" — either source satisfies the gate):
+- If `memory_available = true`: `memory_search(project="guardkit", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
+- Always: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`.
+  - If no local ADRs found **and** the fleet-memory search returned nothing: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit.
+  - If `memory_available = false` but local ADRs exist: display `"WARNING: Fleet-memory unavailable — reading ADRs from local files"` and continue.
 
 ## Execution Flow
 
@@ -58,12 +56,12 @@ Check for architecture context:
 
 **Load existing ADRs and architecture context:**
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
-Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
 
 Load existing ADRs:
-- If `graphiti_available = true`: ADR context is available via Graphiti (run Tier 2 connectivity check from preamble to confirm reachability before querying)
-- If `graphiti_available = false`: use the Read tool on each file matched by `docs/architecture/decisions/ADR-ARCH-*.md`
+- If `memory_available = true`: ADR context is available via fleet-memory (`memory_search(project="guardkit", payload_types=["adr"], domain_tags=["architecture"])`)
+- Always: use the Read tool on each file matched by `docs/architecture/decisions/ADR-ARCH-*.md` (the local ADR files remain the source of truth for the on-disk artefacts)
 
 Load additional context files (if `--context` provided):
 - Use the Read tool to read each context file specified
@@ -75,8 +73,8 @@ If `--adr=ADR-ARCH-NNN` is provided, skip disambiguation and directly load the t
 #### Step 1: Semantic Search
 
 Search for matching ADRs using the user's natural language query:
-- If `graphiti_available = true`: search Graphiti for ADRs matching the query (Tier 2 connectivity required)
-- If `graphiti_available = false`: use Glob and Read tools to scan `docs/architecture/decisions/ADR-ARCH-*.md` for relevant ADRs
+- If `memory_available = true`: search fleet-memory for ADRs matching the query — `mcp__fleet_memory__memory_search(project="guardkit", query="<the user's query>", payload_types=["adr"], domain_tags=["architecture"])`
+- If `memory_available = false`: use Glob and Read tools to scan `docs/architecture/decisions/ADR-ARCH-*.md` for relevant ADRs
 
 Cap results at 3-5 to prevent adversarial queries from surfacing excessive data (ASSUM-002).
 
@@ -196,35 +194,53 @@ new_adr = ArchitectureDecision(
     supersedes=f"ADR-ARCH-{existing_adr.number:03d}",
 )
 
-# Step 4: Upsert to Graphiti — both old and new episodes
-# The old ADR is preserved and remains queryable in Graphiti (per TASK-SAD-001 findings)
-# upsert_episode creates a new episode; the old one is NOT deleted
-if client:
-    # Update existing ADR with superseded_by metadata
-    arch_sp.upsert_episode(
-        entity_id=existing_adr.entity_id,
-        body=existing_adr.to_episode_body(),
-        group_ids=["project_decisions"],
-    )
-
-    # Create new ADR episode
-    arch_sp.upsert_episode(
-        entity_id=new_adr.entity_id,
-        body=new_adr.to_episode_body(),
-        group_ids=["project_decisions"],
-    )
+# Step 4: Write both ADRs to fleet-memory (deferred to Phase 8 seeding)
+# Fleet-memory upserts idempotently on the natural key
+# "adr:guardkit:<identifier>" (identifier = ADR_NNN, underscores only).
+# The NEW adr payload carries a "supersedes" link to the old ADR's natural key;
+# the OLD adr payload is re-written with "status": "superseded" (rule 4).
+# Re-writing the old payload on its own natural key preserves it — both versions
+# coexist and remain searchable; there is no separate "delete" of the old ADR.
+# (Payloads are built here and persisted in Phase 8 via
+# mcp__fleet_memory__memory_write_payload.)
 
 # Step 5: Write updated and new ADR files
 write_adr_file(existing_adr, "docs/architecture/decisions")
 write_adr_file(new_adr, "docs/architecture/decisions")
 ```
 
+**Fleet-memory supersession payloads (built here, written in Phase 8):**
+
+```
+# NEW ADR — carries the forward "supersedes" link to the old ADR's natural key.
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_{next_number:03d}",          # underscores only, e.g. ADR_008
+  "decision": "<new decision text>", "status": "accepted",
+  "supersedes": ["adr:guardkit:ADR_{existing_number:03d}"],
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{new-adr-file}.md"
+})
+
+# OLD ADR — re-written on its own natural key with status "superseded".
+# Idempotent upsert preserves it (both versions coexist and stay searchable).
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_{existing_number:03d}",       # same natural key as before
+  "decision": "<existing decision text>", "status": "superseded",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{existing-adr-file}.md"
+})
+```
+
 **Key temporal superseding properties (from TASK-SAD-001 spike):**
-- Prior ADR remains queryable in Graphiti — both versions coexist
-- `superseded_by` field on old ADR links forward to new version
-- `supersedes` field on new ADR links backward to old version
-- `upsert_episode()` preserves old episodes; it creates new ones without deleting old ones
-- Consumers use `updated_at` to identify the current version
+- Prior ADR remains searchable in fleet-memory — both versions coexist (the old
+  payload is re-written with `status: superseded`, not deleted)
+- `superseded_by` field on the old ADR file links forward to the new version
+- `supersedes` field on the new ADR (file and `adr` payload) links backward to the old version
+- Fleet-memory upserts idempotently on the natural key `adr:guardkit:ADR_NNN`;
+  re-writing an existing key updates it in place without dropping other ADRs
+- Consumers query the current `status` to identify the current version
 
 ### Phase 4: Impact Analysis
 
@@ -232,15 +248,23 @@ Before applying changes, analyse which downstream artefacts are affected and pre
 
 ```python
 # Query downstream artefacts that reference the changed ADR
-if client:
-    # Check project_design group for affected API contracts
-    affected_contracts = arch_sp.get_relevant_context_for_topic(
-        f"references {existing_adr.entity_id}", limit=10
+if memory_available:
+    # Search fleet-memory for affected API contracts (design documents)
+    affected_contracts = mcp__fleet_memory__memory_search(
+        project="guardkit",
+        query=f"references {existing_adr.entity_id}",
+        payload_types=["document"],
+        domain_tags=["design"],
+        token_budget=2000,
     )
 
-    # Check feature_specs group for affected feature specs
-    affected_specs = arch_sp.get_relevant_context_for_topic(
-        f"depends on {existing_adr.entity_id}", limit=10
+    # Search fleet-memory for affected feature specs
+    affected_specs = mcp__fleet_memory__memory_search(
+        project="guardkit",
+        query=f"depends on {existing_adr.entity_id}",
+        payload_types=["document"],
+        domain_tags=["design"],
+        token_budget=2000,
     )
 else:
     affected_contracts = []
@@ -282,25 +306,31 @@ Your choice [A/R/C]:
 
 ### Phase 5: Staleness Flagging
 
-After user approves the impact, tag affected downstream Graphiti nodes with `stale: true` metadata so that `/system-design` and other commands can detect and report stale decisions on next run.
+After user approves the impact, re-write the affected downstream `document` payloads in fleet-memory with a `"status": "stale"` field (and a `stale_reason`) on their own natural keys, so that `/system-design` and other commands can detect and report stale decisions on next run. Fleet-memory upserts idempotently on the natural key `document:guardkit:<identifier>`, so re-writing an affected document updates it in place — no separate node-tagging API is needed.
 
 ```python
-# Tag affected nodes as stale in Graphiti
-if client:
+# Re-write affected documents in fleet-memory with status "stale"
+if memory_available and memory_access == "mcp":
     for affected in affected_contracts + affected_specs:
-        entity_id = affected.get("entity_id")
-        if entity_id:
-            arch_sp.update_entity_metadata(
-                entity_id=entity_id,
-                metadata={"stale": True, "stale_reason": f"Superseded by {new_adr.entity_id}"},
-            )
-            print(f"  ⚠️ Flagged as stale: {entity_id}")
+        identifier = affected.get("identifier")   # underscores-only slug
+        if identifier:
+            mcp__fleet_memory__memory_write_payload(payload={
+                "payload_type": "document",
+                "project": "guardkit",
+                "identifier": identifier,          # same natural key → updates in place
+                "content": affected.get("content", ""),
+                "status": "stale",
+                "stale_reason": f"Superseded by {new_adr.entity_id}",
+                "domain_tags": affected.get("domain_tags", ["design"]),
+                "source_ref": affected.get("source_ref", ""),
+            })
+            print(f"  ⚠️ Flagged as stale: {identifier}")
 
     print()
     print("Stale artefacts will be detected and reported by /system-design on next run.")
 ```
 
-**`/system-design` stale detection:** When `/system-design` runs, it queries for nodes with `stale: true` metadata and presents them to the user:
+**`/system-design` stale detection:** When `/system-design` runs, it searches fleet-memory for documents with `status: "stale"` and presents them to the user:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -409,35 +439,43 @@ if structure_changed:
 writer.write_architecture_index(output_dir, system_context, components, concerns, decisions)
 ```
 
-### Phase 8: Graphiti Seeding
+### Phase 8: Fleet-Memory Seeding
 
-Upsert superseded and new episodes to Graphiti:
+Write the superseded and new ADR payloads to fleet-memory (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern).
 
-If `graphiti_available` is true, run the Tier 2 connectivity check (see `docs/internals/commands-lib/graphiti-preamble.md`).
+**Content sanitisation:** `mcp__fleet_memory__memory_write_payload` accepts typed payloads and handles storage internally — no manual sanitisation step is needed. Map hyphenated ADR ids to underscores (`ADR-ARCH-002` → `ADR_ARCH_002`) so the identifier matches `^[a-zA-Z0-9_]+$`.
 
-**Note on `sanitise_for_graphiti()`:** The `guardkit graphiti add-context` CLI command handles content sanitisation automatically — no manual sanitisation step is needed.
-
-Generate and offer the following seeding commands:
-
-```bash
-# Seed superseded ADR (updated with superseded_by field)
-guardkit graphiti add-context docs/architecture/decisions/{existing-adr-file}.md \
-  --group architecture_decisions
-
-# Seed new ADR
-guardkit graphiti add-context docs/architecture/decisions/{new-adr-file}.md \
-  --group architecture_decisions
-```
-
-Ask: "Run these seeding commands now? [Y/n]"
-
-If yes, execute each via the Bash tool.
-
-If Graphiti is unavailable, display the unavailability warning from the preamble:
+If `memory_available` is true, build and display the following payloads, then ask: `"Seed these to fleet-memory now? [Y/n]"`.
 
 ```
-⚠️  Graphiti unavailable — artefacts written to markdown only.
-    Re-run with Graphiti enabled to seed knowledge graph.
+# NEW ADR — adr payload, carries the forward "supersedes" link, status "accepted"
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_ARCH_{new_number:03d}",       # underscores only
+  "decision": "<new decision text>", "status": "accepted",
+  "supersedes": ["adr:guardkit:ADR_ARCH_{existing_number:03d}"],
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{new-adr-file}.md"
+})
+
+# OLD ADR — re-written on its own natural key with status "superseded"
+# (idempotent upsert preserves it — both versions coexist and stay searchable)
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_ARCH_{existing_number:03d}",  # same natural key as before
+  "decision": "<existing decision text>", "status": "superseded",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{existing-adr-file}.md"
+})
+```
+
+On yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. If `memory_access = "cli"`, note that writes require the fleet-memory MCP tools connected and skip (the ADR files remain on disk).
+
+If fleet-memory is unavailable, display the unavailability warning from the preamble:
+
+```
+⚠️  Fleet-memory unavailable — artefacts written to markdown only.
+    Re-run with the fleet_memory MCP server connected (see .mcp.json) to seed the knowledge store.
 ```
 
 ## Error Handling
@@ -472,37 +510,44 @@ if not matches:
     exit(0)
 ```
 
-### Graphiti Unavailable
+### Fleet-Memory Unavailable
 
-When `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
+When `memory_available = false`, display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`:
 
 ```
-⚠️  Graphiti unavailable — continuing without knowledge graph context.
-    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+⚠️  Fleet-memory unavailable — continuing without knowledge capture.
+    Reason: MCP tools not connected and CLI not reachable
 
-    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
-    FalkorDB is reachable at the configured host.
+    Artefacts are written to markdown only. Re-run with the fleet_memory MCP
+    server connected (see .mcp.json) to seed the knowledge store.
 ```
 
 Then inform the user of the specific limitations for architecture refinement:
-- Temporal superseding won't be tracked in knowledge graph
-- Staleness flagging won't propagate to downstream nodes
+- Temporal superseding won't be tracked in fleet-memory
+- Staleness flagging won't propagate to downstream documents
 - Impact analysis will be limited to local file scanning
 
 Ask: "Continue without persistence? [Y/n]"
 
 If no: display "Cancelled." and stop. Do not block if no input — default to continue.
 
-### Graphiti Connection Drop Mid-Session
+### Fleet-Memory Unavailable Mid-Session
 
 ```python
 try:
-    arch_sp.upsert_episode(entity_id=new_adr.entity_id, body=body, group_ids=["project_decisions"])
-except ConnectionError:
-    print("WARNING: Graphiti connection lost during refinement session")
+    mcp__fleet_memory__memory_write_payload(payload={
+        "payload_type": "adr", "project": "guardkit",
+        "identifier": new_adr.identifier,      # underscores only
+        "decision": new_adr.decision, "status": "accepted",
+        "supersedes": [f"adr:guardkit:{existing_adr.identifier}"],
+        "domain_tags": ["architecture"],
+        "source_ref": new_adr.source_ref,
+    })
+except Exception:
+    print("WARNING: Fleet-memory write failed during refinement session")
     print("ADR files were written to docs/architecture/decisions/ successfully.")
-    print("Re-run /arch-refine to retry Graphiti seeding.")
-    client = None  # Disable further Graphiti calls
+    print("Re-run /arch-refine to retry fleet-memory seeding.")
+    memory_available = False  # Disable further fleet-memory writes
 ```
 
 ### --no-questions Flag
@@ -611,10 +656,10 @@ Updated files:
   ├── docs/architecture/container.md (regenerated)
   └── docs/architecture/ARCHITECTURE.md (updated index)
 
-Graphiti:
-  ✓ ADR-ARCH-002 updated (superseded_by: ADR-ARCH-008)
-  ✓ ADR-ARCH-008 created (supersedes: ADR-ARCH-002)
-  ✓ 5 downstream nodes flagged as stale
+Fleet-memory:
+  ✓ ADR-ARCH-002 updated (adr, status: superseded)
+  ✓ ADR-ARCH-008 created (adr, supersedes: adr:guardkit:ADR_ARCH_002)
+  ✓ 5 downstream documents flagged as stale
 
 Next steps:
   1. Review updated architecture: docs/architecture/ARCHITECTURE.md
@@ -636,13 +681,13 @@ Next steps:
 [... refinement flow continues ...]
 ```
 
-### Example 3: Graphiti Unavailable
+### Example 3: Fleet-Memory Unavailable
 
 ```bash
 /arch-refine "change deployment strategy"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNING: Graphiti unavailable
+WARNING: Fleet-memory unavailable
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Architecture refinement will continue WITHOUT persistence.
@@ -656,8 +701,8 @@ Continue without persistence? [Y/n]: Y
 ✅ ARCHITECTURE DECISION REFINED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  ⚠️ Graphiti unavailable — artefacts written to markdown only
-  ⚠️ Staleness flagging skipped (requires Graphiti)
+  ⚠️ Fleet-memory unavailable — artefacts written to markdown only
+  ⚠️ Staleness flagging skipped (requires fleet-memory)
 ```
 
 ### Example 4: No Matching ADR
@@ -706,20 +751,19 @@ if no_questions:
     exit(1)
 ```
 
-### Step 2: Initialize Graphiti and Prerequisite Check
+### Step 2: Check Fleet-Memory Availability and Prerequisite
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`.
-- If `enabled: true`: set `graphiti_available = true`
-- Otherwise: set `graphiti_available = false`
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`.
+- If reachable: set `memory_available = true` (and `memory_access = "mcp"` or `"cli"`)
+- Otherwise: set `memory_available = false`
 
-Check for architecture context:
-- If `graphiti_available = true`: verify ADR files exist in `docs/architecture/decisions/` (run Tier 2 connectivity check before any seeding operations)
-- If `graphiti_available = false`:
-  - Use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`
-  - If no local files: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit
-  - If local files exist: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
+Check for architecture context (either source satisfies the gate):
+- If `memory_available = true`: `memory_search(project="guardkit", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
+- Always: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`.
+  - If no local files **and** the fleet-memory search returned nothing: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit.
+  - If local files exist but `memory_available = false`: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
 
 ### Step 3: Disambiguation — Locate Target ADR
 
@@ -729,7 +773,15 @@ if adr_target:
     target_adr = load_adr_by_id(adr_target)
 else:
     # Semantic search disambiguation
-    matches = arch_sp.get_relevant_context_for_topic(query, limit=5)
+    if memory_available:
+        matches = mcp__fleet_memory__memory_search(
+            project="guardkit", query=query,
+            payload_types=["adr"], domain_tags=["architecture"],
+            token_budget=2000,
+        )
+    else:
+        # Fleet-memory unavailable — scan local ADR files
+        matches = scan_local_adrs(query, "docs/architecture/decisions")
     matches = matches[:5]  # Cap at 3-5 (ASSUM-002)
 
     if not matches:
@@ -793,13 +845,18 @@ write_adr_files(target_adr, new_adr, "docs/architecture/decisions")
 ### Step 7: Staleness Flagging
 
 ```python
-# Tag affected downstream nodes as stale
-if client:
+# Re-write affected downstream documents in fleet-memory with status "stale"
+if memory_available and memory_access == "mcp":
     for affected in affected_artefacts:
-        arch_sp.update_entity_metadata(
-            entity_id=affected.entity_id,
-            metadata={"stale": True, "stale_reason": f"Superseded by {new_adr.entity_id}"},
-        )
+        mcp__fleet_memory__memory_write_payload(payload={
+            "payload_type": "document", "project": "guardkit",
+            "identifier": affected.identifier,        # same natural key → updates in place
+            "content": affected.content,
+            "status": "stale",
+            "stale_reason": f"Superseded by {new_adr.entity_id}",
+            "domain_tags": affected.domain_tags,
+            "source_ref": affected.source_ref,
+        })
 ```
 
 ### Step 8: C4 Diagram Re-Review Gate (if structure changed)
@@ -811,25 +868,34 @@ if structure_changed:
     regenerate_and_review_c4_diagrams()
 ```
 
-### Step 9: Graphiti Seeding
+### Step 9: Fleet-Memory Seeding
 
-**Seed Graphiti** (if `graphiti_available` is true):
+**Seed fleet-memory** (if `memory_available` is true):
 
-Run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands. The CLI handles sanitisation automatically.
+Build the two `adr` payloads (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern) and offer them for review. `mcp__fleet_memory__memory_write_payload` handles storage internally — no manual sanitisation step is needed. Sanitise hyphens to underscores in the identifier (`ADR-ARCH-002` → `ADR_ARCH_002`).
 
-```bash
-# Seed superseded ADR
-guardkit graphiti add-context docs/architecture/decisions/{target-adr-file}.md \
-  --group architecture_decisions
+```
+# NEW ADR — status "accepted", forward "supersedes" link to the old ADR's natural key
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_ARCH_{new_number:03d}",
+  "decision": "<new decision text>", "status": "accepted",
+  "supersedes": ["adr:guardkit:ADR_ARCH_{target_number:03d}"],
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{new-adr-file}.md"})
 
-# Seed new ADR
-guardkit graphiti add-context docs/architecture/decisions/{new-adr-file}.md \
-  --group architecture_decisions
+# OLD ADR — re-written on its own natural key with status "superseded" (preserved, not deleted)
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "ADR_ARCH_{target_number:03d}",
+  "decision": "<existing decision text>", "status": "superseded",
+  "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/{target-adr-file}.md"})
 ```
 
-Ask: "Run these seeding commands now? [Y/n]"
+Ask: "Seed these to fleet-memory now? [Y/n]"
 
-If yes, execute each via the Bash tool.
+If yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. If `memory_access = "cli"`, note writes need the MCP tools connected and skip.
 
 ### Step 10: Display Summary
 
@@ -854,11 +920,11 @@ print("  3. Update feature specs referencing the old decision")
 - **DO NOT** delete or overwrite existing ADRs (supersede them — both versions must coexist)
 - **DO NOT** skip the impact analysis (always show downstream effects)
 - **DO NOT** skip the C4 diagram re-review gate when structure is affected
-- **DO NOT** batch Graphiti seeding (upsert immediately)
-- **DO NOT** skip staleness flagging (always tag affected downstream nodes)
-- **DO NOT** seed unsanitised free-text content to Graphiti
+- **DO NOT** batch fleet-memory seeding (write each payload as its decision is finalised)
+- **DO NOT** skip staleness flagging (always re-write affected downstream documents with `status: "stale"`)
+- **DO NOT** seed fleet-memory via Python — always use the `mcp__fleet_memory__memory_write_payload` tool
 - **DO NOT** return more than 5 disambiguation results (cap per ASSUM-002)
-- **DO NOT** proceed without Graphiti warning (inform user, offer to continue)
+- **DO NOT** proceed without a fleet-memory warning (inform user, offer to continue)
 
 ### Message Constants
 
@@ -883,10 +949,10 @@ Suggestions:
   3. Run /system-arch to view all existing ADRs
 """
 
-GRAPHITI_UNAVAILABLE_MESSAGE:
-Use the warning template from `docs/internals/commands-lib/graphiti-preamble.md`. Additional context for architecture refinement:
-- Temporal superseding won't be tracked in knowledge graph
-- Staleness flagging won't propagate to downstream nodes
+MEMORY_UNAVAILABLE_MESSAGE:
+Use the warning template from `docs/internals/commands-lib/memory-preamble.md`. Additional context for architecture refinement:
+- Temporal superseding won't be tracked in fleet-memory
+- Staleness flagging won't propagate to downstream documents
 - Impact analysis will be limited to local file scanning
 ```
 
@@ -897,7 +963,7 @@ User: /arch-refine "change authentication from JWT to session-based"
 
 Claude executes:
   1. Parse arguments → query = "change authentication from JWT to session-based"
-  2. Check Graphiti availability → read `.guardkit/graphiti.yaml` (Tier 1 check)
+  2. Check fleet-memory availability → `mcp__fleet_memory__*` tools present (Tier 0), else `guardkit memory status`
   3. Prerequisite check → architecture context exists ✓
   4. Semantic search → 3 matches found (capped at 5 per ASSUM-002)
   5. Display matches → present [1] ADR-ARCH-004: JWT Auth, [2] ADR-ARCH-007: API Keys, [3] ADR-ARCH-001: Auth Strategy
@@ -907,10 +973,10 @@ Claude executes:
   9. Impact analysis → 3 feature specs, 1 C4 diagram, 2 API contracts affected
   10. User approves impact scope
   11. Temporal superseding → ADR-ARCH-004 superseded, ADR-ARCH-009 created
-  12. Staleness flagging → 6 downstream nodes tagged stale: true
+  12. Staleness flagging → 6 downstream documents re-written with status: "stale"
   13. C4 re-review gate → revised L1 and L2 diagrams approved
   14. Output generation → ADR files written, diagrams regenerated
-  15. Graphiti seeding → offer `guardkit graphiti add-context` CLI commands for both ADR files
+  15. Fleet-memory seeding → offer two `mcp__fleet_memory__memory_write_payload` writes (superseded + new ADR)
   16. Summary → display results and next steps
 ```
 

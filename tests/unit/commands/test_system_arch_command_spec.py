@@ -147,10 +147,11 @@ class TestSetupModeAutoDetection:
         """Auto-detection logic for setup mode must be documented."""
         assert "auto-detect" in spec_content.lower() or "auto detect" in spec_content.lower()
 
-    def test_graphiti_check_for_mode(self, spec_content: str):
-        """Must check Graphiti for existing architecture context."""
-        assert "graphiti" in spec_content.lower()
-        assert "architecture context" in spec_content.lower()
+    def test_memory_check_for_mode(self, spec_content: str):
+        """Must check fleet-memory / architecture context for existing context."""
+        content_lower = spec_content.lower()
+        assert "fleet-memory" in content_lower or "memory-preamble" in content_lower
+        assert "architecture context" in content_lower
 
     def test_setup_mode_when_no_context(self, spec_content: str):
         """Must document entering setup mode when no context exists."""
@@ -235,20 +236,33 @@ class TestMandatoryOutputArtefacts:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# AC-006: Graphiti seeding
+# AC-006: Fleet-memory seeding
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-class TestGraphitiSeeding:
-    """Verify Graphiti seeding documentation."""
+class TestFleetMemorySeeding:
+    """Verify fleet-memory seeding documentation (typed payloads)."""
 
-    def test_project_architecture_group(self, spec_content: str):
-        """Must document seeding to project_architecture group."""
-        assert "project_architecture" in spec_content
+    def test_references_memory_write_payload(self, spec_content: str):
+        """Must reference the fleet-memory write tool for persistence."""
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content, (
+            "Spec must reference mcp__fleet_memory__memory_write_payload for seeding"
+        )
 
-    def test_project_decisions_group(self, spec_content: str):
-        """Must document seeding to project_decisions group."""
-        assert "project_decisions" in spec_content
+    def test_architecture_domain_tag(self, spec_content: str):
+        """Must seed architecture artefacts with the architecture domain tag."""
+        assert '"architecture"' in spec_content, (
+            "Spec must reference the architecture domain_tag for fleet-memory seeding"
+        )
+
+    def test_uses_typed_payloads(self, spec_content: str):
+        """Must seed via typed payloads (adr for ADRs, document for artefacts)."""
+        assert '"payload_type": "adr"' in spec_content, (
+            "Spec must reference the adr payload_type for ADRs"
+        )
+        assert '"payload_type": "document"' in spec_content, (
+            "Spec must reference the document payload_type for architecture docs"
+        )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -259,14 +273,14 @@ class TestGraphitiSeeding:
 class TestGracefulDegradation:
     """Verify graceful degradation documentation."""
 
-    def test_graphiti_unavailable_handling(self, spec_content: str):
-        """Must document behavior when Graphiti is unavailable."""
+    def test_memory_unavailable_handling(self, spec_content: str):
+        """Must document behavior when fleet-memory is unavailable."""
         content_lower = spec_content.lower()
         assert "unavailable" in content_lower
-        assert "graphiti" in content_lower
+        assert "fleet-memory" in content_lower
 
     def test_markdown_artefacts_still_generated(self, spec_content: str):
-        """Must state markdown artefacts are generated even without Graphiti."""
+        """Must state markdown artefacts are generated even without fleet-memory."""
         content_lower = spec_content.lower()
         assert "markdown" in content_lower
         # The spec should indicate artefacts are generated regardless
@@ -360,7 +374,7 @@ class TestSecurity:
     """Verify security documentation."""
 
     def test_sanitise_adr_rationale(self, spec_content: str):
-        """Must document sanitising ADR rationale text before Graphiti seeding."""
+        """Must document sanitising ADR rationale text before fleet-memory seeding."""
         content_lower = spec_content.lower()
         assert "saniti" in content_lower  # matches sanitise/sanitize
         assert "rationale" in content_lower or "adr" in content_lower.lower()
@@ -433,8 +447,8 @@ class TestBDDScenarioCoverage:
         assert "review gate" in content_lower or "mandatory" in content_lower
         assert "approval" in content_lower or "approve" in content_lower
 
-    def test_graphiti_unavailable_scenario(self, spec_content: str):
-        """BDD: Running /system-arch when Graphiti unavailable."""
+    def test_memory_unavailable_scenario(self, spec_content: str):
+        """BDD: Running /system-arch when fleet-memory unavailable."""
         content_lower = spec_content.lower()
         assert "unavailable" in content_lower
         assert "warn" in content_lower

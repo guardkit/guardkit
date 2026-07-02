@@ -3,7 +3,7 @@ Unit tests for /system-design command specification.
 
 Validates that the system-design.md command specification exists and contains
 all required sections, acceptance criteria coverage, and correct references
-to dependency modules (SystemDesignGraphiti, DesignWriter, entity dataclasses).
+to dependency modules (fleet-memory MCP tools, DesignWriter, entity dataclasses).
 
 These tests treat the command spec as a structured document with mandatory
 sections. Each test validates a specific acceptance criterion from TASK-SAD-007.
@@ -36,12 +36,12 @@ def spec_content() -> str:
 
 
 class TestPrerequisiteGate:
-    """Validates AC-001: check has_architecture_context() prerequisite."""
+    """Validates AC-001: check that architecture context exists (fleet-memory + filesystem)."""
 
     def test_spec_contains_prerequisite_gate_section(self, spec_content: str) -> None:
         """Spec must document the prerequisite gate check."""
-        assert "has_architecture_context" in spec_content, (
-            "Spec must reference has_architecture_context() for prerequisite gate"
+        assert "Prerequisite Gate" in spec_content or "Prerequisite Check" in spec_content, (
+            "Spec must document a prerequisite gate for architecture context"
         )
 
     def test_spec_references_chain_to_system_arch(self, spec_content: str) -> None:
@@ -56,31 +56,35 @@ class TestPrerequisiteGate:
             "Spec must inform the user about missing architecture context"
         )
 
-    def test_spec_uses_graphiti_arch_for_prerequisite(self, spec_content: str) -> None:
-        """Spec must use SystemPlanGraphiti for the prerequisite check."""
-        assert "SystemPlanGraphiti" in spec_content, (
-            "Spec must reference SystemPlanGraphiti for architecture context check"
+    def test_spec_uses_fleet_memory_and_filesystem_for_prerequisite(self, spec_content: str) -> None:
+        """Spec must check architecture context via fleet-memory search and/or a filesystem glob."""
+        # Filesystem fallback (always available) plus the fleet-memory search path
+        assert "docs/architecture" in spec_content, (
+            "Spec must Glob docs/architecture/** as a filesystem prerequisite check"
+        )
+        assert "memory-preamble" in spec_content or "memory_search" in spec_content, (
+            "Spec must reference the fleet-memory prerequisite search (memory-preamble)"
         )
 
 
 # ============================================================================
-# AC-002: Read bounded contexts from Graphiti
+# AC-002: Read bounded contexts from fleet-memory / architecture context
 # ============================================================================
 
 
 class TestReadBoundedContexts:
-    """Validates AC-002: Read bounded contexts and structural decisions from Graphiti."""
+    """Validates AC-002: Read bounded contexts and structural decisions from architecture context."""
 
-    def test_spec_reads_from_project_architecture_group(self, spec_content: str) -> None:
-        """Spec must reference the project_architecture Graphiti group."""
-        assert "project_architecture" in spec_content, (
-            "Spec must reference project_architecture group for reading bounded contexts"
+    def test_spec_reads_architecture_context(self, spec_content: str) -> None:
+        """Spec must read architecture context via fleet-memory (domain_tags architecture) or local files."""
+        assert 'domain_tags=["architecture"]' in spec_content or "docs/architecture" in spec_content, (
+            "Spec must read architecture context (fleet-memory architecture tag or docs/architecture/)"
         )
 
     def test_spec_references_bounded_contexts(self, spec_content: str) -> None:
         """Spec must discuss bounded context reading."""
         assert "bounded context" in spec_content.lower(), (
-            "Spec must describe reading bounded contexts from Graphiti"
+            "Spec must describe reading bounded contexts from architecture context"
         )
 
     def test_spec_references_structural_decisions(self, spec_content: str) -> None:
@@ -259,41 +263,38 @@ class TestOpenAPIValidation:
 
 
 # ============================================================================
-# AC-007: Graphiti seeding
+# AC-007: Fleet-memory seeding
 # ============================================================================
 
 
-class TestGraphitiSeeding:
-    """Validates AC-007: Artefacts seeded into project_design and api_contracts groups."""
+class TestFleetMemorySeeding:
+    """Validates AC-007: Artefacts seeded to fleet-memory as typed payloads (adr / document)."""
 
-    def test_spec_seeds_project_design_group(self, spec_content: str) -> None:
-        """Spec must reference project_design Graphiti group for seeding."""
-        assert "project_design" in spec_content, (
-            "Spec must reference project_design group for Graphiti seeding"
-        )
-
-    def test_spec_seeds_api_contracts_group(self, spec_content: str) -> None:
-        """Spec must reference api_contracts Graphiti group for seeding."""
-        assert "api_contracts" in spec_content, (
-            "Spec must reference api_contracts group for Graphiti seeding"
+    def test_spec_seeds_design_domain_tag(self, spec_content: str) -> None:
+        """Spec must seed design artefacts with the design domain tag."""
+        assert '"design"' in spec_content, (
+            "Spec must reference the design domain_tag for fleet-memory seeding"
         )
 
-    def test_spec_references_system_design_graphiti(self, spec_content: str) -> None:
-        """Spec must reference SystemDesignGraphiti for persistence."""
-        assert "SystemDesignGraphiti" in spec_content, (
-            "Spec must reference SystemDesignGraphiti class for Graphiti operations"
+    def test_spec_seeds_api_contract_domain_tag(self, spec_content: str) -> None:
+        """Spec must seed API contracts with the api_contract domain tag."""
+        assert "api_contract" in spec_content, (
+            "Spec must reference the api_contract domain_tag for contract seeding"
         )
 
-    def test_spec_uses_upsert_methods(self, spec_content: str) -> None:
-        """Spec must use upsert methods for idempotent writes."""
-        assert "upsert_design_decision" in spec_content, (
-            "Spec must reference upsert_design_decision method"
+    def test_spec_references_memory_write_payload(self, spec_content: str) -> None:
+        """Spec must reference the fleet-memory write tool for persistence."""
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content, (
+            "Spec must reference mcp__fleet_memory__memory_write_payload for seeding"
         )
-        assert "upsert_api_contract" in spec_content, (
-            "Spec must reference upsert_api_contract method"
+
+    def test_spec_uses_typed_payloads(self, spec_content: str) -> None:
+        """Spec must seed via typed payloads (adr for decisions, document for artefacts)."""
+        assert '"payload_type": "adr"' in spec_content, (
+            "Spec must reference the adr payload_type for design decisions/DDRs"
         )
-        assert "upsert_data_model" in spec_content, (
-            "Spec must reference upsert_data_model method"
+        assert '"payload_type": "document"' in spec_content, (
+            "Spec must reference the document payload_type for contracts and models"
         )
 
 
@@ -312,10 +313,10 @@ class TestContradictionDetection:
             "Spec must describe contradiction detection"
         )
 
-    def test_spec_references_project_decisions_group(self, spec_content: str) -> None:
-        """Spec must query project_decisions group for existing ADRs."""
-        assert "project_decisions" in spec_content, (
-            "Spec must reference project_decisions group for ADR contradiction checks"
+    def test_spec_searches_adrs_for_contradiction(self, spec_content: str) -> None:
+        """Spec must check proposed contracts against existing ADRs (fleet-memory adr search or local ADRs)."""
+        assert 'payload_types=["adr"]' in spec_content or "existing_adrs" in spec_content, (
+            "Spec must reference ADR search (fleet-memory adr payload or existing_adrs) for contradiction checks"
         )
 
     def test_spec_flags_violations(self, spec_content: str) -> None:
@@ -333,20 +334,20 @@ class TestContradictionDetection:
 
 
 class TestGracefulDegradation:
-    """Validates AC-009: Graceful degradation when Graphiti unavailable."""
+    """Validates AC-009: Graceful degradation when fleet-memory unavailable."""
 
     def test_spec_has_graceful_degradation_section(self, spec_content: str) -> None:
         """Spec must have a graceful degradation section."""
         content_lower = spec_content.lower()
-        assert "graceful degradation" in content_lower or "graphiti unavailable" in content_lower, (
-            "Spec must describe graceful degradation when Graphiti is unavailable"
+        assert "graceful degradation" in content_lower or "fleet-memory unavailable" in content_lower, (
+            "Spec must describe graceful degradation when fleet-memory is unavailable"
         )
 
-    def test_spec_continues_without_graphiti(self, spec_content: str) -> None:
-        """Spec must allow markdown artefact generation without Graphiti."""
+    def test_spec_continues_without_memory(self, spec_content: str) -> None:
+        """Spec must allow markdown artefact generation without fleet-memory."""
         content_lower = spec_content.lower()
         assert "without persistence" in content_lower or "markdown" in content_lower, (
-            "Spec must describe continuing with markdown artefacts when Graphiti unavailable"
+            "Spec must describe continuing with markdown artefacts when fleet-memory unavailable"
         )
 
 
@@ -411,12 +412,12 @@ class TestErrorHandling:
             "Spec must have an Error Handling section"
         )
 
-    def test_spec_handles_graphiti_errors(self, spec_content: str) -> None:
-        """Spec must handle Graphiti-specific errors."""
+    def test_spec_handles_memory_errors(self, spec_content: str) -> None:
+        """Spec must handle fleet-memory-specific errors."""
         content_lower = spec_content.lower()
-        has_graphiti_error = "graphiti" in content_lower and "error" in content_lower
-        assert has_graphiti_error, (
-            "Spec must describe handling Graphiti errors"
+        has_memory_error = "fleet-memory" in content_lower and "error" in content_lower
+        assert has_memory_error, (
+            "Spec must describe handling fleet-memory errors"
         )
 
     def test_spec_handles_cancelled_session(self, spec_content: str) -> None:
@@ -502,8 +503,8 @@ class TestSpecStructure:
             "Spec must contain Python code examples"
         )
 
-    def test_spec_references_get_graphiti(self, spec_content: str) -> None:
-        """Spec must reference get_graphiti() for client initialization."""
-        assert "get_graphiti" in spec_content, (
-            "Spec must reference get_graphiti() for Graphiti client initialization"
+    def test_spec_references_fleet_memory_access(self, spec_content: str) -> None:
+        """Spec must reference the fleet-memory access path (MCP tool / preamble)."""
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content or "memory-preamble" in spec_content, (
+            "Spec must reference fleet-memory access (MCP write tool or memory-preamble)"
         )

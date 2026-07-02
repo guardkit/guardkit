@@ -861,7 +861,7 @@ Return ClarificationContext with review preferences."""
 **Skip Conditions**:
 - `--no-context` flag is set
 
-**See**: `docs/internals/commands-lib/graphiti-preamble.md` for availability check tiers
+**See**: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers
 
 **STEP 1: Check Graphiti Availability (MCP-First — Tier 0)**
 

@@ -43,17 +43,17 @@ The command instructs Claude directly (Pattern A: command-spec-only) through a s
 
 Before starting the refinement session, `/design-refine` MUST verify that design context exists. This ensures refinement builds on established design decisions rather than creating from scratch.
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use `get_graphiti()` to obtain the client, then read `.guardkit/graphiti.yaml`.
-- If the file exists and `enabled: true`: set `graphiti_available = true`
-- Otherwise: set `graphiti_available = false` and display the unavailability warning from the preamble
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
+- If reachable: set `memory_available = true`
+- Otherwise: set `memory_available = false` and display the unavailability warning from the preamble. If neither is reachable, continue markdown-only — never block.
 
-Check for design context:
-- If `graphiti_available = true`: verify design artefact files exist in `docs/design/`
-- If `graphiti_available = false`: use Glob to check for `docs/design/*.md`
-  - If no local design files found: display `NO_DESIGN_CONTEXT_MESSAGE`, ask "Run /system-design first? [Y/n]", and exit
-  - If local files found: display `"WARNING: Graphiti unavailable — reading design from local files"` and continue
+Check for design context (either source satisfies the gate):
+- If `memory_available = true`: search fleet-memory for design context — `mcp__fleet_memory__memory_search(project="guardkit", query="design decisions API contracts data models", payload_types=["adr","document"], domain_tags=["design"])`. A non-empty result = context exists.
+- Always: use Glob to check for `docs/design/*.md`.
+  - If no local design files found AND fleet-memory has no design context: display `NO_DESIGN_CONTEXT_MESSAGE`, ask "Run /system-design first? [Y/n]", and exit
+  - If local files found: display `"Fleet-memory unavailable — reading design from local files"` (when `memory_available = false`) and continue
 
 ## Execution Flow
 
@@ -61,16 +61,16 @@ Check for design context:
 
 **Load existing design context and validate prerequisites:**
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
-Read `.guardkit/graphiti.yaml`. Set `graphiti_available` accordingly.
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
 
 Load existing design context:
-- If `graphiti_available = true`: design decisions (DDRs), API contracts, and ADRs for contradiction detection are available via Graphiti (run Tier 2 connectivity check from preamble to confirm reachability)
-- If `graphiti_available = false`:
+- If `memory_available = true`: design decisions (DDRs), API contracts, and ADRs for contradiction detection are available via fleet-memory — `mcp__fleet_memory__memory_search(project="guardkit", query=..., payload_types=["adr","document"], domain_tags=["design"])` for design artefacts and `domain_tags=["architecture"]` for ADRs
+- If `memory_available = false`:
   - Use the Read tool on files in `docs/design/decisions/` for DDRs
   - Use the Read tool on files in `docs/design/contracts/` for API contracts
-  - No ADRs available for contradiction detection (skip that step)
-  - Display `"WARNING: Graphiti unavailable — continuing without persistence"`
+  - No fleet-memory ADRs available for contradiction detection (fall back to local `docs/architecture/ADR-*.md` files if present, else skip that step)
+  - Display `"Fleet-memory unavailable — continuing without persistence"`
 
 **Load additional context files (if --context provided):**
 
@@ -84,18 +84,22 @@ for context_file in context_files:
 
 ### Phase 1: Disambiguation — Identify What to Refine
 
-**Semantic search via `SystemDesignGraphiti.search_design_context()` on user input to identify the target design artefact. This disambiguation flow is identical to the pattern used by `/arch-refine`.**
+**Semantic search via `mcp__fleet_memory__memory_search` (`domain_tags=["design"]`) on user input to identify the target design artefact. This disambiguation flow is identical to the pattern used by `/arch-refine`.**
 
 ```python
 # Disambiguation flow
 user_description = args[0]  # "refinement description"
 
-if client and design_sp:
-    # Semantic search across project_design and api_contracts groups
-    search_results = design_sp.search_design_context(
-        query=user_description,
-        num_results=5,
-    )
+if memory_available:
+    # Semantic search across design artefacts (DDRs, API contracts, data models)
+    # mcp__fleet_memory__memory_search(
+    #   project="guardkit",
+    #   query=user_description,
+    #   payload_types=["adr", "document"],
+    #   domain_tags=["design"],
+    #   token_budget=2000,
+    # )
+    search_results = memory_search_design(user_description)
 else:
     # Fallback: scan local files for matches
     search_results = scan_local_design_files(user_description)
@@ -147,7 +151,7 @@ if selected.lower() == "c":
 if selected.lower() == "n":
     # Re-prompt with new query
     new_query = input("New search query: ")
-    search_results = design_sp.search_design_context(new_query, 5)
+    search_results = memory_search_design(new_query)  # mcp__fleet_memory__memory_search
     # Re-display...
 ```
 
@@ -157,7 +161,7 @@ Based on the selected artefact type, follow the appropriate refinement flow.
 
 #### 2A: DDR Refinement (Temporal Superseding)
 
-**When refining a Design Decision Record, apply temporal superseding: the existing DDR status is set to `"superseded"` and a new DDR is created with a `supersedes` reference. The prior DDR remains queryable in Graphiti and preserved in `docs/design/decisions/`.**
+**When refining a Design Decision Record, apply temporal superseding: the existing DDR status is set to `"superseded"` and a new DDR is created with a `supersedes` reference. The prior DDR remains queryable in fleet-memory and preserved in `docs/design/decisions/`.**
 
 ```python
 from guardkit.knowledge.entities.design_decision import DesignDecision
@@ -204,14 +208,14 @@ selected_ddr.status = "superseded"
 writer.write_ddr(selected_ddr, output_dir)  # Update old DDR status
 writer.write_ddr(new_ddr, output_dir)       # Write new DDR
 
-# Upsert both to Graphiti
-if design_sp:
-    design_sp.upsert_design_decision(selected_ddr)  # Update old status
-    design_sp.upsert_design_decision(new_ddr)        # Seed new DDR
+# Seeding to fleet-memory is deferred to Phase 7 (mcp__fleet_memory__memory_write_payload).
+# There, the NEW DDR payload carries a "supersedes" reference to the old DDR's natural key
+# (adr:guardkit:DDR_{old}), and the OLD DDR payload is re-written with "status": "superseded".
+# Fleet-memory upserts idempotently on the natural key — no separate stale-node tagging.
 
 print(f"\n✓ {selected_ddr.entity_id} → superseded")
 print(f"✓ {new_ddr.entity_id} created (supersedes {selected_ddr.entity_id})")
-print(f"✓ Prior DDR remains queryable via search_design_context()")
+print(f"✓ Prior DDR remains queryable via fleet-memory search (domain_tags=[design])")
 ```
 
 **Superseding Confirmation:**
@@ -288,10 +292,10 @@ regenerate_openapi_section(updated_contract, output_dir / "openapi.yaml")
 # Validate updated OpenAPI spec
 validate_openapi_spec(output_dir / "openapi.yaml")
 
-# Upsert to Graphiti
-if design_sp:
-    design_sp.upsert_api_contract(updated_contract)
-    print(f"✓ {updated_contract.entity_id} updated in Graphiti (api_contracts)")
+# Seeding to fleet-memory is deferred to Phase 7 — the updated contract is written as a
+# document payload (domain_tags=["design","api_contract"]), idempotently upserted on its
+# natural key (document:guardkit:<contract_slug>).
+print(f"✓ {updated_contract.entity_id} written — will re-seed to fleet-memory in Phase 7")
 ```
 
 #### 2C: Data Model Refinement
@@ -324,20 +328,26 @@ display_model_diff(selected_model, updated_model)
 approval = input("\n[A]pprove | [R]evise | [C]ancel: ")
 if approval.lower() == "a":
     writer.write_data_model(updated_model, output_dir)
-    if design_sp:
-        design_sp.upsert_data_model(updated_model)
+    # Seeding to fleet-memory is deferred to Phase 7 — the updated model is written as a
+    # document payload (domain_tags=["design","data_model"]), idempotently upserted on its
+    # natural key (document:guardkit:<model_slug>).
 ```
 
 ### Phase 3: Contradiction Detection
 
-**Before finalising design changes, check proposed changes against existing ADRs from the `project_decisions` Graphiti group. Flag any proposed design change that contradicts existing architecture decisions.**
+**Before finalising design changes, check proposed changes against existing ADRs (fleet-memory `payload_types=["adr"]`, `domain_tags=["architecture"]`, or local `docs/architecture/ADR-*.md`). Flag any proposed design change that contradicts existing architecture decisions.**
 
 ```python
-# Query existing ADRs from project_decisions group
-if client and arch_sp:
-    existing_adrs = arch_sp.get_relevant_context_for_topic(
-        "architecture decision ADR constraint protocol communication", 20
-    )
+# Query existing ADRs from fleet-memory (architecture-tagged adr payloads)
+if memory_available:
+    # mcp__fleet_memory__memory_search(
+    #   project="guardkit",
+    #   query="architecture decision ADR constraint protocol communication",
+    #   payload_types=["adr"],
+    #   domain_tags=["architecture"],
+    #   token_budget=2000,
+    # )
+    existing_adrs = memory_search_architecture_adrs()
 
     # Check proposed changes against existing ADRs
     contradictions = detect_contradictions(
@@ -375,21 +385,23 @@ if client and arch_sp:
 
 ### Phase 4: Feature Spec Staleness Detection
 
-**After applying design changes, query the `feature_specs` Graphiti group for scenarios that reference the changed API contracts or domain entities. Flag affected feature specs as potentially stale.**
+**After applying design changes, search fleet-memory for feature-spec artefacts that reference the changed API contracts or domain entities. Flag affected feature specs as potentially stale.**
 
 ```python
-# Query feature_specs group for scenarios referencing changed entities
-if client:
+# Search fleet-memory for feature-spec artefacts referencing changed entities
+if memory_available:
     changed_entity_ids = get_changed_entity_ids()  # e.g., ["API-order-management", "DM-order"]
 
     stale_specs = []
     for entity_id in changed_entity_ids:
-        # Search feature_specs group for references to changed entity
-        results = client.search(
-            query=f"feature spec scenario referencing {entity_id}",
-            group_ids=[client.get_group_id("feature_specs")],
-            num_results=10,
-        )
+        # mcp__fleet_memory__memory_search(
+        #   project="guardkit",
+        #   query=f"feature spec scenario referencing {entity_id}",
+        #   payload_types=["document"],
+        #   domain_tags=["feature_spec"],
+        #   token_budget=2000,
+        # )
+        results = memory_search_feature_specs(entity_id)
         if results:
             stale_specs.extend(results)
 
@@ -419,33 +431,36 @@ if client:
 
 ### Phase 5: Downstream Staleness Flagging
 
-**Flag downstream Graphiti nodes that depend on the changed design artefacts. This ensures consumers of the design context are aware that upstream changes may affect their assumptions.**
+**Flag downstream fleet-memory artefacts that depend on the changed design artefacts. This ensures consumers of the design context are aware that upstream changes may affect their assumptions.**
 
 ```python
-# Flag downstream nodes as stale in Graphiti
-if client and design_sp:
+# Flag downstream design artefacts as potentially stale via fleet-memory search
+if memory_available:
     changed_entities = get_changed_entity_ids()
 
-    # Search for downstream nodes referencing changed entities
+    # Search for downstream artefacts referencing changed entities
     for entity_id in changed_entities:
-        # Search project_design group for dependent nodes
-        downstream = design_sp.search_design_context(
-            query=f"depends on {entity_id} references {entity_id}",
-            num_results=10,
-        )
+        # mcp__fleet_memory__memory_search(
+        #   project="guardkit",
+        #   query=f"depends on {entity_id} references {entity_id}",
+        #   payload_types=["adr", "document"],
+        #   domain_tags=["design"],
+        #   token_budget=2000,
+        # )
+        downstream = memory_search_design(f"depends on {entity_id} references {entity_id}")
 
         for node in downstream:
             # Flag as potentially stale
-            print(f"  ⚠️ Downstream node may be stale: {node.get('fact', 'Unknown')}")
+            print(f"  ⚠️ Downstream artefact may be stale: {node.get('fact', 'Unknown')}")
 
     print(f"\n{'━' * 60}")
     print(f"📋 DOWNSTREAM STALENESS SUMMARY")
     print(f"{'━' * 60}")
     print(f"  Changed: {len(changed_entities)} design artefact(s)")
-    print(f"  Downstream affected: {len(downstream)} node(s) flagged as stale")
+    print(f"  Downstream affected: {len(downstream)} artefact(s) flagged as stale")
     print(f"  Feature specs: {len(stale_specs)} spec(s) flagged as potentially stale")
 else:
-    print("⚠️ Graphiti unavailable — downstream staleness detection skipped")
+    print("⚠️ Fleet-memory unavailable — downstream staleness detection skipped")
     print("  Review docs/design/ manually for affected artefacts")
 ```
 
@@ -499,37 +514,54 @@ if affected_contexts:
                 regenerate_and_review(bc, changes)
 ```
 
-### Phase 7: Graphiti Persistence
+### Phase 7: Fleet-Memory Seeding
 
-**Upsert all updated design artefacts into Graphiti (`project_design` and `api_contracts` groups):**
+**Seed all updated design artefacts into fleet-memory as typed payloads (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern):**
 
-If `graphiti_available` is true, run the Tier 2 connectivity check (see `docs/internals/commands-lib/graphiti-preamble.md`).
-
-Generate and offer the following seeding commands based on what was changed:
-
-```bash
-# Seed updated DDR(s) — run for each changed DDR file
-guardkit graphiti add-context docs/design/decisions/{ddr-file}.md \
-  --group architecture_decisions
-
-# Seed updated API contract(s) — run for each changed contract file
-guardkit graphiti add-context docs/design/contracts/{contract-file}.md \
-  --group architecture_decisions
-
-# Seed updated data model(s) — run for each changed model file
-guardkit graphiti add-context docs/design/{model-file}.md \
-  --group architecture_decisions
-```
-
-Ask: "Run these seeding commands now? [Y/n]"
-
-If yes, execute each applicable command via the Bash tool.
-
-If Graphiti is unavailable, display the unavailability warning from the preamble:
+If `memory_available` is true, build one typed payload per changed artefact, display them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes, if `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note that writes require the MCP tools connected and skip.)
 
 ```
-⚠️  Graphiti unavailable — artefacts written to markdown only.
-    Re-run with Graphiti enabled to seed knowledge graph.
+# Superseded DDR(s): re-write the OLD DDR payload with status "superseded"
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "DDR_{old_NNN}",                # underscores only (DDR-003 → DDR_003)
+  "decision": "<the original decision>", "status": "superseded",
+  "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{old_NNN}.md"})
+
+# New DDR(s): write with a "supersedes" reference to the old DDR's natural key
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit",
+  "identifier": "DDR_{new_NNN}",
+  "decision": "<the revised decision>", "status": "accepted",
+  "supersedes": ["adr:guardkit:DDR_{old_NNN}"],
+  "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{new_NNN}.md"})
+
+# Updated API contract(s) → document payload, domain_tags ["design","api_contract"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "<contract_slug>",              # underscores only
+  "content": "<updated contract markdown>",
+  "domain_tags": ["design", "api_contract"],
+  "source_ref": "docs/design/contracts/<contract-slug>.md"})
+
+# Updated data model(s) → document payload, domain_tags ["design","data_model"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit",
+  "identifier": "<model_slug>",
+  "content": "<updated data-model markdown>",
+  "domain_tags": ["design", "data_model"],
+  "source_ref": "docs/design/models/<model-slug>.md"})
+```
+
+Fleet-memory upserts idempotently on the derived `natural_key` (e.g. `adr:guardkit:DDR_003`), so re-writing the old DDR with `status: "superseded"` overwrites the prior payload in place — there is no separate stale-node tagging step.
+
+If fleet-memory is unavailable, display the unavailability warning from the preamble:
+
+```
+⚠️  Fleet-memory unavailable — artefacts written to markdown only.
+    Re-run /design-refine with the fleet_memory MCP server connected to seed the store.
 ```
 
 ### Phase 8: Summary Output
@@ -556,9 +588,9 @@ Quality Checks:
   ✓ No contradictions with existing ADRs
   ⚠️ 2 feature specs flagged as potentially stale
 
-Graphiti:
-  ✓ 3 design artefacts updated (project_design)
-  ✓ 1 API contract updated (api_contracts)
+Fleet-memory:
+  ✓ 3 design artefacts seeded (adr/document, domain_tags=[design])
+  ✓ 1 API contract seeded (document, domain_tags=[design,api_contract])
 
 Updated: docs/design/
   ├── openapi.yaml (regenerated)
@@ -581,16 +613,16 @@ Next steps:
 
 ## Graceful Degradation
 
-### Graphiti Unavailable
+### Fleet-Memory Unavailable
 
-When `graphiti_available = false`, display the unavailability warning from `docs/internals/commands-lib/graphiti-preamble.md`:
+When `memory_available = false`, display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`:
 
 ```
-⚠️  Graphiti unavailable — continuing without knowledge graph context.
-    Reason: {error from graphiti-check, or "Config disabled / file not found"}
+⚠️  Fleet-memory unavailable — continuing without knowledge capture.
+    Reason: MCP tools not connected and CLI not reachable
 
-    To enable: ensure .guardkit/graphiti.yaml has `enabled: true` and
-    FalkorDB is reachable at the configured host.
+    Artefacts are written to markdown only. Re-run with the fleet_memory
+    MCP server connected (see .mcp.json) to seed the knowledge store.
 ```
 
 Then inform the user of the specific limitations for design refinement:
@@ -604,31 +636,32 @@ Ask: "Continue without persistence? [Y/n]"
 
 If no: display "Cancelled." and stop. Do not block if no input — default to continue.
 
-### Partial Graphiti Failure
+### Partial Seeding Failure
 
 ```python
-# Track successful updates
-updated_count = 0
-failed_updates = []
+# Track successful writes
+seeded_count = 0
+failed_writes = []
 
 for artefact in all_changed_artefacts:
     try:
-        uuid = design_sp.upsert_design_decision(artefact)
-        if uuid:
-            updated_count += 1
+        # mcp__fleet_memory__memory_write_payload(payload={...})
+        natural_key = memory_write_payload(build_payload(artefact))
+        if natural_key:
+            seeded_count += 1
         else:
-            failed_updates.append(artefact.entity_id)
+            failed_writes.append(artefact.entity_id)
     except Exception as e:
-        print(f"WARNING: Graphiti error updating {artefact.entity_id}: {e}")
-        failed_updates.append(artefact.entity_id)
+        print(f"WARNING: Fleet-memory error seeding {artefact.entity_id}: {e}")
+        failed_writes.append(artefact.entity_id)
 
-if failed_updates:
-    print(f"⚠️ {len(failed_updates)} artefact(s) failed to update in Graphiti:")
-    for entity_id in failed_updates:
+if failed_writes:
+    print(f"⚠️ {len(failed_writes)} artefact(s) failed to seed to fleet-memory:")
+    for entity_id in failed_writes:
         print(f"  ✗ {entity_id}")
     print()
     print("Markdown artefacts are still up to date.")
-    print("Re-run /design-refine to retry Graphiti synchronisation.")
+    print("Re-run /design-refine with the fleet_memory MCP server connected to retry.")
 ```
 
 ## Error Handling
@@ -696,16 +729,17 @@ if flags.get("no_questions"):
     exit(1)
 ```
 
-### Graphiti Connection Drop Mid-Session
+### Fleet-Memory Unavailable Mid-Session
 
 ```python
 try:
-    design_sp.upsert_design_decision(new_ddr)
+    # mcp__fleet_memory__memory_write_payload(payload=build_ddr_payload(new_ddr))
+    memory_write_payload(build_ddr_payload(new_ddr))
 except ConnectionError:
-    print("WARNING: Graphiti connection lost during session")
+    print("WARNING: Fleet-memory connection lost during session")
     print("Remaining artefacts will be updated in markdown only.")
-    print("Re-run /design-refine to retry Graphiti synchronisation.")
-    design_sp = None  # Disable further Graphiti calls
+    print("Re-run /design-refine with the fleet_memory MCP server connected to retry.")
+    memory_available = False  # Disable further fleet-memory writes
     # Continue with markdown-only updates
 ```
 
@@ -918,13 +952,13 @@ Regenerating OpenAPI spec for Order Management...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### Example 3: Graphiti Unavailable (Degraded Mode)
+### Example 3: Fleet-Memory Unavailable (Degraded Mode)
 
 ```bash
 /design-refine "update payment schema"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNING: Graphiti unavailable
+WARNING: Fleet-memory unavailable
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Design refinement will continue WITHOUT persistence.
@@ -940,8 +974,8 @@ Continue without persistence? [Y/n]: Y
 ✅ DESIGN REFINEMENT COMPLETE (degraded mode)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-⚠️ Changes NOT synced to Graphiti
-  Re-run with Graphiti enabled to persist changes
+⚠️ Changes NOT synced to fleet-memory
+  Re-run with the fleet_memory MCP server connected to persist changes
 ```
 
 ---
@@ -974,27 +1008,26 @@ if no_questions:
     exit(1)
 ```
 
-### Step 2: Initialize Graphiti and Verify Prerequisite
+### Step 2: Check Fleet-Memory and Verify Prerequisite
 
-**Check Graphiti availability** (Tier 1 — see `docs/internals/commands-lib/graphiti-preamble.md`):
+**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
 
-Use the Read tool to read `.guardkit/graphiti.yaml`.
-- If `enabled: true`: set `graphiti_available = true`
-- Otherwise: set `graphiti_available = false`
+Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly. If neither is reachable, set `memory_available = false` — never block.
 
-Check for design context:
-- If `graphiti_available = true`: verify design artefact files exist in `docs/design/` (run Tier 2 connectivity check before any seeding operations)
-- If `graphiti_available = false`:
-  - Use Glob to check for `docs/design/*.md`
-  - If no local files: display `"❌ No design context found"` and exit
-  - If local files exist: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
+Check for design context (either source satisfies the gate):
+- If `memory_available = true`: search fleet-memory for design context — `mcp__fleet_memory__memory_search(project="guardkit", query="design decisions API contracts data models", payload_types=["adr","document"], domain_tags=["design"])`. A non-empty result = context exists.
+- Always: use Glob to check for `docs/design/*.md`.
+  - If no local files AND fleet-memory has no design context: display `"❌ No design context found"` and exit
+  - If local files exist: display the unavailability warning from the preamble (when `memory_available = false`) and ask: "Continue? [Y/n]"
 
 ### Step 3: Disambiguation
 
 ```python
 # Semantic search for matching design artefacts
-if design_sp:
-    results = design_sp.search_design_context(description, num_results=5)
+if memory_available:
+    # mcp__fleet_memory__memory_search(project="guardkit", query=description,
+    #   payload_types=["adr", "document"], domain_tags=["design"], token_budget=2000)
+    results = memory_search_design(description)
 else:
     results = scan_local_design_files(description)
 
@@ -1012,7 +1045,7 @@ Based on selected artefact type:
 ### Step 5: Contradiction Detection
 
 ```python
-# Query project_decisions group for existing ADRs
+# Search fleet-memory for existing ADRs (payload_types=["adr"], domain_tags=["architecture"])
 # Compare proposed changes against ADR constraints
 # Flag contradictions and offer: [R]evise / [S]upersede / [A]ccept risk
 ```
@@ -1020,7 +1053,8 @@ Based on selected artefact type:
 ### Step 6: Feature Spec Staleness Detection
 
 ```python
-# Query feature_specs group for scenarios referencing changed entities
+# Search fleet-memory for feature-spec artefacts referencing changed entities
+#   (payload_types=["document"], domain_tags=["feature_spec"])
 # Flag affected specs as potentially stale
 # Offer: [R]e-run /feature-spec / [A]ccept delta / [S]kip
 ```
@@ -1028,8 +1062,9 @@ Based on selected artefact type:
 ### Step 7: Downstream Staleness Flagging
 
 ```python
-# Search for downstream Graphiti nodes referencing changed entities
-# Flag affected nodes as stale
+# Search fleet-memory for downstream artefacts referencing changed entities
+#   (payload_types=["adr", "document"], domain_tags=["design"])
+# Flag affected artefacts as stale
 # Report summary of downstream impact
 ```
 
@@ -1042,33 +1077,46 @@ Based on selected artefact type:
 #   DO NOT proceed without approval
 ```
 
-### Step 9: Graphiti Persistence
+### Step 9: Fleet-Memory Seeding
 
-**Seed Graphiti** (if `graphiti_available` is true):
+**Seed fleet-memory** (if `memory_available` is true):
 
-Run the Tier 2 connectivity check from `docs/internals/commands-lib/graphiti-preamble.md`, then generate and offer the seeding commands for all changed artefacts:
+Build one typed payload per changed artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern):
 
-```bash
-# Seed changed DDRs
-guardkit graphiti add-context docs/design/decisions/{ddr-file}.md \
-  --group architecture_decisions
+```
+# Superseded DDR → re-write with status "superseded"
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit", "identifier": "DDR_{old_NNN}",
+  "decision": "<original decision>", "status": "superseded", "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{old_NNN}.md"})
 
-# Seed changed API contracts
-guardkit graphiti add-context docs/design/contracts/{contract-file}.md \
-  --group architecture_decisions
+# New DDR → write with a supersedes reference to the old DDR's natural key
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "adr", "project": "guardkit", "identifier": "DDR_{new_NNN}",
+  "decision": "<revised decision>", "status": "accepted",
+  "supersedes": ["adr:guardkit:DDR_{old_NNN}"], "domain_tags": ["design"],
+  "source_ref": "docs/design/decisions/DDR-{new_NNN}.md"})
 
-# Seed changed data models
-guardkit graphiti add-context docs/design/{model-file}.md \
-  --group architecture_decisions
+# Changed API contract → document / ["design","api_contract"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "<contract_slug>",
+  "content": "<updated contract markdown>", "domain_tags": ["design", "api_contract"],
+  "source_ref": "docs/design/contracts/<contract-slug>.md"})
+
+# Changed data model → document / ["design","data_model"]
+mcp__fleet_memory__memory_write_payload(payload={
+  "payload_type": "document", "project": "guardkit", "identifier": "<model_slug>",
+  "content": "<updated data-model markdown>", "domain_tags": ["design", "data_model"],
+  "source_ref": "docs/design/models/<model-slug>.md"})
 ```
 
-Ask: "Run these seeding commands now? [Y/n]"
+Ask: "Seed these to fleet-memory now? [Y/n]"
 
-If yes, execute each applicable command via the Bash tool.
+If yes and `memory_access = "mcp"`, write each via the MCP tool. If `memory_access = "cli"`, note writes need the MCP tools connected and skip. Fleet-memory upserts idempotently on each `natural_key`, so re-seeding is safe.
 
 ### Step 10: Summary
 
-Display file tree, Graphiti status, staleness summary, and next steps.
+Display file tree, fleet-memory status, staleness summary, and next steps.
 
 ### What NOT to Do
 
@@ -1079,10 +1127,11 @@ DO NOT:
 - Skip contradiction detection — always check against existing ADRs
 - Skip feature spec staleness detection — always check for stale specs
 - Delete superseded DDRs — they must remain queryable
-- Batch all Graphiti upserts at the end — upsert DDRs immediately
+- Batch all fleet-memory writes at the end — write DDRs immediately
+- Seed fleet-memory via Python — always use the `mcp__fleet_memory__memory_write_payload` tool
 - Generate code implementations — this is a design command
 - Skip the prerequisite gate — always verify design context exists
-- Silently swallow Graphiti errors — always inform the user
+- Silently swallow fleet-memory errors — always inform the user
 - Proceed without user confirmation at decision points
 - Auto-answer disambiguation — always present options and wait for user selection
 
@@ -1093,16 +1142,16 @@ User: /design-refine "add rate limiting to payment API"
 
 Claude executes:
   1. Parse arguments → description = "add rate limiting to payment API"
-  2. Check Graphiti availability → read `.guardkit/graphiti.yaml` (Tier 1 check), verify design context
-  3. Disambiguation → search_design_context("add rate limiting to payment API")
+  2. Check fleet-memory availability → mcp__fleet_memory__* tools else `guardkit memory status`, verify design context
+  3. Disambiguation → mcp__fleet_memory__memory_search("add rate limiting to payment API", domain_tags=["design"])
   4. Present top 3-5 matches → user selects API-payment-processing
   5. API Contract refinement → present current, capture changes, show diff
   6. Confirm changes → user approves
-  7. Contradiction detection → check against project_decisions ADRs
-  8. Feature spec staleness → query feature_specs for affected scenarios
-  9. Downstream staleness → flag dependent Graphiti nodes
+  7. Contradiction detection → search fleet-memory ADRs (domain_tags=["architecture"])
+  8. Feature spec staleness → search fleet-memory feature-spec artefacts for affected scenarios
+  9. Downstream staleness → flag dependent fleet-memory artefacts
   10. C4 L3 re-review → present revised diagram if structure changed
-  11. Graphiti seeding → offer `guardkit graphiti add-context` CLI commands for updated contract
+  11. Fleet-memory seeding → write updated contract via mcp__fleet_memory__memory_write_payload
   12. OpenAPI validation → validate updated spec
   13. Summary → display changes, staleness, next steps
 ```
@@ -1126,8 +1175,8 @@ that /design-refine iterates upon.
 Run /system-design first to establish design context.
 """
 
-GRAPHITI_UNAVAILABLE_MESSAGE:
-Use the warning template from `docs/internals/commands-lib/graphiti-preamble.md`. Additional context for design refinement:
+MEMORY_UNAVAILABLE_MESSAGE:
+Use the warning template from `docs/internals/commands-lib/memory-preamble.md`. Additional context for design refinement:
 - Changes won't be queryable by /feature-spec, /feature-plan, or /system-plan
 - Feature spec staleness detection skipped
 - Downstream staleness flagging skipped

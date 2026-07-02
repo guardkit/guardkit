@@ -3,7 +3,7 @@ Unit tests for /design-refine command specification.
 
 Validates that the design-refine.md command specification exists and contains
 all required sections, acceptance criteria coverage, and correct references
-to dependency modules (SystemDesignGraphiti, DesignWriter, entity dataclasses).
+to dependency modules (fleet-memory MCP tools, DesignWriter, entity dataclasses).
 
 These tests treat the command spec as a structured document with mandatory
 sections. Each test validates a specific acceptance criterion from TASK-SAD-009.
@@ -44,10 +44,10 @@ def spec_content() -> str:
 class TestDisambiguationFlow:
     """Validates AC-001: Disambiguation flow using semantic search."""
 
-    def test_spec_references_search_design_context(self, spec_content: str) -> None:
-        """Spec must reference SystemDesignGraphiti.search_design_context()."""
-        assert "search_design_context" in spec_content, (
-            "Spec must reference search_design_context() for disambiguation"
+    def test_spec_references_memory_search_for_disambiguation(self, spec_content: str) -> None:
+        """Spec must reference fleet-memory search for disambiguation."""
+        assert "memory_search" in spec_content or "mcp__fleet_memory__memory_search" in spec_content, (
+            "Spec must reference fleet-memory memory_search for disambiguation"
         )
 
     def test_spec_presents_top_matches(self, spec_content: str) -> None:
@@ -74,10 +74,10 @@ class TestDisambiguationFlow:
             "Spec must require explicit confirmation before applying changes"
         )
 
-    def test_spec_references_system_design_graphiti(self, spec_content: str) -> None:
-        """Spec must reference SystemDesignGraphiti for disambiguation."""
-        assert "SystemDesignGraphiti" in spec_content, (
-            "Spec must reference SystemDesignGraphiti class"
+    def test_spec_disambiguation_scoped_to_design_tag(self, spec_content: str) -> None:
+        """Spec must scope disambiguation search to the design domain tag."""
+        assert '"design"' in spec_content, (
+            "Spec must scope fleet-memory disambiguation search to domain_tags=[design]"
         )
 
     def test_spec_groups_by_relevance(self, spec_content: str) -> None:
@@ -193,10 +193,10 @@ class TestAPIContractUpdateFlow:
 class TestFeatureSpecStaleness:
     """Validates AC-004: Feature spec staleness detection."""
 
-    def test_spec_queries_feature_specs_group(self, spec_content: str) -> None:
-        """Spec must query feature_specs group."""
-        assert "feature_specs" in spec_content, (
-            "Spec must reference feature_specs Graphiti group"
+    def test_spec_queries_feature_spec_artefacts(self, spec_content: str) -> None:
+        """Spec must search fleet-memory for feature-spec artefacts."""
+        assert "feature_spec" in spec_content or "feature spec" in spec_content.lower(), (
+            "Spec must reference fleet-memory feature-spec staleness search"
         )
 
     def test_spec_detects_stale_scenarios(self, spec_content: str) -> None:
@@ -266,19 +266,19 @@ class TestC4L3ReviewGate:
 
 
 # ============================================================================
-# AC-006: Staleness flagging on downstream Graphiti nodes
+# AC-006: Staleness flagging on downstream fleet-memory artefacts
 # ============================================================================
 
 
 class TestDownstreamStaleness:
-    """Validates AC-006: Staleness flagging on downstream Graphiti nodes."""
+    """Validates AC-006: Staleness flagging on downstream fleet-memory artefacts."""
 
     def test_spec_describes_downstream_staleness(self, spec_content: str) -> None:
-        """Spec must describe flagging downstream nodes as stale."""
+        """Spec must describe flagging downstream artefacts as stale."""
         content_lower = spec_content.lower()
         has_downstream = "downstream" in content_lower
         assert has_downstream, (
-            "Spec must describe staleness flagging on downstream Graphiti nodes"
+            "Spec must describe staleness flagging on downstream fleet-memory artefacts"
         )
 
     def test_spec_flags_affected_nodes(self, spec_content: str) -> None:
@@ -291,62 +291,74 @@ class TestDownstreamStaleness:
 
 
 # ============================================================================
-# AC-007: Graphiti integration (project_design and api_contracts groups)
+# AC-007: Fleet-memory integration (design / api_contract seeding)
 # ============================================================================
 
 
-class TestGraphitiIntegration:
-    """Validates AC-007: Graphiti integration with correct groups."""
+class TestFleetMemoryIntegration:
+    """Validates AC-007: Fleet-memory integration with typed payloads."""
 
-    def test_spec_updates_project_design_group(self, spec_content: str) -> None:
-        """Spec must update project_design Graphiti group."""
-        assert "project_design" in spec_content, (
-            "Spec must reference project_design group for Graphiti updates"
+    def test_spec_seeds_design_domain_tag(self, spec_content: str) -> None:
+        """Spec must seed design artefacts with the design domain tag."""
+        assert '"design"' in spec_content, (
+            "Spec must reference the design domain_tag for fleet-memory seeding"
         )
 
-    def test_spec_updates_api_contracts_group(self, spec_content: str) -> None:
-        """Spec must update api_contracts Graphiti group."""
-        assert "api_contracts" in spec_content, (
-            "Spec must reference api_contracts group for Graphiti updates"
+    def test_spec_seeds_api_contract_domain_tag(self, spec_content: str) -> None:
+        """Spec must seed API contracts with the api_contract domain tag."""
+        assert "api_contract" in spec_content, (
+            "Spec must reference the api_contract domain_tag for contract seeding"
         )
 
-    def test_spec_uses_upsert_methods(self, spec_content: str) -> None:
-        """Spec must use upsert methods for idempotent updates."""
-        assert "upsert_design_decision" in spec_content, (
-            "Spec must reference upsert_design_decision method"
+    def test_spec_uses_typed_payloads(self, spec_content: str) -> None:
+        """Spec must seed via typed payloads (adr for DDRs, document for artefacts)."""
+        assert '"payload_type": "adr"' in spec_content, (
+            "Spec must reference the adr payload_type for DDRs"
+        )
+        assert '"payload_type": "document"' in spec_content, (
+            "Spec must reference the document payload_type for contracts and models"
         )
 
-    def test_spec_references_get_graphiti(self, spec_content: str) -> None:
-        """Spec must reference get_graphiti() for client initialization."""
-        assert "get_graphiti" in spec_content, (
-            "Spec must reference get_graphiti() for Graphiti client initialization"
+    def test_spec_references_memory_write_payload(self, spec_content: str) -> None:
+        """Spec must reference the fleet-memory write tool for persistence."""
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content, (
+            "Spec must reference mcp__fleet_memory__memory_write_payload for seeding"
+        )
+
+    def test_spec_supersession_re_writes_old_and_links_new(self, spec_content: str) -> None:
+        """Spec must supersede via a status re-write plus a supersedes reference."""
+        assert '"status": "superseded"' in spec_content, (
+            "Spec must re-write the old DDR payload with status superseded"
+        )
+        assert "supersedes" in spec_content, (
+            "Spec must write the new DDR payload with a supersedes reference"
         )
 
 
 # ============================================================================
-# AC-008: Graceful degradation when Graphiti unavailable
+# AC-008: Graceful degradation when fleet-memory unavailable
 # ============================================================================
 
 
 class TestGracefulDegradation:
-    """Validates AC-008: Graceful degradation when Graphiti unavailable."""
+    """Validates AC-008: Graceful degradation when fleet-memory unavailable."""
 
     def test_spec_has_graceful_degradation(self, spec_content: str) -> None:
         """Spec must have a graceful degradation section."""
         content_lower = spec_content.lower()
-        assert "graceful degradation" in content_lower or "graphiti unavailable" in content_lower, (
-            "Spec must describe graceful degradation when Graphiti is unavailable"
+        assert "graceful degradation" in content_lower or "fleet-memory unavailable" in content_lower, (
+            "Spec must describe graceful degradation when fleet-memory is unavailable"
         )
 
-    def test_spec_continues_without_graphiti(self, spec_content: str) -> None:
-        """Spec must allow operation without Graphiti (markdown-only fallback)."""
+    def test_spec_continues_without_memory(self, spec_content: str) -> None:
+        """Spec must allow operation without fleet-memory (markdown-only fallback)."""
         content_lower = spec_content.lower()
         has_fallback = (
             "without persistence" in content_lower
             or "markdown" in content_lower
         )
         assert has_fallback, (
-            "Spec must describe continuing with markdown artefacts when Graphiti unavailable"
+            "Spec must describe continuing with markdown artefacts when fleet-memory unavailable"
         )
 
     def test_spec_warns_user_about_degradation(self, spec_content: str) -> None:
@@ -372,10 +384,10 @@ class TestContradictionDetection:
             "Spec must describe contradiction detection"
         )
 
-    def test_spec_queries_project_decisions_group(self, spec_content: str) -> None:
-        """Spec must query project_decisions group for existing ADRs."""
-        assert "project_decisions" in spec_content, (
-            "Spec must reference project_decisions group for ADR checks"
+    def test_spec_queries_architecture_adrs_for_contradiction(self, spec_content: str) -> None:
+        """Spec must search fleet-memory architecture ADRs for contradiction checks."""
+        assert 'payload_types=["adr"]' in spec_content or '"architecture"' in spec_content, (
+            "Spec must reference fleet-memory ADR search (adr payload / architecture tag) for contradiction checks"
         )
 
     def test_spec_flags_adr_violations(self, spec_content: str) -> None:
@@ -443,12 +455,12 @@ class TestErrorHandling:
             "Spec must have an Error Handling section"
         )
 
-    def test_spec_handles_graphiti_errors(self, spec_content: str) -> None:
-        """Spec must handle Graphiti-specific errors."""
+    def test_spec_handles_memory_errors(self, spec_content: str) -> None:
+        """Spec must handle fleet-memory-specific errors."""
         content_lower = spec_content.lower()
-        has_graphiti_error = "graphiti" in content_lower and "error" in content_lower
-        assert has_graphiti_error, (
-            "Spec must describe handling Graphiti errors"
+        has_memory_error = "fleet-memory" in content_lower and "error" in content_lower
+        assert has_memory_error, (
+            "Spec must describe handling fleet-memory errors"
         )
 
     def test_spec_handles_no_design_context(self, spec_content: str) -> None:
@@ -541,6 +553,18 @@ class TestSpecStructure:
         """Spec must contain Python code examples in execution flow."""
         assert "```python" in spec_content, (
             "Spec must contain Python code examples"
+        )
+
+    def test_spec_references_fleet_memory_access(self, spec_content: str) -> None:
+        """Spec must reference the fleet-memory access path (MCP tool / preamble)."""
+        assert "mcp__fleet_memory__memory_write_payload" in spec_content or "memory-preamble" in spec_content, (
+            "Spec must reference fleet-memory access (MCP write tool or memory-preamble)"
+        )
+
+    def test_spec_has_no_graphiti_references(self, spec_content: str) -> None:
+        """Spec must not reference the removed Graphiti backend (case-insensitive)."""
+        assert "graphiti" not in spec_content.lower(), (
+            "Spec must not contain any Graphiti references after the fleet-memory cutover"
         )
 
     def test_spec_references_prerequisite_gate(self, spec_content: str) -> None:
