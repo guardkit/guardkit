@@ -502,12 +502,12 @@ class TestCaptureTaskOutcome:
 
     @pytest.mark.asyncio
     async def test_capture_task_outcome_success(self):
-        """Test successful outcome capture with Graphiti enabled."""
+        """Test successful outcome capture with the memory client enabled."""
         mock_client = AsyncMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -529,7 +529,7 @@ class TestCaptureTaskOutcome:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id1 = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -562,7 +562,7 @@ class TestCaptureTaskOutcome:
         started = datetime(2025, 1, 1, 10, 0, 0)
         completed = datetime(2025, 1, 1, 12, 30, 0)
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -594,12 +594,12 @@ class TestCaptureTaskOutcome:
             assert "Standard library" in episode_body
 
     @pytest.mark.asyncio
-    async def test_capture_task_outcome_graphiti_disabled(self):
-        """Test graceful degradation when Graphiti disabled."""
+    async def test_capture_task_outcome_client_disabled(self):
+        """Test graceful degradation when the memory client is disabled."""
         mock_client = AsyncMock()
         mock_client.enabled = False
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -615,9 +615,9 @@ class TestCaptureTaskOutcome:
             mock_client.add_episode.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_capture_task_outcome_graphiti_none(self):
-        """Test graceful degradation when Graphiti client is None."""
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=None):
+    async def test_capture_task_outcome_client_none(self):
+        """Test graceful degradation when the memory client is None."""
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=None):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -632,13 +632,13 @@ class TestCaptureTaskOutcome:
             assert outcome_id.startswith("OUT-")
 
     @pytest.mark.asyncio
-    async def test_capture_task_outcome_graphiti_error(self):
-        """Test graceful degradation when Graphiti raises error."""
+    async def test_capture_task_outcome_client_error(self):
+        """Test graceful degradation when the memory client raises error."""
         mock_client = AsyncMock()
         mock_client.enabled = True
-        mock_client.add_episode = AsyncMock(side_effect=Exception("Graphiti error"))
+        mock_client.add_episode = AsyncMock(side_effect=Exception("memory backend error"))
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -659,7 +659,7 @@ class TestCaptureTaskOutcome:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -683,7 +683,7 @@ class TestCaptureTaskOutcome:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -706,7 +706,7 @@ class TestCaptureTaskOutcome:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_FAILED,
                 task_id="TASK-1234",
@@ -731,7 +731,7 @@ class TestCaptureTaskOutcome:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -923,7 +923,7 @@ class TestEdgeCases:
 
         long_summary = "x" * 10000  # 10,000 characters
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -945,7 +945,7 @@ class TestEdgeCases:
 
         many_patterns = [f"Pattern {i}" for i in range(100)]
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
@@ -965,7 +965,7 @@ class TestEdgeCases:
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
 
-        with patch('guardkit.knowledge.outcome_manager.get_graphiti', return_value=mock_client):
+        with patch('guardkit.knowledge.outcome_manager.get_memory_client', return_value=mock_client):
             outcome_id = await capture_task_outcome(
                 outcome_type=OutcomeType.TASK_COMPLETED,
                 task_id="TASK-1234",
