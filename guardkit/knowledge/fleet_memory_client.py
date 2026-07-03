@@ -56,6 +56,9 @@ class FleetMemoryConfig:
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
     project: str = "guardkit"
+    # New retrieval arm configuration (FEAT-ABL-001)
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
     retrieval_arm: Optional[str] = None
     fixture_id: Optional[str] = None
 
