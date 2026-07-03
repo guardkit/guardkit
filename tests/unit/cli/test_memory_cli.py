@@ -170,3 +170,122 @@ Test description
 
         # Should not fail but warn
         assert "unavailable" in result.output.lower() or "not captured" in result.output.lower()
+
+
+# ============================================================================
+# Optional `memory` extra: the CLI must not hard-import nats-core
+# (regression for `guardkit init` crashing with ModuleNotFoundError: nats_core)
+# ============================================================================
+
+
+class TestMemoryExtraOptionalImport:
+    """The `memory` CLI group must import without the optional `memory` extra.
+
+    `nats-core` is only declared by the `memory` / `all` extras (never a base
+    dependency), yet guardkit.cli.main imports this group unconditionally. A
+    module-level `from nats_core... import ...` therefore breaks *every* guardkit
+    command — including `guardkit init` — on a base install. These tests pin the
+    guarded-import behaviour. See .claude/rules/namespace-hygiene.md.
+    """
+
+    def test_full_cli_imports_without_nats_core(self):
+        """Repro: block nats_core, then the exact failing chain must still work.
+
+        Runs in an isolated subprocess so the module is imported fresh with a
+        `sys.meta_path` finder that makes every `nats_core` import fail — exactly
+        the state of a base install without the `memory` extra.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        repo_root = Path(__file__).resolve().parents[3]
+        program = textwrap.dedent(
+            """
+            import sys
+
+            class _Blocker:
+                def find_spec(self, name, path=None, target=None):
+                    if name == "nats_core" or name.startswith("nats_core."):
+                        raise ModuleNotFoundError(
+                            "No module named '%s'" % name, name=name
+                        )
+                    return None
+
+            sys.meta_path.insert(0, _Blocker())
+
+            # The exact chain that crashed `guardkit init`:
+            #   main -> cli.memory -> memory.harvest_walker -> nats_core.events
+            from guardkit.cli.main import cli, main
+            from click.testing import CliRunner
+
+            runner = CliRunner()
+
+            r = runner.invoke(cli, ["init", "--help"])
+            assert r.exit_code == 0, ("init --help failed", r.exit_code, r.output)
+
+            r = runner.invoke(cli, ["memory", "harvest", "--dry-run"])
+            assert r.exit_code == 1, ("expected clean exit 1", r.exit_code, r.output)
+            assert "guardkit-py[memory]" in r.output, r.output
+            assert "nats_core" in r.output, r.output
+
+            # Importing the CLI must NOT drag nats_core in as a side effect.
+            assert "nats_core" not in sys.modules
+
+            print("REGRESSION_OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", program],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"subprocess failed\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+        assert "REGRESSION_OK" in result.stdout, result.stdout
+
+    def test_harvest_reports_missing_memory_extra(self, runner):
+        """`memory harvest` exits 1 with an actionable hint when the extra is absent."""
+        import guardkit.cli.memory as memory_mod
+
+        err = ModuleNotFoundError("No module named 'nats_core'", name="nats_core")
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", err):
+            result = runner.invoke(memory, ["harvest", "--dry-run"])
+
+        assert result.exit_code == 1
+        # The literal "[memory]" must survive Rich markup rendering.
+        assert "guardkit-py[memory]" in result.output
+        assert "nats_core" in result.output
+
+    def test_migrate_graph_reports_missing_memory_extra(self, runner):
+        """`memory migrate-graph` exits 1 with an actionable hint when the extra is absent."""
+        import guardkit.cli.memory as memory_mod
+
+        err = ModuleNotFoundError("No module named 'nats_core'", name="nats_core")
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", err):
+            result = runner.invoke(memory, ["migrate-graph", "--dry-run"])
+
+        assert result.exit_code == 1
+        assert "guardkit-py[memory]" in result.output
+
+    def test_missing_extra_helper_selects_falkordb_extra(self):
+        """A missing `falkordb` module points at the `falkordb` extra, not `memory`."""
+        import guardkit.cli.memory as memory_mod
+
+        printed: list[str] = []
+        err = ModuleNotFoundError("No module named 'falkordb'", name="falkordb")
+        with patch.object(
+            memory_mod.console,
+            "print",
+            side_effect=lambda *a, **k: printed.append(str(a[0]) if a else ""),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                memory_mod._memory_extra_missing(err)
+
+        assert exc_info.value.code == 1
+        joined = "\n".join(printed)
+        assert "guardkit-py" in joined
+        assert "[falkordb]" in joined  # falkordb extra, and bracket not swallowed
+        assert "[memory]" not in joined

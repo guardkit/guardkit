@@ -24,18 +24,63 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from guardkit.memory.harvest_walker import walk_harvest_dirs
-from guardkit.memory.harvest_publisher import publish_episodes
-from guardkit.memory.graph_export import (
-    build_export_episodes,
-    read_falkordb_episodics,
-)
+# guardkit.memory.harvest_walker / harvest_publisher / graph_export import
+# nats-core (the optional `memory` extra) at module load. This CLI group is
+# registered unconditionally by guardkit.cli.main, so a hard import failure here
+# would break *every* guardkit command (including `guardkit init`) on a base
+# install that lacks the extra. Guard the import: on success the names are the
+# real callables (and stay patchable as `guardkit.cli.memory.<name>` for tests);
+# on failure they are None and the harvest / migrate-graph commands exit with an
+# actionable "install the extra" message via `_memory_extra_missing`. The
+# guardkit.knowledge.* imports below are safe: stdlib-only at import time, with
+# the optional backends deferred to call time inside get_memory_client().
+# See .claude/rules/namespace-hygiene.md and
+# .claude/rules/uv-sources-must-survive-every-install-path.md.
+try:
+    from guardkit.memory.harvest_walker import walk_harvest_dirs
+    from guardkit.memory.harvest_publisher import publish_episodes
+    from guardkit.memory.graph_export import (
+        build_export_episodes,
+        read_falkordb_episodics,
+    )
+except ImportError as _memory_import_exc:  # optional `memory` extra not installed
+    walk_harvest_dirs = None  # type: ignore[assignment]
+    publish_episodes = None  # type: ignore[assignment]
+    build_export_episodes = None  # type: ignore[assignment]
+    read_falkordb_episodics = None  # type: ignore[assignment]
+    _MEMORY_IMPORT_ERROR = _memory_import_exc
+else:
+    _MEMORY_IMPORT_ERROR = None
+
 from guardkit.knowledge.fleet_memory_client import get_memory_client
 from guardkit.knowledge.outcome_manager import capture_task_outcome
 from guardkit.knowledge.entities.outcome import OutcomeType
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def _memory_extra_missing(exc: ImportError) -> None:
+    """Print an actionable message for a missing optional memory-path dependency and exit.
+
+    nats-core / fleet-memory (and falkordb, for migrate-graph) are optional
+    dependencies provided by the `memory` / `falkordb` extras. These imports are
+    kept lazy (see the module header note) so that a base install can still run
+    the core CLI; this helper surfaces the missing module and the extra that
+    provides it, then exits non-zero. Never returns.
+    """
+    module = getattr(exc, "name", None) or str(exc)
+    extra = "falkordb" if "falkordb" in str(module) else "memory"
+    console.print(
+        f"[red]Error:[/red] this command needs an optional dependency that is not "
+        f"installed (missing module: [bold]{module}[/bold])."
+    )
+    # Escape the "[" so Rich renders a literal "[extra]" instead of treating it
+    # as console markup (which would silently swallow the extra name).
+    console.print(
+        rf"[yellow]Install it with:[/yellow] pip install 'guardkit-py\[{extra}]'"
+    )
+    sys.exit(1)
 
 
 def _find_repo_root(start_path: Path | None = None) -> Path:
@@ -173,6 +218,10 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
         # Use custom env file for credentials
         guardkit memory harvest --env-file /path/to/.env
     """
+    # nats-core (the `memory` extra) is optional — see module header note.
+    if _MEMORY_IMPORT_ERROR is not None:
+        _memory_extra_missing(_MEMORY_IMPORT_ERROR)
+
     # Load env file if provided (before any NATS password read)
     if env_file:
         load_dotenv(env_file)
@@ -343,6 +392,12 @@ def migrate_graph(
         guardkit memory migrate-graph                     # guardkit only
         guardkit memory migrate-graph --all-projects      # fleet-wide
     """
+    # nats-core (`memory` extra) is optional — see module header note. falkordb
+    # (`falkordb` extra) is imported lazily inside read_falkordb_episodics and
+    # surfaces as a "FalkorDB read error" below if absent.
+    if _MEMORY_IMPORT_ERROR is not None:
+        _memory_extra_missing(_MEMORY_IMPORT_ERROR)
+
     if env_file:
         load_dotenv(env_file)
         logger.info("Loaded environment from %s", env_file)
