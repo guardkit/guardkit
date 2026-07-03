@@ -7,6 +7,41 @@ what's done and the remaining de-graphiti surface (§3), ranked with recommendat
 
 ---
 
+> ## ✅ UPDATE 2026-07-03 (later session): §3.1 + §3.2 DONE — commit `237f5d4c`
+>
+> Agent-def tool grants (§3.1) and the dead libs (§3.2) are cleaned + pushed.
+> **§3.2 was materially larger than described in §3.2/§4/§5 below** — the "0
+> importers" claim came from a broken grep (`grep -rln a|b path`: the unquoted
+> `|` piped grep into a bogus command, silently missing the real callers). The
+> two dead libs were wired into a substantial installer surface:
+> - **`install.sh`** — a `graphiti-core` pip-install flow (for a now-removed
+>   dependency), `guardkit graphiti` CLI help + a `graphiti)` dispatcher case
+>   (for the removed CLI group), the `graphiti-check` wrapper heredoc,
+>   init-comment mentions, and a drift-warning special-case.
+> - **`bin-entries.txt`** — the `graphiti_diagnose` entry + `graphiti_check`
+>   wrapper comment.
+> - **`init-project.sh`** (NOT mentioned anywhere below) — a `--copy-graphiti`
+>   flag + three helpers (`find_source`/`copy`/`write_graphiti_config`) +
+>   `normalize_project_id`, all writing the **retired** `.guardkit/graphiti.yaml`
+>   (the shell-init fallback was the last holdout; `cli/init.py` already retired
+>   it in FEAT-MEM-09).
+>
+> All removed so the installer matches the already-degraphiti'd Python init.
+> **One deliberate behavior change:** `--copy-graphiti` also served as an
+> explicit source-path hint for the `.mcp.json` copy; that niche hint is gone —
+> `.mcp.json` now always auto-discovers from parent dirs (already the default).
+> **Gates:** full suite 12469 passed / **7 pre-existing fails / zero new**;
+> `bash -n` clean on both scripts; adversarial 3-lens shell review (bash-correctness
+> · behavior-preservation · completeness) returned **clean**. Files: the 2 agent
+> `.md`, the 2 `git-rm`'d libs, `bin-entries.txt`, `install.sh`, `init-project.sh`,
+> `test_install_wrapper_feature_subcommand.py`.
+>
+> **Still remaining:** §3.3 (guardkit/ Python — the big workstream, unstarted),
+> §3.4 (`.claude/rules/graphiti-knowledge*.md` — in progress this session),
+> §3.5 (infra, operator-only).
+
+---
+
 ## 0. TL;DR
 
 - **Done + pushed (origin/main):** 3 commits — arch command specs + fleet-memory preamble
@@ -260,10 +295,12 @@ memory `[[main-has-preexisting-red-tests]]`.)
 
 ---
 
-## 9. Acceptance for the next chunk (§3.1 + §3.2 quick win)
+## 9. Acceptance for the next chunk (§3.1 + §3.2 quick win) — ✅ DONE (commit `237f5d4c`)
 
-- [ ] `grep -rn mcp__graphiti__ installer/core/agents/` → empty (both agent tool-lists cleaned).
-- [ ] Any graphiti prompt-body instructions in those 2 agents removed / repointed to fleet-memory.
-- [ ] `graphiti_check.py` + `graphiti_diagnose.py` deleted; no test references them.
-- [ ] Full suite still exactly the 7 pre-existing fails (§6), zero new; collection clean.
-- [ ] Committed with explicit pathspecs; pushed after `git fetch`.
+- [x] `grep -rn mcp__graphiti__ installer/core/agents/` → empty (both agent tool-lists cleaned).
+- [x] No graphiti prompt-body instructions existed in those 2 agents (only the `tools:` frontmatter).
+- [x] `graphiti_check.py` + `graphiti_diagnose.py` deleted; no test references them.
+- [x] Full installer surface de-graphiti'd too (`install.sh`, `init-project.sh`, `bin-entries.txt`) —
+      see the ✅ UPDATE banner at the top for the (larger-than-scoped) detail + the one behavior change.
+- [x] Full suite still exactly the 7 pre-existing fails (§6), zero new; collection clean.
+- [x] Committed with explicit pathspecs; pushed after `git fetch`.
