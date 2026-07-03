@@ -358,76 +358,6 @@ check_prerequisites() {
                     print_success "python-dotenv already installed"
                 fi
 
-                # Check and install graphiti-core (required for knowledge graph integration)
-                # Note: This system-level install is belt-and-suspenders alongside the
-                # guardkit venv wrapper script (TASK-FIX-GC01). The wrapper uses the
-                # guardkit venv Python which already has graphiti-core. This install
-                # ensures graphiti-core is also available to system Python for cases
-                # where the wrapper is bypassed (e.g., direct python3 -m invocation).
-                print_info "Checking for graphiti-core..."
-                local python_path
-                python_path="$(command -v python3 2>/dev/null || echo 'not found')"
-                local python_version
-                python_version="$(python3 --version 2>/dev/null || echo 'unknown')"
-                print_info "Using Python: $python_path ($python_version)"
-
-                set +e  # Temporarily allow errors for package checks
-                python3 -c "from graphiti_core import Graphiti" </dev/null 2>&1 >/dev/null
-                graphiti_status=$?
-                set -e  # Re-enable exit on error
-
-                if [ $graphiti_status -ne 0 ]; then
-                    print_info "Installing graphiti-core (required for knowledge graph integration)..."
-                    print_info "This may take a moment, please wait..."
-                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
-                    # Use python3 -m pip for reliability with multiple Python installations
-                    set +e  # Temporarily allow errors
-                    local install_ok=false
-                    python3 -m pip install --break-system-packages graphiti-core 2>&1
-                    if [ $? -ne 0 ]; then
-                        # Fallback to user install if --break-system-packages not supported
-                        print_info "Retrying with --user flag..."
-                        python3 -m pip install --user graphiti-core 2>&1
-                        if [ $? -eq 0 ]; then
-                            install_ok=true
-                            print_success "graphiti-core installed successfully (user mode)"
-                        fi
-                    else
-                        install_ok=true
-                        print_success "graphiti-core installed successfully"
-                    fi
-
-                    # Verify the import actually works after installation
-                    if [ "$install_ok" = true ]; then
-                        python3 -c "from graphiti_core import Graphiti" </dev/null 2>&1 >/dev/null
-                        if [ $? -ne 0 ]; then
-                            install_ok=false
-                            print_warning "graphiti-core was installed but import verification failed"
-                        else
-                            print_success "graphiti-core import verified successfully"
-                        fi
-                    fi
-
-                    if [ "$install_ok" = false ]; then
-                        print_warning "graphiti-core installation failed for system Python"
-                        print_warning "Python path: $python_path"
-                        print_warning ""
-                        print_warning "Remediation options:"
-                        print_warning "  1. Install into a virtual environment:"
-                        print_warning "     python3 -m venv ~/.graphiti-env && ~/.graphiti-env/bin/pip install graphiti-core"
-                        print_warning "  2. Install with user flag (may require PATH update):"
-                        print_warning "     python3 -m pip install --user graphiti-core"
-                        print_warning "  3. Use the guardkit venv wrapper (recommended — installed by TASK-FIX-GC01):"
-                        print_warning "     The graphiti-check wrapper at ~/.agentecflow/bin/graphiti-check"
-                        print_warning "     already uses the guardkit venv which includes graphiti-core."
-                        print_warning ""
-                        print_warning "Graphiti knowledge graph features will still work via the wrapper script."
-                    fi
-                    set -e  # Re-enable exit on error
-                else
-                    print_success "graphiti-core already installed and verified"
-                fi
-
                 print_success "Python dependency checks complete"
             fi
         fi
@@ -936,7 +866,6 @@ print_help() {
     echo "  init [template]     Initialize GuardKit in current directory"
     echo "  autobuild <cmd>     Autonomous task implementation (Player-Coach)"
     echo "  feature <cmd>       Feature YAML management (validate, etc.)"
-    echo "  graphiti <cmd>      Knowledge graph management"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
     echo "  help                Show this help message"
@@ -948,18 +877,11 @@ print_help() {
     echo "Feature Commands:"
     echo "  feature validate FEAT-XXXX  Validate feature YAML (schema + smoke-gate paths)"
     echo ""
-    echo "Graphiti Commands:"
-    echo "  graphiti status             Show connection and seeding status"
-    echo "  graphiti seed [--force]     Seed system context into Graphiti"
-    echo "  graphiti verify [--verbose] Verify seeded knowledge with test queries"
-    echo "  graphiti seed-adrs          Seed feature-build ADRs"
-    echo ""
     echo "Examples:"
     echo "  guardkit init                      # Interactive initialization"
     echo "  guardkit init react-typescript     # Initialize with React template"
     echo "  guardkit init fastapi-python       # Initialize with FastAPI template"
     echo "  guardkit autobuild task TASK-001   # Autonomous task implementation"
-    echo "  guardkit graphiti status           # Check Graphiti connection"
     echo "  guardkit doctor                    # Check installation health"
 }
 
@@ -985,7 +907,7 @@ detect_project_context() {
 
 case "$1" in
     init)
-        # Try guardkit-py first (has Graphiti seeding), fall back to shell script
+        # Try guardkit-py first, fall back to shell script
         GUARDKIT_PY=""
         if command -v guardkit-py &> /dev/null; then
             GUARDKIT_PY="$(command -v guardkit-py)"
@@ -1003,8 +925,8 @@ case "$1" in
             shift  # Remove 'init' from args
             exec "$GUARDKIT_PY" init "$@"
         else
-            # Fall back to shell script (no Graphiti seeding)
-            echo -e "${YELLOW}Note: guardkit-py not found, using shell init (no Graphiti seeding)${NC}"
+            # Fall back to shell script
+            echo -e "${YELLOW}Note: guardkit-py not found, using shell init${NC}"
             echo -e "${YELLOW}Install with: pip install guardkit-py${NC}"
             echo ""
             shift
@@ -1082,39 +1004,6 @@ case "$1" in
             echo ""
             echo "Example:"
             echo "  guardkit feature validate FEAT-AC1A"
-            exit 1
-        fi
-        ;;
-    graphiti)
-        # Find guardkit-py CLI - same logic as autobuild
-        GUARDKIT_PY=""
-        if command -v guardkit-py &> /dev/null; then
-            GUARDKIT_PY="$(command -v guardkit-py)"
-        elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
-            GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
-        elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
-            GUARDKIT_PY="$HOME/.local/bin/guardkit-py"
-        elif [ -x "/usr/local/bin/guardkit-py" ]; then
-            GUARDKIT_PY="/usr/local/bin/guardkit-py"
-        else
-            # Try to find it via Python
-            GUARDKIT_PY=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
-        fi
-
-        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
-            shift  # Remove 'graphiti' from args
-            exec "$GUARDKIT_PY" graphiti "$@"
-        else
-            # Python CLI not installed - show guidance
-            echo -e "${YELLOW}Graphiti CLI requires guardkit-py package${NC}"
-            echo ""
-            echo "The guardkit graphiti command requires the guardkit Python package."
-            echo ""
-            echo "To install:"
-            echo "  pip install -e /path/to/guardkit[autobuild]  # From guardkit repository"
-            echo ""
-            echo "Or install directly:"
-            echo "  pip install guardkit-py[autobuild]"
             exit 1
         fi
         ;;
@@ -1266,45 +1155,6 @@ EOF
     ln -sf "$INSTALL_DIR/bin/guardkit-init" "$INSTALL_DIR/bin/gki"
 
     print_success "Created CLI commands (guardkit, guardkit-init, gk, gki)"
-
-    # Create graphiti-check wrapper script
-    # Uses a wrapper (not symlink) to ensure the correct venv Python is used
-    # and PYTHONPATH includes the guardkit repo root
-    local REPO_ROOT
-    REPO_ROOT="$(cd "$INSTALLER_DIR/.." && pwd)"
-
-    # Remove existing symlink if upgrading from older installer
-    if [ -L "$INSTALL_DIR/bin/graphiti-check" ]; then
-        rm -f "$INSTALL_DIR/bin/graphiti-check"
-    fi
-
-    cat > "$INSTALL_DIR/bin/graphiti-check" << WRAPPER_EOF
-#!/usr/bin/env bash
-# Generated by guardkit installer — do not edit
-# Wrapper for graphiti_check.py that uses the GuardKit venv Python
-# to ensure graphiti-core and other dependencies are available.
-
-GUARDKIT_REPO="$REPO_ROOT"
-
-# Use the GuardKit venv Python (has graphiti-core installed).
-# Falls back to system python3 only if the venv is missing.
-VENV_PYTHON="\$GUARDKIT_REPO/.venv/bin/python"
-if [ -x "\$VENV_PYTHON" ]; then
-    PYTHON_CMD="\$VENV_PYTHON"
-elif command -v python3 &> /dev/null; then
-    echo "Warning: GuardKit venv not found at \$GUARDKIT_REPO/.venv — falling back to system python3" >&2
-    PYTHON_CMD="python3"
-else
-    echo "Error: python3 not found" >&2
-    exit 1
-fi
-
-export PYTHONPATH="\$GUARDKIT_REPO\${PYTHONPATH:+:\$PYTHONPATH}"
-exec "\$PYTHON_CMD" -m installer.core.commands.lib.graphiti_check "\$@"
-WRAPPER_EOF
-
-    chmod +x "$INSTALL_DIR/bin/graphiti-check"
-    print_success "Created graphiti-check wrapper"
 }
 
 # Setup shell integration
@@ -1997,8 +1847,8 @@ setup_python_bin_symlinks() {
 
     # ------------------------------------------------------------------
     # Drift warning: any .py file under commands/ or commands/lib/ that
-    # is NOT listed in the manifest, NOT __init__/test_/demo_, and NOT
-    # graphiti_check.py (which has a wrapper). Informational only.
+    # is NOT listed in the manifest and NOT __init__/test_/demo_.
+    # Informational only.
     # ------------------------------------------------------------------
     local unlisted=()
     local candidate
@@ -2009,7 +1859,6 @@ setup_python_bin_symlinks() {
             cand_base=$(basename "$candidate")
             case "$cand_base" in
                 __init__.py|test_*|demo_*) continue ;;
-                graphiti_check.py) continue ;;  # has dedicated wrapper
             esac
             local found=0
             local listed
