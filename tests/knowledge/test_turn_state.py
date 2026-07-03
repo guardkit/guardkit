@@ -1763,3 +1763,162 @@ class TestModuleExports:
         assert callable(load_turn_continuation_context)
         assert callable(load_turn_context)
         assert callable(create_turn_state_from_autobuild)
+
+
+# ============================================================================
+# Real-seam tests (FEAT-MEM-09 W1 / TASK-MEM09-TURNSTATE)
+#
+# The tests above Mock the client. Per
+# .claude/rules/per-task-green-is-not-feature-green.md that is absent
+# integration evidence. The tests below exercise the REAL FleetMemoryClient
+# write path (capture_turn_state -> add_episode -> resolve + build_memory_episode
+# -> publish, stubbing ONLY the external nats publish edge — "assert a real
+# nats_core path, not a mock of the client") and the REAL read path
+# (_load_from_graphiti -> search -> fleet_memory_mapping, external
+# fleet_memory.retrieval edge stubbed). Fork B = KEEP turn_states.
+# ============================================================================
+
+
+def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+    """Fake ONLY the external fleet_memory.retrieval read edge (TASK-MEM08-011)."""
+    import sys
+    import types
+
+    class _FakeSearchRequest:
+        def __init__(self, **kw):
+            captured["request"] = kw
+
+    async def _fake_search(request, store):
+        return ["r1", "r2"]
+
+    class _FakeAssembly:
+        pass
+
+    def _fake_assemble(results, token_budget):
+        a = _FakeAssembly()
+        a.context_block = context_block
+        a.coverage_score = coverage
+        return a
+
+    retrieval = types.ModuleType("fleet_memory.retrieval")
+    retrieval.SearchRequest = _FakeSearchRequest
+    retrieval.search = _fake_search
+    retrieval.assemble_context = _fake_assemble
+    fm = types.ModuleType("fleet_memory")
+    fm.retrieval = retrieval
+    monkeypatch.setitem(sys.modules, "fleet_memory", fm)
+    monkeypatch.setitem(sys.modules, "fleet_memory.retrieval", retrieval)
+
+
+def _enabled_fleet_client():
+    """A REAL FleetMemoryClient (NOT a mock), reads + writes enabled, store pre-opened."""
+    from guardkit.knowledge.fleet_memory_client import (
+        FleetMemoryClient,
+        FleetMemoryConfig,
+    )
+
+    client = FleetMemoryClient(
+        FleetMemoryConfig(
+            enabled=True,
+            postgres_dsn="postgresql://t:t@localhost:5433/t",
+            embed_url="http://localhost:9000/v1",
+            embed_model="nomic-embed",
+            embed_dims=768,
+            nats_url="nats://localhost:4222",
+        )
+    )
+    client._read_available = True
+    client._nats_available = True
+    client._store = object()
+    return client
+
+
+def _turn_entity():
+    from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
+
+    return TurnStateEntity(
+        id="TURN-FEAT-X-1",
+        feature_id="FEAT-X",
+        task_id="TASK-X-001",
+        turn_number=1,
+        player_summary="Implemented feature",
+        player_decision="implemented",
+        coach_decision="approved",
+        coach_feedback=None,
+        mode=TurnMode.FRESH_START,
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+    )
+
+
+class TestTurnStateRealSeam:
+    """Exercise the REAL fleet-memory turn_states write + read seams (not a Mock)."""
+
+    @pytest.mark.asyncio
+    async def test_capture_turn_state_publishes_real_episode(self, monkeypatch):
+        """capture_turn_state -> REAL add_episode -> resolve('turn_states') (migrate) ->
+        build_memory_episode -> publish. Stub ONLY the external nats publish edge.
+
+        A retired/unmapped group would return None BEFORE publish, so publish being
+        called with a real MemoryEpisodeV1 proves the real mapping resolved turn_states
+        as migrate and the real episode was built.
+        """
+        import types as _types
+        from guardkit.knowledge.turn_state_operations import capture_turn_state
+        from nats_core import MemoryEpisodeV1  # importable in this env
+
+        captured: dict = {}
+
+        async def _fake_publish(episodes, *a, **kw):
+            captured["episodes"] = episodes
+            return _types.SimpleNamespace(published=len(episodes), skipped=0)
+
+        monkeypatch.setattr(
+            "guardkit.memory.harvest_publisher.publish_episodes", _fake_publish
+        )
+        client = _enabled_fleet_client()
+
+        await capture_turn_state(client, _turn_entity())
+
+        assert "episodes" in captured, "the real add_episode path must reach publish_episodes"
+        assert len(captured["episodes"]) == 1
+        assert isinstance(captured["episodes"][0], MemoryEpisodeV1)
+
+    @pytest.mark.asyncio
+    async def test_load_from_graphiti_resolves_turn_states_document(self, monkeypatch):
+        """_load_from_graphiti -> REAL search -> fleet_memory_mapping -> document/[state, turn]."""
+        from guardkit.knowledge.turn_state_operations import _load_from_graphiti
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="turn 1 summary", coverage=0.7, captured=captured,
+        )
+        client = _enabled_fleet_client()
+
+        await _load_from_graphiti(client, task_id="TASK-X-001", prev_turn_num=1)
+
+        req = captured["request"]
+        assert req["payload_types"] == ["document"]
+        assert req["domain_tags"] == ["state", "turn"]  # sorted domain_tags
+
+    @pytest.mark.live
+    @pytest.mark.asyncio
+    async def test_turn_state_round_trip_live(self):
+        """Operator-run proof: with the store ENABLED, capture then load returns the
+        turn. Skips cleanly when the store is disabled."""
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
+        from guardkit.knowledge.turn_state_operations import (
+            capture_turn_state,
+            load_turn_continuation_context,
+        )
+
+        client = get_memory_client()
+        if client is None or not getattr(client, "enabled", False):
+            pytest.skip("fleet-memory store not enabled (Status: DISABLED)")
+
+        entity = _turn_entity()
+        await capture_turn_state(client, entity)
+        ctx = await load_turn_continuation_context(
+            client, feature_id=entity.feature_id, task_id=entity.task_id, current_turn=2
+        )
+        assert ctx is not None, "expected the just-captured turn to load back from the live store"
