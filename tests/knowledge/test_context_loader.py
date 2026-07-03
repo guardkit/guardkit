@@ -537,3 +537,163 @@ class TestIntegration:
             # Should return empty but not error
             assert formatted == ""
             assert isinstance(context, CriticalContext)
+
+
+# ============================================================================
+# Real-seam tests (FEAT-MEM-09 W1 / TASK-MEM09-CTXLOAD)
+#
+# The tests above MagicMock the fleet-memory client — the primary first-party
+# seam. Per .claude/rules/per-task-green-is-not-feature-green.md that is absent
+# integration evidence. The tests below exercise the REAL
+# get_memory_client() -> FleetMemoryClient.search() -> fleet_memory_mapping
+# path, stubbing ONLY the external fleet_memory.retrieval edge, and prove each
+# _load_* resolves its group_ids to the correct payload_types/domain_tags.
+# ============================================================================
+
+
+def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+    """Fake ONLY the external fleet_memory.retrieval edge, capturing the real
+    SearchRequest the shim builds. Mirrors the helper in
+    tests/unit/knowledge/test_fleet_memory_client.py (TASK-MEM08-011)."""
+    import sys
+    import types
+
+    class _FakeSearchRequest:
+        def __init__(self, **kw):
+            captured["request"] = kw
+
+    async def _fake_search(request, store):
+        captured["store"] = store
+        return ["r1", "r2"]
+
+    class _FakeAssembly:
+        pass
+
+    def _fake_assemble(results, token_budget):
+        a = _FakeAssembly()
+        a.context_block = context_block
+        a.coverage_score = coverage
+        return a
+
+    retrieval = types.ModuleType("fleet_memory.retrieval")
+    retrieval.SearchRequest = _FakeSearchRequest
+    retrieval.search = _fake_search
+    retrieval.assemble_context = _fake_assemble
+    fm = types.ModuleType("fleet_memory")
+    fm.retrieval = retrieval
+    monkeypatch.setitem(sys.modules, "fleet_memory", fm)
+    monkeypatch.setitem(sys.modules, "fleet_memory.retrieval", retrieval)
+
+
+def _enabled_fleet_client():
+    """A REAL FleetMemoryClient (NOT a mock) with reads enabled + store
+    pre-opened so initialize() is skipped. Exercises the real shim + mapping."""
+    from guardkit.knowledge.fleet_memory_client import (
+        FleetMemoryClient,
+        FleetMemoryConfig,
+    )
+
+    client = FleetMemoryClient(
+        FleetMemoryConfig(
+            enabled=True,
+            postgres_dsn="postgresql://t:t@localhost:5433/t",
+            embed_url="http://localhost:9000/v1",
+            embed_model="nomic-embed",
+            embed_dims=768,
+            nats_url="nats://localhost:4222",
+        )
+    )
+    client._read_available = True
+    client._store = object()
+    return client
+
+
+class TestContextLoaderRealSeam:
+    """Exercise the REAL fleet-memory read seam (not a MagicMock)."""
+
+    @pytest.mark.asyncio
+    async def test_load_architecture_decisions_resolves_migrate_group(self, monkeypatch):
+        """_load_architecture_decisions -> real mapping -> adr + document / [system]."""
+        from guardkit.knowledge.context_loader import _load_architecture_decisions
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="ADR: SDK subprocess delegation",
+            coverage=0.8,
+            captured=captured,
+        )
+        client = _enabled_fleet_client()
+
+        results = await _load_architecture_decisions(client)
+
+        req = captured["request"]
+        # migrate group -> payload_types {adr, document}, domain_tags [system]
+        # computed by the REAL fleet_memory_mapping.resolve (not a mock).
+        assert sorted(req["payload_types"]) == ["adr", "document"]
+        assert req["domain_tags"] == ["system"]
+        assert req["query"] == "architecture decision SDK subprocess worktree delegation"
+        # the real search() adaptation ran end-to-end
+        assert results and results[0]["fact"] == "ADR: SDK subprocess delegation"
+
+    @pytest.mark.asyncio
+    async def test_load_system_context_retire_groups_search_whole_store(self, monkeypatch):
+        """_load_system_context reads only RETIRE groups -> empty filters -> whole-store."""
+        from guardkit.knowledge.context_loader import _load_system_context
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="GuardKit is a task workflow system",
+            coverage=0.5,
+            captured=captured,
+        )
+        client = _enabled_fleet_client()
+
+        await _load_system_context(client)
+
+        req = captured["request"]
+        # product_knowledge + command_workflows are RETIRE -> no typed filter
+        # (whole-store semantic search over the harvest corpus).
+        assert req["payload_types"] == []
+        assert req["domain_tags"] == []
+        assert req["query"] == "GuardKit product workflow quality gate"
+
+    @pytest.mark.asyncio
+    async def test_load_failure_patterns_resolves_migrate_warning(self, monkeypatch):
+        """_load_failure_patterns -> real mapping -> warning + document / [failure, pattern]."""
+        from guardkit.knowledge.context_loader import _load_failure_patterns
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="Do not mock the primary seam",
+            coverage=0.6,
+            captured=captured,
+        )
+        client = _enabled_fleet_client()
+
+        await _load_failure_patterns(client)
+
+        req = captured["request"]
+        assert sorted(req["payload_types"]) == ["document", "warning"]
+        assert req["domain_tags"] == ["failure", "pattern"]
+
+    @pytest.mark.live
+    @pytest.mark.asyncio
+    async def test_load_critical_context_returns_real_hits_live(self):
+        """Operator-run proof: with the store ENABLED, load_critical_context returns
+        real hits. Skips cleanly when the store is disabled (autobuild / CI)."""
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
+
+        client = get_memory_client()
+        if client is None or not getattr(client, "enabled", False):
+            pytest.skip("fleet-memory store not enabled (Status: DISABLED)")
+
+        ctx = await load_critical_context(command="feature-build")
+        assert (
+            ctx.system_context
+            or ctx.quality_gates
+            or ctx.architecture_decisions
+            or ctx.failure_patterns
+        ), "expected at least one enrichment field populated from the live store"
