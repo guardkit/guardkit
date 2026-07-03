@@ -1,8 +1,9 @@
 ---
 id: TASK-MEM09-MODEDET
 title: Remove the dead graphiti_client param from mode_detector.detect_mode
-status: backlog
+status: in_review
 created: 2026-07-03T00:00:00Z
+updated: 2026-07-03T00:00:00Z
 priority: low
 feature_id: FEAT-MEM-09
 wave: 1
@@ -32,16 +33,22 @@ pass it. Remove the vestige.
 
 ## Acceptance Criteria
 
-- [ ] **AC-1:** the `graphiti_client` parameter is removed from `detect_mode`'s signature, and the
-      "Deprecated / ignored" lines are removed from its docstring.
-- [ ] **AC-2:** all call-sites resolve — `system_plan.py:188` unchanged (already keyword-only `project_id`);
-      `grep -rn "graphiti_client" guardkit/planning/` returns empty; `grep -rn "detect_mode(" guardkit/ tests/`
-      shows no site passing `graphiti_client`.
-- [ ] **AC-3:** `guardkit/planning/mode_detector.py` has **zero** graphiti references
-      (`grep -in graphiti guardkit/planning/mode_detector.py` empty).
-- [ ] **AC-4:** any existing `mode_detector` test that passed `graphiti_client=...` is updated; a test asserts
-      `detect_mode` is callable without that kwarg and returns the expected mode. Full suite stays at the 7
-      pre-existing fails, zero new.
+- [x] **AC-1:** the `graphiti_client` parameter is removed from `detect_mode`'s signature, and the
+      "Deprecated / ignored" lines are removed from its docstring. *(signature now `['project_id']`; unused
+      `Any` import also dropped.)*
+- [x] **AC-2:** all call-sites resolve — `system_plan.py:188` unchanged (already keyword-only `project_id`);
+      `grep -rn "graphiti_client" guardkit/planning/` returns empty; no production `detect_mode(` site passes
+      `graphiti_client` (the only remaining reference is the `pytest.raises(TypeError)` regression guard).
+- [x] **AC-3:** `guardkit/planning/mode_detector.py` has **zero** graphiti references
+      (`grep -in graphiti` empty).
+- [x] **AC-4:** the two tests that passed `graphiti_client=` were replaced with a `test_graphiti_client_param_removed`
+      regression guard + a `test_returns_setup_with_project_id`; `detect_mode()` callable without the kwarg returns
+      `"setup"`. Full suite: **7 pre-existing fails, zero new** (12473 passed).
+
+## Outcome (2026-07-03, via `/task-work`, MINIMAL intensity)
+
+Done. `mode_detector.py` param + docstring + `Any` import removed; `test_mode_detector.py` updated (20 planning
+tests pass). Ran in-session through `/task-work` (not `guardkit autobuild task`).
 
 ## Non-Goals
 

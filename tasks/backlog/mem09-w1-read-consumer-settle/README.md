@@ -32,23 +32,28 @@ MODEDET is trivial and could be done first as a warm-up.
 - The instrumentation telemetry enums (`GraphitiQueryType`, `"digest+graphiti"`) — LEAVE (renaming breaks
   stored-telemetry continuity).
 
-## The one thing that makes these autobuild-ready
+## The two-test design (why these run cleanly here)
 
-The **live-store round-trip cannot run in autobuild** (the worktree's store is `DISABLED`). So each task bakes
-in TWO tests (see the guide §3): a **boundary test** (real shim+mapping, external MCP edge stubbed — runs in
-autobuild, proves the real seam) and a **`@pytest.mark.live` round-trip** (skips in autobuild, run by the
-operator with the store enabled — the FEAT-MEM-08 `operator_handoff` split). The autobuild Coach approves on
-the boundary test; the operator signs off the live proof post-merge.
+The **live-store round-trip cannot run in this environment** (the store is `DISABLED` — `guardkit memory
+status`). So each task bakes in TWO tests (see the guide §3): a **boundary test** (real shim+mapping, external
+MCP edge stubbed — runs everywhere, proves the real seam) and a **`@pytest.mark.live` round-trip** (skips when
+the store is disabled, run by the operator with the store enabled — the FEAT-MEM-08 `operator_handoff` split).
+The task-work Phase 4/5 gate approves on the boundary test; the operator signs off the live proof post-merge.
 
-## Start
+## Run
+
+**Use `/task-work`** (interactive, in-session — runs the real quality gates without the autobuild orchestrator):
 
 ```bash
-# per task (recommended — each is tightly scoped):
-guardkit autobuild task TASK-MEM09-MODEDET      # warm-up (trivial cleanup)
-guardkit autobuild task TASK-MEM09-CTXLOAD
-# ... etc.
+# per task (each is tightly scoped):
+/task-work TASK-MEM09-MODEDET      # warm-up (trivial cleanup)
+/task-work TASK-MEM09-FPCTX
+/task-work TASK-MEM09-CTXLOAD
+/task-work TASK-MEM09-JOBCTX
+/task-work TASK-MEM09-TURNSTATE
 ```
 
-> Not filed as a formal `.guardkit/features/FEAT-MEM-09.yaml` (FEAT-MEM-08/09 were never filed as feature
-> YAMLs — see `[[graphiti-cutover-qwen25-removal]]`). Run task-by-task, or `/feature-plan` this folder first
-> if you want `guardkit autobuild feature` orchestration.
+> `guardkit autobuild task` is intentionally NOT the vehicle here — single-task autobuild has never been a
+> reliable path (long unattended loop, VS Code 10-min timeout, harness/GB10 dependency). `/task-work` runs the
+> same quality gates in-session with a human in the loop. Not filed as a `.guardkit/features/FEAT-MEM-09.yaml`
+> (FEAT-MEM-08/09 were never filed as feature YAMLs — see `[[graphiti-cutover-qwen25-removal]]`).
