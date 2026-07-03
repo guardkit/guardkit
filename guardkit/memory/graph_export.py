@@ -30,22 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Optional
 
-try:
-    from nats_core.events import MemoryEpisodeV1
-except ImportError:
-    from dataclasses import dataclass
-    @dataclass
-    class MemoryEpisodeV1:
-        episode_id: str
-        project_id: str
-        episode_type: str
-        content_format: str
-        payload_type: str = "document"
-        body: str = ""
-        name: str = ""
-        source: str = ""
-        source_ref: str = ""
-        occurred_at: any = None
+from nats_core.events import MemoryEpisodeV1
 
 from guardkit.knowledge.fleet_memory_mapping import resolve
 from guardkit.knowledge.fleet_memory_payloads import sanitize_identifier
