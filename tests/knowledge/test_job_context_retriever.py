@@ -2496,3 +2496,179 @@ class TestEstimateTokens:
         tokens = retriever._estimate_tokens(item)
 
         assert tokens >= 1
+
+
+# ============================================================================
+# Real-seam tests (FEAT-MEM-09 W1 / TASK-MEM09-JOBCTX)
+#
+# The tests above MagicMock/AsyncMock the client (self.graphiti). Per
+# .claude/rules/per-task-green-is-not-feature-green.md that is absent
+# integration evidence. The tests below exercise the REAL
+# FleetMemoryClient.search() -> fleet_memory_mapping path (external
+# fleet_memory.retrieval edge stubbed), proving each single-group query
+# (no migrate/retire mixing) resolves to the correct payload_types/domain_tags.
+# Fork A Hybrid = KEEP autobuild job context (not stripped).
+# ============================================================================
+
+
+def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+    """Fake ONLY the external fleet_memory.retrieval edge (mirrors the helper in
+    tests/unit/knowledge/test_fleet_memory_client.py, TASK-MEM08-011)."""
+    import sys
+    import types
+
+    class _FakeSearchRequest:
+        def __init__(self, **kw):
+            captured["request"] = kw
+
+    async def _fake_search(request, store):
+        return ["r1", "r2"]
+
+    class _FakeAssembly:
+        pass
+
+    def _fake_assemble(results, token_budget):
+        a = _FakeAssembly()
+        a.context_block = context_block
+        a.coverage_score = coverage
+        return a
+
+    retrieval = types.ModuleType("fleet_memory.retrieval")
+    retrieval.SearchRequest = _FakeSearchRequest
+    retrieval.search = _fake_search
+    retrieval.assemble_context = _fake_assemble
+    fm = types.ModuleType("fleet_memory")
+    fm.retrieval = retrieval
+    monkeypatch.setitem(sys.modules, "fleet_memory", fm)
+    monkeypatch.setitem(sys.modules, "fleet_memory.retrieval", retrieval)
+
+
+def _enabled_fleet_client():
+    """A REAL FleetMemoryClient (NOT a mock), reads enabled + store pre-opened."""
+    from guardkit.knowledge.fleet_memory_client import (
+        FleetMemoryClient,
+        FleetMemoryConfig,
+    )
+
+    client = FleetMemoryClient(
+        FleetMemoryConfig(
+            enabled=True,
+            postgres_dsn="postgresql://t:t@localhost:5433/t",
+            embed_url="http://localhost:9000/v1",
+            embed_model="nomic-embed",
+            embed_dims=768,
+            nats_url="nats://localhost:4222",
+        )
+    )
+    client._read_available = True
+    client._store = object()
+    return client
+
+
+class TestJobContextRetrieverRealSeam:
+    """Exercise the REAL fleet-memory read seam (not a Mock)."""
+
+    @pytest.mark.asyncio
+    async def test_query_category_resolves_migrate_group(self, monkeypatch):
+        """_query_category(['task_outcomes']) -> real mapping -> build_outcome+document/[task]."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="TASK-X: 80% cov", coverage=0.9, captured=captured,
+        )
+        retriever = JobContextRetriever(_enabled_fleet_client())
+
+        results, _tokens = await retriever._query_category(
+            query="outcomes for X",
+            group_ids=["task_outcomes"],
+            budget_allocation=2000,
+            threshold=0.0,
+            category="similar_outcomes",
+        )
+
+        req = captured["request"]
+        assert sorted(req["payload_types"]) == ["build_outcome", "document"]
+        assert req["domain_tags"] == ["task"]
+        assert results  # real search() adaptation ran end-to-end
+
+    @pytest.mark.asyncio
+    async def test_query_category_retire_group_whole_store(self, monkeypatch):
+        """_query_category(['patterns']) -> RETIRE -> empty filters (whole-store)."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="a pattern", coverage=0.5, captured=captured,
+        )
+        retriever = JobContextRetriever(_enabled_fleet_client())
+
+        await retriever._query_category(
+            query="patterns for X",
+            group_ids=["patterns"],
+            budget_allocation=2000,
+            threshold=0.0,
+            category="relevant_patterns",
+        )
+
+        req = captured["request"]
+        assert req["payload_types"] == []
+        assert req["domain_tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_query_turn_states_resolves_document(self, monkeypatch):
+        """_query_turn_states -> real mapping -> document/[turn, state] (Fork B keep)."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="turn 1 summary", coverage=0.7, captured=captured,
+        )
+        retriever = JobContextRetriever(_enabled_fleet_client())
+
+        await retriever._query_turn_states(
+            feature_id="FEAT-X",
+            task_id="TASK-X-001",
+            budget_allocation=2000,
+            threshold=0.0,
+        )
+
+        req = captured["request"]
+        assert req["payload_types"] == ["document"]
+        assert req["domain_tags"] == ["state", "turn"]  # sorted domain_tags
+
+    def test_autobuild_context_loader_threads_real_client_into_groi(self):
+        """AC-4: AutoBuildContextLoader threads the REAL memory client into GROI
+        (its retriever property builds JobContextRetriever(self.graphiti)) — not a
+        MagicMock of GROI."""
+        from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+
+        client = _enabled_fleet_client()
+        loader = AutoBuildContextLoader(graphiti=client)
+
+        assert loader.retriever is not None
+        # the SAME real client instance is threaded through to GROI
+        assert loader.retriever.graphiti is client
+
+    @pytest.mark.live
+    @pytest.mark.asyncio
+    async def test_retrieve_returns_real_context_live(self):
+        """Operator-run proof: with the store ENABLED, retrieve() returns real job
+        context. Skips cleanly when the store is disabled."""
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        client = get_memory_client()
+        if client is None or not getattr(client, "enabled", False):
+            pytest.skip("fleet-memory store not enabled (Status: DISABLED)")
+
+        retriever = JobContextRetriever(client)
+        ctx = await retriever.retrieve(
+            {"id": "TASK-X", "description": "autobuild coach outcomes", "is_autobuild": True},
+            TaskPhase.IMPLEMENT,
+        )
+        assert (
+            ctx.feature_context or ctx.similar_outcomes or ctx.architecture_context
+            or ctx.warnings or ctx.domain_knowledge
+        ), "expected at least one context category populated from the live store"
