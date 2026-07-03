@@ -59,8 +59,6 @@ class FleetMemoryConfig:
     # New retrieval arm configuration (FEAT-ABL-001)
     retrieval_arm: Optional[str] = None
     fixture_id: Optional[str] = None
-    retrieval_arm: Optional[str] = None
-    fixture_id: Optional[str] = None
 
 
 class FleetMemoryClient:
