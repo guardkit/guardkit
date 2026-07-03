@@ -10,7 +10,7 @@
 #   * Lines starting with '#' and blank lines are ignored.
 #   * Each listed file becomes a symlink in ~/.agentecflow/bin/ with name
 #     equal to the basename (without .py) with underscores replaced by hyphens.
-#     Example: installer/core/commands/lib/graphiti_diagnose.py -> graphiti-diagnose
+#     Example: installer/core/commands/lib/generate_feature_yaml.py -> generate-feature-yaml
 #
 # Why a manifest?
 # ---------------
@@ -36,10 +36,6 @@
 # install (see setup_python_bin_symlinks in install.sh) but will NOT be
 # exposed as CLI commands. Library modules under commands/lib/ are the
 # expected case for that warning.
-#
-# Files with dedicated wrapper scripts (created in create_cli_commands)
-# must NOT be listed here, or the symlink will collide with the wrapper:
-#   - graphiti_check.py     (wrapper: ~/.agentecflow/bin/graphiti-check)
 # ----------------------------------------------------------------------
 
 # --- Top-level commands (installer/core/commands/) ---
@@ -48,9 +44,6 @@ installer/core/commands/agent-format.py
 installer/core/commands/agent-validate.py
 
 # --- Library-resident CLIs (installer/core/commands/lib/) ---
-# Diagnostic helper for verifying Graphiti / FalkorDB connectivity from
-# any project directory. Kept by TASK-FIX-8B4F.
-installer/core/commands/lib/graphiti_diagnose.py
 # R1 AC linter producer: feature-plan.md Step 8 shells out to this via
 # `python3 ~/.agentecflow/bin/generate-feature-yaml`. Added by
 # TASK-FIX-B1E4 so the deterministic Step 8 → producer → linter chain

@@ -25,7 +25,6 @@ fi
 PROJECT_DIR="$(pwd)"
 TEMPLATE=""
 PROJECT_NAME=""
-COPY_GRAPHITI=""
 
 # Color codes
 RED='\033[0;31m'
@@ -58,17 +57,6 @@ print_warning() {
 
 print_info() {
     echo -e "${BLUE}ℹ $1${NC}"
-}
-
-# Normalize project name to a valid project_id
-# Matches guardkit.knowledge.graphiti_client.normalize_project_id()
-normalize_project_id() {
-    local name="$1"
-    # Lowercase, replace non-alphanumeric (except hyphens) with hyphens
-    local normalized
-    normalized=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-    # Truncate to 50 chars
-    echo "${normalized:0:50}"
 }
 
 # Find source .mcp.json by walking up from parent of cwd
@@ -111,63 +99,6 @@ copy_mcp_json() {
     cp "$source_file" "$target_file"
     print_success "Copied .mcp.json (MCP server config)"
     return 0
-}
-
-# Find source graphiti.yaml by walking up from parent of cwd
-find_source_graphiti_config() {
-    local start_dir="$1"
-    local current_dir="$start_dir"
-    local max_depth=10
-    local depth=0
-
-    while [ "$depth" -lt "$max_depth" ]; do
-        if [ -f "$current_dir/.guardkit/graphiti.yaml" ]; then
-            echo "$current_dir/.guardkit/graphiti.yaml"
-            return 0
-        fi
-        if [ "$current_dir" = "/" ]; then
-            return 1
-        fi
-        current_dir="$(dirname "$current_dir")"
-        depth=$((depth + 1))
-    done
-    return 1
-}
-
-# Copy graphiti config from source, replacing project_id
-copy_graphiti_config() {
-    local source_file="$1"
-    local target_dir="$2"
-    local new_project_id="$3"
-    local target_file="$target_dir/.guardkit/graphiti.yaml"
-
-    mkdir -p "$target_dir/.guardkit"
-
-    if [ ! -f "$source_file" ]; then
-        print_warning "Source graphiti.yaml not found: $source_file"
-        return 1
-    fi
-
-    # Copy the file, then replace the project_id line
-    cp "$source_file" "$target_file"
-    # Replace the project_id value (handles both quoted and unquoted YAML)
-    sed -i '' "s/^project_id:.*$/project_id: $new_project_id/" "$target_file"
-
-    print_success "Copied Graphiti config from $source_file"
-    print_success "Set project_id: $new_project_id"
-    return 0
-}
-
-# Write minimal graphiti.yaml with just project_id
-write_graphiti_config() {
-    local target_dir="$1"
-    local project_id="$2"
-    local target_file="$target_dir/.guardkit/graphiti.yaml"
-
-    mkdir -p "$target_dir/.guardkit"
-    echo "project_id: $project_id" > "$target_file"
-
-    print_success "Written project_id to .guardkit/graphiti.yaml"
 }
 
 # Show available templates
@@ -735,10 +666,6 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  -n, --project-name NAME    Override project name (defaults to directory name)"
-                echo "  --copy-graphiti [PATH]     Copy Graphiti config from existing project"
-                echo "                             Without PATH: auto-discovers from parent directories"
-                echo "                             With PATH: copies from specified project directory"
-                echo "                             Also copies .mcp.json (MCP server config) if found"
                 echo "  -i, --interactive          Interactive setup mode"
                 echo "  -h, --help                 Show this help message"
                 exit 0
@@ -754,16 +681,6 @@ main() {
                 fi
                 PROJECT_NAME="$2"
                 shift 2
-                ;;
-            --copy-graphiti)
-                # --copy-graphiti with optional path argument
-                if [ -n "$2" ] && [[ "$2" != -* ]]; then
-                    COPY_GRAPHITI="$2"
-                    shift 2
-                else
-                    COPY_GRAPHITI="auto"
-                    shift
-                fi
                 ;;
             -*)
                 print_error "Unknown option: $1"
@@ -823,60 +740,11 @@ main() {
     create_config
     create_initial_files
 
-    # Handle Graphiti config (after structure is created)
-    local project_id
-    if [ -n "$PROJECT_NAME" ]; then
-        project_id=$(normalize_project_id "$PROJECT_NAME")
-    else
-        project_id=$(normalize_project_id "$(basename "$PROJECT_DIR")")
-    fi
-
-    if [ -n "$COPY_GRAPHITI" ]; then
-        local source_config=""
-        if [ "$COPY_GRAPHITI" = "auto" ]; then
-            # Auto-discover: walk up from parent of cwd
-            local parent_dir
-            parent_dir="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
-            source_config=$(find_source_graphiti_config "$parent_dir" 2>/dev/null || true)
-        else
-            # Explicit path provided
-            local explicit_path
-            explicit_path=$(eval echo "$COPY_GRAPHITI")  # expand ~
-            if [ -f "$explicit_path/.guardkit/graphiti.yaml" ]; then
-                source_config="$explicit_path/.guardkit/graphiti.yaml"
-            elif [ -f "$explicit_path" ]; then
-                # Maybe they pointed directly at the file
-                source_config="$explicit_path"
-            fi
-        fi
-
-        if [ -n "$source_config" ]; then
-            copy_graphiti_config "$source_config" "$PROJECT_DIR" "$project_id"
-        else
-            print_warning "No source graphiti.yaml found, writing project_id only"
-            write_graphiti_config "$PROJECT_DIR" "$project_id"
-        fi
-    else
-        # Default: write minimal graphiti config with project_id
-        write_graphiti_config "$PROJECT_DIR" "$project_id"
-    fi
-
-    # Copy .mcp.json for MCP server config (same file works for all projects)
-    local source_mcp=""
-    if [ -n "$COPY_GRAPHITI" ] && [ "$COPY_GRAPHITI" != "auto" ]; then
-        # If explicit path provided for --copy-graphiti, check there first
-        local explicit_path
-        explicit_path=$(eval echo "$COPY_GRAPHITI")  # expand ~
-        if [ -f "$explicit_path/.mcp.json" ]; then
-            source_mcp="$explicit_path/.mcp.json"
-        fi
-    fi
-    if [ -z "$source_mcp" ]; then
-        # Auto-discover: walk up from parent of cwd
-        local parent_dir
-        parent_dir="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
-        source_mcp=$(find_source_mcp_json "$parent_dir" 2>/dev/null || true)
-    fi
+    # Copy .mcp.json for MCP server config (auto-discover from parent dirs)
+    local source_mcp
+    local parent_dir
+    parent_dir="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
+    source_mcp=$(find_source_mcp_json "$parent_dir" 2>/dev/null || true)
     if [ -n "$source_mcp" ]; then
         copy_mcp_json "$source_mcp" "$PROJECT_DIR"
     else

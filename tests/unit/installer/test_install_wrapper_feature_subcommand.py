@@ -84,7 +84,7 @@ def test_wrapper_contains_feature_case_arm(
 ) -> None:
     """The wrapper's case statement must have a ``feature)`` arm."""
     # Match the arm header with its closing paren on the same line, the
-    # same way ``autobuild)`` and ``graphiti)`` are written in the file.
+    # same way ``autobuild)`` and ``init)`` are written in the file.
     # Anchored at line start to avoid false positives on usage strings
     # like "guardkit feature validate".
     assert re.search(
@@ -102,7 +102,7 @@ def test_wrapper_feature_arm_execs_guardkit_py(
 ) -> None:
     """The ``feature)`` arm must delegate to ``guardkit-py feature``.
 
-    Mirrors the ``autobuild)`` and ``graphiti)`` arms — they all forward
+    Mirrors the ``autobuild)`` and ``init)`` arms — they all forward
     their arguments to the same Python entry point so behaviour stays
     consistent.
     """
