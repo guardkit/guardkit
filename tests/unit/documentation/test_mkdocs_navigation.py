@@ -58,21 +58,15 @@ def test_system_context_guides_in_navigation():
         if isinstance(entry, dict):
             guide_entries.update(entry)
 
-    assert "System Overview" in guide_entries, "System Overview guide missing from navigation"
-    assert "Impact Analysis" in guide_entries, "Impact Analysis guide missing from navigation"
+    # /system-overview and /impact-analysis were retired (FEAT-MEM-09 / W1b 60ebde5d);
+    # only /context-switch remains a live system-context command.
     assert "Context Switch" in guide_entries, "Context Switch guide missing from navigation"
-
-    # Verify the paths
-    assert guide_entries["System Overview"] == "guides/system-overview-guide.md"
-    assert guide_entries["Impact Analysis"] == "guides/impact-analysis-guide.md"
     assert guide_entries["Context Switch"] == "guides/context-switch-guide.md"
 
 
 def test_system_context_guide_files_exist():
     """Test that the system context guide files actually exist."""
     guides = [
-        "docs/guides/system-overview-guide.md",
-        "docs/guides/impact-analysis-guide.md",
         "docs/guides/context-switch-guide.md",
     ]
 

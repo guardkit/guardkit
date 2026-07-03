@@ -3,10 +3,8 @@
 Operational guide for working on the appmilla_github repos from either the MacBook
 or the GB10 (`promaxgb10-41b1`). Covers Anthropic Agent Skills (a.k.a.
 "langchain-skills"), `.claude/settings.json` hygiene, and how it all interacts with
-the Graphiti MCP.
-
-**Companion doc**: [graphiti-gb10-deployment.md](graphiti-gb10-deployment.md) covers
-the Graphiti server stack itself; this doc covers the Claude Code client side.
+the fleet-memory MCP (the knowledge-capture backend that replaced the removed
+Graphiti MCP in FEAT-MEM-09).
 
 ---
 
@@ -21,8 +19,9 @@ the Graphiti server stack itself; this doc covers the Claude Code client side.
 3. Don't put machine-specific absolute paths (`/Users/...`, `/home/...`) in
    committed `.claude/settings.json`. Use `.claude/settings.local.json` for
    per-machine overrides — it's gitignored.
-4. `.mcp.json` for Graphiti must be `http://promaxgb10-41b1:8004/mcp` —
-   no trailing slash.
+4. `.mcp.json` runs the `fleet_memory` MCP as a local **stdio** server
+   (`uv run --project ../fleet-memory python -m fleet_memory.mcp`) — the
+   sibling `../fleet-memory` checkout and `uv` must exist on the machine.
 5. Install [`uv`](https://astral.sh/uv) on every machine that runs
    `guardkit autobuild`. Any target repo whose `pyproject.toml` declares
    `[tool.uv.sources]` (sibling-path / git overrides) **hard-fails at
@@ -65,8 +64,7 @@ marketplace", because there isn't one to install.
 
 The `skills` CLI ships via npm, so you need Node.js available. We use **nvm**
 on both machines for consistency — it installs in user space, no sudo, and
-keeps Node easy to upgrade. The Graphiti deployment doc already assumes nvm
-on the Mac for the same reason.
+keeps Node easy to upgrade.
 
 If `which npx` returns nothing, install nvm first:
 
@@ -87,8 +85,7 @@ Verify with `which node npm npx` — all three should resolve under
 
 > **macOS note**: same nvm install line works on macOS. Claude Desktop on the
 > Mac additionally needs the **absolute** path to `npx` (e.g.
-> `/opt/homebrew/bin/npx`) in its config — see the Claude Desktop section of
-> [graphiti-gb10-deployment.md](graphiti-gb10-deployment.md#client-configuration-summary).
+> `/opt/homebrew/bin/npx`) in its config.
 
 ### Install the skills
 
@@ -440,20 +437,27 @@ done
 
 ---
 
-## MCP server (Graphiti)
+## MCP server (fleet-memory)
 
-The Graphiti MCP server runs on the GB10 — every Claude Code session reaches the
-same HTTP endpoint over Tailscale. Full deployment runbook:
-[graphiti-gb10-deployment.md](graphiti-gb10-deployment.md).
+Knowledge capture runs on the **fleet-memory** MCP server — the Graphiti HTTP MCP
+was removed in FEAT-MEM-09. fleet-memory runs as a **local stdio subprocess** per
+repo (launched by Claude Code via `uv`), so there is no HTTP endpoint or Tailscale
+reachability requirement for the MCP server itself.
 
 For Claude Code, every repo's `.mcp.json` is identical and machine-agnostic:
 
 ```json
 {
   "mcpServers": {
-    "graphiti": {
-      "type": "http",
-      "url": "http://promaxgb10-41b1:8004/mcp"
+    "fleet_memory": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--project", "../fleet-memory", "python", "-m", "fleet_memory.mcp"],
+      "env": {
+        "FLEET_MEMORY_EMBED_URL": "http://promaxgb10-41b1:9000",
+        "FLEET_MEMORY_EMBED_MODEL": "embed",
+        "FLEET_MEMORY_EMBED_DIMS": "1024"
+      }
     }
   }
 }
@@ -461,31 +465,12 @@ For Claude Code, every repo's `.mcp.json` is identical and machine-agnostic:
 
 Three things to watch:
 
-- **No trailing slash on `/mcp`.** The slash triggers a 307 redirect that
-  Claude Code's HTTP MCP transport does not follow on POST. See
-  [graphiti-gb10-deployment.md → Known upstream quirks #2](graphiti-gb10-deployment.md#2-mcp-endpoint-url-must-not-have-a-trailing-slash).
-  Fingerprint of this bug: `/mcp` connects, `/mcp/` silently fails to connect
-  with no error.
-- **Tailscale must be up on the client machine.** `promaxgb10-41b1` is a
-  Tailscale hostname, not public DNS. `tailscale status | grep promaxgb10`
-  should show it.
+- **The sibling `../fleet-memory` checkout must exist** next to this repo and `uv`
+  must be on PATH — the stdio server is launched via `uv run --project ../fleet-memory`.
+- **The embedding backend (`FLEET_MEMORY_EMBED_URL`, GB10 `:9000`) must be reachable.**
+  `promaxgb10-41b1` is a Tailscale hostname, not public DNS, so Tailscale must be up on
+  the client machine (`tailscale status | grep promaxgb10`).
 - **`.mcp.json` is read at Claude Code launch.** Restart after editing.
-
-### Quick fix one-liners
-
-```bash
-# Strip trailing slash (Linux GNU sed — GB10)
-sed -i 's#:8004/mcp/#:8004/mcp#' .mcp.json
-
-# Strip trailing slash (macOS BSD sed — MacBook)
-sed -i '' 's#:8004/mcp/#:8004/mcp#' .mcp.json
-
-# Sweep all sibling repos at once (run from ~/Projects/appmilla_github)
-# Linux / GB10:
-for d in */.mcp.json; do sed -i 's#:8004/mcp/#:8004/mcp#' "$d"; done
-# macOS:
-for d in */.mcp.json; do sed -i '' 's#:8004/mcp/#:8004/mcp#' "$d"; done
-```
 
 ---
 
@@ -506,15 +491,14 @@ ls ~/.agents/skills/    # actual skill content
 # Expect: 11 directories (deep-agents-*, langchain-*, langgraph-*, framework-selection)
 # Empty / missing dirs = run `npx skills add ...` (needs Node — see Prerequisite section)
 
-# 3. Graphiti MCP reachable from this machine?
-curl -s -o /dev/null -w "%{http_code}\n" http://promaxgb10-41b1:8004/mcp
-# 406 = correct (FastMCP wants a session — proves reachable + correctly addressed)
-# 307 = client config still has the trailing slash — see fix above
-# Connection failure = Tailscale or GB10 stack is down — see graphiti-gb10-deployment.md
+# 3. Embedding backend reachable? (the fleet_memory MCP is local stdio, but it needs
+#    the GB10 embedding endpoint on :9000 — FLEET_MEMORY_EMBED_URL)
+tailscale status | grep promaxgb10                                    # Tailscale host up?
+curl -s -o /dev/null -w "%{http_code}\n" http://promaxgb10-41b1:9000/ # any HTTP code = reachable; connection failure = down
 
 # 4. Inside Claude Code: confirm MCP is connected
 /mcp
-# Expect: graphiti: connected
+# Expect: fleet_memory: connected
 
 # 5. uv on PATH? (only required on hosts that run `guardkit autobuild`
 #    against repos with [tool.uv.sources] — see the uv section above)

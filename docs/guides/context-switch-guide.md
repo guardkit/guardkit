@@ -10,9 +10,9 @@ Switch between projects without losing architectural context.
 
 ## What It Does
 
-Switches the active project context in GuardKit and displays an orientation summary. It updates which project's architecture is loaded in Graphiti, shows active tasks, and gets you oriented for work - all without changing git branches or filesystem paths.
+Switches the active project context in GuardKit and displays an orientation summary. It points you at the project's architecture docs (`docs/architecture/`), shows active tasks, and gets you oriented for work - all without changing git branches or filesystem paths.
 
-**Important**: `/context-switch` only updates the *Graphiti namespace* and config. It does NOT:
+**Important**: `/context-switch` only updates the active-project config. It does NOT:
 - Change your git branch
 - Move you to a different directory
 - Modify any project files
@@ -21,7 +21,7 @@ Switches the active project context in GuardKit and displays an orientation summ
 
 - GuardKit initialized: `guardkit init`
 - Projects registered in `.guardkit/config.yaml`
-- (Optional) Graphiti for architecture context
+- (Optional) `docs/architecture/` in the project for architecture context
 
 ## Usage
 
@@ -195,9 +195,7 @@ When you run `/context-switch`:
 | Updated | Not Updated |
 |---------|-------------|
 | `active_project` in config | Git branch |
-| `last_accessed` timestamp | Current directory |
-| Graphiti namespace queries | Project files |
-| Architecture context loaded | Environment variables |
+| `last_accessed` timestamp | Current directory, project files, environment variables |
 
 ## Configuration File
 
@@ -263,9 +261,9 @@ Or add manually to .guardkit/config.yaml
 ======================================================================
 ```
 
-### Graphiti Unavailable
+### No Architecture Docs
 
-When Graphiti isn't running, architecture context won't load:
+When the project has no `docs/architecture/`, there is no architecture summary to point to:
 
 ```
 ======================================================================
@@ -276,15 +274,14 @@ PROJECT: power-of-attorney
 PATH: /Users/dev/projects/poa-platform
 
 ARCHITECTURE:
-  [Graphiti unavailable - architecture context not loaded]
-  Check docs/architecture/ARCHITECTURE.md manually
+  [No docs/architecture/ found - run /system-arch to establish it]
 
 ACTIVE TASKS (2):
   - TASK-POA-018: Implement Moneyhub integration (in_progress)
   - TASK-POA-019: Add audit logging (backlog)
 
 ======================================================================
-Note: Architecture context unavailable. Run /system-plan when ready.
+Note: No architecture context. Run /system-arch, then /system-plan when ready.
 ======================================================================
 ```
 
@@ -298,8 +295,8 @@ Note: Architecture context unavailable. Run /system-plan when ready.
 
 ### Architecture showing as unavailable
 
-- Verify Graphiti is running: `guardkit graphiti status`
-- Check project has been seeded: `guardkit graphiti verify`
+- Check the project has a `docs/architecture/` directory: `ls docs/architecture/`
+- Establish architecture if missing: `/system-arch "project"`
 - Run system-plan: `/system-plan "project"`
 
 ### Tasks not showing after switch
@@ -322,6 +319,6 @@ known_projects:
 
 ## See Also
 
-- [System Overview Guide](system-overview-guide.md) - Architecture summary for current project
-- [Impact Analysis Guide](impact-analysis-guide.md) - Pre-task validation with risk scoring
-- [Graphiti Commands](graphiti-commands.md) - CLI commands for knowledge management
+- Project architecture lives in `docs/architecture/` — establish it with `/system-arch`
+- Multi-project registry: `.guardkit/config.yaml`
+- Task orientation after switching: `/task-status`

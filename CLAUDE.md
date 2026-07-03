@@ -63,8 +63,6 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 
 ### System Context Commands
 ```bash
-/system-overview [--verbose] [--section=SECTION]  # Architecture summary
-/impact-analysis TASK-XXX [--depth=DEPTH]         # Pre-task validation
 /context-switch [project-name]                    # Multi-project navigation
 ```
 
@@ -182,13 +180,13 @@ installer/core/             # Global resources (agents, commands, templates)
 | Command Specs | `installer/core/commands/*.md` |
 | Agent Definitions | `installer/core/agents/*.md` |
 | Workflow Guides | `docs/guides/*.md`, `docs/workflows/*.md` |
-| System Context | `docs/guides/system-overview-guide.md`, `impact-analysis-guide.md`, `context-switch-guide.md` |
+| System Context | `docs/guides/context-switch-guide.md` |
 | Stack Templates | `installer/core/templates/*/` |
 | Rules & Patterns | `.claude/rules/` |
 | Instrumentation Guide | `docs/guides/autobuild-instrumentation-guide.md` |
 | AutoBuild Stall Runbook | `docs/guides/autobuild-instrumentation-guide.md#if-autobuild-stalls-immediately` |
 | MCP Integration | `docs/deep-dives/mcp-integration/` |
-| Graphiti Knowledge | `.claude/rules/graphiti-knowledge.md` |
+| Knowledge Capture (fleet-memory) | `docs/internals/commands-lib/memory-preamble.md` |
 | Multi-Machine Setup | `docs/guides/claude-code-multi-machine-setup.md` (skills, plugin gotchas, cross-platform paths) |
 | Portfolio Python Pinning | `docs/guides/portfolio-python-pinning.md` (LangChain DeepAgents portfolio `requires-python` standard) |
 | Installation | `pip install guardkit-py` or `./installer/scripts/install.sh` |

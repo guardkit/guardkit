@@ -327,8 +327,6 @@ cd your-production-codebase
 guardkit init your-custom-template
 ```
 
-> **Graphiti Integration**: The `guardkit init` command automatically seeds project knowledge to Graphiti when available. Use `--interactive` to capture rich project context, or `--skip-graphiti` to skip seeding. See: [Init Seeding Workflow](graphiti-integration-guide.md#init-seeding-workflow)
-
 ## Key Benefits
 
 ### Developer Experience
