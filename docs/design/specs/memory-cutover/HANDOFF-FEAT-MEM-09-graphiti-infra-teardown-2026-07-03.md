@@ -161,3 +161,30 @@ study-tutor for any remaining Graphiti/FalkorDB reads or writes (repo by repo, s
 guardkit). Only when that's green does the destructive teardown (Phases B→F) become safe. A good first
 concrete step is to run each of those repos' equivalent of `grep -rln "get_graphiti\|GraphitiClient\|
 falkordb\|:8004" <repo>/ --include='*.py'` and check their `.mcp.json` for a graphiti server.
+
+---
+
+## 8. Phase-A first-pass sweep — DONE 2026-07-03 (all 4 consumers still LIVE on Graphiti)
+
+Sibling repos are cloned alongside guardkit under `/home/richardwoollcott/Projects/appmilla_github/`
+(`../forge`, `../jarvis`, `../specialist-agent`, `../study-tutor`). Quick sweep (excludes `.venv`/`node_modules`):
+
+| Repo | `.py` files w/ `graphiti` | files w/ `falkordb` | `get_graphiti`/`GraphitiClient` (**live client use**) | `.mcp.json` graphiti server |
+|---|--:|--:|--:|:--|
+| **forge** | 25 | 1 | 1 | yes (`forge/.mcp.json`) |
+| **jarvis** | 23 | 2 | 7 | yes (`jarvis/.guardkit/.mcp.json`) |
+| **specialist-agent** | 36 | 9 | 4 | yes (`specialist-agent/.mcp.json`) |
+| **study-tutor** | 89 | 55 | 30 | yes (`study-tutor/.mcp.json`) |
+
+**Verdict: the fleet-wide gate (§1) is firmly SHUT.** All four actively call the Graphiti client and are still
+wired to the graphiti MCP in `.mcp.json`. FalkorDB + `qwen-graphiti` are load-bearing for all of them, so the
+destructive Phases E/F **cannot** proceed. **study-tutor is by far the heaviest** (89/55/30) and will be the
+biggest migration.
+
+**Per-repo next step:** each needs the *same cutover guardkit already did* — repoint reads/writes to
+fleet-memory (the `fleet_memory_client` shim + `fleet_memory_mapping` pattern, reusable across repos), flip
+`.mcp.json` from graphiti→`fleet_memory`, then prove on the real seam. Suggested order (lightest first):
+**jarvis / forge → specialist-agent → study-tutor**. Only when **all four** are green does §3's teardown unblock.
+
+> Note: `../graphiti` and `../graphiti-original` in the same parent are the Graphiti **fork source** (cloned by
+> `graphiti-mcp-build.sh`), not consumers — they go away with the MCP image in Phase D/G.
