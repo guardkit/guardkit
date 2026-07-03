@@ -1,0 +1,67 @@
+id: FEAT-ABL-001
+name: Fleet-Memory Retrieval Arm Switch and Retrieval Logging
+description: FLEET_MEMORY_RETRIEVAL=off|fixture:<id> arm switch read in _load_fleet_config_from_env
+  and enforced inside FleetMemoryClient.search (mirroring the enabled=false gate)
+  so ablation arms differ only in retrieval; structured per-call JSONL retrieval log
+  with per-item natural_key+score via a new optional items field on query_logger.log_query,
+  emitted between fm_search() and assemble_context(). Memory ablation scope §4 FEAT-ABL-001.
+created: '2026-07-03T17:26:56.721326'
+status: planned
+complexity: 5
+estimated_tasks: 4
+tasks:
+- id: TASK-ABL1-001
+  name: Extend query_logger with optional per-item results field
+  file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-001-extend-query-logger-items.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-ABL1-002
+  name: Parse FLEET_MEMORY_RETRIEVAL arm and resolve fixture DSN in fleet-memory config
+  file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-002-retrieval-arm-config.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-ABL1-003
+  name: Enforce retrieval arm inside FleetMemoryClient.search and emit per-item retrieval
+    log
+  file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-003-search-arm-gate-and-logging.md
+  complexity: 5
+  dependencies:
+  - TASK-ABL1-001
+  - TASK-ABL1-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-ABL1-004
+  name: Arm-parity acceptance tests through the AutoBuild context chain
+  file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-004-arm-parity-tests.md
+  complexity: 4
+  dependencies:
+  - TASK-ABL1-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+orchestration:
+  parallel_groups:
+  - - TASK-ABL1-001
+    - TASK-ABL1-002
+  - - TASK-ABL1-003
+  - - TASK-ABL1-004
+  estimated_duration_minutes: 208
+  recommended_parallel: 2
+smoke_gates:
+  after_wave: all
+  command: |
+    set -e
+    pytest tests/unit/knowledge -x -q -k "fleet_memory or query_logger or retrieval_arm"
+  expected_exit: 0
+  timeout: 180
