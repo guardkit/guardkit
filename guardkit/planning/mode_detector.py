@@ -18,7 +18,7 @@ Example:
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -33,17 +33,14 @@ def _get_default_project_id() -> str:
 
 
 async def detect_mode(
-    graphiti_client: Optional[Any] = None,
     project_id: Optional[str] = None,
 ) -> str:
     """Detect the appropriate mode for the system-plan command.
 
     Architecture-context lookup was retired in the fleet-memory cutover, so
-    this now degrades to ``setup`` mode. The ``graphiti_client`` parameter is
-    retained for backwards compatibility and is ignored.
+    this now degrades to ``setup`` mode.
 
     Args:
-        graphiti_client: Deprecated / ignored (retained for compatibility).
         project_id: Project ID for namespace prefixing. If None,
             uses default based on current directory name.
 

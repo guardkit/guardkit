@@ -22,24 +22,24 @@ class TestModeDetectorImport:
 
 class TestModeDetectorDegradesToSetup:
     @pytest.mark.asyncio
-    async def test_returns_setup_when_client_none(self):
-        from guardkit.planning.mode_detector import detect_mode
-
-        assert await detect_mode(graphiti_client=None) == "setup"
-
-    @pytest.mark.asyncio
     async def test_returns_setup_with_no_args(self):
         from guardkit.planning.mode_detector import detect_mode
 
         assert await detect_mode() == "setup"
 
     @pytest.mark.asyncio
-    async def test_returns_setup_ignores_any_client(self):
+    async def test_returns_setup_with_project_id(self):
         from guardkit.planning.mode_detector import detect_mode
 
-        # Any client argument is ignored post-cutover.
-        sentinel = object()
-        assert await detect_mode(graphiti_client=sentinel, project_id="proj") == "setup"
+        assert await detect_mode(project_id="proj") == "setup"
+
+    @pytest.mark.asyncio
+    async def test_graphiti_client_param_removed(self):
+        """The deprecated ``graphiti_client`` param was removed (FEAT-MEM-09 W1)."""
+        from guardkit.planning.mode_detector import detect_mode
+
+        with pytest.raises(TypeError):
+            await detect_mode(graphiti_client=None)
 
 
 class TestModeDetectorDefaultProjectId:

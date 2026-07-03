@@ -118,8 +118,8 @@ in each task's "Operator verification" section.
 ## 5. Run / verify
 
 ```bash
-# autobuild a single task (store disabled → live tests skip, boundary tests run):
-guardkit autobuild task TASK-MEM09-CTXLOAD
+# run a single task in-session (store disabled → live tests skip, boundary tests run):
+/task-work TASK-MEM09-CTXLOAD
 
 # full unit gate (must stay at the 7 pre-existing fails, zero new):
 .venv/bin/python -m pytest -o addopts="" -p no:cacheprovider --timeout=120 -q --tb=no tests/ | tail -3
