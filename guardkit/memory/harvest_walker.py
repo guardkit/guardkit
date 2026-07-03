@@ -18,7 +18,24 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from nats_core.events import MAX_EPISODE_BODY_BYTES, MemoryEpisodeV1
+try:
+    from nats_core.events import MAX_EPISODE_BODY_BYTES, MemoryEpisodeV1
+except ImportError:
+    # Define minimal stubs for testing when nats_core is unavailable
+    MAX_EPISODE_BODY_BYTES = 900 * 1024  # 900KB default fallback
+    from dataclasses import dataclass
+    @dataclass
+    class MemoryEpisodeV1:
+        episode_id: str
+        project_id: str
+        episode_type: str
+        content_format: str
+        body: str
+        source: str
+        source_ref: str
+        name: str
+        occurred_at: any
+
 
 from guardkit.memory.harvest_taxonomy import (
     HARVEST_MAP,

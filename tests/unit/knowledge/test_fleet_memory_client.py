@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 
 import pytest
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
@@ -420,6 +421,94 @@ class TestFactoryRouting:
         # (depends on graphiti_client being available)
         # This is acceptable graceful degradation
 
+
+class TestRetrievalArmParsing:
+    """Tests for parsing FLEET_MEMORY_RETRIEVAL and fixture DSN resolution."""
+
+    def test_default_no_env(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        # Ensure env var not set
+        monkeypatch.delenv("FLEET_MEMORY_RETRIEVAL", raising=False)
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm is None
+        assert cfg.fixture_id is None
+        # other fields default unchanged (checking one)
+        assert cfg.enabled is False
+
+    def test_blank_string(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "   ")
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm is None
+        assert cfg.fixture_id is None
+
+    def test_off_value(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "off")
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        assert cfg.fixture_id is None
+
+    def test_fixture_with_specific_dsn(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v1")
+        monkeypatch.setenv("FLEET_MEMORY_FIXTURE_DSN_V1", "postgresql://fixture/db")
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "fixture:v1"
+        assert cfg.fixture_id == "v1"
+        assert cfg.postgres_dsn == "postgresql://fixture/db"
+
+    def test_fixture_fallback_generic(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v1")
+        monkeypatch.setenv("FLEET_MEMORY_FIXTURE_DSN", "postgresql://generic/db")
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "fixture:v1"
+        assert cfg.fixture_id == "v1"
+        assert cfg.postgres_dsn == "postgresql://generic/db"
+
+    def test_fixture_missing_dsn_fails_closed(self, monkeypatch, caplog):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v9")
+        # Ensure no fixture DSN vars set
+        monkeypatch.delenv("FLEET_MEMORY_FIXTURE_DSN_V9", raising=False)
+        monkeypatch.delenv("FLEET_MEMORY_FIXTURE_DSN", raising=False)
+        with caplog.at_level(logging.WARNING):
+            cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        assert cfg.fixture_id == "v9"
+        # postgres_dsn should be default live value
+        assert cfg.postgres_dsn == "postgresql://postgres:test@localhost:5433/memory"
+        # warning logged
+        assert any("Fixture DSN not set" in rec.message for rec in caplog.records)
+
+    def test_invalid_value_fails_closed(self, monkeypatch, caplog):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "banana")
+        with caplog.at_level(logging.WARNING):
+            cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        assert any("Invalid FLEET_MEMORY_RETRIEVAL" in rec.message for rec in caplog.records)
+
+    def test_fixture_empty_id_fails_closed(self, monkeypatch, caplog):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:")
+        with caplog.at_level(logging.WARNING):
+            cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        assert any("Invalid FLEET_MEMORY_RETRIEVAL" in rec.message for rec in caplog.records)
+
+    def test_fixture_id_normalization(self, monkeypatch):
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        # id with special chars
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v1.2-rc")
+        monkeypatch.setenv("FLEET_MEMORY_FIXTURE_DSN_V1_2_RC", "postgresql://spec/db")
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "fixture:v1.2-rc"
+        assert cfg.fixture_id == "v1.2-rc"
+        assert cfg.postgres_dsn == "postgresql://spec/db"
+
+    # End of retrieval arm tests
 
 class TestBackendAutoInit:
     """get_memory_client() lazily initializes the fleet-memory backend on first use."""
