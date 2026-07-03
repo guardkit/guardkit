@@ -314,10 +314,14 @@ class TestGraphitiQueries:
         assert any("feature" in str(call).lower() for call in calls)
 
     @pytest.mark.asyncio
-    async def test_queries_patterns_tech_stack_group(
+    async def test_no_longer_queries_patterns_group(
         self, project_root: Path, mock_graphiti_client: MagicMock
     ):
-        """Test querying patterns_{tech_stack} group."""
+        """patterns (RETIRE) read removed in FEAT-MEM-09 W1 (Fork A Hybrid).
+
+        Even though the mock would return a hit, relevant_patterns stays empty
+        because no patterns read is issued.
+        """
         mock_graphiti_client.search.return_value = [
             {"uuid": "pattern-1", "fact": "Pattern for python", "name": "Repository"}
         ]
@@ -329,10 +333,9 @@ class TestGraphitiQueries:
             description="Implement feature", context_files=[], tech_stack="python"
         )
 
-        # Should have queried patterns group
+        assert result.relevant_patterns == []
         calls = mock_graphiti_client.search.call_args_list
-        # At least one call should mention patterns
-        assert any("pattern" in str(call).lower() for call in calls)
+        assert not any("patterns_python" in str(call) for call in calls)
 
     @pytest.mark.asyncio
     async def test_queries_failure_patterns_group(
@@ -363,10 +366,10 @@ class TestGraphitiQueries:
         )
 
     @pytest.mark.asyncio
-    async def test_queries_role_constraints_group(
+    async def test_no_longer_queries_role_constraints_group(
         self, project_root: Path, mock_graphiti_client: MagicMock
     ):
-        """Test querying role_constraints group (AutoBuild support)."""
+        """role_constraints (RETIRE) read removed in FEAT-MEM-09 W1 (Fork A Hybrid)."""
         mock_graphiti_client.search.return_value = [
             {
                 "uuid": "role-1",
@@ -382,16 +385,15 @@ class TestGraphitiQueries:
             description="Implement feature", context_files=[], tech_stack="python"
         )
 
-        # Should have queried role_constraints
+        assert result.role_constraints == []
         calls = mock_graphiti_client.search.call_args_list
-        # At least one call should mention roles or constraints
-        assert any("role" in str(call).lower() for call in calls)
+        assert not any("role_constraints" in str(call) for call in calls)
 
     @pytest.mark.asyncio
-    async def test_queries_quality_gate_configs_group(
+    async def test_no_longer_queries_quality_gate_configs_group(
         self, project_root: Path, mock_graphiti_client: MagicMock
     ):
-        """Test querying quality_gate_configs group (AutoBuild support)."""
+        """quality_gate_configs (RETIRE) read removed in FEAT-MEM-09 W1 (Fork A Hybrid)."""
         mock_graphiti_client.search.return_value = [
             {
                 "uuid": "gate-1",
@@ -407,16 +409,15 @@ class TestGraphitiQueries:
             description="Implement feature", context_files=[], tech_stack="python"
         )
 
-        # Should have queried quality_gate_configs
+        assert result.quality_gate_configs == []
         calls = mock_graphiti_client.search.call_args_list
-        # At least one call should mention quality or gates
-        assert any("quality" in str(call).lower() or "gate" in str(call).lower() for call in calls)
+        assert not any("quality_gate_configs" in str(call) for call in calls)
 
     @pytest.mark.asyncio
-    async def test_queries_implementation_modes_group(
+    async def test_no_longer_queries_implementation_modes_group(
         self, project_root: Path, mock_graphiti_client: MagicMock
     ):
-        """Test querying implementation_modes group (AutoBuild support)."""
+        """implementation_modes (RETIRE) read removed in FEAT-MEM-09 W1 (Fork A Hybrid)."""
         mock_graphiti_client.search.return_value = [
             {
                 "uuid": "mode-1",
@@ -432,12 +433,9 @@ class TestGraphitiQueries:
             description="Implement feature", context_files=[], tech_stack="python"
         )
 
-        # Should have queried implementation_modes
+        assert result.implementation_modes == []
         calls = mock_graphiti_client.search.call_args_list
-        # At least one call should mention implementation or modes
-        assert any(
-            "implementation" in str(call).lower() or "mode" in str(call).lower()
-            for call in calls
+        assert not any("implementation_modes" in str(call) for call in calls
         )
 
 

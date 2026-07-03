@@ -338,14 +338,16 @@ class FeaturePlanContextBuilder:
 
         Gathers context from:
         - Feature specification files (via FeatureDetector)
-        - Related features from the memory backend
-        - Relevant patterns for the tech stack
-        - Warnings from past failed approaches
-        - Role constraints (AutoBuild support)
-        - Quality gate configs (AutoBuild support)
-        - Implementation modes (AutoBuild support)
-        - Project architecture context
-        - Similar implementations
+        - Related features (feature_specs) from the memory backend
+        - Warnings from past failed approaches (failure_patterns, failed_approaches)
+        - Project architecture context (project_overview, project_architecture)
+        - Similar implementations (task_outcomes)
+
+        The RETIRE-group reads (patterns, role_constraints, quality_gate_configs,
+        implementation_modes) were removed in FEAT-MEM-09 W1 (Fork A Hybrid): that
+        static system knowledge now lives in the fleet-memory harvest corpus and is
+        not feature-specific enrichment. The corresponding FeaturePlanContext fields
+        remain (defaulting to empty) so the output shape is unchanged.
 
         Args:
             description: Feature description (may contain FEAT-XXX-NNN ID)
@@ -390,35 +392,17 @@ class FeaturePlanContextBuilder:
                 group_ids=["feature_specs"]
             )
 
-            # Query relevant patterns (tech-stack specific)
-            relevant_patterns = await self._safe_search(
-                query=f"patterns for {description}",
-                group_ids=[f"patterns_{tech_stack}", "patterns"]
-            )
-
             # Query warnings from past failed approaches
             warnings = await self._safe_search(
                 query=f"warnings failure patterns for {description}",
                 group_ids=["failure_patterns", "failed_approaches"]
             )
 
-            # Query role constraints (AutoBuild support)
-            role_constraints = await self._safe_search(
-                query=f"role constraints for implementation",
-                group_ids=["role_constraints"]
-            )
-
-            # Query quality gate configs (AutoBuild support)
-            quality_gate_configs = await self._safe_search(
-                query=f"quality gate thresholds configuration",
-                group_ids=["quality_gate_configs"]
-            )
-
-            # Query implementation modes (AutoBuild support)
-            implementation_modes = await self._safe_search(
-                query=f"implementation modes for {description}",
-                group_ids=["implementation_modes"]
-            )
+            # RETIRE-group reads (patterns / role_constraints / quality_gate_configs /
+            # implementation_modes) removed in FEAT-MEM-09 W1 (Fork A Hybrid) — that
+            # static knowledge is in the harvest corpus, not feature-specific.
+            # relevant_patterns / role_constraints / quality_gate_configs /
+            # implementation_modes stay as their initialised empty lists.
 
             # Query project architecture
             arch_results = await self._safe_search(
@@ -435,10 +419,9 @@ class FeaturePlanContextBuilder:
             )
 
             # Count populated categories for log summary
-            category_count = sum(1 for items in [
-                related_features, relevant_patterns, warnings,
-                role_constraints, quality_gate_configs, implementation_modes,
-            ] if items)
+            category_count = sum(
+                1 for items in [related_features, warnings] if items
+            )
             if project_architecture:
                 category_count += 1
             if similar_implementations:
