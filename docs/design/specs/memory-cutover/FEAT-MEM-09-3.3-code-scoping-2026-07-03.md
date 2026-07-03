@@ -169,15 +169,18 @@ fleet-memory? It should follow Fork A. (Note: the on-disk `.guardkit/autobuild/`
 and machine-local per `[[autobuild-data-is-gitignored-multi-machine]]` — so durable dataset collection is a
 *separate* archival concern, orthogonal to whether turn_states lives in fleet-memory.)
 
-**Recommended decisions (pending operator confirmation):**
+**✅ CONFIRMED decisions (operator, 2026-07-03):**
 - **Fork A = Hybrid, repoint-leaning:** repoint the autobuild read-enrichment (`context_loader`,
   `job_context_retriever`, `autobuild_context_loader`) + `feature_plan_context` [already FM] + outcomes /
   failed-approaches to fleet-memory `memory_search`, verified against the harvest corpus; drop only the
   dead vestiges (`mode_detector` param). `/system-plan` unaffected (spec-level FM access retained).
-- **Fork B = follows A:** keep `turn_states` as cross-turn context **only if** Fork A keeps autobuild
-  read-enrichment (it does, under the recommendation). Fine-tune data is safe on disk either way. If you
-  want cross-turn context to read the on-disk turn JSONs directly (dropping the fleet-memory round-trip),
-  that's a cleaner future design but a **separate re-architecture**, not de-graphiti cleanup.
+- **Fork B = follows A:** keep `turn_states` as cross-turn context (Fork A keeps autobuild
+  read-enrichment). Fine-tune data is safe on disk either way.
+- **Separate follow-up (NOT de-graphiti):** (a) a **durable autobuild-session dataset sink** — the
+  `.guardkit/autobuild/{task}/{player,coach}_turn_N.json` teacher-pairs are gitignored + machine-local
+  ([[autobuild-data-is-gitignored-multi-machine]]); archiving them for cross-machine fine-tune harvesting
+  is its own task. (b) Optionally, re-architect cross-turn context to read those on-disk turn JSONs
+  directly instead of round-tripping through fleet-memory — cleaner, but a design change, not cleanup.
 
 ---
 
