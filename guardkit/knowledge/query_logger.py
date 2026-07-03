@@ -82,6 +82,7 @@ def _build_entry(
     result_count: int,
     first_result_preview: Optional[str],
     source: str,
+    items: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build a log entry dictionary.
 
@@ -92,6 +93,7 @@ def _build_entry(
         result_count: Number of results returned.
         first_result_preview: Preview of the first result (truncated to 50 chars).
         source: Calling context identifier (e.g., "memory_client", "task-work").
+        items: Optional list of item dicts, each shaped {"id": str, "score": float}. No validation is performed.
 
     Returns:
         Dictionary ready for JSON serialization.
@@ -100,7 +102,7 @@ def _build_entry(
     if first_result_preview is not None:
         preview = first_result_preview[:_PREVIEW_LENGTH]
 
-    return {
+    entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": source,
         "operation": operation,
@@ -109,6 +111,9 @@ def _build_entry(
         "result_count": result_count,
         "first_result_preview": preview,
     }
+    if items is not None:
+        entry["items"] = items
+    return entry
 
 
 def log_query(
@@ -118,6 +123,7 @@ def log_query(
     result_count: int = 0,
     first_result_preview: Optional[str] = None,
     source: str = "memory_client",
+    items: Optional[List[Dict[str, Any]]] = None,
     base_dir: Optional[str] = None,
 ) -> None:
     """Log a memory query result to the JSONL log file.
@@ -132,6 +138,7 @@ def log_query(
         result_count: Number of results returned.
         first_result_preview: Preview of first result (truncated to 50 chars).
         source: Calling context identifier.
+        items: Optional list of item dicts (shape {"id": str, "score": float}).
         base_dir: Override base directory (for testing).
     """
     try:
@@ -142,6 +149,7 @@ def log_query(
             result_count=result_count,
             first_result_preview=first_result_preview,
             source=source,
+            items=items,
         )
         line = json.dumps(entry, separators=(",", ":")) + "\n"
 
