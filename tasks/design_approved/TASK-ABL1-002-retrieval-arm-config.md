@@ -1,13 +1,13 @@
 ---
-id: TASK-ABL1-002
-title: "Parse FLEET_MEMORY_RETRIEVAL arm and resolve fixture DSN in fleet-memory config"
-task_type: feature
-feature_id: FEAT-ABL-001
-wave: 1
-implementation_mode: task-work
 complexity: 4
 dependencies: []
-status: backlog
+feature_id: FEAT-ABL-001
+id: TASK-ABL1-002
+implementation_mode: task-work
+status: design_approved
+task_type: feature
+title: Parse FLEET_MEMORY_RETRIEVAL arm and resolve fixture DSN in fleet-memory config
+wave: 1
 ---
 
 # Parse FLEET_MEMORY_RETRIEVAL arm and resolve fixture DSN in fleet-memory config

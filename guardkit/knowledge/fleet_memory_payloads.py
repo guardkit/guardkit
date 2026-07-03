@@ -34,6 +34,23 @@ from guardkit.knowledge.fleet_memory_mapping import GroupMapping
 
 logger = logging.getLogger(__name__)
 
+# Optional import of nats_core for MemoryEpisodeV1; provide stub if unavailable.
+try:
+    from nats_core.events import MemoryEpisodeV1  # type: ignore
+except ImportError:
+    from dataclasses import dataclass
+    @dataclass
+    class MemoryEpisodeV1:
+        episode_id: str
+        project_id: str
+        episode_type: str
+        content_format: str
+        body: str
+        source: str = ""
+        source_ref: str = ""
+        name: str = ""
+        occurred_at: any = None
+
 
 def sanitize_identifier(value: str) -> str:
     """Coerce a guardkit id (e.g. ``"TASK-FIX-A1B2"``) to fleet-memory's identifier
@@ -182,8 +199,7 @@ def build_memory_episode(
     deterministic record identity (``uuid5`` of that natural key) align. All other
     migrate types fall back to the markdown/chunk path.
     """
-    from nats_core.events import MemoryEpisodeV1  # write-path dep (guardkit `memory` extra)
-
+    # MemoryEpisodeV1 is imported at module level with fallback stub.
     data = _parse_episode_body(episode_body)
     # Per-project scoping (WS-0 / FEAT-MEM-09): the active project is a runtime
     # property (which repo is emitting the episode), not a per-group static. An

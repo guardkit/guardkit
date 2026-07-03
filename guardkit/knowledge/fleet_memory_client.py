@@ -56,6 +56,8 @@ class FleetMemoryConfig:
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
     project: str = "guardkit"
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
 
 
 class FleetMemoryClient:
@@ -625,12 +627,50 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
     Returns:
         FleetMemoryConfig loaded from environment
     """
+    # Default postgres DSN (live)
+    default_postgres_dsn = os.getenv(
+        "FLEET_MEMORY_PG_DSN",
+        "postgresql://postgres:test@localhost:5433/memory",
+    )
+    # Parse retrieval arm
+    raw_retrieval = os.getenv("FLEET_MEMORY_RETRIEVAL")
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
+    if raw_retrieval is None or raw_retrieval.strip() == "":
+        retrieval_arm = None
+    else:
+        val = raw_retrieval.strip().lower()
+        if val == "off":
+            retrieval_arm = "off"
+        elif val.startswith("fixture:"):
+            fid = raw_retrieval.strip()[len("fixture:"):]
+            if fid:
+                retrieval_arm = f"fixture:{fid}"
+                fixture_id = fid
+            else:
+                logger.warning(f"Invalid FLEET_MEMORY_RETRIEVAL value: {raw_retrieval!r}")
+                retrieval_arm = "off"
+        else:
+            logger.warning(f"Invalid FLEET_MEMORY_RETRIEVAL value: {raw_retrieval!r}")
+            retrieval_arm = "off"
+    # Resolve fixture DSN if needed
+    if retrieval_arm and retrieval_arm.startswith("fixture:"):
+        # Uppercase id, map non-alnum to _
+        import re
+        norm_id = re.sub(r"[^0-9A-Za-z]", "_", fixture_id.upper()) if fixture_id else ""
+        env_var_specific = f"FLEET_MEMORY_FIXTURE_DSN_{norm_id}"
+        dsn = os.getenv(env_var_specific) or os.getenv("FLEET_MEMORY_FIXTURE_DSN")
+        if dsn:
+            postgres_dsn = dsn
+        else:
+            logger.warning(f"Fixture DSN not set for retrieval arm {retrieval_arm!r}")
+            retrieval_arm = "off"
+            postgres_dsn = default_postgres_dsn
+    else:
+        postgres_dsn = default_postgres_dsn
     return FleetMemoryConfig(
         enabled=os.getenv("FLEET_MEMORY_ENABLED", "false").lower() == "true",
-        postgres_dsn=os.getenv(
-            "FLEET_MEMORY_PG_DSN",
-            "postgresql://postgres:test@localhost:5433/memory",
-        ),
+        postgres_dsn=postgres_dsn,
         embed_url=os.getenv(
             "FLEET_MEMORY_EMBED_URL",
             "http://promaxgb10-41b1:9000",
@@ -644,4 +684,6 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         # Per-project scoping (FEAT-MEM-09 WS-0): the fleet-memory namespace this
         # guardkit instance reads/writes. Defaults to "guardkit" (back-compat).
         project=os.getenv("GUARDKIT_MEMORY_PROJECT", "guardkit"),
+        retrieval_arm=retrieval_arm,
+        fixture_id=fixture_id,
     )
