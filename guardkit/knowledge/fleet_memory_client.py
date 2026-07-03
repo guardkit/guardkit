@@ -1,8 +1,9 @@
 """Fleet-memory client adapter with graphiti-client-shaped interface.
 
 This module provides a fleet-memory client whose public surface matches
-the subset of graphiti_client.py that call-sites use, enabling swapable
-backends via config flag.
+the subset of the (now-removed) graphiti_client.py that call-sites were
+written against — retained as intentional compat naming so existing
+call-sites did not have to change during the FEAT-MEM-09 cutover.
 
 Architecture:
 - Reads: `memory_search` MCP tool (fleet-memory stdio server)
@@ -12,7 +13,8 @@ Architecture:
 Contract:
 - search() returns same [{"fact": str, "uuid": str, "score": float}] shape
 - add_episode() with unmapped/retired group_id is no-op returning None
-- Factory routes graphiti vs fleet_memory vs dual purely from config
+- Factory returns the fleet-memory client unconditionally (FEAT-MEM-09 WS-2c
+  retired the graphiti/dual routing + the `.guardkit/graphiti.yaml` reader)
 
 See: TASK-MEM08-002
 """
