@@ -222,9 +222,9 @@ See: [BDD Workflow Guide](docs/guides/bdd-workflow-for-agentic-systems.md)
 
 Persistent knowledge capture across sessions. Two access methods:
 - **MCP server** (Claude Code sessions): `mcp__fleet_memory__*` tools
-  (`memory_write_payload`, `memory_search`) — see `.claude/rules/graphiti-knowledge-graph.md`.
+  (`memory_write_payload`, `memory_search`) — see `docs/internals/commands-lib/memory-preamble.md` (Tier 0).
 - **Python client / CLI** (CLI / AutoBuild): `guardkit memory *` (`status`, `search`,
-  `capture-outcome`, `migrate-graph`) — see `.claude/rules/graphiti-knowledge.md`.
+  `capture-outcome`, `migrate-graph`) — see `docs/internals/commands-lib/memory-preamble.md` (Tier 1).
 
 The `guardkit graphiti *` CLI group and the `mcp__graphiti__*` MCP tools **no longer
 exist**. `guardkit memory migrate-graph` still reads FalkorDB (via the direct
