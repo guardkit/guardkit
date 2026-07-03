@@ -130,6 +130,55 @@ autobuild read-enrichment, turn_states loses its consumer → A.
 are gone; the arch command specs were repointed to fleet-memory this session. Residual `mode_detector`
 / `system_plan` reads fold into Fork A (low value).
 
+### 3.1 Clarifications from the 2026-07-03 operator review (verified in code)
+
+Two operator concerns, both resolved by the actual data flows:
+
+**"If `/system-plan` loses memory access, it's just looking through the letterbox — pointless."**
+The concern does **not** apply: `/system-plan` retains full fleet-memory access **at the command-spec
+level**. `installer/core/commands/system-plan.md` already:
+- READS fleet-memory for prerequisite/mode detection —
+  `memory_search(project="guardkit", …, payload_types=["adr","document"], domain_tags=["architecture"])`
+  (`system-plan.md:49`), and
+- WRITES generated artefacts back — `memory_write_payload` (`system-plan.md:147, 391-420`).
+
+`guardkit/planning/system_plan.py` is only the `--context`-file → `docs/architecture/` markdown pipeline;
+it was **never** the knowledge layer (the interactive/knowledge path delegates to the command spec).
+Its "markdown-only mode" note means the *Python orchestrator* doesn't persist to a graph — not that the
+*command* is memory-blind. So Fork A's "drop the planning reads" removes only **dead/vestigial Python
+params** (`mode_detector`'s ignored `graphiti_client` arg; `system_plan.py` has none) — **zero real memory
+access is lost.** The genuine Fork A choice is about the **autobuild read-enrichment** consumers
+(`context_loader`, `job_context_retriever`), where the letterbox concern *does* apply → recommendation:
+**repoint (R) those to fleet-memory** so autobuild keeps knowledge priming; only drop the dead vestiges.
+
+**"turn_states shouldn't be in fleet-memory; autobuild session data should go somewhere specific for
+fine-tune dataset harvesting (like we did for the coach dataset)."** Correct — and the separation already
+exists:
+- **The fine-tune teacher-pair source is the on-disk autobuild session record**, NOT fleet-memory:
+  `.guardkit/autobuild/{task_id}/player_turn_{n}.json` (Player action) + `coach_turn_{n}.json` (Coach
+  verdict) + `coach_feedback_{n}.json` / `task_work_results.json` (`orchestrator/paths.py:85-90`). This is
+  the material the coach fine-tune dataset (812 teacher pairs, `[[coach-training-corpus]]`) was harvested
+  from — pair-by-pair from these JSONs, by harness provenance.
+- **`turn_state_operations` (fleet-memory) is a SEPARATE thing** — it writes `TurnStateEntity` to the
+  semantic store **only** for cross-turn read-enrichment (`capture_turn_state` → `load_turn_continuation_context`,
+  consumed only by `job_context_retriever` on later turns). It is **not** a dataset source.
+
+**Therefore dropping `turn_states` from fleet-memory does NOT affect fine-tune dataset harvesting** — that
+data lives on disk regardless. Fork B is purely: does autobuild keep *cross-turn context priming* via
+fleet-memory? It should follow Fork A. (Note: the on-disk `.guardkit/autobuild/` artifacts are gitignored
+and machine-local per `[[autobuild-data-is-gitignored-multi-machine]]` — so durable dataset collection is a
+*separate* archival concern, orthogonal to whether turn_states lives in fleet-memory.)
+
+**Recommended decisions (pending operator confirmation):**
+- **Fork A = Hybrid, repoint-leaning:** repoint the autobuild read-enrichment (`context_loader`,
+  `job_context_retriever`, `autobuild_context_loader`) + `feature_plan_context` [already FM] + outcomes /
+  failed-approaches to fleet-memory `memory_search`, verified against the harvest corpus; drop only the
+  dead vestiges (`mode_detector` param). `/system-plan` unaffected (spec-level FM access retained).
+- **Fork B = follows A:** keep `turn_states` as cross-turn context **only if** Fork A keeps autobuild
+  read-enrichment (it does, under the recommendation). Fine-tune data is safe on disk either way. If you
+  want cross-turn context to read the on-disk turn JSONs directly (dropping the fleet-memory round-trip),
+  that's a cleaner future design but a **separate re-architecture**, not de-graphiti cleanup.
+
 ---
 
 ## 4. Proposed waves
