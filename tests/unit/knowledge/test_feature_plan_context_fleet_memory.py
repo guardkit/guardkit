@@ -198,3 +198,137 @@ class TestErrorHandling:
         assert context is not None
         assert context.related_features == []
         assert context.relevant_patterns == []
+
+
+# =========================================================================
+# Real-seam tests (FEAT-MEM-09 W1 / TASK-MEM09-FPCTX)
+#
+# The tests above MagicMock the client. Per
+# .claude/rules/per-task-green-is-not-feature-green.md that is absent
+# integration evidence. The tests below (a) exercise the REAL
+# FleetMemoryClient.search() -> fleet_memory_mapping path (external
+# fleet_memory.retrieval edge stubbed) for a KEPT read, and (b) prove the
+# RETIRE-group reads were stripped (Fork A Hybrid).
+# =========================================================================
+
+
+def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+    """Fake ONLY the external fleet_memory.retrieval edge, capturing the real
+    SearchRequest the shim builds (mirrors tests/unit/knowledge/
+    test_fleet_memory_client.py, TASK-MEM08-011)."""
+    import sys
+    import types
+
+    class _FakeSearchRequest:
+        def __init__(self, **kw):
+            captured["request"] = kw
+
+    async def _fake_search(request, store):
+        return ["r1", "r2"]
+
+    class _FakeAssembly:
+        pass
+
+    def _fake_assemble(results, token_budget):
+        a = _FakeAssembly()
+        a.context_block = context_block
+        a.coverage_score = coverage
+        return a
+
+    retrieval = types.ModuleType("fleet_memory.retrieval")
+    retrieval.SearchRequest = _FakeSearchRequest
+    retrieval.search = _fake_search
+    retrieval.assemble_context = _fake_assemble
+    fm = types.ModuleType("fleet_memory")
+    fm.retrieval = retrieval
+    monkeypatch.setitem(sys.modules, "fleet_memory", fm)
+    monkeypatch.setitem(sys.modules, "fleet_memory.retrieval", retrieval)
+
+
+def _enabled_fleet_client():
+    """A REAL FleetMemoryClient (NOT a mock), reads enabled + store pre-opened."""
+    from guardkit.knowledge.fleet_memory_client import (
+        FleetMemoryClient,
+        FleetMemoryConfig,
+    )
+
+    client = FleetMemoryClient(
+        FleetMemoryConfig(
+            enabled=True,
+            postgres_dsn="postgresql://t:t@localhost:5433/t",
+            embed_url="http://localhost:9000/v1",
+            embed_model="nomic-embed",
+            embed_dims=768,
+            nats_url="nats://localhost:4222",
+        )
+    )
+    client._read_available = True
+    client._store = object()
+    return client
+
+
+class TestFeaturePlanContextRealSeam:
+    """Exercise the REAL fleet-memory read seam + prove the RETIRE strip."""
+
+    @pytest.mark.asyncio
+    async def test_feature_specs_read_resolves_migrate_group(
+        self, builder: FeaturePlanContextBuilder, monkeypatch
+    ):
+        """A kept read (feature_specs) resolves via REAL fleet_memory_mapping to
+        document / [feature, spec] (not a MagicMock)."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="feature X spec", coverage=0.7, captured=captured,
+        )
+        builder.graphiti_client = _enabled_fleet_client()
+        monkeypatch.setattr(builder, "_log_fleet_memory_query", lambda **kw: None)
+
+        results = await builder._safe_search(query="x", group_ids=["feature_specs"])
+
+        req = captured["request"]
+        assert req["payload_types"] == ["document"]
+        assert req["domain_tags"] == ["feature", "spec"]
+        assert results and results[0]["fact"] == "feature X spec"
+
+    @pytest.mark.asyncio
+    async def test_retire_group_reads_are_stripped(
+        self, builder: FeaturePlanContextBuilder, monkeypatch
+    ):
+        """RETIRE-group reads removed: even with retrieval returning hits for every
+        search, relevant_patterns / role_constraints / quality_gate_configs /
+        implementation_modes stay empty (no read issued), while a kept read
+        (related_features) is populated."""
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="a hit", coverage=0.6, captured={},
+        )
+        builder.graphiti_client = _enabled_fleet_client()
+        monkeypatch.setattr(builder, "_log_fleet_memory_query", lambda **kw: None)
+
+        ctx = await builder.build_context(description="Test feature", tech_stack="python")
+
+        # kept read fires -> populated
+        assert ctx.related_features, "feature_specs read should still populate related_features"
+        # stripped RETIRE reads never fire -> stay empty (they'd be populated if searched)
+        assert ctx.relevant_patterns == []
+        assert ctx.role_constraints == []
+        assert ctx.quality_gate_configs == []
+        assert ctx.implementation_modes == []
+
+    @pytest.mark.live
+    @pytest.mark.asyncio
+    async def test_build_context_returns_real_hits_live(
+        self, builder: FeaturePlanContextBuilder
+    ):
+        """Operator-run proof: with the store ENABLED, build_context returns real
+        enrichment. Skips cleanly when the store is disabled."""
+        from guardkit.knowledge.fleet_memory_client import get_memory_client
+
+        client = get_memory_client()
+        if client is None or not getattr(client, "enabled", False):
+            pytest.skip("fleet-memory store not enabled (Status: DISABLED)")
+
+        ctx = await builder.build_context(description="autobuild coach", tech_stack="python")
+        assert (
+            ctx.related_features or ctx.warnings or ctx.similar_implementations
+            or ctx.project_architecture
+        ), "expected at least one kept enrichment field populated from the live store"
