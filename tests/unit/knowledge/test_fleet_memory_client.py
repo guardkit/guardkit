@@ -398,53 +398,6 @@ class TestFactoryRouting:
             backend="fleet_memory",
             fleet_config=fleet_config,
         )
-    """Test factory functions route backends correctly."""
-
-    def test_init_memory_client_graphiti_backend(self):
-        """init_memory_client() with backend=graphiti uses graphiti.
-
-        AC-003: Factory returns fleet-memory/graphiti/dual client purely
-        from config; default is graphiti.
-        """
-        # When: initializing with graphiti backend
-        result = init_memory_client(backend="graphiti")
-
-        # Then: initialization succeeds
-        assert result is True
-
-        # And: get_memory_client() would return graphiti client
-        # (actual graphiti client init is mocked for this test)
-
-    def test_init_memory_client_fleet_memory_backend(self, fleet_config):
-        """init_memory_client() with backend=fleet_memory uses fleet."""
-        # When: initializing with fleet_memory backend
-        result = init_memory_client(
-            backend="fleet_memory",
-            fleet_config=fleet_config,
-        )
-
-        # Then: initialization succeeds
-        assert result is True
-
-        # And: get_memory_client returns FleetMemoryClient
-        client = get_memory_client()
-        assert isinstance(client, FleetMemoryClient)
-
-    def test_get_memory_client_returns_none_before_init(self):
-        """get_memory_client() returns None when not initialized."""
-        # Given: clean module state
-        from guardkit.knowledge import fleet_memory_client
-
-        fleet_memory_client._memory_client = None
-        fleet_memory_client._backend = "graphiti"
-
-        # When: getting client before init
-        client = get_memory_client()
-
-        # Then: may return None or lazy-init graphiti
-        # (depends on graphiti_client being available)
-        # This is acceptable graceful degradation
-
 
 class TestRetrievalArmParsing:
     """Tests for parsing FLEET_MEMORY_RETRIEVAL and fixture DSN resolution."""
@@ -535,6 +488,79 @@ class TestRetrievalArmParsing:
     # End of retrieval arm tests
 
 class TestBackendAutoInit:
+    # Existing tests omitted for brevity
+
+class TestFleetMemoryConfigParsing:
+    """Tests for _load_fleet_config_from_env parsing of retrieval arm and DSN resolution."""
+
+    def test_no_retrieval_env(self, monkeypatch):
+        # Ensure no env var set
+        monkeypatch.delenv("FLEET_MEMORY_RETRIEVAL", raising=False)
+        # Set default PG DSN
+        monkeypatch.setenv("FLEET_MEMORY_PG_DSN", "postgresql://postgres:test@localhost:5433/memory")
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm is None
+        assert cfg.fixture_id is None
+        assert cfg.postgres_dsn == "postgresql://postgres:test@localhost:5433/memory"
+
+    def test_empty_retrieval_env(self, monkeypatch):
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "   ")
+        monkeypatch.setenv("FLEET_MEMORY_PG_DSN", "postgresql://postgres:test@localhost:5433/memory")
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm is None
+        assert cfg.fixture_id is None
+
+    def test_off_retrieval(self, monkeypatch):
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "off")
+        monkeypatch.setenv("FLEET_MEMORY_PG_DSN", "postgresql://postgres:test@localhost:5433/memory")
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        assert cfg.fixture_id is None
+        assert cfg.postgres_dsn == "postgresql://postgres:test@localhost:5433/memory"
+
+    def test_fixture_retrieval_specific_dsn(self, monkeypatch):
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v1")
+        monkeypatch.setenv("FLEET_MEMORY_FIXTURE_DSN_V1", "postgresql://fixture/db")
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "fixture:v1"
+        assert cfg.fixture_id == "v1"
+        assert cfg.postgres_dsn == "postgresql://fixture/db"
+
+    def test_fixture_retrieval_generic_fallback(self, monkeypatch):
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v1")
+        monkeypatch.setenv("FLEET_MEMORY_FIXTURE_DSN", "postgresql://generic/db")
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "fixture:v1"
+        assert cfg.fixture_id == "v1"
+        assert cfg.postgres_dsn == "postgresql://generic/db"
+
+    def test_fixture_missing_dsn_fails_closed(self, monkeypatch, caplog):
+        monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "fixture:v9")
+        # No fixture DSN vars set
+        from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+        caplog.set_level(logging.WARNING)
+        cfg = _load_fleet_config_from_env()
+        assert cfg.retrieval_arm == "off"
+        # postgres_dsn should be default (live) when no fixture DSN
+        assert cfg.postgres_dsn == "postgresql://postgres:test@localhost:5433/memory"
+        # warning logged
+        assert any("Fixture DSN not set" in record.message for record in caplog.records)
+
+    def test_invalid_retrieval_values(self, monkeypatch, caplog):
+        for bad in ["banana", "fixture:"]:
+            monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", bad)
+            caplog.clear()
+            caplog.set_level(logging.WARNING)
+            from guardkit.knowledge.fleet_memory_client import _load_fleet_config_from_env
+            cfg = _load_fleet_config_from_env()
+            assert cfg.retrieval_arm == "off"
+            assert any("Invalid FLEET_MEMORY_RETRIEVAL" in record.message for record in caplog.records)
+
     """get_memory_client() lazily initializes the fleet-memory backend on first use."""
 
     @pytest.fixture(autouse=True)
