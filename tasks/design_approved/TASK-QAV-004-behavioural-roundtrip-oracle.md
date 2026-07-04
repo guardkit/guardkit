@@ -1,21 +1,24 @@
 ---
-id: TASK-QAV-004
-title: L4 behavioural round-trip oracle — independent oracle discovery, execution, hard-RED override
-task_type: feature
-parent_review: TASK-REV-QAVG
-feature_id: FEAT-10AC
-wave: 4
-implementation_mode: task-work
 complexity: 7
-dependencies:
-  - TASK-QAV-002
-priority: high
 consumer_context:
-  - task: TASK-QAV-002
-    consumes: behavioural_oracle
-    framework: "CoachEvidenceBundle sibling field"
-    driver: "guardkit.orchestrator.quality_gates.coach_evidence"
-    format_note: "Optional[Dict]; None = no oracle discovered; ran+failed is the ONLY state that overrides a verdict"
+- consumes: behavioural_oracle
+  driver: guardkit.orchestrator.quality_gates.coach_evidence
+  format_note: Optional[Dict]; None = no oracle discovered; ran+failed is the ONLY
+    state that overrides a verdict
+  framework: CoachEvidenceBundle sibling field
+  task: TASK-QAV-002
+dependencies:
+- TASK-QAV-002
+feature_id: FEAT-10AC
+id: TASK-QAV-004
+implementation_mode: task-work
+parent_review: TASK-REV-QAVG
+priority: high
+status: design_approved
+task_type: feature
+title: L4 behavioural round-trip oracle — independent oracle discovery, execution,
+  hard-RED override
+wave: 4
 ---
 
 # Task: L4 behavioural round-trip oracle
