@@ -62,7 +62,21 @@ first honest quality signal the loop ever had for this feature.
 
 ## Outcome
 
-- Run 5 (final attempt) launched 2026-07-04 with the venv fix proven by hand
-  first; in-loop confirmation checkpoint at the first Phase-4.
-- *Update on conclusion:* result, merge SHA or hand-finish decision, and
-  whether defect #4's guardkit fix task was filed.
+- Run 5 (final attempt): the venv fix WORKED — Phase-4 resolved the worktree
+  interpreter and collected 10 tests — and the run then failed HONESTLY:
+  the Coach correctly rejected TASK-ABL5-001 on a genuine Player bug
+  (`TypeError` in `fixture/__init__.py`, reversed test args) through max
+  turns. First honest verdict in five runs; autobuild retired per policy.
+- **Hand-finish executed 2026-07-04** (operator + sequential agent workflow):
+  TASK-ABL5-001 fixed by hand (arg order + `fixture_dir` hardening), then
+  tasks 002–006 implemented and committed one by one. Two further Player
+  pollution artifacts found and reverted along the way — a `try/except`
+  FastMCP stub in `mcp/server.py` and a root-level `fleet_memory` shim
+  package that shadowed the mcp SDK via `sys.path` (same genus as the
+  ABL-001 `nats_core` stub: environment-editing instead of environment-fixing).
+- **Merged to fleet-memory main `caa670f`**: suite 754 passed / 2 skipped
+  (clean-worktree verified); seeded acceptance 6/6 (byte-identity round-trip,
+  FEAT-HARV/OUT-SMOKE temporal-cut proof, scratch isolation) on ephemeral
+  Docker pg16; live-store read-only check `null_occurred_at == 176` exactly.
+- Guardkit fix candidate from defect #4 (resume-path venv resolution) remains
+  to be filed as a guardkit task — tracked in the phase-ablation follow-ups.
