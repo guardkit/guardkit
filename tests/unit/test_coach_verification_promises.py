@@ -218,3 +218,125 @@ class TestVerifyPlayerReportWiresCompletionPromises:
         }
         # Only complete promises' files count: 2 + 1 = 3 (plus min-1 baseline)
         assert verifier._count_verifiable_claims(report) == 3
+
+
+class TestSiblingRelativeClaimResolution:
+    """TASK-FIX-XREPOPROM01 — the FEAT-10AC run-1 honesty-collapse reproducer.
+
+    A Player writing a declared sibling evidence repo reported its
+    completion-promise ``implementation_files`` (and files_modified claims)
+    as SIBLING-RELATIVE unqualified paths. Both Player-authored-claim
+    verifiers resolved them against the worktree only, manufacturing
+    critical ``promise_file_existence`` + ``claim_audit`` discrepancies for
+    work that existed (and was checkpointed) in the sibling — an
+    ``evidence-boundary-narrower-than-write-surface`` false-red that
+    collapsed the run in 3 turns.
+    """
+
+    @pytest.fixture
+    def sibling(self, tmp_path: Path):
+        from guardkit.orchestrator.evidence_repos import EvidenceRepo
+
+        factory = tmp_path / "guardkitfactory"
+        target = factory / "src" / "guardkitfactory" / "wiring"
+        target.mkdir(parents=True)
+        (target / "analyzer.py").write_text("def analyze_stub_scan(): ...\n")
+        return EvidenceRepo(name="guardkitfactory", root=factory)
+
+    @pytest.fixture
+    def worktree(self, tmp_path: Path) -> Path:
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        return wt
+
+    def _promise_report(self, path: str) -> dict:
+        return {
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-1",
+                    "status": "complete",
+                    "implementation_files": [path],
+                }
+            ]
+        }
+
+    def test_unqualified_sibling_promise_resolves_not_critical(
+        self, worktree: Path, sibling
+    ):
+        """A sibling-relative promise path that EXISTS under a declared
+        evidence repo is resolved (recorded), never a discrepancy."""
+        v = CoachVerifier(worktree, evidence_repos=[sibling])
+        report = self._promise_report("src/guardkitfactory/wiring/analyzer.py")
+        discs = v._verify_completion_promises_files_exist(report)
+        assert discs == []
+        assert len(v._resolved_paths) == 1
+        assert v._resolved_paths[0].claimed == (
+            "src/guardkitfactory/wiring/analyzer.py"
+        )
+
+    def test_missing_everywhere_still_critical(self, worktree: Path, sibling):
+        """FEAT-6CC5 protection unchanged: a path existing in neither the
+        worktree nor any declared repo stays a critical discrepancy."""
+        v = CoachVerifier(worktree, evidence_repos=[sibling])
+        report = self._promise_report("src/guardkitfactory/wiring/nowhere.py")
+        discs = v._verify_completion_promises_files_exist(report)
+        assert len(discs) == 1
+        assert discs[0].claim_type == "promise_file_existence"
+        assert discs[0].severity == "critical"
+
+    def test_no_declared_repos_prior_behaviour_exact(self, worktree: Path):
+        """With no evidence repos declared, the worktree-only behaviour is
+        exact — the sibling-relative path stays critical."""
+        v = CoachVerifier(worktree)
+        report = self._promise_report("src/guardkitfactory/wiring/analyzer.py")
+        discs = v._verify_completion_promises_files_exist(report)
+        assert len(discs) == 1
+        assert discs[0].severity == "critical"
+
+    @staticmethod
+    def _git_init(path: Path) -> None:
+        import subprocess
+
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t"], cwd=path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "t"], cwd=path, check=True
+        )
+
+    def test_claim_audit_drops_sibling_resolved_unqualified(
+        self, worktree: Path, sibling
+    ):
+        """claim_audit must not audit a worktree-missing, sibling-present
+        unqualified claim against the worktree's git status."""
+        self._git_init(worktree)
+        v = CoachVerifier(worktree, evidence_repos=[sibling])
+        report = {
+            "files_modified": ["src/guardkitfactory/wiring/analyzer.py"],
+        }
+        discs = v._verify_claims_were_staged(report)
+        assert discs == []
+
+    def test_claim_audit_missing_everywhere_still_fabricated(
+        self, worktree: Path, sibling
+    ):
+        """A claim existing nowhere still classifies as fabricated critical."""
+        self._git_init(worktree)
+        v = CoachVerifier(worktree, evidence_repos=[sibling])
+        report = {"files_modified": ["src/guardkitfactory/wiring/ghost.py"]}
+        discs = v._verify_claims_were_staged(report)
+        assert len(discs) == 1
+        assert discs[0].severity == "critical"
+
+    def test_end_to_end_verify_player_report_resolves(self, worktree: Path, sibling):
+        """The full verify_player_report path surfaces the resolution on
+        HonestyVerification.resolved_paths and stays verified."""
+        self._git_init(worktree)
+        v = CoachVerifier(worktree, evidence_repos=[sibling])
+        report = self._promise_report("src/guardkitfactory/wiring/analyzer.py")
+        result = v.verify_player_report(report)
+        assert result.verified is True
+        assert [r.claimed for r in result.resolved_paths] == [
+            "src/guardkitfactory/wiring/analyzer.py"
+        ]

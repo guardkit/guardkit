@@ -4,7 +4,7 @@ description: L2 anti-stub tree-sitter scan, L3 runtime coverage gate, L4 behavio
   round-trip oracle; three sibling absent-signal-safe CoachEvidenceBundle fields (stub_scan,
   coverage, behavioural_oracle); L1 wiring probes excluded (built, FEAT-C332)
 created: '2026-07-04T17:12:07.822003'
-status: planned
+status: failed
 complexity: 7
 estimated_tasks: 5
 tasks:
@@ -13,10 +13,20 @@ tasks:
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-001-anti-stub-scan-factory-core.md
   complexity: 6
   dependencies: []
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 3
+    final_decision: honesty_collapse
+    error: 'Honesty collapse: rolling avg over last 3 turns dropped below threshold
+      0.30 after 3 turn(s)'
+    deferred_reason: null
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-07-04T17:40:44.543581'
+  completed_at: '2026-07-04T18:49:28.685678'
 - id: TASK-QAV-002
   name: Bundle fields and stub_scan seam wiring
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-002-bundle-fields-and-stub-scan-seam.md
@@ -24,9 +34,14 @@ tasks:
   dependencies:
   - TASK-QAV-001
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-QAV-003
   name: L3 runtime coverage gate
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-003-runtime-coverage-gate.md
@@ -34,9 +49,14 @@ tasks:
   dependencies:
   - TASK-QAV-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 113
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-QAV-004
   name: L4 behavioural roundtrip oracle
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-004-behavioural-roundtrip-oracle.md
@@ -44,9 +64,14 @@ tasks:
   dependencies:
   - TASK-QAV-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 170
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-QAV-005
   name: Dogfood validation fs-01
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-005-dogfood-validation-fs01.md
@@ -55,13 +80,15 @@ tasks:
   - TASK-QAV-003
   - TASK-QAV-004
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
-  # TASK-QAV-003 and TASK-QAV-004 are dependency-parallel but both edit
-  # coach_validator.py + agent_invoker.py in the shared worktree -> run in
-  # separate waves (TASK-REV-QAVG decision; GB10 recipe is --max-parallel 1).
   parallel_groups:
   - - TASK-QAV-001
   - - TASK-QAV-002
@@ -70,13 +97,31 @@ orchestration:
   - - TASK-QAV-005
   estimated_duration_minutes: 521
   recommended_parallel: 1
-evidence_repos:
-- ../guardkitfactory
 smoke_gates:
   after_wave: all
-  command: |
-    set -e
+  command: 'set -e
+
     python -c "from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle"
+
     python -m pytest tests/unit/orchestrator/quality_gates -x -q -p no:cacheprovider
+
+    '
   expected_exit: 0
   timeout: 300
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos:
+- path: ../guardkitfactory
+  test_command: python -m pytest tests/wiring -q -p no:cacheprovider
+execution:
+  started_at: '2026-07-04T17:40:43.026792'
+  completed_at: '2026-07-04T18:49:28.688724'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
+  total_turns: 3
+  tasks_completed: 0
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-07-04T18:49:28.685686'
+  archived_at: null
+  archived_to: null

@@ -63,11 +63,32 @@ whose deliverable lived in the sibling `guardkitfactory` repo:
    committed anywhere — one `git clean` / `git checkout` in the factory away
    from breaking merged main.
 
-Both incidents share a mechanism: **the orchestrator's evidence loop has a
+3. **2026-07-04** — FEAT-10AC run 1 **false-red** (TASK-FIX-XREPOPROM01).
+   TASK-QAV-001's deliverable (980 insertions of on-spec anti-stub analyzer +
+   tests) landed in guardkitfactory and WAS collected — sibling-evidence
+   checkpoints committed, `files_modified` correctly repo-qualified by the
+   XREPOEV01 machinery. But the two **Player-authored** claim verifiers were
+   never widened: the Player wrote its completion-promise
+   `implementation_files` as *sibling-relative unqualified* strings
+   (`src/guardkitfactory/wiring/analyzer.py`); the promise-existence
+   fall-through resolved them against the worktree root and the claim audit
+   ran `git status` in the worktree — critical `promise_file_existence` +
+   `claim_audit` discrepancies three identical turns running →
+   `HONESTY_COLLAPSE` over work that existed. Fix: declaration-bounded
+   sibling resolution (`_resolve_against_evidence_repos`,
+   `coach_verification.py`) before any critical verdict in both verifiers —
+   permissive ONLY on positive evidence (file exists under a declared repo
+   root); paths existing nowhere stay critical (FEAT-6CC5 untouched).
+   Reproducers:
+   `tests/unit/test_coach_verification_promises.py::TestSiblingRelativeClaimResolution`.
+
+All incidents share a mechanism: **the orchestrator's evidence loop has a
 narrower spatial boundary (the worktree) than the task's actual write surface
 (worktree + a declared sibling repo).** The defect surfaced the moment a task
 was *expected* to write outside the worktree; it would not appear for any
-purely in-worktree task.
+purely in-worktree task. Incident #3 shows the boundary must be widened at
+**every verifier that consumes a path string — including Player-authored
+claim fields** — not only the orchestrator-authored ones XREPOEV01 covered.
 
 The fix (TASK-AB-XREPOEV01) widened the boundary via an explicit
 `evidence_repos` declaration and a single-source-of-truth repo-qualified path
