@@ -1,6 +1,7 @@
 ---
 id: TASK-BDDW-001
-title: Wire factory BDD plugin discovery into the Coach evidence path (core, Python end-to-end)
+title: Wire factory BDD plugin discovery into the Coach evidence path (core, Python
+  end-to-end)
 task_type: feature
 parent_task: TASK-HMIG-BDDWIRE
 feature_id: FEAT-E2CB
@@ -9,6 +10,24 @@ implementation_mode: task-work
 complexity: 5
 dependencies: []
 priority: medium
+status: completed
+updated: '2026-07-04T17:18:29'
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-E2CB
+  base_branch: main
+  started_at: '2026-07-04T17:01:02.150838'
+  last_updated: '2026-07-04T17:11:03.042960'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-04T17:01:02.150838'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Wire factory BDD plugin discovery into the Coach evidence path
