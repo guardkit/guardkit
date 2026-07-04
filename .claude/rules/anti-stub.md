@@ -150,3 +150,14 @@ The function must contain actual orchestration logic — calling
 detect_mode(), generating questions, collecting answers, and writing
 plan files.
 ```
+
+## Scope Note — Tests That Pin Stubs (invariant-not-snapshot)
+
+This rule governs stub *implementations*. Tests that pin a scaffold task's
+stubs as permanent behaviour — e.g. asserting a method raises
+`NotImplementedError` when a later task in the same feature implements it —
+are the separate transient-assertion ("invariant-not-snapshot") anti-pattern
+(TASK-AB-INVARIANTTEST01): see the Anti-Patterns section of
+`installer/core/agents/autobuild-player.md` and Coach guard #8 in
+`AgentInvoker._render_absence_of_failure_guards`. A stub that is legitimate
+under this rule does NOT make a test pinning that stub legitimate.

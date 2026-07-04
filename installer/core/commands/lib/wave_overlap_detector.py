@@ -33,7 +33,11 @@ Pure functions over plain data. The module owns:
 * :func:`infer_task_files` — derive a per-task edit set from prose.
 * :func:`compute_wave_overlaps` — pairwise overlap detection within each wave.
 * :func:`serialize_overlapping_groups` — split offending parallel groups into
-  sequential follow-on entries, when ``--auto-serialise-overlap`` is set.
+  sequential follow-on entries. Default-ON at plan time since
+  TASK-AB-WAVECTL01 (was opt-in under TASK-FIX-A7B3); opt out with
+  ``--no-auto-serialise-overlap``. When the detector infers NO overlapping
+  file sets the plan is unchanged in either mode (absent signal: neither
+  block nor serialise — .claude/rules/absence-of-failure-is-not-success.md).
 * :func:`format_overlap_warning_summary` — stdout banner mirroring the
   AC-linter's :func:`format_warning_summary` shape.
 
@@ -386,8 +390,9 @@ def format_overlap_warning_summary(
     if auto_serialise:
         lines.append("")
         lines.append(
-            "   --auto-serialise-overlap was set: offending tasks moved to a "
-            "follow-on sequential wave."
+            "   Auto-serialisation applied (default-on, TASK-AB-WAVECTL01): "
+            "offending tasks moved to a follow-on sequential wave. "
+            "Pass --no-auto-serialise-overlap to keep the original layout."
         )
     else:
         lines.append("")
@@ -396,8 +401,9 @@ def format_overlap_warning_summary(
             "edit the same file(s)."
         )
         lines.append(
-            "   Re-run with --auto-serialise-overlap to split the offending "
-            "wave automatically, or restructure dependencies."
+            "   Warn-only (--no-auto-serialise-overlap): drop the flag to let "
+            "the planner split the offending wave automatically, or "
+            "restructure dependencies."
         )
 
     return "\n".join(lines)

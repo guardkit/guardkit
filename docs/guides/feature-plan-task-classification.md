@@ -1,6 +1,6 @@
 # `/feature-plan` task classification
 
-Reference for the three classes of defect that `/feature-plan` is
+Reference for the four classes of defect that `/feature-plan` is
 hardened against, the strong/weak signal taxonomy used by the
 Class C detector, and the `operator_handoff` escape hatch that
 runs through `/feature-complete`.
@@ -24,21 +24,24 @@ miss for a defect to ship.** We bias toward false positives at the
 plan-time layer — they cost one operator confirmation; false
 negatives cost a full turn-budget burn.
 
-## The three classes
+## The four classes
 
 | Class | Defect | Predicate type | Layer where prevention is anchored |
 |---|---|---|---|
 | **A** | Invented paths in `smoke_gates.command` | `present_on_disk(path)` | Plan-time path verification (L3a) + generator validator (L3b) |
 | **B** | Temporal mis-sequencing of `after_wave` | `present_at_wave_W(path)` | Same validators as Class A, with wave-aware temporal check |
 | **C** | Task-design mismatch — runtime-observation ACs | `observed_at_runtime(real_world)` | Plan-time detector + `operator_handoff` enforcement |
+| **D** | Transient boundary assertions — specs that instruct self-defeating snapshot tests | `still_true_after_wave_N(assertion)` | Plan-time spec wording (negative boundary naming) + Player/Coach prompt guidance |
 
-The three classes are **independent**: a single feature run can hit
-one, two, or all three. Each has its own subfolder, parent review,
-and prevention strategy. The unifying principle is the predicate
-shape: A and B are about **paths the validator can check
-deterministically**; C is about **claims that no validator can
-check at all** because the verification predicate names the real
-world rather than the codebase.
+The four classes are **independent**: a single feature run can hit
+one, several, or all of them. Each has its own prevention strategy.
+The unifying principle is the predicate shape: A and B are about
+**paths the validator can check deterministically**; C is about
+**claims that no validator can check at all** because the
+verification predicate names the real world rather than the
+codebase; D is about **assertions that are true at authoring time
+but false by construction once a later task in the same feature
+does its job**.
 
 ## Class A — invented paths
 
@@ -210,6 +213,59 @@ operator_handoff` rather than the default. The full machinery:
 plan time, then `/feature-complete` reminds the operator post-merge
 that the runtime checks still need to be performed by hand.
 AutoBuild never burns a turn on a task it cannot satisfy.
+
+## Class D — transient boundary assertions (invariant-not-snapshot)
+
+**Defect**: Plan agent emits a scaffold/early task spec that
+instructs (or invites) the Player to write tests pinning a
+*point-in-time snapshot* of the current task boundary — e.g.
+"assert that learner-state writes raise `NotImplementedError`" when
+a later task in the SAME feature is specified to implement those
+writes, or "assert the versions directory is empty" when the next
+task adds a migration. Each such test is locally valid at authoring
+time (the per-task Coach approves it), then correctly goes red when
+the later task does its job — a self-defeating test by
+construction, which burns the WRONG task's turn budget.
+
+**Reproducer**: study-tutor FEAT-SMP-001 (2026-07-03 retro) —
+SMP-03 authored `test_learner_state_writes_raise_not_implemented`;
+SMP-04 (whose deliverable WAS those writes) hit
+`max_turns_exceeded` on SMP-03's test.
+
+**Prevention** (prompt-guidance by necessity — no cheap structural
+bound can distinguish "asserts a durable invariant" from "asserts a
+snapshot of scaffolding state"; per
+`.claude/rules/structural-defence-beats-prompt-instruction.md` the
+prompt lever must therefore be paired with monitoring):
+
+- **Plan time**: `feature-plan.md`'s task-spec authoring rules
+  require scaffold-task specs to name out-of-scope boundaries
+  **negatively and explicitly** — "assert NotImplementedError ONLY
+  for methods out of scope for the WHOLE feature — reads → TASK-B,
+  session CRUD → TASK-C — never for methods a later task in this
+  feature implements".
+- **Player prompt**: the invariant-not-snapshot rule appears in
+  three locations (test-writing workflow step, anti-patterns table,
+  grounding paragraph) per
+  `.claude/rules/player-prompt-reinforce-coach-constraint-in-three-locations.md`
+  — see `installer/core/agents/autobuild-player.md` and
+  `AgentInvoker._build_player_prompt`.
+- **Coach prompt**: advisory guard #8 (`transient_assertion`,
+  `should_fix`, never turn-rejecting on its own) in
+  `AgentInvoker._render_absence_of_failure_guards` names the same
+  anti-pattern in the same wording.
+- **Runtime monitor**: the TASK-AB-STALEATTRIB01 authorship join
+  attributes a red test back to the task that authored it, so a
+  Player that ignored the guidance is detected rather than silently
+  blocking a sibling task.
+
+**Compatibility note**: stub *implementations* in scaffold tasks
+remain legitimate (`.claude/rules/anti-stub.md`); Class D is about
+*tests that pin those stubs* as permanent behaviour, not the stubs
+themselves.
+
+Seeded by TASK-AB-INVARIANTTEST01
+([`tasks/backlog/autobuild-reliability/TASK-AB-INVARIANTTEST01-transient-assertion-guidance.md`](../../tasks/backlog/autobuild-reliability/TASK-AB-INVARIANTTEST01-transient-assertion-guidance.md)).
 
 ## Backwards compatibility
 

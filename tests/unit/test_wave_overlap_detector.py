@@ -383,7 +383,10 @@ class TestFormatOverlapWarningSummary:
     def test_empty_warnings_returns_empty_string(self):
         assert format_overlap_warning_summary([]) == ""
 
-    def test_warn_only_banner_mentions_auto_serialise_flag(self):
+    def test_warn_only_banner_mentions_opt_out_flag(self):
+        """TASK-AB-WAVECTL01: warn-only now only happens under
+        --no-auto-serialise-overlap, so the banner names that flag as the
+        cause and tells the user how to get the split back."""
         warnings = [OverlapWarning(
             wave_index=1,
             task_ids=("TASK-001", "TASK-002"),
@@ -393,7 +396,8 @@ class TestFormatOverlapWarningSummary:
         assert "Wave 1" in summary
         assert "TASK-001" in summary and "TASK-002" in summary
         assert "features/foo/test_foo.py" in summary
-        assert "--auto-serialise-overlap" in summary
+        assert "--no-auto-serialise-overlap" in summary
+        assert "Warn-only" in summary
 
     def test_auto_serialise_banner_mentions_split_action(self):
         warnings = [OverlapWarning(
@@ -403,8 +407,10 @@ class TestFormatOverlapWarningSummary:
         )]
         summary = format_overlap_warning_summary(warnings, auto_serialise=True)
         assert "follow-on sequential wave" in summary
-        # Banner must not steer the user to re-run with the flag they
-        # already set.
+        # TASK-AB-WAVECTL01: default-on — the banner names the opt-out.
+        assert "--no-auto-serialise-overlap" in summary
+        # Banner must not steer the user to re-run with a flag that is
+        # already the default.
         assert "Re-run with --auto-serialise-overlap" not in summary
 
 

@@ -551,6 +551,75 @@ class TestNoOverlapPreservesExistingApproval:
 
 
 # ---------------------------------------------------------------------------
+# 3b. validate() — overlap issue carries the machine-readable contention
+#     marker (TASK-AB-STALLTAX01)
+# ---------------------------------------------------------------------------
+
+
+class TestContentionPeersMarker:
+    """The TASK-FIX-A7B2 overlap branch's ``test_verification`` issue must
+    carry a schema-stable ``contention_peers`` map (peer_task_id → sorted
+    overlapping files) so the parallel-interference stall classifier can key
+    on structured fields even when ``failure_classification`` records
+    ``"code"``. Additive only — the overlap-forces-feedback verdict is
+    unchanged (the veto is load-bearing per
+    per-task-green-is-not-feature-green.md)."""
+
+    def test_overlap_issue_carries_contention_peers(self, tmp_path: Path) -> None:
+        shared_file = "features/foo/test_foo.py"
+        validator = _make_validator(
+            tmp_path,
+            wave_size=2,
+            peer_changed_files={"TASK-PRV-003": [shared_file, "src/extra.py"]},
+        )
+        results = _task_work_results_with_files(files_modified=[shared_file])
+
+        result = _run_validate(validator, task_work_results=results)
+
+        # Verdict unchanged: overlap still forces feedback.
+        assert result.decision == "feedback"
+        tv_issues = [
+            issue
+            for issue in result.issues
+            if issue.get("category") == "test_verification"
+        ]
+        assert len(tv_issues) == 1
+        issue = tv_issues[0]
+        # The machine-readable marker: peer id → sorted overlapping files.
+        assert issue["contention_peers"] == {"TASK-PRV-003": [shared_file]}
+        # JSON-serializable (frozenset converted to a sorted list).
+        assert isinstance(issue["contention_peers"]["TASK-PRV-003"], list)
+        # The existing schema-stable fields remain present.
+        assert "failure_classification" in issue
+        assert "failure_confidence" in issue
+
+    def test_no_overlap_issue_omits_contention_peers(self, tmp_path: Path) -> None:
+        """Serial-wave code failure (no overlap computed) → no marker.
+
+        The marker is present-only-on-overlap: an absent contention signal
+        stays absent (absence-must-survive-every-reconciliation-layer)."""
+        validator = _make_validator(
+            tmp_path,
+            wave_size=1,
+            peer_changed_files=None,
+        )
+        results = _task_work_results_with_files(
+            files_modified=["features/foo/test_foo.py"]
+        )
+
+        result = _run_validate(validator, task_work_results=results)
+
+        assert result.decision == "feedback"
+        tv_issues = [
+            issue
+            for issue in result.issues
+            if issue.get("category") == "test_verification"
+        ]
+        assert len(tv_issues) == 1
+        assert "contention_peers" not in tv_issues[0]
+
+
+# ---------------------------------------------------------------------------
 # 4. Constructor normalisation
 # ---------------------------------------------------------------------------
 

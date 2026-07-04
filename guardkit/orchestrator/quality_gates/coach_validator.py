@@ -45,6 +45,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+from guardkit.lib.pytest_argv import isolated_basetemp
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
@@ -109,6 +110,99 @@ logger = logging.getLogger(__name__)
 # ``.claude/rules/stack-plugin-architecture.md`` and
 # ``.claude/rules/absence-of-failure-is-not-success.md``.
 _DEFAULT_COACH_PER_TEST_TIMEOUT_S = 60
+
+# TASK-AB-COACHSUBPROC01 (2026-07-04): single source of truth for the Coach's
+# independent test-execution default — flipped "sdk" -> "subprocess". The SDK
+# "environment parity" path failed with the opaque exit-1 "Fatal error in
+# message reader" on essentially 100% of invocations across every repo,
+# machine and vintage in the 2026 retro corpus (2026-07-04 xref §5 item 15);
+# every verdict actually came from the subprocess fallback, so each Coach turn
+# paid one doomed SDK attempt. The SDK path stays in-repo as an explicit
+# opt-in (config `autobuild.coach.test_execution: sdk` or env
+# `GUARDKIT_COACH_TEST_EXECUTION=sdk`) for the open diagnosis tasks
+# (TASK-REV-COSE, TASK-FIX-A7B7). Mirrors the ``selector.py::DEFAULT_HARNESS``
+# cutover shape: permanent rollback = change this one constant back to "sdk".
+DEFAULT_COACH_TEST_EXECUTION = "subprocess"
+
+# Env override for the Coach test-execution mode. Precedence mirrors the
+# TASK-AB-PERTASKFG01 ``GUARDKIT_PHASE4_TEST_EXECUTION`` pattern:
+# env > config (``autobuild.coach.test_execution``) > default.
+COACH_TEST_EXECUTION_ENV = "GUARDKIT_COACH_TEST_EXECUTION"
+
+_VALID_COACH_TEST_EXECUTION_MODES = ("subprocess", "sdk")
+
+
+def resolve_coach_test_execution(config_value: Optional[str] = None) -> str:
+    """Resolve the Coach independent test-execution mode.
+
+    Precedence: ``GUARDKIT_COACH_TEST_EXECUTION`` env var > *config_value*
+    (``.guardkit/config.yaml`` ``autobuild.coach.test_execution``) >
+    :data:`DEFAULT_COACH_TEST_EXECUTION`. Read at call time (not import time)
+    so tests and operators can flip it per-invocation. An unrecognised value
+    at either tier logs a WARNING and that tier is ignored (falls through to
+    the next tier), so an invalid value can never select a mode by accident.
+
+    Logs the active mode and its provenance (env/config/default) at INFO —
+    called once per :class:`CoachValidator` init, so operators can see which
+    execution path the Coach will use and where the decision came from
+    (display-must-derive-from-enforcement-source: the logged value IS the
+    value the validator consumes, not a proxy).
+
+    Parameters
+    ----------
+    config_value : Optional[str]
+        The raw ``autobuild.coach.test_execution`` value from
+        ``.guardkit/config.yaml``, or None when unset.
+
+    Returns
+    -------
+    str
+        ``"subprocess"`` or ``"sdk"``.
+    """
+    mode: Optional[str] = None
+    source = "default"
+
+    env_raw = os.environ.get(COACH_TEST_EXECUTION_ENV)
+    if env_raw is not None and env_raw.strip():
+        candidate = env_raw.strip().lower()
+        if candidate in _VALID_COACH_TEST_EXECUTION_MODES:
+            mode, source = candidate, "env"
+        else:
+            logger.warning(
+                "Invalid %s=%r (expected one of %s); ignoring env override.",
+                COACH_TEST_EXECUTION_ENV,
+                env_raw,
+                _VALID_COACH_TEST_EXECUTION_MODES,
+            )
+
+    if mode is None and config_value is not None and str(config_value).strip():
+        candidate = str(config_value).strip().lower()
+        if candidate in _VALID_COACH_TEST_EXECUTION_MODES:
+            mode, source = candidate, "config"
+        else:
+            logger.warning(
+                "Invalid autobuild.coach.test_execution=%r in "
+                ".guardkit/config.yaml (expected one of %s); "
+                "falling back to default %r.",
+                config_value,
+                _VALID_COACH_TEST_EXECUTION_MODES,
+                DEFAULT_COACH_TEST_EXECUTION,
+            )
+
+    if mode is None:
+        mode = DEFAULT_COACH_TEST_EXECUTION
+
+    logger.info(
+        "Coach test execution mode: %s (source: %s; "
+        "%s > autobuild.coach.test_execution > default %r) "
+        "[TASK-AB-COACHSUBPROC01]",
+        mode,
+        source,
+        COACH_TEST_EXECUTION_ENV,
+        DEFAULT_COACH_TEST_EXECUTION,
+    )
+    return mode
+
 
 # ============================================================================
 # BDD Factory Bridge — wire guardkitfactory.bdd into the Coach evidence path
@@ -991,6 +1085,67 @@ class QualityGateStatus:
         self.all_gates_passed = all(required_gates) if required_gates else True
 
 
+# TASK-AB-SKIPVIS01: pytest per-outcome summary tokens, used ONLY to derive
+# the advisory ``tests_skipped`` count. ``skipped`` stays excluded from any
+# tests_run / tests_failed arithmetic — a skipped test executed no assertions
+# (an ABSENT verdict, never a pass and never a failure).
+_PYTEST_OUTCOME_TOKEN_RE = re.compile(
+    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed|skipped)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_tests_skipped(output: Optional[str]) -> Optional[int]:
+    """Parse the advisory pytest ``skipped`` count from stdout/stderr.
+
+    TASK-AB-SKIPVIS01. Tri-state, absence-preserving
+    (``.claude/rules/absence-must-survive-every-reconciliation-layer.md``):
+
+    * ``None`` — no recognisable pytest outcome token in ``output`` (empty,
+      garbage, non-pytest runner): the skip count is UNKNOWN, never coerced
+      to ``0``.
+    * ``0`` — a summary parsed cleanly (>=1 outcome token) with no ``skipped``
+      token: positively zero skips.
+    * ``N`` — the summary reported ``N skipped``. ``max`` across matches
+      tolerates pytest reprinting the summary.
+
+    Advisory only: no gate or verdict logic may read this value.
+    """
+    if not output:
+        return None
+    skipped: Optional[int] = None
+    saw_outcome_token = False
+    for match in _PYTEST_OUTCOME_TOKEN_RE.finditer(output):
+        saw_outcome_token = True
+        if match.group(2).lower() == "skipped":
+            count = int(match.group(1))
+            skipped = count if skipped is None else max(skipped, count)
+    if skipped is not None:
+        return skipped
+    return 0 if saw_outcome_token else None
+
+
+def _combined_output_tail(
+    stdout: Optional[str], stderr: Optional[str], bound: int = 2000
+) -> Optional[str]:
+    """Combined stdout+stderr tail for ``RuntimeParityResult.output_tail``.
+
+    2026-07-04 code review (runtime-parity stdout gap): pytest writes its
+    ``FAILED <nodeid>`` short-summary lines to STDOUT, so a stderr-only tail
+    hides the failing-test names from the per-task parity guard's evidence
+    extraction. Joins stdout first, then stderr (mirroring
+    ``feature_orchestrator._build_smoke_feedback``'s combined_output), each
+    stream bounded to its last *bound* chars. Returns ``None`` when neither
+    stream produced output — consumers then fall back to ``stderr_tail``.
+    """
+    parts = [
+        part.rstrip()[-bound:]
+        for part in (stdout, stderr)
+        if part and part.rstrip()
+    ]
+    return "\n".join(parts) or None
+
+
 @dataclass
 class IndependentTestResult:
     """
@@ -1021,6 +1176,25 @@ class IndependentTestResult:
         independent-test signal as ABSENT — surfaced as feedback, never
         approved on the Player's self-reported tests. See
         ``.claude/rules/absence-of-failure-is-not-success.md``.
+    tests_skipped : Optional[int]
+        Advisory pytest ``skipped`` count from the independent run. Tri-state:
+        ``None`` = not parsed / unknown (never coerced to ``0``), ``0`` = the
+        summary parsed cleanly with zero skips, ``N`` = N tests skipped. A
+        skipped test is an ABSENT verdict, not a pass — a nonzero count may
+        indicate missing optional extras in the worktree venv silently
+        under-testing the deliverable. Advisory ONLY: no gate or verdict
+        branch reads this field; it is surfaced to the Coach (evidence
+        bundle / prompt) and the operator (``coach_turn_N.json``) for
+        visibility.
+    resolved_interpreter : Optional[str]
+        The Python interpreter the independent pytest run was actually pinned
+        to (``_pytest_interpreter()`` — the bootstrap venv when resolved,
+        else ``sys.executable``). ``None`` when no interpreter-pinned run
+        happened (non-pytest command, SDK/PATH execution, skipped run).
+        Forensic evidence ONLY (TASK-AB-RESUMEVENV01 AC-003): no gate or
+        verdict branch reads it — it makes the "which interpreter did the
+        verifier actually run?" post-mortem a one-grep answer instead of a
+        reproduction session (FEAT-ABL-005 run 4).
     """
 
     tests_passed: bool
@@ -1029,6 +1203,12 @@ class IndependentTestResult:
     duration_seconds: float
     raw_output: Optional[str] = None
     signal_absent: bool = False
+    # TASK-AB-SKIPVIS01: advisory skip-count visibility. None = unknown, never
+    # 0-coerced; never joins any verdict / turn-rejecting / stall logic.
+    tests_skipped: Optional[int] = None
+    # TASK-AB-RESUMEVENV01: forensic interpreter evidence. None = no pinned
+    # run; never read by any verdict / gate / stall logic.
+    resolved_interpreter: Optional[str] = None
 
 
 @dataclass
@@ -1184,6 +1364,16 @@ class CoachValidationResult:
                     # ``independent.get("signal_absent") is True`` guard there is
                     # dead on arrival for the Coach's own run.
                     "signal_absent": self.independent_tests.signal_absent,
+                    # TASK-AB-SKIPVIS01: advisory skip count. Serialized even
+                    # when None (unknown stays unknown — the ABFIX-010 lesson:
+                    # a flag omitted from to_dict makes downstream reads dead).
+                    "tests_skipped": self.independent_tests.tests_skipped,
+                    # TASK-AB-RESUMEVENV01 (AC-003): forensic interpreter
+                    # evidence. Serialized even when None (same ABFIX-010
+                    # lesson — an omitted key makes downstream reads dead).
+                    "resolved_interpreter": (
+                        self.independent_tests.resolved_interpreter
+                    ),
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -1370,7 +1560,7 @@ class CoachValidator:
         test_command: Optional[str] = None,
         test_timeout: int = 300,
         task_id: Optional[str] = None,
-        coach_test_execution: str = "sdk",
+        coach_test_execution: Optional[str] = None,
         matching_strategy: str = "auto",
         wave_size: int = 1,
         turn: int = 1,
@@ -1381,6 +1571,7 @@ class CoachValidator:
         evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
     ):
         """
         Initialize CoachValidator.
@@ -1397,9 +1588,22 @@ class CoachValidator:
             Task identifier for task-specific test filtering in shared worktrees.
             When provided, test detection will first look for task-specific test
             files before falling back to running the full test suite.
-        coach_test_execution : str
-            Test execution mode: "sdk" (default) uses Claude Agent SDK via Bash
-            tool for environment parity; "subprocess" uses subprocess.run() directly.
+        coach_test_execution : Optional[str]
+            Test execution mode: "subprocess" (default,
+            TASK-AB-COACHSUBPROC01) uses subprocess.run() directly with the
+            venv-pinned interpreter; "sdk" (opt-in — see the open diagnosis
+            tasks TASK-REV-COSE / TASK-FIX-A7B7) runs pytest through the
+            Claude Agent SDK Bash tool for environment parity, with the
+            subprocess path as fallback. None (default) resolves via
+            :func:`resolve_coach_test_execution` (env
+            ``GUARDKIT_COACH_TEST_EXECUTION`` > default). Callers that read
+            ``.guardkit/config.yaml`` resolve
+            ``resolve_coach_test_execution(config_value)`` before
+            constructing. An explicit value is authoritative (validated, but
+            never env-overridden) so pinned callers like the deterministic
+            Phase-4 runner (``specialist_invocations.py``,
+            TASK-AB-PERTASKFG01: never an LLM turn) cannot be flipped by the
+            Coach env lever.
         matching_strategy : str
             Text matching strategy for acceptance criteria verification.
             ``"text"``: strict Jaccard threshold (70%), ``"semantic"``: lower
@@ -1446,18 +1650,55 @@ class CoachValidator:
             pinned interpreter; results reach the evidence bundle and a
             ran-and-failed (or declared-but-unrunnable) suite blocks the turn.
             Default None -> no sibling-repo test execution.
+        basetemp_context : Optional[str]
+            Attribution label for the per-run pytest ``--basetemp`` isolation
+            (TASK-AB-BASETEMP01). When set (e.g. ``"phase4"`` from the
+            deterministic Phase-4 runner in ``specialist_invocations.py``),
+            it overrides the per-path defaults (``"coach-independent"`` for
+            the standard subprocess run, ``"coach-isolated"`` for the
+            parallel-wave snapshot run) so a leaked tmp dir names the caller.
+            The label is combined with ``task_id`` in the directory prefix.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
         self.task_id = task_id
+        # TASK-AB-COACHSUBPROC01: None -> resolve env > default (subprocess);
+        # resolve_coach_test_execution logs the active mode + provenance once
+        # per init. An explicit value is authoritative (validated with safe
+        # degrade, never env-overridden — protects pinned callers like the
+        # deterministic Phase-4 runner).
+        if coach_test_execution is None:
+            coach_test_execution = resolve_coach_test_execution()
+        elif coach_test_execution not in _VALID_COACH_TEST_EXECUTION_MODES:
+            # 2026-07-04 code review: an INVALID explicit value is not a pin —
+            # delegate to the standard env > default resolution instead of
+            # jumping straight to the default, so a valid
+            # GUARDKIT_COACH_TEST_EXECUTION override still applies (mirrors
+            # resolve_coach_test_execution's invalid-tier fall-through). Only
+            # a VALID explicit value stays authoritative over env.
+            logger.warning(
+                "Invalid coach_test_execution=%r (expected one of %s); "
+                "delegating to %s > default resolution.",
+                coach_test_execution,
+                _VALID_COACH_TEST_EXECUTION_MODES,
+                COACH_TEST_EXECUTION_ENV,
+            )
+            coach_test_execution = resolve_coach_test_execution()
+        else:
+            logger.debug(
+                "Coach test execution mode: %s (source: caller)",
+                coach_test_execution,
+            )
         self._coach_test_execution = coach_test_execution
         # TASK-FIX-COACHPYENV: resolve the interpreter Coach runs independent
         # tests under. Prefers the explicit bootstrap venv, then a filesystem
-        # ``<worktree>/.guardkit/venv/bin/python`` recovery, else None (PATH
-        # pytest / sys.executable for non-Python projects). Reuses the helper
-        # already battle-tested for CoachVerifier (TASK-FIX-7A05) so the two
-        # Coach verification surfaces resolve interpreters identically.
+        # recovery probing ``<worktree>/.venv/bin/python`` (current bootstrap
+        # layout) and legacy ``<worktree>/.guardkit/venv/bin/python``
+        # (TASK-AB-RESUMEVENV01), else None (PATH pytest / sys.executable for
+        # non-Python projects). Reuses the helper already battle-tested for
+        # CoachVerifier (TASK-FIX-7A05) so the two Coach verification surfaces
+        # resolve interpreters identically.
         self._configured_venv_python: Optional[str] = venv_python
         self._venv_python: Optional[Path] = _resolve_venv_python(
             self.worktree_path, venv_python
@@ -1506,6 +1747,9 @@ class CoachValidator:
         # Threaded from the feature's smoke_gates.expected_exit so the per-task
         # check agrees with the post-wave gate (default 0).
         self.smoke_expected_exit: int = smoke_expected_exit
+        # TASK-AB-BASETEMP01: caller-supplied attribution label for the per-run
+        # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
+        self._basetemp_context: Optional[str] = basetemp_context
         self.wave_size = max(1, int(wave_size))
         # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
         # by ``_detect_test_command`` for THIS run (None for Python / no match /
@@ -2185,6 +2429,14 @@ class CoachValidator:
                 and failure_confidence == "ambiguous"
                 and gates_status.all_gates_passed
                 and not requires_infra
+                # TASK-AB-ZEROTESTLOUD01 (AC-004): an ABSENT independent-test
+                # signal must never become an approval input. The amnesty is
+                # for a RAN-AND-FAILED environment-class failure on a
+                # known-broken bootstrap; "the oracle never produced a
+                # verdict" (signal_absent — e.g. zero collected tests via the
+                # verifier-infrastructure defect) is owned by the absent
+                # guard (#6) and stays feedback.
+                and not test_result.signal_absent
                 and self._bootstrap_likely_broken(task)
             )
 
@@ -2214,34 +2466,47 @@ class CoachValidator:
                     self._detect_source_file_contention(task_work_results)
                 )
 
-            conditional_approval = (
-                failure_class == "infrastructure"
-                and failure_confidence == "high"
-                and bool(requires_infra)
-                and not docker_available
-                and gates_status.all_gates_passed
-            ) or (
-                failure_class == "collection_error"
-                and gates_status.all_gates_passed
-            ) or (
-                # TASK-ABFIX-005: Grant conditional approval for contention-related
-                # failures in a parallel wave when all Player quality gates passed.
-                # "parallel_contention" is set by _classify_test_failure() when
-                # wave_size > 1 and the failure looks like it could be contention.
-                # TASK-FIX-A7B2: Only when no source-file overlap with peers.
-                failure_class == "parallel_contention"
-                and gates_status.all_gates_passed
-                and not source_file_contention_overlaps
-            ) or (
-                # TASK-ABFIX-005: Also grant conditional approval for any "code"
-                # failure in a parallel wave (recommendation 3b from TASK-REV-A17A).
-                # The failure might be a false positive caused by concurrent mutations.
-                # TASK-FIX-A7B2: Only when no source-file overlap with peers.
-                failure_class == "code"
-                and self.is_parallel
-                and gates_status.all_gates_passed
-                and not source_file_contention_overlaps
-            ) or environment_conditional_approval
+            # TASK-AB-ZEROTESTLOUD01 (AC-004), extended 2026-07-04 code review:
+            # an ABSENT independent-test signal must never become an approval
+            # input for ANY conditional-approval clause — not only the
+            # environment amnesty above. Every amnesty below exists for a
+            # RAN-AND-FAILED failure explained away as infrastructure /
+            # collection / contention; "the oracle never produced a verdict"
+            # (signal_absent=True — e.g. TimeoutExpired, or raw_output=None
+            # which _classify_test_failure maps to parallel_contention in
+            # parallel waves) is owned by the absent guard (#6) and stays
+            # feedback (absence-of-failure-is-not-success.md). Hoisted here as
+            # a single precondition so a future clause cannot forget it.
+            conditional_approval = not test_result.signal_absent and (
+                (
+                    failure_class == "infrastructure"
+                    and failure_confidence == "high"
+                    and bool(requires_infra)
+                    and not docker_available
+                    and gates_status.all_gates_passed
+                ) or (
+                    failure_class == "collection_error"
+                    and gates_status.all_gates_passed
+                ) or (
+                    # TASK-ABFIX-005: Grant conditional approval for contention-related
+                    # failures in a parallel wave when all Player quality gates passed.
+                    # "parallel_contention" is set by _classify_test_failure() when
+                    # wave_size > 1 and the failure looks like it could be contention.
+                    # TASK-FIX-A7B2: Only when no source-file overlap with peers.
+                    failure_class == "parallel_contention"
+                    and gates_status.all_gates_passed
+                    and not source_file_contention_overlaps
+                ) or (
+                    # TASK-ABFIX-005: Also grant conditional approval for any "code"
+                    # failure in a parallel wave (recommendation 3b from TASK-REV-A17A).
+                    # The failure might be a false positive caused by concurrent mutations.
+                    # TASK-FIX-A7B2: Only when no source-file overlap with peers.
+                    failure_class == "code"
+                    and self.is_parallel
+                    and gates_status.all_gates_passed
+                    and not source_file_contention_overlaps
+                ) or environment_conditional_approval
+            )
 
             if conditional_approval:
                 if environment_conditional_approval:
@@ -2380,19 +2645,36 @@ class CoachValidator:
                         "independent verification"
                     )
 
+                test_verification_issue: Dict[str, Any] = {
+                    "severity": "must_fix",
+                    "category": "test_verification",
+                    "description": description,
+                    "test_output": test_result.test_output_summary,
+                    "failure_classification": failure_class,
+                    "failure_confidence": failure_confidence,
+                }
+                if source_file_contention_overlaps:
+                    # TASK-AB-STALLTAX01: additive machine-readable contention
+                    # marker. The TASK-FIX-A7B2 overlap branch can record
+                    # failure_class == "code" (a code failure in a parallel
+                    # wave), which would otherwise lose the contention signal
+                    # before the terminal stall label. Serialize the
+                    # peer-overlap map (peer_task_id -> sorted overlapping
+                    # files) onto the issue so the parallel-interference stall
+                    # classifier keys on structured fields only. Verdict
+                    # behaviour is unchanged — overlap still forces feedback.
+                    test_verification_issue["contention_peers"] = {
+                        peer_id: sorted(files)
+                        for peer_id, files in (
+                            source_file_contention_overlaps.items()
+                        )
+                    }
                 return self._feedback_result(
                     task_id=task_id,
                     turn=turn,
                     quality_gates=gates_status,
                     independent_tests=test_result,
-                    issues=advisory_issues + [{
-                        "severity": "must_fix",
-                        "category": "test_verification",
-                        "description": description,
-                        "test_output": test_result.test_output_summary,
-                        "failure_classification": failure_class,
-                        "failure_confidence": failure_confidence,
-                    }],
+                    issues=advisory_issues + [test_verification_issue],
                     rationale=rationale,
                     context_used=context,
                     honesty_verification=honesty_verification,
@@ -3204,16 +3486,25 @@ class CoachValidator:
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
+            timeout_stderr = (
+                exc.stderr.decode() if isinstance(exc.stderr, bytes)
+                else exc.stderr
+            ) or ""
+            timeout_stdout = (
+                exc.stdout.decode() if isinstance(exc.stdout, bytes)
+                else exc.stdout
+            ) or ""
             stderr_tail = "\n".join(
-                (
-                    (exc.stderr.decode() if isinstance(exc.stderr, bytes)
-                     else exc.stderr) or ""
-                ).rstrip().splitlines()[-40:]
+                timeout_stderr.rstrip().splitlines()[-40:]
             )
             logger.warning(
                 "Runtime-parity check timed out after %ss: %s",
                 self.test_timeout, command,
             )
+            # NOTE: ran=True on timeout is operator-pinned
+            # (TASK-AB-COACHRUNPARITY01: a smoke entry point that starts and
+            # hangs is a real deliverable defect). output_tail is additive
+            # evidence only — verdict/timeout semantics unchanged.
             return RuntimeParityResult(
                 ran=True,
                 passed=False,
@@ -3222,6 +3513,7 @@ class CoachValidator:
                 expected_exit=self.smoke_expected_exit,
                 timed_out=True,
                 stderr_tail=stderr_tail,
+                output_tail=_combined_output_tail(timeout_stdout, timeout_stderr),
             )
         except Exception as exc:  # noqa: BLE001 — runner errors are ABSENT, not fail
             logger.warning(
@@ -3255,6 +3547,10 @@ class CoachValidator:
             expected_exit=self.smoke_expected_exit,
             timed_out=False,
             stderr_tail=stderr_tail,
+            # 2026-07-04 code review: pytest FAILED summaries live on stdout;
+            # carry the combined tail so the parity guard can name the failing
+            # tests (stderr_tail semantics untouched — additive only).
+            output_tail=_combined_output_tail(proc.stdout, proc.stderr),
         )
 
     def _compute_agent_invocations_advisory(
@@ -3824,6 +4120,17 @@ class CoachValidator:
                 "Coach SDK test command pinned to bootstrap interpreter: %s",
                 sdk_test_cmd,
             )
+        # 2026-07-04 code review: record the pinned interpreter as forensic
+        # evidence on the SDK-path results too (the subprocess/isolated runners
+        # already do — TASK-AB-RESUMEVENV01 AC-003). Only when the pin actually
+        # fired: an unpinned SDK run resolves ``pytest`` via the Bash tool's
+        # PATH, so the probe interpreter would not match the run — honest
+        # ``None`` there.
+        sdk_resolved_interpreter = (
+            self._resolved_interpreter_for(test_cmd)
+            if sdk_test_cmd != test_cmd
+            else None
+        )
         prompt = (
             f"Run the following test command and report the output:\n\n"
             f"```bash\n{sdk_test_cmd}\n```\n\nProvide the full test output."
@@ -4005,6 +4312,8 @@ class CoachValidator:
                     duration_seconds=duration,
                     raw_output=output_text,
                     signal_absent=substrate_absent,
+                    tests_skipped=_parse_tests_skipped(output_text),
+                    resolved_interpreter=sdk_resolved_interpreter,
                 )
             elif bash_is_error is False:
                 # NOTE (TASK-HMIG-006.3 code-review nit): this branch is
@@ -4028,6 +4337,8 @@ class CoachValidator:
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=output_text,
+                    tests_skipped=_parse_tests_skipped(output_text),
+                    resolved_interpreter=sdk_resolved_interpreter,
                 )
             else:
                 # GAP-FIX #7: is_error is None — parse output text
@@ -4070,6 +4381,8 @@ class CoachValidator:
                         test_output_summary=summary,
                         duration_seconds=duration,
                         raw_output=output_text,
+                        tests_skipped=_parse_tests_skipped(output_text),
+                        resolved_interpreter=sdk_resolved_interpreter,
                     )
                 # Heuristic fallback: check for failure indicators in output
                 lower = output_text.lower()
@@ -4088,6 +4401,8 @@ class CoachValidator:
                     test_output_summary=summary,
                     duration_seconds=duration,
                     raw_output=output_text,
+                    tests_skipped=_parse_tests_skipped(output_text),
+                    resolved_interpreter=sdk_resolved_interpreter,
                 )
 
         except asyncio.TimeoutError:
@@ -4194,6 +4509,20 @@ class CoachValidator:
         framework-pytest mismatch.
         """
         return str(self._venv_python) if self._venv_python is not None else sys.executable
+
+    def _resolved_interpreter_for(self, test_cmd: str) -> Optional[str]:
+        """The interpreter an interpreter-pinned run of ``test_cmd`` uses.
+
+        TASK-AB-RESUMEVENV01 (AC-003): recorded on
+        :class:`IndependentTestResult.resolved_interpreter` as forensic
+        evidence. Only pytest-shaped commands are pinned to
+        ``_pytest_interpreter()`` by the subprocess/isolated runners; a
+        non-pytest command runs via ``shell=True`` with no interpreter pin,
+        so ``None`` (unknown) is the honest value there.
+        """
+        if test_cmd.startswith("pytest"):
+            return self._pytest_interpreter()
+        return None
 
     def _pin_pytest_command(self, test_cmd: str) -> str:
         """Rewrite a bare ``pytest …`` command to pin the bootstrap interpreter.
@@ -4394,6 +4723,19 @@ class CoachValidator:
             self._pytest_timeout_method(),
         ]
 
+    def _basetemp_run_context(self, default_label: str) -> str:
+        """Attribution label for the per-run pytest ``--basetemp`` dir.
+
+        TASK-AB-BASETEMP01: composes ``<task_id>-<label>`` so a leaked dir
+        under system tmp is attributable to its task and call site. A
+        caller-supplied ``basetemp_context`` (e.g. ``"phase4"`` from the
+        deterministic Phase-4 runner) overrides the per-path default.
+        """
+        label = self._basetemp_context or default_label
+        if self.task_id:
+            return f"{self.task_id}-{label}"
+        return label
+
     def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
         """
         Run tests in an isolated temporary directory (Option B: tempdir copy).
@@ -4459,19 +4801,30 @@ class CoachValidator:
                     # TASK-ABFIX-011: append a gated per-test --timeout so a hung
                     # test on a PARALLEL wave is named-FAILED, not tests_run=0
                     # (the easy-to-miss 4th injection site — ABFIX-010 GAP 3).
-                    cmd = (
-                        [self._pytest_interpreter(), "-m", "pytest"]
-                        + parts[1:]
-                        + self._pytest_timeout_argv()
-                    )
-                    result = subprocess.run(
-                        cmd,
-                        cwd=str(tmpdir_path),
-                        capture_output=True,
-                        text=True,
-                        timeout=self.test_timeout,
-                        env=self._pytest_env(),
-                    )
+                    # TASK-AB-BASETEMP01: the tempdir COPY isolates the CWD but
+                    # NOT pytest's basetemp — that is still the shared per-user
+                    # /tmp/pytest-of-<user> default, which two concurrent loops
+                    # on one host race. Inject a unique --basetemp (a
+                    # pre-existing --basetemp in the command wins; the dir is
+                    # best-effort removed after the run).
+                    with isolated_basetemp(
+                        self._basetemp_run_context("coach-isolated"),
+                        parts[1:],
+                    ) as basetemp_argv:
+                        cmd = (
+                            [self._pytest_interpreter(), "-m", "pytest"]
+                            + parts[1:]
+                            + self._pytest_timeout_argv()
+                            + basetemp_argv
+                        )
+                        result = subprocess.run(
+                            cmd,
+                            cwd=str(tmpdir_path),
+                            capture_output=True,
+                            text=True,
+                            timeout=self.test_timeout,
+                            env=self._pytest_env(),
+                        )
                 else:
                     result = subprocess.run(
                         test_cmd,
@@ -4535,6 +4888,8 @@ class CoachValidator:
                     duration_seconds=duration,
                     raw_output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=signal_absent,
+                    tests_skipped=_parse_tests_skipped(combined),
+                    resolved_interpreter=self._resolved_interpreter_for(test_cmd),
                 )
 
         except subprocess.TimeoutExpired:
@@ -4547,6 +4902,7 @@ class CoachValidator:
                 duration_seconds=duration,
                 # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
                 signal_absent=True,
+                resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
         except Exception as e:
             duration = time.time() - start_time
@@ -4558,6 +4914,7 @@ class CoachValidator:
                 duration_seconds=duration,
                 # TASK-FIX-COACHTESTTO: execution error before any verdict.
                 signal_absent=True,
+                resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
 
     def run_independent_tests(
@@ -4743,19 +5100,29 @@ class CoachValidator:
                     # interpreter, never sys.executable / PATH pytest.
                     # TASK-ABFIX-011: append a gated per-test --timeout (no-op
                     # unless Python stack + pytest-timeout resolvable).
-                    cmd = (
-                        [self._pytest_interpreter(), "-m", "pytest"]
-                        + parts[1:]
-                        + self._pytest_timeout_argv()
-                    )
-                    result = subprocess.run(
-                        cmd,
-                        cwd=str(self.worktree_path),
-                        capture_output=True,
-                        text=True,
-                        timeout=self.test_timeout,
-                        env=self._pytest_env(),
-                    )
+                    # TASK-AB-BASETEMP01: inject a unique --basetemp under the
+                    # system temp dir so concurrent loops on one host cannot
+                    # race pytest's shared /tmp/pytest-of-<user> default (a
+                    # pre-existing --basetemp in the command wins; the dir is
+                    # best-effort removed after the run).
+                    with isolated_basetemp(
+                        self._basetemp_run_context("coach-independent"),
+                        parts[1:],
+                    ) as basetemp_argv:
+                        cmd = (
+                            [self._pytest_interpreter(), "-m", "pytest"]
+                            + parts[1:]
+                            + self._pytest_timeout_argv()
+                            + basetemp_argv
+                        )
+                        result = subprocess.run(
+                            cmd,
+                            cwd=str(self.worktree_path),
+                            capture_output=True,
+                            text=True,
+                            timeout=self.test_timeout,
+                            env=self._pytest_env(),
+                        )
                 else:
                     result = subprocess.run(
                         test_cmd,
@@ -4890,6 +5257,12 @@ class CoachValidator:
                     duration_seconds=duration,
                     raw_output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=signal_absent,
+                    tests_skipped=_parse_tests_skipped(
+                        (result.stdout or "") + (result.stderr or "")
+                    ),
+                    resolved_interpreter=self._resolved_interpreter_for(
+                        test_cmd
+                    ),
                 )
 
             except subprocess.TimeoutExpired:
@@ -4902,6 +5275,9 @@ class CoachValidator:
                     duration_seconds=duration,
                     # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
                     signal_absent=True,
+                    resolved_interpreter=self._resolved_interpreter_for(
+                        test_cmd
+                    ),
                 )
             except Exception as e:
                 duration = time.time() - start_time
@@ -4913,6 +5289,9 @@ class CoachValidator:
                     duration_seconds=duration,
                     # TASK-FIX-COACHTESTTO: execution error before any verdict.
                     signal_absent=True,
+                    resolved_interpreter=self._resolved_interpreter_for(
+                        test_cmd
+                    ),
                 )
 
         finally:

@@ -61,7 +61,10 @@ ORCHESTRATION_SCHEMA = """
 Orchestration Schema:
   parallel_groups: list     # Lists of task IDs per wave
   estimated_duration_minutes: int
-  recommended_parallel: int # Recommended max parallel tasks
+  recommended_parallel: int # Bound (may only lower, never raise) on the
+                            # auto-detected max parallel tasks when neither
+                            # the GUARDKIT_MAX_PARALLEL_TASKS env var nor
+                            # --max-parallel is set (TASK-AB-WAVECTL01)
 """
 
 
@@ -263,15 +266,23 @@ class FeatureOrchestration(BaseModel):
         Wave execution order (tasks in same list can run in parallel)
     estimated_duration_minutes : int
         Total estimated duration
-    recommended_parallel : int
-        Recommended max parallel tasks
+    recommended_parallel : Optional[int]
+        Recommended max parallel tasks. Consumed by the orchestrator's
+        concurrency resolution with precedence env > CLI flag > this value
+        > auto-detect (TASK-AB-WAVECTL01), and it may only LOWER the
+        auto-detect result, never raise it (generate_feature_yaml emits it
+        as a machine default, so it must not lift the TASK-VPT-001 local
+        cap of 1). ``None`` means "not set" — the default must stay
+        ``None`` (not a coerced int) so an absent YAML tier survives
+        save/load round-trips and never silently caps a run
+        (see .claude/rules/absence-must-survive-every-reconciliation-layer.md).
     """
 
     model_config = ConfigDict(extra="ignore")
 
     parallel_groups: List[List[str]] = Field(default_factory=list)
     estimated_duration_minutes: int = 0
-    recommended_parallel: int = 1
+    recommended_parallel: Optional[int] = None
 
 
 @dataclass
@@ -659,6 +670,13 @@ class FeatureLoader:
                 validate_paths=validate_paths,
             )
             feature.file_path = feature_file
+            # TASK-AB-WAVECTL01: warn (never block) when the configured smoke
+            # gate leaves the final wave ungated.
+            coverage_warning = (
+                FeatureLoader.check_smoke_gate_final_wave_coverage(feature)
+            )
+            if coverage_warning:
+                logger.warning(coverage_warning)
             return feature
         except FeatureParseError:
             # Re-raise with schema hints intact
@@ -1263,6 +1281,54 @@ class FeatureLoader:
                                 f"Move {task_id} to a later wave."
                             )
         return errors
+
+    @staticmethod
+    def check_smoke_gate_final_wave_coverage(feature: Feature) -> Optional[str]:
+        """Warn-only check: does ``smoke_gates.after_wave`` cover the final wave?
+
+        TASK-AB-WAVECTL01. A smoke gate configured with an int/list
+        ``after_wave`` that skips the final wave of
+        ``orchestration.parallel_groups`` leaves the assembled feature's last
+        wave(s) ungated, letting composition breaks ship silently
+        (FEAT-SMP-001 used ``after_wave: [2, 3, 4]`` with 7 waves). This is a
+        validation WARNING, never an error, and existing YAMLs are never
+        silently rewritten — final-wave gating is genuine operator policy
+        (see .claude/rules/activate-by-artefact-not-opt-in-flag.md).
+
+        Parameters
+        ----------
+        feature : Feature
+            Already-parsed feature.
+
+        Returns
+        -------
+        Optional[str]
+            Warning message when the final wave is uncovered; ``None`` when
+            there is nothing to warn about (no smoke_gates block, no wave
+            layout, ``after_wave: "all"``, or a covering int/list).
+        """
+        if feature.smoke_gates is None:
+            return None
+        waves = feature.orchestration.parallel_groups
+        if not waves:
+            # No wave layout to check — absent signal, neither warn nor block.
+            return None
+
+        final_wave = len(waves)
+        after = feature.smoke_gates.after_wave
+        if after == "all":
+            return None
+        covered = {after} if isinstance(after, int) else set(after)
+        if final_wave in covered:
+            return None
+
+        return (
+            f"Feature {feature.id}: smoke_gates.after_wave={after!r} does not "
+            f"cover the final wave (wave {final_wave} of {final_wave}) — "
+            f"composition breaks in the ungated final wave(s) will ship "
+            f"unverified. Add wave {final_wave} to after_wave or use "
+            f'after_wave: "all" (TASK-AB-WAVECTL01).'
+        )
 
     @staticmethod
     def validate_yaml(data: Dict[str, Any]) -> List[str]:

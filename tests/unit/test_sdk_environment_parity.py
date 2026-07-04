@@ -154,11 +154,12 @@ class TestSdkUtils:
 class TestCoachValidatorInit:
     """Tests for CoachValidator.__init__() parameter handling."""
 
-    def test_init_default_sdk_execution(self, tmp_path):
-        """Default coach_test_execution is 'sdk'."""
+    def test_init_default_subprocess_execution(self, tmp_path, monkeypatch):
+        """Default coach_test_execution is 'subprocess' (TASK-AB-COACHSUBPROC01)."""
+        monkeypatch.delenv("GUARDKIT_COACH_TEST_EXECUTION", raising=False)
         validator = CoachValidator(str(tmp_path))
 
-        assert validator._coach_test_execution == "sdk"
+        assert validator._coach_test_execution == "subprocess"
 
     def test_init_subprocess_execution(self, tmp_path):
         """coach_test_execution='subprocess' is stored correctly."""
@@ -578,3 +579,98 @@ class TestBug472DefenseInExistingPaths:
         # carried on the HarnessEvent (event.raw) rather than a bare
         # `message`. The defence is still present and unconditional.
         assert "check_assistant_message_error(event.raw)" in source
+
+
+# ============================================================================
+# 8. TestSdkResolvedInterpreter (2026-07-04 code review: SDK-path forensics)
+# ============================================================================
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason=(
+        "_run_tests_via_sdk uses asyncio.timeout(), added in Python 3.11; "
+        "matches the skip in test_coach_independent_test_timeout.py."
+    ),
+)
+class TestSdkResolvedInterpreter:
+    """The SDK-path IndependentTestResult sites record the PINNED interpreter
+    on resolved_interpreter (TASK-AB-RESUMEVENV01 forensics — previously a
+    false None on every SDK-mode result), and keep an honest None when no
+    pin fired (bare PATH pytest / no bootstrap venv)."""
+
+    class _FakeHarness:
+        """Yields one assistant message then the terminal result event —
+        drives _run_tests_via_sdk's heuristic/summary-verdict branches."""
+
+        def __init__(self, text: str):
+            self._text = text
+
+        def invoke(self, **kwargs):
+            from guardkit.orchestrator.harness import (
+                AssistantMessageEvent,
+                ResultMessageEvent,
+            )
+
+            async def _gen():
+                yield AssistantMessageEvent(text=self._text)
+                yield ResultMessageEvent(session_id=None)
+
+            return _gen()
+
+    def _validator(self, tmp_path, *, venv: bool) -> CoachValidator:
+        worktree = tmp_path / "wt"
+        worktree.mkdir(exist_ok=True)
+        validator = CoachValidator(
+            worktree_path=str(worktree),
+            test_command="pytest tests/x.py",
+            test_timeout=30,
+            task_id="TASK-SDKRI",
+            coach_test_execution="sdk",
+        )
+        # Pin (or clear) the bootstrap venv directly: _pin_pytest_command
+        # rewrites to "<venv_python> -m pytest ..." only when a venv resolved.
+        validator._venv_python = (
+            (worktree / ".venv" / "bin" / "python") if venv else None
+        )
+        # The pinned-interpreter probe for pytest-timeout would subprocess the
+        # fake interpreter; force the cached probe to "unavailable" so the pin
+        # is exercised without --timeout injection noise.
+        validator._pytest_timeout_available_cache = False
+        return validator
+
+    def _run(self, validator: CoachValidator, text: str):
+        with patch(
+            "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
+            return_value=self._FakeHarness(text),
+        ):
+            return asyncio.run(validator._run_tests_via_sdk("pytest tests/x.py"))
+
+    def test_pinned_pass_records_interpreter(self, tmp_path):
+        """Summary-verdict pass branch records the pinned venv interpreter."""
+        validator = self._validator(tmp_path, venv=True)
+        result = self._run(validator, "2 passed in 0.01s")
+        assert result.tests_passed is True
+        assert result.resolved_interpreter == str(validator._venv_python)
+
+    def test_pinned_fail_records_interpreter(self, tmp_path):
+        """Summary-verdict fail branch records the pinned venv interpreter."""
+        validator = self._validator(tmp_path, venv=True)
+        result = self._run(validator, "1 failed, 1 passed in 0.02s")
+        assert result.tests_passed is False
+        assert result.resolved_interpreter == str(validator._venv_python)
+
+    def test_pinned_heuristic_branch_records_interpreter(self, tmp_path):
+        """Heuristic fallback branch (no pytest summary line) records it too."""
+        validator = self._validator(tmp_path, venv=True)
+        result = self._run(validator, "everything ok - success")
+        assert result.tests_passed is True
+        assert result.resolved_interpreter == str(validator._venv_python)
+
+    def test_unpinned_run_keeps_honest_none(self, tmp_path):
+        """No bootstrap venv → no pin fired → the Bash tool resolves pytest
+        via PATH, so the honest forensic value stays None."""
+        validator = self._validator(tmp_path, venv=False)
+        result = self._run(validator, "2 passed in 0.01s")
+        assert result.tests_passed is True
+        assert result.resolved_interpreter is None

@@ -3,9 +3,11 @@
 Exercises the imperative callsite added by TASK-FIX-A7B3. Drives the
 ``generate_feature_yaml.py`` script via subprocess against a fixture workspace
 where two tasks in the same parallel wave both edit the same shared BDD glue
-file. The default run must emit a warning (AC-004 default mode), and the
-``--auto-serialise-overlap`` run must split the offending parallel group into
-a sequential follow-on entry (AC-004 auto-serialise mode).
+file. Since TASK-AB-WAVECTL01 auto-serialisation is the DEFAULT: the default
+run must split the offending parallel group into a sequential follow-on entry
+and say so in the banner; ``--no-auto-serialise-overlap`` opts back into the
+original warn-only behaviour. Plans with no detected overlap are unchanged
+in either mode.
 
 Structural twin of ``test_generate_feature_yaml_nudges.py`` (R2/R3 nudges)
 and ``test_generate_feature_yaml_linter.py`` (R1 AC linter) — those tests
@@ -13,7 +15,7 @@ prove the pre-existing producer-runs-check banners fire from the producer;
 this test proves the wave-overlap banner does the same. Without this test,
 the overlap detection remains a Claude-as-runtime interpretation of prose.
 
-See TASK-FIX-A7B3 §Acceptance Criteria AC-004.
+See TASK-FIX-A7B3 §Acceptance Criteria AC-004 and TASK-AB-WAVECTL01 AC-006.
 """
 
 from __future__ import annotations
@@ -88,6 +90,7 @@ def _run_script(
     tasks_json: Path,
     *,
     auto_serialise: bool = False,
+    no_auto_serialise: bool = False,
     quiet: bool = False,
 ) -> subprocess.CompletedProcess:
     """Invoke generate_feature_yaml.py as a subprocess and capture output."""
@@ -103,6 +106,8 @@ def _run_script(
     ]
     if auto_serialise:
         cmd.append("--auto-serialise-overlap")
+    if no_auto_serialise:
+        cmd.append("--no-auto-serialise-overlap")
     if quiet:
         cmd.append("--quiet")
     return subprocess.run(
@@ -114,10 +119,11 @@ def _run_script(
     )
 
 
-class TestDefaultModeEmitsWarning:
-    """AC-004: default mode emits a planner warning naming overlapping tasks/files."""
+class TestDefaultModeSerialises:
+    """TASK-AB-WAVECTL01 AC-006: default mode splits the offending wave and
+    the banner names the overlapping tasks/files plus the applied split."""
 
-    def test_default_run_emits_overlap_warning_banner(
+    def test_default_run_emits_overlap_banner(
         self, project_dir: Path, overlapping_tasks_json: Path
     ) -> None:
         result = _run_script(project_dir, overlapping_tasks_json)
@@ -148,22 +154,67 @@ class TestDefaultModeEmitsWarning:
         assert result.returncode == 0
         assert "features/foo/test_foo.py" in result.stdout
 
-    def test_default_run_suggests_auto_serialise_flag(
+    def test_default_run_banner_says_split_applied(
         self, project_dir: Path, overlapping_tasks_json: Path
     ) -> None:
         result = _run_script(project_dir, overlapping_tasks_json)
 
         assert result.returncode == 0
-        assert "--auto-serialise-overlap" in result.stdout
+        assert "follow-on sequential wave" in result.stdout
+        assert "--no-auto-serialise-overlap" in result.stdout
 
-    def test_default_run_does_not_split_parallel_groups(
+    def test_default_run_splits_parallel_groups(
         self, project_dir: Path, overlapping_tasks_json: Path
     ) -> None:
-        """Default mode is warn-only; the YAML still schedules both tasks in wave 1."""
+        """Default mode serialises: the offenders land in sequential waves."""
         result = _run_script(project_dir, overlapping_tasks_json)
 
         assert result.returncode == 0
-        # Both task IDs should land on the same Wave 1 line.
+        assert "Parallel execution groups: 2 waves" in result.stdout, (
+            f"Expected 2 waves after default-on split; got:\n{result.stdout}"
+        )
+        wave_1_lines = [
+            line for line in result.stdout.splitlines()
+            if line.lstrip().startswith("Wave 1:")
+        ]
+        wave_2_lines = [
+            line for line in result.stdout.splitlines()
+            if line.lstrip().startswith("Wave 2:")
+        ]
+        assert wave_1_lines and wave_2_lines, (
+            f"Expected both 'Wave 1:' and 'Wave 2:' lines.\nstdout:\n{result.stdout}"
+        )
+        assert "TASK-FOO-001" in wave_1_lines[0]
+        assert "TASK-FOO-002" not in wave_1_lines[0]
+        assert "TASK-FOO-002" in wave_2_lines[0]
+
+
+class TestOptOutIsWarnOnly:
+    """TASK-AB-WAVECTL01 AC-006: --no-auto-serialise-overlap restores the
+    A7B3 warn-only behaviour — banner fires, wave layout untouched."""
+
+    def test_opt_out_emits_warning_banner(
+        self, project_dir: Path, overlapping_tasks_json: Path
+    ) -> None:
+        result = _run_script(
+            project_dir, overlapping_tasks_json, no_auto_serialise=True
+        )
+
+        assert result.returncode == 0, (
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+        assert "Wave overlap (plan-time) check" in result.stdout
+        assert "follow-on sequential wave" not in result.stdout
+
+    def test_opt_out_does_not_split_parallel_groups(
+        self, project_dir: Path, overlapping_tasks_json: Path
+    ) -> None:
+        result = _run_script(
+            project_dir, overlapping_tasks_json, no_auto_serialise=True
+        )
+
+        assert result.returncode == 0
+        # Both task IDs stay on the same Wave 1 line.
         wave_lines = [
             line for line in result.stdout.splitlines()
             if line.lstrip().startswith("Wave 1:")

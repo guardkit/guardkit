@@ -232,9 +232,12 @@ class TestVenvPathInCoach:
     """Tests for virtualenv PATH prepending in verify_command_criteria."""
 
     def test_venv_bin_prepended_when_exists(self, coach, worktree_path):
-        """When .venv/bin/ exists, PATH should be prepended."""
+        """When .venv/bin/python exists, PATH should be prepended."""
         venv_bin = worktree_path / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
+        # build_venv_env derives the dir from probe_worktree_venv, which
+        # requires the interpreter (2026-07-04 review, FIX 4).
+        (venv_bin / "python").touch()
 
         criteria = ["`pytest tests/ -v` runs successfully"]
 
@@ -298,53 +301,73 @@ class TestCommandModels:
         result = normalise_pip_command("python -m pip install X")
         assert result == "python -m pip install X"
 
-    def test_build_venv_env_with_venv(self, tmp_path):
-        """build_venv_env should return env with venv PATH when .venv/bin exists."""
-        venv_bin = tmp_path / ".venv" / "bin"
+    @staticmethod
+    def _make_venv_bin(root, *parts):
+        """Create a venv ``bin`` dir carrying the ``python`` interpreter
+        (build_venv_env now derives the dir from ``probe_worktree_venv``,
+        which requires the interpreter — 2026-07-04 review, FIX 4)."""
+        venv_bin = root.joinpath(*parts)
         venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
+        return venv_bin
+
+    def test_build_venv_env_with_venv(self, tmp_path):
+        """build_venv_env should return env with venv PATH when .venv exists."""
+        venv_bin = self._make_venv_bin(tmp_path, ".venv", "bin")
 
         env = build_venv_env(tmp_path)
         assert env is not None
         assert env["PATH"].startswith(str(venv_bin))
 
     def test_build_venv_env_without_venv(self, tmp_path):
-        """build_venv_env should return None when no .venv/bin exists."""
+        """build_venv_env should return None when no venv exists."""
         env = build_venv_env(tmp_path)
         assert env is None
+
+    def test_build_venv_env_bare_bin_dir_without_interpreter_is_none(
+        self, tmp_path
+    ):
+        """A ``bin`` dir with no ``python`` is not a usable venv: the layout
+        probe is owned by ``probe_worktree_venv`` (interpreter-existence),
+        no longer a hand-listed dir-existence check (FIX 4)."""
+        (tmp_path / ".venv" / "bin").mkdir(parents=True)
+        assert build_venv_env(tmp_path) is None
 
     def test_build_venv_env_with_bootstrap_venv(self, tmp_path):
         """AC-004: build_venv_env consults ``.guardkit/venv/bin`` (TASK-FIX-A7B1).
 
-        The bootstrap creates the venv at ``<worktree>/.guardkit/venv/bin``
-        rather than ``<worktree>/.venv/bin``. Without this branch,
-        build_venv_env returns None for bootstrapped worktrees and the
+        The legacy PEP 668 bootstrap created the venv at
+        ``<worktree>/.guardkit/venv/bin``. Without this branch,
+        build_venv_env returns None for such worktrees and the
         Coach pytest invocation falls back to whatever ``pytest`` is on
         the parent PATH — losing the verification interpreter
         ``environment_bootstrap`` was meant to install.
         """
-        bootstrap_bin = tmp_path / ".guardkit" / "venv" / "bin"
-        bootstrap_bin.mkdir(parents=True)
+        bootstrap_bin = self._make_venv_bin(tmp_path, ".guardkit", "venv", "bin")
 
         env = build_venv_env(tmp_path)
         assert env is not None
         assert env["PATH"].startswith(str(bootstrap_bin))
 
-    def test_build_venv_env_prefers_bootstrap_over_legacy(self, tmp_path):
-        """AC-004: bootstrap venv wins when both ``.guardkit/venv`` and ``.venv`` exist.
+    def test_build_venv_env_prefers_current_layout_over_legacy(self, tmp_path):
+        """TASK-AB-RESUMEVENV01: ``.venv`` wins when both layouts exist.
 
-        The bootstrap-managed venv is the interpreter Coach was
-        configured to verify against — preferring it makes Coach and the
-        smoke gate agree on which interpreter to use.
+        Current bootstrap creates the worktree venv at ``<worktree>/.venv``
+        (FFC6); ``.guardkit/venv`` is the legacy PEP 668 fallback. The PATH
+        prepend must agree with the pinned pytest ``argv[0]``
+        (build_venv_env derives from the same ``probe_worktree_venv``
+        ``_resolve_venv_python`` uses) so nested ``python``/console-scripts
+        resolve inside the SAME venv pytest runs under. Supersedes the
+        TASK-FIX-A7B1 ordering, which predated the FFC6 ``.venv`` layout.
         """
-        bootstrap_bin = tmp_path / ".guardkit" / "venv" / "bin"
-        bootstrap_bin.mkdir(parents=True)
-        legacy_bin = tmp_path / ".venv" / "bin"
-        legacy_bin.mkdir(parents=True)
+        self._make_venv_bin(tmp_path, ".guardkit", "venv", "bin")
+        current_bin = self._make_venv_bin(tmp_path, ".venv", "bin")
 
         env = build_venv_env(tmp_path)
         assert env is not None
-        assert env["PATH"].startswith(str(bootstrap_bin)), (
-            "Bootstrap venv must be preferred over legacy .venv when both exist"
+        assert env["PATH"].startswith(str(current_bin)), (
+            "Current .venv layout must be preferred over legacy "
+            ".guardkit/venv when both exist"
         )
 
     def test_assert_worktree_path_valid(self, worktree_path):

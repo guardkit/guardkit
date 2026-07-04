@@ -78,6 +78,15 @@ Unknown keys under `smoke_gates` are **rejected** (`extra="forbid"`).
 The wave numbers come from `orchestration.parallel_groups` — the feature
 plan is the source of truth. The smoke gate never invents waves.
 
+**Always cover the final wave** (TASK-AB-WAVECTL01). An int/list
+`after_wave` that skips the last wave leaves the assembled feature's final
+composition ungated — FEAT-SMP-001 used `after_wave: [2, 3, 4]` with 7
+waves, so composition breaks in waves 5–7 shipped silently. Prefer
+`after_wave: "all"`, or make sure the list includes the final wave (and
+make the last gate full-suite, e.g. `pytest tests/`). The feature loader
+emits a warning (never an error, and it never rewrites your YAML) when
+the configured gate does not cover the final wave.
+
 ## What happens on failure
 
 When the smoke gate's exit code differs from `expected_exit` (or it

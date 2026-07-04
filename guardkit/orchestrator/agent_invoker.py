@@ -60,6 +60,11 @@ from guardkit.orchestrator.schemas import (
     CompletionPromise,
     CriterionVerification,
 )
+from guardkit.orchestrator.stale_test_attribution import (
+    extract_failing_test_lines,
+    is_test_runner_command,
+    stale_test_notes,
+)
 
 # TASK-HMIG-006 Phase 3b: HarnessAdapter substrate seam.
 # Pure-Python, SDK-free imports — the concrete ClaudeSDKHarness lazily
@@ -717,6 +722,24 @@ _PROMISE_SCHEMA_FIELDS = {
 }
 
 # =========================================================================
+# TASK-AB-INVARIANTTEST01: Transient-assertion ("invariant-not-snapshot")
+# detection phrase shared by Coach and Player
+# =========================================================================
+# This exact wording appears verbatim in BOTH the Coach-side advisory guard
+# (#8 in _render_absence_of_failure_guards) and the Player's anti-patterns
+# entry in installer/core/agents/autobuild-player.md, per
+# .claude/rules/player-prompt-reinforce-coach-constraint-in-three-locations.md
+# (the anti-patterns entry must quote the Coach's detection wording verbatim
+# so the Player recognises the failure in the Coach's terms). Keep the two
+# byte-identical — tests/unit/test_transient_assertion_guidance.py pins it.
+TRANSIENT_ASSERTION_DETECTION_PHRASE = (
+    "a new test asserts a transient point-in-time state of the current task "
+    "boundary (e.g. that a method raises NotImplementedError, or that a "
+    "directory/table/config is empty or absent) for functionality a later "
+    "task in this feature implements"
+)
+
+# =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
 # =========================================================================
 # When the SDK's query() async generator is closed between turns, AnyIO's
@@ -870,6 +893,12 @@ class TaskWorkStreamParser:
         r"[=]+\s*(?:(\d+)\s+passed)?(?:,?\s*(\d+)\s+failed)?(?:,?\s*(\d+)\s+skipped)?.*?[=]+",
         re.IGNORECASE
     )
+    # TASK-AB-SKIPVIS01: independent skip-token search over a matched summary
+    # line. The positional group(3) above only matches in passed-then-failed
+    # adjacency, but pytest orders failed BEFORE passed on every failing run
+    # ("2 failed, 3 passed, 1 skipped"), so deriving the skip count from
+    # group(3) coerced a real skip count to 0 on failing-run summaries.
+    PYTEST_SKIPPED_TOKEN_PATTERN = re.compile(r"(\d+)\s+skipped\b", re.IGNORECASE)
     # Alternative pytest pattern for simpler output: "5 passed in 0.23s"
     PYTEST_SIMPLE_PATTERN = re.compile(r"(\d+)\s+passed(?:\s+in\s+[\d.]+s)?", re.IGNORECASE)
 
@@ -878,6 +907,11 @@ class TaskWorkStreamParser:
         self._phases: Dict[str, Dict[str, Any]] = {}
         self._tests_passed: Optional[int] = None
         self._tests_failed: Optional[int] = None
+        # TASK-AB-SKIPVIS01: advisory skip count. None = no parseable pytest
+        # summary seen (unknown, never 0-coerced); 0 = a summary parsed
+        # cleanly with no skip token; N = N tests skipped. Never read by any
+        # gate/verdict logic.
+        self._tests_skipped: Optional[int] = None
         self._coverage: Optional[float] = None
         self._quality_gates_passed: Optional[bool] = None
         self._files_modified: set = set()
@@ -1098,6 +1132,28 @@ class TaskWorkStreamParser:
                 if self._tests_failed is None or failed_count > self._tests_failed:
                     self._tests_failed = failed_count
                     logger.debug(f"Pytest summary - tests failed: {self._tests_failed}")
+            # TASK-AB-SKIPVIS01: advisory skip count, derived from an
+            # INDEPENDENT token search over the matched summary line — never
+            # from the positional group(3), which only matches in
+            # passed-then-failed adjacency and so misses the skip token on
+            # every failing-run summary (pytest orders failed before passed:
+            # "2 failed, 3 passed, 1 skipped"). Tri-state contract: None =
+            # no parseable summary ever seen (unknown stays unknown, never
+            # 0-coerced); 0 = a summary matched cleanly and carries no
+            # 'skipped' token; N = N skipped.
+            skipped_token_match = self.PYTEST_SKIPPED_TOKEN_PATTERN.search(
+                pytest_summary_match.group(0)
+            )
+            if skipped_token_match:
+                skipped_count = int(skipped_token_match.group(1))
+                if self._tests_skipped is None or skipped_count > self._tests_skipped:
+                    self._tests_skipped = skipped_count
+                    logger.debug(f"Pytest summary - tests skipped: {self._tests_skipped}")
+            elif pytest_summary_match.group(1) or pytest_summary_match.group(2):
+                # A cleanly parsed summary (it carried a passed/failed count)
+                # with no skip token is positively zero skips (0).
+                if self._tests_skipped is None:
+                    self._tests_skipped = 0
 
         # Also try simpler pytest pattern (e.g., "5 passed in 0.23s")
         if self._tests_passed is None:
@@ -1160,6 +1216,8 @@ class TaskWorkStreamParser:
             - phases: Dict of detected phases with completion status
             - tests_passed: Number of tests that passed (or None)
             - tests_failed: Number of tests that failed (or None)
+            - tests_skipped: Advisory skip count (omitted when no parseable
+              pytest summary was seen — unknown stays unknown; TASK-AB-SKIPVIS01)
             - coverage: Coverage percentage (or None)
             - quality_gates_passed: Boolean or None if not detected
             - files_modified: List of modified file paths
@@ -1178,6 +1236,11 @@ class TaskWorkStreamParser:
 
         if self._tests_failed is not None:
             result["tests_failed"] = self._tests_failed
+
+        # TASK-AB-SKIPVIS01: advisory only. Omitted when None (no parseable
+        # pytest summary) — mirrors tests_passed/tests_failed absence handling.
+        if self._tests_skipped is not None:
+            result["tests_skipped"] = self._tests_skipped
 
         if self._coverage is not None:
             result["coverage"] = self._coverage
@@ -1223,6 +1286,7 @@ class TaskWorkStreamParser:
         self._phases = {}
         self._tests_passed = None
         self._tests_failed = None
+        self._tests_skipped = None
         self._coverage = None
         self._quality_gates_passed = None
         self._files_modified = set()
@@ -2280,6 +2344,34 @@ class AgentInvoker:
             decision = self._load_agent_report(task_id, turn, "coach")
             self._validate_coach_decision(decision)
 
+            # TASK-AB-NULLEVID01: deterministic fail-closed backstop for the
+            # absence-of-failure guard #5 (the GATHERING-STATUS GUARD in
+            # _build_coach_prompt). When gather_evidence aborts early (e.g.
+            # partial_honesty_abort) the bundle has everything downstream None
+            # and signal_absent is never set, so the guard-#6 backstop below
+            # no-ops — leaving guard #5 as prompt text only. This override
+            # makes guard #5 load-bearing CODE. Ordering is deliberate: it
+            # runs FIRST among the verdict-override guards because incomplete
+            # gathering is upstream of every leg-specific signal — on an
+            # aborted gather the legs the guards below read (independent_tests,
+            # spec_gap, runtime_parity, classification) are all None, so they
+            # would no-op anyway; firing first means the feedback names the
+            # root cause (the aborted gathering stage), not a downstream
+            # symptom. Contract: only `approve` verdicts are ever FLIPPED to
+            # feedback; guard #6 (_reconcile_absent_independent_test_signal)
+            # additionally ANNOTATES feedback verdicts with the
+            # verifier-infrastructure marker (idempotent, re-persisted to
+            # disk — TASK-AB-ZEROTESTLOUD01) without touching the decision.
+            # Ordering still guarantees the flip happens before the
+            # annotation-capable guards run.
+            self._reconcile_incomplete_evidence_gathering(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # TASK-FIX-COACHFG01: deterministic fail-closed backstop for the
             # absence-of-failure guard #6 (the INDEPENDENT-TEST ABSENT GUARD in
             # _build_coach_prompt). The toolless-synthesis Coach is *told* not
@@ -2728,6 +2820,12 @@ Please address all feedback points in this turn.
 {",".join(example_promises)}
   ],'''
 
+        # TASK-AB-INVARIANTTEST01: responsibility 2 carries the
+        # invariant-not-snapshot constraint (location 1 of the three
+        # Player-prompt locations; locations 2-3 live in
+        # installer/core/agents/autobuild-player.md, and the matching
+        # Coach-side detection is advisory guard #8 in
+        # _render_absence_of_failure_guards).
         prompt = f"""You are the Player agent. Implement the following task.
 
 Task ID: {task_id}
@@ -2741,7 +2839,13 @@ Turn: {turn}
 ## Your Responsibilities
 
 1. Implement the code to satisfy the requirements
-2. Write comprehensive tests
+2. Write comprehensive tests that assert LASTING INVARIANTS, never
+   point-in-time snapshots of the current task boundary
+   (invariant-not-snapshot): never assert that a method raises
+   NotImplementedError, or that a directory/table/config is empty or absent,
+   when a later task in THIS feature implements/fills it; scope any boundary
+   pin to methods/paths NO task in this feature will implement, and say which
+   task owns each excluded piece
 3. Run the tests and verify they pass
 4. Create your report with completion promises for each acceptance criterion
 
@@ -3339,13 +3443,31 @@ orchestrator takes only the **last** fenced block.
             )
             payload = '{"gathering_status": "partial_exception", "gathering_error": "json_encode_failed"}'
 
+        # TASK-AB-SKIPVIS01: advisory skip-count visibility. A skipped test is
+        # an ABSENT verdict, not a pass — a nonzero count may mean the worktree
+        # venv is missing an optional extra and is silently under-testing the
+        # deliverable. Advisory prompt text ONLY: no gate/verdict branch reads
+        # tests_skipped, and the line itself tells the Coach never to reject
+        # on it alone.
+        skip_advisory = ""
+        independent = bundle_dict.get("independent_tests")
+        if isinstance(independent, dict):
+            skipped = independent.get("tests_skipped")
+            if isinstance(skipped, int) and not isinstance(skipped, bool) and skipped > 0:
+                skip_advisory = (
+                    f"\nADVISORY: tests_skipped: {skipped} — skipped tests are "
+                    "ABSENT verdicts, not passes; a nonzero count may indicate "
+                    "missing optional extras in the worktree venv. Advisory "
+                    "only — never reject the turn on this count alone.\n"
+                )
+
         return f"""
 ## Deterministic Evidence Bundle
 
 <evidence_bundle>
 {payload}
 </evidence_bundle>
-"""
+{skip_advisory}"""
 
     def _render_bundle_honesty_section(
         self,
@@ -3430,8 +3552,15 @@ orchestrator takes only the **last** fenced block.
         ``.claude/rules/absence-of-failure-is-not-success.md`` and
         ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` to
         preserve the rule citation chain.
+
+        Guard #8 (TASK-AB-INVARIANTTEST01) adds the advisory
+        transient-assertion / invariant-not-snapshot check; like guard #7 it
+        is advisory-only and never turn-rejecting on its own. Its detection
+        wording is ``TRANSIENT_ASSERTION_DETECTION_PHRASE``, quoted verbatim
+        in the Player anti-patterns entry in
+        ``installer/core/agents/autobuild-player.md``.
         """
-        return """
+        return f"""
 <absence_of_failure_guards>
 CRITICAL READING RULES — apply these BEFORE any approval decision:
 
@@ -3502,6 +3631,23 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    Advisory only — does not override on its own; combines with other
    guards for the final decision. Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
+
+8. TRANSIENT-ASSERTION ADVISORY GUARD (invariant-not-snapshot).
+   If {TRANSIENT_ASSERTION_DETECTION_PHRASE}:
+   flag it as a should_fix issue with category "transient_assertion".
+   Tests must assert LASTING INVARIANTS, never point-in-time snapshots of
+   the current task boundary. Judge "later task in this feature" from the
+   context you can see — the task's own scope statement, requirements, and
+   acceptance criteria (e.g. a boundary the requirements name as another
+   task's deliverable); when no such context is available, apply the check
+   only to boundaries the requirements explicitly defer. A boundary pin is
+   legitimate when it is scoped to methods/paths that NO task in this
+   feature will implement and names which task owns each excluded piece.
+   Stub IMPLEMENTATIONS in scaffold tasks remain legitimate per
+   .claude/rules/anti-stub.md — this guard targets TESTS that pin those
+   stubs as permanent behaviour, not the stubs themselves.
+   Advisory only — NEVER reject the turn on this finding alone; it
+   combines with other guards for the final decision.
 </absence_of_failure_guards>
 """
 
@@ -5345,6 +5491,384 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 error_msg += f"Type errors: {', '.join(type_errors)}"
             raise CoachDecisionInvalidError(error_msg)
 
+    def _detect_phase4_verifier_infrastructure(
+        self, task_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Detect the absent/infrastructure Phase-4 markers for ``task_id``.
+
+        2026-07-04 code review (FIX 4). On the ``partial_gate_abort`` route a
+        reconciled-ABSENT deterministic Phase-4 record (zero collected tests
+        from a broken venv — the FEAT-ABL-005 run-4 shape) fails the quality
+        gates, ``gather_evidence`` aborts with ``independent_tests=None``,
+        guard #6 no-ops, and the generic "quality gates failed" framing
+        implies Player quality while the verifier was blind. This helper
+        schema-matches ONLY the machine-readable markers written upstream —
+        never feedback prose:
+
+        * ``specialist_results.json`` → ``phase_4.verifier_infrastructure``
+          / ``phase_4.signal_absent`` (written by
+          ``specialist_invocations._run_deterministic_phase_4``,
+          TASK-AB-ZEROTESTLOUD01 AC-001), which also carries
+          ``resolved_interpreter`` / ``test_command``;
+        * ``task_work_results.json`` →
+          ``quality_gates.reconciled_absent`` (written by the ABFIX-010
+          narrative reconciliation in
+          ``_inject_specialist_records_into_task_work_results``).
+
+        Returns the marker details dict when a marker is present, else
+        ``None``. Fails OPEN on any missing/unreadable input — an absent
+        marker is an ABSENT signal, never assumed infrastructure
+        (``absence-must-survive-every-reconciliation-layer``).
+        """
+        try:
+            phase_4: Dict[str, Any] = {}
+            specialist_path = (
+                TaskArtifactPaths.autobuild_dir(task_id, self.worktree_path)
+                / "specialist_results.json"
+            )
+            if specialist_path.exists():
+                try:
+                    specialist_data = json.loads(specialist_path.read_text())
+                except (OSError, ValueError):
+                    specialist_data = None
+                if isinstance(specialist_data, dict) and isinstance(
+                    specialist_data.get("phase_4"), dict
+                ):
+                    phase_4 = specialist_data["phase_4"]
+
+            marked = (
+                phase_4.get("verifier_infrastructure") is True
+                or phase_4.get("signal_absent") is True
+            )
+            if not marked:
+                results_path = TaskArtifactPaths.task_work_results_path(
+                    task_id, self.worktree_path
+                )
+                if results_path.exists():
+                    try:
+                        task_work_data = json.loads(results_path.read_text())
+                    except (OSError, ValueError):
+                        task_work_data = None
+                    if isinstance(task_work_data, dict):
+                        qg = task_work_data.get("quality_gates")
+                        if (
+                            isinstance(qg, dict)
+                            and qg.get("reconciled_absent") is True
+                        ):
+                            marked = True
+            if not marked:
+                return None
+            return {
+                "resolved_interpreter": phase_4.get("resolved_interpreter"),
+                "test_command": phase_4.get("test_command"),
+                "test_output_summary": phase_4.get("output_summary"),
+            }
+        except Exception as exc:  # noqa: BLE001 — fail OPEN, never raise
+            logger.debug(
+                "FIX 4: verifier-infrastructure marker probe skipped for "
+                "%s: %s",
+                task_id,
+                exc,
+            )
+            return None
+
+    def _reconcile_incomplete_evidence_gathering(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the Coach approves over an incomplete evidence pass.
+
+        TASK-AB-NULLEVID01. Deterministic backstop for the absence-of-failure
+        guard #5 (``GATHERING-STATUS GUARD`` in
+        ``_render_absence_of_failure_guards``). When ``gather_evidence`` aborts
+        early the bundle is returned with everything downstream ``None`` — and
+        ``independent_tests`` is never constructed, so ``signal_absent`` is
+        never set and ``_reconcile_absent_independent_test_signal`` explicitly
+        no-ops (its ``independent is None`` branch delegates to guard #5). That
+        left guard #5 as prompt text only — an advisory instruction the LLM can
+        ignore (the shape ``structural-defence-beats-prompt-instruction``
+        forbids for a gating invariant). This method makes guard #5
+        load-bearing: it overrides an ``approve`` verdict to ``feedback``
+        whenever the bundle's ``gathering_status`` is not ``"complete"``,
+        independent of what the LLM emitted.
+
+        Firing statuses — every non-``"complete"`` value fires, matching guard
+        #5's ``!= "complete"`` predicate verbatim. Justification per status
+        (see ``GatheringStatus`` in ``coach_evidence.py``):
+
+        * ``partial_honesty_abort`` — honesty produced ``must_fix``
+          discrepancies; gates and independent tests were never run. The
+          legacy decision tree short-circuits to feedback here; an approve is
+          always a false-green (the FEAT-SMP-002 retro case).
+        * ``partial_gate_abort`` — quality gates FAILED
+          (``all_gates_passed=False``); independent tests / requirements were
+          never run. The legacy tree short-circuits via ``_feedback_from_gates``
+          here, and every legitimate conditional-approval clause (infra /
+          collection_error / parallel_contention) requires
+          ``all_gates_passed=True`` — i.e. it can only arise on a ``complete``
+          bundle — so no legitimately-approvable case exists on this status.
+        * ``partial_exception`` — a gathering helper errored before the
+          evidence pass completed; the approval would rest on evidence that was
+          never collected.
+
+        There is no legitimately-approvable non-complete status: the
+        OPERATOR_HANDOFF empty bundle reports ``"complete"``, and the
+        ``complete`` path is the only one that carries a full evidence pass.
+
+        Fail-open rules (this guard must not fire on evidence-less legacy
+        paths):
+
+        * ``evidence_bundle is None`` → no-op (legacy/tool-using callers).
+        * ``gathering_status`` attribute missing or ``None`` → no-op (an
+          unknown legacy bundle shape is not positive evidence of an abort).
+        * A ``feedback`` verdict already rejects the turn — never touched.
+
+        Absence stays absent (``absence-must-survive-every-reconciliation-layer``):
+        this guard flips the *verdict* on the grounds of absent evidence. It
+        does NOT forge ``signal_absent``, construct a synthetic
+        ``IndependentTestResult``, or coerce any ``None`` bundle field to
+        ``False`` — so it contributes nothing to the checkpoint
+        consecutive-failure tally (``cp.tests_passed is False`` remains the
+        only thing that counts).
+
+        The on-disk ``coach_turn_N.json`` is rewritten to match the override so
+        the Layer-4 late-approval reconciliation
+        (``feature_orchestrator._check_late_approval`` reads ``decision``
+        straight off disk) cannot resurrect the overridden ``approve``. See
+        ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``.
+
+        2026-07-04 code review (FIX 4) extends the ``partial_gate_abort``
+        route with verifier-infrastructure ATTRIBUTION: when the gate failure
+        stems from an ABSENT deterministic Phase-4 signal (the markers
+        ``_detect_phase4_verifier_infrastructure`` schema-matches), the
+        generic "quality gates failed" framing would imply Player quality
+        while the verifier was blind — guard #6 cannot cover this route
+        because ``independent_tests`` is ``None`` on an aborted gather. In
+        that case:
+
+        * the flipped ``approve`` uses the infrastructure framing (guard #6's
+          wording) and its prepended issue carries
+          ``details.verifier_infrastructure=True`` +
+          ``resolved_interpreter`` / ``test_command``, so the
+          TASK-AB-ZEROTESTLOUD01 stall extractor schema-matches this route;
+        * a ``feedback`` verdict over the same shape is ANNOTATED
+          (idempotently) with an APPENDED ``should_fix`` marker issue —
+          verdict and the LLM's rationale untouched (FIX 5 precedent:
+          attribution never outranks the LLM's genuine must_fix issues).
+
+        Fails OPEN to the pre-existing generic framing (and the feedback
+        no-op) whenever the markers are absent.
+
+        Mutates ``decision`` in place. No-op for every case except the
+        ``approve`` + non-complete ``gathering_status`` shape above and the
+        ``feedback`` + marked ``partial_gate_abort`` annotation.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        decision_value = decision.get("decision")
+        if decision_value not in ("approve", "feedback"):
+            return
+        if evidence_bundle is None:
+            return
+        gathering_status = getattr(evidence_bundle, "gathering_status", None)
+        if gathering_status is None or gathering_status == "complete":
+            return
+
+        # 2026-07-04 code review (FIX 4): probe the machine-readable Phase-4
+        # markers on the gate-abort route only — the other abort statuses
+        # never ran the Phase-4 gate, so an infra attribution there would be
+        # invented. Absent markers → None → generic framing (fail open).
+        infra_details: Optional[Dict[str, Any]] = None
+        if gathering_status == "partial_gate_abort":
+            infra_details = self._detect_phase4_verifier_infrastructure(
+                task_id
+            )
+
+        if decision_value == "feedback":
+            if infra_details is None:
+                # A feedback verdict already rejects the turn — untouched
+                # (pre-FIX-4 behaviour, pinned by the NULLEVID01 tests).
+                return
+            already_marked = any(
+                isinstance(issue, dict)
+                and isinstance(issue.get("details"), dict)
+                and issue["details"].get("verifier_infrastructure") is True
+                for issue in decision.get("issues", [])
+                if issue is not None
+            )
+            if already_marked:
+                return
+            resolved_interpreter = infra_details.get("resolved_interpreter")
+            test_command = infra_details.get("test_command")
+            annotation_issue = {
+                # should_fix + APPEND (FIX 5 precedent): attribution, not a
+                # new top-priority defect. The stall extractor schema-matches
+                # details.verifier_infrastructure anywhere in issues.
+                "severity": "should_fix",
+                "category": "absence_of_failure",
+                "description": (
+                    "Verification infrastructure could not collect/run any "
+                    f"tests (interpreter: {resolved_interpreter or 'unknown'}, "
+                    f"command: {test_command or 'unknown'}) — this is NOT a "
+                    "signal about your code; do not rewrite the "
+                    "implementation in response. Check the worktree venv / "
+                    "re-run environment bootstrap so the verifier can "
+                    "produce a verdict."
+                ),
+                "details": {
+                    "gathering_status": gathering_status,
+                    "signal_absent": True,
+                    "verifier_infrastructure": True,
+                    "resolved_interpreter": resolved_interpreter,
+                    "test_command": test_command,
+                },
+            }
+            decision["issues"] = [
+                *decision.get("issues", []),
+                annotation_issue,
+            ]
+            logger.info(
+                "FIX 4 (TASK-AB-ZEROTESTLOUD01 route): annotating Coach "
+                "feedback for %s turn %s with verifier_infrastructure marker "
+                "— partial_gate_abort over an absent Phase-4 signal "
+                "(interpreter=%s, command=%s).",
+                task_id,
+                turn,
+                resolved_interpreter or "unknown",
+                test_command or "unknown",
+            )
+            try:
+                coach_output_path.write_text(json.dumps(decision, indent=2))
+            except OSError as exc:
+                logger.warning(
+                    "FIX 4: failed to re-persist annotated verdict to %s "
+                    "(%s); in-memory annotation still applies",
+                    coach_output_path,
+                    exc,
+                )
+            return
+
+        original_decision = decision["decision"]
+        gathering_error = (
+            getattr(evidence_bundle, "gathering_error", None) or ""
+        ).strip()
+
+        # Name the abort stage so the Player (and operator) can see WHICH
+        # gathering stage never ran, not just that one didn't.
+        abort_stages = {
+            "partial_honesty_abort": (
+                "honesty verification produced must_fix discrepancies; "
+                "quality gates and independent tests were never run"
+            ),
+            "partial_gate_abort": (
+                "quality gates failed; independent tests and requirements "
+                "validation were never run"
+            ),
+            "partial_exception": (
+                "a gathering helper errored before the evidence pass completed"
+            ),
+        }
+        abort_stage = abort_stages.get(
+            gathering_status,
+            "evidence collection aborted before all fields were populated",
+        )
+
+        if infra_details is not None:
+            # 2026-07-04 code review (FIX 4a): the failing Phase-4 gate is an
+            # ABSENT verifier signal — use the infrastructure framing (guard
+            # #6's wording), never the quality-implying generic one.
+            resolved_interpreter = infra_details.get("resolved_interpreter")
+            test_command = infra_details.get("test_command")
+            rationale = (
+                f"Evidence gathering did not complete (gathering_status="
+                f"{gathering_status!r}) — the failing Phase-4 test gate is "
+                "an ABSENT verifier signal, not a Player failure. "
+                "Verification infrastructure could not collect/run any "
+                f"tests (interpreter: {resolved_interpreter or 'unknown'}, "
+                f"command: {test_command or 'unknown'}) — this is NOT a "
+                "signal about your code; do not rewrite the implementation "
+                "in response. Check the worktree venv / re-run environment "
+                "bootstrap so the verifier can produce a verdict."
+            )
+        else:
+            rationale = (
+                f"Evidence gathering did not complete (gathering_status="
+                f"{gathering_status!r}) — {abort_stage}. Every missing evidence "
+                "field is ABSENT SIGNAL, not a pass — cannot approve a turn whose "
+                "evidence gathering never completed. The next turn must produce a "
+                "complete evidence pass (gathering_status == 'complete') before "
+                "an approval can stand."
+            )
+        if gathering_error:
+            rationale += f" Gathering error: {gathering_error}"
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        override_details: Dict[str, Any] = {
+            "gathering_status": gathering_status,
+            "gathering_error": gathering_error or None,
+            "overridden_decision": original_decision,
+        }
+        if infra_details is not None:
+            # FIX 4b: schema-additive marker so the stall extractor
+            # (autobuild._extract_verifier_infrastructure_signal) matches
+            # this route too — keys, never description text.
+            override_details.update(
+                {
+                    "signal_absent": True,
+                    "verifier_infrastructure": True,
+                    "resolved_interpreter": infra_details.get(
+                        "resolved_interpreter"
+                    ),
+                    "test_command": infra_details.get("test_command"),
+                }
+            )
+        override_issue = {
+            "severity": "must_fix",
+            "category": "absence_of_failure",
+            "description": rationale,
+            "details": override_details,
+        }
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        # WARNING with task_id, turn, and the original (overridden) decision.
+        logger.warning(
+            "TASK-AB-NULLEVID01: overriding Coach verdict %r->'feedback' for "
+            "%s turn %s — evidence gathering incomplete "
+            "(gathering_status=%s; absence-of-failure). %s",
+            original_decision,
+            task_id,
+            turn,
+            gathering_status,
+            abort_stage,
+        )
+
+        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
+        # late-approval reader see the override, not the stale `approve`. A
+        # persistence hiccup must never unblock the turn — the in-memory
+        # override (returned in the result) already rejects it.
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-AB-NULLEVID01: failed to re-persist overridden verdict "
+                "to %s (%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
+
     def _reconcile_absent_independent_test_signal(
         self,
         *,
@@ -5370,7 +5894,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         ``.claude/rules/absence-of-failure-is-not-success.md``):
 
         * Only an ``approve`` is overridden. A ``feedback`` verdict already
-          rejects the turn and is left untouched.
+          rejects the turn — its decision and rationale are left untouched
+          (TASK-AB-ZEROTESTLOUD01 only ANNOTATES it with the
+          verifier-infrastructure marker issue; see below).
         * Only ``independent_tests.signal_absent is True`` triggers it. A
           genuine test *failure* (``tests_passed=False, signal_absent=False``)
           is NOT this case — it flows through the existing conditional-approval
@@ -5383,8 +5909,31 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
           straight off disk) cannot resurrect the overridden ``approve``. See
           ``.claude/rules/harness-cancellation-contract.md``.
 
-        Mutates ``decision`` in place. No-op for every case except the single
-        ``approve`` + ``signal_absent`` shape above.
+        TASK-AB-ZEROTESTLOUD01 extends the same seam with loud, honest
+        ATTRIBUTION (verdict semantics unchanged):
+
+        * The override issue carries a machine-readable
+          ``verifier_infrastructure`` marker plus the resolved interpreter and
+          probed test command (AC-001), and the rationale/description states
+          explicitly that an absent signal is a verification-infrastructure
+          condition, NOT a signal about the Player's code (AC-002).
+        * A ``feedback`` verdict over an absent signal is ANNOTATED with the
+          same marker issue (idempotently; the verdict, and the LLM's own
+          rationale, are left untouched) so every absent-signal turn carries
+          the marker — the stall classifier's verifier-infrastructure
+          extractor (``autobuild._extract_verifier_infrastructure_signal``)
+          schema-matches it across the trailing window, and the Player sees
+          the not-your-code framing instead of an apparent quality rejection
+          (the FEAT-ABL-005 run-4 mis-attribution). The annotation is
+          re-persisted to disk per
+          ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``.
+          Per the 2026-07-04 code review (FIX 5) the annotation issue is
+          ``should_fix`` and APPENDED — attribution must never outrank the
+          LLM's genuine must_fix issues; the extractor is position/severity
+          independent.
+
+        Mutates ``decision`` in place. No-op for every case except the
+        ``approve``/``feedback`` + ``signal_absent`` shapes above.
 
         Args:
             decision: The loaded, schema-validated Coach verdict dict.
@@ -5395,7 +5944,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
                 override.
         """
-        if decision.get("decision") != "approve":
+        decision_value = decision.get("decision")
+        if decision_value not in ("approve", "feedback"):
             return
         if evidence_bundle is None:
             return
@@ -5405,28 +5955,101 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         original_decision = decision["decision"]
         summary = (getattr(independent, "test_output_summary", "") or "").strip()
+        # TASK-AB-ZEROTESTLOUD01 (AC-001/AC-002): name the interpreter and
+        # command so the honest framing (and the machine-readable marker) can
+        # say exactly WHAT could not run. Both come from the Coach's own
+        # IndependentTestResult (resolved_interpreter threaded by
+        # TASK-AB-RESUMEVENV01 AC-003).
+        resolved_interpreter = getattr(independent, "resolved_interpreter", None)
+        test_command = getattr(independent, "test_command", None)
 
         # AC-2: name the cause and quote test_output_summary verbatim so the
         # operator can see whether the oracle timed out or errored. The leading
         # sentence mirrors guard #6's prompt wording exactly.
+        # TASK-AB-ZEROTESTLOUD01 (AC-002): follow with the honest
+        # infrastructure framing — an absent signal can never mean "Player
+        # code is bad", so tell the Player not to rewrite the implementation.
         rationale = (
             "Independent test verification did not complete (signal absent) — "
             "cannot independently confirm the Player's reported tests. "
+            "Verification infrastructure could not collect/run any tests "
+            f"(interpreter: {resolved_interpreter or 'unknown'}, "
+            f"command: {test_command or 'unknown'}) — this is NOT a signal "
+            "about your code; do not rewrite the implementation in response. "
+            "Check the worktree venv / re-run environment bootstrap so the "
+            "verifier can produce a verdict. "
             f"Independent-test oracle output: {summary or '<empty>'}"
         )
 
-        decision["decision"] = "feedback"
-        decision["rationale"] = rationale
         override_issue = {
             "severity": "must_fix",
             "category": "absence_of_failure",
             "description": rationale,
             "details": {
                 "signal_absent": True,
+                # TASK-AB-ZEROTESTLOUD01 (AC-001): schema-additive marker —
+                # downstream consumers (stall classifier) match these keys,
+                # never the description text.
+                "verifier_infrastructure": True,
+                "resolved_interpreter": resolved_interpreter,
+                "test_command": test_command,
                 "test_output_summary": summary,
                 "overridden_decision": original_decision,
             },
         }
+
+        if decision_value == "feedback":
+            # TASK-AB-ZEROTESTLOUD01: the verdict already rejects the turn —
+            # annotate only (never touch the decision or the LLM's rationale).
+            # Idempotent: skip when some issue already carries the marker
+            # (e.g. a re-entrant call on the same decision dict).
+            already_marked = any(
+                isinstance(issue, dict)
+                and isinstance(issue.get("details"), dict)
+                and issue["details"].get("verifier_infrastructure") is True
+                for issue in decision.get("issues", [])
+                if issue is not None
+            )
+            if already_marked:
+                return
+            del override_issue["details"]["overridden_decision"]
+            # 2026-07-04 code review (FIX 5): the annotation is ATTRIBUTION,
+            # not a new top-priority defect — emit it as ``should_fix`` and
+            # APPEND it so it never lands ABOVE (and apparently contradicts)
+            # the LLM's genuine must_fix issues (e.g. "AC-003 not delivered —
+            # implement X"). The stall extractor
+            # (``autobuild._extract_verifier_infrastructure_signal``)
+            # schema-matches ``details.verifier_infrastructure`` anywhere in
+            # ``issues`` — severity and position are irrelevant to it. The
+            # APPROVE flip-path override below stays must_fix + prepended
+            # (load-bearing verdict override, untouched).
+            override_issue["severity"] = "should_fix"
+            decision["issues"] = [*decision.get("issues", []), override_issue]
+            logger.info(
+                "TASK-AB-ZEROTESTLOUD01: annotating Coach feedback for %s "
+                "turn %s with verifier_infrastructure marker — independent-"
+                "test oracle signal absent (interpreter=%s, command=%s).",
+                task_id,
+                turn,
+                resolved_interpreter or "unknown",
+                test_command or "unknown",
+            )
+            # Re-persist so the on-disk coach_turn_N.json carries the marker
+            # the stall classifier and operators read
+            # (deterministic-verdict-override-must-persist-to-disk).
+            try:
+                coach_output_path.write_text(json.dumps(decision, indent=2))
+            except OSError as exc:
+                logger.warning(
+                    "TASK-AB-ZEROTESTLOUD01: failed to re-persist annotated "
+                    "verdict to %s (%s); in-memory annotation still applies",
+                    coach_output_path,
+                    exc,
+                )
+            return
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
         decision["issues"] = [override_issue, *decision.get("issues", [])]
 
         # AC-3: WARNING with task_id, turn, and the original (overridden) decision.
@@ -5632,19 +6255,69 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         exit_code = getattr(runtime_parity, "exit_code", None)
         timed_out = getattr(runtime_parity, "timed_out", False)
         stderr_tail = getattr(runtime_parity, "stderr_tail", "") or ""
+        # 2026-07-04 code review: pytest writes its FAILED short-summary lines
+        # to STDOUT, not stderr — parse the combined ``output_tail`` when the
+        # record carries one (additive field mirroring
+        # ``_build_smoke_feedback``'s stdout+stderr join), falling back to
+        # ``stderr_tail`` for older records that predate the field.
+        output_tail = getattr(runtime_parity, "output_tail", None) or ""
+        evidence_tail = output_tail or stderr_tail
 
         reason_detail = (
             f"timed out after the runtime-parity timeout"
             if timed_out
             else f"exit={exit_code}, expected=0"
         )
-        rationale = (
-            "Runtime-parity failure: the deliverable passed pytest but its "
-            "declared runtime entry point FAILED to run "
-            f"({reason_detail}). This is a 'passes tests but does not run' "
-            "defect — fix the deliverable so it runs standalone. "
-            f"Command: {command}"
+        # TASK-AB-STALEATTRIB01: surface the failing-test evidence to the
+        # Player. ``_extract_feedback`` (autobuild.py) carries an issue's
+        # ``test_output`` verbatim but never reads ``details`` — so the output
+        # tail (and, when parseable, the pytest failing-test node IDs) must
+        # live in ``test_output`` to reach the Player at all.
+        failing_lines = extract_failing_test_lines(evidence_tail)
+        bounded_tail = evidence_tail[-2000:]
+        tail_label = "output (tail)" if output_tail else "stderr (tail)"
+        if failing_lines:
+            test_output = (
+                "Failing tests:\n"
+                + "\n".join(failing_lines)
+                + f"\n\n{tail_label}:\n"
+                + bounded_tail
+            )
+        else:
+            test_output = bounded_tail
+
+        # TASK-AB-STALEATTRIB01: conditional framing — when the smoke command
+        # is recognisably a test-runner invocation, a red here is a failing
+        # TEST in the feature smoke suite, not a standalone-run/import defect.
+        # Non-test-runner smoke commands keep the runs-standalone framing.
+        if is_test_runner_command(command):
+            rationale = (
+                "Runtime-parity failure: a test in the feature smoke suite "
+                f"FAILED under this task's changes ({reason_detail}). The "
+                "smoke command runs the feature's test suite — fix the "
+                "failing test(s) named in the output below. "
+                f"Command: {command}"
+            )
+        else:
+            rationale = (
+                "Runtime-parity failure: the deliverable passed pytest but its "
+                "declared runtime entry point FAILED to run "
+                f"({reason_detail}). This is a 'passes tests but does not run' "
+                "defect — fix the deliverable so it runs standalone. "
+                f"Command: {command}"
+            )
+
+        # TASK-AB-STALEATTRIB01: authorship join — when the failing test's
+        # file was authored by exactly one OTHER task, name it and grant the
+        # narrowly-scoped stale-assertion permission. Fails OPEN on any
+        # miss/ambiguity/missing-record/exception
+        # (path-string-mismatch-is-not-dishonesty.md); never suppresses or
+        # reclassifies the red signal — the verdict flip below is untouched.
+        notes = stale_test_notes(
+            failing_lines, getattr(self, "worktree_path", None), {task_id}
         )
+        if notes:
+            rationale = rationale + "\n\n" + "\n\n".join(notes)
 
         decision["decision"] = "feedback"
         decision["rationale"] = rationale
@@ -5652,11 +6325,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             "severity": "must_fix",
             "category": "runtime_parity",
             "description": rationale,
+            "test_output": test_output,
             "details": {
                 "command": command,
                 "exit_code": exit_code,
                 "timed_out": timed_out,
                 "stderr_tail": stderr_tail[-2000:],
+                "output_tail": output_tail[-2000:] if output_tail else None,
                 "overridden_decision": original_decision,
             },
         }

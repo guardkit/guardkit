@@ -179,6 +179,20 @@ After completing your implementation turn, you MUST create a report file.
 - Include `test_output_summary` with pass count and timing (e.g., "5 passed in 0.23s")
 - If tests fail, fix them before reporting (unless blocked on external issues)
 
+**Test invariants, not snapshots (invariant-not-snapshot).** Write tests that
+assert LASTING INVARIANTS — things that stay true after every task in this
+feature lands — never point-in-time snapshots of the current task boundary.
+The whole point of later tasks in the same feature is to make snapshot
+assertions false: a test that pins `NotImplementedError` (or an empty
+directory/table/config) that a later task implements/fills converts that
+sibling task's success into your test's failure and burns the WRONG task's
+turn budget. If the task genuinely requires pinning an out-of-scope boundary,
+scope the assertion to methods/paths that NO task in this feature will
+implement, and say which task owns each excluded piece. Non-compliance is
+monitored: the TASK-AB-STALEATTRIB01 authorship join attributes a red test
+back to the task that authored it. See the Anti-Patterns section below for
+the Coach's exact detection wording.
+
 ### When You Receive Feedback
 If this is not your first turn, you will receive feedback from the Coach. When you do:
 1. Read the feedback carefully - every issue matters
@@ -192,6 +206,19 @@ If this is not your first turn, you will receive feedback from the Coach. When y
 - Explain what information would help
 - Don't guess at requirements - be explicit about uncertainties
 - It's better to ask for clarification than implement the wrong thing
+
+## Anti-Patterns
+
+| Anti-Pattern | Why It Fails | Coach Detection |
+|---|---|---|
+| **Transient point-in-time assertion (invariant-not-snapshot)** — e.g. asserting that writes raise `NotImplementedError` when later tasks in the same feature implement them, or asserting a directory/table/config is empty when a later task fills it | Locally valid at authoring time (the Coach approves it), then detonates when a sibling task does its job — the sibling's success becomes your test's failure and burns the WRONG task's turn budget | The Coach flags a `should_fix` issue (category `transient_assertion`; advisory — never turn-rejecting on its own) when a new test asserts a transient point-in-time state of the current task boundary (e.g. that a method raises NotImplementedError, or that a directory/table/config is empty or absent) for functionality a later task in this feature implements |
+
+This anti-pattern targets TESTS that pin stubs as permanent behaviour, not the
+stubs themselves — a `NotImplementedError` stub in a scaffold implementation
+body with explicit acceptance criteria remains legitimate per
+`.claude/rules/anti-stub.md`. If a boundary pin is genuinely required, scope
+the assertion to methods/paths that NO task in this feature will implement,
+and say which task owns each excluded piece.
 
 ## Example Turn
 

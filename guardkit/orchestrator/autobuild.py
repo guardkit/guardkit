@@ -78,6 +78,9 @@ from guardkit.orchestrator.phase_specialists import (
     render_missing_phase_list,
 )
 from guardkit.orchestrator.progress import ProgressDisplay
+from guardkit.orchestrator.stale_test_attribution import (
+    extract_failing_test_lines,
+)
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     BlockedReport,
@@ -107,6 +110,12 @@ from guardkit.orchestrator.quality_gates import (
     CheckpointRejectedError,
     CoachValidator,
     CoachValidationResult,
+)
+
+# TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
+# the Coach's independent test-execution mode.
+from guardkit.orchestrator.quality_gates.coach_validator import (
+    resolve_coach_test_execution,
 )
 
 # Import criteria classifier for runtime command verification (TASK-CRV-537E)
@@ -298,6 +307,11 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     "player_invocation_stall": "env_failure",
     "design_extraction_failed": "other",
     "honesty_collapse": "other",
+    # TASK-AB-STALLTAX01: stall sub-type label (STALL_PARALLEL_INTERFERENCE).
+    # Never a top-level final_decision — it co-fires as a decision_subtype —
+    # but mapped here so consumers that look the label up resolve it to the
+    # isolation/environment cause rather than "other".
+    "parallel_interference_stall": "env_failure",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
 
@@ -329,6 +343,26 @@ quality gates clean) but ``independent_tests.tests_passed=False`` with a
 and an identical ``failure_confidence``. Indicates the worktree environment is
 broken (e.g. Python interpreter mismatch with ``requires-python``) rather than
 a code defect or task-type misclassification. TASK-ABSR-C3D4."""
+
+STALL_PARALLEL_INTERFERENCE = "parallel_interference_stall"
+"""Stall sub-type: trailing N turns each carry a ``test_verification`` issue
+whose ``failure_classification == "parallel_contention"`` (or a non-empty
+``contention_peers`` map naming peer wave tasks). The Coach layer knew
+per-turn that peer wave tasks were interfering with this task's test runs;
+this sub-type carries that CAUSE through to the terminal label so an
+isolation problem is not read as a Player-quality problem. Co-fires
+additively alongside ``STALL_CONTEXT_POLLUTION`` (which names the terminal
+CONDITION); the top-level ``final_decision`` stays ``unrecoverable_stall``.
+TASK-AB-STALLTAX01."""
+
+STALL_CLASSIFICATION_THRESHOLD = 3
+"""Single source of truth for the trailing-turn window every stall scan uses
+(2026-07-04 code review, FIX 2). ``classify_stall``'s call sites and the
+diagnostic re-scans (``_build_verifier_infrastructure_stall_diagnostic``,
+``_collect_contention_peers``, ``_aggregate_failing_test_lines``) MUST share
+this value: a caller-side threshold change with a diverged diagnostic default
+makes the sub-type fire while its diagnostic silently returns ``None`` — the
+operator then sees the generic, quality-implying stall message."""
 
 
 @dataclass(frozen=True)
@@ -469,10 +503,247 @@ def _extract_environment_stall_signal(
     return None
 
 
+def _coach_report_issues(
+    turn_record: "TurnRecord",
+) -> List[Dict[str, Any]]:
+    """Return every well-formed issue dict from a turn's coach report.
+
+    Shared defensive walk (TASK-AB-ZEROTESTLOUD01, factored out of
+    ``_test_verification_issues``) — any shape mismatch (Mock objects in
+    tests, partial state during error paths) returns an empty list rather
+    than raising.
+    """
+    if turn_record.coach_result is None:
+        return []
+    # getattr with a default cannot raise for a missing/absent attribute —
+    # the isinstance guards below are the real shape defence.
+    report = getattr(turn_record.coach_result, "report", None) or {}
+    if not isinstance(report, dict):
+        return []
+    issues = report.get("issues")
+    if not isinstance(issues, list):
+        return []
+    return [issue for issue in issues if isinstance(issue, dict)]
+
+
+def _test_verification_issues(
+    turn_record: "TurnRecord",
+) -> List[Dict[str, Any]]:
+    """Return the ``test_verification`` issue dicts from a turn's coach report.
+
+    Shared schema-stable walk used by the parallel-interference extractor,
+    the contention-peer collection, and the failing-test aggregation
+    (TASK-AB-STALLTAX01). Mirrors the defensive posture of
+    ``_extract_environment_stall_signal`` — any shape mismatch (Mock objects
+    in tests, partial state during error paths) returns an empty list rather
+    than raising.
+    """
+    return [
+        issue
+        for issue in _coach_report_issues(turn_record)
+        if issue.get("category") == "test_verification"
+    ]
+
+
+def _extract_verifier_infrastructure_signal(
+    turn_record: "TurnRecord",
+) -> Optional[Dict[str, Any]]:
+    """Return the issue dict carrying the ``verifier_infrastructure`` marker
+    for this turn, or ``None`` when no issue carries it (TASK-AB-ZEROTESTLOUD01).
+
+    The marker is attached by
+    ``AgentInvoker._reconcile_absent_independent_test_signal`` (Coach-side
+    absent path) as ``details.verifier_infrastructure is True`` — a Phase-4 /
+    independent-test oracle that collected/ran ZERO tests, which can never
+    mean "Player code is bad". Schema-match only — the detector never
+    string-matches feedback prose (TASK-FIX-7A07 precedent). An absent /
+    missing marker is an ABSENT signal: it never defaults to
+    verifier-infrastructure
+    (``absence-must-survive-every-reconciliation-layer.md``).
+    """
+    for issue in _coach_report_issues(turn_record):
+        details = issue.get("details")
+        if (
+            isinstance(details, dict)
+            and details.get("verifier_infrastructure") is True
+        ):
+            return issue
+    return None
+
+
+def _extract_parallel_interference_signal(
+    turn_record: "TurnRecord",
+) -> Optional[Dict[str, Any]]:
+    """Return the ``test_verification`` issue dict for this turn when the
+    parallel-interference pattern matches, or ``None`` otherwise
+    (TASK-AB-STALLTAX01).
+
+    Pattern requires ``coach_result.report["issues"]`` to contain an entry
+    with ``category == "test_verification"`` and EITHER:
+
+      - ``failure_classification == "parallel_contention"`` (the Coach
+        classifier's per-turn contention verdict), OR
+      - a non-empty ``contention_peers`` mapping (the TASK-FIX-A7B2
+        overlap-forces-feedback branch can record
+        ``failure_classification == "code"``, so the peer-overlap map is the
+        marker that survives the overlap case).
+
+    Schema-match only — the detector never string-matches feedback prose
+    (TASK-FIX-7A07 precedent). An absent / ``None`` ``failure_classification``
+    is an ABSENT signal: it never defaults to interference
+    (``absence-must-survive-every-reconciliation-layer.md``).
+    """
+    for issue in _test_verification_issues(turn_record):
+        if issue.get("failure_classification") == "parallel_contention":
+            return issue
+        contention_peers = issue.get("contention_peers")
+        if isinstance(contention_peers, dict) and contention_peers:
+            return issue
+    return None
+
+
+def _collect_contention_peers(
+    turn_history: List["TurnRecord"],
+    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
+) -> Dict[str, List[str]]:
+    """Merge ``contention_peers`` maps from the trailing window's turns.
+
+    Returns ``peer_task_id -> sorted overlapping files`` unioned across the
+    same trailing window ``classify_stall`` inspects, for the stall message's
+    isolation hint (TASK-AB-STALLTAX01). Empty when no turn carried the map
+    (the plain ``parallel_contention`` classification names no specific
+    peers).
+    """
+    merged: Dict[str, Set[str]] = {}
+    recent = turn_history[-threshold:] if threshold > 0 else list(turn_history)
+    for turn_record in recent:
+        for issue in _test_verification_issues(turn_record):
+            contention_peers = issue.get("contention_peers")
+            if not isinstance(contention_peers, dict):
+                continue
+            for peer_id, files in contention_peers.items():
+                if not peer_id:
+                    continue
+                bucket = merged.setdefault(str(peer_id), set())
+                if isinstance(files, (list, tuple, set, frozenset)):
+                    bucket.update(str(f) for f in files if f)
+    return {peer_id: sorted(files) for peer_id, files in merged.items()}
+
+
+# Loose fallback markers for a failing-test line in a ``test_verification``
+# issue's ``test_output`` summary (TASK-AB-STALLTAX01). Used ONLY when the
+# anchored pytest parse (``extract_failing_test_lines``) finds nothing, so
+# non-pytest runner outputs still surface something (2026-07-04 review FIX 3).
+_STALL_FAILING_TEST_MARKERS = ("FAILED", "ERROR", "E   ")
+
+
+def _aggregate_failing_test_lines(
+    turn_history: List["TurnRecord"],
+    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
+    max_lines: int = 10,
+) -> List[str]:
+    """Aggregate deduped failing-test lines from the trailing window's
+    ``test_verification`` issues (TASK-AB-STALLTAX01).
+
+    Walks the same trailing window ``classify_stall`` uses and collects the
+    pytest failure lines carried on each ``test_verification`` issue's
+    ``test_output`` field, so the terminal stall message names WHICH tests
+    failed instead of only that a stall occurred.
+
+    2026-07-04 code review (FIX 3): the primary extractor is the anchored,
+    reason-stripping ``stale_test_attribution.extract_failing_test_lines``
+    (``^FAILED/ERROR <node-id>`` short-summary lines only) so pytest section
+    banners (``==== ERRORS ====``) and traceback ``E   assert`` noise cannot
+    pollute the list, and repeated same-test-different-message lines dedupe
+    to one node-id. The loose substring scan survives ONLY as a fallback for
+    outputs where the anchored parse finds nothing (non-pytest runners);
+    the issue ``description``'s first line is the last resort. Deduped in
+    first-seen order and bounded to ``max_lines`` (plus one overflow marker)
+    so the message stays readable.
+    """
+    lines: List[str] = []
+    seen: Set[str] = set()
+    recent = turn_history[-threshold:] if threshold > 0 else list(turn_history)
+    for turn_record in recent:
+        for issue in _test_verification_issues(turn_record):
+            candidates: List[str] = []
+            test_output = issue.get("test_output")
+            if isinstance(test_output, str):
+                # Primary: anchored pytest node-id lines (deduped,
+                # reason-stripped — dedup across turns is by node-id).
+                candidates = extract_failing_test_lines(test_output)
+                if not candidates:
+                    # Loose fallback ONLY when the anchored parse found
+                    # nothing — non-pytest outputs still surface something.
+                    candidates = [
+                        line.strip()
+                        for line in test_output.splitlines()
+                        if any(
+                            marker in line
+                            for marker in _STALL_FAILING_TEST_MARKERS
+                        )
+                    ]
+            if not candidates:
+                description = issue.get("description")
+                if isinstance(description, str) and description.strip():
+                    candidates.append(description.strip().splitlines()[0])
+            for candidate in candidates:
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    lines.append(candidate)
+    if len(lines) > max_lines:
+        overflow = len(lines) - max_lines
+        lines = lines[:max_lines]
+        lines.append(f"... ({overflow} more line(s) omitted)")
+    return lines
+
+
+def _render_parallel_interference_block(
+    classification: Optional["StallClassification"],
+    turn_history: List["TurnRecord"],
+    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
+) -> Optional[str]:
+    """Render the additive parallel-interference hint block, or ``None``.
+
+    TASK-AB-STALLTAX01 / 2026-07-04 code review (FIX 1): the isolation hint
+    and the contention-peer map are keyed off ``classification.co_fires``
+    ALONE — independent of which primary stall branch builds the surrounding
+    message. Nesting this inside the context-pollution branch was the defect:
+    an interference-ONLY stall (e.g. the ``_is_feedback_stalled`` exit, which
+    never sets ``_context_pollution_no_checkpoint_fired``) fell through to the
+    generic task_type hint, losing exactly the isolation knowledge the
+    sub-type exists to carry.
+    """
+    if (
+        classification is None
+        or STALL_PARALLEL_INTERFERENCE not in classification.co_fires
+    ):
+        return None
+    block = (
+        f"[{STALL_PARALLEL_INTERFERENCE}] Tasks in this "
+        "wave failed on source-file contention with peers "
+        "— a parallel-wave isolation smell, not a "
+        "Player-quality problem. Consider --max-parallel 1 "
+        "(or GUARDKIT_MAX_PARALLEL_TASKS=1), or serializing "
+        "the feature's parallel_groups."
+    )
+    peer_map = _collect_contention_peers(turn_history, threshold=threshold)
+    if peer_map:
+        peer_block = "\n".join(
+            f"    - {peer_id}: {', '.join(files)}"
+            for peer_id, files in sorted(peer_map.items())
+        )
+        block += (
+            "\n  Contending peer task(s) and overlapping "
+            f"file(s):\n{peer_block}"
+        )
+    return block
+
+
 def classify_stall(
     turn_history: List["TurnRecord"],
     final_decision: str,
-    threshold: int = 3,
+    threshold: int = STALL_CLASSIFICATION_THRESHOLD,
     context_pollution_fired: bool = False,
 ) -> Optional[StallClassification]:
     """Classify the sub-type of an ``unrecoverable_stall`` exit (TASK-FIX-7A07).
@@ -492,7 +763,14 @@ def classify_stall(
        existed (``context_pollution_fired=True``). This is detected at the
        orchestrator level because it's signalled by the early-exit at
        ``autobuild.py:_loop_phase`` line ~2007, not by turn-record content.
-    3. **coach_feedback_stall** — the default fallback: identical feedback
+    3. **parallel_interference_stall** — fires when the trailing ``threshold``
+       turns each carry a ``test_verification`` issue classified
+       ``parallel_contention`` (or carrying a ``contention_peers`` map).
+       ADDITIVE co-fire: checked unconditionally so the Coach layer's
+       per-turn contention knowledge is never discarded before the terminal
+       label — it names the CAUSE alongside whatever condition sub-type also
+       fired (TASK-AB-STALLTAX01).
+    4. **coach_feedback_stall** — the default fallback: identical feedback
        with zero criteria progress, no more specific sub-type matched.
 
     Sub-types can co-fire (e.g. both the agent-invocations stall AND the
@@ -581,6 +859,42 @@ def classify_stall(
             ]
             if len(set(confidences)) == 1:
                 co_fires.append(STALL_ENVIRONMENT)
+
+        # TASK-AB-ZEROTESTLOUD01 (AC-003): a trailing window whose turns ALL
+        # carry the verifier_infrastructure marker (the Phase-4/independent
+        # test oracle collected/ran ZERO tests every turn) is the same
+        # environment class of stall — the verifier was blind, not the Player
+        # wrong. Second entry path into STALL_ENVIRONMENT under the same
+        # precedence gate; schema-match only, never feedback-text matching.
+        if STALL_ENVIRONMENT not in co_fires:
+            vi_signals = [
+                _extract_verifier_infrastructure_signal(tr) for tr in recent
+            ]
+            if all(signal is not None for signal in vi_signals):
+                co_fires.append(STALL_ENVIRONMENT)
+
+    # Check parallel_interference: trailing N turns each carry a
+    # test_verification issue classified parallel_contention (or carrying a
+    # contention_peers map from the TASK-FIX-A7B2 overlap branch).
+    # Precedence decision (TASK-AB-STALLTAX01): unlike environment_stall
+    # above — which is suppressed when agent_invocations or
+    # context_pollution fired — interference is an ADDITIVE co-fire checked
+    # unconditionally against the trailing window. It names the CAUSE (peer
+    # wave tasks contending on this task's test runs, as the Coach layer
+    # classified per-turn) while context_pollution names the terminal
+    # CONDITION (N consecutive ran-and-failed checkpoints, no green
+    # checkpoint); discarding it here is exactly the knowledge loss the
+    # sub-type exists to fix. It never replaces the top-level
+    # ``final_decision`` ("unrecoverable_stall" stays, backward-compat).
+    # Placed AFTER the environment_stall check so that check's
+    # ``not co_fires`` precedence gate is untouched.
+    if len(turn_history) >= threshold:
+        recent = turn_history[-threshold:]
+        interference_signals = [
+            _extract_parallel_interference_signal(tr) for tr in recent
+        ]
+        if all(signal is not None for signal in interference_signals):
+            co_fires.append(STALL_PARALLEL_INTERFERENCE)
 
     # Default fallback.
     if not co_fires:
@@ -1634,7 +1948,7 @@ class AutoBuildOrchestrator:
             stall_classification = classify_stall(
                 turn_history,
                 final_decision,
-                threshold=3,
+                threshold=STALL_CLASSIFICATION_THRESHOLD,
                 context_pollution_fired=self._context_pollution_no_checkpoint_fired,
             )
             result = OrchestrationResult(
@@ -5843,7 +6157,11 @@ class AutoBuildOrchestrator:
         )
         try:
             coach_cfg = self._load_coach_config()
-            coach_test_execution = coach_cfg.get("test_execution", "sdk")
+            # TASK-AB-COACHSUBPROC01: env > config > default (subprocess);
+            # logs the active mode + provenance once per validator init.
+            coach_test_execution = resolve_coach_test_execution(
+                coach_cfg.get("test_execution")
+            )
             matching_strategy = coach_cfg.get("matching_strategy", "auto")
             validator = CoachValidator(
                 str(worktree.path),
@@ -6021,7 +6339,11 @@ class AutoBuildOrchestrator:
             )
 
         coach_cfg = self._load_coach_config()
-        coach_test_execution = coach_cfg.get("test_execution", "sdk")
+        # TASK-AB-COACHSUBPROC01: env > config > default (subprocess);
+        # logs the active mode + provenance once per validator init.
+        coach_test_execution = resolve_coach_test_execution(
+            coach_cfg.get("test_execution")
+        )
         matching_strategy = coach_cfg.get("matching_strategy", "auto")
         validator = CoachValidator(
             str(worktree.path),
@@ -6931,6 +7253,60 @@ class AutoBuildOrchestrator:
             return f"Feedback: {fallback_text[:80]}..."
         return f"Feedback: {fallback_text}"
 
+    def _build_verifier_infrastructure_stall_diagnostic(
+        self,
+        turn_history: List["TurnRecord"],
+        threshold: int = STALL_CLASSIFICATION_THRESHOLD,
+    ) -> Optional[str]:
+        """Build the verifier-infrastructure stall message (TASK-AB-ZEROTESTLOUD01).
+
+        Returns a diagnostic naming VERIFIER INFRASTRUCTURE (not Player
+        quality), the resolved interpreter, the probed test command, and the
+        remediation, when the trailing ``threshold`` turns ALL carry the
+        ``verifier_infrastructure`` marker. Returns ``None`` otherwise —
+        callers fall through to the TASK-ABSR-C3D4 environment diagnostic /
+        generic stall message. Schema-match only (same extractor
+        ``classify_stall`` uses), never feedback-text matching.
+
+        2026-07-04 code review (FIX 2): ``threshold`` defaults to the shared
+        ``STALL_CLASSIFICATION_THRESHOLD`` and callers must thread the SAME
+        value they passed to ``classify_stall`` — a diverged window makes the
+        sub-type fire while this diagnostic silently returns ``None`` (the
+        generic quality-implying message).
+        """
+        if len(turn_history) < threshold:
+            return None
+        recent = turn_history[-threshold:]
+        vi_signals = [
+            _extract_verifier_infrastructure_signal(tr) for tr in recent
+        ]
+        if not all(signal is not None for signal in vi_signals):
+            return None
+
+        latest = vi_signals[-1] or {}
+        details = latest.get("details") if isinstance(latest.get("details"), dict) else {}
+        resolved_interpreter = details.get("resolved_interpreter") or "unknown"
+        test_command = details.get("test_command") or "unknown"
+
+        n_turns = len(turn_history)
+        parts = [
+            f"Unrecoverable stall detected after {n_turns} turn(s) "
+            f"[{STALL_ENVIRONMENT}].",
+            "Verifier infrastructure failure: the Phase-4/independent test "
+            "oracle collected/ran ZERO tests on every trailing turn — the "
+            "Coach was blind, NOT rejecting the Player on quality. This is "
+            "not a signal about the implementation.",
+            f"Resolved interpreter: {resolved_interpreter}",
+            f"Probed test command: {test_command}",
+            "Remediation: check the worktree venv (<worktree>/.venv or "
+            "legacy <worktree>/.guardkit/venv) resolves and has the "
+            "project's deps installed, or re-run environment bootstrap "
+            "(a --resume hash-match skip must still thread venv_python — "
+            "see TASK-AB-RESUMEVENV01).",
+            "Worktree preserved for inspection.",
+        ]
+        return "\n".join(parts)
+
     def _build_environment_stall_diagnostic(
         self,
         turn_history: List["TurnRecord"],
@@ -7170,10 +7546,19 @@ class AutoBuildOrchestrator:
             classification = classify_stall(
                 turn_history,
                 final_decision,
-                threshold=3,
+                threshold=STALL_CLASSIFICATION_THRESHOLD,
                 context_pollution_fired=getattr(
                     self, "_context_pollution_no_checkpoint_fired", False
                 ),
+            )
+            # 2026-07-04 code review (FIX 1): the interference hint + peer map
+            # are ADDITIVE, keyed off co_fires alone — rendered whichever
+            # primary branch below builds the surrounding message, so the
+            # CAUSE the sub-type carries is never lost to branch nesting.
+            interference_block = _render_parallel_interference_block(
+                classification,
+                turn_history,
+                threshold=STALL_CLASSIFICATION_THRESHOLD,
             )
             if (
                 classification is not None
@@ -7214,6 +7599,11 @@ class AutoBuildOrchestrator:
                     co_fire_suffix = (
                         f"\nCo-fired stall sub-types: {', '.join(others)}."
                     )
+                # FIX 1: additive interference block (empty when interference
+                # did not co-fire — byte-compatible with the pre-fix message).
+                interference_suffix = (
+                    f"\n{interference_block}" if interference_block else ""
+                )
                 return (
                     f"Unrecoverable stall detected after {n_turns} turn(s) "
                     f"[{classification.decision_subtype}].\n"
@@ -7235,7 +7625,8 @@ class AutoBuildOrchestrator:
                     f"  (b) set `implementation_mode: direct` in the task "
                     f"frontmatter if the task's complexity does not warrant "
                     f"the specialist pipeline."
-                    f"{co_fire_suffix}\n"
+                    f"{co_fire_suffix}"
+                    f"{interference_suffix}\n"
                     f"Worktree preserved for inspection."
                 )
 
@@ -7247,10 +7638,27 @@ class AutoBuildOrchestrator:
                 classification is not None
                 and STALL_ENVIRONMENT in classification.co_fires
             ):
+                # TASK-AB-ZEROTESTLOUD01 (AC-003): when the stall window is
+                # all verifier_infrastructure-marked turns (zero collected
+                # tests every turn), name verifier infrastructure, the
+                # resolved interpreter, and the venv remediation instead of
+                # implying Player quality.
+                vi_message = (
+                    self._build_verifier_infrastructure_stall_diagnostic(
+                        turn_history,
+                        threshold=STALL_CLASSIFICATION_THRESHOLD,
+                    )
+                )
+                if vi_message is not None:
+                    if interference_block:
+                        vi_message += f"\n{interference_block}"
+                    return vi_message
                 env_message = self._build_environment_stall_diagnostic(
                     turn_history
                 )
                 if env_message is not None:
+                    if interference_block:
+                        env_message += f"\n{interference_block}"
                     return env_message
 
             # Fallback: Check if the stall was caused by SDK API errors
@@ -7274,10 +7682,48 @@ class AutoBuildOrchestrator:
                     "existed to roll back to \u2014 review the Player's "
                     "early turns for regression patterns."
                 )
+            elif interference_block is not None:
+                # 2026-07-04 code review (FIX 1): an interference-ONLY stall
+                # (e.g. the feedback-stall exit, which never sets the
+                # pollution flag) must carry the isolation hint, NOT the
+                # generic task_type hint \u2014 the additive block appended below
+                # IS the hint.
+                stall_hint = ""
             else:
                 stall_hint = (
                     "Review task_type classification and acceptance criteria."
                 )
+
+            # TASK-AB-STALLTAX01 (a) / 2026-07-04 review (FIX 1): the
+            # isolation hint + contention-peer map are additive, keyed off
+            # co_fires alone \u2014 appended whichever primary hint branch ran,
+            # so the Coach layer's per-turn contention knowledge is never
+            # discarded before the terminal message.
+            if interference_block is not None:
+                stall_hint = (
+                    f"{stall_hint}\n{interference_block}"
+                    if stall_hint
+                    else interference_block
+                )
+            # TASK-AB-STALLTAX01 (b): name the failing tests across the
+            # stall window so the operator sees WHICH tests failed without
+            # grepping coach_turn_N.json. Renders for the context-pollution
+            # AND interference cases (2026-07-04 review FIX 1).
+            if classification is not None and (
+                STALL_CONTEXT_POLLUTION in classification.co_fires
+                or STALL_PARALLEL_INTERFERENCE in classification.co_fires
+            ):
+                failing_lines = _aggregate_failing_test_lines(
+                    turn_history, threshold=STALL_CLASSIFICATION_THRESHOLD
+                )
+                if failing_lines:
+                    failing_block = "\n".join(
+                        f"    {line}" for line in failing_lines
+                    )
+                    stall_hint += (
+                        "\n  Failing tests across the stall window:\n"
+                        f"{failing_block}"
+                    )
             return (
                 f"Unrecoverable stall detected after {len(turn_history)} turn(s).\n"
                 f"AutoBuild cannot make forward progress.\n"

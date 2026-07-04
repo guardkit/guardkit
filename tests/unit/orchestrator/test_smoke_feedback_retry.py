@@ -130,35 +130,42 @@ def _orchestrator(tmp_path) -> FeatureOrchestrator:
     )
 
 
-def _feature_with_smoke() -> MagicMock:
+def _feature_with_smoke(command="python3 mod.py") -> MagicMock:
     feature = MagicMock()
     feature.smoke_gates = SmokeGates(
         after_wave=1,
-        command="pytest -k x && python3 mod.py",
+        command=command,
         expected_exit=0,
         timeout=30,
     )
     return feature
 
 
-def test_build_smoke_feedback_contains_command_and_stderr(tmp_path):
-    orch = _orchestrator(tmp_path)
-    feature = _feature_with_smoke()
-    smoke_result = SmokeGateResult(
+def _smoke_result(**overrides) -> SmokeGateResult:
+    defaults = dict(
         passed=False,
         exit_code=1,
         stdout="",
         stderr="Traceback...\nModuleNotFoundError: No module named 'installer'",
         timed_out=False,
-        command="pytest -k x && python3 mod.py",
+        command="python3 mod.py",
         timeout=30,
         after_wave=1,
     )
+    defaults.update(overrides)
+    return SmokeGateResult(**defaults)
+
+
+def test_build_smoke_feedback_contains_command_and_stderr(tmp_path):
+    """Non-test-runner smoke command keeps the runs-standalone framing."""
+    orch = _orchestrator(tmp_path)
+    feature = _feature_with_smoke()
+    smoke_result = _smoke_result()
 
     feedback = orch._build_smoke_feedback(smoke_result, feature)
 
     assert "RUNTIME-PARITY FAILURE" in feedback
-    assert "pytest -k x && python3 mod.py" in feedback
+    assert "python3 mod.py" in feedback
     assert "ModuleNotFoundError" in feedback
     assert "exit=1" in feedback
     # Frames the "passes tests but does not run" defect explicitly.
@@ -168,18 +175,126 @@ def test_build_smoke_feedback_contains_command_and_stderr(tmp_path):
 def test_build_smoke_feedback_handles_timeout(tmp_path):
     orch = _orchestrator(tmp_path)
     feature = _feature_with_smoke()
-    smoke_result = SmokeGateResult(
-        passed=False,
-        exit_code=-1,
-        stdout="",
-        stderr="",
-        timed_out=True,
-        command="python3 mod.py",
-        timeout=30,
-        after_wave=1,
+    smoke_result = _smoke_result(
+        exit_code=-1, stderr="", timed_out=True,
     )
 
     feedback = orch._build_smoke_feedback(smoke_result, feature)
     assert "timed out after 30s" in feedback
     # Empty stderr renders a placeholder, not a crash.
     assert "(empty)" in feedback
+
+
+# ============================================================================
+# 3. Conditional framing + stale-test attribution (TASK-AB-STALEATTRIB01)
+# ============================================================================
+
+
+_FAILED_LINE = "FAILED tests/unit/test_boundary.py::test_transient_state - AssertionError"
+
+
+def _write_authored_record(worktree_root: Path, task_id: str, files) -> None:
+    task_dir = worktree_root / ".guardkit" / "autobuild" / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    import json
+
+    (task_dir / "task_work_results.json").write_text(
+        json.dumps({"files_authored": list(files)})
+    )
+
+
+def test_build_smoke_feedback_test_runner_frames_smoke_suite_failure(tmp_path):
+    """A pytest smoke command gets the smoke-suite framing + failing tests named."""
+    orch = _orchestrator(tmp_path)
+    feature = _feature_with_smoke(command="pytest tests/unit -q")
+    smoke_result = _smoke_result(
+        command="pytest tests/unit -q",
+        stdout=f"short test summary info\n{_FAILED_LINE}\n1 failed",
+        stderr="",
+    )
+
+    feedback = orch._build_smoke_feedback(smoke_result, feature)
+
+    assert "SMOKE-SUITE TEST FAILURE" in feedback
+    assert "A test in the feature smoke suite FAILED under this task's changes" in feedback
+    # Names the failing test node ID (retro item a — feedback never named it).
+    assert "FAILED tests/unit/test_boundary.py::test_transient_state" in feedback
+    # The runs-standalone import framing is NOT used for test-runner commands.
+    assert "does not run" not in feedback.lower()
+    assert "sys.path" not in feedback
+
+
+def test_build_smoke_feedback_names_authoring_task_and_grants_permission(tmp_path):
+    """Failing file authored by an earlier (non-wave) task -> attribution note."""
+    orch = _orchestrator(tmp_path)
+    feature = _feature_with_smoke(command="pytest tests/unit -q")
+    _write_authored_record(
+        tmp_path, "TASK-SMP-03", ["tests/unit/test_boundary.py"]
+    )
+    smoke_result = _smoke_result(
+        command="pytest tests/unit -q",
+        stdout=f"{_FAILED_LINE}\n",
+        stderr="",
+    )
+
+    feedback = orch._build_smoke_feedback(
+        smoke_result,
+        feature,
+        worktree_root=tmp_path,
+        wave_task_ids=["TASK-SMP-04"],
+    )
+
+    assert "TASK-SMP-03" in feedback
+    assert (
+        "you may amend or delete that specific stale assertion in "
+        "tests/unit/test_boundary.py only if it pins transient "
+        "point-in-time scaffold state" in feedback.lower()
+    )
+    assert "change nothing else in that file" in feedback.lower()
+    # The permission never licenses deleting a genuine regression guard.
+    assert (
+        "fix your implementation instead — do not delete it"
+        in feedback.lower()
+    )
+    # The red framing stays — attribution is content, never suppression.
+    assert "SMOKE-SUITE TEST FAILURE" in feedback
+
+
+def test_build_smoke_feedback_attribution_fails_open(tmp_path):
+    """Unmatched / ambiguous / wave-authored files leave the framing unchanged."""
+    orch = _orchestrator(tmp_path)
+    feature = _feature_with_smoke(command="pytest tests/unit -q")
+    smoke_result = _smoke_result(
+        command="pytest tests/unit -q",
+        stdout=f"{_FAILED_LINE}\n",
+        stderr="",
+    )
+
+    # (a) No records at all.
+    fb = orch._build_smoke_feedback(
+        smoke_result, feature, worktree_root=tmp_path,
+        wave_task_ids=["TASK-SMP-04"],
+    )
+    assert "STALE-TEST ATTRIBUTION" not in fb
+
+    # (b) Ambiguous: two other tasks authored the file.
+    _write_authored_record(tmp_path, "TASK-SMP-02", ["tests/unit/test_boundary.py"])
+    _write_authored_record(tmp_path, "TASK-SMP-03", ["tests/unit/test_boundary.py"])
+    fb = orch._build_smoke_feedback(
+        smoke_result, feature, worktree_root=tmp_path,
+        wave_task_ids=["TASK-SMP-04"],
+    )
+    assert "STALE-TEST ATTRIBUTION" not in fb
+
+    # (c) Authored by a current-wave task: its own framing stands.
+    import shutil
+
+    shutil.rmtree(tmp_path / ".guardkit")
+    _write_authored_record(tmp_path, "TASK-SMP-04", ["tests/unit/test_boundary.py"])
+    fb = orch._build_smoke_feedback(
+        smoke_result, feature, worktree_root=tmp_path,
+        wave_task_ids=["TASK-SMP-04"],
+    )
+    assert "STALE-TEST ATTRIBUTION" not in fb
+    # The red signal itself is untouched in every fail-open case.
+    assert "SMOKE-SUITE TEST FAILURE" in fb

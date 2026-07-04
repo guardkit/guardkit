@@ -55,6 +55,11 @@ from guardkit.orchestrator.smoke_gates import (
     run_smoke_gate,
     should_fire_for_wave,
 )
+from guardkit.orchestrator.stale_test_attribution import (
+    extract_failing_test_lines,
+    is_test_runner_command,
+    stale_test_notes,
+)
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
     validate_feature_environment,
@@ -81,6 +86,7 @@ from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
     MaxParallelMode,
     ParallelConfig,
+    apply_feature_recommended_parallel,
     bound_concurrency,
     resolve_max_parallel,
 )
@@ -987,6 +993,21 @@ class FeatureOrchestrator:
             )
 
         console.print("[green]✓[/green] Feature validation passed")
+
+        # TASK-AB-WAVECTL01: apply the feature-YAML tier of the max-parallel
+        # precedence chain (env > CLI flag > feature-YAML recommended_parallel
+        # > auto-detect) ONCE, before any resolve_max_parallel call site, so
+        # the wave-banner resolution (log=False) and the executor resolution
+        # keep consuming the identical decision — see
+        # .claude/rules/display-must-derive-from-enforcement-source-not-proxy.md.
+        # Operator-set values (env/flag) pass through unchanged, and the YAML
+        # may only LOWER an auto-detected value (never raise the TASK-VPT-001
+        # local cap of 1); the chosen source is logged by the executor's
+        # authoritative resolution.
+        self._parallel_config = apply_feature_recommended_parallel(
+            self._parallel_config,
+            feature.orchestration.recommended_parallel,
+        )
 
         # TASK-AB-XREPOEV01: resolve declared sibling evidence repos once per
         # feature, relative to the source repo root. Threaded into every
@@ -2208,7 +2229,11 @@ The detailed specifications are in the task markdown file.
         return wave_results
 
     def _build_smoke_feedback(
-        self, smoke_result: "SmokeGateResult", feature: Feature
+        self,
+        smoke_result: "SmokeGateResult",
+        feature: Feature,
+        worktree_root: Optional[Path] = None,
+        wave_task_ids: Optional[List[str]] = None,
     ) -> str:
         """Compose Player-facing feedback from a failed post-wave smoke gate.
 
@@ -2218,6 +2243,17 @@ The detailed specifications are in the task markdown file.
         Coach's pytest run is structurally blind to (pytest puts the worktree
         root on ``sys.path``; a standalone ``python <module>`` invocation does
         not). Includes the command, the failure reason, and a stderr tail.
+
+        TASK-AB-STALEATTRIB01: when the smoke command is recognisably a
+        test-runner invocation, the failure is framed as "a test in the
+        feature smoke suite failed under this task's changes" (naming the
+        failing tests when parseable) instead of the runs-standalone import
+        framing. And when a failing test's file was authored by an earlier
+        (non-wave) task, the feedback names that task and grants a
+        narrowly-scoped stale-assertion permission. All attribution fails
+        OPEN (``path-string-mismatch-is-not-dishonesty.md``) — unmatched /
+        ambiguous / missing records leave the framing unchanged, and the red
+        signal is never suppressed.
         """
         reason = (
             f"timed out after {smoke_result.timeout}s"
@@ -2230,19 +2266,58 @@ The detailed specifications are in the task markdown file.
         stderr_tail = "\n".join(
             (smoke_result.stderr or "").rstrip().splitlines()[-40:]
         )
-        return (
-            "RUNTIME-PARITY FAILURE (feature smoke gate)\n"
-            "Your task's pytest passed, but the feature's post-wave smoke "
-            "gate — which runs the deliverable's REAL runtime entry point — "
-            "FAILED. This is a 'passes tests but does not run' defect: pytest "
-            "puts the worktree root on sys.path so imports like "
-            "`from installer.core...` resolve, but a standalone "
-            "`python <module>` invocation does not. Fix the runtime failure "
-            "below so the deliverable runs standalone, not just under pytest.\n\n"
-            f"Smoke command:\n{smoke_result.command}\n\n"
-            f"Result: {reason}\n\n"
-            f"stderr (last 40 lines):\n{stderr_tail or '(empty)'}"
+        # TASK-AB-STALEATTRIB01: parse pytest failing-test node IDs from the
+        # combined runner output (pytest writes the short summary to stdout).
+        combined_output = "\n".join(
+            part
+            for part in (smoke_result.stdout, smoke_result.stderr)
+            if part
         )
+        failing_lines = extract_failing_test_lines(combined_output)
+
+        if is_test_runner_command(smoke_result.command):
+            header = (
+                "SMOKE-SUITE TEST FAILURE (feature smoke gate)\n"
+                "A test in the feature smoke suite FAILED under this task's "
+                "changes. The smoke command runs the feature's test suite — "
+                "this is a failing test, not a standalone-run/import defect. "
+                "The failing test(s) may have been authored by an earlier "
+                "task in this feature. Fix the failure below.\n\n"
+            )
+        else:
+            header = (
+                "RUNTIME-PARITY FAILURE (feature smoke gate)\n"
+                "Your task's pytest passed, but the feature's post-wave smoke "
+                "gate — which runs the deliverable's REAL runtime entry point — "
+                "FAILED. This is a 'passes tests but does not run' defect: pytest "
+                "puts the worktree root on sys.path so imports like "
+                "`from installer.core...` resolve, but a standalone "
+                "`python <module>` invocation does not. Fix the runtime failure "
+                "below so the deliverable runs standalone, not just under pytest.\n\n"
+            )
+
+        failing_section = (
+            "Failing tests:\n" + "\n".join(failing_lines) + "\n\n"
+            if failing_lines
+            else ""
+        )
+        feedback = (
+            header
+            + f"Smoke command:\n{smoke_result.command}\n\n"
+            + f"Result: {reason}\n\n"
+            + failing_section
+            + f"stderr (last 40 lines):\n{stderr_tail or '(empty)'}"
+        )
+
+        # TASK-AB-STALEATTRIB01: authorship join — the wave's own tasks are
+        # "current" (they receive this feedback); only an earlier/other task
+        # is attributable. Fails OPEN on any miss/ambiguity/exception.
+        notes = stale_test_notes(
+            failing_lines, worktree_root, set(wave_task_ids or [])
+        )
+        if notes:
+            feedback += "\n\n" + "\n\n".join(notes)
+        return feedback
 
     def _run_post_wave_smoke_gate(
         self,
@@ -2353,7 +2428,12 @@ The detailed specifications are in the task markdown file.
             # wave. Bounded by _smoke_gate_max_retries.
             retries_remaining -= 1
             attempt += 1
-            smoke_feedback = self._build_smoke_feedback(smoke_result, feature)
+            smoke_feedback = self._build_smoke_feedback(
+                smoke_result,
+                feature,
+                worktree_root=Path(worktree.path),
+                wave_task_ids=task_ids,
+            )
             console.print(
                 f"[yellow]↻ Smoke gate failed after wave {wave_number}[/yellow] "
                 f"— re-entering the wave with the runtime error as Player "

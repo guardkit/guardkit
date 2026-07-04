@@ -173,9 +173,11 @@ def _resolve_phase_4_execution_mode() -> str:
 
 # Tokens a pytest summary line uses for each outcome class. ``error``/``errors``
 # both fold to ``error``; ``skipped`` is intentionally excluded from
-# ``tests_run`` (a skipped test executed no assertions).
+# ``tests_run`` (a skipped test executed no assertions). TASK-AB-SKIPVIS01:
+# ``skipped`` IS captured — but only as a separate advisory ``tests_skipped``
+# count, never folded into ``tests_run`` / ``tests_failed``.
 _PYTEST_COUNT_RE = re.compile(
-    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed)\b",
+    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed|skipped)\b",
     re.IGNORECASE,
 )
 
@@ -936,22 +938,34 @@ def _build_code_reviewer_prompt(
     return prompt
 
 
-def _parse_pytest_counts(output: Optional[str]) -> tuple[int, int]:
-    """Parse ``(tests_run, tests_failed)`` from pytest stdout/stderr.
+def _parse_pytest_counts(
+    output: Optional[str],
+) -> tuple[int, int, Optional[int]]:
+    """Parse ``(tests_run, tests_failed, tests_skipped)`` from pytest output.
 
     ``tests_run`` = passed + failed + errors + xpassed + xfailed (skipped
-    excluded). Best-effort: returns ``(0, 0)`` when no recognisable summary
-    token is present. Counts are metadata only — the authoritative pass/fail
-    signal is the subprocess return code (carried by
-    :attr:`IndependentTestResult.tests_passed`), so a parse miss never changes
-    the gate verdict. ``max`` per class tolerates pytest reprinting the summary.
+    excluded — a skipped test executed no assertions). Best-effort: returns
+    ``(0, 0, None)`` when no recognisable summary token is present. Counts are
+    metadata only — the authoritative pass/fail signal is the subprocess
+    return code (carried by :attr:`IndependentTestResult.tests_passed`), so a
+    parse miss never changes the gate verdict. ``max`` per class tolerates
+    pytest reprinting the summary.
+
+    TASK-AB-SKIPVIS01: ``tests_skipped`` is a separate ADVISORY count, never
+    folded into ``tests_run`` / ``tests_failed`` and never read by any verdict
+    logic. Tri-state: ``None`` = unparseable output (unknown, never 0-coerced),
+    ``0`` = summary parsed cleanly with no ``skipped`` token, ``N`` = N tests
+    skipped (e.g. a worktree venv missing an optional extra silently turning
+    tests into skips).
     """
     if not output:
-        return 0, 0
+        return 0, 0, None
     counts: dict[str, int] = {}
     for match in _PYTEST_COUNT_RE.finditer(output):
         key = match.group(2).lower().rstrip("s")  # error/errors -> error
         counts[key] = max(counts.get(key, 0), int(match.group(1)))
+    if not counts:
+        return 0, 0, None
     passed = counts.get("passed", 0)
     failed = counts.get("failed", 0)
     errors = counts.get("error", 0)
@@ -959,7 +973,9 @@ def _parse_pytest_counts(output: Optional[str]) -> tuple[int, int]:
     xfailed = counts.get("xfailed", 0)
     tests_failed = failed + errors
     tests_run = passed + failed + errors + xpassed + xfailed
-    return tests_run, tests_failed
+    # "skipped" ends in "d" so rstrip("s") leaves the key unchanged.
+    tests_skipped = counts.get("skipped", 0)
+    return tests_run, tests_failed, tests_skipped
 
 
 def _load_task_work_results(
@@ -1056,6 +1072,10 @@ def _run_deterministic_phase_4(
             # wave size — without it the runner believes wave_size=1 and would
             # run a parallel wave's sibling tests.
             wave_size=wave_size,
+            # TASK-AB-BASETEMP01: label the per-run pytest --basetemp so a
+            # leaked tmp dir is attributable to the deterministic Phase-4
+            # runner rather than the Coach's own independent run.
+            basetemp_context="phase4",
         )
         task_work_results = _load_task_work_results(Path(worktree_path), task_id)
         result = validator.run_independent_tests(
@@ -1101,10 +1121,22 @@ def _run_deterministic_phase_4(
             "duration_seconds": duration,
             "error": f"absent test signal (deterministic Phase 4): {summary[:160]}",
             "signal_absent": True,
+            # TASK-AB-ZEROTESTLOUD01 (AC-001): machine-readable marker — a
+            # Phase-4 record with ZERO collected tests is VERIFIER
+            # INFRASTRUCTURE, never a Player-quality signal. Schema-additive
+            # (downstream consumers match these keys, never feedback text),
+            # with the resolved interpreter and probed command so the
+            # "which interpreter did the verifier actually run?" forensic
+            # dig is one grep (FEAT-ABL-005 run 4 / TASK-AB-RESUMEVENV01).
+            "verifier_infrastructure": True,
+            "resolved_interpreter": result.resolved_interpreter,
+            "test_command": result.test_command,
             **{**_PHASE_4_AGENT_FIELD_DEFAULTS, "output_summary": summary},
         }
 
-    tests_run, tests_failed = _parse_pytest_counts(result.raw_output)
+    tests_run, tests_failed, tests_skipped = _parse_pytest_counts(
+        result.raw_output
+    )
 
     if result.tests_passed:
         # returncode 0 (and not signal_absent, so not the returncode-5
@@ -1119,6 +1151,10 @@ def _run_deterministic_phase_4(
             "error": None,
             "tests_run": tests_run,
             "tests_failed": 0,
+            # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
+            "tests_skipped": tests_skipped,
+            # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only.
+            "resolved_interpreter": result.resolved_interpreter,
             "coverage_pct": 0.0,
             "output_summary": summary,
             "quality_gates_passed": True,
@@ -1131,6 +1167,12 @@ def _run_deterministic_phase_4(
         "error": f"tests failed (deterministic Phase 4): {summary[:160]}",
         "tests_run": tests_run,
         "tests_failed": tests_failed or max(1, tests_run),
+        # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
+        "tests_skipped": tests_skipped,
+        # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only. NOTE: no
+        # ``verifier_infrastructure`` marker here — a ran-and-failed verdict
+        # is a genuine Player signal (TASK-AB-ZEROTESTLOUD01 AC-005).
+        "resolved_interpreter": result.resolved_interpreter,
         "coverage_pct": 0.0,
         "output_summary": summary,
         "quality_gates_passed": False,
