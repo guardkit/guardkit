@@ -19,14 +19,14 @@ tasks:
   requires_infrastructure: []
   result:
     total_turns: 3
-    final_decision: honesty_collapse
-    error: 'Honesty collapse: rolling avg over last 3 turns dropped below threshold
-      0.30 after 3 turn(s)'
+    final_decision: unrecoverable_stall
+    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
+      progress.
     deferred_reason: null
   turns_completed: 3
   current_turn: 0
-  started_at: '2026-07-04T17:40:44.543581'
-  completed_at: '2026-07-04T18:49:28.685678'
+  started_at: '2026-07-04T18:59:18.094857'
+  completed_at: '2026-07-04T19:54:24.709093'
 - id: TASK-QAV-002
   name: Bundle fields and stub_scan seam wiring
   file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-002-bundle-fields-and-stub-scan-seam.md
@@ -112,16 +112,20 @@ smoke_gates:
 preflight_strict: false
 evidence_repos:
 - path: ../guardkitfactory
-  test_command: python -m pytest tests/wiring -q -p no:cacheprovider
+  # Absolute interpreter ON PURPOSE: a bare python/pytest head gets pinned to
+  # the guardkit WORKTREE venv (which cannot import guardkitfactory) and
+  # exit-2'd every turn -> unrecoverable_stall (FEAT-10AC run 2). See
+  # TASK-FIX-SIBTESTENV01 for the runner-side fix.
+  test_command: /home/richardwoollcott/Projects/appmilla_github/guardkitfactory/.venv/bin/python -m pytest tests/wiring -q -p no:cacheprovider
 execution:
-  started_at: '2026-07-04T17:40:43.026792'
-  completed_at: '2026-07-04T18:49:28.688724'
+  started_at: '2026-07-04T18:59:16.581833'
+  completed_at: '2026-07-04T19:54:24.712386'
   worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
   total_turns: 3
   tasks_completed: 0
   tasks_failed: 1
   current_wave: 1
   completed_waves: []
-  last_updated: '2026-07-04T18:49:28.685686'
+  last_updated: '2026-07-04T19:54:24.709102'
   archived_at: null
   archived_to: null
