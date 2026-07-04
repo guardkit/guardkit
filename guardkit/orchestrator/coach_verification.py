@@ -590,6 +590,22 @@ class CoachVerifier:
         # manager's job (AC-004).
         claimed = {c for c in claimed if split_qualified(c) is None}
 
+        # TASK-FIX-XREPOPROM01: also drop UNQUALIFIED claims that are absent
+        # from the worktree but exist under a declared sibling evidence repo
+        # (the Player reported sibling-relative paths without the ``<repo>:``
+        # qualifier — FEAT-10AC run 1). Same rationale as the qualified drop
+        # above: this audit's ``git status`` runs in the WORKTREE and knows
+        # nothing about sibling files; sibling staging is the per-repo
+        # checkpoint manager's job. A claim that exists nowhere is untouched
+        # and still classifies as fabricated below.
+        if self.evidence_repos:
+            claimed = {
+                c
+                for c in claimed
+                if (self.worktree_path / c).exists()
+                or self._resolve_against_evidence_repos(c) is None
+            }
+
         # TASK-FIX-CAUD-J6F1 AC-003b — defence-in-depth allowlist.
         # The orchestrator-side filter at
         # ``agent_invoker._strip_orchestrator_managed_paths`` is the
@@ -1102,6 +1118,32 @@ class CoachVerifier:
                 pass
         return cleaned
 
+    def _resolve_against_evidence_repos(self, rel_path: str) -> Optional[Path]:
+        """Resolve an UNQUALIFIED claim against declared sibling evidence repos.
+
+        TASK-FIX-XREPOPROM01 (FEAT-10AC run 1, 2026-07-04): a Player writing
+        a declared sibling repo reports promise/claim paths RELATIVE TO THE
+        SIBLING ROOT (``src/guardkitfactory/wiring/analyzer.py``) without the
+        ``<repo>:`` qualifier the orchestrator injects for ``files_modified``.
+        Resolving those Player-authored strings against the worktree root
+        manufactured critical ``promise_file_existence`` + ``claim_audit``
+        discrepancies three turns running (honesty collapse) while the work
+        sat committed in the sibling's checkpoint commits — the
+        ``evidence-boundary-narrower-than-write-surface`` false-red, at the
+        two Player-authored-claim verifiers TASK-AB-XREPOEV01 did not widen.
+
+        Declaration-bounded and permissive only on POSITIVE evidence: returns
+        the resolved path ONLY when the file actually exists under a declared
+        evidence repo root. A path that exists nowhere stays a critical
+        discrepancy (the FEAT-6CC5 fabrication class is untouched), and with
+        no declared repos the prior worktree-only behaviour is exact.
+        """
+        for repo in self.evidence_repos:
+            candidate = repo.root / rel_path
+            if candidate.exists():
+                return candidate
+        return None
+
     def _verify_completion_promises_files_exist(
         self, report: Dict[str, Any]
     ) -> List[Discrepancy]:
@@ -1163,6 +1205,28 @@ class CoachVerifier:
                         )
                     continue
                 if not (self.worktree_path / impl_file).exists():
+                    # TASK-FIX-XREPOPROM01: before calling an unqualified
+                    # promise path fabricated, try it as sibling-relative
+                    # against each declared evidence repo. Positive hit ->
+                    # resolved (recorded for audit), never a discrepancy;
+                    # miss everywhere -> critical, exactly as before.
+                    sibling_hit = self._resolve_against_evidence_repos(impl_file)
+                    if sibling_hit is not None:
+                        self._resolved_paths.append(
+                            ResolvedPath(
+                                claimed=str(impl_file),
+                                resolved_to=str(sibling_hit),
+                                task_id=self.task_id,
+                            )
+                        )
+                        logger.debug(
+                            "CoachVerifier suppressed promise_file_existence "
+                            "discrepancy for %s via declared evidence repo "
+                            "(%s)",
+                            impl_file,
+                            sibling_hit,
+                        )
+                        continue
                     discrepancies.append(
                         Discrepancy(
                             claim_type="promise_file_existence",
