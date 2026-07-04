@@ -1,16 +1,17 @@
 ---
-id: TASK-QAV-005
-title: Dogfood validation — fs-01 reproducer + correctly-wired stub go RED end-to-end
-task_type: testing
-parent_review: TASK-REV-QAVG
-feature_id: FEAT-10AC
-wave: 5
-implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-QAV-003
-  - TASK-QAV-004
+- TASK-QAV-003
+- TASK-QAV-004
+feature_id: FEAT-10AC
+id: TASK-QAV-005
+implementation_mode: task-work
+parent_review: TASK-REV-QAVG
 priority: high
+status: design_approved
+task_type: testing
+title: Dogfood validation — fs-01 reproducer + correctly-wired stub go RED end-to-end
+wave: 5
 ---
 
 # Task: Dogfood validation — the new gates catch the class they were built for
