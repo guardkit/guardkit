@@ -1,6 +1,8 @@
 # QA Verifier — Behavioural-Evidence Gates — Conversation Starter
 ## For: `/feature-spec` → `/feature-plan` session · **guardkit only** · July 2026
 
+> ⚠️ **RECONCILED 2026-07-04 — read `docs/retro/qa-verifier-state-consolidation-2026-07-04.md` FIRST.** This starter was written unaware of the 12 June FEAT-C332/FEAT-E2CB work: the wiring-evidence layer (tree-sitter WiringAnalyzer; `wiring`/`mocked_seam`/`spec_gap` bundle fields; coach_validator bridge) is already BUILT. This starter's scope narrows to the genuinely-new gates (anti-stub body scan — tree-sitter per `.claude/rules/stack-plugin-architecture.md`, NOT Python-ast; runtime coverage gate; behavioural round-trip oracle), and the `behavioural_evidence` single-block schema is superseded by extending the existing `CoachEvidenceBundle` sibling-field pattern. A1–A6 stand.
+
 ---
 
 ## Purpose of this document
