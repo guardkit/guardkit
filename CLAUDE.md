@@ -1,3 +1,5 @@
+> **Fleet decisions:** read `../ai-transition/docs/decisions/REGISTER.md` (sibling repo) before architectural or cross-repo changes. Cross-cutting decisions are indexed there, not in this repo.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
