@@ -343,15 +343,29 @@ class TestFs01Reproducer:
         behavioural run exposes. The L4 oracle must flip the verdict to
         feedback.
 
-        NOTE: behavioural_oracle is hardcoded None in the current CoachValidator
-        (Wave-4 not yet wired). This test verifies the stub_scan and coverage
-        gates work, and documents the L4 field as None until Wave-4 is wired.
+        This test creates a real (not mocked) failing oracle fixture and
+        asserts that bundle.behavioural_oracle is populated with a
+        ran-and-failed result.
         """
         worktree_path = tmp_path / "worktree-fs01"
         task_id = "TASK-QAV-005-FS01"
 
         # Write task_work_results
         _write_task_work_results(worktree_path, task_id, _fs01_reproducer_payload())
+
+        # Create a real failing oracle file at the convention path.
+        # Its presence activates the L4 gate; its failure produces
+        # behavioural_oracle with status="ran", passed=False.
+        oracle_dir = worktree_path / "tests" / "acceptance"
+        oracle_dir.mkdir(parents=True, exist_ok=True)
+        (oracle_dir / "__init__.py").write_text("")
+        oracle_file = oracle_dir / "x_roundtrip.py"
+        oracle_file.write_text(
+            '"""Failing roundtrip oracle — simulates a behavioural regression."""\n'
+            'import pytest\n'
+            'def test_roundtrip_regression():\n'
+            '    assert False, "Oracle failure: expected X but got Y"\n'
+        )
 
         # Build validator and gather evidence
         validator = _build_validator(worktree_path)
@@ -379,21 +393,29 @@ class TestFs01Reproducer:
         assert bundle.stub_scan["status"] == "positive"
         assert len(bundle.stub_scan.get("findings", [])) >= 1
 
-        # behavioural_oracle is None (Wave-4 not yet wired in CoachValidator)
-        # This is expected — AC-1 verifies the gate structure exists
-        assert bundle.behavioural_oracle is None
+        # behavioural_oracle is populated with a ran-and-failed result
+        # (the oracle file exists, is independent, and the test fails)
+        assert bundle.behavioural_oracle is not None
+        assert bundle.behavioural_oracle["status"] == "ran"
+        assert bundle.behavioural_oracle["passed"] is False
+        assert bundle.behavioural_oracle["provenance"] == "independent"
 
     @pytest.mark.integration
     def test_fs01_approves_with_l4_disabled(self, tmp_path: Path) -> None:
-        """With the L4 guard disabled, the same fixture approves.
+        """With no oracle file, the same fixture produces behavioural_oracle=None.
 
-        This proves the gate is the difference — without L4, the green tests
-        and passing quality gates lead to approval.
+        This proves the gate is the difference — without an oracle artefact,
+        behavioural_oracle stays None and the guard no-ops. The comparison
+        with test_fs01_verdict_is_feedback_with_oracle (which creates a
+        failing oracle) shows the gate is the deciding factor.
         """
         worktree_path = tmp_path / "worktree-fs01-no-l4"
         task_id = "TASK-QAV-005-FS01"
 
         _write_task_work_results(worktree_path, task_id, _fs01_reproducer_payload())
+
+        # NO oracle file is created — absence discipline means
+        # behavioural_oracle stays None and the guard no-ops.
 
         validator = _build_validator(worktree_path)
         task = _make_task(task_id, task_type="feature")
@@ -414,7 +436,7 @@ class TestFs01Reproducer:
         assert bundle.stub_scan["status"] == "clean"
         assert len(bundle.stub_scan.get("findings", [])) == 0
 
-        # behavioural_oracle should be None (L4 disabled / not wired)
+        # behavioural_oracle is None (no oracle artefact in worktree)
         assert bundle.behavioural_oracle is None
 
 
@@ -548,7 +570,7 @@ class TestNoFalseRedSweep:
         assert bundle.coverage["status"] == "clean"
         assert len(bundle.coverage.get("findings", [])) == 0
 
-        # behavioural_oracle is None (Wave-4 not yet wired)
+        # behavioural_oracle is None (no oracle artefact in worktree)
         assert bundle.behavioural_oracle is None
 
 
@@ -669,7 +691,7 @@ class TestBundleRender:
         # stub_scan and coverage should be non-None dicts
         assert bundle_dict["stub_scan"] is not None
         assert bundle_dict["coverage"] is not None
-        # behavioural_oracle is None (Wave-4 not yet wired)
+        # behavioural_oracle is None (no oracle artefact in worktree)
         assert bundle_dict["behavioural_oracle"] is None
 
         # Verify JSON serialization works (Coach prompt render)
