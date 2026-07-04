@@ -1,6 +1,7 @@
 ---
 id: TASK-QAV-006
-title: Wire the L4 behavioural-oracle PRODUCER into gather_evidence (discovery, independence, execution, population)
+title: Wire the L4 behavioural-oracle PRODUCER into gather_evidence (discovery, independence,
+  execution, population)
 task_type: feature
 parent_review: TASK-REV-QAVG
 feature_id: FEAT-0E6D
@@ -9,6 +10,75 @@ implementation_mode: task-work
 complexity: 6
 dependencies: []
 priority: critical
+status: in_review
+autobuild_state:
+  current_turn: 4
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0E6D
+  base_branch: main
+  started_at: '2026-07-04T23:08:12.960501'
+  last_updated: '2026-07-05T00:22:42.692730'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: "- The file 'tests/acceptance/x_roundtrip.py' required by AC-001 is\
+      \ missing from the disk, as identified by the plan_audit violation.: Ensure\
+      \ the failing oracle file 'tests/acceptance/x_roundtrip.py' is created and present\
+      \ in the repository to allow for end-to-end verification of the red $\to$ green\
+      \ cycle."
+    timestamp: '2026-07-04T23:08:12.960501'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: "- Deterministic honesty record (claim_audit_unmodified, severity=should_fix):\
+      \ Player claim: Player claimed file conversation_history/session_0ef47dea.md.\
+      \ Actual: Path is tracked in git but 'git status --porcelain' shows no change\
+      \ for it \u2014 the Player claimed work on a file it did not actually modify\
+      \ this turn. Most likely cause: the report writer swept an orchestrator-managed\
+      \ path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified.\
+      \ Defence-in-depth for the agent_invoker-side filter; this is a warning, not\
+      \ a turn-rejecting fabrication..\n- Deterministic honesty record (claim_audit_unmodified,\
+      \ severity=should_fix): Player claim: Player claimed file conversation_history/session_5036aca9.md.\
+      \ Actual: Path is tracked in git but 'git status --porcelain' shows no change\
+      \ for it \u2014 the Player claimed work on a file it did not actually modify\
+      \ this turn. Most likely cause: the report writer swept an orchestrator-managed\
+      \ path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified.\
+      \ Defence-in-depth for the agent_invoker-side filter; this is a warning, not\
+      \ a turn-rejecting fabrication..\n- Deterministic honesty record (claim_audit_unmodified,\
+      \ severity=should_fix): Player claim: Player claimed file conversation_history/session_bca36ccf.md.\
+      \ Actual: Path is tracked in git but 'git status --porcelain' shows no change\
+      \ for it \u2014 the Player claimed work on a file it did not actually modify\
+      \ this turn. Most likely cause: the report writer swept an orchestrator-managed\
+      \ path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified.\
+      \ Defence-in-depth for the agent_invoker-side filter; this is a warning, not\
+      \ a turn-rejecting fabrication..\n... and 4 more issues"
+    timestamp: '2026-07-04T23:32:55.868817'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 3
+    decision: feedback
+    feedback: '- Coach verdict-emission failed: Coach decision not found: no assistant
+      text in harness events for TASK-QAV-006 turn 3 (0 AssistantMessageEvent). Likely
+      substrate limitation (qwen36-workhorse F2 at Coach level). Player should retry
+      on turn 4 with this feedback.'
+    timestamp: '2026-07-04T23:51:54.798241'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 4
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-05T00:11:52.774687'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Wire the L4 behavioural-oracle producer
