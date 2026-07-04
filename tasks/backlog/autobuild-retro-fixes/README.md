@@ -23,17 +23,19 @@ cross-referencing all 11 retros against current main.
   (F584 preserved via a positive-evidence discriminator); bridge auto-installed at
   `WorktreeManager.create()` + `guardkit init`.
 
-That leaves the 2 below still open here.
+- TASK-AB-BOOTPY01 — pin `uv venv` interpreter to `requires-python`; completed
+  2026-06-17 at [`tasks/completed/TASK-AB-BOOTPY01/`](../../completed/TASK-AB-BOOTPY01/TASK-AB-BOOTPY01.md)
+  (commit `5b6bead26`).
+- TASK-AB-COACHVENV01 — refresh Coach venv on intra-wave dependency change; completed
+  2026-06-17 at [`tasks/completed/TASK-AB-COACHVENV01/`](../../completed/TASK-AB-COACHVENV01/TASK-AB-COACHVENV01.md)
+  (commit `a9c0022cc`).
 
-| Task | Priority | What | Class |
-|---|---|---|---|
-| [TASK-AB-BOOTPY01](TASK-AB-BOOTPY01-pin-uv-venv-interpreter-to-requires-python.md) | medium | Pin `uv venv` interpreter to `requires-python` | bootstrap trap |
-| [TASK-AB-COACHVENV01](TASK-AB-COACHVENV01-refresh-coach-venv-on-intrawave-dep-change.md) | medium | Refresh Coach venv on intra-wave dependency change | false-red stall |
+**All five follow-ups from the 2026-06-17 xref are now landed.** This folder is kept as
+a pointer; new autobuild-reliability work from the 2026-07-04 xref is filed under
+[`tasks/backlog/autobuild-reliability/`](../autobuild-reliability/) — see
+[`docs/retro/autobuild-retro-xref-2026-07-04.md`](../../../docs/retro/autobuild-retro-xref-2026-07-04.md).
 
-**Recommended order:** the two remaining bootstrap/BDD items are operator-friction
-fixes. (Both high-impact correctness items — TASK-GK-PA-003 and TASK-AB-WIREGATE01 —
-are done; see above.)
-
-**Not filed (borderline / usage):** TASK-AB-COACHSUBPROC01 (make `coach.test_execution:
-subprocess` the default / auto-fallback) — noted in the report §4 as a candidate, not yet
-a committed task.
+**TASK-AB-COACHSUBPROC01** (make `coach.test_execution: subprocess` the default) was
+judged borderline by the 2026-06-17 xref and not filed; the 2026-07-04 xref found the
+SDK path failing on ~100% of invocations across every repo/vintage and **revived it** —
+now filed in `tasks/backlog/autobuild-reliability/`.

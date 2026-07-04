@@ -65,3 +65,11 @@ smoke_gates:
     pytest tests/unit/knowledge -x -q -k "fleet_memory or query_logger or retrieval_arm"
   expected_exit: 0
   timeout: 180
+# The memory extra (nats-core + fleet-memory editables) MUST be installed in the
+# worktree venv: the suite's skipif(find_spec("nats_core")) guards probe for it, and
+# run 2 proved a missing extra tempts the Player into sys.modules stubs (see
+# docs/retro/abl001-natscore-stub-false-green-2026-07-03.md). A bare extra is never
+# auto-detected (auto-detect covers dev/test only) — it must be declared here.
+bootstrap_extras:
+- dev
+- memory

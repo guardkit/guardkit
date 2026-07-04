@@ -26,7 +26,7 @@ Supports two modes:
 | `--no-merge` | Skip Step 0 worktree merge (use when merge was already done manually) | false |
 | `--no-archive` | Skip archiving before deletion (delete artifacts immediately) | false |
 | `--verbose` | Show detailed merge output | false |
-| `--verify` | Re-run tests after merge | false |
+| `--verify` | Re-run tests after merge (slash-command workflow only — **not implemented on the `guardkit autobuild complete` CLI**; see TASK-AB-VERIFYCLI01) | false |
 
 ---
 
@@ -65,8 +65,9 @@ guardkit autobuild complete FEAT-A1B2
 # Force merge without confirmation
 guardkit autobuild complete FEAT-A1B2 --force
 
-# Verify tests after merge
-guardkit autobuild complete FEAT-A1B2 --verify
+# Verify tests after merge — run the suite manually after the CLI merge; the
+# CLI itself does not accept --verify (slash-command workflow step only)
+guardkit autobuild complete FEAT-A1B2 && pytest tests/
 
 # Preview changes without merging
 guardkit autobuild complete FEAT-A1B2 --dry-run --verbose
@@ -769,8 +770,9 @@ if not args.force:
 #### Step 4: Execute Merge via CLI
 
 ```bash
-# Execute actual merge
-guardkit autobuild complete TASK-XXX [--dry-run] [--verify]
+# Execute actual merge (--verify is a slash-command workflow step, not a CLI flag:
+# when the user asked for verification, run the test suite yourself after this merge)
+guardkit autobuild complete TASK-XXX [--dry-run]
 ```
 
 ---
@@ -954,8 +956,9 @@ for wave in parallel_groups:
         if task["status"] != "completed":
             continue
 
-        # Execute merge for this task
-        guardkit autobuild complete {task_id} --force [--verify]
+        # Execute merge for this task (run tests yourself afterwards if the user
+        # asked for verification — the CLI has no --verify flag)
+        guardkit autobuild complete {task_id} --force
 
         # Update task status in feature YAML
         # Change task.status from "completed" to "merged"
