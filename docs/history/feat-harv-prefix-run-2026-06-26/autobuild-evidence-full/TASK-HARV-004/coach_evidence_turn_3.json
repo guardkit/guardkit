@@ -1,0 +1,276 @@
+{
+  "honesty": {
+    "verified": false,
+    "discrepancies": [
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file features/conftest.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/memory/test_harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      }
+    ],
+    "honesty_score": 1.0,
+    "resolved_paths": [],
+    "should_fix_count": 7
+  },
+  "gathering_status": "complete",
+  "gathering_error": null,
+  "quality_gates": {
+    "tests_passed": true,
+    "coverage_met": true,
+    "arch_review_passed": true,
+    "plan_audit_passed": true,
+    "tests_required": true,
+    "coverage_required": true,
+    "arch_review_required": false,
+    "plan_audit_required": true,
+    "all_gates_passed": true
+  },
+  "coverage_details": {
+    "coverage_met": null,
+    "line_coverage": null,
+    "branch_coverage": null,
+    "line_threshold": null,
+    "branch_threshold": null,
+    "coverage_required": true
+  },
+  "plan_audit": {
+    "status": "skipped",
+    "severity": null,
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no implementation plan on disk"
+  },
+  "bdd": null,
+  "arch_review": null,
+  "tests": {
+    "tests_passed": true,
+    "tests_required": true,
+    "tests_run": null,
+    "tests_failed": 0,
+    "all_passed": true,
+    "requires_infrastructure": []
+  },
+  "wiring": null,
+  "mocked_seam": null,
+  "spec_gap": null,
+  "independent_tests": {
+    "tests_passed": false,
+    "test_command": "pytest tests/memory/test_harvest_publisher.py tests/unit/memory/test_harvest_taxonomy.py -v --tb=short",
+    "test_output_summary": "I'll run the test command and show you the output.",
+    "duration_seconds": 8.158856630325317,
+    "raw_output": "\nI'll run the test command and show you the output.\n",
+    "signal_absent": true
+  },
+  "independent_test_classification": null,
+  "requirements": {
+    "criteria_total": 9,
+    "criteria_met": 9,
+    "all_criteria_met": true,
+    "missing": [],
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "`guardkit/memory/harvest_publisher.py` reads `GUARDKIT_NATS_PASSWORD` from the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "build_nats_client() reads GUARDKIT_NATS_PASSWORD from environment or optional env_file parameter. Raises ValueError with actionable message 'GUARDKIT_NATS_PASSWORD is not set or is blank. Set this environment variable to the provisioned guardkit user password...' if missing or blank. Tests TestBuildNatsClient::test_missing_password_raises_actionable_error and test_blank_password_raises_actionable_error verify error handling with specific message patterns."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "Builds `NATSConfig(url=\"nats://127.0.0.1:4222\", user=\"guardkit\",",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "build_nats_client() constructs NATSConfig at line 79 with exact parameters: url='nats://127.0.0.1:4222', user='guardkit', password=SecretStr(password), name='guardkit-harvest'. Then passes config to NATSClient at line 87 with source_id='guardkit-harvest'. Tests TestBuildNatsClient::test_builds_config_with_correct_parameters and test_builds_client_with_correct_source_id verify construction parameters via mock assertions."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Publish lifecycle: `await client.connect()` \u2192 for each episode",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "publish_episodes() implements exact lifecycle at lines 119-148: await client.connect() (line 119), for loop with await client.publish_episode(episode) per episode (line 124), finally block with await client.disconnect() (line 148). Uses .disconnect() method as specified, not .close(). Test TestPublishEpisodes::test_publish_lifecycle_ordering verifies call sequence with mock.assert_has_calls() checking connect \u2192 publish \u00d7 N \u2192 disconnect ordering."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "A `publish_episode` `ValueError` (body > 900 KB) is caught **per episode**: that",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "ValueError from publish_episode is caught in per-episode try/except block at lines 133-144. Skipped episodes increment result.skipped_oversized (line 136) and log warning at lines 138-144 with format 'Skipped oversized episode {episode_id} ({size_bytes} bytes, >{MAX_EPISODE_BODY_BYTES} byte limit). chunk upstream'. Loop continues after skip (exception caught, not re-raised). Tests TestPublishEpisodes::test_oversized_episode_skipped_with_actionable_message and test_oversized_episode_does_not_abort_run verify handling: skipped count increments, actionable logging, and run continues to publish remaining episodes after an oversized one."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Idempotent / resumable: no client-side dedupe state; correctness relies on the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "No client-side deduplication state exists in publish_episodes() or PublishResult. Implementation publishes all episodes every run with no skip/cache logic (lines 122-131 publish every episode in sequence). JetStream deduplication via Nats-Msg-Id header is handled by NATSClient.publish_episode() (delegated, not implemented here per AC-006). Test TestPublishEpisodes::test_idempotent_deterministic_episode_ids verifies re-running with same episodes calls publish_episode with identical episode_ids in same order."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Does **not** hand-roll NATS publishing, subject construction, or the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Implementation delegates all NATS operations to NATSClient.publish_episode() at line 124. No direct NATS protocol code, subject string construction, header setting, or nats.js imports. Only calls client.connect(), client.publish_episode(episode), client.disconnect(). All NATS publishing details (subject resolution, Nats-Msg-Id header, JetStream publish) handled by nats_core library methods. Verified by code review of harvest_publisher.py - no NATS wire protocol or subject formatting logic present."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "Returns a publish summary: `published`, `skipped_oversized`, `counts_per_type`.",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "publish_episodes() returns PublishResult dataclass (defined lines 25-37) with published: int (line 35), skipped_oversized: int (line 36), counts_per_type: dict[str, int] (line 37). Result populated during publish loop: published increments at line 125, skipped_oversized increments at line 136, counts_per_type tracks episodes per episode_type at lines 128-131. Test TestPublishEpisodes::test_returns_publish_summary verifies return type is PublishResult and all three fields are populated correctly after publishing."
+      },
+      {
+        "criterion_id": "AC-008",
+        "criterion_text": "Unit tests use a **fake/mock `NATSClient`** (no live broker) asserting:",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "All tests use AsyncMock(spec=NATSClient) fixture at lines 62-68 with no live broker connection. Tests verify: (1) connect/publish/disconnect ordering via TestPublishEpisodes::test_publish_lifecycle_ordering using mock.assert_has_calls() to check call sequence, (2) oversized episode skip with actionable logging via test_oversized_episode_skipped_with_actionable_message checking logger.warning call and skipped_oversized count, (3) run continuation after oversized episode via test_oversized_episode_does_not_abort_run verifying subsequent episodes still publish. Test suite: 14 publisher tests + 36 taxonomy tests = 50 total, all passing."
+      },
+      {
+        "criterion_id": "AC-009",
+        "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Files compile successfully with py_compile (verified via 'python -m py_compile guardkit/memory/harvest_publisher.py guardkit/memory/harvest_taxonomy.py'). No linter/formatter configured in project (no ruff, black, flake8 in pyproject.toml). Code follows PEP 8 conventions with type hints (from __future__ import annotations), docstrings on all public functions/classes, proper imports, and error handling. Coverage: harvest_publisher.py 96% (100% line, 83% branch), harvest_taxonomy.py 92% (95% line, 83% branch), both exceeding quality gates (\u226580% line, \u226575% branch)."
+      }
+    ]
+  },
+  "runtime_parity": null,
+  "evidence_repo_tests": [],
+  "severity_recommendations": [],
+  "advisory_issues": [
+    {
+      "severity": "warning",
+      "category": "agent_invocations_advisory",
+      "description": "Advisory (non-blocking): task-work produced a report with 2 of 3 expected agent invocations. Missing phases: 3 (Implementation). Consider invoking these agents via the Task tool to strengthen stack-specific quality:\n- Phase 3: `the stack-specific Phase-3 specialist` (Implementation)",
+      "details": {
+        "missing_phases": [
+          "3"
+        ],
+        "expected_phases": 3,
+        "actual_invocations": 2
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file features/conftest.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file features/conftest.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file guardkit/memory/__init__.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file guardkit/memory/harvest_publisher.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file guardkit/memory/harvest_taxonomy.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file tests/memory/test_harvest_publisher.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/memory/test_harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file tests/unit/memory/__init__.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file tests/unit/memory/test_harvest_taxonomy.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    }
+  ],
+  "task_type": "feature",
+  "profile_name": "feature"
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "parent_task": "TASK-HMIG-009",
+  "central_falsifier": "LangGraph aggregate first-pass-success rate across 9 LangGraph runs >= 75% (review \u00a711). <75% halts Wave 4.",
+  "updated": "2026-05-27T13:51:49.272122+00:00",
+  "runs": [
+    {
+      "task_id": "TASK-GLI-004",
+      "harness": "sdk",
+      "run_index": 1,
+      "started_at": "2026-05-27T11:35:22.020500+00:00",
+      "finished_at": "2026-05-27T13:51:49.270567+00:00",
+      "wall_clock_seconds": 8187.3,
+      "turns_used": 0,
+      "coach_decision": "unknown",
+      "acceptance_criteria_passed": 0,
+      "acceptance_criteria_failed": 0,
+      "model_used": "qwen3-coder-30b",
+      "exit_code": 2,
+      "notes": "see .guardkit/autobuild/TASK-REV-HMIG-canary/sdk/TASK-GLI-004/run_1/stdout.log; canary worktree on canary-TASK-GLI-004-fixture@7f2c02cfbaf8",
+      "langsmith_trace_id": null,
+      "artefact_dir": ".guardkit/autobuild/TASK-REV-HMIG-canary/sdk/TASK-GLI-004/run_1"
+    }
+  ]
+}

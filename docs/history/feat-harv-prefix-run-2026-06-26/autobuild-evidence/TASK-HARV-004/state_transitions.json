@@ -1,0 +1,16 @@
+[
+  {
+    "task_id": "TASK-HARV-004",
+    "pre_path": "tasks/backlog/TASK-HARV-004-nats-publisher-integration.md",
+    "post_path": "tasks/design_approved/TASK-HARV-004-nats-publisher-integration.md",
+    "timestamp": "2026-06-26T07:02:56.226600+00:00",
+    "kind": "design_approved_transition"
+  },
+  {
+    "task_id": "TASK-HARV-004",
+    "pre_path": "tasks/backlog/memory-harvest-publisher/TASK-HARV-004-nats-publisher-integration.md",
+    "post_path": "tasks/design_approved/TASK-HARV-004-nats-publisher-integration.md",
+    "timestamp": "2026-06-26T07:13:32.106061+00:00",
+    "kind": "design_approved_transition"
+  }
+]

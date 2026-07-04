@@ -1,0 +1,153 @@
+{
+  "task_id": "TASK-HARV-004",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file features/conftest.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file features/conftest.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file guardkit/memory/__init__.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file guardkit/memory/harvest_publisher.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file guardkit/memory/harvest_taxonomy.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file tests/memory/test_harvest_publisher.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/memory/test_harvest_publisher.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file tests/unit/memory/__init__.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/__init__.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file tests/unit/memory/test_harvest_taxonomy.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "type": "test_failure",
+      "severity": "critical",
+      "description": "Independent test verification did not complete (signal_absent: true). The Coach's trust-but-verify pytest run produced no actual test output, only the string 'I'll run the test command and report the full output.' This appears to be a transport/execution failure. Test command: pytest tests/memory/test_harvest_publisher.py tests/unit/memory/test_harvest_taxonomy.py -v --tb=short. Duration: 16.09 seconds but no pytest output captured.",
+      "requirement": "AC-008 (Unit tests verification)",
+      "suggestion": "This is likely a technical issue with the test execution infrastructure rather than the implementation. The orchestrator's test execution shows tests_passed: true, and the Player reports 14 tests passing. However, per absence-of-failure guard #6, independent verification must complete before approval. Please verify tests are runnable: 1) Check that test files exist and are properly formatted, 2) Ensure all test dependencies are available, 3) Run pytest locally to confirm tests execute and produce output."
+    },
+    {
+      "type": "code_quality",
+      "severity": "minor",
+      "description": "Player's report includes 7 files in files_created that were not actually modified this turn: features/conftest.py, guardkit/memory/__init__.py, guardkit/memory/harvest_publisher.py, guardkit/memory/harvest_taxonomy.py, tests/memory/test_harvest_publisher.py, tests/unit/memory/__init__.py, tests/unit/memory/test_harvest_taxonomy.py. These are honesty verification warnings (should_fix severity) indicating the report writer swept orchestrator-managed or pre-existing files into the files list.",
+      "requirement": "Honesty verification",
+      "suggestion": "Ensure the task report accurately reflects only files authored/modified during this turn. This is a warning-level issue and does not block approval on its own."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "verified",
+      "notes": "Password configuration correctly reads GUARDKIT_NATS_PASSWORD from environment (or optional env_file). Raises ValueError with actionable message for missing/blank password. Tests verify both cases."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "verified",
+      "notes": "NATSConfig constructed with exact parameters: url='nats://127.0.0.1:4222', user='guardkit', password=SecretStr, name='guardkit-harvest'. NATSClient created with source_id='guardkit-harvest'. Tests verify all parameters."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "verified",
+      "notes": "Publish lifecycle correctly implements: await client.connect() \u2192 loop over episodes calling await client.publish_episode(ep) \u2192 await client.disconnect(). Uses disconnect() not close() as specified."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "verified",
+      "notes": "Per-episode ValueError handling implemented. Oversized episodes (>900 KB) caught per episode, recorded in skipped_oversized count, logged with episode_id/size/'chunk upstream' message. Loop continues after skip - one oversized doc does not abort run."
+    },
+    {
+      "criterion_id": "AC-005",
+      "result": "verified",
+      "notes": "Idempotent/resumable design confirmed. No client-side deduplication state. Relies on deterministic episode_id \u2192 Nats-Msg-Id for JetStream dedupe. Re-running publishes same ids."
+    },
+    {
+      "criterion_id": "AC-006",
+      "result": "verified",
+      "notes": "All NATS operations delegated to NATSClient.publish_episode(). No hand-rolled subject construction, header setting, or direct NATS client calls. publish_episode owns all NATS protocol details."
+    },
+    {
+      "criterion_id": "AC-007",
+      "result": "verified",
+      "notes": "Returns PublishResult dataclass containing: published (int), skipped_oversized (int), counts_per_type (dict[str, int]). Result populated during publish loop."
+    },
+    {
+      "criterion_id": "AC-008",
+      "result": "verified",
+      "notes": "Based on available evidence (Player report, requirements checker, orchestrator test execution), unit tests use AsyncMock(spec=NATSClient) with no live broker. Tests verify connect/publish/disconnect ordering, oversized episode handling, and run continuation. 14 tests reported passing. However, independent test verification layer did not complete (see critical issue above)."
+    },
+    {
+      "criterion_id": "AC-009",
+      "result": "verified",
+      "notes": "Code compiles successfully with py_compile. Follows PEP 8 conventions with proper type hints, docstrings, organized imports (stdlib/third-party/local), and error handling."
+    }
+  ],
+  "rationale": "While all 9 acceptance criteria appear to be met based on available evidence (Player completion promises, deterministic requirements checker verification, orchestrator test execution showing tests_passed: true), the Coach's independent test verification layer did not complete (signal_absent: true). Per absence-of-failure guard #6, I cannot approve when independent verification produces an absent signal rather than a test result. The test output shows only 'I'll run the test command and report the full output.' with no actual pytest execution results, indicating a transport/execution failure. This must be resolved before approval. Additionally, 7 files were claimed but not actually modified this turn (honesty warnings, non-blocking). The implementation appears sound, but independent verification must complete."
+}

@@ -1,12 +1,13 @@
 id: FEAT-ABL-001
 name: Fleet-Memory Retrieval Arm Switch and Retrieval Logging
-description: FLEET_MEMORY_RETRIEVAL=off|fixture:<id> arm switch read in _load_fleet_config_from_env
-  and enforced inside FleetMemoryClient.search (mirroring the enabled=false gate)
-  so ablation arms differ only in retrieval; structured per-call JSONL retrieval log
-  with per-item natural_key+score via a new optional items field on query_logger.log_query,
-  emitted between fm_search() and assemble_context(). Memory ablation scope §4 FEAT-ABL-001.
+description: "FLEET_MEMORY_RETRIEVAL=off|fixture:<id> arm switch read in _load_fleet_config_from_env\
+  \ and enforced inside FleetMemoryClient.search (mirroring the enabled=false gate)\
+  \ so ablation arms differ only in retrieval; structured per-call JSONL retrieval\
+  \ log with per-item natural_key+score via a new optional items field on query_logger.log_query,\
+  \ emitted between fm_search() and assemble_context(). Memory ablation scope \xA7\
+  4 FEAT-ABL-001."
 created: '2026-07-03T17:26:56.721326'
-status: planned
+status: failed
 complexity: 5
 estimated_tasks: 4
 tasks:
@@ -15,19 +16,38 @@ tasks:
   file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-001-extend-query-logger-items.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: direct
   estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-03T17:37:53.250348'
+  completed_at: '2026-07-03T18:20:16.333058'
 - id: TASK-ABL1-002
   name: Parse FLEET_MEMORY_RETRIEVAL arm and resolve fixture DSN in fleet-memory config
   file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-002-retrieval-arm-config.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 3
+    final_decision: unrecoverable_stall
+    error: Unrecoverable stall detected after 3 turn(s). AutoBuild cannot make forward
+      progress.
+    deferred_reason: null
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-07-04T14:06:03.385637'
+  completed_at: '2026-07-04T14:21:45.287654'
 - id: TASK-ABL1-003
   name: Enforce retrieval arm inside FleetMemoryClient.search and emit per-item retrieval
     log
@@ -37,9 +57,14 @@ tasks:
   - TASK-ABL1-001
   - TASK-ABL1-002
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 - id: TASK-ABL1-004
   name: Arm-parity acceptance tests through the AutoBuild context chain
   file_path: tasks/backlog/retrieval-arm-switch/TASK-ABL1-004-arm-parity-tests.md
@@ -47,9 +72,14 @@ tasks:
   dependencies:
   - TASK-ABL1-003
   status: pending
-  description: ''
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
   parallel_groups:
   - - TASK-ABL1-001
@@ -60,11 +90,14 @@ orchestration:
   recommended_parallel: 2
 smoke_gates:
   after_wave: all
-  command: |
-    set -e
+  command: 'set -e
+
     pytest tests/unit/knowledge -x -q -k "fleet_memory or query_logger or retrieval_arm"
+
+    '
   expected_exit: 0
   timeout: 180
+  exit5_is_hard_fail: false
 # The memory extra (nats-core + fleet-memory editables) MUST be installed in the
 # worktree venv: the suite's skipif(find_spec("nats_core")) guards probe for it, and
 # run 2 proved a missing extra tempts the Player into sys.modules stubs (see
@@ -73,3 +106,17 @@ smoke_gates:
 bootstrap_extras:
 - dev
 - memory
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-03T17:37:52.113809'
+  completed_at: '2026-07-04T14:21:45.290811'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-ABL-001
+  total_turns: 5
+  tasks_completed: 1
+  tasks_failed: 1
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-07-04T14:21:45.287668'
+  archived_at: null
+  archived_to: null

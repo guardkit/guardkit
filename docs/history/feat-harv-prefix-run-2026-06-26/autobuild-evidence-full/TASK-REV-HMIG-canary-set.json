@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "TASK-HMIG-009",
+  "parent_review": "TASK-REV-HMIG",
+  "created": "2026-05-21T00:00:00Z",
+  "created_by": "scaffolded by /task-work TASK-HMIG-009 (operator-pickable)",
+  "spec_reference": "tasks/backlog/autobuild-harness-migration/TASK-HMIG-009-canary-validation.md",
+  "central_falsifier": "LangGraph aggregate first-pass-success rate across 9 LangGraph runs >= 75% (review §11). <75% halts Wave 4.",
+  "rep_count_per_harness": 3,
+  "pre_loop": false,
+  "pre_loop_rationale": "Forced off after smoke v5+v6 (2026-05-27) revealed that the pre-loop design phase hard-routes through claude-agent-sdk via task_work_interface, bypassing GUARDKIT_HARNESS. Disabling pre-loop isolates the harness adapter's actual purview (the Player-Coach loop). NOTE 2026-06-02: the v5/v6 marker-contract failures attributed to 'local Qwen' on qwen36-workhorse may have been a transient symptom of the pre-llama-swap-rework configuration (system prompt, tool-call parser, etc.) — the operator has since done substantial llama-swap configuration work (week of 2026-05-28→2026-06-02) and verified qwen36-workhorse on benchmarks + NVIDIA-forum-validated real-world agentic-coding use. Re-evaluation of pre-loop ON against the current live qwen36-workhorse is deferred to TASK-HMIG-009B. This is a scope narrowing relative to the original AC-007 falsifier — recorded in canary-analysis.md.",
+  "model_choice_correction": {
+    "applied": "2026-05-27 → SUPERSEDED 2026-06-02",
+    "superseded_by": "model_choice_correction_v2",
+    "applied_via": "TASK-REV-HM09 review feedback (operator: rich@appmilla.com)",
+    "from": "qwen3-coder-30b / openai:qwen3-coder-30b",
+    "to": "qwen-coder-next / openai:qwen-coder-next",
+    "rationale": "Qwen3-Coder-Next was the documented and empirically proven AutoBuild Player model per docs/research/dgx-spark/gb10-model-requirements-matrix.md:61 ('Current. Proven with AutoBuild'). Reverted from the undocumented post-2026-04-29 swap to qwen3-coder-30b.",
+    "outcome": "Preflight AC-001A (2026-05-27) found qwen-coder-next was documented but NOT deployed on the live GB10 llama-swap (config drift between the historical llama-swap-config.yaml and the live RUNBOOK-v3 production deployment). See preflight_findings.AC-001A_2026-05-27 below for the verbatim failure. Block surfaced before any compute was burned — the cheap preflight design caught the issue.",
+    "endpoint_change": "Both harnesses targeted llama-swap's qwen-coder-next alias on port 9000. ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 (SDK), OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 (LangGraph)."
+  },
+  "model_choice_correction_v2": {
+    "applied": "2026-06-02",
+    "applied_via": "Operator direction (rich@appmilla.com) post-research on docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md and operator's own llama-swap configuration work + NVIDIA-forum benchmarks for agentic coding",
+    "from": "qwen-coder-next / openai:qwen-coder-next  (documented but not deployed — see model_choice_correction.outcome)",
+    "to": "qwen36-workhorse / openai:qwen36-workhorse",
+    "rationale": "Per docs/research/dgx-spark/gb10-memory-budget-and-macbook-offload.md:37 (measured 2026-05-28), qwen36-workhorse (Qwen3.6-35B-A3B) serves 'jarvis-reasoner, forge, autobuild, dataset-factory' — a shared workhorse across multiple agentic-coding roles, not a single-purpose model. Resource-consolidation argument: don't run three separate coding models when one strong workhorse covers all the roles. Empirical argument: benchmarks + NVIDIA developer-forum posts (operator's own research, week of 2026-05-28→2026-06-02) identify Qwen3.6-35B-A3B as the strongest agentic-coding model in the GB10's deployable range. Deployment argument: qwen36-workhorse is LIVE on the GB10 llama-swap (verified by preflight AC-001A 2026-05-27 — it was the only autobuild-shaped model serving), so this swap requires zero infrastructure changes.",
+    "endpoint_change": "Both harnesses now target llama-swap's qwen36-workhorse alias on port 9000. ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 (SDK), OPENAI_BASE_URL=http://promaxgb10-41b1:9000/v1 (LangGraph). Port unchanged — minimal-diff continuity.",
+    "f2_reframe": "The original F2 finding in canary-analysis.md §3.F2 (smokes v2/v3, 'qwen36-workhorse fails AutoBuild marker contract') was observed PRE the operator's 2026-05-28→2026-06-02 llama-swap reconfiguration work. The new direction is to re-verify against the post-reconfig live workhorse via TASK-HMIG-009A's preflight ACs. If preflight passes (expected per operator's benchmark+forum research), F2 is resolved as 'pre-reconfig transient' and the 12-run batch proceeds. If preflight fails, the parser-config audit fallback path applies to qwen36-workhorse specifically (not the deleted TASK-OPS-LSPC's framing).",
+    "supersedes_rule": "This revision invalidates the prior 'use qwen-coder-next' guidance in feedback memory feedback_autobuild_player_model.md. The durable rule is 'defer to operator on AutoBuild Player model selection'; the specific current choice is qwen36-workhorse. Memory updated 2026-06-02."
+  },
+  "task_hmig_009a_scope": {
+    "applied": "2026-05-27",
+    "applied_via": "implement TASK-HMIG-009A (operator: rich@appmilla.com)",
+    "summary": "Scope-narrowed partial canary. Run via `python scripts/canary_validation_runner.py --variant 009a`, which reads this same canary set but restricts to the two backlog tasks below and writes to a dedicated TASK-HMIG-009A-canary output namespace (so 009A runs never conflate with the full-009 results in TASK-REV-HMIG-canary-results.json).",
+    "tasks": ["TASK-FIX-A7D3", "TASK-DOC-267D"],
+    "dropped_from_009a": {
+      "TASK-GLI-004": "Needs fixture-branch isolation, which is defeated by F4 (TASK-FIX-WTBC). Retained in this canary_tasks[] for the full-009 / 009B run but excluded from the 009A --variant allowlist. NOT removed (009 spec AC-001 mandates the GLI-004 slot)."
+    },
+    "reps_per_task_per_harness": 3,
+    "total_runs": 12,
+    "pre_loop": false,
+    "f4_status": "OUT OF SCOPE for 009A — the two 009A tasks run against current main (no fixture replay), so the F4 worktree-cwd-branch bug is not on the critical path. Fixture-isolation canary is deferred to TASK-HMIG-009B (post-TASK-FIX-WTBC).",
+    "aggregate_metric": "LangGraph first-pass-success rate across all 6 LangGraph runs (2 tasks x 3 reps)."
+  },
+  "preflight_findings": {
+    "AC-001A_2026-05-27": {
+      "verdict": "FAIL — BLOCKER (RESOLVED 2026-06-02 by model_choice_correction_v2, not by infrastructure work)",
+      "finding": "Live GB10 llama-swap front door (http://promaxgb10-41b1:9000) does NOT serve the `qwen-coder-next` alias. `GET /v1/models` lists architect-agent, gemma4-tutor, nomic-embed, qwen-graphiti, qwen3-coder-30b, qwen36-workhorse — but NOT qwen-coder-next. A direct `POST /v1/chat/completions` with model=qwen-coder-next returns 'could not find suitable inference handler for qwen-coder-next'. Port 8002 (claimed direct vLLM endpoint) refuses connection. By contrast qwen3-coder-30b answers normally on :9000.",
+      "implication": "The model_choice_correction above cited docs/research/dgx-spark/llama-swap-config.yaml:72-79 as evidence qwen-coder-next is 'already configured' — but that file is explicitly marked HISTORICAL (pre-llamacpp-migration, 2026-04-29) at its line 4, and names RUNBOOK-v3-production-deployment.md §5.2 as the live source-of-truth. The runbook's live config block defines qwen36-workhorse / gemma4-tutor / qwen-graphiti / nomic-embed — NOT qwen-coder-next. So qwen-coder-next is defined ONLY in a stale config and is not deployed on the live substrate.",
+      "resolution": "Operator decided 2026-06-02 (after benchmark + NVIDIA-forum research and ~1 week of llama-swap reconfiguration work) to use the LIVE qwen36-workhorse instead of deploying qwen-coder-next. See model_choice_correction_v2 above. The original blocker is therefore obsolete — both harnesses now target a model that IS deployed and verified responding. AC-001A will be re-run against qwen36-workhorse before the 12-run batch as a sanity check (cheap, expected to pass per the preflight design).",
+      "halts": ["AC-001A", "AC-001B", "AC-001C", "AC-001D", "AC-003"],
+      "halts_lifted_by": "model_choice_correction_v2 (2026-06-02). Re-running AC-001A against qwen36-workhorse is the new gate; halts persist contingently until that re-run passes."
+    },
+    "AC-001A_2026-06-02": {
+      "verdict": "PASS",
+      "finding": "qwen36-workhorse listed in :9000/v1/models; 10-token completion returned 'OK'. Endpoint live and routing correctly.",
+      "tool": "scripts/preflight_009a.py",
+      "raw_response_dir": ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/"
+    },
+    "AC-001B_2026-06-02": {
+      "verdict": "PASS (both wire formats)",
+      "finding_openai_compat": "POST :9000/v1/chat/completions with model=qwen36-workhorse + the real 12.3KB design-phase prompt for TASK-FIX-A7D3 + the real autobuild tool surface (Read/Write/Edit/Bash/Grep/Glob) returned a response with tool_calls=[{name:'Glob'}]. LangGraph wire format works.",
+      "finding_anthropic_compat": "POST :9000/v1/messages with same prompt + same tool surface in Anthropic shape returned content blocks with type='tool_use' name='Glob'. This is the historical F2 failure path; resolved.",
+      "implication": "F2 ('local Qwen fails AutoBuild marker contract') is empirically resolved at the substrate level on qwen36-workhorse. The operator's 2026-05-28→2026-06-02 llama-swap reconfiguration work is verified working. The pre-reconfig failures observed on smokes v2/v3 (canary-analysis.md §3.F2) are now obsolete data points.",
+      "tool": "scripts/preflight_009a.py",
+      "raw_response_files": [
+        ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/AC-001B-openai-response.json",
+        ".guardkit/autobuild/TASK-HMIG-009A-canary/preflight/AC-001B-anthropic-response.json"
+      ]
+    },
+    "AC-001C_2026-06-02": {
+      "verdict": "PASS — APPROVED in 1 turn (well exceeds 'reaches Coach turn 1 with non-empty files_modified' criterion)",
+      "command": "GUARDKIT_HARNESS=sdk ANTHROPIC_BASE_URL=http://promaxgb10-41b1:9000 ANTHROPIC_API_KEY=vllm-local-key guardkit autobuild task TASK-FIX-A7D3 --no-pre-loop --no-checkpoints --max-turns 2 --model qwen36-workhorse",
+      "metrics": {
+        "decision": "approved",
+        "turns": 1,
+        "wall_clock_total": "~21min",
+        "files_created": 3,
+        "files_modified": 16,
+        "tests_passing": 1,
+        "sdk_turns": 40,
+        "sdk_wall_clock": "500.6s",
+        "sdk_turn_avg": "12.5s",
+        "tool_use_blocks": 39,
+        "specialists_invoked": ["test-orchestrator", "code-reviewer"],
+        "coach_validation_wall_clock": "287s",
+        "honesty_score": 1.0,
+        "honesty_discrepancies_handled": 1,
+        "ghost_path_filter_fires": 3
+      },
+      "implications": [
+        "F2 dead for SDK + qwen36-workhorse: 39 real ToolUseBlocks, real file diffs, no marker-contract failure.",
+        "F6 (Player honesty failures) not manifesting on workhorse: honesty score 1.00.",
+        "Full Player↔Coach↔specialist orchestration works end-to-end on workhorse, not just bare model emission.",
+        "TASK-FIX-1B4A / Layer-3' ghost-path filter (path-string-mismatch-is-not-dishonesty.md) fires correctly during real runs."
+      ],
+      "anomalies_noted_not_regressions": [
+        "Deterministic gates flagged audit=False (required=True), ALL_PASSED=False at coach_validator.py — LLM Coach overrode per TASK-HMIG-008R design (LLM Coach primary, CoachValidator is evidence supplier).",
+        "Criteria Progress: 0/1 verified (0%) — Coach approved despite 0 verified ACs. May be a single abstract criterion that's pending, or criteria verifier path needs review. Worth a glance at coach_turn_1.json before scaling to 12 runs.",
+        "BDD oracle ran against system pytest (no worktree-local .venv); minor fallback path. Not blocking."
+      ],
+      "full_log": "docs/reviews/autobuild-migration/TASK-FIX-A7D3.md"
+    }
+  },
+  "harnesses": [
+    {
+      "name": "sdk",
+      "env": {
+        "GUARDKIT_HARNESS": "sdk",
+        "ANTHROPIC_BASE_URL": "http://promaxgb10-41b1:9000",
+        "ANTHROPIC_API_KEY": "vllm-local-key"
+      },
+      "model": "qwen36-workhorse",
+      "notes": "SDK redirected to llama-swap front door on the GB10 (port 9000). Model alias: qwen36-workhorse (Qwen3.6-35B-A3B) — operator's current AutoBuild Player model choice as of 2026-06-02. Shared workhorse across jarvis-reasoner, forge, autobuild, dataset-factory. See model_choice_correction_v2 above for the swap from qwen-coder-next (which was documented but not deployed). Verified LIVE on the GB10 llama-swap by preflight AC-001A on 2026-05-27."
+    },
+    {
+      "name": "langgraph",
+      "env": {
+        "GUARDKIT_HARNESS": "langgraph",
+        "OPENAI_BASE_URL": "http://promaxgb10-41b1:9000/v1",
+        "OPENAI_API_KEY": "llama-swap-local-key"
+      },
+      "model": "openai:qwen36-workhorse",
+      "notes": "LangGraph via deepagents.create_deep_agent → init_chat_model('openai:qwen36-workhorse') hitting llama-swap's OpenAI-compat endpoint at port 9000. The Wave-2 skeleton only forwards `model`; backend/permissions wiring is TASK-HMIG-002R territory. Endpoint reachability already confirmed by preflight AC-001A (qwen36-workhorse was the live, working model in 2026-05-27 probe). Post-reconfig tool-use block emission to be re-confirmed at the start of TASK-HMIG-009A execution to validate the 2026-05-28→2026-06-02 llama-swap rework resolved the v2/v3 marker-contract issue."
+    }
+  ],
+  "canary_tasks": [
+    {
+      "task_id": "TASK-GLI-004",
+      "role": "mandated_baseline",
+      "complexity": 2,
+      "source_path_at_canary_time": "tasks/completed/TASK-GLI-004/TASK-GLI-004.md",
+      "rationale": "Mandated by TASK-HMIG-009 spec. Small (complexity 2), single-file YAML edit + Python config-loader change. Already-passed SDK historical baseline (completed 2026-02-28). Establishes the harness-agnostic floor: if either harness fails here, it's not a Pattern-2 or Pattern-3 issue, it's a harness regression.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1 turn (historical record)",
+      "surface_coverage": ["state-bridge moves (all autobuild tasks hit this)", "Coach AC verification on YAML+Python pair"],
+      "fixture_baseline_commit": "7f2c02cfbaf83da3348c51091929231abef2d489",
+      "fixture_baseline_rationale": "Parent of 5bbca5142 ('graphiti local embedding review and tasks', 2026-02-28) which introduced llm_provider and embedding_provider fields per AC-001. Verified: parent has no llm_provider in .guardkit/graphiti.yaml; child does.",
+      "fixture_branch_name": "canary-TASK-GLI-004-fixture",
+      "operator_action_required": "The runner auto-creates a local branch named `canary-TASK-GLI-004-fixture` at `fixture_baseline_commit` if it doesn't exist, then mutates the task file's autobuild.base_branch to that branch for the duration of each run, then restores the task file via `git checkout` after each run. The operator does NOT need to author the fixture branch manually. To opt out (e.g. to run against current main and trivially pass), set `fixture_baseline_commit` to null."
+    },
+    {
+      "task_id": "TASK-FIX-A7D3",
+      "role": "pattern_3_surface_candidate",
+      "complexity": 3,
+      "source_path_at_canary_time": "tasks/backlog/TASK-FIX-A7D3-fix-python-scoping-issue-with-json-import-in-enhancer-py.md",
+      "rationale": "Currently in backlog (not yet implemented), critical-priority bugfix in installer/core/lib/agent_enhancement/enhancer.py. Small scope (single-file Python scoping fix), exercises every state-bridge transition (backlog → design_approved → in_progress → in_review). Pattern 3 (honesty false-fail) historically manifested at the boundary between state_bridge moves and the union-merge at agent_invoker.py:2796 — every autobuild run on this task hits that surface naturally. If the LangGraph harness's identity-bounded honesty resolution (Layer 1 + Layer 3' contracts from review §6, codified in path-string-mismatch-is-not-dishonesty.md) is wired correctly, all 6 runs (3×SDK + 3×LG) should reach the 16-AC evaluation rather than short-circuit on a single critical file_existence discrepancy.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1-2 turns (the post-Layer-1/Layer-3' SDK should handle this cleanly)",
+      "surface_coverage": ["state-bridge moves", "CoachVerifier._verify_files_exist", "TaskStateBridge.canonical_path_for(task_id)", "orchestrator-induced ghost-path filter"],
+      "operator_action_required": "No prep — task is already in backlog. The autobuild creates a worktree from main and the Player attempts the implementation fresh."
+    },
+    {
+      "task_id": "TASK-DOC-267D",
+      "role": "pattern_2_surface_candidate_with_caveat",
+      "complexity": 2,
+      "source_path_at_canary_time": "tasks/backlog/TASK-DOC-267D-add-agent-response-format-reference-to-claude-md-templates.md",
+      "rationale": "Currently in backlog. Documentation/template task: touches multiple template CLAUDE.md files plus template-generation logic. Multi-file scope (vs the single-file FIX-A7D3) stresses the Coach's file-set diff handling — a known weak surface in the SDK path. CAVEAT: this task has bdd_scenarios: [] (no linked Gherkin), so it does NOT directly exercise the BDD plugin interface contract from review §6 (C1: scenarios_attempted=0 → feedback, not approve). To get faithful Pattern-2 coverage, the operator should either (i) accept that this canary slot is a multi-file-write proxy rather than a BDD-plugin probe, or (ii) before the run, author a synthetic small task with `bdd_scenarios: [BDD-CANARY-001]` and a single scenario whose step definitions intentionally do not match (forces scenarios_attempted=0). Option (ii) is the more faithful Pattern-2 coverage; option (i) is the faster operator path.",
+      "expected_first_pass_outcome_under_sdk": "approve in 1-2 turns",
+      "surface_coverage": ["multi-file template edits", "Coach diff-summary handling", "(weakly) BDD oracle pre-flight on a task with no scenarios"],
+      "operator_action_required": "Optional: replace this slot with a synthetic BDD canary fixture per the caveat above. If accepting the slot as-is, no prep needed."
+    }
+  ],
+  "selection_notes": {
+    "why_these_three": "TASK-GLI-004 anchored by spec. TASK-FIX-A7D3 and TASK-DOC-267D selected from current backlog (no fixture replay needed). The two extras cover (a) single-file Pattern-3 surface and (b) multi-file write surface (weakly Pattern-2). Both are complexity 2-3, which keeps total wall-clock for 18 runs in the 4-12 hour range depending on harness throughput.",
+    "alternative_picks_considered_and_rejected": [
+      {
+        "task_id": "TASK-FIX-1B4A",
+        "reason_rejected": "Already completed (commit 9d2fe52d). Re-running requires a pre-fix fixture branch, which the operator may not want to author."
+      },
+      {
+        "task_id": "TASK-AB-FIX-INVAB1",
+        "reason_rejected": "Already completed. Same pre-fix-fixture requirement."
+      },
+      {
+        "task_id": "TASK-P28-D102",
+        "reason_rejected": "Has bdd_scenarios: [] (empty) — does not exercise BDD plugin. Also marked `deferred: post-release`, so out-of-scope for canary."
+      }
+    ],
+    "operator_override_protocol": "The operator MAY swap either of the two non-mandated canary tasks (slots 2 and 3) before invoking the runner. Update this file in place; the runner reads canary_tasks[] at start. The mandated TASK-GLI-004 slot MUST NOT be removed (spec AC-001) but MAY be supplemented with a fixture-branch reference if the operator chooses the pre-implementation replay path."
+  },
+  "result_collection": {
+    "per_run_record_target": ".guardkit/autobuild/TASK-REV-HMIG-canary-results.json",
+    "per_run_artefacts_target": ".guardkit/autobuild/TASK-REV-HMIG-canary/<harness>/<task_id>/run_<n>/",
+    "comparison_doc_target": ".guardkit/autobuild/TASK-REV-HMIG-canary-comparison.md",
+    "analysis_doc_target": "docs/state/TASK-REV-HMIG/canary-analysis.md"
+  }
+}

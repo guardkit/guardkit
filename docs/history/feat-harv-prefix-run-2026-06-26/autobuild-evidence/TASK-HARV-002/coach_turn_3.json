@@ -1,0 +1,76 @@
+{
+  "task_id": "TASK-HARV-002",
+  "turn": 3,
+  "decision": "feedback",
+  "issues": [
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file guardkit/memory/harvest_taxonomy.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "honesty",
+      "description": "Deterministic honesty record (claim_audit_unmodified, severity=should_fix): Player claim: Player claimed file tests/unit/memory/test_harvest_taxonomy.py. Actual: Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication..",
+      "details": {
+        "source": "deterministic_honesty_gate",
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix"
+      }
+    },
+    {
+      "type": "test_failure",
+      "severity": "critical",
+      "description": "Independent test verification did not complete (signal_absent: true). The Coach's trust-but-verify pytest run produced no verdict - the test output shows only 'I'll run the test command and report the full output.' with no actual execution. This is an ABSENT SIGNAL per the absence-of-failure rule, not a passing or failing test result.",
+      "requirement": "Independent verification of Player's test claims",
+      "suggestion": "The orchestrator needs to successfully complete the independent test run. The test command was: 'pytest tests/memory/test_harvest_publisher.py tests/unit/memory/test_harvest_taxonomy.py -v --tb=short'. Once this completes with an actual test verdict (pass or fail), we can proceed with approval."
+    }
+  ],
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "verified",
+      "notes": "Evidence shows guardkit/memory/harvest_taxonomy.py module exists with HARVEST_MAP dataclass configuration defining all 4 episode types (adr, review_report, feature_outcome, document) with directory mappings. Implementation from turn 1."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "verified",
+      "notes": "Evidence shows derive_episode_id() implemented with SHA-256 hash returning 'ep-{16-hex}' format. Deterministic algorithm verified as byte-identical to fleet-memory reference."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "verified",
+      "notes": "Evidence shows natural_key_for() implemented returning 'guardkit:{path}:{type}' format. Tests verify format and path preservation."
+    },
+    {
+      "criterion_id": "AC-004",
+      "result": "verified",
+      "notes": "Evidence shows episode_type_for() implemented with longest-prefix matching using Path.parts. 14 tests cover all mappings, nested paths, exclusions, and edge cases."
+    },
+    {
+      "criterion_id": "AC-005",
+      "result": "verified",
+      "notes": "Evidence shows validate_episode_types() validates all HARVEST_MAP keys against NATS pattern ^[a-zA-Z0-9][a-zA-Z0-9\\-_]*$ on module import. All episode types pass validation."
+    },
+    {
+      "criterion_id": "AC-006",
+      "result": "verified",
+      "notes": "Evidence shows 4 comprehensive determinism tests in TestEndToEndDeterminism class. Tests verify same inputs yield same episode_id across multiple calls, different paths yield different IDs, and 100-call reproducibility."
+    },
+    {
+      "criterion_id": "AC-007",
+      "result": "verified",
+      "notes": "Evidence shows all files are valid Python with correct syntax, proper type hints, comprehensive docstrings. Module imports successfully, all 36 tests pass in pytest collection."
+    }
+  ],
+  "rationale": "Cannot approve due to ABSENT independent test signal (evidence_bundle.independent_tests.signal_absent: true). The Coach's trust-but-verify pytest run did not complete or produce a verdict. Per absence-of-failure guard 6, an absent test signal is NOT a passing result - it's the absence of evidence. All 7 ACs show verification evidence from turn 1 implementation, and the Player correctly reported no new work this turn. The honesty discrepancies appear to be false positives (completion_promises referencing prior work). Once the independent test run completes with an actual verdict, approval can proceed if tests pass."
+}
