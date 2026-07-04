@@ -1,13 +1,44 @@
 ---
 id: TASK-ABL1-001
-title: "Extend query_logger with optional per-item results field"
+title: Extend query_logger with optional per-item results field
 task_type: feature
 feature_id: FEAT-ABL-001
 wave: 1
 implementation_mode: direct
 complexity: 3
 dependencies: []
-status: backlog
+status: in_review
+autobuild_state:
+  current_turn: 2
+  max_turns: 8
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-ABL-001
+  base_branch: main
+  started_at: '2026-07-03T17:37:53.265045'
+  last_updated: '2026-07-03T17:49:13.751542'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Direct-mode evidence gate blocked the turn (direct_mode_ac_unverified).
+      Direct mode relaxes coverage/arch gates but still requires verifiable AC delivery,
+      resolved wiring, and runnable registered producers:
+
+      - [direct_mode_ac_unverified] Direct mode: 1/6 acceptance criteria have no disk
+      evidence (unmet: [''AC-005'']). Direct mode relaxes coverage/arch but NOT AC
+      delivery.'
+    timestamp: '2026-07-03T17:37:53.265045'
+    player_summary: 'Direct mode SDK invocation completed (git-detected: 3 modified,
+      4 created)'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-03T17:42:17.150649'
+    player_summary: Added optional `items` parameter to _build_entry and log_query,
+      included it conditionally in the entry. Updated docstrings. Added unit tests
+      for non-empty items, empty list, and omitted items.
+    player_success: true
+    coach_success: true
 ---
 
 # Extend query_logger with optional per-item results field

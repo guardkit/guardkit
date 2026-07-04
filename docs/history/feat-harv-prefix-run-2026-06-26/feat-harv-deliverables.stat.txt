@@ -1,0 +1,24 @@
+ .../TASK-HARV-004-implementation-plan.md           |  16 +
+ .guardkit/bootstrap_state.json                     |   5 +-
+ ...uild-coach-test-gathering-handoff-2026-06-26.md | 218 ------------
+ features/conftest.py                               | 150 +++++++++
+ guardkit/memory/__init__.py                        |  19 ++
+ guardkit/memory/harvest_publisher.py               | 150 +++++++++
+ guardkit/memory/harvest_taxonomy.py                | 191 +++++++++++
+ guardkit/orchestrator/feature_orchestrator.py      |  56 +++-
+ .../orchestrator/quality_gates/coach_validator.py  |  68 +++-
+ ...PARITYWAVE01-runtime-parity-after-wave-scope.md | 164 ----------
+ ...ASK-HARV-002-harvest-taxonomy-and-episode-id.md |  72 ++++
+ tasks/backlog/TASK-HARV-003-harvest-walker.md      |  73 +++++
+ tasks/backlog/TASK-HARV-005-memory-harvest-cli.md  |  69 ++++
+ tasks/backlog/TASK-HARV-006-acceptance-tests.md    |  61 ++++
+ .../backlog/TASK-HARV-007-live-gb10-harvest-run.md |  64 ++++
+ ...gnose-coach-sdk-test-execution-opaque-stderr.md |  77 -----
+ ...ASK-FIX-DF44-collection-error-classification.md |  60 ----
+ .../TASK-HARV-004-nats-publisher-integration.md    |  34 +-
+ tests/memory/test_harvest_publisher.py             | 335 +++++++++++++++++++
+ tests/unit/memory/__init__.py                      |   1 +
+ tests/unit/memory/test_harvest_taxonomy.py         | 364 +++++++++++++++++++++
+ .../orchestrator/test_per_task_smoke_wave_gate.py  |  71 ++++
+ tests/unit/test_coach_sdk_narration_absent.py      |  77 +++++
+ 23 files changed, 1834 insertions(+), 561 deletions(-)

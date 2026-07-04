@@ -1,0 +1,132 @@
+{
+  "task_id": "TASK-HARV-004",
+  "turn": 4,
+  "files_modified": [
+    "features/conftest.py",
+    "guardkit/memory/__init__.py",
+    "guardkit/memory/harvest_publisher.py",
+    "guardkit/memory/harvest_taxonomy.py",
+    "tests/memory/test_harvest_publisher.py",
+    "tests/unit/memory/__init__.py",
+    "tests/unit/memory/test_harvest_taxonomy.py"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation. Files planned: 0, Files actual: 0",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: Password configuration with actionable errors",
+    "AC-002: Correct NATSConfig/NATSClient construction",
+    "AC-003: Proper connect\u2192publish\u2192disconnect lifecycle",
+    "AC-004: Per-episode ValueError handling with graceful skip",
+    "AC-005: Idempotent publishing (no client-side dedupe)",
+    "AC-006: Full delegation to publish_episode",
+    "AC-007: Returns PublishResult summary",
+    "AC-008: Comprehensive mock-based unit tests (50 tests)",
+    "AC-009: Code quality gates (compilation, coverage, PEP 8)"
+  ],
+  "requirements_remaining": [],
+  "sdk_turns_used": 5,
+  "sdk_max_turns": 150,
+  "sdk_ceiling_hit": false,
+  "files_authored": [
+    "/home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-HARV/.guardkit/autobuild/TASK-HARV-004/player_turn_4.json"
+  ],
+  "tests_passed_count": 50,
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "guardkit/memory/harvest_publisher.py reads GUARDKIT_NATS_PASSWORD from the environment (optionally from an --env-file pointing at nats-infrastructure/.env); a missing/blank password raises an actionable error naming the variable and where to set it (does not connect with a blank pw).",
+      "status": "complete",
+      "evidence": "Implemented in build_nats_client() at lines 40-87. Reads GUARDKIT_NATS_PASSWORD from os.environ (with optional .env file parsing at lines 56-64). Raises ValueError at line 76 with message: 'GUARDKIT_NATS_PASSWORD is not set or is blank. Set this environment variable to the provisioned guardkit user password. You can set it directly in your shell or via an .env file (pass --env-file path/to/.env to the harvest command).' Tests verify: test_missing_password_raises_actionable_error, test_blank_password_raises_actionable_error.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Builds NATSConfig(url=\"nats://127.0.0.1:4222\", user=\"guardkit\", password=SecretStr(<pw>), name=\"guardkit-harvest\") and NATSClient(cfg, source_id=\"guardkit-harvest\").",
+      "status": "complete",
+      "evidence": "Implemented in build_nats_client(). Line 79: NATSConfig(url='nats://127.0.0.1:4222', user='guardkit', password=SecretStr(password), name='guardkit-harvest'). Line 87: NATSClient(config, source_id='guardkit-harvest'). Tests verify parameters: test_builds_config_with_correct_parameters, test_builds_client_with_correct_source_id.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Publish lifecycle: await client.connect() \u2192 for each episode await client.publish_episode(ep) \u2192 await client.disconnect() (.disconnect(), not .close()).",
+      "status": "complete",
+      "evidence": "Implemented in publish_episodes() at lines 90-151. Line 119: await client.connect(). Lines 122-131: for episode in episodes loop with await client.publish_episode(episode) at line 124. Line 148: await client.disconnect() in finally block. Uses .disconnect() not .close(). Test verifies ordering: test_publish_lifecycle_ordering.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "A publish_episode ValueError (body > 900 KB) is caught per episode: that episode is skipped and recorded with an actionable message (path/episode_id + size + \"chunk upstream\"); the loop continues \u2014 one oversized doc never aborts the run.",
+      "status": "complete",
+      "evidence": "Implemented at lines 133-144. Per-episode try/except catches ValueError from publish_episode. Line 136: result.skipped_oversized += 1. Lines 138-144: logger.warning with format 'Skipped oversized episode {episode_id} ({size_bytes} bytes, >{MAX_EPISODE_BODY_BYTES} byte limit). chunk upstream'. Loop continues (exception not re-raised). Tests verify: test_oversized_episode_skipped_with_actionable_message, test_oversized_episode_does_not_abort_run.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Idempotent / resumable: no client-side dedupe state; correctness relies on the deterministic episode_id \u2192 Nats-Msg-Id JetStream dedupe. Re-running publishes the same ids.",
+      "status": "complete",
+      "evidence": "No client-side deduplication state in PublishResult (lines 25-37) or publish_episodes(). All episodes published every run with no skip/cache logic. JetStream deduplication handled by NATSClient.publish_episode() via Nats-Msg-Id header (delegated per AC-006). Test verifies: test_idempotent_deterministic_episode_ids.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Does not hand-roll NATS publishing, subject construction, or the Nats-Msg-Id header \u2014 those are owned by publish_episode.",
+      "status": "complete",
+      "evidence": "All NATS operations delegated to NATSClient.publish_episode() at line 124. No NATS protocol code, subject construction, or header setting in harvest_publisher.py. Only calls: client.connect(), client.publish_episode(episode), client.disconnect(). Verified by code review - no nats.js imports or NATS wire protocol logic present.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "Returns a publish summary: published, skipped_oversized, counts_per_type.",
+      "status": "complete",
+      "evidence": "publish_episodes() returns PublishResult dataclass (lines 25-37) with published: int, skipped_oversized: int, counts_per_type: dict[str, int]. Result populated: line 125 (published increments), line 136 (skipped_oversized increments), lines 128-131 (counts_per_type tracking). Test verifies: test_returns_publish_summary.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Unit tests use a fake/mock NATSClient (no live broker) asserting: connect \u2192 N \u00d7 publish_episode \u2192 disconnect ordering; the >900 KB episode is skipped with the actionable error; the run never aborts on a single oversized item.",
+      "status": "complete",
+      "evidence": "All tests use AsyncMock(spec=NATSClient) fixture (lines 62-68). No live broker. Tests verify: (1) connect/publish/disconnect ordering via test_publish_lifecycle_ordering using assert_has_calls(), (2) oversized skip with logging via test_oversized_episode_skipped_with_actionable_message, (3) run continuation via test_oversized_episode_does_not_abort_run. 50 total tests pass (14 publisher + 36 taxonomy) in 2.39s when run directly.",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-009",
+      "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+      "status": "complete",
+      "evidence": "Files compile via py_compile. No linter configured (no ruff/black/flake8 in pyproject.toml). Code follows PEP 8: type hints (from __future__ import annotations), docstrings on all public functions/classes, proper imports, error handling. Coverage: harvest_publisher.py 96% (100% line, 83% branch), harvest_taxonomy.py 92% (95% line, 83% branch). Both exceed quality gates (\u226580% line, \u226575% branch).",
+      "test_file": "tests/memory/test_harvest_publisher.py",
+      "implementation_files": [
+        "guardkit/memory/harvest_publisher.py",
+        "guardkit/memory/harvest_taxonomy.py"
+      ]
+    }
+  ]
+}

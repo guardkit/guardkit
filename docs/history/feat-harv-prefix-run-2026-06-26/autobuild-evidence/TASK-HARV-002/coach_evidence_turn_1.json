@@ -1,0 +1,116 @@
+{
+  "honesty": {
+    "verified": true,
+    "discrepancies": [],
+    "honesty_score": 1.0,
+    "resolved_paths": [],
+    "should_fix_count": 0
+  },
+  "gathering_status": "complete",
+  "gathering_error": null,
+  "quality_gates": {
+    "tests_passed": true,
+    "coverage_met": true,
+    "arch_review_passed": true,
+    "plan_audit_passed": true,
+    "tests_required": true,
+    "coverage_required": false,
+    "arch_review_required": false,
+    "plan_audit_required": true,
+    "all_gates_passed": true
+  },
+  "coverage_details": {
+    "coverage_met": true,
+    "line_coverage": null,
+    "branch_coverage": null,
+    "line_threshold": null,
+    "branch_threshold": null,
+    "coverage_required": false
+  },
+  "plan_audit": null,
+  "bdd": null,
+  "arch_review": null,
+  "tests": {
+    "tests_passed": true,
+    "tests_required": true,
+    "tests_run": null,
+    "tests_failed": 0,
+    "all_passed": true,
+    "requires_infrastructure": []
+  },
+  "wiring": null,
+  "mocked_seam": null,
+  "spec_gap": null,
+  "independent_tests": {
+    "tests_passed": false,
+    "test_command": "pytest tests/unit/memory/test_harvest_taxonomy.py -v --tb=short",
+    "test_output_summary": "I'll run the test command for you.",
+    "duration_seconds": 13.075387239456177,
+    "raw_output": "\nI'll run the test command for you.\n",
+    "signal_absent": true
+  },
+  "independent_test_classification": null,
+  "requirements": {
+    "criteria_total": 7,
+    "criteria_met": 7,
+    "all_criteria_met": true,
+    "missing": [],
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "A module `guardkit/memory/harvest_taxonomy.py` defines `HARVEST_MAP`, the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Created guardkit/memory/harvest_taxonomy.py with HARVEST_MAP defined as a dict[str, HarvestEntry] containing all required episode types. The map uses a frozen dataclass structure (HarvestEntry) for type safety and immutability. Module is pure-Python with no external dependencies."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "`derive_episode_id(natural_key: str) -> str` returns",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['adr'] entry configured with directories=['docs/adr', 'docs/adrs', 'docs/decisions'] and content_format='markdown'. Verified by test_adr_entry_has_correct_directories and test_adr_directory_mapping tests."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "`natural_key_for(repo_relative_path, episode_type) -> str` returns the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['review_report'] entry configured with directories=['docs/reviews', 'docs/code-review'] and content_format='markdown'. Verified by test_review_report_entry_has_correct_directories and test_review_report_directory_mapping tests."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "`episode_type_for(repo_relative_path) -> str | None` resolves a doc path to its",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['feature_outcome'] entry configured with directories=['docs/completion-reports', 'docs/retro'] and content_format='markdown'. Verified by test_feature_outcome_entry_has_correct_directories and test_feature_outcome_directory_mapping tests."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Every `episode_type` value is a valid NATS subject segment, i.e. matches",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['document'] entry configured with directories=['docs/design', 'docs/guides', 'docs/reference'] and content_format='markdown'. Verified by test_document_entry_has_correct_directories and test_document_directory_mapping tests."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Determinism unit test: the same `(path, episode_type)` yields the same",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Defined EXCLUDED_DIRS set containing 'archive', 'checkpoints', 'state', 'history'. The episode_type_for() function checks for these directories anywhere in the path and returns None if found. Verified by test_excluded_archive_directory, test_excluded_checkpoints_directory, test_excluded_state_directory, and test_excluded_history_directory tests covering all exclusion scenarios."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Implemented derive_episode_id() that takes SHA-256 hash of UTF-8 encoded natural_key and returns 'ep-{first 16 hex chars}'. Function is pure and deterministic with no randomness or wall-clock input. Verified by test_derive_episode_id_format, test_derive_episode_id_deterministic, and test_reproducibility_no_randomness (100 calls produce identical results)."
+      }
+    ]
+  },
+  "runtime_parity": null,
+  "evidence_repo_tests": [],
+  "severity_recommendations": [],
+  "advisory_issues": [],
+  "task_type": "declarative",
+  "profile_name": "declarative"
+}

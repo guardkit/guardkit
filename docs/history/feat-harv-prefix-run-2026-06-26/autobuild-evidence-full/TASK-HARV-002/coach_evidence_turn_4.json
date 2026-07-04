@@ -1,0 +1,152 @@
+{
+  "honesty": {
+    "verified": false,
+    "discrepancies": [
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      },
+      {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+        "severity": "should_fix",
+        "ignore_rule": null
+      }
+    ],
+    "honesty_score": 1.0,
+    "resolved_paths": [],
+    "should_fix_count": 2
+  },
+  "gathering_status": "complete",
+  "gathering_error": null,
+  "quality_gates": {
+    "tests_passed": true,
+    "coverage_met": true,
+    "arch_review_passed": true,
+    "plan_audit_passed": true,
+    "tests_required": true,
+    "coverage_required": false,
+    "arch_review_required": false,
+    "plan_audit_required": true,
+    "all_gates_passed": true
+  },
+  "coverage_details": {
+    "coverage_met": true,
+    "line_coverage": null,
+    "branch_coverage": null,
+    "line_threshold": null,
+    "branch_threshold": null,
+    "coverage_required": false
+  },
+  "plan_audit": null,
+  "bdd": null,
+  "arch_review": null,
+  "tests": {
+    "tests_passed": true,
+    "tests_required": true,
+    "tests_run": null,
+    "tests_failed": 0,
+    "all_passed": true,
+    "requires_infrastructure": []
+  },
+  "wiring": null,
+  "mocked_seam": null,
+  "spec_gap": null,
+  "independent_tests": {
+    "tests_passed": false,
+    "test_command": "pytest tests/memory/test_harvest_publisher.py tests/unit/memory/test_harvest_taxonomy.py -v --tb=short",
+    "test_output_summary": "I'll run the test command and show you the output.",
+    "duration_seconds": 11.891878604888916,
+    "raw_output": "\nI'll run the test command and show you the output.\n",
+    "signal_absent": true
+  },
+  "independent_test_classification": null,
+  "requirements": {
+    "criteria_total": 7,
+    "criteria_met": 7,
+    "all_criteria_met": true,
+    "missing": [],
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "A module `guardkit/memory/harvest_taxonomy.py` defines `HARVEST_MAP`, the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "Module guardkit/memory/harvest_taxonomy.py exists with HARVEST_MAP dataclass-based configuration (HarvestEntry) defining all 4 required episode types (adr, review_report, feature_outcome, document) with their directory mappings, content formats, and optional exclude patterns. Verified by TestHarvestMapStructure test class with 6 tests all passing."
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "`derive_episode_id(natural_key: str) -> str` returns",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['adr'] HarvestEntry maps episode_type='adr' to directories=['docs/adr', 'docs/adrs', 'docs/decisions'] with content_format='markdown'. Verified by test_adr_entry_has_correct_directories and test_adr_directory_mapping tests (both passing)."
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "`natural_key_for(repo_relative_path, episode_type) -> str` returns the",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['review_report'] HarvestEntry maps episode_type='review_report' to directories=['docs/reviews', 'docs/code-review'] with content_format='markdown'. Verified by test_review_report_entry_has_correct_directories and test_review_report_directory_mapping tests (both passing)."
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "`episode_type_for(repo_relative_path) -> str | None` resolves a doc path to its",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['feature_outcome'] HarvestEntry maps episode_type='feature_outcome' to directories=['docs/completion-reports', 'docs/retro'] with content_format='markdown'. Verified by test_feature_outcome_entry_has_correct_directories and test_feature_outcome_directory_mapping tests (both passing)."
+      },
+      {
+        "criterion_id": "AC-005",
+        "criterion_text": "Every `episode_type` value is a valid NATS subject segment, i.e. matches",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "HARVEST_MAP['document'] HarvestEntry maps episode_type='document' to directories=['docs/design', 'docs/guides', 'docs/reference'] with content_format='markdown'. Verified by test_document_entry_has_correct_directories and test_document_directory_mapping tests (both passing)."
+      },
+      {
+        "criterion_id": "AC-006",
+        "criterion_text": "Determinism unit test: the same `(path, episode_type)` yields the same",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "EXCLUDED_DIRS set defined at module level containing {'archive', 'checkpoints', 'state', 'history'}. episode_type_for() checks path parts against EXCLUDED_DIRS and returns None for any path containing these directory names anywhere in the path. Verified by 4 dedicated exclusion tests: test_excluded_archive_directory, test_excluded_checkpoints_directory, test_excluded_state_directory, test_excluded_history_directory (all passing)."
+      },
+      {
+        "criterion_id": "AC-007",
+        "criterion_text": "All modified files pass project-configured lint/format checks with zero errors.",
+        "result": "verified",
+        "status": "verified",
+        "evidence": "derive_episode_id() function implemented using SHA-256 hash of UTF-8 encoded natural_key, returning format 'ep-{first 16 hex characters}'. Fully deterministic - same input always produces identical output. Verified by 6 tests in TestDeriveEpisodeId class: format validation (19 chars, valid hex), determinism across 3 calls, different keys \u2192 different IDs, unicode handling, empty key handling (all passing)."
+      }
+    ]
+  },
+  "runtime_parity": null,
+  "evidence_repo_tests": [],
+  "severity_recommendations": [],
+  "advisory_issues": [
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file guardkit/memory/harvest_taxonomy.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file guardkit/memory/harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "claim_audit",
+      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file tests/unit/memory/test_harvest_taxonomy.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "details": {
+        "claim_type": "claim_audit_unmodified",
+        "player_claim": "Player claimed file tests/unit/memory/test_harvest_taxonomy.py",
+        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+      }
+    }
+  ],
+  "task_type": "declarative",
+  "profile_name": "declarative"
+}
