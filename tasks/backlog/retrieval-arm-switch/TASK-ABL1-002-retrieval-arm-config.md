@@ -41,7 +41,7 @@ autobuild_state:
       \ Defence-in-depth for the agent_invoker-side filter; this is a warning, not\
       \ a turn-rejecting fabrication..\n- Automated tests failed with an AssertionError:\
       \ assert cfg.postgres_dsn == \"postgresql://postgres:test@localhost:5433/memory\"\
-      \ E AssertionError: assert 'postgresql://fleet_memory:7C1L+0hfYu...: Investigate\
+      \ E AssertionError: assert 'postgresql://fleet_memory:[REDACTED-CREDENTIAL-LEAK-SEE-RETRO] Investigate\
       \ the logic responsible for resolving and assigning the postgres_dsn. The test\
       \ expected a specific DSN but received a different one, suggesting the DSN swap\
       \ or fallback logic is incorrect.\n- Player claimed modification of .guardkit/memory-query-log.jsonl,\
