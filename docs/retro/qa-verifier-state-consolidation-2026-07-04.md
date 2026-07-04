@@ -17,9 +17,9 @@
 | Coach-validator wiring bridge (lazy import, `_run_wiring_analysis()`, `_compute_spec_gap()`) | ✅ **BUILT** | `coach_validator.py` L584–611 (0fadbd4f, 13 June) |
 | BDDWIRE (factory BDD plugins → Coach) | ✅ Landed (f93e56b 12 June; guardkit side TASK-FIX-BDDFW01 15 June) | tasks/completed |
 | TASK-FIX-LSTRACE01 (LangSmith executor crash) · TASK-FIX-BOOTPYTEST01 (worktree pytest) | ✅ Both FIXED 12 June | guardkitfactory 189ece6; completed task files |
-| **FEAT-E2CB re-run** (the H6 generalization proof, post-fixes) | ❌ **NEVER EXECUTED** — recipe documented, no run-2 logs | handoff §recipe |
-| TASK-QAWE-004 (Wave 4: SPEC_GAP hard gate) | ⏳ Gated on FEAT-E2CB merged | `tasks/backlog/qa-wiring-evidence/` |
-| Anti-stub body scan · runtime coverage/reachability gate · behavioural round-trip oracle | ❌ Not built — the genuinely NEW Phase-0 work | 2 July starter |
+| **FEAT-E2CB re-run** (the H6 generalization proof, post-fixes) | ✅ **EXECUTED 2026-07-04** — SUCCESS 2/2 tasks, 2 turns, 17m27s, first-attempt pass 100%; criteria 6/6 + 3/3 `verified`, honesty 1.00, independent tests RAN (8 passed, 3-4s), evidence_repos declared, no crash / no false-green. Caveat: deliverable already on main since June, so this validates the harness+Coach pipeline half of H6; Player-authoring half remains the June evidence | recipe verbatim; log `.guardkit/autobuild/FEAT-E2CB-run2-stdout.log`; durable record `docs/retro/evidence/FEAT-E2CB-run2-review-summary.md` |
+| TASK-QAWE-004 (Wave 4: SPEC_GAP hard gate) | ▶️ **UNBLOCKED** (FEAT-E2CB merged since June, re-validated 2026-07-04) — build next per §3.2 | `tasks/backlog/qa-wiring-evidence/` |
+| Anti-stub body scan · runtime coverage/reachability gate · behavioural round-trip oracle | 📋 **SPEC + PLAN DONE 2026-07-04** (`/feature-spec` → `/feature-plan`): **FEAT-10AC**, 5 tasks / 5 waves, 22 @task-tagged scenarios, evidence_repos + smoke gates declared. Build via §3.3 recipe | `features/qav-behavioural-gates/`; `tasks/backlog/qav-behavioural-gates/`; `.guardkit/features/FEAT-10AC.yaml` |
 | TASK-AB-XREPOEV01 (cross-repo evidence architecture) | Filed, not detailed | backlog |
 
 **Correction to the 2026-07-04 SPL/panel docs:** their "QAV Phase 0 gates absent in code" row is wrong as stated — the *wiring-evidence* layer is built; what's absent is the *stub/behaviour* layer below.
