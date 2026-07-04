@@ -1,6 +1,6 @@
 ---
 id: TASK-QAV-005
-title: Dogfood validation — fs-01 reproducer + correctly-wired stub go RED end-to-end
+title: "Dogfood validation \u2014 fs-01 reproducer + correctly-wired stub go RED end-to-end"
 task_type: testing
 parent_review: TASK-REV-QAVG
 feature_id: FEAT-10AC
@@ -8,9 +8,41 @@ wave: 5
 implementation_mode: task-work
 complexity: 4
 dependencies:
-  - TASK-QAV-003
-  - TASK-QAV-004
+- TASK-QAV-003
+- TASK-QAV-004
 priority: high
+status: in_review
+autobuild_state:
+  current_turn: 2
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
+  base_branch: main
+  started_at: '2026-07-04T22:08:33.155629'
+  last_updated: '2026-07-04T22:55:58.230293'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- AC-006 (full guardkit + guardkitfactory suites green) was not included
+      in the Player''s completion promises.: Include AC-006 in the completion promises
+      and ensure all suites, including BDD, are fully verified.
+
+      - The BDD oracle failed to run any scenarios due to a marker configuration error:
+      ''qav_behavioural_gates'' not found in markers configuration option.: Update
+      the pytest configuration (e.g., in pytest.ini) to register the ''qav_behavioural_gates''
+      marker to allow BDD scenarios to collect.'
+    timestamp: '2026-07-04T22:08:33.155629'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-04T22:35:40.024674'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Dogfood validation — the new gates catch the class they were built for

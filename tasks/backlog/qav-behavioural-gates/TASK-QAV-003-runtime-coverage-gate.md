@@ -1,6 +1,6 @@
 ---
 id: TASK-QAV-003
-title: L3 runtime coverage gate — zero-execution authored public surface
+title: "L3 runtime coverage gate \u2014 zero-execution authored public surface"
 task_type: feature
 parent_review: TASK-REV-QAVG
 feature_id: FEAT-10AC
@@ -8,14 +8,32 @@ wave: 3
 implementation_mode: task-work
 complexity: 6
 dependencies:
-  - TASK-QAV-002
+- TASK-QAV-002
 priority: high
 consumer_context:
-  - task: TASK-QAV-002
-    consumes: coverage
-    framework: "CoachEvidenceBundle sibling field"
-    driver: "guardkit.orchestrator.quality_gates.coach_evidence"
-    format_note: "Optional[Dict]; None = gate did not run; positive status + findings:[] = real clean verdict"
+- task: TASK-QAV-002
+  consumes: coverage
+  framework: CoachEvidenceBundle sibling field
+  driver: guardkit.orchestrator.quality_gates.coach_evidence
+  format_note: Optional[Dict]; None = gate did not run; positive status + findings:[]
+    = real clean verdict
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
+  base_branch: main
+  started_at: '2026-07-04T21:20:49.534717'
+  last_updated: '2026-07-04T21:44:07.440649'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-04T21:20:49.534717'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: L3 runtime coverage gate
