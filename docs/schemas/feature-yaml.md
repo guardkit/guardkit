@@ -56,7 +56,7 @@ orchestration:
 |-----|------|----------|-------|
 | `parallel_groups` | list of list of task IDs | yes | Topological levels from the dependency graph. Each inner list is one wave. |
 | `estimated_duration_minutes` | int | no | Default 0. |
-| `recommended_parallel` | int | no | Default 1. |
+| `recommended_parallel` | int | no | Bound on max parallel tasks per wave. Consumed by `guardkit autobuild feature` with precedence `GUARDKIT_MAX_PARALLEL_TASKS` env var > `--max-parallel` flag > this value > auto-detect (TASK-AB-WAVECTL01). Applies only when nothing is operator-set, and **may only lower the auto-detect result, never raise it**: `effective = min(this value, auto-detect)`, where an unlimited (cloud) auto-detect takes this value as-is, but the local-backend auto-detect cap of 1 (TASK-VPT-001) can never be raised — `generate_feature_yaml` emits this key as a machine default, not operator intent. Unset means "fall through to auto-detect" (1 for local backends, unlimited otherwise). Values < 1 are ignored. |
 
 ## Smoke gates schema (TASK-SMK-F703A)
 

@@ -1463,16 +1463,25 @@ def test_phase4_execution_mode_unknown_degrades_to_subprocess(monkeypatch):
 # --- pytest count parser ----------------------------------------------------
 
 
+# TASK-AB-SKIPVIS01: third element is the advisory tests_skipped count.
+# tests_run/tests_failed semantics are UNCHANGED (skipped stays excluded from
+# tests_run); tests_skipped is tri-state — None when the output carries no
+# recognisable summary token (unknown, never 0-coerced), 0 when a summary
+# parsed cleanly with no skip token, N when "N skipped" is present.
 @pytest.mark.parametrize(
     "output,expected",
     [
-        ("===== 5 passed, 2 failed in 0.3s =====", (7, 2)),
-        ("3 passed in 0.1s", (3, 0)),
-        ("1 passed, 3 errors in 1s", (4, 3)),
-        ("2 passed, 1 xfailed, 1 skipped in 1s", (3, 0)),
-        ("", (0, 0)),
-        (None, (0, 0)),
-        ("no recognisable summary here", (0, 0)),
+        ("===== 5 passed, 2 failed in 0.3s =====", (7, 2, 0)),
+        ("3 passed in 0.1s", (3, 0, 0)),
+        ("1 passed, 3 errors in 1s", (4, 3, 0)),
+        ("2 passed, 1 xfailed, 1 skipped in 1s", (3, 0, 1)),
+        ("===== 5 passed, 2 skipped in 1.2s =====", (5, 0, 2)),
+        # All-skipped run (the FEAT-ABL-001 R1 shape: missing optional extra
+        # silently turns every test into a skip; pytest exits 0).
+        ("===== 4 skipped in 0.5s =====", (0, 0, 4)),
+        ("", (0, 0, None)),
+        (None, (0, 0, None)),
+        ("no recognisable summary here", (0, 0, None)),
     ],
 )
 def test_parse_pytest_counts(output, expected):

@@ -628,11 +628,24 @@ def main():
 
     parser.add_argument(
         "--auto-serialise-overlap",
+        dest="auto_serialise_overlap",
         action="store_true",
+        default=True,
         help="When tasks within a parallel-execution wave appear to edit overlapping "
              "files (inferred from task descriptions and ACs), split the offending "
              "wave into a sequential follow-on entry instead of warning. "
-             "Default: warn-only. See TASK-FIX-A7B3."
+             "Default: ON (TASK-AB-WAVECTL01; was warn-only under TASK-FIX-A7B3). "
+             "Use --no-auto-serialise-overlap to opt out. Plans where the "
+             "detector infers no overlapping file sets are unchanged either way."
+    )
+
+    parser.add_argument(
+        "--no-auto-serialise-overlap",
+        dest="auto_serialise_overlap",
+        action="store_false",
+        help="Opt out of default-on overlap serialisation (TASK-AB-WAVECTL01): "
+             "keep the original wave layout and emit the warn-only banner when "
+             "overlapping file edits are detected within a wave."
     )
 
     parser.add_argument(

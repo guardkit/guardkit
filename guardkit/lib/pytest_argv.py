@@ -18,18 +18,36 @@ TASK-FPSG-004 / L3d, TASK-FPSG-005 / L4):
 Centralising the helpers means a YAML with ``tests/cli`` produces the
 same error wording at every defense layer — agents see one message, not
 three.
+
+It also carries the shared ``--basetemp`` isolation helpers for every
+pytest invocation the orchestrator itself constructs
+(TASK-AB-BASETEMP01):
+
+- ``has_basetemp(argv)`` — detect a pre-existing ``--basetemp`` option.
+- ``isolated_basetemp(context, existing_argv)`` — context manager that
+  yields a ``["--basetemp", <unique tmp dir>]`` argv fragment and
+  best-effort-removes the directory after the run.
 """
 
 from __future__ import annotations
 
+import contextlib
+import logging
+import re
 import shlex
+import shutil
+import tempfile
 from pathlib import Path
-from typing import List
+from typing import Iterator, List, Sequence
 
 __all__ = [
     "parse_positional_paths",
     "format_smoke_gate_path_error",
+    "has_basetemp",
+    "isolated_basetemp",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 # Pytest options that consume the *next* token as their value when not
@@ -188,3 +206,103 @@ def format_smoke_gate_path_error(
         roots_line = "Available test roots: (none — no tests/<name> subdirectories found)"
 
     return f"{header}\n{body}\n{roots_line}"
+
+
+# ---------------------------------------------------------------------------
+# Isolated --basetemp for orchestrator-constructed pytest runs
+# (TASK-AB-BASETEMP01)
+# ---------------------------------------------------------------------------
+
+# Characters allowed verbatim in the mkdtemp prefix derived from a caller's
+# context label; everything else collapses to "-" so a task id / label can
+# never produce an invalid or path-traversing prefix.
+_BASETEMP_LABEL_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def has_basetemp(argv: Sequence[str]) -> bool:
+    """Return True when ``argv`` already carries a ``--basetemp`` option.
+
+    Recognises both the separate-value form (``--basetemp DIR``) and the
+    ``--basetemp=DIR`` form. Callers use this to let an operator- or
+    test-supplied basetemp win over orchestrator injection
+    (TASK-AB-BASETEMP01).
+    """
+    return any(
+        tok == "--basetemp" or tok.startswith("--basetemp=") for tok in argv
+    )
+
+
+@contextlib.contextmanager
+def isolated_basetemp(
+    context: str,
+    existing_argv: Sequence[str] = (),
+) -> Iterator[List[str]]:
+    """Yield a unique ``["--basetemp", <dir>]`` fragment for one pytest run.
+
+    TASK-AB-BASETEMP01: pytest's default basetemp is the per-USER
+    ``/tmp/pytest-of-<user>``, not per-run, so two concurrent autobuild
+    loops on one host race each other's tmp-dir creation/cleanup and
+    manufacture spurious reds (the FEAT-ABL-005 Coach died on that race
+    three turns straight). Every pytest invocation the orchestrator itself
+    constructs routes through this helper so each run gets its own
+    basetemp under the SYSTEM temp dir.
+
+    Deliberately NOT under the worktree: ``.guardkit/`` in a worktree is
+    not gitignored and checkpoint commits ``git add -A`` the whole tree
+    (``worktree_checkpoints.py``), so a worktree-local tmp dir would
+    pollute checkpoints and ``files_modified`` attribution.
+
+    Parameters
+    ----------
+    context : str
+        Attribution label baked into the directory prefix (e.g.
+        ``"TASK-XXX-YYYY-coach-independent"``) so a leaked dir under
+        system tmp names its origin. Sanitised to filesystem-safe chars.
+    existing_argv : Sequence[str]
+        The pytest argv built so far. When it already carries a
+        ``--basetemp`` (operator/test override), the helper yields ``[]``
+        and creates nothing — the explicit value wins.
+
+    Yields
+    ------
+    list[str]
+        ``["--basetemp", <unique dir>]``, or ``[]`` when injection is
+        skipped (pre-existing ``--basetemp``) or the tmp dir could not be
+        created (fail-open: dropping the flag reverts to pytest's default
+        rather than failing the oracle run on tmp-dir trouble — the
+        absent-signal rules forbid fabricating a verdict from it).
+
+    Cleanup is best-effort in a ``finally``: errors are swallowed at
+    DEBUG — a leaked dir under system tmp is acceptable; a crashed run
+    must not be worsened by cleanup.
+    """
+    if has_basetemp(existing_argv):
+        yield []
+        return
+
+    label = _BASETEMP_LABEL_UNSAFE.sub("-", str(context)).strip("-") or "run"
+    try:
+        basetemp = tempfile.mkdtemp(prefix=f"guardkit-pytest-{label}-")
+    except OSError as exc:
+        # Fail-open: run without --basetemp (pytest's default) rather than
+        # let tmp-dir trouble fail — or fabricate a verdict for — the run.
+        logger.warning(
+            "Could not create isolated pytest basetemp for %s (%s); "
+            "running without --basetemp",
+            label,
+            exc,
+        )
+        yield []
+        return
+
+    try:
+        yield ["--basetemp", basetemp]
+    finally:
+        try:
+            shutil.rmtree(basetemp)
+        except Exception as exc:  # noqa: BLE001 — cleanup is best-effort
+            logger.debug(
+                "Best-effort cleanup of pytest basetemp %s failed: %s",
+                basetemp,
+                exc,
+            )

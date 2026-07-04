@@ -80,6 +80,53 @@ def _tail_excerpt(stderr: Optional[str], max_chars: int = _STDERR_EXCERPT_MAX_CH
     return "…" + stripped[-max_chars:]
 
 
+def probe_worktree_venv(root: Path) -> Optional[Path]:
+    """Probe the known worktree venv layouts for a Python interpreter.
+
+    Single source of truth for the on-disk venv locations the bootstrap
+    creates (TASK-AB-RESUMEVENV01). Resolution order — current layout first:
+
+    1. ``<root>/.venv/bin/python`` — the FFC6 eager worktree-local venv
+       created by :meth:`EnvironmentBootstrapper._ensure_worktree_venv`
+       (what every current bootstrap produces for a Python stack).
+    2. ``<root>/.guardkit/venv/bin/python`` — the legacy PEP 668 fallback
+       venv created by :meth:`EnvironmentBootstrapper._ensure_venv`
+       (old worktrees still carry it).
+
+    Trade-off (deliberate): ``.venv``-first matches what the current
+    bootstrap creates (FFC6) and fixes the live ABL-005 resume defect. The
+    accepted narrow edge: a legacy dual-venv worktree whose deps live only
+    in ``.guardkit/venv`` while a bare ``.venv`` also exists would now pin
+    the bare one. Mitigated by the AC-003 WARNING and the
+    ``resolved_interpreter`` evidence naming exactly which interpreter ran,
+    so the operator can see the mis-pin immediately. This deliberately
+    supersedes the TASK-FIX-A7B1 (legacy-first) ordering.
+
+    POSIX ``bin/python`` only — both creators produce that layout and no
+    bootstrap path has Windows ``Scripts/python.exe`` handling; do not
+    invent platform logic the creators don't have.
+
+    Parameters
+    ----------
+    root : Path
+        Worktree root to probe.
+
+    Returns
+    -------
+    Optional[Path]
+        The first interpreter that exists on disk, or ``None`` when
+        neither layout is present (non-Python worktree / never
+        bootstrapped).
+    """
+    for candidate in (
+        root / ".venv" / "bin" / "python",
+        root / ".guardkit" / "venv" / "bin" / "python",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 # ============================================================================
 # Data Models
 # ============================================================================
@@ -1423,7 +1470,7 @@ class EnvironmentBootstrapper:
                 skipped=True,
                 stacks_detected=stacks_detected,
                 manifests_found=manifests_found,
-                venv_python=saved.get("venv_python"),
+                venv_python=self._resolve_skip_venv_python(saved),
                 duration_seconds=time.monotonic() - start_time,
             )
 
@@ -1703,6 +1750,78 @@ class EnvironmentBootstrapper:
             content_hash[:8],
         )
         return False
+
+    def _resolve_skip_venv_python(self, saved: Dict[str, object]) -> Optional[str]:
+        """Resolve a usable ``venv_python`` for the hash-match skip path.
+
+        TASK-AB-RESUMEVENV01 (AC-002): ``--resume`` runs skip bootstrap on a
+        hash match, so ``BootstrapResult.venv_python`` on the skip path is the
+        ONLY chance to thread the worktree interpreter to the Coach/Phase-4
+        execution paths. Before this fix the skip result echoed the saved
+        state verbatim — a state file written before venv persistence (or one
+        carrying a stale/leaked path) yielded ``None`` and downstream callers
+        silently fell back to ``sys.executable`` (the orchestrator's own venv,
+        with no target-project deps → pytest collected 0 tests, FEAT-ABL-005
+        run 4).
+
+        Resolution order:
+
+        1. The saved ``venv_python`` when it still exists on disk AND lives
+           inside the worktree (the FFC6 invariant — an outside-worktree path
+           is the historical ``sys.executable`` leak and is discarded).
+        2. Re-probe the known worktree venv layouts on disk at skip time via
+           :func:`probe_worktree_venv` (``.venv`` first, legacy
+           ``.guardkit/venv`` second) — the same result a fresh bootstrap
+           would have produced for an already-created venv.
+        3. A worktree-local saved value that is not currently on disk —
+           preserved for backward compatibility with the pre-RESUMEVENV01
+           echo contract (downstream ``_resolve_venv_python`` re-validates
+           existence and falls through to its own filesystem probe).
+        4. ``None`` — genuinely no worktree venv (e.g. non-Python project);
+           downstream fallback behaviour is unchanged.
+        """
+        saved_venv = saved.get("venv_python")
+        saved_inside: Optional[str] = None
+        if isinstance(saved_venv, str) and saved_venv:
+            saved_path = Path(saved_venv)
+            # Path-aware containment, NOT str.startswith: a sibling worktree
+            # sharing a string prefix (FEAT-AB vs FEAT-AB2) would pass a
+            # prefix check and pin the Coach to ANOTHER worktree's venv
+            # (2026-07-04 review, FIX 5). Resolve both sides so symlinked
+            # roots (/tmp vs /private/tmp) compare consistently.
+            try:
+                saved_is_inside = saved_path.resolve().is_relative_to(
+                    Path(self._root).resolve()
+                )
+            except OSError:
+                saved_is_inside = False
+            if saved_is_inside:
+                if saved_path.exists():
+                    return saved_venv
+                saved_inside = saved_venv
+                logger.debug(
+                    "TASK-AB-RESUMEVENV01: saved venv_python %s not on disk — "
+                    "re-probing worktree venv layouts.",
+                    saved_venv,
+                )
+            else:
+                # FFC6 invariant: an outside-worktree interpreter is the
+                # historical sys.executable leak — never thread it downstream.
+                logger.warning(
+                    "TASK-AB-RESUMEVENV01: discarding saved venv_python %s — "
+                    "outside worktree %s. Re-probing worktree venv layouts.",
+                    saved_venv,
+                    self._root,
+                )
+        probed = probe_worktree_venv(self._root)
+        if probed is not None:
+            logger.info(
+                "TASK-AB-RESUMEVENV01: bootstrap skipped (hash match) — "
+                "re-resolved worktree venv interpreter from disk: %s",
+                probed,
+            )
+            return str(probed)
+        return saved_inside
 
     def _load_state(self) -> Dict[str, str]:
         """

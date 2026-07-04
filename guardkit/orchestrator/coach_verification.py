@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 if TYPE_CHECKING:
     from guardkit.tasks.state_bridge import TaskStateBridge
 
+from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
 from guardkit.orchestrator.evidence_repos import (
     EvidenceRepo,
     resolve_qualified_path,
@@ -32,19 +33,39 @@ from guardkit.orchestrator.evidence_repos import (
 logger = logging.getLogger(__name__)
 
 
+# Manifest names that mark a worktree as a Python project for the loud
+# no-venv fallback WARNING (TASK-AB-RESUMEVENV01 AC-003). Deliberately the
+# same root-level names ProjectEnvironmentDetector treats as Python stack
+# manifests — a match means "pytest against sys.executable will almost
+# certainly miss the project's deps".
+_PYTHON_PROJECT_MARKERS = (
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+)
+
+
 def _resolve_venv_python(
     worktree_path: Path,
     explicit: Optional[Union[str, Path]],
 ) -> Optional[Path]:
     """Resolve the Python interpreter Coach should use for pytest.
 
-    Resolution order (AC-TASK-FIX-7A05):
+    Resolution order (AC-TASK-FIX-7A05, extended by TASK-AB-RESUMEVENV01):
       1. Explicit path passed by the orchestrator (typically from
          BootstrapResult.venv_python).
-      2. ``<worktree>/.guardkit/venv/bin/python`` when it exists on disk
-         (recovery path when the explicit param wasn't threaded through).
-      3. None — caller falls back to PATH ``pytest`` / ``sys.executable``
-         behaviour for non-Python projects.
+      2. ``<worktree>/.venv/bin/python`` when it exists on disk — the
+         current bootstrap layout (FFC6 eager worktree venv; recovery path
+         when the explicit param wasn't threaded through, e.g. the
+         ``--resume`` hash-match skip).
+      3. ``<worktree>/.guardkit/venv/bin/python`` when it exists on disk —
+         the legacy PEP 668 fallback layout (old worktrees exist).
+      4. None — caller falls back to PATH ``pytest`` / ``sys.executable``
+         behaviour for non-Python projects. For a PYTHON project worktree
+         this is the FEAT-ABL-005 run-4 blind-verifier shape, so it logs
+         ONE WARNING naming the probed locations and the interpreter the
+         caller will actually use.
     """
     if explicit:
         candidate = Path(explicit)
@@ -56,9 +77,30 @@ def _resolve_venv_python(
             candidate,
         )
 
-    filesystem = worktree_path / ".guardkit" / "venv" / "bin" / "python"
-    if filesystem.exists():
+    filesystem = probe_worktree_venv(worktree_path)
+    if filesystem is not None:
         return filesystem
+
+    # TASK-AB-RESUMEVENV01 (AC-003): no silent sys.executable fallback for a
+    # Python project. The caller will run pytest under the ORCHESTRATOR'S own
+    # interpreter, which almost certainly lacks the target project's deps —
+    # pytest then collects 0 tests and every turn records an absent signal
+    # that looks exactly like a quality rejection (FEAT-ABL-005 run 4).
+    if any(
+        (worktree_path / marker).exists() for marker in _PYTHON_PROJECT_MARKERS
+    ):
+        logger.warning(
+            "TASK-AB-RESUMEVENV01: no worktree venv interpreter resolved for "
+            "Python project at %s — probed %s and %s (explicit=%s). Callers "
+            "will fall back to %s (the orchestrator's own interpreter), which "
+            "likely lacks the project's deps; check the worktree venv or "
+            "re-run environment bootstrap.",
+            worktree_path,
+            worktree_path / ".venv" / "bin" / "python",
+            worktree_path / ".guardkit" / "venv" / "bin" / "python",
+            explicit,
+            sys.executable,
+        )
 
     return None
 

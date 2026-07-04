@@ -1538,7 +1538,9 @@ class TestFeatureLoaderEdgeCases:
         )
         assert feature.orchestration.parallel_groups == []
         assert feature.orchestration.estimated_duration_minutes == 0
-        assert feature.orchestration.recommended_parallel == 1
+        # TASK-AB-WAVECTL01: unset stays None (not a coerced 1) so an absent
+        # YAML tier never silently caps concurrency after a save/load cycle.
+        assert feature.orchestration.recommended_parallel is None
 
     def test_unicode_in_feature_name(self):
         """Test that unicode characters in names are handled."""

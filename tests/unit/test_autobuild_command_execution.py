@@ -399,9 +399,12 @@ class TestVenvPathInjection:
     """Tests for virtualenv PATH prepending when .venv/bin/ exists."""
 
     def test_venv_bin_prepended_when_exists(self, orchestrator, worktree_path):
-        """When .venv/bin/ exists in worktree, PATH should be prepended."""
+        """When .venv/bin/python exists in worktree, PATH should be prepended."""
         venv_bin = worktree_path / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
+        # build_venv_env derives the dir from probe_worktree_venv, which
+        # requires the interpreter (2026-07-04 review, FIX 4).
+        (venv_bin / "python").touch()
 
         report = {"requirements_addressed": [], "_synthetic": True}
         criteria = ["`pytest tests/ -v` runs successfully"]
@@ -438,6 +441,7 @@ class TestVenvPathInjection:
         """PATH separator should use os.pathsep for platform compatibility."""
         venv_bin = worktree_path / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
 
         report = {"requirements_addressed": [], "_synthetic": True}
         criteria = ["`echo hello` runs successfully"]
@@ -458,6 +462,7 @@ class TestVenvPathInjection:
         """Both pip normalization AND venv PATH should apply simultaneously."""
         venv_bin = worktree_path / ".venv" / "bin"
         venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
 
         report = {"requirements_addressed": [], "_synthetic": True}
         criteria = ["`pip install guardkit-py` runs successfully"]

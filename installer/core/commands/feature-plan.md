@@ -2138,6 +2138,12 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    - Lint and format compliance MUST be verified as part of each implementation task's Coach Validation commands, not in a separate final task
    - This applies to all task types EXCEPT: scaffolding, documentation, and testing tasks
 
+   **CRITICAL: Name out-of-scope boundaries NEGATIVELY in scaffold-task specs (invariant-not-snapshot):**
+   - When a scaffold/early task's spec or acceptance criteria pin a boundary that later tasks in THIS feature implement, name the boundary negatively and explicitly: "assert NotImplementedError ONLY for methods out of scope for the WHOLE feature — reads → TASK-B, session CRUD → TASK-C — never for methods a later task in this feature implements"
+   - NEVER instruct a task to write tests asserting that a method raises NotImplementedError, or that a directory/table/config is empty or absent, when a later task in this feature implements/fills it — the later task's success turns the earlier task's test red (a self-defeating transient assertion, and a burned turn budget for the WRONG task)
+   - Stub *implementations* in scaffold tasks remain legitimate (see `.claude/rules/anti-stub.md`); this rule governs the TESTS the spec instructs the task to write, not the stubs themselves
+   - See [`docs/guides/feature-plan-task-classification.md`](../../../docs/guides/feature-plan-task-classification.md) Class D (transient boundary assertions) for the defect class this prevents
+
    **Seam Test Stub Generation Rule:**
 
    When a §4 Integration Contract exists AND a task is listed as a **consumer** in that contract, you MUST include a `## Seam Tests` section at the bottom of the consumer task markdown file body (below Acceptance Criteria, above Implementation Notes).

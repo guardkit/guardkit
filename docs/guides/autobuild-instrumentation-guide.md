@@ -18,6 +18,7 @@
 - [vLLM / Local Backend Specifics](#vllm--local-backend-specifics)
 - [Secret Redaction](#secret-redaction)
 - [Bootstrap Hard-Fail Gate (`bootstrap_failure_mode`)](#bootstrap-hard-fail-gate-bootstrap_failure_mode)
+- [Coach Independent Test Execution (`coach.test_execution`)](#coach-independent-test-execution-coachtest_execution)
 - [Troubleshooting](#troubleshooting)
   - [If AutoBuild stalls immediately](#if-autobuild-stalls-immediately)
 
@@ -906,6 +907,37 @@ Hint: set `bootstrap_failure_mode: warn` in .guardkit/config.yaml (or pass `--bo
 - Wave 2 task [TASK-FIX-7A05](../../tasks/backlog/autobuild-sdk-stall-resilience/TASK-FIX-7A05-wire-venv-to-coach-pytest.md) wires the bootstrap venv into the Coach pytest interpreter, closing the rest of the GB10 class-of-defect (venv-was-built-but-Coach-ignored-it).
 - Review: [TASK-REV-E4F5](../../.claude/reviews/TASK-REV-E4F5-review-report.md) findings F6 and F7.
 - Amendment: [TASK-REV-JMBP](../../.claude/reviews/TASK-REV-JMBP-review-report.md) Workstream E (requires-python pre-check).
+
+---
+
+## Coach Independent Test Execution (`coach.test_execution`)
+
+The Coach's "trust but verify" independent test run has two execution modes. **`subprocess` is the default** (TASK-AB-COACHSUBPROC01, 2026-07-04): a deterministic `subprocess.run()` of pytest pinned to the bootstrap venv interpreter (`_resolve_venv_python`) — no LLM in the loop, so it cannot hang and cannot fail on SDK transport.
+
+The former default, `sdk` (pytest run through the Claude Agent SDK Bash tool for "environment parity"), is now **opt-in only**. The corpus evidence behind the flip (2026-07-04 retro cross-reference, §5 item 15): across the full 2026 retro history the SDK path failed with an opaque exit-1 *"Fatal error in message reader"* on essentially 100% of invocations across every repo (jarvis, forge, study-tutor, specialist-agent), machine, and vintage — never root-caused, always masked by the subprocess fallback, so each Coach turn paid one doomed SDK attempt. The SDK path stays in-repo (with its subprocess fallback intact) for the open diagnosis tasks [TASK-REV-COSE](../../tasks/backlog/TASK-REV-COSE-diagnose-coach-sdk-test-execution-opaque-stderr.md) and [TASK-FIX-A7B7](../../tasks/backlog/TASK-FIX-A7B7-pin-sdk-message-reader-root-cause.md).
+
+### Configuration
+
+Resolution precedence: **env > config > default** (mirrors the `GUARDKIT_PHASE4_TEST_EXECUTION` pattern from TASK-AB-PERTASKFG01). An invalid value at either tier is ignored with a WARNING, so the safe default always wins over a typo. The active mode and its provenance (`env`/`config`/`default`) are logged at INFO once per Coach validator init.
+
+```yaml
+# .guardkit/config.yaml
+autobuild:
+  coach:
+    test_execution: subprocess   # "subprocess" (default) or "sdk" (opt-in)
+```
+
+```bash
+# Env override — wins over the yaml value (per-invocation revert lever)
+GUARDKIT_COACH_TEST_EXECUTION=sdk guardkit autobuild feature FEAT-XXX
+```
+
+Permanent rollback is a one-line change to `DEFAULT_COACH_TEST_EXECUTION` in `guardkit/orchestrator/quality_gates/coach_validator.py` (mirroring the `selector.py::DEFAULT_HARNESS` cutover shape).
+
+### Notes
+
+- Even under `test_execution: sdk`, the SDK path is skipped (subprocess is used) for infrastructure-dependent tasks (TASK-REV-CB30 R5), custom `ANTHROPIC_BASE_URL` endpoints, and the LangGraph harness (TASK-FIX-COACHTESTTO) — and any SDK error still falls back to subprocess.
+- Both modes pin pytest to the bootstrap venv interpreter (TASK-FIX-COACHPYENV), so environment parity is preserved by the subprocess default.
 
 ---
 

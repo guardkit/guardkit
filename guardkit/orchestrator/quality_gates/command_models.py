@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
 from guardkit.orchestrator.quality_gates.command_failure_classifier import (
     CommandFailureRecord,
 )
@@ -76,13 +77,21 @@ def normalise_pip_command(cmd: str) -> str:
 def build_venv_env(worktree_path: Path) -> Optional[Dict[str, str]]:
     """Build environment dict with virtualenv PATH prepended.
 
-    Consults the bootstrap venv at ``.guardkit/venv/bin`` first (created by
-    ``environment_bootstrap``), then falls back to the operator-managed
-    ``.venv/bin``. The bootstrap location is preferred when both exist
-    because that is the interpreter Coach was configured to verify against
-    (TASK-FIX-A7B1, sibling of TASK-FIX-7A05).
+    Derives the ``bin`` directory from
+    :func:`guardkit.orchestrator.environment_bootstrap.probe_worktree_venv`
+    (the interpreter's ``.parent``), so the worktree venv layouts and their
+    resolution order — current bootstrap ``.venv/bin`` first (the FFC6 eager
+    worktree venv), legacy PEP 668 ``.guardkit/venv/bin`` second — have ONE
+    owner (2026-07-04 review, FIX 4; previously this helper hand-listed the
+    same layouts). The PATH prepend therefore agrees with the pinned pytest
+    ``argv[0]`` by construction (``_resolve_venv_python`` resolves the
+    interpreter via the same probe; a divergent order here would PATH-prepend
+    a DIFFERENT venv than the one pytest runs under).
+    TASK-AB-RESUMEVENV01; supersedes the TASK-FIX-A7B1 ordering, which
+    predated the FFC6 ``.venv`` layout.
 
-    Returns None when neither venv exists (inherit parent environment).
+    Returns None when neither venv interpreter exists (inherit parent
+    environment) — a ``bin`` dir with no ``python`` is not a usable venv.
 
     Parameters
     ----------
@@ -94,18 +103,12 @@ def build_venv_env(worktree_path: Path) -> Optional[Dict[str, str]]:
     Optional[Dict[str, str]]
         Environment dict with modified PATH, or None.
     """
-    bootstrap_venv_bin = worktree_path / ".guardkit" / "venv" / "bin"
-    legacy_venv_bin = worktree_path / ".venv" / "bin"
-
-    if bootstrap_venv_bin.is_dir():
-        venv_bin = bootstrap_venv_bin
-    elif legacy_venv_bin.is_dir():
-        venv_bin = legacy_venv_bin
-    else:
+    interpreter = probe_worktree_venv(worktree_path)
+    if interpreter is None:
         return None
 
     env = os.environ.copy()
-    env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
+    env["PATH"] = str(interpreter.parent) + os.pathsep + env.get("PATH", "")
     return env
 
 

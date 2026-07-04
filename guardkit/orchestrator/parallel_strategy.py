@@ -9,7 +9,7 @@ Supports three modes:
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Awaitable, List, Optional, Sequence
 
@@ -30,6 +30,18 @@ class MaxParallelMode(Enum):
     PER_WAVE = "per-wave"  # Allow per-wave override from feature config
 
 
+# TASK-AB-WAVECTL01: provenance of ParallelConfig.static_value. Drives the
+# feature-YAML tier of the max-parallel precedence chain
+# (env > CLI flag > feature-YAML recommended_parallel > auto-detect):
+# only a value that was NOT operator-set (source == auto-detect) may be
+# BOUNDED (lowered, never raised) by the loaded feature's
+# ``recommended_parallel``.
+PARALLEL_SOURCE_ENV = "env"
+PARALLEL_SOURCE_FLAG = "flag"
+PARALLEL_SOURCE_FEATURE_YAML = "feature-yaml"
+PARALLEL_SOURCE_AUTO_DETECT = "auto-detect"
+
+
 @dataclass
 class ParallelConfig:
     """Resolved parallel execution configuration."""
@@ -37,14 +49,103 @@ class ParallelConfig:
     mode: MaxParallelMode = MaxParallelMode.STATIC
     static_value: Optional[int] = None  # None = unlimited
     gpu_monitor: GpuMonitor = field(default_factory=NullGpuMonitor)
+    # TASK-AB-WAVECTL01: where static_value came from (one of the
+    # PARALLEL_SOURCE_* constants). Operator-set sources (env/flag) always
+    # win over the feature YAML; auto-detect is the only tier the YAML's
+    # ``recommended_parallel`` may bound (lower, never raise).
+    source: str = PARALLEL_SOURCE_AUTO_DETECT
 
     @classmethod
     def from_legacy(cls, max_parallel: Optional[int]) -> "ParallelConfig":
         """Create a ParallelConfig from the legacy max_parallel int.
 
-        Provides backward compatibility with existing callers.
+        Provides backward compatibility with existing callers. An explicit
+        int is treated as operator-set (``flag``) so the feature-YAML tier
+        cannot override it; ``None`` means "nothing set" (``auto-detect``),
+        the only tier ``apply_feature_recommended_parallel`` may bound
+        (lower, never raise; TASK-AB-WAVECTL01).
         """
-        return cls(mode=MaxParallelMode.STATIC, static_value=max_parallel)
+        source = (
+            PARALLEL_SOURCE_FLAG
+            if max_parallel is not None
+            else PARALLEL_SOURCE_AUTO_DETECT
+        )
+        return cls(
+            mode=MaxParallelMode.STATIC, static_value=max_parallel, source=source
+        )
+
+
+def apply_feature_recommended_parallel(
+    config: ParallelConfig,
+    recommended_parallel: Optional[int],
+) -> ParallelConfig:
+    """Apply the feature-YAML tier of the max-parallel precedence chain.
+
+    TASK-AB-WAVECTL01. Precedence: env > CLI flag > feature-YAML
+    ``recommended_parallel`` > auto-detect. This helper implements ONLY the
+    feature-YAML tier, and the YAML may only LOWER concurrency, never raise
+    it: an operator-set config (source env/flag) is returned unchanged; an
+    auto-detected value is BOUNDED by a valid ``recommended_parallel`` (an
+    explicit int >= 1) — ``new_value = min(yaml_value, auto_detect_value)``,
+    where an auto-detect value of ``None`` (unlimited) means the YAML
+    applies as-is.
+
+    The lowering-only contract exists because ``generate_feature_yaml`` has
+    always emitted ``recommended_parallel`` as a machine default
+    (min(max wave size, 4)), so existing feature YAMLs carry 2-5 as
+    previously-inert metadata — while on local backends the auto-detect
+    result of 1 is the TASK-VPT-001 KV-cache safety cap. A machine-emitted
+    YAML default must never raise that cap; bounding the UNLIMITED cloud
+    default (the retro-motivating use) still works because a ``None``
+    auto-detect takes the YAML value as-is.
+
+    The caller MUST apply this ONCE to the shared config, before BOTH
+    ``resolve_max_parallel`` call sites (the read-only ``log=False`` display
+    resolution and the authoritative executor resolution), so the wave
+    banner and the executor consume the identical decision — see
+    ``.claude/rules/display-must-derive-from-enforcement-source-not-proxy.md``.
+
+    Parameters
+    ----------
+    config : ParallelConfig
+        Config resolved from env / CLI flag / auto-detect.
+    recommended_parallel : Optional[int]
+        ``orchestration.recommended_parallel`` from the loaded feature YAML.
+        ``None`` (absent), bools, non-ints, and values < 1 are ignored —
+        an absent/invalid YAML tier falls through to the auto-detect result
+        unchanged. A value >= the finite auto-detect result is also ignored
+        (it cannot lower anything).
+
+    Returns
+    -------
+    ParallelConfig
+        Either ``config`` unchanged (with its auto-detect source intact), or
+        a copy with ``static_value`` lowered to the YAML value and ``source``
+        set to ``PARALLEL_SOURCE_FEATURE_YAML``. The feature-YAML source is
+        stamped ONLY when the YAML actually changed the value.
+    """
+    if config.source != PARALLEL_SOURCE_AUTO_DETECT:
+        return config
+    # bool is an int subclass; a YAML `recommended_parallel: true` must not
+    # be honoured as 1.
+    if isinstance(recommended_parallel, bool):
+        return config
+    if not isinstance(recommended_parallel, int) or recommended_parallel < 1:
+        return config
+    # Lowering-only: the YAML may bound an unlimited (None) auto-detect
+    # result, but may never raise a finite one (e.g. the local-backend
+    # TASK-VPT-001 KV-cache cap of 1). An equal-or-higher YAML value changes
+    # nothing, so the auto-detect value AND source stand.
+    if (
+        config.static_value is not None
+        and recommended_parallel >= config.static_value
+    ):
+        return config
+    return replace(
+        config,
+        static_value=recommended_parallel,
+        source=PARALLEL_SOURCE_FEATURE_YAML,
+    )
 
 
 def resolve_max_parallel(
@@ -112,8 +213,14 @@ def resolve_max_parallel(
 
     # STATIC mode (or fallback)
     if config.static_value is not None and log:
+        # TASK-AB-WAVECTL01: the authoritative (executor-side) resolution logs
+        # the precedence-chain source once; the display resolution passes
+        # log=False, so the source is never double-logged per wave.
         logger.info(
-            "Wave %d: max_parallel=%d (static)", wave_number, config.static_value
+            "Wave %d: max_parallel=%d (static) [source: %s]",
+            wave_number,
+            config.static_value,
+            config.source,
         )
     return config.static_value
 

@@ -785,8 +785,12 @@ def status(ctx, task_id: str, verbose: bool):
     type=int,
     help=(
         "Max parallel tasks per wave (default: auto-detect). "
-        "Defaults to 1 for local backends (TASK-VPT-001: reduced from 2 due to KV cache contention), "
-        "unlimited otherwise. Override via GUARDKIT_MAX_PARALLEL_TASKS env var."
+        "Precedence: GUARDKIT_MAX_PARALLEL_TASKS env var > this flag > "
+        "feature-YAML orchestration.recommended_parallel > auto-detect "
+        "(TASK-AB-WAVECTL01). The feature-YAML tier may only LOWER the "
+        "auto-detect result, never raise it. Auto-detect defaults to 1 for "
+        "local backends (TASK-VPT-001: reduced from 2 due to KV cache "
+        "contention; the YAML cannot raise this cap), unlimited otherwise."
     ),
 )
 @click.option(
@@ -964,8 +968,22 @@ def feature(
             param_hint="'--sdk-timeout'",
         )
 
-    # Resolve max_parallel: env var > CLI flag > auto-detect
+    # Resolve max_parallel: env var > CLI flag > feature-YAML > auto-detect.
+    # The env/flag/auto-detect tiers are resolved here; the feature-YAML tier
+    # (orchestration.recommended_parallel) is applied by FeatureOrchestrator
+    # once the feature file is loaded, only when the value below came from
+    # auto-detect — the recorded source makes that distinction possible —
+    # and only to LOWER it, never raise it (TASK-AB-WAVECTL01).
+    from guardkit.orchestrator.parallel_strategy import (
+        PARALLEL_SOURCE_AUTO_DETECT,
+        PARALLEL_SOURCE_ENV,
+        PARALLEL_SOURCE_FLAG,
+        MaxParallelMode,
+        ParallelConfig,
+    )
+
     env_max_parallel = os.environ.get("GUARDKIT_MAX_PARALLEL_TASKS")
+    max_parallel_source = PARALLEL_SOURCE_AUTO_DETECT
     if env_max_parallel is not None:
         try:
             max_parallel = int(env_max_parallel)
@@ -979,7 +997,10 @@ def feature(
                 f"Invalid GUARDKIT_MAX_PARALLEL_TASKS value: {env_max_parallel!r}",
                 param_hint="'GUARDKIT_MAX_PARALLEL_TASKS'",
             )
-    elif max_parallel is None:
+        max_parallel_source = PARALLEL_SOURCE_ENV
+    elif max_parallel is not None:
+        max_parallel_source = PARALLEL_SOURCE_FLAG
+    else:
         # Auto-detect: default to 1 for local backends (TASK-VPT-001: was 2, reduced due to KV cache contention)
         from guardkit.orchestrator.agent_invoker import detect_timeout_multiplier
         detected_multiplier = timeout_multiplier if timeout_multiplier is not None else detect_timeout_multiplier()
@@ -993,15 +1014,18 @@ def feature(
         )
 
     # TASK-VRF-006: Build ParallelConfig from CLI args
-    from guardkit.orchestrator.parallel_strategy import MaxParallelMode, ParallelConfig
-
     if max_parallel_strategy == "dynamic":
         parallel_config = ParallelConfig(
             mode=MaxParallelMode.DYNAMIC,
             static_value=max_parallel,  # fallback when GPU pressure is UNKNOWN
+            source=max_parallel_source,
         )
     else:
-        parallel_config = ParallelConfig.from_legacy(max_parallel)
+        parallel_config = ParallelConfig(
+            mode=MaxParallelMode.STATIC,
+            static_value=max_parallel,
+            source=max_parallel_source,
+        )
 
     logger.info(
         f"Starting feature orchestration: {feature_id} "

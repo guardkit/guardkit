@@ -106,6 +106,15 @@ class RuntimeParityResult:
     skipped_reason : Optional[str]
         Why the check did not run (``"no_smoke_command"``, ``"parallel_wave"``,
         ``"runner_error: ..."``). ``None`` when the check ran.
+    output_tail : Optional[str]
+        Combined stdout+stderr tail (stdout first, each stream bounded to its
+        last 2000 chars). Additive field (2026-07-04 code review): pytest
+        writes its ``FAILED <nodeid>`` short-summary lines to STDOUT, so a
+        stderr-only tail hides the failing-test names from
+        ``AgentInvoker._apply_runtime_parity_guard``'s evidence extraction —
+        the same stdout+stderr join ``feature_orchestrator._build_smoke_feedback``
+        already performs post-wave. ``None`` on older records / when the run
+        produced no output; consumers fall back to ``stderr_tail``.
     """
 
     ran: bool
@@ -116,6 +125,7 @@ class RuntimeParityResult:
     timed_out: bool = False
     stderr_tail: str = ""
     skipped_reason: Optional[str] = None
+    output_tail: Optional[str] = None
 
 
 @dataclass

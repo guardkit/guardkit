@@ -38,6 +38,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from guardkit.lib.pytest_argv import isolated_basetemp
+
 logger = logging.getLogger(__name__)
 
 # Marker substrings for distinguishing pending steps from real failures in
@@ -601,14 +603,22 @@ def _invoke_pytest_bdd(
         env = os.environ.copy()
         env[_BDD_TASK_ID_ENV] = task_id
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
+        # TASK-AB-BASETEMP01: unique --basetemp under the system temp dir so
+        # concurrent orchestrator-run pytest invocations on one host cannot
+        # race the shared /tmp/pytest-of-<user> default. Unrelated to the
+        # --junitxml path (which stays under the worktree's .guardkit/bdd/);
+        # the dir is best-effort removed after the run.
+        with isolated_basetemp(
+            f"{task_id}-bdd" if task_id else "bdd", argv
+        ) as basetemp_argv:
+            proc = subprocess.run(
+                argv + basetemp_argv,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
     except subprocess.TimeoutExpired as exc:
         logger.warning("pytest-bdd timed out after %ss: %s", timeout, exc)
         return _PytestInvocation(
