@@ -1,0 +1,82 @@
+id: FEAT-10AC
+name: QA Verifier Behavioural-Evidence Gates
+description: L2 anti-stub tree-sitter scan, L3 runtime coverage gate, L4 behavioural
+  round-trip oracle; three sibling absent-signal-safe CoachEvidenceBundle fields (stub_scan,
+  coverage, behavioural_oracle); L1 wiring probes excluded (built, FEAT-C332)
+created: '2026-07-04T17:12:07.822003'
+status: planned
+complexity: 7
+estimated_tasks: 5
+tasks:
+- id: TASK-QAV-001
+  name: L2 anti-stub scan factory core
+  file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-001-anti-stub-scan-factory-core.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-QAV-002
+  name: Bundle fields and stub_scan seam wiring
+  file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-002-bundle-fields-and-stub-scan-seam.md
+  complexity: 5
+  dependencies:
+  - TASK-QAV-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-QAV-003
+  name: L3 runtime coverage gate
+  file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-003-runtime-coverage-gate.md
+  complexity: 6
+  dependencies:
+  - TASK-QAV-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-QAV-004
+  name: L4 behavioural roundtrip oracle
+  file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-004-behavioural-roundtrip-oracle.md
+  complexity: 7
+  dependencies:
+  - TASK-QAV-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 170
+- id: TASK-QAV-005
+  name: Dogfood validation fs-01
+  file_path: tasks/backlog/qav-behavioural-gates/TASK-QAV-005-dogfood-validation-fs01.md
+  complexity: 4
+  dependencies:
+  - TASK-QAV-003
+  - TASK-QAV-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+orchestration:
+  # TASK-QAV-003 and TASK-QAV-004 are dependency-parallel but both edit
+  # coach_validator.py + agent_invoker.py in the shared worktree -> run in
+  # separate waves (TASK-REV-QAVG decision; GB10 recipe is --max-parallel 1).
+  parallel_groups:
+  - - TASK-QAV-001
+  - - TASK-QAV-002
+  - - TASK-QAV-003
+  - - TASK-QAV-004
+  - - TASK-QAV-005
+  estimated_duration_minutes: 521
+  recommended_parallel: 1
+evidence_repos:
+- ../guardkitfactory
+smoke_gates:
+  after_wave: all
+  command: |
+    set -e
+    python -c "from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle"
+    python -m pytest tests/unit/orchestrator/quality_gates -x -q -p no:cacheprovider
+  expected_exit: 0
+  timeout: 300
