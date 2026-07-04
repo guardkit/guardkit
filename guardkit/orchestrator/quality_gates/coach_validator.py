@@ -3503,6 +3503,32 @@ class CoachValidator:
         runtime_parity = self._gather_runtime_parity()
 
         # ------------------------------------------------------------------
+        # 8. L4 behavioural-oracle producer (TASK-QAV-006).
+        # Populates behavioural_oracle at the complete-path return only.
+        # Partial returns (honesty_abort, gate_abort, exception) keep None.
+        # ------------------------------------------------------------------
+        behavioural_oracle_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            behavioural_oracle_dict = self._produce_behavioural_oracle(
+                authored_files=authored if 'authored' in locals() else [],
+            )
+            if behavioural_oracle_dict is not None:
+                logger.info(
+                    "gather_evidence: behavioural-oracle complete "
+                    "(status=%s, passed=%s, oracle=%s).",
+                    behavioural_oracle_dict.get("status"),
+                    behavioural_oracle_dict.get("passed"),
+                    behavioural_oracle_dict.get("oracle_path"),
+                )
+        except Exception as exc:  # noqa: BLE001 — oracle errors must not break gathering
+            logger.warning(
+                "gather_evidence: behavioural-oracle raised %s; "
+                "behavioural_oracle field left as None.",
+                exc.__class__.__name__,
+            )
+
+        # ------------------------------------------------------------------
         # 7. Independent-test substrate-vs-code classification (TASK-ABFIX-012).
         # The live gather_evidence path carries NO failure classification on the
         # bundle today (the legacy validate() path's _classify_test_failure is
@@ -3578,7 +3604,7 @@ class CoachValidator:
             spec_gap=spec_gap_dict,
             stub_scan=stub_scan_dict,
             coverage=coverage_dict,     # Wave-3 (TASK-QAV-003)
-            behavioural_oracle=None,   # Wave-4 (TASK-QAV-004)
+            behavioural_oracle=behavioural_oracle_dict,  # Wave-4 (TASK-QAV-006)
             runtime_parity=runtime_parity,
         )
 
@@ -3699,6 +3725,168 @@ class CoachValidator:
             # tests (stderr_tail semantics untouched — additive only).
             output_tail=_combined_output_tail(proc.stdout, proc.stderr),
         )
+
+    # ------------------------------------------------------------------
+    # L4 behavioural-oracle producer (TASK-QAV-006)
+    # ------------------------------------------------------------------
+
+    def _produce_behavioural_oracle(
+        self,
+        authored_files: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Produce the L4 behavioural-oracle result for the bundle.
+
+        Discovery by artefact presence: looks for files matching
+        ``tests/acceptance/*_roundtrip.py`` under the worktree root.
+        No opt-in flag — presence of the artefact activates the gate.
+
+        Independence check: the oracle file must NOT be in the turn's
+        authored set (``files_authored`` when present, else
+        ``files_created ∪ files_modified``). A Player-authored oracle
+        yields ``{"status": "not_independent", ...}`` with a
+        ``should_fix`` warning — never trusted, never blocks.
+
+        Execution: runs the oracle via the worktree venv interpreter
+        (``<venv_python> -m pytest <oracle_path>``) with a bounded
+        timeout (default 300s, overridable via ``GUARDKIT_ORACLE_TIMEOUT``
+        env var).
+
+        Outcome policy:
+          * ran-and-failed → ``{"status": "ran", "passed": False, ...}``
+            (the guard fires)
+          * started-then-timed-out → ran-and-failed (COACHRUNPARITY01
+            semantics)
+          * failed-to-start / no oracle discovered → ``None`` (absent,
+            guard no-ops)
+
+        Args:
+            authored_files: List of source files authored by the Player
+                this turn (relative to worktree root).
+
+        Returns:
+            A dict matching the guard's consumed shape, or ``None`` when
+            no oracle file was discovered.
+        """
+        oracle_files = sorted(
+            self.worktree_path.glob("tests/acceptance/*_roundtrip.py")
+        )
+        if not oracle_files:
+            logger.info(
+                "gather_evidence: no behavioural-oracle artefact found "
+                "(no tests/acceptance/*_roundtrip.py); leaving behavioural_oracle absent."
+            )
+            return None
+
+        # Use the first discovered oracle file (convention: one per worktree).
+        oracle_path = oracle_files[0]
+        logger.info(
+            "gather_evidence: discovered behavioural-oracle artefact at %s",
+            oracle_path,
+        )
+
+        # Independence check: the oracle file must NOT be in the authored set.
+        oracle_rel = str(oracle_path.relative_to(self.worktree_path))
+        if oracle_rel in authored_files:
+            logger.warning(
+                "gather_evidence: behavioural-oracle at %s is in the "
+                "Player-authored set — marking not_independent.",
+                oracle_rel,
+            )
+            return {
+                "status": "not_independent",
+                "oracle_path": oracle_rel,
+                "provenance": "player_authored",
+            }
+
+        # Resolve timeout: env override or default 300s.
+        timeout_seconds = float(
+            os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
+        )
+
+        # Build the pytest command, pinned to the worktree venv interpreter.
+        interpreter = self._pytest_interpreter()
+        cmd = [interpreter, "-m", "pytest", str(oracle_path)]
+        env: Optional[dict] = None
+        if self._venv_python is not None:
+            env = os.environ.copy()
+            env["PATH"] = (
+                str(Path(self._venv_python).parent)
+                + os.pathsep
+                + env.get("PATH", "")
+            )
+
+        start_time = time.time()
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration = time.time() - start_time
+            stdout = (
+                exc.stdout.decode() if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            ) or ""
+            stderr = (
+                exc.stderr.decode() if isinstance(exc.stderr, bytes)
+                else (exc.stderr or "")
+            ) or ""
+            output_tail = _combined_output_tail(stdout, stderr)
+            logger.warning(
+                "gather_evidence: behavioural-oracle timed out after %.1fs "
+                "(oracle: %s). Treating as ran-and-failed.",
+                duration, oracle_rel,
+            )
+            return {
+                "status": "ran",
+                "passed": False,
+                "oracle_path": oracle_rel,
+                "exit_code": None,
+                "duration": duration,
+                "timed_out": True,
+                "output_tail": output_tail,
+                "provenance": "independent",
+            }
+        except Exception as exc:
+            # Failed to start — absent signal.
+            logger.warning(
+                "gather_evidence: behavioural-oracle failed to start "
+                "(oracle: %s): %s. Treating as absent.",
+                oracle_rel, exc,
+            )
+            return None
+
+        duration = time.time() - start_time
+        passed = proc.returncode == 0
+        output_tail = _combined_output_tail(proc.stdout, proc.stderr)
+
+        if passed:
+            logger.info(
+                "gather_evidence: behavioural-oracle passed (oracle: %s, "
+                "duration=%.1fs).",
+                oracle_rel, duration,
+            )
+        else:
+            logger.warning(
+                "gather_evidence: behavioural-oracle FAILED (oracle: %s, "
+                "exit_code=%d, duration=%.1fs).",
+                oracle_rel, proc.returncode, duration,
+            )
+
+        return {
+            "status": "ran",
+            "passed": passed,
+            "oracle_path": oracle_rel,
+            "exit_code": proc.returncode,
+            "duration": duration,
+            "timed_out": False,
+            "output_tail": output_tail,
+            "provenance": "independent",
+        }
 
     def _compute_agent_invocations_advisory(
         self, task_work_results: Dict[str, Any],
