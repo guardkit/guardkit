@@ -18,7 +18,8 @@ consumer_context:
   driver: guardkit.orchestrator.quality_gates.coach_evidence
   format_note: Optional[Dict]; None = no oracle discovered; ran+failed is the ONLY
     state that overrides a verdict
-status: in_review
+status: completed
+updated: '2026-07-04T21:56:00'
 autobuild_state:
   current_turn: 1
   max_turns: 5
