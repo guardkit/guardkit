@@ -105,6 +105,27 @@ def _select_glue(feature_path: Path) -> Path | None:
     return None
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Register dynamic BDD markers so --strict-markers doesn't reject them.
+
+    pytest-bdd applies tags like ``@task:TASK-QAV-005`` as markers named
+    ``task_TASK_QAV_005``. With ``--strict-markers`` pytest requires every
+    marker to be pre-registered. This hook registers the common BDD markers
+    used across all feature files.
+    """
+    for marker in [
+        "task",
+        "key_example",
+        "smoke",
+        "regression",
+        "boundary",
+        "negative",
+        "edge_case",
+        "qav_behavioural_gates",
+    ]:
+        config.addinivalue_line("markers", f"{marker}: BDD scenario tag (auto-generated)")
+
+
 def pytest_bdd_apply_tag(tag: str, function: T) -> T:
     """Register Gherkin tags as sanitised pytest markers.
 
