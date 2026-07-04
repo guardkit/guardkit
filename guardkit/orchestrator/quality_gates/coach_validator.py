@@ -594,11 +594,13 @@ def _run_factory_bdd(
 
 try:
     from guardkitfactory.wiring import (  # type: ignore[attr-defined,no-redef]
+        analyze_stub_scan,
         analyze_wiring,
     )
 
     _WIRING_FACTORY_AVAILABLE = True
 except ImportError:
+    analyze_stub_scan = None  # type: ignore[misc,assignment]
     analyze_wiring = None  # type: ignore[misc,assignment]
     _WIRING_FACTORY_AVAILABLE = False
 
@@ -945,6 +947,86 @@ def _run_wiring_analysis(
     except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
         logger.warning(
             "wiring analysis raised %s; all three fields left as None.",
+            exc.__class__.__name__,
+        )
+        return None
+
+
+def _compute_stub_scan(
+    worktree_path: Path,
+    authored_files: List[str],
+    task_type: str,
+) -> Optional[Dict[str, Any]]:
+    """Run the L2 anti-stub scan for the authored files.
+
+    Returns a dict with ``status``, ``findings``, and ``symbols_scanned`` keys
+    (some may be ``None``). Returns ``None`` when the task type gates out
+    (SCAFFOLDING/DOCUMENTATION) or there are no authored source targets.
+
+    Uses the same lazy-import seam as the wiring analysis: when
+    ``guardkitfactory.wiring.analyze_stub_scan`` is unavailable, all three
+    fields (``stub_scan``, ``coverage``, ``behavioural_oracle``) stay ``None``.
+
+    Parameters
+    ----------
+    worktree_path : Path
+        Root of the worktree.
+    authored_files : List[str]
+        Source files authored this turn.
+    task_type : str
+        Resolved task type (e.g. ``"feature"``, ``"scaffolding"``).
+
+    Returns
+    -------
+    Optional[Dict[str, Any]]
+        Dict with ``status``, ``findings``, ``symbols_scanned`` keys, or
+        ``None`` when the probe legitimately did not run.
+    """
+    # Positive task-type gate (same as wiring): only FEATURE / REFACTOR /
+    # INTEGRATION are scanned. Everything else produces None.
+    if (task_type or "").upper() not in ("FEATURE", "REFACTOR", "INTEGRATION"):
+        logger.debug(
+            "stub_scan: task_type=%s gates out; "
+            "all three fields left as None.",
+            task_type,
+        )
+        return None
+
+    # Zero-authored-targets gate → None.
+    if not authored_files:
+        logger.debug(
+            "stub_scan: no authored source targets; "
+            "all three fields left as None.",
+        )
+        return None
+
+    # Factory unavailable → None (graceful import absence).
+    if not _is_wiring_factory_available() or analyze_stub_scan is None:
+        logger.debug(
+            "stub_scan: guardkitfactory.wiring not available; "
+            "all three fields left as None.",
+        )
+        return None
+
+    try:
+        result = analyze_stub_scan(
+            authored_files=authored_files,
+            worktree_path=worktree_path,
+            task_type=task_type,
+        )
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            logger.warning(
+                "stub_scan returned unexpected type %s; "
+                "all three fields left as None.",
+                type(result).__name__,
+            )
+            return None
+        return result
+    except Exception as exc:  # noqa: BLE001 — analyzer errors must not break gathering
+        logger.warning(
+            "stub_scan raised %s; all three fields left as None.",
             exc.__class__.__name__,
         )
         return None
@@ -3348,7 +3430,34 @@ class CoachValidator:
             )
 
         # ------------------------------------------------------------------
-        # 6. Runtime parity (TASK-AB-COACHRUNPARITY01, arm b). Run the
+        # 6. Stub scan (Wave-2, TASK-QAV-002).
+        # Populates stub_scan at the complete-path return only. Partial
+        # returns (honesty_abort, gate_abort, exception) leave it None.
+        # Uses the same authored_files set as wiring analysis.
+        # ------------------------------------------------------------------
+        stub_scan_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            stub_scan_dict = _compute_stub_scan(
+                worktree_path=self.worktree_path,
+                authored_files=authored if 'authored' in locals() else [],
+                task_type=task_type.value,
+            )
+            if stub_scan_dict is not None:
+                logger.info(
+                    "gather_evidence: stub_scan complete "
+                    "(findings=%d).",
+                    len(stub_scan_dict.get("findings", [])),
+                )
+        except Exception as exc:  # noqa: BLE001 — stub scan errors must not break gathering
+            logger.warning(
+                "gather_evidence: stub_scan raised %s; "
+                "stub_scan field left as None.",
+                exc.__class__.__name__,
+            )
+
+        # ------------------------------------------------------------------
+        # 7. Runtime parity (TASK-AB-COACHRUNPARITY01, arm b). Run the
         # deliverable's declared runtime entry point (the feature smoke
         # command) before approving, so a "passes pytest but does not run"
         # deliverable is caught pre-approval. Guarded to single-task waves
@@ -3432,6 +3541,9 @@ class CoachValidator:
             wiring=wiring_dict,
             mocked_seam=mocked_seam_dict,
             spec_gap=spec_gap_dict,
+            stub_scan=stub_scan_dict,
+            coverage=None,             # Wave-3 (TASK-QAV-003)
+            behavioural_oracle=None,   # Wave-4 (TASK-QAV-004)
             runtime_parity=runtime_parity,
         )
 

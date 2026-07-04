@@ -1,21 +1,24 @@
 ---
-id: TASK-QAV-002
-title: CoachEvidenceBundle sibling fields (stub_scan, coverage, behavioural_oracle) + stub_scan seam wiring
-task_type: feature
-parent_review: TASK-REV-QAVG
-feature_id: FEAT-10AC
-wave: 2
-implementation_mode: task-work
 complexity: 5
-dependencies:
-  - TASK-QAV-001
-priority: high
 consumer_context:
-  - task: TASK-QAV-001
-    consumes: analyze_stub_scan
-    framework: "guardkit CoachValidator lazy-import seam"
-    driver: "guardkitfactory.wiring"
-    format_note: "dict via .to_dict() with status + findings keys; status never maps to pass; None = probe did not run"
+- consumes: analyze_stub_scan
+  driver: guardkitfactory.wiring
+  format_note: dict via .to_dict() with status + findings keys; status never maps
+    to pass; None = probe did not run
+  framework: guardkit CoachValidator lazy-import seam
+  task: TASK-QAV-001
+dependencies:
+- TASK-QAV-001
+feature_id: FEAT-10AC
+id: TASK-QAV-002
+implementation_mode: task-work
+parent_review: TASK-REV-QAVG
+priority: high
+status: design_approved
+task_type: feature
+title: CoachEvidenceBundle sibling fields (stub_scan, coverage, behavioural_oracle)
+  + stub_scan seam wiring
+wave: 2
 ---
 
 # Task: Bundle fields + stub_scan seam wiring

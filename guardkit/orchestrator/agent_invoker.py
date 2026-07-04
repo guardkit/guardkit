@@ -3364,6 +3364,9 @@ orchestrator takes only the **last** fenced block.
         * ``evidence_bundle.wiring.findings`` — keep first 20 entries.
         * ``evidence_bundle.mocked_seam.findings`` — keep first 20 entries.
         * ``evidence_bundle.spec_gap.findings`` — keep first 20 entries.
+        * ``evidence_bundle.stub_scan.findings`` — keep first 20 entries.
+        * ``evidence_bundle.coverage.findings`` — keep first 20 entries.
+        * ``evidence_bundle.behavioural_oracle.findings`` — keep first 20 entries.
 
         Each truncation appends a ``"... and N more"`` marker so the Coach
         knows the list was bounded. Non-list fields are bounded by gate
@@ -3434,6 +3437,11 @@ orchestrator takes only the **last** fenced block.
         self._truncate_findings(bundle_dict.get("wiring"), self._COACH_WIRING_FINDINGS_LIMIT)
         self._truncate_findings(bundle_dict.get("mocked_seam"), self._COACH_WIRING_FINDINGS_LIMIT)
         self._truncate_findings(bundle_dict.get("spec_gap"), self._COACH_WIRING_FINDINGS_LIMIT)
+
+        # Wave-2+ anti-stub / coverage / behavioural-oracle findings truncation.
+        self._truncate_findings(bundle_dict.get("stub_scan"), self._COACH_WIRING_FINDINGS_LIMIT)
+        self._truncate_findings(bundle_dict.get("coverage"), self._COACH_WIRING_FINDINGS_LIMIT)
+        self._truncate_findings(bundle_dict.get("behavioural_oracle"), self._COACH_WIRING_FINDINGS_LIMIT)
 
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
@@ -3648,6 +3656,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    stubs as permanent behaviour, not the stubs themselves.
    Advisory only — NEVER reject the turn on this finding alone; it
    combines with other guards for the final decision.
+
+   9. STUB-SCAN ADVISORY GUARD.
+   If evidence_bundle.stub_scan is not null AND
+   evidence_bundle.stub_scan.findings is non-empty: the L2 anti-stub scan
+   detected symbols that may be stub implementations (pass bodies,
+   NotImplemented, TODO markers). Treat these as advisory — a nonzero
+   stub_scan findings count NEVER changes the Coach decision deterministically.
+   Surface as feedback only; never reject the turn on stub_scan findings alone.
+   This guard is advisory-only and never overrides any other guard.
 </absence_of_failure_guards>
 """
 

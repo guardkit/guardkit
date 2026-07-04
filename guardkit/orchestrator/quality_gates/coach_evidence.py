@@ -275,6 +275,22 @@ class CoachEvidenceBundle:
         ``whole_file_deselection``. ``None`` when the task type gates out,
         the factory BDD plugin is unavailable, or Wave-3 wiring is not yet
         implemented.
+    stub_scan
+        L2 anti-stub scan result (dict) from ``guardkitfactory.wiring``.
+        Contains ``status``, ``findings``, ``symbols_scanned``. ``None`` when
+        the task type gates out (SCAFFOLDING/DOCUMENTATION), there are no
+        authored source targets, or the factory is unavailable. Populated by
+        Wave-2 (TASK-QAV-002).
+    coverage
+        L3 coverage analysis result (dict). Contains ``status``,
+        ``coverage_percentage``, ``files_below_threshold``. ``None`` when the
+        factory is unavailable or coverage analysis did not run. Populated by
+        Wave-3 (TASK-QAV-003).
+    behavioural_oracle
+        L4 behavioural oracle result (dict). Contains ``status``,
+        ``scenarios_verified``, ``oracles_passed``. ``None`` when the factory
+        is unavailable or the oracle did not run. Populated by Wave-4
+        (TASK-QAV-004).
     """
 
     honesty: "HonestyVerification"
@@ -295,6 +311,14 @@ class CoachEvidenceBundle:
     wiring: Optional[Dict[str, Any]] = None         # UNWIRED_PATH analysis
     mocked_seam: Optional[Dict[str, Any]] = None    # MOCKED_SEAM analysis
     spec_gap: Optional[Dict[str, Any]] = None       # SPEC_GAP (Wave-3)
+
+    # Wave-2+ anti-stub / coverage / behavioural-oracle fields (TASK-QAV-002/003/004).
+    # Populated by CoachValidator.gather_evidence at the complete-path return.
+    # Left None for SCAFFOLDING/DOCUMENTATION tasks, zero-target turns,
+    # or when guardkitfactory.wiring is unavailable (ImportError).
+    stub_scan: Optional[Dict[str, Any]] = None      # L2 anti-stub scan (Wave-2)
+    coverage: Optional[Dict[str, Any]] = None       # L3 coverage analysis (Wave-3)
+    behavioural_oracle: Optional[Dict[str, Any]] = None  # L4 behavioural oracle (Wave-4)
 
     independent_tests: Optional["IndependentTestResult"] = None
     # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
