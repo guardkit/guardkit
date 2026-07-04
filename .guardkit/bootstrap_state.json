@@ -1,6 +1,6 @@
 {
-  "content_hash": "9046f7169e85d2aef08a1c3198bc782563cdb3e6d50d903d0e57d74bf3b4b138",
+  "content_hash": "14fe598cb59d1e68849b0d920de8f5702ec9abcaff08469632dc78a131e42685",
   "success": false,
-  "timestamp": "2026-06-29T07:45:17.877524",
-  "venv_python": "/home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-MEM-08/.venv/bin/python"
+  "timestamp": "2026-07-04T19:57:31.821691",
+  "venv_python": "/home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC/.venv/bin/python"
 }
