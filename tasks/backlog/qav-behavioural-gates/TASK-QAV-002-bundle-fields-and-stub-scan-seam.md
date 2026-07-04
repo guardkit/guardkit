@@ -1,6 +1,7 @@
 ---
 id: TASK-QAV-002
-title: CoachEvidenceBundle sibling fields (stub_scan, coverage, behavioural_oracle) + stub_scan seam wiring
+title: CoachEvidenceBundle sibling fields (stub_scan, coverage, behavioural_oracle)
+  + stub_scan seam wiring
 task_type: feature
 parent_review: TASK-REV-QAVG
 feature_id: FEAT-10AC
@@ -8,14 +9,32 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies:
-  - TASK-QAV-001
+- TASK-QAV-001
 priority: high
 consumer_context:
-  - task: TASK-QAV-001
-    consumes: analyze_stub_scan
-    framework: "guardkit CoachValidator lazy-import seam"
-    driver: "guardkitfactory.wiring"
-    format_note: "dict via .to_dict() with status + findings keys; status never maps to pass; None = probe did not run"
+- task: TASK-QAV-001
+  consumes: analyze_stub_scan
+  framework: guardkit CoachValidator lazy-import seam
+  driver: guardkitfactory.wiring
+  format_note: dict via .to_dict() with status + findings keys; status never maps
+    to pass; None = probe did not run
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
+  base_branch: main
+  started_at: '2026-07-04T20:53:38.701866'
+  last_updated: '2026-07-04T21:20:41.934976'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-04T20:53:38.701866'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Bundle fields + stub_scan seam wiring

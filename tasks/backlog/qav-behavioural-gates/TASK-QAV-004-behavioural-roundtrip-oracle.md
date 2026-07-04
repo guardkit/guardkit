@@ -1,6 +1,7 @@
 ---
 id: TASK-QAV-004
-title: L4 behavioural round-trip oracle — independent oracle discovery, execution, hard-RED override
+title: "L4 behavioural round-trip oracle \u2014 independent oracle discovery, execution,\
+  \ hard-RED override"
 task_type: feature
 parent_review: TASK-REV-QAVG
 feature_id: FEAT-10AC
@@ -8,14 +9,32 @@ wave: 4
 implementation_mode: task-work
 complexity: 7
 dependencies:
-  - TASK-QAV-002
+- TASK-QAV-002
 priority: high
 consumer_context:
-  - task: TASK-QAV-002
-    consumes: behavioural_oracle
-    framework: "CoachEvidenceBundle sibling field"
-    driver: "guardkit.orchestrator.quality_gates.coach_evidence"
-    format_note: "Optional[Dict]; None = no oracle discovered; ran+failed is the ONLY state that overrides a verdict"
+- task: TASK-QAV-002
+  consumes: behavioural_oracle
+  framework: CoachEvidenceBundle sibling field
+  driver: guardkit.orchestrator.quality_gates.coach_evidence
+  format_note: Optional[Dict]; None = no oracle discovered; ran+failed is the ONLY
+    state that overrides a verdict
+status: in_review
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-10AC
+  base_branch: main
+  started_at: '2026-07-04T21:44:15.870795'
+  last_updated: '2026-07-04T22:08:24.295906'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-04T21:44:15.870795'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: L4 behavioural round-trip oracle
