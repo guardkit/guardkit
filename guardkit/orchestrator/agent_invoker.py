@@ -2432,6 +2432,20 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # TASK-QAV-004: behavioural round-trip oracle hard-gate.
+            # Deterministic backstop for the L4 behavioural oracle: when the
+            # Coach's behavioural_oracle bundle reports ran-and-failed, override
+            # approve→feedback. Timeout → ran-and-failed. Failed-to-start →
+            # absent (no override). None-safety: no-op when bundle/oracle is
+            # None or outcome is not ran-and-failed.
+            self._apply_behavioural_oracle_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
             # the deterministic records. Embeds honesty discrepancies verbatim
             # and strips fabricated "does not exist on disk" claims (the
@@ -6489,6 +6503,199 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             logger.warning(
                 "TASK-ABFIX-012: failed to re-persist overridden verdict to %s "
                 "(%s); in-memory override still applies",
+                coach_output_path,
+                exc,
+            )
+
+    def _apply_behavioural_oracle_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the Coach's behavioural oracle ran and failed.
+
+        TASK-QAV-004. Deterministic backstop for the L4 behavioural round-trip
+        oracle gate. When ``evidence_bundle.behavioural_oracle`` reports a
+        ran-and-failed outcome, override an ``approve`` verdict to ``feedback``
+        with a ``must_fix`` issue naming the oracle and its failure output.
+
+        Outcome policy (consolidation + ASSUM-005/006):
+
+        * **ran-and-failed** (``status == "ran"``, ``passed == False``) → hard
+          RED override to ``feedback``.
+        * **started-then-timed-out** (``timed_out == True``) → treated as
+          ran-and-failed (fires the override). A deliverable that hangs is a
+          real defect (COACHRUNPARITY01 semantics).
+        * **failed-to-start / runner error / absent** (``status != "ran"`` or
+          ``passed is not False``) → ABSENT (WARN only, never a pass, never a
+          block). No override fires.
+        * **not_independent** (Player-authored oracle) → recorded as
+          ``not_independent`` with a ``should_fix`` warning. Neither passes
+          nor blocks. No override fires.
+
+        Discovery is by artefact presence (``.claude/rules/activate-by-artefact-
+        not-opt-in-flag.md``): an oracle file at the convention path
+        ``tests/acceptance/*_roundtrip.py`` in the worktree, or — for non-file
+        oracles only — a ``behavioural_oracle.command`` declared in the feature
+        YAML (genuine operator policy with no artefact proxy).
+
+        Independence check (ASSUM-004): the oracle file must NOT be in the
+        turn's authored set (``files_authored`` when present, else
+        ``files_created ∪ files_modified``). A Player-authored oracle degrades
+        to ``not_independent`` + a warning — it is never trusted as independent
+        evidence.
+
+        Narrow and identity-bounded (mirrors
+        ``.claude/rules/absence-of-failure-is-not-success.md``):
+
+        * Only an ``approve`` is overridden. A ``feedback`` verdict is left
+          untouched (the guard does not annotate feedback — only the absent
+          independent-test guard does that).
+        * Only ``status == "ran"`` and ``passed == False`` triggers the override.
+          A passing oracle (``passed == True``) is a no-op (AC-4).
+        * **None-safety mirrors the existing guard archetype:** no-op when
+          ``evidence_bundle is None``, ``evidence_bundle.behavioural_oracle is
+          None``, or the outcome is anything but ran-and-failed (AC-3).
+        * **Timeout asymmetry:** ``timed_out == True`` → ran-and-failed (AC-6).
+          ``status != "ran"`` (failed-to-start) → absent, no override (AC-6).
+
+        Mutates ``decision`` in place and re-persists ``coach_turn_N.json``.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        decision_value = decision.get("decision")
+        if decision_value not in ("approve", "feedback"):
+            return
+        if evidence_bundle is None:
+            return
+        oracle = getattr(evidence_bundle, "behavioural_oracle", None)
+        if oracle is None:
+            return
+
+        # AC-5: not_independent → should_fix warning, no override
+        if oracle.get("status") == "not_independent":
+            oracle_path = oracle.get("oracle_path") or "<unknown>"
+            warning = {
+                "severity": "should_fix",
+                "category": "oracle_not_independent",
+                "description": (
+                    f"Behavioural oracle at {oracle_path} was authored by the "
+                    f"Player (present in the turn's authored set). It is recorded "
+                    f"as not_independent and neither passes nor blocks. "
+                    f"An independent oracle must be authored outside the turn."
+                ),
+                "details": {
+                    "oracle_path": oracle_path,
+                    "provenance": oracle.get("provenance"),
+                },
+            }
+            decision["issues"] = [*decision.get("issues", []), warning]
+            logger.info(
+                "TASK-QAV-004: behavioural oracle at %s is not_independent "
+                "for %s turn %s — warning recorded, no override.",
+                oracle_path,
+                task_id,
+                turn,
+            )
+            try:
+                coach_output_path.write_text(json.dumps(decision, indent=2))
+            except OSError as exc:
+                logger.warning(
+                    "TASK-QAV-004: failed to re-persist annotated verdict "
+                    "to %s (%s); in-memory annotation still applies",
+                    coach_output_path,
+                    exc,
+                )
+            return
+
+        # AC-3/AC-7: absent or non-ran status → no-op (no override)
+        if oracle.get("status") != "ran":
+            return
+
+        # AC-4: passing oracle → no override
+        if oracle.get("passed") is True:
+            return
+
+        # ran-and-failed (including timeout) → hard RED override
+        timed_out = oracle.get("timed_out", False)
+        oracle_path = oracle.get("oracle_path") or "<unknown>"
+        output_tail = (oracle.get("output_tail") or "").strip()
+        exit_code = oracle.get("exit_code")
+        duration = oracle.get("duration", 0)
+        provenance = oracle.get("provenance", "unknown")
+
+        # Build the failure reason
+        if timed_out:
+            reason = (
+                f"behavioural oracle timed out after {duration:.0f}s "
+                f"(oracle: {oracle_path})"
+            )
+        else:
+            reason = (
+                f"behavioural oracle failed with exit_code={exit_code} "
+                f"(oracle: {oracle_path}, duration={duration:.1f}s)"
+            )
+
+        # AC-1: name the cause and include failure output
+        rationale = (
+            f"Behavioural round-trip oracle FAILED — {reason}. "
+            f"The oracle is independent evidence that the Coach did not author. "
+            f"This overrides the Coach's approve verdict to feedback. "
+            f"Provenance: {provenance}. "
+            f"Failure output: {output_tail or '<empty>'}"
+        )
+
+        override_issue = {
+            "severity": "must_fix",
+            "category": "behavioural_oracle_failure",
+            "description": rationale,
+            "test_output": output_tail,
+            "details": {
+                "oracle_path": oracle_path,
+                "provenance": provenance,
+                "exit_code": exit_code,
+                "duration": duration,
+                "timed_out": timed_out,
+                "output_tail": output_tail,
+                "overridden_decision": decision_value,
+            },
+        }
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        logger.warning(
+            "TASK-QAV-004: overriding Coach verdict %r->'feedback' for "
+            "%s turn %s — behavioural oracle ran-and-failed "
+            "(%s). Oracle: %s",
+            decision_value,
+            task_id,
+            turn,
+            "timed_out" if timed_out else "exit_code=" + str(exit_code),
+            oracle_path,
+        )
+
+        # AC-2: re-persist so the on-disk coach_turn_N.json carries the
+        # override, not the stale approve (deterministic-verdict-override-
+        # must-persist-to-disk).
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            logger.warning(
+                "TASK-QAV-004: failed to re-persist overridden verdict "
+                "to %s (%s); in-memory override still applies",
                 coach_output_path,
                 exc,
             )
