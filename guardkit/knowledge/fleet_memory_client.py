@@ -54,6 +54,8 @@ class FleetMemoryConfig:
     embed_url: str = "http://promaxgb10-41b1:9000/v1"
     embed_model: str = "nomic-embed"
     embed_dims: int = 768
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
     nats_url: str = "nats://localhost:4222"
     project: str = "guardkit"
     # New retrieval arm configuration (FEAT-ABL-001)
