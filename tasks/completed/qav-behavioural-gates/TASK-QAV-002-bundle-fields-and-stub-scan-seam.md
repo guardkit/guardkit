@@ -18,7 +18,8 @@ consumer_context:
   driver: guardkitfactory.wiring
   format_note: dict via .to_dict() with status + findings keys; status never maps
     to pass; None = probe did not run
-status: in_review
+status: completed
+updated: '2026-07-04T21:56:00'
 autobuild_state:
   current_turn: 1
   max_turns: 5

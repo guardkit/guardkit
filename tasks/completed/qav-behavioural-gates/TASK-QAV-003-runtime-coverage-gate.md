@@ -17,7 +17,8 @@ consumer_context:
   driver: guardkit.orchestrator.quality_gates.coach_evidence
   format_note: Optional[Dict]; None = gate did not run; positive status + findings:[]
     = real clean verdict
-status: in_review
+status: completed
+updated: '2026-07-04T21:56:00'
 autobuild_state:
   current_turn: 1
   max_turns: 5
