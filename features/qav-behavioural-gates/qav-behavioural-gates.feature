@@ -23,6 +23,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
   # ━━ GROUP A: Key Examples ━━
 
   # Why: Core L2 path — a stub body is the exact deliverable class the current oracle misses
+  @task:TASK-QAV-001
   @key-example @smoke
   Scenario: An authored function whose body is only a stub is flagged by the anti-stub scan
     Given a feature task authored a public function whose body contains no executable logic
@@ -31,6 +32,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the finding should identify the file and the symbol
 
   # Why: No-false-positive control for L2 — real logic must come back clean
+  @task:TASK-QAV-001
   @key-example
   Scenario: An authored function with real executable logic produces no stub findings
     Given a feature task authored a public function with genuine executable logic
@@ -38,6 +40,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the stub scan evidence should report a positive status with no findings
 
   # Why: Core L3 path — tests green but the authored public surface never executed
+  @task:TASK-QAV-003
   @key-example @smoke
   Scenario: An authored public function never executed by any test is flagged by the coverage gate
     Given the test suite ran under coverage measurement and passed
@@ -46,6 +49,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the coverage evidence should record one zero-execution finding for that function
 
   # Why: No-false-positive control for L3 — an executed symbol is not flagged
+  @task:TASK-QAV-003
   @key-example
   Scenario: An authored public function executed by the test suite produces no coverage findings
     Given the test suite ran under coverage measurement and passed
@@ -54,6 +58,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the coverage evidence should report a positive status with no findings
 
   # Why: Core L4 path — a failed independent oracle is the hard RED this feature exists for
+  @task:TASK-QAV-004
   @key-example @smoke
   Scenario: A failed behavioural oracle overrides an approving verdict
     Given a behavioural oracle is declared for the feature and was not authored by the Player
@@ -63,6 +68,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the overridden verdict should be persisted to the turn record on disk
 
   # Why: L4 positive path — a passing oracle is recorded as independent behavioural evidence
+  @task:TASK-QAV-004
   @key-example
   Scenario: A passing behavioural oracle is recorded as independent evidence
     Given a behavioural oracle is declared for the feature and was not authored by the Player
@@ -71,6 +77,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the behavioural oracle evidence should record the pass with its provenance
 
   # Why: The fs-01 class — wired, green, and still a stub; the case L1 cannot catch
+  @task:TASK-QAV-005
   @key-example @regression
   Scenario: A correctly-wired stub with green co-generated tests is still flagged
     Given an authored implementation that is fully wired into the composition root
@@ -82,6 +89,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
   # ━━ GROUP B: Boundary Conditions ━━
 
   # Why: The absent-vs-empty discipline is the load-bearing boundary for every gate
+  @task:TASK-QAV-002
   @boundary @smoke
   Scenario Outline: An empty findings list with a positive status is distinct from an absent signal
     Given the <gate> probe ran to completion with no findings
@@ -97,6 +105,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
 
   # [ASSUMPTION: confidence=low] A docstring alone is not executable logic; docstring plus logic is clean
   # Why: Just-inside and just-outside pair for the stub-body definition
+  @task:TASK-QAV-001
   @boundary
   Scenario: A function body containing only a docstring and a placeholder is flagged as a stub
     Given a feature task authored a public function whose body is a docstring followed by a bare placeholder
@@ -104,6 +113,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the stub scan evidence should record one finding for that function
 
   # Why: Just-inside counterpart — docstring plus real statements is not a stub
+  @task:TASK-QAV-001
   @boundary
   Scenario: A function body containing a docstring followed by real statements is not flagged
     Given a feature task authored a public function whose body is a docstring followed by executable statements
@@ -112,6 +122,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
 
   # [ASSUMPTION: confidence=low] The v0 coverage gate flags zero-execution only, with no percentage threshold
   # Why: Boundary between zero execution and any execution at all
+  @task:TASK-QAV-003
   @boundary
   Scenario: A single execution of an authored function is enough to avoid a coverage finding
     Given the test suite ran under coverage measurement
@@ -120,6 +131,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the coverage evidence should not record a finding for that function
 
   # Why: A declared-but-unresolvable oracle is the absence boundary for L4
+  @task:TASK-QAV-004
   @boundary @negative
   Scenario: A declared behavioural oracle that cannot be found is treated as absent
     Given a behavioural oracle is declared for the feature
@@ -132,6 +144,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
   # ━━ GROUP C: Negative Cases ━━
 
   # Why: The status discriminator is what stops an unsupported stack becoming a silent pass
+  @task:TASK-QAV-001
   @negative @smoke
   Scenario: An unsupported stack yields an absent stub-scan signal instead of a pass
     Given the detected language has no registered anti-stub dialect
@@ -140,6 +153,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the unsupported-stack status should never be read as a positive verdict
 
   # Why: Missing coverage tooling must degrade to absent signal, not a green
+  @task:TASK-QAV-003
   @negative
   Scenario: Unavailable coverage tooling yields an absent coverage signal
     Given coverage measurement could not run for the test suite
@@ -149,6 +163,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the absent coverage signal should never block the turn on its own
 
   # Why: A2 — an oracle the Player wrote this turn shares the Player's blind spot
+  @task:TASK-QAV-004
   @negative @smoke
   Scenario: An oracle authored by the Player this turn is rejected as independent evidence
     Given the Player authored the declared behavioural oracle during the current turn
@@ -157,6 +172,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the non-independent oracle should be surfaced as a warning in the Coach feedback
 
   # Why: Parse failures must degrade per-target, never crash evidence gathering
+  @task:TASK-QAV-001
   @negative
   Scenario: A source file that fails to parse is skipped without manufacturing findings
     Given an authored source file that cannot be parsed by the analyzer
@@ -166,6 +182,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the evidence gathering should complete without error
 
   # Why: The lazy-import seam must fail open to absent, matching the L1 wiring seam
+  @task:TASK-QAV-002
   @negative
   Scenario: Evidence gathering survives the analyzer package being unavailable
     Given the analyzer package cannot be imported
@@ -176,6 +193,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
   # ━━ GROUP D: Edge Cases ━━
 
   # Why: Task-type gating — scaffolding and documentation legitimately contain stubs
+  @task:TASK-QAV-001
   @edge-case
   Scenario: Documentation and scaffolding tasks are not scanned for stubs
     Given the current task is a documentation or scaffolding task
@@ -184,6 +202,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
 
   # [ASSUMPTION: confidence=low] An oracle that starts and then hangs is a real deliverable defect
   # Why: Timeout asymmetry — hang is ran-and-failed, failure to start is absent
+  @task:TASK-QAV-004
   @edge-case
   Scenario: A behavioural oracle that starts and then times out is treated as a failure
     Given a behavioural oracle is declared for the feature and was not authored by the Player
@@ -192,6 +211,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     Then the behavioural oracle evidence should record a ran-and-failed outcome
 
   # Why: Absence must survive every reconciliation layer between gate and checkpoint
+  @task:TASK-QAV-005
   @edge-case @regression
   Scenario: An absent behavioural-evidence signal survives reconciliation unchanged
     Given the stub scan and coverage and behavioural oracle signals are all absent for a turn
@@ -200,6 +220,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And no absent signal should be coerced into a pass or a failure
 
   # Why: Advisory posture — only the failed oracle is a verdict override in v0
+  @task:TASK-QAV-002
   @edge-case
   Scenario: Stub and coverage findings are advisory feedback rather than verdict overrides
     Given the stub scan and the coverage gate each produced findings for the turn
@@ -209,6 +230,7 @@ Feature: QA Verifier Behavioural-Evidence Gates
     And the findings alone should not override an otherwise approving verdict
 
   # Why: Prompt-size safety — mirrors the existing bundle truncation behaviour
+  @task:TASK-QAV-002
   @edge-case
   Scenario: Large finding sets are truncated when rendered for the Coach
     Given the stub scan produced more than twenty findings
