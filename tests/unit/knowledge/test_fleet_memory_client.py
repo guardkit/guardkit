@@ -375,6 +375,30 @@ class TestFleetMemoryClientAddEpisode:
 
 class TestFactoryRouting:
     """Test factory functions route backends correctly."""
+    
+    def test_init_memory_client_graphiti_backend(self):
+        """init_memory_client() with backend=graphiti uses graphiti.
+
+        AC-003: Factory returns fleet-memory/graphiti/dual client purely
+        from config; default is graphiti.
+        """
+        # When: initializing with graphiti backend
+        result = init_memory_client(backend="graphiti")
+
+        # Then: initialization succeeds
+        assert result is True
+
+        # And: get_memory_client() would return graphiti client
+        # (actual graphiti client init is mocked for this test)
+
+    def test_init_memory_client_fleet_memory_backend(self, fleet_config):
+        """init_memory_client() with backend=fleet_memory uses fleet."""
+        # When: initializing with fleet_memory backend
+        result = init_memory_client(
+            backend="fleet_memory",
+            fleet_config=fleet_config,
+        )
+    """Test factory functions route backends correctly."""
 
     def test_init_memory_client_graphiti_backend(self):
         """init_memory_client() with backend=graphiti uses graphiti.
