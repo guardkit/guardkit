@@ -3457,7 +3457,42 @@ class CoachValidator:
             )
 
         # ------------------------------------------------------------------
-        # 7. Runtime parity (TASK-AB-COACHRUNPARITY01, arm b). Run the
+        # 7. Coverage gate (Wave-3, TASK-QAV-003).
+        # Populates coverage at the complete-path return only. Partial
+        # returns (honesty_abort, gate_abort, exception) leave it None.
+        # Uses the same authored_files set as wiring analysis.
+        # Runs pytest under coverage measurement and flags authored public
+        # symbols with zero real execution.
+        # ------------------------------------------------------------------
+        coverage_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            from guardkit.orchestrator.quality_gates.coverage_gate import (
+                run_coverage_gate_for_bundle,
+            )
+
+            coverage_dict = run_coverage_gate_for_bundle(
+                worktree_path=self.worktree_path,
+                authored_files=authored if 'authored' in locals() else [],
+                task_type=task_type.value,
+                timeout=self.test_timeout,
+            )
+            if coverage_dict is not None:
+                logger.info(
+                    "gather_evidence: coverage gate complete "
+                    "(status=%s, findings=%d).",
+                    coverage_dict.get("status"),
+                    len(coverage_dict.get("findings", [])),
+                )
+        except Exception as exc:  # noqa: BLE001 — coverage gate errors must not break gathering
+            logger.warning(
+                "gather_evidence: coverage gate raised %s; "
+                "coverage field left as None.",
+                exc.__class__.__name__,
+            )
+
+        # ------------------------------------------------------------------
+        # 8. Runtime parity (TASK-AB-COACHRUNPARITY01, arm b). Run the
         # deliverable's declared runtime entry point (the feature smoke
         # command) before approving, so a "passes pytest but does not run"
         # deliverable is caught pre-approval. Guarded to single-task waves
@@ -3542,7 +3577,7 @@ class CoachValidator:
             mocked_seam=mocked_seam_dict,
             spec_gap=spec_gap_dict,
             stub_scan=stub_scan_dict,
-            coverage=None,             # Wave-3 (TASK-QAV-003)
+            coverage=coverage_dict,     # Wave-3 (TASK-QAV-003)
             behavioural_oracle=None,   # Wave-4 (TASK-QAV-004)
             runtime_parity=runtime_parity,
         )
