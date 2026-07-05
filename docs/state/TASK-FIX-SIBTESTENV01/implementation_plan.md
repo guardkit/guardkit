@@ -50,6 +50,8 @@
 3. New `_resolve_repo_interpreter(repo) -> Optional[str]`: (a) `repo.interpreter`
    (relative → against repo.root; missing → WARNING + fall through);
    (b) `probe_worktree_venv(repo.root)`; (c) None. INFO-log resolution source.
+   Docstring must state WHY explicit precedes probed: a stale sibling `.venv`
+   must not silently override an operator declaration (arch-review REC-2).
 4. `_build_repo_test_argv(test_command, interpreter)` — rename param, logic same.
 5. `run_repo_tests(repo, timeout=600)` — drop `venv_python`; resolve per-repo;
    add AC-3 classification post-run. `run_all_repo_tests` — drop `venv_python`.
@@ -82,11 +84,22 @@ Delete venv threading in `run_evidence_repo_tests`; fix docstrings (~1719-1731,
    r.passed for r in results)`; pass `evidence_repo_signal_absent=(not
    has_ran_and_failed)` (pure-absent only; mixed sets stay stall-stackable).
 2. `_emit_synthetic_coach_feedback`: new kwarg `evidence_repo_signal_absent:
-   bool = False` → written into the synthetic report dict.
+   bool = False` → written into the synthetic report dict. Comment at the
+   kwarg: only the `_evidence_repo_gate` call site sets this True; all other
+   callers leave it False (arch-review REC-1).
 3. `_is_feedback_stalled`: schema-match marker via
    `_extract_absent_evidence_repo_signal(turn_record)`; when True → WARNING +
    `return False` WITHOUT appending to the history window. Bounded termination
    preserved: permanently-unrunnable exits `max_turns_exceeded`, never approve.
+
+**CRITICAL-1 (arch review 2026-07-05, must-honour):**
+`evidence_repo_signal_absent` is a TOP-LEVEL key in the synthetic report dict
+(same level as `coach_primary_synthetic_feedback`), NOT nested inside
+`issues`. `_extract_absent_evidence_repo_signal` reads
+`turn_record.coach_result.report.get('evidence_repo_signal_absent', False)`.
+If the key were placed inside `issues`, the extractor would silently never
+fire and the stall would return with no test failure — the stall-detection
+tests MUST assert the marker is read from the top-level dict key.
 
 ### Step 5 — feature_loader.py schema
 `_validate_evidence_repos` (~463): accept optional `interpreter` (string);
@@ -102,7 +115,8 @@ reject non-string loudly.
   veto + still-blocks).
 - NEW tests/integration/orchestrator/test_sibling_venv_interpreter_regression.py
   (2): real `python -m venv` sibling with injected site-packages dep — the
-  FEAT-10AC run-2 reproducer (AC-1).
+  FEAT-10AC run-2 reproducer (AC-1). Assert the resolved interpreter IS the
+  sibling's `.venv/bin/python` (arch-review REC-3), not just pass/fail.
 - tests/unit/test_autobuild_stall_detection.py (3): absent-marker never stalls;
   ran-and-failed still stalls at 3 (control); gate sets flag only when pure-absent.
 - tests/unit/test_feature_loader.py (2): interpreter accepted/rejected.
