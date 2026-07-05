@@ -3,7 +3,10 @@ id: TASK-FIX-SIBTESTENV01
 title: Sibling evidence-repo test_command pins to the guardkit worktree venv, not the sibling's environment
 task_type: fix
 priority: high
-status: backlog
+status: in_progress
+updated: 2026-07-05T12:00:00+01:00
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution"
 created: 2026-07-04T20:15:00+01:00
 tags: [autobuild, evidence-repos, environment, false-red]
 ---
