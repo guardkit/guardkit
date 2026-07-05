@@ -27,6 +27,19 @@ from guardkit.knowledge.feature_plan_context import FeaturePlanContextBuilder
 # =========================================================================
 
 
+@pytest.fixture(autouse=True)
+def _isolate_query_log(monkeypatch, tmp_path):
+    """Redirect the memory-query JSONL log into tmp_path for every test in this
+    module. Both the builder's _log_fleet_memory_query writer and (since
+    TASK-ABL1-003) FleetMemoryClient.search's per-item writer append via
+    query_logger._get_log_path, which defaults to cwd/.guardkit — without this,
+    test runs dirty the repo's committed .guardkit/memory-query-log.jsonl."""
+    monkeypatch.setattr(
+        "guardkit.knowledge.query_logger._get_log_path",
+        lambda base_dir=None: tmp_path / "memory-query-log.jsonl",
+    )
+
+
 @pytest.fixture
 def mock_fleet_client() -> MagicMock:
     """Create a mock FleetMemoryClient instance."""
@@ -224,7 +237,19 @@ def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage
             captured["request"] = kw
 
     async def _fake_search(request, store):
-        return ["r1", "r2"]
+        # Contract-shaped items (langgraph SearchItem subset): search() reads
+        # `.score` + `.value["natural_key"/"content"]` for the per-item
+        # retrieval log (TASK-ABL1-003).
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                score=0.9, value={"natural_key": "document:guardkit:r1", "content": "r1"}
+            ),
+            SimpleNamespace(
+                score=0.8, value={"natural_key": "document:guardkit:r2", "content": "r2"}
+            ),
+        ]
 
     class _FakeAssembly:
         pass
