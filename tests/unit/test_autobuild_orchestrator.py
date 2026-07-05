@@ -4731,8 +4731,10 @@ class TestResolveTestsRequired:
     def test_scaffolding_task_does_not_require_tests(self, orchestrator):
         assert orchestrator._resolve_tests_required("scaffolding") is False
 
-    def test_testing_task_does_not_require_tests(self, orchestrator):
-        assert orchestrator._resolve_tests_required("testing") is False
+    def test_testing_task_requires_tests(self, orchestrator):
+        # TASK-ABFIX-012: a TESTING task's deliverable IS passing tests,
+        # so the profile sets tests_required=True.
+        assert orchestrator._resolve_tests_required("testing") is True
 
     def test_none_task_type_defaults_to_tests_required(self, orchestrator):
         assert orchestrator._resolve_tests_required(None) is True
@@ -4744,7 +4746,9 @@ class TestResolveTestsRequired:
         assert orchestrator._resolve_tests_required("implementation") is True
 
     def test_alias_benchmark_maps_to_testing(self, orchestrator):
-        assert orchestrator._resolve_tests_required("benchmark") is False
+        # "benchmark" aliases to TaskType.TESTING, whose profile requires
+        # tests (TASK-ABFIX-012).
+        assert orchestrator._resolve_tests_required("benchmark") is True
 
     def test_alias_research_maps_to_documentation(self, orchestrator):
         assert orchestrator._resolve_tests_required("research") is False
