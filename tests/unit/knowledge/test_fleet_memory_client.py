@@ -13,7 +13,9 @@ See: TASK-MEM08-002
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+from types import SimpleNamespace
 
 import pytest
 import logging
@@ -80,11 +82,39 @@ def _disabled_config():
     )
 
 
-def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage, captured):
+def _mk_result_item(natural_key: str, score: float, content: str = "content"):
+    """A minimal fm_search result item matching the langgraph SearchItem contract
+    subset search() consumes: `.score` plus `.value` dict with natural_key/content."""
+    return SimpleNamespace(
+        score=score, value={"natural_key": natural_key, "content": content}
+    )
+
+
+def _install_fake_fleet_memory_retrieval(
+    monkeypatch,
+    *,
+    context_block,
+    coverage,
+    captured,
+    results=None,
+    search_exc=None,
+):
     """Inject a fake fleet_memory.retrieval so search() wiring runs without the
-    real dependency or a live store (TASK-MEM08-011)."""
+    real dependency or a live store (TASK-MEM08-011).
+
+    Args:
+        results: fm_search return value (contract-shaped items); defaults to two
+            items so existing wiring assertions (assembled_n == 2) hold.
+        search_exc: when set, fm_search raises it instead of returning results.
+    """
     import sys
     import types
+
+    if results is None:
+        results = [
+            _mk_result_item("build_outcome:guardkit:R1", 0.9, "result one content"),
+            _mk_result_item("build_outcome:guardkit:R2", 0.8, "result two content"),
+        ]
 
     class _FakeSearchRequest:
         def __init__(self, **kw):
@@ -92,7 +122,9 @@ def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage
 
     async def _fake_search(request, store):
         captured["store"] = store
-        return ["result-1", "result-2"]
+        if search_exc is not None:
+            raise search_exc
+        return results
 
     class _FakeAssembly:
         pass
@@ -116,6 +148,16 @@ def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage
 
 class TestFleetMemoryClientSearch:
     """Test search() — graphiti-shaped contract + real retrieval adaptation."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_query_log(self, monkeypatch, tmp_path):
+        """Redirect the retrieval JSONL log (written by search() since
+        TASK-ABL1-003) into tmp_path so tests never touch the repo's
+        .guardkit/memory-query-log.jsonl."""
+        monkeypatch.setattr(
+            "guardkit.knowledge.query_logger._get_log_path",
+            lambda base_dir=None: tmp_path / "memory-query-log.jsonl",
+        )
 
     async def test_search_disabled_returns_empty(self):
         """search() returns [] when reads are disabled (FLEET_MEMORY_ENABLED=false)."""
@@ -213,6 +255,209 @@ class TestFleetMemoryClientSearch:
 
         assert captured["request"]["payload_types"] == ["document"]
         assert captured["request"]["domain_tags"] == ["architecture"]
+
+
+class TestSearchArmGateAndRetrievalLog:
+    """TASK-ABL1-003: retrieval arm gate inside search() + per-item JSONL log.
+
+    Hermetic: the FLEET_MEMORY_* env surface is scrubbed (configs are built
+    directly — search() never re-reads env), the query log is redirected to
+    tmp_path, and only synthetic DSNs appear anywhere.
+    """
+
+    _DSN = "postgresql://user:pw@localhost:5433/fixture_db"
+
+    @pytest.fixture(autouse=True)
+    def _hermetic(self, monkeypatch, tmp_path):
+        _scrub_fleet_memory_env(monkeypatch)
+        self._log_path = tmp_path / "memory-query-log.jsonl"
+        monkeypatch.setattr(
+            "guardkit.knowledge.query_logger._get_log_path",
+            lambda base_dir=None: self._log_path,
+        )
+
+    def _client(self, retrieval_arm=None, fixture_id=None, enabled=True):
+        config = FleetMemoryConfig(
+            enabled=enabled,
+            postgres_dsn=self._DSN,
+            embed_url="http://localhost:9000/v1",
+            embed_model="nomic-embed",
+            embed_dims=768,
+            nats_url="nats://localhost:4222",
+            retrieval_arm=retrieval_arm,
+            fixture_id=fixture_id,
+        )
+        client = FleetMemoryClient(config)
+        client._read_available = True
+        client._store = object()
+        return client
+
+    def _entries(self):
+        if not self._log_path.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in self._log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    async def test_off_arm_returns_empty_never_touches_store_or_log(self):
+        """AC-1: retrieval_arm='off' + enabled=True -> [], no initialize(), no
+        store access, zero retrieval-log entries."""
+        client = self._client(retrieval_arm="off")
+        client._store = None  # lazy initialize() would fire without the gate
+        client.initialize = AsyncMock()
+
+        assert await client.search("q", group_ids=["task_outcomes"]) == []
+
+        client.initialize.assert_not_awaited()
+        assert self._entries() == []
+
+    async def test_off_arm_precedes_read_available_gate(self, monkeypatch):
+        """The arm gate sits directly after the enabled gate: fm_search is never
+        reached even with a fake retrieval module installed and a store open."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        client = self._client(retrieval_arm="off")
+
+        assert await client.search("q") == []
+        assert "store" not in captured  # fm_search never invoked
+        assert self._entries() == []
+
+    async def test_unset_arm_logs_per_item_and_keeps_synthetic_hit(self, monkeypatch):
+        """AC-2: unset arm + 2 mocked items -> same single synthetic hit as
+        before the change, plus exactly one JSONL entry with per-item id/score."""
+        captured: dict = {}
+        results = [
+            _mk_result_item(
+                "build_outcome:guardkit:TASK_1", 0.93, "First outcome content"
+            ),
+            _mk_result_item("adr:guardkit:ADR_7", 0.71, "Second content"),
+        ]
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="assembled block",
+            coverage=0.8,
+            captured=captured,
+            results=results,
+        )
+        client = self._client(retrieval_arm=None)
+
+        hits = await client.search("q", group_ids=["task_outcomes"])
+
+        # Synthetic single-hit return shape unchanged (requirement 4)
+        assert len(hits) == 1
+        assert hits[0]["fact"] == "assembled block"
+        assert hits[0]["score"] == 0.8
+        assert isinstance(hits[0]["uuid"], str)
+
+        entries = self._entries()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["operation"] == "search"
+        assert entry["source"] == "fleet_memory_client"
+        assert entry["query"] == "q"
+        assert entry["group_ids"] == ["task_outcomes"]
+        assert entry["result_count"] == 2
+        assert entry["items"] == [
+            {"id": "build_outcome:guardkit:TASK_1", "score": 0.93},
+            {"id": "adr:guardkit:ADR_7", "score": 0.71},
+        ]
+        assert entry["first_result_preview"] == "First outcome content"
+
+    async def test_fixture_arm_logs_natural_keys_not_uuids(self, monkeypatch):
+        """AC-3: fixture arm entries carry the mocked natural keys and per-item
+        scores — never freshly-generated uuids."""
+        captured: dict = {}
+        results = [
+            _mk_result_item("document:guardkit:DOC_A", 0.66, "doc A"),
+            _mk_result_item("document:guardkit:DOC_B", 0.44, "doc B"),
+        ]
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="fixture block",
+            coverage=0.6,
+            captured=captured,
+            results=results,
+        )
+        client = self._client(retrieval_arm="fixture:v1", fixture_id="v1")
+
+        hits = await client.search("q")
+
+        assert len(hits) == 1  # fixture arm needs no special handling in search()
+        entries = self._entries()
+        assert len(entries) == 1
+        logged_ids = [item["id"] for item in entries[0]["items"]]
+        assert logged_ids == ["document:guardkit:DOC_A", "document:guardkit:DOC_B"]
+        assert entries[0]["items"][0]["score"] == 0.66
+        assert entries[0]["items"][1]["score"] == 0.44
+        # the synthetic hit uuid never leaks into the per-item log
+        assert hits[0]["uuid"] not in logged_ids
+
+    async def test_empty_results_logs_empty_items_entry(self, monkeypatch):
+        """AC-4: fm_search returning [] still appends one entry (result_count 0,
+        items []) — 'retrieval attempted, nothing found' is distinguishable from
+        'no retrieval' (no entry)."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="",
+            coverage=0.0,
+            captured=captured,
+            results=[],
+        )
+        client = self._client()
+
+        assert await client.search("nothing") == []
+
+        entries = self._entries()
+        assert len(entries) == 1
+        assert entries[0]["result_count"] == 0
+        assert entries[0]["items"] == []
+        assert entries[0]["first_result_preview"] is None
+
+    async def test_fm_search_failure_writes_no_entry(self, monkeypatch):
+        """AC-5: a raising fm_search -> search() returns [] and appends nothing."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch,
+            context_block="block",
+            coverage=0.5,
+            captured=captured,
+            search_exc=RuntimeError("store connection lost"),
+        )
+        client = self._client()
+
+        assert await client.search("q") == []
+        assert self._entries() == []
+
+    async def test_disabled_gate_precedes_arm_gate(self, monkeypatch):
+        """AC-6: enabled=False -> [] with no entry, whatever the arm."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        for arm in (None, "off", "fixture:v1"):
+            client = self._client(retrieval_arm=arm, enabled=False)
+            assert await client.search("q") == []
+        assert self._entries() == []
+
+    async def test_log_entries_never_contain_dsn(self, monkeypatch):
+        """AC-7: the serialized log lines never contain the configured DSN."""
+        captured: dict = {}
+        _install_fake_fleet_memory_retrieval(
+            monkeypatch, context_block="block", coverage=0.5, captured=captured
+        )
+        client = self._client(retrieval_arm="fixture:v1", fixture_id="v1")
+
+        await client.search("q", group_ids=["task_outcomes"])
+
+        raw = self._log_path.read_text(encoding="utf-8")
+        assert raw.strip()  # an entry was written
+        assert self._DSN not in raw
+        assert "user:pw" not in raw
 
 
 class TestFleetMemoryClientInterface:

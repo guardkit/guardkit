@@ -259,6 +259,13 @@ class FleetMemoryClient:
         """
         if not self.config.enabled:
             return []
+        if self.config.retrieval_arm == "off":
+            # Retrieval ablation arm gate (FEAT-ABL-001 / TASK-ABL1-003): mirror
+            # the enabled=false gate exactly — no store access, no initialize(),
+            # no retrieval-log entry — so the context loader, turn-continuation
+            # and template-pattern paths run byte-identical code on every arm.
+            logger.debug("Fleet-memory retrieval arm 'off': returning empty")
+            return []
         if not self._read_available:
             logger.debug("fleet_memory.retrieval unavailable, returning empty")
             return []
@@ -305,6 +312,39 @@ class FleetMemoryClient:
                 include_superseded=False,
             )
             results = await fm_search(request, self._store)
+
+            # Per-item retrieval log (FEAT-ABL-001 / TASK-ABL1-003). Emitted HERE
+            # because per-item identity (natural_key + score) only exists between
+            # fm_search() and assemble_context() — assembly collapses everything
+            # into the one synthetic uuid4 hit below. Written on EVERY successful
+            # fm_search return, including empty results (items=[]), so the run
+            # guardrail can distinguish "retrieval attempted, nothing found"
+            # (entry with empty items) from "no retrieval" (no entry). A failed
+            # fm_search raises into the except below and writes nothing.
+            # log_query never raises by contract.
+            from guardkit.knowledge.query_logger import log_query
+
+            first_preview: Optional[str] = None
+            if results:
+                first_content = results[0].value.get("content")
+                if isinstance(first_content, str) and first_content:
+                    first_preview = first_content
+            log_query(
+                operation="search",
+                query=query,
+                group_ids=group_ids or [],
+                result_count=len(results),
+                first_result_preview=first_preview,
+                source="fleet_memory_client",
+                items=[
+                    {
+                        "id": item.value.get("natural_key", ""),
+                        "score": float(item.score or 0.0),
+                    }
+                    for item in results
+                ],
+            )
+
             assembly = assemble_context(results, token_budget)
 
             if not assembly.context_block:
