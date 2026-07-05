@@ -3171,6 +3171,7 @@ class AutoBuildOrchestrator:
             UvSourcesRequireUvError,
             changed_dependency_manifests,
             refresh_environment_for_changes,
+            stacks_for_changed_manifests,
         )
 
         if worktree is None or player_result is None:
@@ -3190,8 +3191,15 @@ class AutoBuildOrchestrator:
             manifests_changed,
         )
         try:
+            # Scope essentials to the stacks this turn actually touched: a
+            # pyproject.toml edit must not be blocked by a co-resident stack
+            # whose toolchain is absent on this host (e.g. a Flutter app dir
+            # with no `flutter` binary). Non-relevant stack failures degrade
+            # to warnings inside bootstrap().
             result = refresh_environment_for_changes(
-                Path(worktree.path), changed
+                Path(worktree.path),
+                changed,
+                relevant_stacks=stacks_for_changed_manifests(changed) or None,
             )
         except UvSourcesRequireUvError as exc:
             return (
