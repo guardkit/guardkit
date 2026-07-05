@@ -68,15 +68,27 @@ for a window of hours. Redacted at HEAD (`65dc82562`); verified 2026-07-05
 that the only remaining DSN-shaped strings in tracked files are benign
 localhost fixture/test DSNs.
 
-**⚠ TWO OPERATOR-OWED DECISIONS (urgent, nothing in-repo can do them):**
-1. **Rotate the fleet_memory Postgres password** — treat 14/32 public chars as
-   compromised. Touches: NAS Postgres, `fleet-memory-relay` container env,
-   guardkit/fleet-memory `.env` files, the P3/P4 env contracts. (Tailnet-only
-   listener mitigates but does not excuse.)
-2. **History-rewrite call for guardkit main** — the fragment persists in
-   pushed history (`cbce5cf2` + checkpoint commits + 3 later commits). Same
-   decision shape as the 2026-07-03 fleet-evals FinProxy incident. Rewrite
-   (force-push + collaborator re-clone cost) vs accept-with-rotation.
+**⚠ OPERATOR-OWED DECISIONS — status as of 2026-07-05:**
+1. ✅ **Password rotation DONE (2026-07-05)** via the new
+   `fleet-memory/deploy/nas/rotate.sh` (gates R0-R4 green; R2a proves the auth
+   path enforces passwords — added after the first run exposed that in-container
+   loopback is `trust`, making naive password gates vacuous). Verified: no real
+   `.env` in any local checkout held the credential; the live copies were the
+   NAS-side `.env`, the GB10 relay `.env.deploy`, and ambient shell exports.
+   Remaining consumer steps at rotation time: GB10 relay `.env.deploy` +
+   compose restart, shell exports (fixture DSNs only for loops per P4),
+   `guardkit memory status` + `deploy/nas/smoke.sh` verification.
+2. **History-rewrite call for guardkit main — STILL OPEN** — the fragment
+   persists in pushed history (`cbce5cf2` + checkpoint commits + 3 later
+   commits). With the credential now rotated dead, accept-with-rotation is the
+   defensible default; rewrite is optional hygiene. Same decision shape as the
+   2026-07-03 fleet-evals FinProxy incident.
+
+Also landed 2026-07-05 (another session): **TASK-AB-SECRETSCRUB01 implemented**
+(`guardkit/lib/secret_scrub.py`, wired at `_serialize_turn_history`
+scrub-before-truncate + `ReviewSummaryGenerator.generate`, lint
+`tests/rules/test_no_secrets_in_tracked_artifacts.py`, 33 tests) — the
+prevention half of this incident is closed; its task file is the record.
 
 **Tasks filed from it:**
 - **TASK-AB-SECRETSCRUB01** (high, ready-to-implement) — scrub secret-shaped
