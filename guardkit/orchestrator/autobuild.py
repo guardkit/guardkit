@@ -503,6 +503,36 @@ def _extract_environment_stall_signal(
     return None
 
 
+def _extract_absent_evidence_repo_signal(
+    turn_record: "TurnRecord",
+) -> bool:
+    """Return True when this turn was blocked by a pure-ABSENT sibling-repo
+    signal (TASK-FIX-SIBTESTENV01 AC-3).
+
+    Reads the TOP-LEVEL ``evidence_repo_signal_absent`` key from
+    ``turn_record.coach_result.report`` — the key
+    ``_emit_synthetic_coach_feedback`` writes at the same level as
+    ``coach_primary_synthetic_feedback`` (CRITICAL-1: it is never nested
+    inside ``issues``; a nested marker must NOT trigger immunity). Schema
+    match, never text match — the feedback-stall detector hashes feedback
+    text, and "could NOT run" text is just as identical turn-over-turn as a
+    genuine failure.
+
+    Defensive against malformed TurnRecords (Mock objects in tests, partial
+    state during error paths) — any shape mismatch returns ``False`` rather
+    than raising.
+    """
+    if turn_record.coach_result is None:
+        return False
+    try:
+        report = getattr(turn_record.coach_result, "report", None) or {}
+    except (AttributeError, TypeError):
+        return False
+    if not isinstance(report, dict):
+        return False
+    return report.get("evidence_repo_signal_absent", False) is True
+
+
 def _coach_report_issues(
     turn_record: "TurnRecord",
 ) -> List[Dict[str, Any]]:
@@ -4803,13 +4833,28 @@ class AutoBuildOrchestrator:
             Current turn record used to fold canonical violation fingerprint
             into the signature when the feedback came from the
             agent-invocations gate (TASK-FIX-7A07 AC-5). When None, falls
-            back to text-only normalisation.
+            back to text-only normalisation. Also consulted for the
+            absent-sibling-signal immunity (TASK-FIX-SIBTESTENV01 AC-3): a
+            turn blocked by a pure-ABSENT ``evidence_repos`` signal is an
+            environment problem, not task-content feedback, so it is
+            excluded from the stall tally entirely (bounded termination is
+            preserved by ``max_turns``).
 
         Returns
         -------
         bool
             True if feedback stall detected, False otherwise
         """
+        if turn_record is not None and _extract_absent_evidence_repo_signal(
+            turn_record
+        ):
+            logger.warning(
+                "Feedback-stall tally: turn blocked by an ABSENT sibling-repo "
+                "signal (evidence_repo_signal_absent) — environment problem, "
+                "excluded from the feedback-stall tally."
+            )
+            return False
+
         normalized = self._normalize_feedback_for_stall(feedback, turn_record)
         feedback_sig = hashlib.md5(
             normalized.strip().lower().encode()
@@ -6664,6 +6709,14 @@ class AutoBuildOrchestrator:
         )
         if blocking_reason is None:
             return None
+        # TASK-FIX-SIBTESTENV01: distinguish a genuine ran-and-failed sibling
+        # suite from a pure-ABSENT one (declared but never executed — e.g. a
+        # collection ImportError from an environment mismatch). Only the
+        # pure-absent shape is marked signal-absent; mixed result sets stay
+        # stall-stackable because at least one suite genuinely failed.
+        has_ran_and_failed = any(
+            r.command and r.ran and not r.passed for r in results
+        )
         logger.warning(
             "Sibling-repo tests block %s turn %s:\n%s",
             task_id, turn, blocking_reason,
@@ -6674,6 +6727,7 @@ class AutoBuildOrchestrator:
             worktree=worktree,
             rationale=blocking_reason,
             start_time=start_time,
+            evidence_repo_signal_absent=(not has_ran_and_failed),
         )
 
     def _direct_mode_evidence_gate(
@@ -6913,6 +6967,10 @@ class AutoBuildOrchestrator:
         worktree: Worktree,
         rationale: str,
         start_time: float,
+        # TASK-FIX-SIBTESTENV01 (arch-review REC-1): only the
+        # _evidence_repo_gate call site sets this True (pure-absent sibling
+        # signal); every other caller leaves it False.
+        evidence_repo_signal_absent: bool = False,
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -6963,6 +7021,13 @@ class AutoBuildOrchestrator:
             "environment_conditional_approval": False,
             "honesty_verification": None,
             "coach_primary_synthetic_feedback": True,
+            # TASK-FIX-SIBTESTENV01 (CRITICAL-1): this MUST stay a TOP-LEVEL
+            # report key (same level as coach_primary_synthetic_feedback),
+            # never nested inside "issues" — the stall-immunity extractor
+            # (_extract_absent_evidence_repo_signal) reads it via
+            # report.get("evidence_repo_signal_absent") and would silently
+            # never fire on a nested placement.
+            "evidence_repo_signal_absent": evidence_repo_signal_absent,
         }
         try:
             with open(decision_path, "w") as f:

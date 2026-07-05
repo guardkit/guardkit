@@ -282,14 +282,20 @@ class TestRunRepoTests:
         result = ev.run_repo_tests(repo)
         assert result.passed is True
 
-    def test_pytest_command_pinned_to_venv_python(self, tmp_path):
-        # When venv_python is given and command is bare pytest, argv is pinned.
-        argv, shell = ev._build_repo_test_argv("pytest -q tests/", "/venv/bin/python")
+    def test_pytest_command_pinned_to_resolved_interpreter(self, tmp_path):
+        # TASK-FIX-SIBTESTENV01: when a per-repo interpreter resolved and the
+        # command is bare pytest, argv is pinned to THAT interpreter (the
+        # sibling's own environment, never the guardkit worktree venv).
+        argv, shell = ev._build_repo_test_argv(
+            "pytest -q tests/", "/sibling/.venv/bin/python"
+        )
         assert shell is False
-        assert argv == ["/venv/bin/python", "-m", "pytest", "-q", "tests/"]
+        assert argv == ["/sibling/.venv/bin/python", "-m", "pytest", "-q", "tests/"]
 
     def test_non_pytest_command_runs_via_shell(self, tmp_path):
-        argv, shell = ev._build_repo_test_argv("make test", "/venv/bin/python")
+        # A non-bare-head command runs verbatim via shell even when a
+        # per-repo interpreter resolved (TASK-FIX-SIBTESTENV01).
+        argv, shell = ev._build_repo_test_argv("make test", "/sibling/.venv/bin/python")
         assert shell is True
         assert argv == "make test"
 
@@ -304,6 +310,194 @@ class TestRunRepoTests:
             "returncode",
             "output_summary",
         }
+
+
+# ---------------------------------------------------------------------------
+# per-repo interpreter resolution (TASK-FIX-SIBTESTENV01)
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_interpreter(path: Path, marker_line: str = "pinned") -> Path:
+    """Create an executable shell script standing in for a Python interpreter.
+
+    When executed with ``cwd=repo.root`` it writes ``ran_by.txt`` naming
+    itself, so tests can assert WHICH interpreter actually ran.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'#!/bin/sh\necho "{marker_line} $0" > ran_by.txt\nexit 0\n')
+    path.chmod(0o755)
+    return path
+
+
+class TestResolveRepoInterpreter:
+    def test_explicit_absolute_interpreter_wins(self, tmp_path):
+        interp = tmp_path / "custom" / "python"
+        _make_fake_interpreter(interp)
+        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter=str(interp))
+        assert ev._resolve_repo_interpreter(repo) == str(interp)
+
+    def test_explicit_relative_resolves_against_repo_root(self, tmp_path):
+        interp = tmp_path / "tools" / "python"
+        _make_fake_interpreter(interp)
+        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter="tools/python")
+        assert ev._resolve_repo_interpreter(repo) == str(interp)
+
+    def test_explicit_precedes_probed_sibling_venv(self, tmp_path):
+        # REC-2: a stale sibling .venv must not silently override an operator
+        # declaration — explicit beats discovery.
+        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
+        explicit = _make_fake_interpreter(tmp_path / "custom" / "python")
+        repo = ev.EvidenceRepo(name="r", root=tmp_path, interpreter=str(explicit))
+        resolved = ev._resolve_repo_interpreter(repo)
+        assert resolved == str(explicit)
+        assert resolved != str(venv_interp)
+
+    def test_missing_explicit_warns_and_falls_through_to_probe(
+        self, tmp_path, caplog
+    ):
+        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, interpreter="/does/not/exist/python"
+        )
+        with caplog.at_level("WARNING"):
+            resolved = ev._resolve_repo_interpreter(repo)
+        assert resolved == str(venv_interp)
+        assert any(
+            "does not exist" in rec.message for rec in caplog.records
+        ), "missing explicit interpreter must warn loudly before falling through"
+
+    def test_probes_sibling_venv_when_no_explicit(self, tmp_path):
+        venv_interp = _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
+        repo = ev.EvidenceRepo(name="r", root=tmp_path)
+        assert ev._resolve_repo_interpreter(repo) == str(venv_interp)
+
+    def test_returns_none_when_nothing_resolves(self, tmp_path):
+        repo = ev.EvidenceRepo(name="r", root=tmp_path)
+        assert ev._resolve_repo_interpreter(repo) is None
+
+
+class TestRunRepoTestsInterpreterResolution:
+    def test_bare_python_command_runs_under_sibling_venv(self, tmp_path):
+        # AC-1 shape: bare `python`-headed command pins to repo.root/.venv.
+        _make_fake_interpreter(tmp_path / ".venv" / "bin" / "python")
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command="python -m pytest -q"
+        )
+        result = ev.run_repo_tests(repo)
+        assert result.ran is True
+        assert result.passed is True
+        ran_by = (tmp_path / "ran_by.txt").read_text()
+        assert str(tmp_path / ".venv" / "bin" / "python") in ran_by
+
+    def test_no_sibling_venv_runs_verbatim_via_shell(self, tmp_path, monkeypatch):
+        # AC-2: with no sibling venv the command runs verbatim via shell —
+        # NEVER pinned to any caller-side interpreter.
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            captured["argv"] = argv
+            captured["shell"] = kwargs.get("shell")
+            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(ev.subprocess, "run", fake_run)
+        repo = ev.EvidenceRepo(name="r", root=tmp_path, test_command="pytest -q")
+        result = ev.run_repo_tests(repo)
+        assert result.passed is True
+        assert captured["shell"] is True
+        assert captured["argv"] == "pytest -q"
+
+    def test_worktree_venv_structurally_unreachable(self):
+        # AC-2 (structural): the caller can no longer thread its own venv —
+        # the parameter is GONE, so the FEAT-10AC mis-pin cannot recur.
+        import inspect
+
+        assert "venv_python" not in inspect.signature(ev.run_repo_tests).parameters
+        assert (
+            "venv_python" not in inspect.signature(ev.run_all_repo_tests).parameters
+        )
+
+
+# ---------------------------------------------------------------------------
+# collection ImportError classification (TASK-FIX-SIBTESTENV01 AC-3)
+# ---------------------------------------------------------------------------
+
+
+class TestCollectionImportErrorAbsent:
+    def test_real_exit2_collection_import_error_is_absent(self, tmp_path):
+        # The FEAT-10AC run-2 shape: exit 2 + collection ImportError output
+        # from a mis-environmented interpreter → ABSENT (ran=False), never
+        # ran-and-failed.
+        script = tmp_path / "fail_collect.py"
+        script.write_text(
+            "import sys\n"
+            "sys.stderr.write(\n"
+            "    'ImportError while importing test module '\n"
+            "    \"'tests/wiring/test_analyzer.py'\\n\"\n"
+            ")\n"
+            "sys.stderr.write(\"ModuleNotFoundError: No module named "
+            "'guardkitfactory'\\n\")\n"
+            "sys.exit(2)\n"
+        )
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command="python fail_collect.py"
+        )
+        result = ev.run_repo_tests(repo)
+        assert result.ran is False
+        assert result.passed is False
+        assert result.returncode == 2  # preserved for diagnosis
+        assert "NEVER ran" in result.output_summary
+        assert "UNVERIFIED" in result.output_summary
+        assert "ModuleNotFoundError" in result.output_summary
+
+    def test_ambiguous_exit2_without_marker_stays_ran_and_failed(self, tmp_path):
+        # Bias to failure: exit 2 with no ImportError signature is NOT
+        # reclassified (bdd_runner precedent).
+        script = tmp_path / "fail_plain.py"
+        script.write_text(
+            "import sys\nsys.stderr.write('something broke\\n')\nsys.exit(2)\n"
+        )
+        repo = ev.EvidenceRepo(
+            name="r", root=tmp_path, test_command="python fail_plain.py"
+        )
+        result = ev.run_repo_tests(repo)
+        assert result.ran is True
+        assert result.passed is False
+        assert result.returncode == 2
+
+    def test_veto_when_tests_actually_ran(self):
+        # "N passed/failed" proves the suite executed — a late import error
+        # stays ran-and-failed regardless of the marker.
+        output = (
+            "collected 5 items\n"
+            "ModuleNotFoundError: No module named 'late_dep'\n"
+            "2 failed, 3 passed in 0.4s\n"
+        )
+        assert ev._is_collection_import_error(2, output) is False
+
+    def test_exit_1_never_reclassified(self):
+        # Exit 1 is pytest's ran-and-failed verdict; even with an
+        # ImportError in the output it is a genuine failure.
+        output = "ModuleNotFoundError: No module named 'x'\n"
+        assert ev._is_collection_import_error(1, output) is False
+
+    def test_absent_collection_error_still_blocks(self):
+        # AC-3 gate outcome unchanged: absent still blocks the turn (it is
+        # feedback / unverified, never a silent pass).
+        result = ev.EvidenceTestResult(
+            repo_name="r",
+            command="python -m pytest tests/wiring -q",
+            ran=False,
+            passed=False,
+            returncode=2,
+            output_summary=(
+                "Evidence-repo test collection failed with an import error "
+                "(exit 2) -- the suite NEVER ran, so sibling-repo work is "
+                "UNVERIFIED (absent signal, not a test failure)."
+            ),
+        )
+        reason = ev.evidence_repo_tests_blocking_reason([result])
+        assert reason is not None
+        assert "could NOT run" in reason
 
 
 # ---------------------------------------------------------------------------

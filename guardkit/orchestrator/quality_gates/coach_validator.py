@@ -1725,11 +1725,14 @@ class CoachValidator:
             :func:`guardkit.orchestrator.coach_verification._resolve_venv_python`.
             Without it, Coach could validate against the wrong interpreter
             (TASK-FIX-COACHPYENV — sibling of the TASK-FIX-7A05 CoachVerifier fix).
+            WORKTREE tests only: this interpreter is never threaded into
+            sibling ``evidence_repos`` tests (TASK-FIX-SIBTESTENV01).
         evidence_repos : Optional[List[EvidenceRepo]]
             Declared sibling repos whose independent tests the Coach runs
             (TASK-AB-XREPOEV01 AC-002). When a repo carries a ``test_command``,
-            :meth:`run_evidence_repo_tests` executes it in that repo with the
-            pinned interpreter; results reach the evidence bundle and a
+            :meth:`run_evidence_repo_tests` executes it in that repo under the
+            repo's OWN interpreter (TASK-FIX-SIBTESTENV01 — never the guardkit
+            worktree venv); results reach the evidence bundle and a
             ran-and-failed (or declared-but-unrunnable) suite blocks the turn.
             Default None -> no sibling-repo test execution.
         basetemp_context : Optional[str]
@@ -4070,8 +4073,14 @@ class CoachValidator:
         """Run independent tests in every declared sibling repo (AC-002).
 
         Trust-but-verify for sibling-repo deliverables: each declared repo's
-        ``test_command`` runs in that repo's root under the same interpreter
-        Coach pins for worktree tests. Returns one
+        ``test_command`` runs in that repo's root under that repo's OWN
+        interpreter (explicit ``interpreter:`` field, else the sibling's
+        ``.venv``, else verbatim via shell — resolved per-repo by
+        ``evidence_repos._resolve_repo_interpreter``). The guardkit worktree
+        venv (``self._venv_python``) is deliberately NOT threaded here: it
+        cannot import the sibling's dependency set, so pinning sibling tests
+        to it produced a guaranteed-broken mis-environmented oracle
+        (TASK-FIX-SIBTESTENV01, the FEAT-10AC run-2 false-red). Returns one
         :class:`EvidenceTestResult` per declared repo (empty list when no
         sibling repos are declared). The orchestrator attaches these to the
         evidence bundle and blocks the turn on a failed/unrunnable suite via
@@ -4079,10 +4088,8 @@ class CoachValidator:
         """
         if not self._evidence_repos:
             return []
-        venv = str(self._venv_python) if self._venv_python is not None else None
         results = evidence_repos_lib.run_all_repo_tests(
             self._evidence_repos,
-            venv_python=venv,
             timeout=self.test_timeout,
         )
         for r in results:

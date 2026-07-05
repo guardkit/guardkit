@@ -466,10 +466,12 @@ class Feature(BaseModel):
         """Reject malformed ``evidence_repos`` declarations at parse time.
 
         Each entry must be a non-empty path string, or a mapping carrying a
-        ``path`` (string) and an optional ``test_command`` (string). Failing
-        loudly here is the namespace-hygiene / seam-test posture: a feature
-        that declares cross-repo evidence must not be silently degraded to
-        absent-signal by a typo (TASK-AB-XREPOEV01).
+        ``path`` (string), an optional ``test_command`` (string), and an
+        optional ``interpreter`` (string — the explicit per-repo Python the
+        test_command pins to, TASK-FIX-SIBTESTENV01). Failing loudly here is
+        the namespace-hygiene / seam-test posture: a feature that declares
+        cross-repo evidence must not be silently degraded to absent-signal
+        by a typo (TASK-AB-XREPOEV01).
         """
         if not isinstance(v, list):
             raise ValueError("evidence_repos must be a list")
@@ -490,6 +492,12 @@ class Feature(BaseModel):
                     raise ValueError(
                         "evidence_repos 'test_command' must be a string; got "
                         f"{test_command!r}"
+                    )
+                interpreter = entry.get("interpreter")
+                if interpreter is not None and not isinstance(interpreter, str):
+                    raise ValueError(
+                        "evidence_repos 'interpreter' must be a string; got "
+                        f"{interpreter!r}"
                     )
                 continue
             raise ValueError(

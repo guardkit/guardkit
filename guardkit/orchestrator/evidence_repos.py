@@ -50,6 +50,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Stdlib-only module; no import cycle back into evidence consumers
+# (TASK-FIX-SIBTESTENV01 reuses the single source of truth for on-disk
+# venv layouts rather than re-inventing the probe).
+from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
+
 logger = logging.getLogger(__name__)
 
 # The separator between a repo name and its in-repo relative path in a
@@ -85,11 +90,16 @@ class EvidenceRepo:
             to verify sibling-repo work (AC-002). ``None`` means "no
             independent test for this repo" -- which is absent signal, NOT a
             pass (see :class:`EvidenceTestResult`).
+        interpreter: Optional explicit Python interpreter path the
+            ``test_command`` is pinned to (TASK-FIX-SIBTESTENV01). Relative
+            paths resolve against ``root``. Takes precedence over the
+            sibling's probed ``.venv`` -- see :func:`_resolve_repo_interpreter`.
     """
 
     name: str
     root: Path
     test_command: Optional[str] = None
+    interpreter: Optional[str] = None
 
 
 @dataclass
@@ -279,7 +289,7 @@ def resolve_evidence_repos(
     seen_roots: set[str] = set()
 
     for entry in declared:
-        raw_path, test_command = _parse_entry(entry)
+        raw_path, test_command, interpreter = _parse_entry(entry)
         if raw_path is None:
             logger.warning(
                 "evidence_repos: ignoring malformed entry %r (expected str or "
@@ -328,29 +338,37 @@ def resolve_evidence_repos(
             continue
 
         resolved.append(
-            EvidenceRepo(name=name, root=root, test_command=test_command)
+            EvidenceRepo(
+                name=name,
+                root=root,
+                test_command=test_command,
+                interpreter=interpreter,
+            )
         )
         logger.info(
-            "evidence_repos: declared sibling repo %s -> %s%s",
+            "evidence_repos: declared sibling repo %s -> %s%s%s",
             name,
             root,
             f" (test_command={test_command!r})" if test_command else "",
+            f" (interpreter={interpreter!r})" if interpreter else "",
         )
 
     return resolved
 
 
-def _parse_entry(entry: Any) -> Tuple[Optional[str], Optional[str]]:
-    """Extract ``(path, test_command)`` from one declared entry."""
+def _parse_entry(entry: Any) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract ``(path, test_command, interpreter)`` from one declared entry."""
     if isinstance(entry, str):
-        return (entry.strip() or None), None
+        return (entry.strip() or None), None, None
     if isinstance(entry, dict):
         raw_path = entry.get("path") or entry.get("repo")
         test_command = entry.get("test_command") or entry.get("tests")
+        interpreter = entry.get("interpreter")
         if isinstance(raw_path, str) and raw_path.strip():
             tc = test_command.strip() if isinstance(test_command, str) and test_command.strip() else None
-            return raw_path.strip(), tc
-    return None, None
+            interp = interpreter.strip() if isinstance(interpreter, str) and interpreter.strip() else None
+            return raw_path.strip(), tc, interp
+    return None, None, None
 
 
 # ============================================================================
@@ -485,10 +503,105 @@ def qualified_paths_for_changes(
 # Independent per-repo tests (AC-002)
 # ============================================================================
 
+# Pytest exit codes that indicate the run died before/inside collection
+# (2 = interrupted, 3 = internal error, 4 = usage/collection error). Exit 1
+# is a genuine ran-and-failed verdict and is NEVER reclassified
+# (TASK-FIX-SIBTESTENV01 AC-3).
+_COLLECTION_ERROR_EXITS: Tuple[int, ...] = (2, 3, 4)
+
+# Import-failure signatures pytest emits when a test module cannot even be
+# imported during collection -- the fingerprint of a mis-resolved
+# interpreter (the FEAT-10AC run-2 shape), not of failing tests.
+_COLLECTION_IMPORT_ERROR_MARKERS: Tuple[str, ...] = (
+    "ImportError while importing test module",
+    "ModuleNotFoundError: No module named",
+    "ImportError: cannot import name",
+)
+
+# Veto: if ANY tests actually ran ("3 passed", "1 failed"), the suite
+# executed and a late import error must stay ran-and-failed -- bias to
+# failure on ambiguity (the bdd_runner precedent).
+_TESTS_ACTUALLY_RAN_RE = re.compile(r"\b\d+ (?:passed|failed)\b")
+
+
+def _is_collection_import_error(returncode: Optional[int], output: str) -> bool:
+    """True when a test run died at collection with an import error (AC-3).
+
+    Classification rules (TASK-FIX-SIBTESTENV01):
+
+    1. Exit code must be in :data:`_COLLECTION_ERROR_EXITS`. Exit 1 (tests
+       ran and failed) is never reclassified.
+    2. VETO: when :data:`_TESTS_ACTUALLY_RAN_RE` matches the output, tests
+       executed -- the result stays ran-and-failed regardless of any
+       import-error text.
+    3. At least one :data:`_COLLECTION_IMPORT_ERROR_MARKERS` signature must
+       be present. An ambiguous exit-2 with no marker stays ran-and-failed
+       (bias to failure, per ``absence-of-failure-is-not-success``).
+    """
+    if returncode not in _COLLECTION_ERROR_EXITS:
+        return False
+    if _TESTS_ACTUALLY_RAN_RE.search(output):
+        return False
+    return any(marker in output for marker in _COLLECTION_IMPORT_ERROR_MARKERS)
+
+
+def _resolve_repo_interpreter(repo: EvidenceRepo) -> Optional[str]:
+    """Resolve the Python interpreter a sibling repo's tests pin to.
+
+    Per-repo resolution (TASK-FIX-SIBTESTENV01): the sibling repo has its
+    OWN dependency set, so its tests must never be pinned to the guardkit
+    worktree venv (the FEAT-10AC run-2 mis-environmented oracle). Precedence:
+
+    1. Explicit ``interpreter:`` field on the declaration. Relative paths
+       resolve against ``repo.root``; a declared-but-missing path logs a
+       loud WARNING and falls through (fail-open). Explicit precedes probed
+       because a stale sibling ``.venv`` must not silently override an
+       operator declaration (arch-review REC-2) -- mirrors the
+       ``_resolve_venv_python`` precedent (explicit beats discovery).
+    2. The sibling's own venv via :func:`probe_worktree_venv` on
+       ``repo.root`` (covers ``.venv/bin/python`` and the legacy
+       ``.guardkit/venv/bin/python`` layout).
+    3. None -- the command runs verbatim via the shell in ``repo.root``.
+    """
+    if repo.interpreter:
+        candidate = Path(repo.interpreter)
+        if not candidate.is_absolute():
+            candidate = repo.root / candidate
+        if candidate.exists():
+            logger.info(
+                "evidence_repos: %s tests pin to declared interpreter %s",
+                repo.name,
+                candidate,
+            )
+            return str(candidate)
+        logger.warning(
+            "evidence_repos: declared interpreter %r for %s does not exist "
+            "(resolved to %s) -- falling through to the sibling venv probe.",
+            repo.interpreter,
+            repo.name,
+            candidate,
+        )
+
+    probed = probe_worktree_venv(repo.root)
+    if probed is not None:
+        logger.info(
+            "evidence_repos: %s tests pin to sibling venv interpreter %s",
+            repo.name,
+            probed,
+        )
+        return str(probed)
+
+    logger.info(
+        "evidence_repos: no interpreter resolved for %s -- test_command "
+        "runs verbatim via shell in %s",
+        repo.name,
+        repo.root,
+    )
+    return None
+
 
 def run_repo_tests(
     repo: EvidenceRepo,
-    venv_python: Optional[str] = None,
     timeout: int = 600,
 ) -> EvidenceTestResult:
     """Run the declared per-repo ``test_command`` independently in ``repo.root``.
@@ -496,15 +609,20 @@ def run_repo_tests(
     This is the Coach's trust-but-verify pass for sibling-repo work (AC-002).
     The result is meant to be folded into the evidence bundle.
 
-    Interpreter pinning: when ``venv_python`` is provided and the command
+    Interpreter pinning is PER-REPO (TASK-FIX-SIBTESTENV01): when the command
     starts with a bare ``pytest``/``python`` token, it is rewritten to run
-    under that interpreter so the sibling tests use the same environment the
-    bootstrap installed packages into (mirrors TASK-FIX-COACHPYENV). Any other
-    command is run verbatim via the shell.
+    under the interpreter :func:`_resolve_repo_interpreter` resolves for THIS
+    repo (explicit ``interpreter:`` field, else the sibling's own venv).
+    The guardkit worktree venv is structurally unreachable here -- pinning a
+    sibling suite to the caller's venv is the FEAT-10AC run-2 defect. When no
+    interpreter resolves, the command runs verbatim via the shell.
 
     Absent signal, not pass: a repo with no ``test_command`` returns
     ``ran=False, passed=False``. The caller decides how to surface that (it is
-    feedback / unverified, never a silent approval).
+    feedback / unverified, never a silent approval). A run that died at
+    collection with an import error is likewise ABSENT (``ran=False``) -- the
+    suite never executed, so there is no test verdict (AC-3; the
+    ``absence-of-failure`` family).
     """
     if not repo.test_command:
         return EvidenceTestResult(
@@ -516,7 +634,8 @@ def run_repo_tests(
             "(sibling-repo tests UNVERIFIED).",
         )
 
-    argv, shell = _build_repo_test_argv(repo.test_command, venv_python)
+    interpreter = _resolve_repo_interpreter(repo)
+    argv, shell = _build_repo_test_argv(repo.test_command, interpreter)
     try:
         proc = subprocess.run(
             argv,
@@ -544,6 +663,22 @@ def run_repo_tests(
         )
 
     combined = (proc.stdout or "") + (proc.stderr or "")
+    if _is_collection_import_error(proc.returncode, combined):
+        return EvidenceTestResult(
+            repo_name=repo.name,
+            command=repo.test_command,
+            ran=False,
+            passed=False,
+            returncode=proc.returncode,
+            output_summary=(
+                f"Evidence-repo test collection failed with an import error "
+                f"(exit {proc.returncode}) -- the suite NEVER ran, so "
+                f"sibling-repo work is UNVERIFIED (absent signal, not a test "
+                f"failure; TASK-FIX-SIBTESTENV01 AC-3). Likely an environment "
+                f"/ interpreter mismatch, not a deliverable defect.\n"
+                + _truncate(combined)
+            ),
+        )
     return EvidenceTestResult(
         repo_name=repo.name,
         command=repo.test_command,
@@ -555,33 +690,36 @@ def run_repo_tests(
 
 
 def _build_repo_test_argv(
-    test_command: str, venv_python: Optional[str]
+    test_command: str, interpreter: Optional[str]
 ) -> Tuple[Any, bool]:
     """Return ``(argv, shell)`` for running a repo test command.
 
-    When the command is a bare ``pytest ...`` / ``python ...`` invocation and a
-    venv interpreter is available, run it as a pinned argv list (no shell).
+    When the command is a bare ``pytest ...`` / ``python ...`` invocation and
+    a per-repo interpreter resolved, run it as a pinned argv list (no shell).
     Otherwise run the command string through the shell verbatim.
     """
     tokens = test_command.split()
-    if venv_python and tokens:
+    if interpreter and tokens:
         head = tokens[0]
         if head == "pytest":
-            return [str(venv_python), "-m", "pytest", *tokens[1:]], False
+            return [str(interpreter), "-m", "pytest", *tokens[1:]], False
         if head in ("python", "python3"):
-            return [str(venv_python), *tokens[1:]], False
+            return [str(interpreter), *tokens[1:]], False
     return test_command, True
 
 
 def run_all_repo_tests(
     repos: Optional[List[EvidenceRepo]],
-    venv_python: Optional[str] = None,
     timeout: int = 600,
 ) -> List[EvidenceTestResult]:
-    """Run independent tests for every declared repo that has a command."""
+    """Run independent tests for every declared repo that has a command.
+
+    Each repo resolves its own interpreter (TASK-FIX-SIBTESTENV01) -- there
+    is deliberately no caller-supplied interpreter parameter here.
+    """
     if not repos:
         return []
-    return [run_repo_tests(repo, venv_python=venv_python, timeout=timeout) for repo in repos]
+    return [run_repo_tests(repo, timeout=timeout) for repo in repos]
 
 
 def evidence_repo_tests_blocking_reason(
