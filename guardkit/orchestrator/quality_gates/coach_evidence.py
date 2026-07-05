@@ -301,6 +301,15 @@ class CoachEvidenceBundle:
     coverage_details: Optional[Dict[str, Any]] = None
     plan_audit: Optional[Dict[str, Any]] = None
     bdd: Optional[Dict[str, Any]] = None
+    # TASK-AB-BDDAUTHOR01: the authoring-sweep result (unfiltered run over
+    # the glue modules THIS task authored this turn). Distinct from ``bdd``
+    # (the tag-scoped oracle); carries the sweep-only ``scenarios_undefined``
+    # counter. ``None`` when the turn authored no owned glue — an absent
+    # sweep is an absent key, never a verdict. Blocking is enforced
+    # deterministically by ``autobuild._bdd_authoring_sweep_gate`` in BOTH
+    # Coach paths; this field exists so the LLM Coach also *sees* the sweep
+    # in the rendered bundle.
+    bdd_authoring_sweep: Optional[Dict[str, Any]] = None
     arch_review: Optional[Dict[str, Any]] = None
     tests: Optional[Dict[str, Any]] = None
 

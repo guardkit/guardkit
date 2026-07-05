@@ -70,6 +70,7 @@ from guardkit.worktrees import (
 )
 
 # Import local orchestrator components
+from guardkit.lib.secret_scrub import scrub_for_publication
 from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
@@ -429,22 +430,10 @@ def _extract_agent_invocations_violation(
         The violation issue dict (with keys ``missing_phases``, ``details``,
         etc.) if present, else ``None``.
     """
-    if turn_record.coach_result is None:
-        return None
-    try:
-        report = getattr(turn_record.coach_result, "report", None) or {}
-    except (AttributeError, TypeError):
-        return None
-    if not isinstance(report, dict):
-        return None
-    issues = report.get("issues")
-    if not isinstance(issues, list):
-        return None
-    for issue in issues:
-        if (
-            isinstance(issue, dict)
-            and issue.get("category") == "agent_invocations_violation"
-        ):
+    # TASK-AB-REVIEWCLEAN01 (item 4): consume the shared defensive walker
+    # rather than re-inlining the coach_result/report/issues shape checks.
+    for issue in _coach_report_issues(turn_record):
+        if issue.get("category") == "agent_invocations_violation":
             return issue
     return None
 
@@ -466,6 +455,10 @@ def _extract_environment_stall_signal(
     state during error paths) — any shape mismatch returns ``None`` rather
     than raising.
     """
+    # TASK-AB-REVIEWCLEAN01 (item 4): the issue walk consumes the shared
+    # defensive walker; the validation_results gate below is this signal's
+    # own precondition (no shared helper for it) and keeps its inline shape
+    # checks.
     if turn_record.coach_result is None:
         return None
     try:
@@ -490,13 +483,9 @@ def _extract_environment_stall_signal(
     if independent_tests.get("tests_passed") is not False:
         return None
 
-    issues = report.get("issues")
-    if not isinstance(issues, list):
-        return None
-    for issue in issues:
+    for issue in _coach_report_issues(turn_record):
         if (
-            isinstance(issue, dict)
-            and issue.get("category") == "test_verification"
+            issue.get("category") == "test_verification"
             and issue.get("failure_classification") == "infrastructure"
         ):
             return issue
@@ -6262,6 +6251,15 @@ class AutoBuildOrchestrator:
             if direct_gate_result is not None:
                 return direct_gate_result
 
+            # TASK-AB-BDDAUTHOR01: deterministic authoring-sweep gate.
+            # Shared with the primary path so the legacy revert cannot
+            # bypass it (both-Coach-paths ledger constraint).
+            sweep_gate_result = self._bdd_authoring_sweep_gate(
+                validator, task_id, turn, worktree, start_time
+            )
+            if sweep_gate_result is not None:
+                return sweep_gate_result
+
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -6500,6 +6498,16 @@ class AutoBuildOrchestrator:
         )
         if direct_gate_result is not None:
             return direct_gate_result
+
+        # TASK-AB-BDDAUTHOR01: deterministic authoring-sweep gate. Runs
+        # AFTER the evidence-repo/direct-mode gates and BEFORE the LLM Coach
+        # so an undefined-step red signal cannot be approved over by Coach
+        # leniency (the BDDW-002 lesson; both-Coach-paths ledger constraint).
+        sweep_gate_result = self._bdd_authoring_sweep_gate(
+            validator, task_id, turn, worktree, start_time
+        )
+        if sweep_gate_result is not None:
+            return sweep_gate_result
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -6957,6 +6965,78 @@ class AutoBuildOrchestrator:
         )
         logger.warning(
             "Direct-mode evidence gate blocks %s turn %s:\n%s",
+            task_id, turn, rationale,
+        )
+        return self._emit_synthetic_coach_feedback(
+            task_id=task_id,
+            turn=turn,
+            worktree=worktree,
+            rationale=rationale,
+            start_time=start_time,
+        )
+
+    def _bdd_authoring_sweep_gate(
+        self,
+        validator: "CoachValidator",
+        task_id: str,
+        turn: int,
+        worktree: Worktree,
+        start_time: float,
+    ) -> Optional[AgentInvocationResult]:
+        """Deterministic BDD authoring-sweep gate (TASK-AB-BDDAUTHOR01).
+
+        Mirrors ``_direct_mode_evidence_gate`` EXACTLY: shared by BOTH Coach
+        paths (primary LLM Coach and legacy ``GUARDKIT_COACH_LEGACY=1``) so
+        neither implementation can bypass it, running AFTER the evidence-repo
+        gate and BEFORE the LLM Coach so a red sweep signal cannot be
+        approved over by Coach leniency.
+
+        Blocks (synthetic feedback) ONLY on the sweep's deterministic
+        blocking set — ``scenarios_undefined > 0`` or a sweep runner-error
+        sentinel — as computed by
+        ``CoachValidator._check_bdd_authoring_sweep``. Advisory sweep
+        findings never block here (they ride the evidence bundle into the
+        LLM Coach prompt). A turn with no ``bdd_authoring_sweep`` key is a
+        structural no-op: absence is never a verdict.
+        """
+        try:
+            task_work_results = validator.read_quality_gate_results(task_id)
+        except Exception:  # noqa: BLE001 — gate must never crash the Coach flow
+            return None
+        if not isinstance(task_work_results, dict):
+            return None
+        if "bdd_authoring_sweep" not in task_work_results:
+            return None
+
+        try:
+            blocking, _non_blocking = validator._check_bdd_authoring_sweep(
+                task_work_results
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-open, never invent a red
+            logger.warning(
+                "BDD authoring-sweep gate raised for %s turn %s: %s "
+                "(gate skipped — fail-open).",
+                task_id, turn, exc,
+            )
+            return None
+
+        if not blocking:
+            return None
+
+        lines = [
+            "BDD authoring sweep blocks this turn "
+            "(TASK-AB-BDDAUTHOR01 — the authoring task's job is making "
+            "scenarios executable):"
+        ]
+        for issue in blocking:
+            lines.append(f"- {issue.get('description', '')}")
+            for example in issue.get("undefined_examples", [])[:10]:
+                lines.append(f"    • {example}")
+            for err in issue.get("errors", [])[:3]:
+                lines.append(f"    • {err}")
+        rationale = "\n".join(lines)
+        logger.info(
+            "BDD authoring-sweep gate blocks %s turn %s:\n%s",
             task_id, turn, rationale,
         )
         return self._emit_synthetic_coach_feedback(
@@ -8167,18 +8247,27 @@ class AutoBuildOrchestrator:
         List[Dict[str, Any]]
             Serialized turn history
         """
+        # TASK-AB-SECRETSCRUB01: the task file is TRACKED, so this is a
+        # publication boundary — captured output (Coach feedback, Player
+        # notes/errors) is scrubbed here, never at the oracle (the Coach
+        # verdicts on the raw gitignored evidence). Scrub BEFORE truncation
+        # so a truncation cut can never expose a partial secret.
         serialized = []
         for record in self._turn_history:
+            if record.player_result.success:
+                player_summary = scrub_for_publication(
+                    record.player_result.report.get("implementation_notes", "")
+                )
+                if player_summary is not None:
+                    player_summary = player_summary[:500]
+            else:
+                player_summary = scrub_for_publication(record.player_result.error)
             serialized.append({
                 "turn": record.turn,
                 "decision": record.decision,
-                "feedback": record.feedback,
+                "feedback": scrub_for_publication(record.feedback),
                 "timestamp": record.timestamp,
-                "player_summary": (
-                    record.player_result.report.get("implementation_notes", "")[:500]
-                    if record.player_result.success
-                    else record.player_result.error
-                ),
+                "player_summary": player_summary,
                 "player_success": record.player_result.success,
                 "coach_success": record.coach_result.success if record.coach_result else False,
             })

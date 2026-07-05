@@ -57,7 +57,7 @@ from guardkit.orchestrator.smoke_gates import (
 )
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
-    is_test_runner_command,
+    smoke_gate_header,
     stale_test_notes,
 )
 from guardkit.orchestrator.feature_validator import (
@@ -2293,26 +2293,10 @@ The detailed specifications are in the task markdown file.
         )
         failing_lines = extract_failing_test_lines(combined_output)
 
-        if is_test_runner_command(smoke_result.command):
-            header = (
-                "SMOKE-SUITE TEST FAILURE (feature smoke gate)\n"
-                "A test in the feature smoke suite FAILED under this task's "
-                "changes. The smoke command runs the feature's test suite — "
-                "this is a failing test, not a standalone-run/import defect. "
-                "The failing test(s) may have been authored by an earlier "
-                "task in this feature. Fix the failure below.\n\n"
-            )
-        else:
-            header = (
-                "RUNTIME-PARITY FAILURE (feature smoke gate)\n"
-                "Your task's pytest passed, but the feature's post-wave smoke "
-                "gate — which runs the deliverable's REAL runtime entry point — "
-                "FAILED. This is a 'passes tests but does not run' defect: pytest "
-                "puts the worktree root on sys.path so imports like "
-                "`from installer.core...` resolve, but a standalone "
-                "`python <module>` invocation does not. Fix the runtime failure "
-                "below so the deliverable runs standalone, not just under pytest.\n\n"
-            )
+        # TASK-AB-REVIEWCLEAN01 (item 6): framing wording lives in
+        # stale_test_attribution.smoke_gate_header (shared with the per-task
+        # parity guard's rationale composer).
+        header = smoke_gate_header(smoke_result.command)
 
         failing_section = (
             "Failing tests:\n" + "\n".join(failing_lines) + "\n\n"

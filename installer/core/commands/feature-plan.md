@@ -2144,6 +2144,10 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
    - Stub *implementations* in scaffold tasks remain legitimate (see `.claude/rules/anti-stub.md`); this rule governs the TESTS the spec instructs the task to write, not the stubs themselves
    - See [`docs/guides/feature-plan-task-classification.md`](../../../docs/guides/feature-plan-task-classification.md) Class D (transient boundary assertions) for the defect class this prevents
 
+   **CRITICAL: Name the env-var surface in specs whose deliverable reads configuration from the environment (hermetic-env):**
+   - When a task's deliverable reads configuration from environment variables, the task spec MUST name the full env-var surface (e.g. "config reads `FLEET_MEMORY_PG_DSN`, `FLEET_MEMORY_PG_SCHEMA`, `FLEET_MEMORY_TIMEOUT_S`") so the Player knows exactly what to pin with `monkeypatch.setenv`/`delenv` in every test that exercises that configuration
+   - A test whose outcome can change with the host environment is not a test of the code — and a non-hermetic failure's diff prints the AMBIENT value, which can be a live credential entering the publication path (the ABL-001 run-3 leak; see TASK-AB-HERMETICTEST01 / TASK-AB-SECRETSCRUB01)
+
    **Seam Test Stub Generation Rule:**
 
    When a §4 Integration Contract exists AND a task is listed as a **consumer** in that contract, you MUST include a `## Seam Tests` section at the bottom of the consumer task markdown file body (below Acceptance Criteria, above Implementation Notes).

@@ -11,14 +11,36 @@ source: docs/retro/autobuild-retro-xref-2026-07-04.md
 
 # Task: Per-task worktree isolation for parallel waves
 
-> **Status note: backlog, NOT scheduled — design-first.** This is the real
-> structural fix for R2, but it touches the evidence boundary, `git add -A`
-> checkpoints, `reset --hard` rollback, cross-process locks and merge
-> semantics. It MUST go through `/task-work --design-only` (design doc +
-> Phase 2.5 review) before any implementation task is cut. TASK-ABSR-WTKS
-> was this class and was deferred 2026-04-28 — treat this filing as the
-> re-opened design mandate, not a green light to implement. Until it lands,
-> overlap-aware serialization (TASK-AB-WAVECTL01) is the mitigation.
+> **CLOSED 2026-07-05: wontfix — serialize instead** (operator decision on
+> handoff §2.3 question 1, delegated with "long-term correctness as the
+> goal"; this file stays as the closure record and re-open mandate).
+>
+> Rationale: serialization is CORRECT — it produces right answers, just
+> slower — while a per-task-worktree layer touches ~7 load-bearing
+> invariants at once (evidence boundary, `git add -A` checkpoints,
+> `reset --hard` rollback, the two-level fcntl/threading lock, wave-merge
+> semantics, per-worktree venv bootstrap cost, and the wiring gate's
+> wave-aggregate aperture). Local backends are capped at 1 by design
+> (KV-cache), so parallelism only pays on cloud runs; the landed mitigation
+> stack (overlap auto-serialise default-on + lowering-only YAML tier +
+> interference stall subtype, TASK-AB-WAVECTL01/STALLTAX01) already forces
+> serial execution exactly where interference would occur, leaving only
+> non-overlapping tasks parallel — which are safe in a shared worktree.
+> Building the isolation layer speculatively, without demonstrated demand,
+> is where the correctness risk lives (YAGNI). Precedent: TASK-ABSR-WTKS
+> filed this class 2026-04-28 and was deferred for the same reasons.
+>
+> **Re-open trigger:** cloud runs with genuinely parallel overlapping-file
+> waves become routine AND overlap auto-serialisation is a measured
+> throughput bottleneck. If re-opened, the original design-first mandate
+> below stands unchanged: `/task-work --design-only` + Phase 2.5 review
+> before any implementation task is cut.
+>
+> Original filing note (preserved): this is the real structural fix for R2,
+> but it touches the evidence boundary, `git add -A` checkpoints,
+> `reset --hard` rollback, cross-process locks and merge semantics. It MUST
+> go through `/task-work --design-only` (design doc + Phase 2.5 review)
+> before any implementation task is cut.
 
 ## Description
 

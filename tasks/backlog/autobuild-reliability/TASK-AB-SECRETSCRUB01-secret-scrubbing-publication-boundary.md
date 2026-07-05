@@ -13,6 +13,18 @@ source: docs/retro/abl001-run3-honest-fail-and-credential-leak-2026-07-04.md
 
 > Filed 2026-07-05 from the ABL-001 run-3 credential leak. Ready to implement
 > (not design-first): the design decisions are made below; prior art exists.
+>
+> **Implemented 2026-07-05 (session following the 2026-07-04 handoff); this
+> file is the tracking record.** Scrubber: `guardkit/lib/secret_scrub.py`
+> (kept separate from `instrumentation/redaction.py`, whose blanket
+> event-path semantics are pinned by its own tests). Wired at the two
+> publication writers: `AutoBuildOrchestrator._serialize_turn_history`
+> (scrub-before-truncate, so a truncation cut can never expose a partial
+> secret — the incident's 14/32-char mechanism) and
+> `ReviewSummaryGenerator.generate`. Lint:
+> `tests/rules/test_no_secrets_in_tracked_artifacts.py` (placeholder
+> heuristic + audited `KNOWN_BENIGN_LITERALS` for the llama-swap local dev
+> key). Tests: `tests/unit/test_secret_scrub.py` (33).
 
 ## Description
 
@@ -37,7 +49,7 @@ publication path — treat evidence-file content as publish-equivalent."**
 
 ## Acceptance Criteria
 
-- [ ] AC-001: A `scrub_secrets`-style helper in guardkit (port/generalize the
+- [x] AC-001: A `scrub_secrets`-style helper in guardkit (port/generalize the
       ABL-005 prior art, fleet-memory `fixture/dsn.py`) that redacts
       secret-shaped substrings: URL userinfo credentials
       (`scheme://user:pass@host` → `scheme://user:***@host`), and common token
@@ -45,23 +57,23 @@ publication path — treat evidence-file content as publish-equivalent."**
       Deterministic (same input → same redaction) so repeated writes and
       honesty comparisons stay stable. Localhost/127.0.0.1 credentials MAY be
       preserved (fixture DSNs are the documented, legitimate pattern).
-- [ ] AC-002: The scrubber is applied at every writer that produces TRACKED or
+- [x] AC-002: The scrubber is applied at every writer that produces TRACKED or
       operator-copyable artifacts embedding captured output: the task-md
       frontmatter turn-history writer (autobuild_state), review-summary
       writers, and any path that copies evidence content out of gitignored
       dirs into docs/ or tasks/. It is NOT applied to the in-memory/gitignored
       evidence the Coach verdicts on (the oracle must see real output; the
       boundary is publication, not verification).
-- [ ] AC-003: Fail-closed on scrubber errors at the publication boundary:
+- [x] AC-003: Fail-closed on scrubber errors at the publication boundary:
       if scrubbing raises, redact the whole embedded block with a marker and a
       WARNING — never write the unscrubbed content, never crash the loop.
-- [ ] AC-004: A repo lint in the style of `tests/rules/test_no_dead_task_id_references.py`:
+- [x] AC-004: A repo lint in the style of `tests/rules/test_no_dead_task_id_references.py`:
       scan TRACKED files under `tasks/` and `docs/` for non-localhost URL
       userinfo credentials and token shapes; fail with file:line (values
       masked in the failure message). Seed an allowlist for the known-benign
       localhost fixture DSNs. This is the standing gate the retro asked for on
       "land stashed run state" chores.
-- [ ] AC-005: Regression tests: DSN in embedded test output is masked in the
+- [x] AC-005: Regression tests: DSN in embedded test output is masked in the
       written task-md; localhost fixture DSN untouched; scrubber determinism;
       fail-closed path; the lint catches a planted non-localhost DSN in a
       tracked file (and the failure message itself contains no secret).

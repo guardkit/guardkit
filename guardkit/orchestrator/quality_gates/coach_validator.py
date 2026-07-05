@@ -46,6 +46,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from guardkit.lib.pytest_argv import isolated_basetemp
+from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
@@ -1171,12 +1172,6 @@ class QualityGateStatus:
 # the advisory ``tests_skipped`` count. ``skipped`` stays excluded from any
 # tests_run / tests_failed arithmetic — a skipped test executed no assertions
 # (an ABSENT verdict, never a pass and never a failure).
-_PYTEST_OUTCOME_TOKEN_RE = re.compile(
-    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed|skipped)\b",
-    re.IGNORECASE,
-)
-
-
 def _parse_tests_skipped(output: Optional[str]) -> Optional[int]:
     """Parse the advisory pytest ``skipped`` count from stdout/stderr.
 
@@ -1192,19 +1187,13 @@ def _parse_tests_skipped(output: Optional[str]) -> Optional[int]:
       tolerates pytest reprinting the summary.
 
     Advisory only: no gate or verdict logic may read this value.
+
+    TASK-AB-REVIEWCLEAN01 (item 1): delegates to the shared
+    ``guardkit.lib.pytest_summary`` parser — ``summary.skipped`` already
+    carries this exact tri-state (``None`` unparseable / ``0`` parsed-no-skip
+    / ``N``).
     """
-    if not output:
-        return None
-    skipped: Optional[int] = None
-    saw_outcome_token = False
-    for match in _PYTEST_OUTCOME_TOKEN_RE.finditer(output):
-        saw_outcome_token = True
-        if match.group(2).lower() == "skipped":
-            count = int(match.group(1))
-            skipped = count if skipped is None else max(skipped, count)
-    if skipped is not None:
-        return skipped
-    return 0 if saw_outcome_token else None
+    return parse_pytest_summary(output).skipped
 
 
 def _combined_output_tail(
@@ -1291,6 +1280,87 @@ class IndependentTestResult:
     # TASK-AB-RESUMEVENV01: forensic interpreter evidence. None = no pinned
     # run; never read by any verdict / gate / stall logic.
     resolved_interpreter: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # TASK-AB-REVIEWCLEAN01 (item 3): outcome-shape factories. The advisory
+    # ``tests_skipped`` and forensic ``resolved_interpreter`` fields were
+    # hand-populated at ~16 construction sites; a site that forgot one
+    # silently dropped evidence. These three classmethods own the population
+    # per outcome shape so it cannot be omitted:
+    #   - from_run: a run that PRODUCED OUTPUT — derives ``tests_skipped``
+    #     from that output (impossible to forget); pass/fail is the caller's.
+    #   - absent:   an ABSENT signal (timeout / transport / substrate gap) —
+    #     ``tests_passed=False``, ``signal_absent=True``, ``tests_skipped=None``
+    #     (nothing to parse). ``resolved_interpreter`` optional (subprocess
+    #     shapes carry it; SDK-transport shapes do not).
+    #   - skipped:  tests not required for this task type — no advisory fields.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_run(
+        cls,
+        *,
+        tests_passed: bool,
+        test_command: str,
+        test_output_summary: str,
+        duration_seconds: float,
+        output: Optional[str],
+        resolved_interpreter: Optional[str],
+        signal_absent: bool = False,
+    ) -> "IndependentTestResult":
+        """A run that produced ``output``. Derives the advisory skip count
+        from ``output`` so it can never be silently omitted."""
+        return cls(
+            tests_passed=tests_passed,
+            test_command=test_command,
+            test_output_summary=test_output_summary,
+            duration_seconds=duration_seconds,
+            raw_output=output,
+            signal_absent=signal_absent,
+            tests_skipped=parse_pytest_summary(output).skipped,
+            resolved_interpreter=resolved_interpreter,
+        )
+
+    @classmethod
+    def absent(
+        cls,
+        *,
+        test_command: str,
+        test_output_summary: str,
+        duration_seconds: float,
+        raw_output: Optional[str] = None,
+        resolved_interpreter: Optional[str] = None,
+    ) -> "IndependentTestResult":
+        """An ABSENT signal — the oracle never produced a verdict (timeout,
+        SDK transport error, host-substrate gap). Never a pass; no skip
+        count to parse."""
+        return cls(
+            tests_passed=False,
+            test_command=test_command,
+            test_output_summary=test_output_summary,
+            duration_seconds=duration_seconds,
+            raw_output=raw_output,
+            signal_absent=True,
+            tests_skipped=None,
+            resolved_interpreter=resolved_interpreter,
+        )
+
+    @classmethod
+    def skipped(
+        cls,
+        *,
+        test_output_summary: str,
+        test_command: str = "skipped",
+        duration_seconds: float = 0.0,
+    ) -> "IndependentTestResult":
+        """Tests not required for this task type — no run, no advisory
+        fields."""
+        return cls(
+            tests_passed=True,
+            test_command=test_command,
+            test_output_summary=test_output_summary,
+            duration_seconds=duration_seconds,
+        )
 
 
 @dataclass
@@ -2447,14 +2517,11 @@ class CoachValidator:
         # 3. Independent test verification (trust but verify)
         # Skip independent tests for task types that don't require tests (e.g., scaffolding)
         if not profile.tests_required:
-            test_result = IndependentTestResult(
-                tests_passed=True,
-                test_command="skipped",
+            test_result = IndependentTestResult.skipped(
                 test_output_summary=(
                     f"Independent test verification skipped "
                     f"(tests not required for {task_type.value} tasks)"
                 ),
-                duration_seconds=0.0,
             )
             logger.info(
                 f"Independent test verification skipped for {task_id} "
@@ -2860,6 +2927,37 @@ class CoachValidator:
                 honesty_verification=honesty_verification,
             )
 
+        # 5.7b. BDD authoring-sweep gate (TASK-AB-BDDAUTHOR01): when the turn
+        # authored owned pytest-bdd glue, the sweep ran unfiltered over it;
+        # scenarios_undefined > 0 (or a sweep runner error) blocks approval.
+        # Ordinary sweep failures are advisory (see _check_bdd_authoring_sweep
+        # — pass/fail ownership stays with each scenario's tag-scoped oracle).
+        # NOTE: this legacy-path wiring is defence-in-depth; the load-bearing
+        # both-paths enforcement is autobuild._bdd_authoring_sweep_gate.
+        sweep_blocking, sweep_non_blocking = self._check_bdd_authoring_sweep(
+            task_work_results
+        )
+        if sweep_blocking:
+            logger.info(
+                f"Coach rejected {task_id} turn {turn}: BDD authoring sweep "
+                "found undefined steps or a sweep runner error"
+            )
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                quality_gates=gates_status,
+                independent_tests=test_result,
+                requirements=requirements,
+                issues=advisory_issues + bdd_non_blocking + sweep_blocking + sweep_non_blocking,
+                rationale=(
+                    "BDD authoring sweep: the glue authored this turn leaves "
+                    "steps undefined (or the sweep could not run at all). "
+                    "The authoring task's job is making scenarios executable."
+                ),
+                context_used=context,
+                honesty_verification=honesty_verification,
+            )
+
         # 5.8. Seam tests blocking gate (TASK-FIX-A7B4).
         # Distinct from the soft `_check_seam_test_recommendation` above:
         # this gate fires only when the task description itself contains a
@@ -2901,6 +2999,7 @@ class CoachValidator:
             + consumer_context_issues
             + assumption_issues
             + bdd_non_blocking
+            + sweep_non_blocking
         )
 
         # 6. All checks passed - approve
@@ -3309,6 +3408,7 @@ class CoachValidator:
                 coverage_details=coverage_details,
                 plan_audit=plan_audit_dict,
                 bdd=bdd_dict,
+                bdd_authoring_sweep=task_work_results.get("bdd_authoring_sweep"),
                 arch_review=arch_review_dict,
                 tests=tests_dict,
                 severity_recommendations=severity_recommendations,
@@ -3350,14 +3450,11 @@ class CoachValidator:
         # 4. Independent tests. Mirrors validate() lines 1156-1175.
         # ------------------------------------------------------------------
         if not profile.tests_required:
-            test_result: IndependentTestResult = IndependentTestResult(
-                tests_passed=True,
-                test_command="skipped",
+            test_result: IndependentTestResult = IndependentTestResult.skipped(
                 test_output_summary=(
                     f"Independent test verification skipped "
                     f"(tests not required for {task_type.value} tasks)"
                 ),
-                duration_seconds=0.0,
             )
             logger.info(
                 "gather_evidence: independent test verification skipped for "
@@ -3593,6 +3690,7 @@ class CoachValidator:
             coverage_details=coverage_details,
             plan_audit=plan_audit_dict,
             bdd=bdd_dict,
+            bdd_authoring_sweep=task_work_results.get("bdd_authoring_sweep"),
             arch_review=arch_review_dict,
             tests=tests_dict,
             independent_tests=test_result,
@@ -4614,15 +4712,13 @@ class CoachValidator:
 
             if api_error is not None:
                 logger.error(f"SDK API error during coach test execution: {api_error}")
-                return IndependentTestResult(
-                    tests_passed=False,
+                # TASK-FIX-COACHTESTTO: transport-layer failure — the oracle
+                # never produced a verdict. ABSENT, not a fail.
+                return IndependentTestResult.absent(
                     test_command=test_cmd,
                     test_output_summary=f"SDK API error: {api_error}",
                     duration_seconds=duration,
                     raw_output=f"SDK API error: {api_error}",
-                    # TASK-FIX-COACHTESTTO: transport-layer failure — the
-                    # oracle never produced a verdict. ABSENT, not a fail.
-                    signal_absent=True,
                 )
 
             # Determine pass/fail from bash_is_error and output. Branches
@@ -4647,14 +4743,13 @@ class CoachValidator:
                         "not a test failure. cmd=%s",
                         test_cmd,
                     )
-                return IndependentTestResult(
+                return IndependentTestResult.from_run(
                     tests_passed=False,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
-                    raw_output=output_text,
+                    output=output_text,
                     signal_absent=substrate_absent,
-                    tests_skipped=_parse_tests_skipped(output_text),
                     resolved_interpreter=sdk_resolved_interpreter,
                 )
             elif bash_is_error is False:
@@ -4673,13 +4768,12 @@ class CoachValidator:
                 logger.debug(
                     f"[{self.task_id}] _run_tests_via_sdk raw output (first 2000 chars): {output_text[:2000]}"
                 )
-                return IndependentTestResult(
+                return IndependentTestResult.from_run(
                     tests_passed=True,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
-                    raw_output=output_text,
-                    tests_skipped=_parse_tests_skipped(output_text),
+                    output=output_text,
                     resolved_interpreter=sdk_resolved_interpreter,
                 )
             else:
@@ -4699,13 +4793,11 @@ class CoachValidator:
                         "test failure. cmd=%s",
                         test_cmd,
                     )
-                    return IndependentTestResult(
-                        tests_passed=False,
+                    return IndependentTestResult.absent(
                         test_command=test_cmd,
                         test_output_summary=summary,
                         duration_seconds=duration,
                         raw_output=output_text,
-                        signal_absent=True,
                     )
                 # TASK-FIX-COACHTRES01: prefer the pytest summary line (real
                 # counts) over the substring scan, which false-positives on a
@@ -4717,13 +4809,12 @@ class CoachValidator:
                 # legacy substring heuristic when no summary line is present.
                 summary_verdict = self._verdict_from_pytest_summary(output_text)
                 if summary_verdict is not None:
-                    return IndependentTestResult(
+                    return IndependentTestResult.from_run(
                         tests_passed=summary_verdict,
                         test_command=test_cmd,
                         test_output_summary=summary,
                         duration_seconds=duration,
-                        raw_output=output_text,
-                        tests_skipped=_parse_tests_skipped(output_text),
+                        output=output_text,
                         resolved_interpreter=sdk_resolved_interpreter,
                     )
                 # Heuristic fallback: check for failure indicators in output
@@ -4737,28 +4828,25 @@ class CoachValidator:
                     for indicator in ["passed", "ok", "success"]
                 )
                 tests_passed = has_success and not has_failure
-                return IndependentTestResult(
+                return IndependentTestResult.from_run(
                     tests_passed=tests_passed,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
-                    raw_output=output_text,
-                    tests_skipped=_parse_tests_skipped(output_text),
+                    output=output_text,
                     resolved_interpreter=sdk_resolved_interpreter,
                 )
 
         except asyncio.TimeoutError:
             duration = time.time() - start_time
             logger.error(f"SDK coach test execution timed out after {self.test_timeout}s")
-            return IndependentTestResult(
-                tests_passed=False,
+            # TASK-FIX-COACHTESTTO: the oracle did not complete — ABSENT,
+            # not a real pass/fail verdict.
+            return IndependentTestResult.absent(
                 test_command=test_cmd,
                 test_output_summary=f"SDK test execution timed out after {self.test_timeout}s",
                 duration_seconds=duration,
                 raw_output=f"Timeout after {self.test_timeout}s",
-                # TASK-FIX-COACHTESTTO: the oracle did not complete — ABSENT,
-                # not a real pass/fail verdict.
-                signal_absent=True,
             )
         except AgentInvocationError as e:
             # TASK-HMIG-006.3 D-4: the harness normalises
@@ -5223,39 +5311,36 @@ class CoachValidator:
                     f"in {duration:.1f}s"
                 )
 
-                return IndependentTestResult(
+                # ``combined`` is byte-identical to raw_output here (both are
+                # stdout+stderr); from_run derives tests_skipped from it.
+                return IndependentTestResult.from_run(
                     tests_passed=tests_passed,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
-                    raw_output=(result.stdout or "") + (result.stderr or ""),
+                    output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=signal_absent,
-                    tests_skipped=_parse_tests_skipped(combined),
                     resolved_interpreter=self._resolved_interpreter_for(test_cmd),
                 )
 
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
             logger.error(f"[TASK-ABFIX-005] Isolated test execution timed out after {self.test_timeout}s")
-            return IndependentTestResult(
-                tests_passed=False,
+            # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
+            return IndependentTestResult.absent(
                 test_command=test_cmd,
                 test_output_summary=f"Isolated test execution timed out after {self.test_timeout}s",
                 duration_seconds=duration,
-                # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-                signal_absent=True,
                 resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
         except Exception as e:
             duration = time.time() - start_time
             logger.error(f"[TASK-ABFIX-005] Isolated test execution failed: {e}")
-            return IndependentTestResult(
-                tests_passed=False,
+            # TASK-FIX-COACHTESTTO: execution error before any verdict.
+            return IndependentTestResult.absent(
                 test_command=test_cmd,
                 test_output_summary=f"Isolated test execution failed: {e}",
                 duration_seconds=duration,
-                # TASK-FIX-COACHTESTTO: execution error before any verdict.
-                signal_absent=True,
                 resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
 
@@ -5314,11 +5399,8 @@ class CoachValidator:
         # but no matching tests were found. Skip verification in this case.
         if test_cmd is None:
             logger.info(f"No task-specific tests found for {self.task_id}, skipping independent verification")
-            return IndependentTestResult(
-                tests_passed=True,
-                test_command="skipped",
+            return IndependentTestResult.skipped(
                 test_output_summary=f"No task-specific tests found for {self.task_id}, skipping independent verification",
-                duration_seconds=0.0,
             )
 
         # Infrastructure lifecycle for tasks with requires_infrastructure
@@ -5592,16 +5674,13 @@ class CoachValidator:
                     f"in {duration:.1f}s"
                 )
 
-                return IndependentTestResult(
+                return IndependentTestResult.from_run(
                     tests_passed=tests_passed,
                     test_command=test_cmd,
                     test_output_summary=summary,
                     duration_seconds=duration,
-                    raw_output=(result.stdout or "") + (result.stderr or ""),
+                    output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=signal_absent,
-                    tests_skipped=_parse_tests_skipped(
-                        (result.stdout or "") + (result.stderr or "")
-                    ),
                     resolved_interpreter=self._resolved_interpreter_for(
                         test_cmd
                     ),
@@ -5610,13 +5689,11 @@ class CoachValidator:
             except subprocess.TimeoutExpired:
                 duration = time.time() - start_time
                 logger.error(f"Test execution timed out after {self.test_timeout}s")
-                return IndependentTestResult(
-                    tests_passed=False,
+                # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
+                return IndependentTestResult.absent(
                     test_command=test_cmd,
                     test_output_summary=f"Test execution timed out after {self.test_timeout}s",
                     duration_seconds=duration,
-                    # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-                    signal_absent=True,
                     resolved_interpreter=self._resolved_interpreter_for(
                         test_cmd
                     ),
@@ -5624,13 +5701,11 @@ class CoachValidator:
             except Exception as e:
                 duration = time.time() - start_time
                 logger.error(f"Test execution failed: {e}")
-                return IndependentTestResult(
-                    tests_passed=False,
+                # TASK-FIX-COACHTESTTO: execution error before any verdict.
+                return IndependentTestResult.absent(
                     test_command=test_cmd,
                     test_output_summary=f"Test execution failed: {e}",
                     duration_seconds=duration,
-                    # TASK-FIX-COACHTESTTO: execution error before any verdict.
-                    signal_absent=True,
                     resolved_interpreter=self._resolved_interpreter_for(
                         test_cmd
                     ),
@@ -8158,6 +8233,147 @@ class CoachValidator:
                 "scenarios_pending": scenarios_pending,
                 "feature_files": feature_files,
                 "pending_examples": pending_summaries,
+            })
+
+        return blocking, non_blocking
+
+    def _check_bdd_authoring_sweep(
+        self,
+        task_work_results: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Evaluate the BDD authoring-sweep result (TASK-AB-BDDAUTHOR01).
+
+        Returns ``(blocking, non_blocking)``:
+
+        - ``bdd_authoring_sweep`` key absent → ``([], [])`` (gate inert —
+          the turn authored no owned glue; absence is never a verdict);
+        - ``scenarios_undefined > 0`` → BLOCKING ``bdd_undefined_steps``
+          (the authoring task's job is making scenarios executable);
+        - a sweep runner-error sentinel (``pytest_runner_error`` /
+          ``pytest_bdd_not_importable``) → BLOCKING ``bdd_sweep_error``
+          (glue authored but unrunnable — a vacuous pass here is the
+          absence-of-failure hazard);
+        - ordinary sweep failures → ADVISORY ``bdd_sweep_failure``
+          (pass/fail ownership stays with each scenario's tag-scoped
+          oracle — the FEAT-39E1 class stays closed);
+        - sweep ran but bound zero scenarios (all counters zero) →
+          ADVISORY ``bdd_sweep_zero_collected``.
+
+        Feedback for undefined steps names BOTH remediations: implement the
+        step definition, or narrow the glue binding to owned scenarios
+        (per-scenario ``@scenario`` rather than ``scenarios()`` — see
+        ``bdd-per-task-glue.md``) so a peer task's scenario is not bound by
+        this task's glue.
+        """
+        from guardkit.orchestrator.quality_gates.bdd_runner import (
+            SWEEP_RUNNER_ERROR_SENTINELS as _SWEEP_RUNNER_ERROR_SENTINELS,
+        )
+
+        blocking: List[Dict[str, Any]] = []
+        non_blocking: List[Dict[str, Any]] = []
+
+        sweep = task_work_results.get("bdd_authoring_sweep")
+        if not sweep or not isinstance(sweep, dict):
+            return blocking, non_blocking
+
+        undefined_count = sweep.get("scenarios_undefined", 0) or 0
+        failed = sweep.get("scenarios_failed", 0) or 0
+        passed = sweep.get("scenarios_passed", 0) or 0
+        failures = sweep.get("failures", []) or []
+        undefined = sweep.get("undefined", []) or []
+        glue_files = sweep.get("feature_files", []) or []
+
+        sentinel_failures = [
+            f for f in failures
+            if isinstance(f, dict)
+            and f.get("scenario_name") in _SWEEP_RUNNER_ERROR_SENTINELS
+        ]
+        ordinary_failures = [
+            f for f in failures if f not in sentinel_failures
+        ]
+
+        if sentinel_failures:
+            reasons = [
+                (f.get("reason") or "")[:300] for f in sentinel_failures
+            ]
+            blocking.append({
+                "severity": "must_fix",
+                "category": "bdd_sweep_error",
+                "description": (
+                    "BDD authoring sweep could not run the glue authored "
+                    "this turn (runner error). The glue exists but is "
+                    "unrunnable — fix the environment/collection error; a "
+                    "vacuous pass here would hide undefined steps entirely."
+                ),
+                "glue_files": glue_files,
+                "errors": reasons,
+            })
+
+        if undefined_count > 0:
+            undefined_summaries: List[str] = []
+            for u in undefined[:10]:
+                scenario = u.get("scenario_name", "<unknown>")
+                step = u.get("pending_step", "")
+                summary = scenario
+                if step:
+                    summary += f" — undefined step: {step}"
+                undefined_summaries.append(summary)
+            blocking.append({
+                "severity": "must_fix",
+                "category": "bdd_undefined_steps",
+                "description": (
+                    f"BDD authoring sweep: {undefined_count} scenario(s) "
+                    "bound by the glue you authored reference step "
+                    "definitions that do not resolve. Either implement each "
+                    "undefined step, or — if a scenario belongs to another "
+                    "task — narrow your glue binding to the scenarios you "
+                    "own (bind per-scenario with @scenario(...), not "
+                    "scenarios(...); see .claude/rules/bdd-per-task-glue.md)."
+                ),
+                "scenarios_undefined": undefined_count,
+                "glue_files": glue_files,
+                "undefined_examples": undefined_summaries,
+            })
+
+        if ordinary_failures:
+            failure_summaries = [
+                f"{f.get('scenario_name', '<unknown>')} — "
+                f"{(f.get('reason') or '')[:200]}"
+                for f in ordinary_failures[:5]
+            ]
+            non_blocking.append({
+                "severity": "should_fix",
+                "category": "bdd_sweep_failure",
+                "description": (
+                    f"BDD authoring sweep: {len(ordinary_failures)} bound "
+                    "scenario(s) failed their assertions when run "
+                    "unfiltered. Advisory within the sweep — each "
+                    "scenario's pass/fail verdict is owned by its "
+                    "tag-scoped oracle — but review whether your step "
+                    "definitions are correct."
+                ),
+                "failure_examples": failure_summaries,
+                "glue_files": glue_files,
+            })
+
+        if (
+            not blocking
+            and not non_blocking
+            and undefined_count == 0
+            and failed == 0
+            and passed == 0
+        ):
+            non_blocking.append({
+                "severity": "should_fix",
+                "category": "bdd_sweep_zero_collected",
+                "description": (
+                    "BDD authoring sweep: the glue authored this turn "
+                    "carries binding constructs but pytest collected ZERO "
+                    "scenarios from it. Verify the @scenario/scenarios() "
+                    "bindings reference real feature files and scenario "
+                    "names."
+                ),
+                "glue_files": glue_files,
             })
 
         return blocking, non_blocking

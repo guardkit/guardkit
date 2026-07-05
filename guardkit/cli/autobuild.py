@@ -32,6 +32,7 @@ from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrationError,
 )
 from guardkit.orchestrator.feature_loader import (
+    FeatureLoader,
     FeatureNotFoundError,
     FeatureValidationError,
 )
@@ -1128,6 +1129,30 @@ def feature(
     is_flag=True,
     help="Force completion even if tasks are incomplete",
 )
+@click.option(
+    "--verify",
+    is_flag=True,
+    help=(
+        "Re-run the project's test suite in the merge-target repo after "
+        "completion and report the result (never prints success unless "
+        "tests actually ran and passed)"
+    ),
+)
+@click.option(
+    "--verify-cmd",
+    default=None,
+    help=(
+        "Explicit verification command (implies --verify). Default "
+        "resolution: feature smoke_gates.command, else a stack-aware "
+        "test command (venv-pinned pytest for Python)"
+    ),
+)
+@click.option(
+    "--verify-timeout",
+    type=int,
+    default=None,
+    help="Seconds before the verification run is killed (default: 600)",
+)
 @click.pass_context
 @handle_cli_errors
 def complete(
@@ -1135,6 +1160,9 @@ def complete(
     feature_id: str,
     dry_run: bool,
     force: bool,
+    verify: bool,
+    verify_cmd: Optional[str],
+    verify_timeout: Optional[int],
 ):
     """
     Complete all tasks in a feature and archive it.
@@ -1147,6 +1175,8 @@ def complete(
         guardkit autobuild complete FEAT-A1B2
         guardkit autobuild complete FEAT-A1B2 --dry-run
         guardkit autobuild complete FEAT-A1B2 --force
+        guardkit autobuild complete FEAT-A1B2 --verify
+        guardkit autobuild complete FEAT-A1B2 --verify-cmd "pytest tests/ -q"
 
     \b
     Workflow:
@@ -1154,23 +1184,36 @@ def complete(
         2. Completion: Mark incomplete tasks as complete (TASK-FC-002)
         3. Archival: Archive feature and cleanup worktree (TASK-FC-003)
         4. Handoff: Display review instructions (TASK-FC-004)
+        5. Verification (if --verify): re-run the test suite (TASK-AB-VERIFYCLI01)
 
     \b
     Exit Codes:
-        0: Success (feature completed)
+        0: Success (feature completed; verification passed if requested)
         1: Feature not found
         2: Completion error
         3: Validation error
+        4: Completed, but post-completion verification FAILED or UNVERIFIED
     """
+    verify = verify or verify_cmd is not None
     logger.info(
         f"Starting feature completion: {feature_id} "
-        f"(dry_run={dry_run}, force={force})"
+        f"(dry_run={dry_run}, force={force}, verify={verify})"
     )
 
     try:
+        repo_root = Path.cwd()
+
+        # Resolve the verification command BEFORE completion — the archival
+        # phase owns the feature YAML the smoke command lives in.
+        verify_plan = None
+        if verify:
+            verify_plan = _resolve_completion_verification(
+                repo_root, feature_id, verify_cmd
+            )
+
         # Initialize completion orchestrator
         orchestrator = FeatureCompleteOrchestrator(
-            repo_root=Path.cwd(),
+            repo_root=repo_root,
             dry_run=dry_run,
             force=force,
         )
@@ -1181,8 +1224,36 @@ def complete(
         # Display summary
         _display_complete_result(result)
 
-        # Exit with appropriate code
-        sys.exit(0 if result.success else 2)
+        if not result.success:
+            sys.exit(2)
+
+        # Post-completion verification (TASK-AB-VERIFYCLI01). Report-only:
+        # a failure never un-completes anything, but it must never print
+        # success and must exit non-zero.
+        if verify:
+            command, source, profile = verify_plan
+            if dry_run:
+                console.print(
+                    f"[yellow]--dry-run:[/yellow] would verify via "
+                    f"{source}: [cyan]{command or '(none found)'}[/cyan]"
+                )
+                sys.exit(0)
+            from guardkit.orchestrator.completion_verification import (
+                DEFAULT_VERIFY_TIMEOUT,
+                run_completion_verification,
+            )
+
+            verification = run_completion_verification(
+                repo_root,
+                command,
+                source,
+                stack_profile=profile,
+                timeout=verify_timeout or DEFAULT_VERIFY_TIMEOUT,
+            )
+            _display_verification_result(verification)
+            sys.exit(0 if verification.status == "passed" else 4)
+
+        sys.exit(0)
 
     except FeatureNotFoundError as e:
         console.print(f"[red]Feature not found: {e}[/red]")
@@ -1387,6 +1458,78 @@ def _display_complete_result(result: FeatureCompleteResult) -> None:
                 border_style="red",
             )
         )
+
+
+def _resolve_completion_verification(
+    repo_root: Path,
+    feature_id: str,
+    verify_cmd: Optional[str],
+):
+    """Resolve the post-completion verification plan (TASK-AB-VERIFYCLI01).
+
+    Shares ``resolve_verify_command`` with the slash-command workflow's
+    verify step — one implementation, two entry points
+    (cli-wrapper-shares-client-acquisition-path).
+    """
+    from guardkit.orchestrator.completion_verification import resolve_verify_command
+
+    smoke_command = None
+    if not verify_cmd:
+        try:
+            feature = FeatureLoader.load_feature(feature_id, repo_root=repo_root)
+            if feature.smoke_gates is not None:
+                smoke_command = feature.smoke_gates.command
+        except Exception:
+            # Command resolution is best-effort: fall through to the
+            # stack-aware default; the verification itself still runs.
+            logger.debug(
+                "Could not load feature %s for smoke command resolution",
+                feature_id,
+                exc_info=True,
+            )
+    return resolve_verify_command(
+        repo_root, smoke_command=smoke_command, override=verify_cmd
+    )
+
+
+def _display_verification_result(verification) -> None:
+    """Render the verification outcome.
+
+    The verdict line derives from ``verification.status`` — the enforcement
+    source — never from "the completion succeeded"
+    (display-must-derive-from-enforcement-source-not-proxy). Command and
+    output text are markup-escaped: pytest parametrized IDs (``test[x-y]``)
+    read as Rich tags otherwise and get silently dropped from the display.
+    """
+    from rich.markup import escape
+
+    console.print()
+    if verification.status == "passed":
+        console.print(
+            Panel(
+                f"[green]✓ Post-completion verification passed[/green]\n\n"
+                f"Command: [cyan]{escape(verification.command)}[/cyan]\n"
+                f"Ran in: [cyan]{escape(verification.cwd)}[/cyan]\n"
+                f"Result: {escape(verification.detail)}",
+                title="Verification Passed",
+                border_style="green",
+            )
+        )
+        return
+    label = (
+        "FAILED" if verification.status == "failed" else "UNVERIFIED"
+    )
+    body = (
+        f"[red]✗ Post-completion verification {label}[/red]\n\n"
+        f"Command: [cyan]{escape(verification.command or '(none resolved)')}[/cyan]\n"
+        f"Ran in: [cyan]{escape(verification.cwd)}[/cyan]\n"
+        f"Result: {escape(verification.detail)}\n\n"
+        "The completion/merge is left in place — inspect and fix before "
+        "shipping."
+    )
+    if verification.output_tail:
+        body += f"\n\n[dim]{escape(verification.output_tail[-800:])}[/dim]"
+    console.print(Panel(body, title=f"Verification {label}", border_style="red"))
 
 
 # ============================================================================

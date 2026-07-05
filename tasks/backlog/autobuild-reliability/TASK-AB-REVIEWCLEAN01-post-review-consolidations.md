@@ -11,7 +11,39 @@ source: 2026-07-04 post-implementation code review (TASK-AB-* batch)
 
 # Task: Post-review consolidations deferred from the 2026-07-04 code review
 
-> **Status note: backlog, NOT scheduled — design-first / filed for later.**
+> **Implemented 2026-07-05 (session following the 2026-07-04 handoff), items
+> 1–4 + 6; item 5 closed wontfix (see below). This file is the tracking
+> record.**
+>
+> - **Item 1** — one pytest-summary parser: `guardkit/lib/pytest_summary.py`
+>   (`parse_pytest_summary` → `PytestSummary`). `specialist_invocations
+>   ._parse_pytest_counts` and `coach_validator._parse_tests_skipped` both
+>   delegate to it; the streaming `agent_invoker` parser is DELIBERATELY left
+>   separate (documented in-code) — it is a decoration-anchored max-wins
+>   accumulator whose behaviour folding-in would change (AC-007). Tests:
+>   `tests/unit/lib/test_pytest_summary.py`.
+> - **Item 2** — one shared `AgentInvoker._persist_coach_decision(decision,
+>   coach_output_path, *, tag, kind)`; all 10 hand-rolled write blocks route
+>   through it (one `write_text` in the file). The
+>   `deterministic-verdict-override-must-persist-to-disk` rule's grep
+>   fingerprints updated to match.
+> - **Item 3** — `IndependentTestResult.from_run` / `.absent` / `.skipped`
+>   classmethod factories own `tests_skipped` (derived from output in
+>   `from_run`, so it cannot be silently omitted) and `resolved_interpreter`;
+>   all 16 construction sites migrated.
+> - **Item 4** — `_extract_agent_invocations_violation` and
+>   `_extract_environment_stall_signal` now consume the shared
+>   `_coach_report_issues` walker.
+> - **Item 6** — `stale_test_attribution.smoke_gate_header` +
+>   `runtime_parity_rationale`; the smoke-gate and per-task-parity surfaces
+>   consume one composer (a wording change is a one-file edit).
+> - **Item 5 (single-persist-per-turn) — CLOSED wontfix.** Rationale below in
+>   the item-5 section: it would WIDEN the crash window where disk says
+>   `approve` while memory says `feedback` (the exact Layer-4 resurrection
+>   `deterministic-verdict-override-must-persist-to-disk` guards). Item 2's
+>   shared helper already delivers the "impossible to forget on the next
+>   guard" safety without moving the write; the every-guard-persists
+>   convention is intentionally kept.
 
 ## Description
 
@@ -67,13 +99,21 @@ six deferred consolidations.
    `_test_verification_issues` / `_extract_verifier_infrastructure_signal`
    already are.
 
-5. **Single-persist-per-turn for `coach_turn_N.json`.** Today every firing
-   guard in the item-2 chain re-writes the file (N guards firing → N
-   writes). Restructure so guards mutate the in-memory `decision` and the
-   invoke path persists ONCE after the last guard — keeping the fail-open
-   posture (a failed write logs WARNING and never un-rejects the turn) and
-   keeping the on-disk file authoritative for Layer-4
-   (`_check_late_approval`) before the turn result is consumed.
+5. **Single-persist-per-turn for `coach_turn_N.json`. — CLOSED wontfix
+   (2026-07-05).** The proposal was to have guards mutate memory and persist
+   ONCE after the last guard. Rejected for long-term correctness: moving the
+   write to chain-end WIDENS the window in which the on-disk file says
+   `approve` while the in-memory verdict is already `feedback` — precisely
+   the divergence Layer-4 (`feature_orchestrator._check_late_approval`)
+   resurrects into an `approved_late` false-green
+   (`deterministic-verdict-override-must-persist-to-disk`). The current
+   "every guard re-persists immediately" convention keeps disk == memory at
+   every step, which is the invariant that matters. Item 2's shared
+   `_persist_coach_decision` helper already delivers the stated goal of item
+   5 ("impossible to forget the persist on the next guard") WITHOUT moving
+   the write — one seam, N calls, the contract centralised. N writes per turn
+   is cheap (small JSON, already on the guard path) and is the safe posture.
+   Original proposal preserved above for the record; not implemented.
 
 6. **A shared framing composer for the parity/smoke feedback wording.**
    `agent_invoker._apply_runtime_parity_guard` (`agent_invoker.py:6197`,
