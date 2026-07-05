@@ -3,8 +3,8 @@ id: TASK-FIX-SIBTESTENV01
 title: Sibling evidence-repo test_command pins to the guardkit worktree venv, not the sibling's environment
 task_type: fix
 priority: high
-status: in_progress
-updated: 2026-07-05T12:00:00+01:00
+status: in_review
+updated: 2026-07-05T15:30:00+01:00
 previous_state: backlog
 state_transition_reason: "Automatic transition for task-work execution"
 created: 2026-07-04T20:15:00+01:00
@@ -54,16 +54,16 @@ mis-resolved interpreter is a runner error, not a test failure (the
 
 ## Acceptance criteria
 
-- [ ] AC-1: sibling repo with its own `.venv` → bare `pytest`/`python`
+- [x] AC-1: sibling repo with its own `.venv` → bare `pytest`/`python`
   commands pin to `repo.root/.venv/bin/python`; reproducer proves the
   FEAT-10AC run-2 command now passes.
-- [ ] AC-2: no sibling venv → command runs verbatim via shell in the repo
+- [x] AC-2: no sibling venv → command runs verbatim via shell in the repo
   root; never pinned to the guardkit worktree venv.
-- [ ] AC-3: collection-error exit (2/3/4 with ImportError signature) from a
+- [x] AC-3: collection-error exit (2/3/4 with ImportError signature) from a
   pinning mismatch surfaces as `ran=False` absent signal (feedback,
   unverified), not ran-and-failed — and therefore cannot stack into
   `unrecoverable_stall`.
-- [ ] AC-4: existing worktree-side interpreter pinning (TASK-FIX-COACHPYENV)
+- [x] AC-4: existing worktree-side interpreter pinning (TASK-FIX-COACHPYENV)
   unchanged; all existing evidence-repos tests green.
 
 ## Workaround in the field (until fixed)
@@ -79,3 +79,32 @@ Declare the sibling `test_command` with an **absolute interpreter path**
 - `.claude/rules/evidence-boundary-narrower-than-write-surface.md` (the
   sibling-signal machinery this hardens)
 - TASK-FIX-XREPOPROM01 (run 1's false-red — the companion incident)
+
+## Resolution (2026-07-05, /task-work)
+
+Implemented per `docs/state/TASK-FIX-SIBTESTENV01/implementation_plan.md`
+(arch review 82/100 approve-with-recommendations; CRITICAL-1 honoured;
+code review APPROVE, 9/9 checklist).
+
+- Per-repo interpreter resolution: explicit `interpreter:` field (new
+  optional evidence-repo mapping key, validated in `feature_loader`) >
+  `probe_worktree_venv(repo.root)` (reused from `environment_bootstrap`) >
+  verbatim shell in `cwd=repo.root`. `venv_python` REMOVED from
+  `run_repo_tests`/`run_all_repo_tests` — the worktree venv is structurally
+  unreachable from the sibling path (AC-2 pinned by test).
+- AC-3: exit 2/3/4 + ImportError-marker + tests-ran-veto classifier →
+  `ran=False` absent (still blocks the turn); feedback-stall immunity via
+  top-level `evidence_repo_signal_absent` synthetic-report key —
+  `_is_feedback_stalled` excludes pure-absent sibling turns from the tally
+  (the FEAT-10AC run-2 stall was `_is_feedback_stalled`, not checkpoints);
+  mixed failed+unrunnable stays stall-stackable; bounded termination via
+  max_turns preserved.
+- Verification: 292 passed / 6 skipped across all affected + AC-4 suites;
+  broader orchestrator/unit sweep failures (23+2) all reproduce on pristine
+  HEAD (pre-existing). FEAT-10AC run-2 reproducer: real sibling venv with
+  injected dep — caller interpreter provably cannot import it, sibling run
+  passes, resolved interpreter asserted to be `sibling/.venv/bin/python`.
+- Known residual (out of scope, pre-existing): `_build_repo_test_argv`
+  uses naive `str.split()` — quoted args never survive argv pinning.
+  Mitigated by verbatim-shell fallback + `interpreter:` escape hatch;
+  upgrade to `shlex.split()` only if quoted test_commands become real.

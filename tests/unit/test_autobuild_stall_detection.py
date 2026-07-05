@@ -25,6 +25,7 @@ from guardkit.orchestrator.autobuild import (
     TurnRecord,
 )
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+from guardkit.orchestrator.evidence_repos import EvidenceTestResult
 from guardkit.orchestrator.progress import FinalStatus
 
 # Import worktree components
@@ -310,6 +311,176 @@ class TestIsFeedbackStalled:
         assert orchestrator._is_feedback_stalled("Fix type hints", 0) is False
         assert orchestrator._is_feedback_stalled("Fix type hints", 0) is False
         assert orchestrator._is_feedback_stalled("Fix type hints", 0) is True
+
+
+# ============================================================================
+# Test absent sibling-repo signal immunity (TASK-FIX-SIBTESTENV01 AC-3)
+# ============================================================================
+
+
+class TestAbsentEvidenceRepoSignalImmunity:
+    """A turn blocked by a pure-ABSENT evidence_repos signal (environment
+    problem — e.g. a collection ImportError from a mis-resolved interpreter)
+    must be excluded from the feedback-stall tally entirely, so it can never
+    stack into ``unrecoverable_stall`` (the FEAT-10AC run-2 kill mechanism).
+    Bounded termination is preserved by ``max_turns``.
+    """
+
+    _FEEDBACK = (
+        "Sibling-repo (evidence_repos) independent tests did not pass:\n"
+        "- guardkitfactory: declared sibling-repo tests could NOT run "
+        "(`python -m pytest tests/wiring -q`)"
+    )
+
+    def _turn_record_with_report(self, report: dict) -> Mock:
+        turn_record = Mock()
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = report
+        return turn_record
+
+    def test_absent_marker_feedback_never_stalls(self):
+        """Identical absent-marker feedback across 3+ turns never stalls."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=10,
+        )
+        turn_record = self._turn_record_with_report(
+            {
+                "decision": "feedback",
+                "coach_primary_synthetic_feedback": True,
+                "evidence_repo_signal_absent": True,
+            }
+        )
+
+        for _ in range(5):
+            assert (
+                orchestrator._is_feedback_stalled(
+                    self._FEEDBACK, 0, turn_record=turn_record
+                )
+                is False
+            )
+        # Excluded from the tally entirely: the history window never grew.
+        assert orchestrator._feedback_history == []
+
+    def test_ran_and_failed_sibling_feedback_still_stalls_at_3(self):
+        """Control: a genuine ran-and-failed sibling suite still stalls."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=10,
+        )
+        turn_record = self._turn_record_with_report(
+            {
+                "decision": "feedback",
+                "coach_primary_synthetic_feedback": True,
+                "evidence_repo_signal_absent": False,
+            }
+        )
+
+        feedback = (
+            "Sibling-repo (evidence_repos) independent tests did not pass:\n"
+            "- guardkitfactory: sibling-repo tests FAILED (exit 1)"
+        )
+        assert orchestrator._is_feedback_stalled(feedback, 0, turn_record=turn_record) is False
+        assert orchestrator._is_feedback_stalled(feedback, 0, turn_record=turn_record) is False
+        assert orchestrator._is_feedback_stalled(feedback, 0, turn_record=turn_record) is True
+
+    def test_marker_nested_in_issues_does_not_trigger_immunity(self):
+        """CRITICAL-1 pin: the marker is read from the TOP-LEVEL report key.
+
+        A marker nested inside ``issues`` must NOT trigger immunity — if the
+        producer ever moved the key into ``issues``, the extractor would
+        silently never fire and the stall would return. This test fails loud
+        in the opposite direction: nested-only markers still stall.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=10,
+        )
+        turn_record = self._turn_record_with_report(
+            {
+                "decision": "feedback",
+                "coach_primary_synthetic_feedback": True,
+                # NOT at top level — nested inside issues only.
+                "issues": [
+                    {
+                        "severity": "must_fix",
+                        "category": "coach_primary_exception",
+                        "evidence_repo_signal_absent": True,
+                        "description": self._FEEDBACK,
+                    }
+                ],
+            }
+        )
+
+        assert orchestrator._is_feedback_stalled(self._FEEDBACK, 0, turn_record=turn_record) is False
+        assert orchestrator._is_feedback_stalled(self._FEEDBACK, 0, turn_record=turn_record) is False
+        assert orchestrator._is_feedback_stalled(self._FEEDBACK, 0, turn_record=turn_record) is True
+
+
+class TestEvidenceRepoGateSignalAbsentFlag:
+    """_evidence_repo_gate sets evidence_repo_signal_absent ONLY when no
+    result is ran-and-failed (pure-absent sets; mixed sets stay
+    stall-stackable). TASK-FIX-SIBTESTENV01.
+    """
+
+    def _run_gate(self, tmp_path, results):
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+        validator = Mock()
+        validator.run_evidence_repo_tests.return_value = results
+        worktree = Mock(spec=Worktree)
+        worktree.path = tmp_path
+        return orchestrator._evidence_repo_gate(
+            validator,
+            "TASK-FIX-SIBTESTENV01",
+            1,
+            worktree,
+            0.0,
+        )
+
+    def test_pure_absent_results_set_flag_true(self, tmp_path):
+        results = [
+            EvidenceTestResult(
+                repo_name="guardkitfactory",
+                command="python -m pytest tests/wiring -q",
+                ran=False,
+                passed=False,
+                returncode=2,
+                output_summary="collection failed with an import error",
+            )
+        ]
+        gate_result = self._run_gate(tmp_path, results)
+        assert gate_result is not None
+        assert gate_result.report["decision"] == "feedback"
+        # Top-level key (CRITICAL-1), True for the pure-absent shape.
+        assert gate_result.report["evidence_repo_signal_absent"] is True
+
+    def test_mixed_results_with_ran_and_failed_set_flag_false(self, tmp_path):
+        results = [
+            EvidenceTestResult(
+                repo_name="guardkitfactory",
+                command="python -m pytest tests/wiring -q",
+                ran=False,
+                passed=False,
+                returncode=2,
+                output_summary="collection failed with an import error",
+            ),
+            EvidenceTestResult(
+                repo_name="other",
+                command="pytest -q",
+                ran=True,
+                passed=False,
+                returncode=1,
+                output_summary="1 failed",
+            ),
+        ]
+        gate_result = self._run_gate(tmp_path, results)
+        assert gate_result is not None
+        assert gate_result.report["decision"] == "feedback"
+        # A genuine ran-and-failed suite is present: stays stall-stackable.
+        assert gate_result.report["evidence_repo_signal_absent"] is False
 
 
 # ============================================================================

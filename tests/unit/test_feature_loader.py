@@ -200,6 +200,40 @@ def test_load_feature_threads_evidence_repos(tmp_path):
     ]
 
 
+def test_evidence_repos_interpreter_string_accepted():
+    """TASK-FIX-SIBTESTENV01: optional ``interpreter`` string is a valid
+    evidence_repos mapping key (explicit per-repo interpreter pin)."""
+    feature = Feature(
+        id="FEAT-SIBENV",
+        name="Sibling interpreter feature",
+        evidence_repos=[
+            {
+                "path": "../guardkitfactory",
+                "test_command": "python -m pytest tests/wiring -q",
+                "interpreter": "/abs/guardkitfactory/.venv/bin/python",
+            }
+        ],
+    )
+    assert feature.evidence_repos[0]["interpreter"] == (
+        "/abs/guardkitfactory/.venv/bin/python"
+    )
+
+
+def test_evidence_repos_interpreter_non_string_rejected():
+    """TASK-FIX-SIBTESTENV01: a non-string ``interpreter`` fails loudly at
+    parse time (mirrors the test_command check — no silent degrade)."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="interpreter"):
+        Feature(
+            id="FEAT-SIBENV",
+            name="Sibling interpreter feature",
+            evidence_repos=[
+                {"path": "../guardkitfactory", "interpreter": 123}
+            ],
+        )
+
+
 def test_load_feature_yaml_extension(temp_features_dir):
     """Test loading feature with .yaml extension works - REMOVED."""
     # This test is stale - feature_id should not include the extension
