@@ -47,6 +47,84 @@ cross-checked on a scratch 3.12 venv where relevant.
 
 ---
 
+## 1.5 ADDENDUM (2026-07-05) — two more retros landed; read before proceeding
+
+Two retros arrived after this handoff was first written. Both are analysed and
+folded in here; two new tasks were filed (the backlog folder now holds 17).
+
+### (a) ABL-001 run 3 — honest failure + CREDENTIAL LEAK
+([`abl001-run3-honest-fail-and-credential-leak-2026-07-04.md`](abl001-run3-honest-fail-and-credential-leak-2026-07-04.md))
+
+Run 3 failed **honestly** — the narrative-false-green guard (PERTASKFG01
+lineage) caught and overrode the Player's "suite is green" narration TWICE
+in-loop; the feature was retired to hand-finish per the ABL-005 playbook. That
+half is validation, not a defect.
+
+The defect: a failing assertion printed the **live NAS store DSN** from the
+loop's ambient env, and that output travelled the standard publication path
+(evidence JSON → task-md turn history → the `cbce5cf2` "land stashed run
+state" chore commit → public GitHub). 14/32 password characters were public
+for a window of hours. Redacted at HEAD (`65dc82562`); verified 2026-07-05
+that the only remaining DSN-shaped strings in tracked files are benign
+localhost fixture/test DSNs.
+
+**⚠ TWO OPERATOR-OWED DECISIONS (urgent, nothing in-repo can do them):**
+1. **Rotate the fleet_memory Postgres password** — treat 14/32 public chars as
+   compromised. Touches: NAS Postgres, `fleet-memory-relay` container env,
+   guardkit/fleet-memory `.env` files, the P3/P4 env contracts. (Tailnet-only
+   listener mitigates but does not excuse.)
+2. **History-rewrite call for guardkit main** — the fragment persists in
+   pushed history (`cbce5cf2` + checkpoint commits + 3 later commits). Same
+   decision shape as the 2026-07-03 fleet-evals FinProxy incident. Rewrite
+   (force-push + collaborator re-clone cost) vs accept-with-rotation.
+
+**Tasks filed from it:**
+- **TASK-AB-SECRETSCRUB01** (high, ready-to-implement) — scrub secret-shaped
+  strings at the evidence→publication boundary (task-md turn-history writer,
+  review summaries; ABL-005's `scrub_secrets` is the prior art) + a
+  `tests/rules/`-style lint scanning tracked `tasks/`+`docs/` for
+  non-localhost credentials. Key boundary decision already made: scrub at
+  PUBLICATION, never at the oracle (the Coach must see real output).
+- **TASK-AB-HERMETICTEST01** (low) — env-reading config tests must pin the
+  full env surface (three-location prompt pattern + planner note + the ops
+  rule: never run agent loops with live creds in ambient env).
+- Note for fleet-evals (not a guardkit task): the run-3 trace (honest-fail +
+  caught narration) is a §6c corpus candidate alongside the run-2 stub.
+
+### (b) QA-Verifier state consolidation
+([`qa-verifier-state-consolidation-2026-07-04.md`](qa-verifier-state-consolidation-2026-07-04.md))
+
+The QA-Verifier thread is reconciled and **Phase 0 is code-complete**: L1
+wiring probes (FEAT-C332), L2 anti-stub body scan + L3 runtime coverage gate
+(FEAT-10AC, merged `888906f2`), and the L4 behavioural-oracle guard + producer
+(TASK-QAV-006 / FEAT-0E6D, merged `fe949bb0`). Two build-time catches worth
+knowing: the L4 guard initially shipped WITHOUT its producer wired
+(runner-without-producer, caught at merge review by the feature's own ethos),
+and a Player committed an intentionally-failing oracle into the tree (caught,
+excluded — a live proof of the oracle-independence check).
+
+**Consequences for the design-first tasks below:**
+- **ENVTAMPER01**: its half-(b) (`sys.modules` probe) must EXTEND the now
+  even-richer `guardkitfactory.wiring` dialect data — the consolidation doc
+  makes this binding ("extend the existing WiringAnalyzer dialect descriptors;
+  do not build a parallel analyzer"). The merged L2 anti-stub scan is the
+  nearest sibling to copy.
+- **New overnight commits in the venv-resolution territory** (do not collide;
+  read before any venv work): `aa4ecc81` TASK-FIX-SIBTESTENV01 (sibling
+  evidence-repo tests resolve interpreter PER REPO, never the worktree venv —
+  in_review), `fc33a23e` (bootstrap the environment when resuming onto an
+  existing worktree — goes further than RESUMEVENV01's skip-path re-probe),
+  `01820fbb` (per-turn venv refresh scoped to touched stacks), and
+  TASK-FIX-XREPOPROM01 (sibling-relative Player claims false-red). Any
+  RESUMEVENV follow-up must rebase its mental model on these.
+- TASK-QAV-008 was filed (`4aaa7de1`) — check it before scheduling QAV work.
+
+**Updated suggested ordering:** SECRETSCRUB01 first (leak class is live and
+it's fully specified) → VERIFYCLI01 → BDDAUTHOR01 → ENVTAMPER01 →
+HERMETICTEST01/REVIEWCLEAN01 (fillers) → WTISO01 (still gated on §2.3-1).
+
+---
+
 ## 2. The five design-first tasks — what they are and what input is needed
 
 All five live in `tasks/backlog/autobuild-reliability/` with full task files.

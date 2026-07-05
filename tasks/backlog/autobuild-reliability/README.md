@@ -1,6 +1,7 @@
 # autobuild-reliability — task index
 
-Fourteen tasks filed 2026-07-04 from the retro cross-reference
+Seventeen tasks (15 filed 2026-07-04, 2 on 2026-07-05 from the ABL-001 run-3
+credential-leak retro) from the retro cross-reference
 [`docs/retro/autobuild-retro-xref-2026-07-04.md`](../../../docs/retro/autobuild-retro-xref-2026-07-04.md)
 (five retros: R1 `nats_core` stub, R2 parallel-wave worktree pollution,
 R3 self-defeating boundary tests, R4 undefined BDD step, R5 ABL-005 infra
@@ -31,6 +32,8 @@ post-implementation code review of this batch.
 | [TASK-AB-WTISO01](TASK-AB-WTISO01-per-task-worktree-isolation.md) | medium | design-first | Per-task worktree isolation for parallel waves — the structural fix for R2; design doc covering evidence boundary, checkpoints, rollback, locks, merge semantics (§5 item 14) |
 | [TASK-AB-VERIFYCLI01](TASK-AB-VERIFYCLI01-implement-verify-on-autobuild-complete-cli.md) | low | design-first | Implement `--verify` on the `guardkit autobuild complete` CLI (doc currently marks it slash-command-only and references this task) (§3 R3 / §5 item 3) |
 | [TASK-AB-REVIEWCLEAN01](TASK-AB-REVIEWCLEAN01-post-review-consolidations.md) | low | design-first | Consolidations deferred from the 2026-07-04 post-implementation code review: one pytest-summary parser, shared Coach-guard override-and-persist (single-persist-per-turn), `IndependentTestResult` factory, coach-turn walkers over `_coach_report_issues`, shared parity/smoke framing composer |
+| [TASK-AB-SECRETSCRUB01](TASK-AB-SECRETSCRUB01-secret-scrubbing-publication-boundary.md) | high | ready-to-implement | Scrub secret-shaped strings at the evidence→publication boundary (task-md turn history, review summaries) + repo lint for tracked run-state artifacts — from the ABL-001 run-3 credential leak (2026-07-05) |
+| [TASK-AB-HERMETICTEST01](TASK-AB-HERMETICTEST01-hermetic-env-test-guidance.md) | low | ready-to-implement | Hermetic-env test guidance: env-reading config tests must pin the full env surface (three-location prompt pattern + planner note + ops rule: no live creds in loop env) (2026-07-05) |
 
 Do-not-refile ledger (already landed, per xref §4): `--max-parallel` /
 `GUARDKIT_MAX_PARALLEL_TASKS`, A7B2/A7B3/ABFIX-005, `bootstrap_extras` +
