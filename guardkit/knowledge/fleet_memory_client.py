@@ -56,6 +56,9 @@ class FleetMemoryConfig:
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
     project: str = "guardkit"
+    # New retrieval arm configuration (FEAT-ABL-001)
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
 
 
 class FleetMemoryClient:
@@ -256,6 +259,13 @@ class FleetMemoryClient:
         """
         if not self.config.enabled:
             return []
+        if self.config.retrieval_arm == "off":
+            # Retrieval ablation arm gate (FEAT-ABL-001 / TASK-ABL1-003): mirror
+            # the enabled=false gate exactly — no store access, no initialize(),
+            # no retrieval-log entry — so the context loader, turn-continuation
+            # and template-pattern paths run byte-identical code on every arm.
+            logger.debug("Fleet-memory retrieval arm 'off': returning empty")
+            return []
         if not self._read_available:
             logger.debug("fleet_memory.retrieval unavailable, returning empty")
             return []
@@ -302,6 +312,39 @@ class FleetMemoryClient:
                 include_superseded=False,
             )
             results = await fm_search(request, self._store)
+
+            # Per-item retrieval log (FEAT-ABL-001 / TASK-ABL1-003). Emitted HERE
+            # because per-item identity (natural_key + score) only exists between
+            # fm_search() and assemble_context() — assembly collapses everything
+            # into the one synthetic uuid4 hit below. Written on EVERY successful
+            # fm_search return, including empty results (items=[]), so the run
+            # guardrail can distinguish "retrieval attempted, nothing found"
+            # (entry with empty items) from "no retrieval" (no entry). A failed
+            # fm_search raises into the except below and writes nothing.
+            # log_query never raises by contract.
+            from guardkit.knowledge.query_logger import log_query
+
+            first_preview: Optional[str] = None
+            if results:
+                first_content = results[0].value.get("content")
+                if isinstance(first_content, str) and first_content:
+                    first_preview = first_content
+            log_query(
+                operation="search",
+                query=query,
+                group_ids=group_ids or [],
+                result_count=len(results),
+                first_result_preview=first_preview,
+                source="fleet_memory_client",
+                items=[
+                    {
+                        "id": item.value.get("natural_key", ""),
+                        "score": float(item.score or 0.0),
+                    }
+                    for item in results
+                ],
+            )
+
             assembly = assemble_context(results, token_budget)
 
             if not assembly.context_block:
@@ -625,12 +668,50 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
     Returns:
         FleetMemoryConfig loaded from environment
     """
+    # Default postgres DSN (live)
+    default_postgres_dsn = os.getenv(
+        "FLEET_MEMORY_PG_DSN",
+        "postgresql://postgres:test@localhost:5433/memory",
+    )
+    # Parse retrieval arm
+    raw_retrieval = os.getenv("FLEET_MEMORY_RETRIEVAL")
+    retrieval_arm: Optional[str] = None
+    fixture_id: Optional[str] = None
+    if raw_retrieval is None or raw_retrieval.strip() == "":
+        retrieval_arm = None
+    else:
+        val = raw_retrieval.strip().lower()
+        if val == "off":
+            retrieval_arm = "off"
+        elif val.startswith("fixture:"):
+            fid = raw_retrieval.strip()[len("fixture:"):]
+            if fid:
+                retrieval_arm = f"fixture:{fid}"
+                fixture_id = fid
+            else:
+                logger.warning(f"Invalid FLEET_MEMORY_RETRIEVAL value: {raw_retrieval!r}")
+                retrieval_arm = "off"
+        else:
+            logger.warning(f"Invalid FLEET_MEMORY_RETRIEVAL value: {raw_retrieval!r}")
+            retrieval_arm = "off"
+    # Resolve fixture DSN if needed
+    if retrieval_arm and retrieval_arm.startswith("fixture:"):
+        # Uppercase id, map non-alnum to _
+        import re
+        norm_id = re.sub(r"[^0-9A-Za-z]", "_", fixture_id.upper()) if fixture_id else ""
+        env_var_specific = f"FLEET_MEMORY_FIXTURE_DSN_{norm_id}"
+        dsn = os.getenv(env_var_specific) or os.getenv("FLEET_MEMORY_FIXTURE_DSN")
+        if dsn:
+            postgres_dsn = dsn
+        else:
+            logger.warning(f"Fixture DSN not set for retrieval arm {retrieval_arm!r}")
+            retrieval_arm = "off"
+            postgres_dsn = default_postgres_dsn
+    else:
+        postgres_dsn = default_postgres_dsn
     return FleetMemoryConfig(
         enabled=os.getenv("FLEET_MEMORY_ENABLED", "false").lower() == "true",
-        postgres_dsn=os.getenv(
-            "FLEET_MEMORY_PG_DSN",
-            "postgresql://postgres:test@localhost:5433/memory",
-        ),
+        postgres_dsn=postgres_dsn,
         embed_url=os.getenv(
             "FLEET_MEMORY_EMBED_URL",
             "http://promaxgb10-41b1:9000",
@@ -644,4 +725,6 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         # Per-project scoping (FEAT-MEM-09 WS-0): the fleet-memory namespace this
         # guardkit instance reads/writes. Defaults to "guardkit" (back-compat).
         project=os.getenv("GUARDKIT_MEMORY_PROJECT", "guardkit"),
+        retrieval_arm=retrieval_arm,
+        fixture_id=fixture_id,
     )

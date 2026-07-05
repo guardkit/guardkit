@@ -267,6 +267,42 @@ class TestLogQuery:
                 base_dir=str(tmp_path),
             )
 
+    def test_items_present(self, tmp_path):
+        """log_query with items includes them in entry."""
+        items = [{"id": "chunk:guardkit:X", "score": 0.9}]
+        log_query(
+            operation="search",
+            query="q",
+            items=items,
+            base_dir=str(tmp_path),
+        )
+        log_path = tmp_path / ".guardkit" / _DEFAULT_LOG_FILENAME
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["items"] == items
+
+    def test_items_empty_list(self, tmp_path):
+        """log_query with empty items list preserves empty list."""
+        log_query(
+            operation="search",
+            query="q",
+            items=[],
+            base_dir=str(tmp_path),
+        )
+        log_path = tmp_path / ".guardkit" / _DEFAULT_LOG_FILENAME
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["items"] == []
+
+    def test_items_omitted(self, tmp_path):
+        """log_query without items does not include 'items' key."""
+        log_query(
+            operation="search",
+            query="q",
+            base_dir=str(tmp_path),
+        )
+        log_path = tmp_path / ".guardkit" / _DEFAULT_LOG_FILENAME
+        entry = json.loads(log_path.read_text().strip())
+        assert "items" not in entry
+
     def test_default_source(self, tmp_path):
         """Default source is 'memory_client'."""
         log_query(
