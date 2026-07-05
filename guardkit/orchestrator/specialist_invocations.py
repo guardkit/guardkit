@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
+from guardkit.lib.pytest_summary import parse_pytest_summary
+
 if TYPE_CHECKING:
     from guardkit.orchestrator.agent_invoker import AgentInvoker
 
@@ -171,15 +173,11 @@ def _resolve_phase_4_execution_mode() -> str:
     return mode if mode in ("subprocess", "sdk") else "subprocess"
 
 
-# Tokens a pytest summary line uses for each outcome class. ``error``/``errors``
-# both fold to ``error``; ``skipped`` is intentionally excluded from
-# ``tests_run`` (a skipped test executed no assertions). TASK-AB-SKIPVIS01:
-# ``skipped`` IS captured — but only as a separate advisory ``tests_skipped``
-# count, never folded into ``tests_run`` / ``tests_failed``.
-_PYTEST_COUNT_RE = re.compile(
-    r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed|skipped)\b",
-    re.IGNORECASE,
-)
+# TASK-AB-REVIEWCLEAN01 (item 1): the pytest-summary regex + count semantics
+# now live in guardkit.lib.pytest_summary (the single source of truth shared
+# with coach_validator's advisory skip-count reader). ``_parse_pytest_counts``
+# below adapts that parser to this module's historic
+# ``(tests_run, tests_failed, tests_skipped)`` tuple shape.
 
 
 # Reverse lookup of guardkit.orchestrator.phase_specialists.STATIC_PHASE_SPECIALISTS
@@ -957,25 +955,15 @@ def _parse_pytest_counts(
     ``0`` = summary parsed cleanly with no ``skipped`` token, ``N`` = N tests
     skipped (e.g. a worktree venv missing an optional extra silently turning
     tests into skips).
+
+    TASK-AB-REVIEWCLEAN01 (item 1): count extraction is delegated to the
+    shared ``guardkit.lib.pytest_summary`` parser. This one-shot count
+    consumer keeps its historic ``(0, 0, None)`` shape on a parse miss —
+    ``tests_run``/``tests_failed`` are 0-coerced here (metadata only; the
+    return code is authoritative) while ``tests_skipped`` stays ``None``.
     """
-    if not output:
-        return 0, 0, None
-    counts: dict[str, int] = {}
-    for match in _PYTEST_COUNT_RE.finditer(output):
-        key = match.group(2).lower().rstrip("s")  # error/errors -> error
-        counts[key] = max(counts.get(key, 0), int(match.group(1)))
-    if not counts:
-        return 0, 0, None
-    passed = counts.get("passed", 0)
-    failed = counts.get("failed", 0)
-    errors = counts.get("error", 0)
-    xpassed = counts.get("xpassed", 0)
-    xfailed = counts.get("xfailed", 0)
-    tests_failed = failed + errors
-    tests_run = passed + failed + errors + xpassed + xfailed
-    # "skipped" ends in "d" so rstrip("s") leaves the key unchanged.
-    tests_skipped = counts.get("skipped", 0)
-    return tests_run, tests_failed, tests_skipped
+    summary = parse_pytest_summary(output)
+    return (summary.tests_run or 0, summary.tests_failed or 0, summary.skipped)
 
 
 def _load_task_work_results(

@@ -812,6 +812,24 @@ custom_redactor = SecretRedactor(patterns=[
 
 Pass the custom redactor to `redact_tool_exec_event()` to apply it.
 
+### Never Run Agent Loops With Live Credentials in the Ambient Environment
+
+Redaction and publication-boundary scrubbing (TASK-AB-SECRETSCRUB01,
+`guardkit/lib/secret_scrub.py`) are the LAST lines of defence, not the
+first. The ABL-001 run-3 leak (2026-07-04) happened because the loop's
+ambient environment carried a **live** Postgres DSN: a non-hermetic test
+printed it in an expected-vs-actual diff, and that output travelled the
+standard publication path into a public commit.
+
+The operational rule (the P4 env contract): **agent loops run with fixture
+credentials only** — localhost/127.0.0.1 DSNs are the documented,
+legitimate pattern. Live store credentials have no business in the
+environment an autonomous loop inherits; export them only in the shells
+that genuinely talk to the live store, never in the loop launcher. Pair
+this with hermetic tests (pin the full env-var surface with
+`monkeypatch.setenv`/`delenv` — see TASK-AB-HERMETICTEST01) so a config
+test can never read the ambient environment at all.
+
 ---
 
 ## Bootstrap Hard-Fail Gate (`bootstrap_failure_mode`)

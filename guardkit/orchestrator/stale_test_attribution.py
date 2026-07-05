@@ -256,6 +256,62 @@ def build_stale_test_note(
     )
 
 
+def smoke_gate_header(command: Optional[str]) -> str:
+    """The post-wave smoke-gate feedback header (TASK-AB-REVIEWCLEAN01 item 6).
+
+    Consolidated here from ``feature_orchestrator._build_smoke_feedback`` so
+    the parity/smoke framing wording lives in ONE file — a wording change is a
+    one-file edit (AC-006). Conditional on whether the smoke command is a
+    test-runner invocation: a test-runner red is a failing TEST, a
+    non-test-runner red is a "passes pytest but does not run standalone"
+    defect. Trailing blank line included (the caller concatenates directly).
+    """
+    if is_test_runner_command(command):
+        return (
+            "SMOKE-SUITE TEST FAILURE (feature smoke gate)\n"
+            "A test in the feature smoke suite FAILED under this task's "
+            "changes. The smoke command runs the feature's test suite — "
+            "this is a failing test, not a standalone-run/import defect. "
+            "The failing test(s) may have been authored by an earlier "
+            "task in this feature. Fix the failure below.\n\n"
+        )
+    return (
+        "RUNTIME-PARITY FAILURE (feature smoke gate)\n"
+        "Your task's pytest passed, but the feature's post-wave smoke "
+        "gate — which runs the deliverable's REAL runtime entry point — "
+        "FAILED. This is a 'passes tests but does not run' defect: pytest "
+        "puts the worktree root on sys.path so imports like "
+        "`from installer.core...` resolve, but a standalone "
+        "`python <module>` invocation does not. Fix the runtime failure "
+        "below so the deliverable runs standalone, not just under pytest.\n\n"
+    )
+
+
+def runtime_parity_rationale(command: Optional[str], reason_detail: str) -> str:
+    """The per-task runtime-parity guard rationale (TASK-AB-REVIEWCLEAN01 item 6).
+
+    Consolidated here from ``agent_invoker._apply_runtime_parity_guard`` so it
+    shares this module with the smoke-gate header (AC-006). Same conditional
+    framing (test-runner failure vs runs-standalone defect); the caller
+    appends the stale-attribution notes.
+    """
+    if is_test_runner_command(command):
+        return (
+            "Runtime-parity failure: a test in the feature smoke suite "
+            f"FAILED under this task's changes ({reason_detail}). The "
+            "smoke command runs the feature's test suite — fix the "
+            "failing test(s) named in the output below. "
+            f"Command: {command}"
+        )
+    return (
+        "Runtime-parity failure: the deliverable passed pytest but its "
+        "declared runtime entry point FAILED to run "
+        f"({reason_detail}). This is a 'passes tests but does not run' "
+        "defect — fix the deliverable so it runs standalone. "
+        f"Command: {command}"
+    )
+
+
 def stale_test_notes(
     failing_lines: Iterable[str],
     worktree_root: Optional[Union[str, Path]],

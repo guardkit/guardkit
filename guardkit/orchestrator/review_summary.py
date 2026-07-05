@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
+from guardkit.lib.secret_scrub import scrub_for_publication
+
 if TYPE_CHECKING:
     from guardkit.orchestrator.feature_orchestrator import (
         FeatureOrchestrationResult,
@@ -92,7 +94,10 @@ class ReviewSummaryGenerator:
         try:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             output_path = self.output_dir / self.FILENAME
-            content = self._render(result)
+            # TASK-AB-SECRETSCRUB01: the summary embeds captured task error
+            # text and is operator-copyable into tracked docs — scrub the
+            # rendered content at this publication boundary (fail-closed).
+            content = scrub_for_publication(self._render(result))
             output_path.write_text(content, encoding="utf-8")
             logger.info("Review summary written to %s", output_path)
             return ReviewSummaryResult(success=True, output_path=output_path)

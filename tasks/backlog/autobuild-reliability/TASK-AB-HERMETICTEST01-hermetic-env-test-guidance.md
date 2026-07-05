@@ -13,6 +13,19 @@ source: docs/retro/abl001-run3-honest-fail-and-credential-leak-2026-07-04.md
 
 > Filed 2026-07-05 from ABL-001 run-3 lesson 4. Prompt/doc-level guidance
 > (the INVARIANTTEST01 shape); no verdict-logic change.
+>
+> **Implemented 2026-07-05 (session following the 2026-07-04 handoff); this
+> file is the tracking record.** Shared detection phrase:
+> `HERMETIC_ENV_DETECTION_PHRASE` (`agent_invoker.py`, byte-identical in
+> Coach guard #10 `HERMETIC-ENV ADVISORY GUARD` and the Player anti-patterns
+> entry). Location 1 = Player-prompt responsibility 2; locations 2+3 =
+> `installer/core/agents/autobuild-player.md` (anti-pattern row + "Pin the
+> environment surface" grounding paragraph); planner guidance in
+> `feature-plan.md` (name the env-var surface); ops note in
+> `docs/guides/autobuild-instrumentation-guide.md` (never run agent loops
+> with live creds in ambient env). Tests:
+> `tests/unit/test_hermetic_env_guidance.py` (14); prior guard suites
+> re-run green.
 
 ## Description
 
@@ -30,23 +43,23 @@ config tests hermetic (`monkeypatch.delenv`/`setenv` around the full
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Player-prompt guidance (following the
+- [x] AC-001: Player-prompt guidance (following the
       player-prompt-reinforce-coach-constraint-in-three-locations pattern used
       by TASK-AB-INVARIANTTEST01, and landing adjacent to its text): tests
       exercising env-read configuration MUST pin the FULL relevant env-var
       surface with `monkeypatch.setenv`/`delenv` — a test whose outcome can
       change with the host environment is not a test of the code.
-- [ ] AC-002: Coach-side advisory (prompt guard, `should_fix`, never
+- [x] AC-002: Coach-side advisory (prompt guard, `should_fix`, never
       turn-rejecting alone): flag a NEW test that asserts config values whose
       loader reads env vars the test does not pin.
-- [ ] AC-003: `/feature-plan` spec guidance: tasks whose deliverable reads
+- [x] AC-003: `/feature-plan` spec guidance: tasks whose deliverable reads
       configuration from env must name the env surface in the task spec so the
       Player knows what to pin (mirrors the negative-boundary guidance added
       by INVARIANTTEST01).
-- [ ] AC-004: Operational note in the instrumentation guide: never run agent
+- [x] AC-004: Operational note in the instrumentation guide: never run agent
       loops with live credentials in the ambient environment — fixture DSNs
       only (the P4 contract; live creds had no business in the ABL loop env).
-- [ ] AC-005: Tests pinning the prompt text in all locations (the
+- [x] AC-005: Tests pinning the prompt text in all locations (the
       transient-assertion test file is the template).
 
 ## Regression constraints

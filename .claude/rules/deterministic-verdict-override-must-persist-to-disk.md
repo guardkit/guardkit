@@ -105,11 +105,14 @@ rg "deterministic-verdict-override-must-persist|absence-of-failure|harness-cance
    `try/except OSError`, log at WARNING, and continue — the in-memory override
    already rejects the turn, so a disk error must never unblock it.
 3. **Any new deterministic verdict-override at the synthesis seam inherits this
-   contract.** `_apply_spec_gap_absent_guard`
-   ([`agent_invoker.py:5457`](../../guardkit/orchestrator/agent_invoker.py))
-   already follows the same shape (it takes the same `coach_output_path` and
-   re-persists). A new guard that mutates `decision` but skips the write is the
-   regression.
+   contract.** Since TASK-AB-REVIEWCLEAN01 (item 2), every guard routes its
+   disk write through the ONE shared helper
+   `AgentInvoker._persist_coach_decision(decision, coach_output_path, *, tag,
+   kind)` — fail-open `OSError` + WARNING, verdict already decided. A new guard
+   that mutates `decision` MUST call this helper (never re-hand-roll a
+   `write_text` block); a guard that mutates `decision` but skips the call is
+   the regression. The helper is the single place the on-disk/in-memory
+   contract lives, so it cannot drift per-guard.
 4. **Keep the prompt-level guard as defence-in-depth, not the enforcement.**
    The LLM instruction is cheap and correct but advisory; the code override plus
    the disk write is the load-bearing pair.
@@ -117,10 +120,14 @@ rg "deterministic-verdict-override-must-persist|absence-of-failure|harness-cance
 ## Grep-able signature (for next agent)
 
 ```bash
-# Override + persist fingerprint (MUST MATCH; absence = the disk half is gone):
-rg -n "coach_output_path.write_text" guardkit/orchestrator/agent_invoker.py   # -> 5448
+# Override + persist fingerprint (MUST MATCH; absence = the disk half is gone).
+# Since TASK-AB-REVIEWCLEAN01 item 2 there is exactly ONE write_text — inside
+# the shared helper — and every guard calls it. Both MUST MATCH:
+rg -n "def _persist_coach_decision" guardkit/orchestrator/agent_invoker.py    # the single write seam
+rg -c "self._persist_coach_decision\(" guardkit/orchestrator/agent_invoker.py # -> 10 (one per guard path)
+rg -c "coach_output_path.write_text" guardkit/orchestrator/agent_invoker.py   # -> 1 (only inside the helper)
 rg -n "def _reconcile_absent_independent_test_signal" \
-   guardkit/orchestrator/agent_invoker.py                                     # -> 5348
+   guardkit/orchestrator/agent_invoker.py
 
 # Layer-4 disk-read fingerprint (why the persist is load-bearing):
 rg -n "json.loads\(latest.read_text\(\)\).get\(.decision.\)" \

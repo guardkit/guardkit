@@ -11,7 +11,18 @@ source: docs/retro/autobuild-retro-xref-2026-07-04.md
 
 # Task: Implement --verify on the `guardkit autobuild complete` CLI
 
-> **Status note: backlog, NOT scheduled — design-first / filed for later.**
+> **Implemented 2026-07-05 (session following the 2026-07-04 handoff); this
+> file is the tracking record.** Operator-input answers adopted from the
+> handoff recommendations: verify command = `--verify-cmd` override >
+> feature `smoke_gates.command` > stack-aware default (venv-pinned pytest
+> for Python; `stack_test_execution` registry rows for .NET/JS-TS/Go);
+> failure disposition = report-only + exit 4 (never un-merge, never print
+> success); runs in the merge-target repo root; timeout default 600s
+> (`--verify-timeout` override). Shared implementation:
+> `guardkit/orchestrator/completion_verification.py`; CLI wiring in
+> `guardkit/cli/autobuild.py` `complete`; slash-command doc updated to
+> delegate its verify step to the CLI flag. Tests:
+> `tests/unit/test_completion_verification.py` (22).
 
 ## Description
 
@@ -38,24 +49,24 @@ documented flow: "Run tests (if `--verify`)").
 
 ## Acceptance Criteria
 
-- [ ] AC-001: `guardkit autobuild complete FEAT-XXX --verify` re-runs the
+- [x] AC-001: `guardkit autobuild complete FEAT-XXX --verify` re-runs the
       project's test suite after the merge and reports the result; a
       failing verification is surfaced loudly with a non-zero exit code (it
       does not un-merge, but it must never print success).
-- [ ] AC-002: Without `--verify`, behaviour is byte-for-byte today's
+- [x] AC-002: Without `--verify`, behaviour is byte-for-byte today's
       (backward compatible; the flag is additive).
-- [ ] AC-003: The verification runs the tests in the merged target context
+- [x] AC-003: The verification runs the tests in the merged target context
       via a subprocess with the project's own interpreter/venv — not
       guardkit's — so a merged-in missing dependency cannot be masked by
       guardkit's environment.
-- [ ] AC-004: The CLI path shares its logic with the slash-command
+- [x] AC-004: The CLI path shares its logic with the slash-command
       workflow's verify step (one implementation, two entry points) rather
       than duplicating a second test-invocation path.
-- [ ] AC-005: `installer/core/commands/feature-complete.md` is updated to
+- [x] AC-005: `installer/core/commands/feature-complete.md` is updated to
       remove the "slash-command workflow only" caveat (and the reference to
       this task) once the CLI flag lands; `--help` output documents the
       flag.
-- [ ] AC-006: Regression tests: (a) `--verify` triggers the post-merge test
+- [x] AC-006: Regression tests: (a) `--verify` triggers the post-merge test
       run; (b) verify-failure → non-zero exit + explicit failure text;
       (c) no `--verify` → no test run, unchanged output; (d) a test run
       that cannot start (no runner) is reported as UNVERIFIED, never as a

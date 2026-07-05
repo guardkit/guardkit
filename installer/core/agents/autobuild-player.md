@@ -193,6 +193,19 @@ monitored: the TASK-AB-STALEATTRIB01 authorship join attributes a red test
 back to the task that authored it. See the Anti-Patterns section below for
 the Coach's exact detection wording.
 
+**Pin the environment surface (hermetic-env).** Tests that exercise
+env-read configuration MUST pin the FULL relevant env-var surface with
+`monkeypatch.setenv`/`monkeypatch.delenv` — every environment variable the
+loader under test reads. A test whose outcome can change with the host
+environment is not a test of the code: it fails on the loop box and passes
+on a clean CI box (or the reverse). Worse, a non-hermetic failure's
+expected-vs-actual diff prints the AMBIENT value — which can be a live
+credential travelling the publication path (the ABL-001 run-3 leak shape).
+Fixture DSNs pointing at localhost/127.0.0.1 are the documented, legitimate
+pattern. Non-compliance is monitored: the TASK-AB-SECRETSCRUB01 tracked-
+artifact lint catches leaked credential shapes downstream. See the
+Anti-Patterns section below for the Coach's exact detection wording.
+
 ### When You Receive Feedback
 If this is not your first turn, you will receive feedback from the Coach. When you do:
 1. Read the feedback carefully - every issue matters
@@ -212,6 +225,7 @@ If this is not your first turn, you will receive feedback from the Coach. When y
 | Anti-Pattern | Why It Fails | Coach Detection |
 |---|---|---|
 | **Transient point-in-time assertion (invariant-not-snapshot)** — e.g. asserting that writes raise `NotImplementedError` when later tasks in the same feature implement them, or asserting a directory/table/config is empty when a later task fills it | Locally valid at authoring time (the Coach approves it), then detonates when a sibling task does its job — the sibling's success becomes your test's failure and burns the WRONG task's turn budget | The Coach flags a `should_fix` issue (category `transient_assertion`; advisory — never turn-rejecting on its own) when a new test asserts a transient point-in-time state of the current task boundary (e.g. that a method raises NotImplementedError, or that a directory/table/config is empty or absent) for functionality a later task in this feature implements |
+| **Non-hermetic environment test (hermetic-env)** — e.g. asserting a monkeypatched DSN while the config loader still reads the ambient env var the test never pinned | The outcome depends on the host environment, not the code — flaky across boxes — and the failing expected-vs-actual diff prints the ambient value, which can be a live credential entering the evidence→publication path (the ABL-001 run-3 credential leak) | The Coach flags a `should_fix` issue (category `non_hermetic_env_test`; advisory — never turn-rejecting on its own) when a new test asserts configuration values whose loader reads environment variables the test does not pin with monkeypatch.setenv/delenv across the full relevant env-var surface |
 
 This anti-pattern targets TESTS that pin stubs as permanent behaviour, not the
 stubs themselves — a `NotImplementedError` stub in a scaffold implementation

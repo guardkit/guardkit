@@ -62,7 +62,7 @@ from guardkit.orchestrator.schemas import (
 )
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
-    is_test_runner_command,
+    runtime_parity_rationale,
     stale_test_notes,
 )
 
@@ -740,6 +740,24 @@ TRANSIENT_ASSERTION_DETECTION_PHRASE = (
 )
 
 # =========================================================================
+# TASK-AB-HERMETICTEST01: Hermetic-environment detection phrase shared by
+# Coach and Player
+# =========================================================================
+# Same three-locations contract as TRANSIENT_ASSERTION_DETECTION_PHRASE
+# above: this exact wording appears verbatim in BOTH the Coach-side advisory
+# guard (#10 in _render_absence_of_failure_guards) and the Player's
+# anti-patterns entry in installer/core/agents/autobuild-player.md. Keep the
+# two byte-identical — tests/unit/test_hermetic_env_guidance.py pins it.
+# ABL-001 run-3 origin: a test asserted a monkeypatched DSN while the loader
+# read the ambient env — non-hermetic (host-dependent outcome) AND a leak
+# channel (the failing diff printed a live credential).
+HERMETIC_ENV_DETECTION_PHRASE = (
+    "a new test asserts configuration values whose loader reads environment "
+    "variables the test does not pin with monkeypatch.setenv/delenv across "
+    "the full relevant env-var surface"
+)
+
+# =========================================================================
 # SDK Async Generator Cleanup Noise Suppression (TASK-FIX-k3l4)
 # =========================================================================
 # When the SDK's query() async generator is closed between turns, AnyIO's
@@ -888,6 +906,19 @@ class TaskWorkStreamParser:
     # Matches tool result messages like "File created successfully at: /path"
     TOOL_RESULT_CREATED_PATTERN = re.compile(r"File\s+(?:created|written)\s+(?:successfully\s+)?(?:at|to)[:\s]+([^\s]+)", re.IGNORECASE)
     TOOL_RESULT_MODIFIED_PATTERN = re.compile(r"File\s+(?:modified|updated|edited)\s+(?:successfully\s+)?(?:at)?[:\s]+([^\s]+)", re.IGNORECASE)
+    # TASK-AB-REVIEWCLEAN01 (item 1): this STREAMING parser is deliberately
+    # NOT consolidated onto guardkit.lib.pytest_summary. It is a different
+    # shape from the two one-shot count readers (specialist_invocations /
+    # coach_validator, which DO share that lib): (1) it accumulates max-wins
+    # across many stream messages, not a single captured output string; (2)
+    # its summary regex is anchored to pytest's ``====`` decoration so it
+    # cannot match an "N passed" fragment in arbitrary mid-stream prose,
+    # whereas the lib parser matches outcome tokens anywhere; (3) its
+    # positional capture semantics differ. Folding it in would change
+    # observable behaviour (e.g. it would begin capturing the passed count on
+    # failing-run summaries the decoration-anchored pattern currently misses),
+    # which AC-007 forbids. The three-state skip contract below is kept
+    # byte-identical to the lib's.
     # Pytest summary pattern: "X passed" or "X passed, Y failed" or "X passed, Y failed, Z skipped"
     PYTEST_SUMMARY_PATTERN = re.compile(
         r"[=]+\s*(?:(\d+)\s+passed)?(?:,?\s*(\d+)\s+failed)?(?:,?\s*(\d+)\s+skipped)?.*?[=]+",
@@ -2859,7 +2890,11 @@ Turn: {turn}
    NotImplementedError, or that a directory/table/config is empty or absent,
    when a later task in THIS feature implements/fills it; scope any boundary
    pin to methods/paths NO task in this feature will implement, and say which
-   task owns each excluded piece
+   task owns each excluded piece. Tests exercising env-read configuration
+   MUST pin the FULL relevant env-var surface with monkeypatch.setenv/delenv
+   (hermetic-env): a test whose outcome can change with the host environment
+   is not a test of the code, and its failure diff can print live ambient
+   values
 3. Run the tests and verify they pass
 4. Create your report with completion promises for each acceptance criterion
 
@@ -3679,6 +3714,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    stub_scan findings count NEVER changes the Coach decision deterministically.
    Surface as feedback only; never reject the turn on stub_scan findings alone.
    This guard is advisory-only and never overrides any other guard.
+
+10. HERMETIC-ENV ADVISORY GUARD (hermetic-env).
+   If {HERMETIC_ENV_DETECTION_PHRASE}:
+   flag it as a should_fix issue with category "non_hermetic_env_test".
+   A test whose outcome can change with the host environment is not a test
+   of the code — it fails on a loop box and passes on a clean CI box (or
+   vice versa), and its expected-vs-actual diff can print live ambient
+   values into the evidence stream (a leak channel). Judge the "full
+   relevant env-var surface" from the loader code the test exercises — the
+   env vars that loader reads. Fixture DSNs pointing at
+   localhost/127.0.0.1 remain the documented, legitimate pattern.
+   Advisory only — NEVER reject the turn on this finding alone; it
+   combines with other guards for the final decision.
 </absence_of_failure_guards>
 """
 
@@ -5603,6 +5651,49 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             )
             return None
 
+    # Log noun per mutation kind, so the WARNING reads naturally
+    # ("in-memory override still applies" / "annotation" / "correction").
+    _PERSIST_KIND_NOUN = {
+        "overridden": "override",
+        "annotated": "annotation",
+        "reconciled": "correction",
+    }
+
+    def _persist_coach_decision(
+        self,
+        decision: Dict[str, Any],
+        coach_output_path: "Path",
+        *,
+        tag: str,
+        kind: str = "overridden",
+    ) -> None:
+        """Fail-open re-persist of ``coach_turn_N.json`` after a guard mutated
+        the loaded ``decision`` dict (TASK-AB-REVIEWCLEAN01 item 2).
+
+        The single seam every deterministic Coach guard routes its disk write
+        through, so the
+        ``deterministic-verdict-override-must-persist-to-disk`` contract is
+        impossible to forget on the next guard: the on-disk file must match
+        the in-memory verdict before the Layer-4 late-approval reader
+        (``feature_orchestrator._check_late_approval``) consumes it. The write
+        is **fail-open** — an ``OSError`` logs WARNING and returns; the
+        in-memory mutation (carried in the returned result) already governs
+        the turn, so a disk hiccup must never un-reject it. The verdict itself
+        is fail-closed (decided before this call).
+
+        ``tag`` is the originating guard's marker (for operator log
+        correlation); ``kind`` selects the WARNING noun.
+        """
+        try:
+            coach_output_path.write_text(json.dumps(decision, indent=2))
+        except OSError as exc:
+            noun = self._PERSIST_KIND_NOUN.get(kind, "override")
+            logger.warning(
+                "%s: failed to re-persist %s verdict to %s (%s); "
+                "in-memory %s still applies",
+                tag, kind, coach_output_path, exc, noun,
+            )
+
     def _reconcile_incomplete_evidence_gathering(
         self,
         *,
@@ -5780,15 +5871,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 resolved_interpreter or "unknown",
                 test_command or "unknown",
             )
-            try:
-                coach_output_path.write_text(json.dumps(decision, indent=2))
-            except OSError as exc:
-                logger.warning(
-                    "FIX 4: failed to re-persist annotated verdict to %s "
-                    "(%s); in-memory annotation still applies",
-                    coach_output_path,
-                    exc,
-                )
+            self._persist_coach_decision(
+                decision, coach_output_path, tag="FIX 4", kind="annotated"
+            )
             return
 
         original_decision = decision["decision"]
@@ -5890,15 +5975,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # late-approval reader see the override, not the stale `approve`. A
         # persistence hiccup must never unblock the turn — the in-memory
         # override (returned in the result) already rejects it.
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-AB-NULLEVID01: failed to re-persist overridden verdict "
-                "to %s (%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-AB-NULLEVID01"
+        )
 
     def _reconcile_absent_independent_test_signal(
         self,
@@ -6068,15 +6147,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Re-persist so the on-disk coach_turn_N.json carries the marker
             # the stall classifier and operators read
             # (deterministic-verdict-override-must-persist-to-disk).
-            try:
-                coach_output_path.write_text(json.dumps(decision, indent=2))
-            except OSError as exc:
-                logger.warning(
-                    "TASK-AB-ZEROTESTLOUD01: failed to re-persist annotated "
-                    "verdict to %s (%s); in-memory annotation still applies",
-                    coach_output_path,
-                    exc,
-                )
+            self._persist_coach_decision(
+                decision, coach_output_path,
+                tag="TASK-AB-ZEROTESTLOUD01", kind="annotated",
+            )
             return
 
         decision["decision"] = "feedback"
@@ -6098,15 +6172,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # late-approval reader see the override, not the stale `approve`. A
         # persistence hiccup must never unblock the turn — the in-memory
         # override (returned in the result) already rejects it.
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-FIX-COACHFG01: failed to re-persist overridden verdict "
-                "to %s (%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-FIX-COACHFG01"
+        )
 
     def _apply_spec_gap_absent_guard(
         self,
@@ -6215,15 +6283,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
         # late-approval reader see the override, not the stale `approve`.
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-QAWE-004: failed to re-persist overridden verdict "
-                "to %s (%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-QAWE-004"
+        )
 
     def _apply_runtime_parity_guard(
         self,
@@ -6321,22 +6383,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # is recognisably a test-runner invocation, a red here is a failing
         # TEST in the feature smoke suite, not a standalone-run/import defect.
         # Non-test-runner smoke commands keep the runs-standalone framing.
-        if is_test_runner_command(command):
-            rationale = (
-                "Runtime-parity failure: a test in the feature smoke suite "
-                f"FAILED under this task's changes ({reason_detail}). The "
-                "smoke command runs the feature's test suite — fix the "
-                "failing test(s) named in the output below. "
-                f"Command: {command}"
-            )
-        else:
-            rationale = (
-                "Runtime-parity failure: the deliverable passed pytest but its "
-                "declared runtime entry point FAILED to run "
-                f"({reason_detail}). This is a 'passes tests but does not run' "
-                "defect — fix the deliverable so it runs standalone. "
-                f"Command: {command}"
-            )
+        # TASK-AB-REVIEWCLEAN01 (item 6): the wording lives in
+        # stale_test_attribution.runtime_parity_rationale (shared with the
+        # post-wave smoke-gate header composer).
+        rationale = runtime_parity_rationale(command, reason_detail)
 
         # TASK-AB-STALEATTRIB01: authorship join — when the failing test's
         # file was authored by exactly one OTHER task, name it and grant the
@@ -6379,15 +6429,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             command,
         )
 
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-AB-COACHRUNPARITY01: failed to re-persist overridden "
-                "verdict to %s (%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-AB-COACHRUNPARITY01"
+        )
 
     def _apply_independent_test_code_failure_guard(
         self,
@@ -6497,15 +6541,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             confidence,
         )
 
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-ABFIX-012: failed to re-persist overridden verdict to %s "
-                "(%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-ABFIX-012"
+        )
 
     def _apply_behavioural_oracle_guard(
         self,
@@ -6608,15 +6646,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 task_id,
                 turn,
             )
-            try:
-                coach_output_path.write_text(json.dumps(decision, indent=2))
-            except OSError as exc:
-                logger.warning(
-                    "TASK-QAV-004: failed to re-persist annotated verdict "
-                    "to %s (%s); in-memory annotation still applies",
-                    coach_output_path,
-                    exc,
-                )
+            self._persist_coach_decision(
+                decision, coach_output_path,
+                tag="TASK-QAV-004", kind="annotated",
+            )
             return
 
         # AC-3/AC-7: absent or non-ran status → no-op (no override)
@@ -6690,15 +6723,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # AC-2: re-persist so the on-disk coach_turn_N.json carries the
         # override, not the stale approve (deterministic-verdict-override-
         # must-persist-to-disk).
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-QAV-004: failed to re-persist overridden verdict "
-                "to %s (%s); in-memory override still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="TASK-QAV-004"
+        )
 
     def _reconcile_coach_narrative_with_records(
         self,
@@ -6769,15 +6796,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # corrected narrative and embedded records. A persistence hiccup must
         # never block the turn — the in-memory decision (returned in the
         # result) already carries the correction.
-        try:
-            coach_output_path.write_text(json.dumps(decision, indent=2))
-        except OSError as exc:
-            logger.warning(
-                "TASK-FIX-COACHNARR01: failed to re-persist reconciled verdict "
-                "to %s (%s); in-memory correction still applies",
-                coach_output_path,
-                exc,
-            )
+        self._persist_coach_decision(
+            decision, coach_output_path,
+            tag="TASK-FIX-COACHNARR01", kind="reconciled",
+        )
 
     # =========================================================================
     # Task-Work Delegation Methods
@@ -9056,6 +9078,103 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return None
         return result.to_dict()
 
+    def _run_bdd_authoring_sweep(
+        self, task_id: str, results: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run the BDD authoring sweep (TASK-AB-BDDAUTHOR01) for this turn.
+
+        Activation is by artefact presence: the turn's authored files include
+        pytest-bdd glue OWNED by this task (per-task-named glue, or glue
+        created this turn). No glue → ``None`` and behaviour is identical to
+        before this leg existed.
+
+        Activation input: ``files_authored`` when NON-EMPTY, else
+        ``files_created ∪ files_modified``. This deliberately diverges from
+        ``CoachValidator._compute_authored_set``'s []-is-authoritative
+        reading: at this seam ``files_authored`` is unconditionally present
+        and ``[]`` only means the Write/Edit stream interception captured
+        nothing (a Player writing glue via Bash heredocs would otherwise
+        silently bypass the sweep — the evidence-boundary-narrower shape).
+        Both the existence check and ``is_bdd_glue_file`` bound the wider
+        fallback, and at this point the lists are parser-extracted Player
+        claims (the git-diff union happens later, on the report), so peer
+        contamination is not in play.
+        """
+        try:
+            from guardkit.orchestrator.quality_gates.bdd_runner import (
+                find_per_task_glue,
+                glue_owned_by_task,
+                is_bdd_glue_file,
+                run_bdd_authoring_sweep,
+            )
+
+            authored = list(results.get("files_authored") or [])
+            if not authored:
+                authored = sorted(
+                    set(results.get("files_created") or [])
+                    | set(results.get("files_modified") or [])
+                )
+            created = list(results.get("files_created") or [])
+
+            owned_glue = []
+            for candidate in authored:
+                path = Path(candidate)
+                if not path.is_absolute():
+                    path = self.worktree_path / path
+                if not is_bdd_glue_file(path):
+                    continue
+                if not glue_owned_by_task(candidate, task_id, created):
+                    logger.info(
+                        "BDD authoring sweep: %s is authored glue but not "
+                        "owned by %s (pre-existing shared/legacy module) — "
+                        "not swept.",
+                        candidate,
+                        task_id,
+                    )
+                    continue
+                owned_glue.append(path)
+
+            # Re-arm: per-task-named glue already ON DISK is swept every
+            # turn, not only the turn that authored it — otherwise a Player
+            # blocked on undefined steps could clear the deterministic gate
+            # next turn by simply not touching the glue (the LLM-leniency
+            # hole this sweep exists to close). Name-attribution keeps this
+            # parallel-wave-safe.
+            seen = {p.resolve() for p in owned_glue}
+            for path in find_per_task_glue(self.worktree_path, task_id):
+                if path.resolve() not in seen and is_bdd_glue_file(path):
+                    owned_glue.append(path)
+                    seen.add(path.resolve())
+
+            if not owned_glue:
+                return None
+
+            python_executable = self._resolve_worktree_python_executable()
+            logger.info(
+                "BDD authoring sweep for %s over %d owned glue module(s) "
+                "(python_executable=%s)",
+                task_id,
+                len(owned_glue),
+                python_executable,
+            )
+            result = run_bdd_authoring_sweep(
+                task_id,
+                self.worktree_path,
+                owned_glue,
+                python_executable=python_executable,
+            )
+        except Exception as exc:  # noqa: BLE001 — protect task-work writer
+            logger.warning(
+                "BDD authoring sweep raised %s for %s; treating as skipped.",
+                exc.__class__.__name__,
+                task_id,
+            )
+            return None
+
+        if result is None:
+            return None
+        return result.to_dict()
+
     @staticmethod
     def _extract_invocations_from_result_data(
         result_data: Dict[str, Any],
@@ -10302,6 +10421,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         bdd_results = self._run_bdd_oracle(task_id)
         if bdd_results is not None:
             results["bdd_results"] = bdd_results
+
+        # TASK-AB-BDDAUTHOR01: authoring sweep — the second BDD leg, activated
+        # by authored OWNED glue (artefact presence, no flag). Distinct key;
+        # absent sweep = absent key at every layer.
+        bdd_authoring_sweep = self._run_bdd_authoring_sweep(task_id, results)
+        if bdd_authoring_sweep is not None:
+            results["bdd_authoring_sweep"] = bdd_authoring_sweep
 
         # Filter invalid path entries before validation (TASK-FIX-PV01)
         # Ensures _validate_file_count_constraint sees only real file paths,

@@ -11,9 +11,32 @@ source: docs/retro/autobuild-retro-xref-2026-07-04.md
 
 # Task: BDD authoring sweep (artefact-activated on authored glue)
 
-> **Status note: backlog, NOT scheduled — design-first.** The scoping that
-> keeps `bdd-pending-is-not-failed` intact by construction is the design's
-> load-bearing element; get it reviewed before implementation.
+> **Implemented 2026-07-05 (session following the 2026-07-04 handoff); this
+> file is the tracking record.** Design gate honoured: design doc at
+> `docs/state/TASK-AB-BDDAUTHOR01/design.md`, adversarially reviewed
+> (round 1 REJECT 54/100 — the gate as first designed only ran under
+> `GUARDKIT_COACH_LEGACY=1`; amended to a both-Coach-paths deterministic
+> gate per the `_direct_mode_evidence_gate` precedent, plus evidence-bundle
+> visibility). Landed: `run_bdd_authoring_sweep` + `glue_owned_by_task` +
+> `scenarios_undefined`/`undefined` on `BDDResult` (bdd_runner.py);
+> `AgentInvoker._run_bdd_authoring_sweep` producer;
+> `CoachValidator._check_bdd_authoring_sweep` + legacy `validate()` wiring +
+> `CoachEvidenceBundle.bdd_authoring_sweep`;
+> `AutoBuildOrchestrator._bdd_authoring_sweep_gate` at BOTH Coach call
+> sites. Tests: `tests/unit/orchestrator/quality_gates/test_bdd_authoring_sweep.py`
+> (34); all pinned BDD suites re-run green (95).
+>
+> **AC-003 amended at design review (finding 6):** the sweep's pytest targets
+> are the authored glue MODULES themselves (executing exactly the scenarios
+> they bind), not the `.feature` files — feature-file targets route through
+> the conftest bridge whose glue lookup (env-var/legacy-name) would defeat
+> the per-task isolation AC-006 requires. Undefined-step details therefore
+> carry module classnames rather than `.feature` paths (accepted).
+>
+> **Follow-up noted, not implemented here (operator Q3 "both"):** the
+> planner-side rule (the authoring task must own at least the scenarios it
+> makes executable) is ergonomics for `/feature-plan`; the sweep is the
+> structural defence and is what this task ships.
 
 ## Description
 
@@ -62,34 +85,34 @@ The non-regressing fix is **ownership-scoped, not marker-reclassified**:
 
 ## Acceptance Criteria
 
-- [ ] AC-001 (design gate): a short design doc is reviewed covering: the
+- [x] AC-001 (design gate): a short design doc is reviewed covering: the
       `is_bdd_glue_file` predicate; how the sweep discovers which feature
       files a glue module binds; junit naming; the `scenarios_undefined`
       field's journey through `BDDResult` → `bdd_results` →
       `_check_bdd_results`; and the parallel-wave scoping.
-- [ ] AC-002: the sweep activates by artefact only — a turn whose
+- [x] AC-002: the sweep activates by artefact only — a turn whose
       `files_authored` include pytest-bdd glue. No opt-in flag; turns
       authoring no glue see zero behaviour change.
-- [ ] AC-003: the sweep runs pytest over the glue-bound feature files
+- [x] AC-003: the sweep runs pytest over the glue-bound feature files
       WITHOUT the `-m task_<ID>` filter and writes a junit XML artefact for
       the sweep run.
-- [ ] AC-004: within the sweep only, `StepDefinitionNotFoundError` results
+- [x] AC-004: within the sweep only, `StepDefinitionNotFoundError` results
       are counted under a NEW distinct field `scenarios_undefined`, which is
       blocking (feeds back to the Player naming the undefined steps).
-- [ ] AC-005: the tag-scoped oracle is byte-for-byte unchanged:
+- [x] AC-005: the tag-scoped oracle is byte-for-byte unchanged:
       `_PENDING_MARKERS` untouched; tag-scoped
       `StepDefinitionNotFoundError` still → `scenarios_pending`,
       non-blocking `should_fix`. The pinned tests for
       `bdd-pending-is-not-failed` (`test_pending_step_recorded_distinctly`,
       `test_bdd_pending_approves_with_feedback`) still pass unmodified.
-- [ ] AC-006: the sweep only exercises glue authored by THIS task (per-task
+- [x] AC-006: the sweep only exercises glue authored by THIS task (per-task
       glue naming per `bdd-per-task-glue.md`); in a parallel wave it never
       collects a sibling task's glue module.
-- [ ] AC-007: sweep failures feed back (bounded), never terminate the loop;
+- [x] AC-007: sweep failures feed back (bounded), never terminate the loop;
       a sweep that cannot run (pytest-bdd absent, runner error) surfaces as
       the existing synthesised-failure/absent semantics — never a vacuous
       pass.
-- [ ] AC-008: regression tests: authoring-task-with-undefined-step →
+- [x] AC-008: regression tests: authoring-task-with-undefined-step →
       blocking `scenarios_undefined`; scaffolding task (feature file, no
       glue) → no sweep, pending semantics intact; parallel-wave glue
       isolation.
