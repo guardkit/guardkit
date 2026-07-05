@@ -48,9 +48,15 @@ class TestStartupSdkVersionLog:
         AC: a test that parses the startup log produced by the orchestrator
         on a known-good environment finds a line matching
         `claude-agent-sdk version: <semver>`.
+
+        The known-good environment is simulated by patching
+        importlib.metadata.version (the same seam the fallback test patches),
+        so the test does not depend on the ambient venv having the
+        claude-agent-sdk distribution metadata installed.
         """
-        with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
-            _init_orchestrator()
+        with patch("importlib.metadata.version", return_value="0.1.49"):
+            with caplog.at_level(logging.INFO, logger="guardkit.orchestrator.autobuild"):
+                _init_orchestrator()
 
         semver_lines = [
             record.getMessage()
