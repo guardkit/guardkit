@@ -51,13 +51,17 @@ tailnet access — mitigating, not excusing.
 (`65dc8256`); fleet-memory and fleet-evals HEADs verified clean; run logs
 and worktree evidence files holding the fragment confirmed gitignored.
 
-**Remediation OWED (operator decisions):**
-1. **Rotate the fleet_memory Postgres password** — 14/32 chars public means
-   treat as compromised. Touches: NAS Postgres, `fleet-memory-relay`
-   container env, guardkit/fleet-memory `.env` files, P3/P4 env contracts.
-2. **History rewrite decision** for guardkit main (the fragment persists in
-   pushed history: `cbce5cf25`, checkpoint commits, and 3 later commits) —
-   same call the fleet-evals FinProxy incident forced on 2026-07-03.
+**Remediation status:**
+1. **Password ROTATED 2026-07-05 (Rich)** — the leaked fragment is now inert
+   (14 chars of a dead credential). Consumer updates in progress: the
+   `fleet-memory-relay` container was still holding the old DSN at rotation
+   time (no auth errors yet — idle/pooled) and needs recreating with the new
+   secret; `.env` files and the P3 docker-inspect recovery recipe refresh
+   with it.
+2. **History rewrite** for guardkit main: downgraded from urgent to optional
+   hygiene by the rotation — the fragment in pushed history (`cbce5cf25` and
+   successors) no longer opens anything. Rich's call whether to rewrite for
+   cleanliness.
 
 ## Lessons
 
