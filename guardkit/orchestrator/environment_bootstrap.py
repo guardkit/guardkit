@@ -2736,6 +2736,61 @@ _DEPENDENCY_MANIFEST_NAMES = frozenset(
 # Matches requirements.txt / requirements-dev.txt / requirements/base.txt etc.
 _REQUIREMENTS_RE = re.compile(r"requirements[\w.-]*\.txt$")
 
+# Basename → stack for scoping the per-turn refresh (relevant_stacks). A turn
+# that edits only pyproject.toml must not be BLOCKED by a co-resident stack
+# whose toolchain is absent on the build host (observed: study-tutor
+# FEAT-APP-001 wave 3 — app/pubspec.yaml detected but no `flutter` binary on
+# the GB10; every turn touching pyproject.toml fed back "flutter: [Errno 2]").
+_MANIFEST_STACK_BY_BASENAME = {
+    "pyproject.toml": "python",
+    "uv.lock": "python",
+    "poetry.lock": "python",
+    "package.json": "node",
+    "package-lock.json": "node",
+    "pnpm-lock.yaml": "node",
+    "yarn.lock": "node",
+    "go.mod": "go",
+    "go.sum": "go",
+    "Cargo.toml": "rust",
+    "Cargo.lock": "rust",
+    "pubspec.yaml": "flutter",
+    "pubspec.lock": "flutter",
+}
+
+
+def stacks_for_changed_manifests(changed_paths: Iterable[str]) -> List[str]:
+    """
+    Return the stacks whose dependency manifests appear in ``changed_paths``.
+
+    Companion to :func:`changed_dependency_manifests` (delegates to it, so the
+    basename matching — including repo-qualified ``repo:path`` stripping and
+    the ``requirements*.txt`` → python rule — stays single-sourced). Callers
+    pass the result as ``relevant_stacks`` to
+    :func:`refresh_environment_for_changes` so only the stacks a turn actually
+    touched are essential; failures from other detected stacks are recorded as
+    non-blocking warnings (the semantics ``EnvironmentBootstrapper.bootstrap``
+    already implements).
+
+    Returns
+    -------
+    List[str]
+        De-duplicated, order-preserving stack names; empty when no manifest
+        changed.
+    """
+    stacks: List[str] = []
+    for raw in changed_dependency_manifests(changed_paths):
+        path_part = str(raw)
+        head, sep, tail = path_part.partition(":")
+        if sep and tail and "/" not in head and "\\" not in head:
+            path_part = tail
+        name = Path(path_part).name
+        stack = _MANIFEST_STACK_BY_BASENAME.get(name)
+        if stack is None and _REQUIREMENTS_RE.search(name):
+            stack = "python"
+        if stack is not None and stack not in stacks:
+            stacks.append(stack)
+    return stacks
+
 
 def changed_dependency_manifests(changed_paths: Iterable[str]) -> List[str]:
     """
@@ -2850,6 +2905,7 @@ __all__ = [
     "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
     "changed_dependency_manifests",
+    "stacks_for_changed_manifests",
     "refresh_environment_for_changes",
     "RequiresPythonMismatch",
     "UvSourcesRequireUvError",
