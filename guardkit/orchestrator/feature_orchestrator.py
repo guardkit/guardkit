@@ -1114,6 +1114,17 @@ class FeatureOrchestrator:
                         if self.refresh:
                             self._refresh_worktree(worktree, base_branch)
 
+                        # Re-establish the environment on resume: this early
+                        # return bypasses Phase 1.5, leaving
+                        # _bootstrap_venv_python unset — Coach + smoke gates
+                        # then fall back to PATH pytest (system python) and
+                        # spawn-based tests (sys.executable -m ...) fail with
+                        # ModuleNotFoundError. Both calls are idempotent
+                        # (hash-match skip still resolves the venv
+                        # interpreter via _resolve_skip_venv_python).
+                        self._arrange_uv_sources_symlinks(worktree)
+                        self._bootstrap_environment(worktree, feature=feature)
+
                         return feature, worktree
 
                 # Worktree not found, create new but keep state
@@ -1140,6 +1151,13 @@ class FeatureOrchestrator:
                             # Refresh worktree if user chose update+resume
                             if self.refresh:
                                 self._refresh_worktree(worktree, base_branch)
+
+                            # Same resume-path environment re-establishment
+                            # as the --resume branch above (idempotent).
+                            self._arrange_uv_sources_symlinks(worktree)
+                            self._bootstrap_environment(
+                                worktree, feature=feature
+                            )
 
                             return feature, worktree
                     return self._create_new_worktree(feature, feature_id, base_branch)
