@@ -58,6 +58,12 @@ and worktree evidence files holding the fragment confirmed gitignored.
    time (no auth errors yet — idle/pooled) and needs recreating with the new
    secret; `.env` files and the P3 docker-inspect recovery recipe refresh
    with it.
+   **[✅ CLOSED — verified 2026-07-06 (GB10):** the relay was in fact
+   recreated 2026-07-05 15:12:07 UTC (16:12 BST) — the same minute
+   `deploy/relay/.env.deploy` was edited, four minutes after this note was
+   committed. Confirmed by sha256 comparison of `FLEET_MEMORY_PG_DSN` in the
+   running container's env vs `.env.deploy`: identical. No consumer update
+   remains outstanding; only item 2 (history rewrite, optional) stays open.**]
 2. **History rewrite** for guardkit main: downgraded from urgent to optional
    hygiene by the rotation — the fragment in pushed history (`cbce5cf25` and
    successors) no longer opens anything. Rich's call whether to rewrite for
