@@ -1,8 +1,9 @@
 ---
 id: TASK-AB-ENVTAMPER01
 title: Environment-integrity contract — skip-guard dependency parity probe + product-file sys.modules probe
-status: backlog
+status: design_approved
 created: 2026-07-04T09:38:00Z
+design_approved: 2026-07-07
 priority: high
 tags: [autobuild, environment, bootstrap, sys-modules, tree-sitter, guardkitfactory, cross-repo, design-first]
 complexity: 8
@@ -24,6 +25,16 @@ source: docs/retro/autobuild-retro-xref-2026-07-04.md
 > task's probes; all fixed-in-doc or filed). The v2 fixes materially strengthen AC-005
 > (module-alias forms) and AC-009 (exemption bounded by product-import). **Move to
 > design_approved on Rich's review of that doc**; implement in WS3-S3 (Opus 4.8).
+>
+> **2026-07-07 — DESIGN GATE APPROVED (Rich, decision-queue curation session).**
+> AC-001 discharged; status flipped `backlog` → `design_approved`. Rich reviewed
+> the §5 probe spec — both halves, the RENV-1 resolution-origin check that closes
+> the vendored-stub-directory hole, and the §-intro-item-8 invariant
+> "baseline-read protects the pointer, not the pointee" — and approved the design
+> as sound enough to unlock the build. Design doc:
+> `docs/design/specs/autobuild-reliability/ws3-s2-seam-check-semantics-2026-07-07.md`
+> (commit `a287c7df`, v2 post-adversarial-review; pointer commit `41a0ebe4`).
+> No findings raised. Implementation proceeds in WS3-S3 (Opus 4.8).
 
 ## Description
 
