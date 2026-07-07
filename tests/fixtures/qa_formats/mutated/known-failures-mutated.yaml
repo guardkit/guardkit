@@ -1,0 +1,27 @@
+# MUTATED-BAD fixture (F2) — deliberately broken copy of the lpa ledger.
+# Mutations (each must produce a loud validation error):
+#   1. expected.passed is not an integer ("lots" — an unauditable ledger)
+#   2. first entry missing reason (an unexplained known failure is
+#      normalised failure, exactly what LPA-09 forbids)
+#   3. unknown key `notes` on the second entry (extra=forbid catches typos)
+format_version: "1.0"
+suite_id: lpa-backend-pytest
+framework: pytest
+language: python
+expected:
+  passed: lots
+known_failures:
+  - test_id: "tests/extraction/test_docling_pipeline.py::test_vlm_extraction_smoke"
+    since:
+      date: "2026-07-05"
+      sha: 8980af1
+    owner: rich
+    review_by: "2026-08-01"
+  - test_id: "tests/extraction/test_docling_pipeline.py::test_vlm_model_load"
+    reason: "transformers import fails locally"
+    since:
+      date: "2026-07-05"
+      sha: 8980af1
+    owner: rich
+    review_by: "2026-08-01"
+    notes: "extra key that the schema must refuse"

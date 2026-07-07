@@ -1,0 +1,19 @@
+# MUTATED-BAD fixture (F5) — deliberately broken copy of the study-tutor
+# walk index.
+# Mutations (each must produce a loud validation error):
+#   1. format_version 0.9 — older than the supported N/N-1 window; the
+#      refusal must carry the migration pointer
+#   2. first entry missing artifact (an inspection record pointing at nothing)
+#   3. second entry has an empty checkpoint_or_assertion_id (evidence bound
+#      to no checkpoint is not evidence)
+format_version: "0.9"
+entries:
+  - checkpoint_or_assertion_id: walk-1
+    description: "sign in -> home"
+    inspected_by: "Rich (live) 2026-07-05"
+    verdict: pass
+  - artifact: walk_02.png
+    checkpoint_or_assertion_id: ""
+    description: "start + 2 turns"
+    inspected_by: "Rich (live) 2026-07-05"
+    verdict: pass

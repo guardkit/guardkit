@@ -1,0 +1,62 @@
+# F5 exemplar — index over the §3.6 cross-device walk evidence (walk_01..
+# walk_10), from docs/runbooks/RESULTS-study-tutor-p2-live-acceptance-
+# 2026-07-05.md (10/10 checkpoints observed clean: 9 pre-registered + 1
+# bonus). inspected_by is real: Rich observed live, the Mac session drove
+# and read each screenshot.
+# HONEST CAVEAT (why this format exists): the walk shots lived in the Mac
+# session's scratchpad and were NOT committed — the same durability gap the
+# lpa B0 rescue closed. This index preserves the inspection record; V1's
+# re-drive produces durable artifacts under docs/runbooks/evidence/ and
+# authors the repo's real index beside them.
+format_version: "1.0"
+entries:
+  - artifact: walk_01.png
+    checkpoint_or_assertion_id: walk-1
+    description: "emulator: sign in -> home; real list_sessions over the tailnet returns empty, no connection dialog"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_02.png
+    checkpoint_or_assertion_id: walk-2
+    description: "emulator: start + 2 turns; real Socratic tutoring inside the 15s product deadline"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_03.png
+    checkpoint_or_assertion_id: walk-3
+    description: "Mac curl same student: list_sessions shows the session, status active, turn_count 2"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_04.png
+    checkpoint_or_assertion_id: walk-4
+    description: "Mac curl: turn from the second device gets a real reply continuing the thread"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_05.png
+    checkpoint_or_assertion_id: walk-5
+    description: "Mac curl: resume_session returns 6 turns, strict order, roles alternating, timestamps monotonic"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_06.png
+    checkpoint_or_assertion_id: walk-6
+    description: "emulator home re-list: card shows 'maths, 3 turns' (sees the curl-advanced count)"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_07.png
+    checkpoint_or_assertion_id: walk-7
+    description: "emulator resume: transcript renders all six messages in order incl. the curl-injected pair"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_08.png
+    checkpoint_or_assertion_id: walk-8
+    description: "emulator end session: banner shown, input disabled, End affordance gone, transcript intact (negative space)"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_09.png
+    checkpoint_or_assertion_id: walk-9
+    description: "Mac curl session_status: ended, resumable false, turn_count 3, history preserved"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass
+  - artifact: walk_10.png
+    checkpoint_or_assertion_id: walk-10-bonus
+    description: "bonus: emulator home shows 'No active sessions' — ended session dropped off the resume list"
+    inspected_by: "Rich (live) + Claude Mac session 2026-07-05"
+    verdict: pass

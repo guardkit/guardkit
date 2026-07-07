@@ -1,0 +1,61 @@
+# F4 exemplar — lpa-platform-poc gate registry over the B0-rescued pack
+# (lpa commit 8980af1: qa/gates/gate_phase{1..6}*.py, evidence under
+# qa/gates/evidence-2026-07-05/shots-gate-phase{1..6}/ — note B0's committed
+# paths deviate from its spec path docs/poc/evidence-2026-07-05/; the
+# committed paths are treated as actual).
+# target.base_url_env records the INTENDED contract — the rescued scripts
+# still hard-code BASE (the LPA-02 finding); parameterizing them is gate-pack
+# cleanup, registry-side the env-var name is the contract.
+format_version: "1.0"
+gates:
+  - id: gate-phase1-auth
+    path: qa/gates/gate_phase1_auth.py
+    target: &lpa_target
+      base_url_env: LPA_BASE_URL
+      environment_id: lpa-poc-tailnet
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase1
+    last_green: {date: "2026-07-05", sha: 8980af1}
+  - id: gate-phase2-data
+    path: qa/gates/gate_phase2_data.py
+    target: *lpa_target
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase2
+    last_green: {date: "2026-07-05", sha: 8980af1}
+  - id: gate-phase3-lpa
+    path: qa/gates/gate_phase3_lpa.py
+    target: *lpa_target
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase3
+    last_green: {date: "2026-07-05", sha: 8980af1}
+  - id: gate-phase4-claim
+    path: qa/gates/gate_phase4_claim.py
+    target: *lpa_target
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase4
+    last_green: {date: "2026-07-05", sha: 8980af1}
+  - id: gate-phase5-delegated
+    path: qa/gates/gate_phase5_delegated.py
+    target: *lpa_target
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase5
+    last_green: {date: "2026-07-05", sha: 8980af1}
+  - id: gate-phase6-sweep
+    path: qa/gates/gate_phase6_sweep.py
+    target: *lpa_target
+    preconditions: [suite_vs_ledger]
+    preflight: [login_helper_loads]
+    leak_sweep_manifest_ref: qa/leak-sweep.yaml
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase6
+    last_green: {date: "2026-07-05", sha: 8980af1}

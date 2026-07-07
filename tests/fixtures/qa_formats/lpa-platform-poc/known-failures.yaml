@@ -1,0 +1,29 @@
+# F2 exemplar — lpa-platform-poc backend suite ledger.
+# Source: docs/poc/retros/RETRO-verification-techniques-for-guardkit.md:49-52
+# — "the expected suite outcome is documented ('1021 passed + these 2, for
+# this reason') and every run is compared against the ledger, not against
+# 'all green'". The retro does not pin the two test ids; descriptive ids
+# stand in here and V2 pins the exact node ids in the repo's real instance.
+format_version: "1.0"
+suite_id: lpa-backend-pytest
+framework: pytest
+language: python
+expected:
+  passed: 1021
+known_failures:
+  - test_id: "tests/extraction/test_docling_pipeline.py::test_vlm_extraction_smoke"
+    reason: "transformers import fails in local dev envs (model deps not installed); passes on the GB10 deploy env"
+    env_condition: "local dev env only (no transformers/model weights)"
+    since:
+      date: "2026-07-05"
+      sha: 8980af1
+    owner: rich
+    review_by: "2026-08-01"
+  - test_id: "tests/extraction/test_docling_pipeline.py::test_vlm_model_load"
+    reason: "same transformers-import class as above — local env only, for the same documented reason"
+    env_condition: "local dev env only (no transformers/model weights)"
+    since:
+      date: "2026-07-05"
+      sha: 8980af1
+    owner: rich
+    review_by: "2026-08-01"

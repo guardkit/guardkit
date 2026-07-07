@@ -1,0 +1,26 @@
+# MUTATED-BAD fixture (F3) — deliberately broken copy of the lpa manifest.
+# Mutations (each must produce a loud validation error):
+#   1. deny lists all empty (a sweep that checks for nothing passes vacuously)
+#   2. /transactions has scope "partial" (invalid enum value)
+#   3. /documents is scoped but wired_selector was dropped (the sweep can no
+#      longer know which region is claimed real)
+format_version: "1.0"
+personas:
+  - id: donor-donor
+    login_role: donor
+    credentials_ref: LPA_QA_DONOR_CREDENTIALS
+deny:
+  identity_strings: []
+  count_patterns: []
+  url_patterns: []
+  badge_patterns: []
+surfaces:
+  - route: /transactions
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: partial
+  - route: /documents
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: scoped
+    allowed_mock_regions:
+      - selector: "main .generic-document-manager"
+        reason: "mock by design"
