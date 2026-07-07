@@ -1,0 +1,21 @@
+# F2 · known-failure ledger — the documented expected suite outcome.
+# Every suite run is diffed against this ledger, never against "all green":
+# an un-ledgered failure fails the gate; an unexpectedly-PASSING entry also
+# fails (stale ledger is a finding).
+# Written by human/Coach at triage time only — never by the Player mid-build.
+# Validate: guardkit qa validate known-failures qa/known-failures.yaml
+format_version: "1.0"
+suite_id: default-suite          # PLACEHOLDER — name this repo's suite
+framework: pytest                # pytest | flutter_test | dotnet_test | jest | ...
+language: python
+expected:
+  passed: 0                      # PLACEHOLDER — the documented green count
+known_failures: []
+# known_failures entry shape:
+#   - test_id: tests/test_x.py::test_y
+#     reason: why this fails, and why that is acceptable for now
+#     env_condition: local env only        # optional
+#     since: {date: "2026-01-01", sha: abcdef12}
+#     owner: who owns retiring this entry
+#     review_by: "2026-02-01"
+#     tracking_ref: TASK-XXXX              # optional

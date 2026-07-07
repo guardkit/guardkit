@@ -1,0 +1,31 @@
+# F3 · leak-sweep manifest — which surfaces are claimed REAL, and what mock
+# strings/patterns must never appear inside a claimed-real scope.
+# Any mock identity, placeholder URL, or fake count found in a claimed-real
+# scope is a red; a claimed-real surface with no entry here blocks the gate.
+# Validate: guardkit qa validate leak-sweep qa/leak-sweep.yaml
+format_version: "1.0"
+personas:
+  - id: default-user             # PLACEHOLDER — a real login persona
+    login_role: user
+    credentials_ref: QA_DEFAULT_USER_CREDENTIALS   # env var / register KEY, never a value
+deny:
+  identity_strings:
+    - "Test User"                # PLACEHOLDER — this repo's mock identities
+  count_patterns: []
+  url_patterns:
+    - "example.com"
+  badge_patterns: []
+surfaces:
+  - route: /                     # PLACEHOLDER — a claimed-real surface
+    claimed_by: TASK-0000
+    scope: full_page
+    allowed_mock_regions: []
+    extra_deny: []
+# scoped surface example (only the wired region is swept):
+#   - route: /documents
+#     claimed_by: TASK-0000
+#     scope: scoped
+#     wired_selector: "main .wired-region"
+#     allowed_mock_regions:
+#       - selector: ".generic-doc-manager"
+#         reason: mock by design until FEAT-XXXX lands
