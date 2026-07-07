@@ -61,7 +61,11 @@ every consumer — the same mechanism Session C's loader already standardises.
    a mystery (per Session C's `TemplateSourceError` design).
 6. **Acceptance gate (CI-pinned):** clean venv → build wheel → install → `guardkit-py init
    default` produces qa/ stubs and resolves a stack template; runs in CI so the gap cannot
-   silently reopen.
+   silently reopen. Also exercised via the ephemeral-consumer path (`uvx --from <wheel>
+   guardkit-py init` or pipx equivalent) — the harshest consumer: no install.sh, no
+   `~/.agentecflow`, no repo checkout, so it proves the wheel is fully self-contained.
+   (Consumer tooling stays the user's choice — pip/uv/uvx all consume the same wheel; this
+   record decides the wheel's contents, not the consumer.)
 
 ## 3 · Consequences
 
