@@ -1,6 +1,6 @@
 # DECISION-DF-011 — Template data ships inside the wheel, under the guardkit namespace
 
-**Status:** CANDIDATE — drafted 2026-07-08 for Rich's curation (P11 modernization-review follow-up, Fable). **NOT filed in REGISTER.md**; number tentative (DF-005 reserved, DF-010 = the A2A candidate ahead in the queue). Accept/amend/decline at the register.
+**Status:** ACCEPTED — by Rich, 2026-07-08 (in-session curation with the P11 follow-up Fable session; drafted same day). Filed in REGISTER.md. **Rich's recorded rationale:** prior painful experience with venv management makes the self-contained wheel + ephemeral-consumer path (uvx/pipx) the valued property; pip preferred as the baseline channel; consumer tooling stays the user's choice per §2.6.
 **Scope:** guardkit distribution/packaging only. Additive; no pinned byte changes; integration seam v1/v1.1 preserved (this is the packaging change Session C's design names as the wheel-install remediation, not a seam change).
 **Consumer:** Session C template loader (specialist-agent, `importlib.resources` over the installed distribution), `guardkit init` / `qa_scaffold` / `conftest_bridge` resolution, any future non-editable (container/wheel) deployment of guardkit.
 **Companions:** DF-007 (unchanged — qa/ *instances* remain repo-owned; this ships stubs/templates only), namespace-hygiene rule (`.claude/rules/namespace-hygiene.md` — binding constraint §2.2), WS3 calibrated baseline (untouched — exclusion §2.4).
