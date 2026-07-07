@@ -581,6 +581,12 @@ who re-freezes. Overlapping findings are consolidated; source finding IDs given.
 
 ## 9. Candidate decision/ADR filings for Rich
 
+> **2026-07-08 update:** ADR-A and ADR-B are now DRAFTED as full decision candidates for the
+> register queue — `docs/decisions/DECISION-DF-011-template-data-ships-in-the-wheel-under-the-guardkit-namespace.md`
+> and `docs/decisions/DECISION-DF-012-planning-commands-emit-the-pass-bar-v2-emission-contract.md`
+> (CANDIDATE status, not filed in REGISTER.md; numbers tentative behind the DF-010 A2A candidate).
+> DF-012 carries PB-14 and the ADR-D batching as binding riders. ADR-C/ADR-D remain listed-only.
+
 1. **ADR-A — Template-data packaging & distribution** (PB-1 + PB-3 manifest): wheel ships
    template data under the guardkit namespace via importlib.resources (Session C's own
    mechanism); one provenance manifest serves prune, doctor, and packaging include-list.
