@@ -15,6 +15,15 @@ source: docs/retro/autobuild-retro-xref-2026-07-04.md
 > (guardkit + guardkitfactory). Requires a design pass before
 > implementation; do not pick up via plain `/task-work` without
 > `--design-only` first.
+>
+> **2026-07-07 — DESIGN PASS COMPLETE (WS3-S2).** The AC-001 design gate is
+> discharged by `docs/design/specs/autobuild-reliability/ws3-s2-seam-check-semantics-2026-07-07.md`
+> §5 (both halves: skip-guard parity probe + `sys.modules` probe), §7 (adversary map),
+> §8 (must-fire/must-NOT-fire fixtures), and the §5.4 AC-coverage map. Adversarially
+> reviewed in-session (4 agents, 46 findings, ledger §9 — 10 were RENV-n against this
+> task's probes; all fixed-in-doc or filed). The v2 fixes materially strengthen AC-005
+> (module-alias forms) and AC-009 (exemption bounded by product-import). **Move to
+> design_approved on Rich's review of that doc**; implement in WS3-S3 (Opus 4.8).
 
 ## Description
 
