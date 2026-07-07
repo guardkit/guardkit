@@ -20,6 +20,7 @@ from guardkit.cli.autobuild import autobuild
 from guardkit.cli.feature import feature
 from guardkit.cli.init import init
 from guardkit.cli.memory import memory
+from guardkit.cli.qa import qa
 from guardkit.cli.review import review
 from guardkit.cli.system_plan import system_plan
 from guardkit.cli.system_context import context_switch
@@ -112,6 +113,9 @@ cli.add_command(init)
 
 # Add Memory command group
 cli.add_command(memory)
+
+# Add QA command group (tier-1 verification formats, WS2 B1)
+cli.add_command(qa)
 
 # Add Review command
 cli.add_command(review)
