@@ -1,0 +1,78 @@
+# F3 exemplar — lpa-platform-poc leak-sweep manifest.
+# Source: the hard-coded MOCK_NAMES deny-list + DONOR_PAGES/ATTORNEY_PAGES
+# scope map in qa/gates/gate_phase6_sweep.py (B0 rescue, lpa commit 8980af1)
+# — this file is that knowledge as F3 data. The /documents pages check only
+# their wired LPA card region; the generic document manager below stays mock
+# by design (lpa plan §4). credentials are REFS (env var names) — the
+# script's inline passwords are exactly what the manifest retires.
+format_version: "1.0"
+personas:
+  - id: donor-donor
+    login_role: donor
+    credentials_ref: LPA_QA_DONOR_CREDENTIALS
+  - id: attorney-athena
+    login_role: attorney
+    credentials_ref: LPA_QA_ATTORNEY_CREDENTIALS
+deny:
+  identity_strings:
+    - Paul Jones
+    - John Smith
+    - James Guest
+    - Sarah Johnson
+    - Michael Chen
+    - Emma Brown
+    - David Johnson
+    - Sarah Patel
+  count_patterns:
+    - "of 156"                    # the fake "of 156 transactions" count
+  url_patterns: []
+  badge_patterns:
+    - "^\\d+$"                    # bare numeric header/bell badge (fake 11/3/1)
+surfaces:
+  - route: /insights
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /accounts
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /transactions
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /attorneys
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /activity
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /documents
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: scoped
+    wired_selector: "main >> .space-y-6 >> nth=0 >> css=div.border-finproxy-blue-200"
+    allowed_mock_regions:
+      - selector: "main .generic-document-manager"
+        reason: "generic document manager below the LPA card stays mock by design (lpa plan §4)"
+  - route: /attorney-accounts
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /attorney-transactions
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /attorney-activity
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /attorney-insights
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+  - route: /attorney-documents
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: scoped
+    wired_selector: "main >> .space-y-6 >> nth=0 >> css=div.border-finproxy-blue-200"
+    allowed_mock_regions:
+      - selector: "main .generic-document-manager"
+        reason: "generic document manager stays mock by design (lpa plan §4)"
+  - route: /attorney-claim
+    claimed_by: FEAT-POC-DEMO-0705
+    scope: full_page
+    # "Paul Jones" legitimately remains on the attorney side as a mock DONOR
+    # in the donor-switcher (phase-5 scope) — but never as the signed-in
+    # identity; the phase-1 gate carries that check.

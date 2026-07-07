@@ -1,0 +1,27 @@
+# F4 exemplar — study-tutor gate registry.
+# The registered gate is the live contract suite (app/test_live/ — the same
+# 35 test bodies as test/contract/, imported not copied, run through
+# LiveContractBackend against the deployed GB10 adapter). It honours the
+# gate contract at the suite level: exit 0 = pass, non-zero enumerates
+# failing tests. Source: app/test_live/README.md +
+# docs/runbooks/RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md.
+# preflight entries encode the RESULTS campaign's hard-won rules: probe the
+# server before burning a 20-minute run; warm the model before timed runs
+# (cold loads ~22-66s, once >120s); require a quiet GPU (attempts 3-4 lost
+# to llama-swap eviction under a concurrent LPA workload).
+format_version: "1.0"
+gates:
+  - id: live-contract-suite
+    path: app/test_live
+    target:
+      base_url_env: API_BASE_URL
+      environment_id: gb10-dev-8100
+    preconditions:
+      - suite_vs_ledger          # hermetic 125 green vs qa/known-failures.yaml first
+    preflight:
+      - server_health_probe      # single curl turn: shape + latency before the run
+      - model_warm_up_turn       # throwaway turn absorbs the cold load
+      - gpu_quiet_window         # reservation honoured (multi-tenant GB10)
+    pass_bar_ref: qa/pass-bar-p2-wave-7.yaml
+    evidence_dir_pattern: docs/runbooks/evidence/p2-live-acceptance-{date}
+    last_green: {date: "2026-07-05", sha: aa94365}

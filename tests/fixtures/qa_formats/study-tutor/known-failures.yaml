@@ -1,0 +1,13 @@
+# F2 exemplar — study-tutor hermetic suite ledger.
+# Source: docs/runbooks/RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md
+# — hermetic suite 125/125 at acceptance. An EMPTY known_failures list is the
+# point of this exemplar: a fully-green suite still documents its expected
+# outcome, so the ledger diff catches a new failure as a diff (and a drop in
+# the passed count as a diff), never a shrug.
+format_version: "1.0"
+suite_id: app-hermetic
+framework: flutter_test
+language: dart
+expected:
+  passed: 125
+known_failures: []

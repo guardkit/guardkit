@@ -1,0 +1,39 @@
+# F1 exemplar — study-tutor phase-2 live acceptance (p2-wave-7).
+# Source: the pre-registered success bar quoted verbatim in
+# docs/runbooks/RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md ("live
+# contract suite green against the real adapter AND the fake (same
+# assertions) + §3.6 walk clean + full hermetic suite green with pre-phase
+# tests unmodified in substance") and the retro's L1 layer. Retro-fitted from
+# that committed L1 text (B1 kickoff); V1 authors the repo's real in-repo
+# instance. registered_at pins the phase-2 range start (retro evidence base:
+# git history 4be98b2^..aa94365 — the bar was in the build plan before the
+# work).
+format_version: "1.0"
+task_id: p2-wave-7
+registered_at:
+  sha: 4be98b2
+  date: "2026-07-04"
+preconditions:
+  - suite_green_vs_ledger      # hermetic 125/125 (flutter analyze + test)
+  - analyze_clean
+  - build_artifact             # flutter build apk --debug per wave
+criteria:
+  - id: AC-HERMETIC
+    text: "Full hermetic suite green (125 tests incl. the 35 contract tests via FakeContractBackend), with pre-phase tests unmodified in substance"
+    class: machine
+    evidence_kind: log
+  - id: AC-LIVE-SUITE
+    text: "Live contract suite green: the SAME 35 test bodies (imported, not copied) pass through LiveContractBackend against the deployed GB10 adapter"
+    class: machine
+    evidence_kind: log
+  - id: AC-WALK
+    text: "§3.6 cross-device walk clean: start + 2 turns on the emulator, curl witness from the Mac (list/turn/resume), re-resume shows all six messages in order, end, status ended/resumable:false — every step observed"
+    class: operator
+    evidence_kind: operator_signoff
+    runbook_ref: docs/runbooks/RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md
+negative_paths:
+  - wrong_credential            # invalid dev token -> 401 (s3_s9_authentication)
+  - anonymous_deep_link         # missing token -> 401, no session leakage
+  - post_logout_401             # ended session: resumable:false, input disabled, affordance gone
+  - unauthorized_403_ui         # other student's session denied (s5_ownership)
+  - dependency_down_degradation # backend unreachable -> connection dialog, no crash

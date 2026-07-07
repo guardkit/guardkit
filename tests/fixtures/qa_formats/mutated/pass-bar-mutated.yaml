@@ -1,0 +1,23 @@
+# MUTATED-BAD fixture (F1) — deliberately broken copy of the lpa pass bar.
+# Mutations (each must produce a loud validation error):
+#   1. registered_at removed (the bar is no longer pinned to a commit)
+#   2. negative_paths missing post_logout_401 + dependency_down_degradation
+#      (violates the required minimum set)
+#   3. operator criterion without runbook_ref (silently-droppable criterion)
+format_version: "1.0"
+task_id: FEAT-POC-DEMO-0705
+preconditions:
+  - suite_green_vs_ledger
+criteria:
+  - id: GATE-1-AUTH
+    text: "Real Keycloak login shows the real /me name"
+    class: machine
+    evidence_kind: screenshot
+  - id: OPS-DEMO-LOGINS
+    text: "All 10 demo personas log in"
+    class: operator
+    evidence_kind: operator_signoff
+negative_paths:
+  - wrong_credential
+  - anonymous_deep_link
+  - unauthorized_403_ui

@@ -1,0 +1,36 @@
+# F3 exemplar — study-tutor leak-sweep manifest (mobile app: "routes" are
+# the app's logical screens; the sweep runs through the walk driver rather
+# than Playwright — the manifest is stack-blind by design).
+# Deny strings are the FakeSessionApi canned tutor replies
+# (app/lib/fakes/fake_session_api.dart cannedReplies): a canned fake reply
+# rendered on a live screen means the shipping composition wired the fake —
+# exactly the composition leak the composition_test.dart assertion guards
+# structurally (ST-04). Personas are the dev token table entries from
+# app/test_live/README.md; credentials are REFS, never values.
+format_version: "1.0"
+personas:
+  - id: lilymay
+    login_role: student
+    credentials_ref: STUDY_TUTOR_DEV_TOKEN_LILYMAY
+  - id: alex
+    login_role: student
+    credentials_ref: STUDY_TUTOR_DEV_TOKEN_ALEX
+deny:
+  identity_strings:
+    - "Let's break that down together — what do you already know?"
+    - "Good thinking. Walk me through your reasoning step by step."
+    - "Nearly there — check the last step once more."
+    - "Exactly right! Want to try a slightly harder one?"
+  count_patterns: []
+  url_patterns: []
+  badge_patterns: []
+surfaces:
+  - route: home
+    claimed_by: p2-wave-7
+    scope: full_page
+  - route: session
+    claimed_by: p2-wave-7
+    scope: full_page
+  - route: transcript
+    claimed_by: p2-wave-7
+    scope: full_page

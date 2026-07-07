@@ -1,0 +1,55 @@
+# F5 exemplar — index over lpa-platform-poc qa/gates/evidence-2026-07-05/
+# (B0 rescue, lpa commit 8980af1; the dir holds the committed shots across
+# shots-gate-phase{1..6}). Representative entries here — one per gate plus
+# the negative-path shots; V2 authors the repo's complete in-repo index.
+# Artifact paths are relative to the evidence dir (the index's own home).
+# inspected_by is set because these shots WERE opened and read during the
+# 2026-07-05 live-gate push (LPA-07: an uninspected-evidence verdict is
+# invalid).
+format_version: "1.0"
+entries:
+  - artifact: shots-gate-phase1/donor-donor-insights.png
+    checkpoint_or_assertion_id: GATE-1-AUTH
+    description: "donor-donor logged in via real Keycloak; /insights shows the real /me name"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase1/anon-accounts-redirects-to-keycloak.png
+    checkpoint_or_assertion_id: anonymous_deep_link
+    description: "anonymous deep link to /accounts redirects to the Keycloak login"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase1/after-logout-keycloak-login.png
+    checkpoint_or_assertion_id: post_logout_401
+    description: "after logout, protected routes land on Keycloak login, not a stale session"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase2/transactions.png
+    checkpoint_or_assertion_id: GATE-2-DATA
+    description: "donor /transactions renders real synced rows"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase3/05-confirmed.png
+    checkpoint_or_assertion_id: GATE-3-LPA
+    description: "LPA extraction review confirmed; real rules on screen"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase4/05-claim-wrong-code.png
+    checkpoint_or_assertion_id: wrong_credential
+    description: "attorney claim with a wrong invite code is rejected"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase4/07-donor-list-andrew-active.png
+    checkpoint_or_assertion_id: GATE-4-CLAIM
+    description: "correct claim activates the attorney on the donor's list"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase5/02-donor-switcher-real.png
+    checkpoint_or_assertion_id: GATE-5-DELEGATED
+    description: "attorney donor-switcher shows the real donor; delegated views live"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass
+  - artifact: shots-gate-phase6/attorney-accounts.png
+    checkpoint_or_assertion_id: GATE-6-SWEEP
+    description: "attorney accounts surface clean of all eight mock identities and fake counts"
+    inspected_by: "operator session 2026-07-05 (lpa live-gate push)"
+    verdict: pass

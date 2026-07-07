@@ -1,0 +1,53 @@
+# F1 exemplar — lpa-platform-poc, retro-fitted over the six-gate demo-ready
+# pack (B0 rescue, lpa commit 8980af1: qa/gates/gate_phase{1..6}*.py).
+# Source: the gate scripts' own docstrings + docs/poc/retros/
+# RETRO-verification-techniques-for-guardkit.md. This is a guardkit-side
+# exemplar INSTANCE (fixture repo is read-only in B1); V2 authors the repo's
+# real in-repo instance. registered_at is the B0 rescue pin — the real
+# pass bar predated the gates as session prompts; the committed pack is the
+# earliest durable pin available.
+format_version: "1.0"
+task_id: FEAT-POC-DEMO-0705
+registered_at:
+  sha: 8980af1
+  date: "2026-07-05"
+preconditions:
+  - suite_green_vs_ledger      # 1021 passed + the 2 ledgered transformers-import failures
+  - analyze_clean
+  - build_artifact             # vite build (import/bundle breakage layer)
+criteria:
+  - id: GATE-1-AUTH
+    text: "Real Keycloak login (server-side flow) lands each persona on its SPA page showing the real /me first+last name; no mock identity presented as the signed-in user"
+    class: machine
+    evidence_kind: screenshot
+  - id: GATE-2-DATA
+    text: "Donor insights/accounts/transactions render real Moneyhub-synced data (self-calibrated against /api values fetched in the same authed session)"
+    class: machine
+    evidence_kind: screenshot
+  - id: GATE-3-LPA
+    text: "LPA extraction flow drives card -> extraction progress -> review-needed -> confirmed -> real POA details on screen"
+    class: machine
+    evidence_kind: screenshot
+  - id: GATE-4-CLAIM
+    text: "Attorney invite/claim journey completes: invite code issued, wrong code rejected, correct claim activates the attorney on the donor's list"
+    class: machine
+    evidence_kind: screenshot
+  - id: GATE-5-DELEGATED
+    text: "Delegated attorney views (accounts/transactions/flags/audit) show the donor's real data via the donor switcher"
+    class: machine
+    evidence_kind: screenshot
+  - id: GATE-6-SWEEP
+    text: "No mock identity, fake count, or numeric badge appears on any wired surface as either persona; audit pages show real rows"
+    class: machine
+    evidence_kind: screenshot
+  - id: OPS-DEMO-LOGINS
+    text: "All 10 demo personas log in and land on their role-correct surface ahead of the HSBC demo"
+    class: operator
+    evidence_kind: operator_signoff
+    runbook_ref: docs/demo_logins.md
+negative_paths:
+  - wrong_credential            # gate_phase4: 05-claim-wrong-code
+  - anonymous_deep_link         # gate_phase1: anon-accounts-redirects-to-keycloak
+  - post_logout_401             # gate_phase1: after-logout-keycloak-login
+  - unauthorized_403_ui         # cross-persona route access (donor page as attorney)
+  - dependency_down_degradation # Moneyhub sandbox down -> degraded, not crashed

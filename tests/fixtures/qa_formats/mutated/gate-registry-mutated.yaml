@@ -1,0 +1,24 @@
+# MUTATED-BAD fixture (F4) — deliberately broken copy of the lpa registry.
+# Mutations (each must produce a loud validation error):
+#   1. first gate missing pass_bar_ref (a gate with no bar to gate against)
+#   2. target carries a hard-coded `url` key instead of base_url_env only
+#      (extra=forbid — the LPA-02 anti-pattern must not sneak back as data)
+#   3. last_green.date malformed ("July 5th" — not mechanically auditable)
+format_version: "1.0"
+gates:
+  - id: gate-phase1-auth
+    path: qa/gates/gate_phase1_auth.py
+    target:
+      base_url_env: LPA_BASE_URL
+      environment_id: lpa-poc-tailnet
+    preconditions: [suite_vs_ledger]
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase1
+  - id: gate-phase6-sweep
+    path: qa/gates/gate_phase6_sweep.py
+    target:
+      base_url_env: LPA_BASE_URL
+      environment_id: lpa-poc-tailnet
+      url: "https://promaxgb10-41b1.tailebf801.ts.net"
+    pass_bar_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-gate-phase6
+    last_green: {date: "July 5th", sha: 8980af1}
