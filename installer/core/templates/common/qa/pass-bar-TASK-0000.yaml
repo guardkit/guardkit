@@ -1,0 +1,33 @@
+# F1 · pass-bar block — the observable success bar, committed BEFORE
+# implementation (registered_at must predate implementation commits).
+# Acceptance is evaluated against this text, never against the implementer's
+# memory of intent. Criteria are observable BEHAVIOUR, not activity.
+# This stub is an example — real pass bars are written per task at spec/plan
+# time (headless /feature-spec + /feature-plan emit them).
+# Validate: guardkit qa validate pass-bar qa/pass-bar-TASK-0000.yaml
+format_version: "1.0"
+task_id: TASK-0000               # PLACEHOLDER
+registered_at:
+  sha: "00000000"                # the commit that pinned this bar
+  date: "2026-01-01"
+preconditions:
+  - suite_green_vs_ledger
+  - analyze_clean
+  - build_artifact
+criteria:
+  - id: AC-001
+    text: "PLACEHOLDER: an observable behaviour, e.g. 'logging in as X shows dashboard Y within Zs'"
+    class: machine               # machine | operator
+    evidence_kind: screenshot    # screenshot | json | log | operator_signoff
+  - id: AC-OPS-001
+    text: "PLACEHOLDER: an operator-verified behaviour"
+    class: operator
+    evidence_kind: operator_signoff
+    runbook_ref: docs/runbooks/RUNBOOK-operator-handoff.md   # required for operator class
+negative_paths:                  # the required minimum set — all five
+  - wrong_credential
+  - anonymous_deep_link
+  - post_logout_401
+  - unauthorized_403_ui
+  - dependency_down_degradation
+# checkpoint_list_ref: qa/walk-TASK-0000.yaml   # F15 walk checkpoints, if the feature walks

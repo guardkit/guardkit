@@ -1,0 +1,20 @@
+# F4 · gate-script registry — this repo's durable, named live-gate scripts.
+# Gate-script CONTRACT: exit 0 = pass; non-zero MUST enumerate failures in a
+# JSON results envelope (assertion id, observed/expected, evidence ref).
+# Scripts are durable, named products in the repo — never scratch files.
+# The live-gate runner executes ONLY registered gates.
+# Validate: guardkit qa validate gate-registry qa/gates/registry.yaml
+format_version: "1.0"
+gates:
+  - id: smoke                    # PLACEHOLDER — this repo's first real gate
+    path: qa/gates/gate_smoke.py
+    target:
+      base_url_env: QA_BASE_URL  # env var NAME — never a hard-coded URL
+      environment_id: local-dev
+    preconditions:
+      - suite_vs_ledger
+    preflight:
+      - login_helper_loads
+    pass_bar_ref: qa/pass-bar-TASK-0000.yaml
+    evidence_dir_pattern: qa/gates/evidence-{date}/shots-smoke
+    # last_green: {date: "2026-01-01", sha: abcdef12}   # set on first green run

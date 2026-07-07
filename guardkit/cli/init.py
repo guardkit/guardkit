@@ -44,6 +44,7 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from guardkit.templates.conftest_bridge import install_features_conftest_bridge
+from guardkit.templates.qa_scaffold import install_qa_scaffold
 from guardkit.templates.resolver import (
     _get_templates_base_dir as _get_templates_base_dir,
     _get_user_templates_dir as _get_user_templates_dir,
@@ -769,6 +770,15 @@ async def _cmd_init(
     # do not use task-scoped BDD, and never clobbers an existing conftest.
     if install_features_conftest_bridge(project_dir):
         console.print("  [green]Installed features/conftest.py BDD bridge[/green]")
+
+    # Step 1.0c: Scaffold the tier-1 QA format stubs (WS2 B1, 2026-07-07).
+    # Per-file skip — never clobbers a repo's existing qa/ instances.
+    qa_files = install_qa_scaffold(project_dir)
+    if qa_files:
+        console.print(
+            f"  [green]Scaffolded qa/ format stubs ({len(qa_files)} files — "
+            f"see qa/README.md)[/green]"
+        )
 
     # Step 2 (optional): Interactive project setup -> CLAUDE.md
     if interactive:
