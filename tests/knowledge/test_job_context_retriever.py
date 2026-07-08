@@ -2522,7 +2522,16 @@ def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage
             captured["request"] = kw
 
     async def _fake_search(request, store):
-        return ["r1", "r2"]
+        # Contract-shaped items: search() reads .score and .value dict
+        # (natural_key/content) for per-item retrieval logging (FEAT-ABL-001).
+        return [
+            types.SimpleNamespace(
+                score=0.9, value={"natural_key": "r1", "content": "result one"}
+            ),
+            types.SimpleNamespace(
+                score=0.8, value={"natural_key": "r2", "content": "result two"}
+            ),
+        ]
 
     class _FakeAssembly:
         pass
