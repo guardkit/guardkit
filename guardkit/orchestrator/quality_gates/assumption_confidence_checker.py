@@ -1,6 +1,7 @@
 """Assumption-confidence warn-mode gate (TASK-FIX-RWOP1.4a).
 
-``installer/core/commands/feature-spec.md:337`` declares that the Coach
+The "Gating rule" paragraph in ``installer/core/commands/feature-spec.md``
+(under the "Confidence levels" table in Phase 5) declares that the Coach
 "is expected to verify all low-confidence assumptions before accepting
 the specification." Before this module, no code enforced that claim —
 the Coach validator had no producer writing a Coach-consumable verdict,

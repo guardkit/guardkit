@@ -110,7 +110,7 @@ from installer.core.commands.lib.phase_execution import (
 )
 
 # TASK-FIX-RWOP1.4a: Assumption-confidence warn-mode gate on the producer
-# path. feature-spec.md:337 claims the Coach verifies low-confidence
+# path. feature-spec.md's "Gating rule" claims the Coach verifies low-confidence
 # assumptions before accepting a spec, but before this wire no producer
 # wrote a Coach-consumable verdict — same "runner without producer" shape
 # as TASK-FIX-RWOP1.3.1 (R5 precedent). Coach surfaces the block as a
@@ -10509,8 +10509,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
         # TASK-FIX-RWOP1.4a: assumption-confidence warn-mode gate on the
         # producer side. Coach reads unconfirmed_low_confidence_assumptions
-        # and surfaces it as a non-blocking warning (see feature-spec.md:337
-        # for the prose claim this wire validates). Same fix-shape as the
+        # and surfaces it as a non-blocking warning (see feature-spec.md's
+        # "Gating rule" for the prose claim this wire validates). Same fix-shape as the
         # 1.3.1 agent_invocations gate; warn-mode per TASK-FIX-RWOP1.4
         # Part A decision — escalation to block-mode is a separate task.
         # Lazy import — see the comment on the top-of-file import block.

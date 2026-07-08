@@ -2891,7 +2891,7 @@ class CoachValidator:
         )
 
         # 5.65. Unconfirmed low-confidence assumptions (TASK-FIX-RWOP1.4a).
-        # Warn-mode gate: feature-spec.md:337 says Coach verifies
+        # Warn-mode gate: feature-spec.md's "Gating rule" says Coach verifies
         # low-confidence assumptions before accepting a spec. The producer
         # (AgentInvoker._write_task_work_results) writes the block;
         # here we surface it as a non-blocking warning so the human
@@ -8763,7 +8763,7 @@ class CoachValidator:
             "description": (
                 f"{row_count} low-confidence assumption(s) in features/**/"
                 f"_assumptions.yaml have no 'human_response: confirmed' entry. "
-                f"feature-spec.md:337 says the Coach verifies these before "
+                f"feature-spec.md's \"Gating rule\" says the Coach verifies these before "
                 f"accepting a spec — please review before merging. "
                 f"Unconfirmed IDs: {', '.join(row_ids)}."
             ),
