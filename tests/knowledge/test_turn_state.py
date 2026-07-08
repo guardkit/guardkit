@@ -1864,8 +1864,12 @@ class TestTurnStateRealSeam:
         as migrate and the real episode was built.
         """
         import types as _types
+
+        # nats-core (the `memory` extra's [tool.uv.sources] sibling) is not
+        # installed in CI; skip this real-publish-seam test when it is absent.
+        pytest.importorskip("nats_core")
         from guardkit.knowledge.turn_state_operations import capture_turn_state
-        from nats_core import MemoryEpisodeV1  # importable in this env
+        from nats_core import MemoryEpisodeV1
 
         captured: dict = {}
 

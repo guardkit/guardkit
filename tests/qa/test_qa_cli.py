@@ -50,7 +50,10 @@ def test_validate_missing_file_exits_nonzero(tmp_path: Path) -> None:
         qa, ["validate", "pass-bar", str(tmp_path / "nope.yaml")]
     )
     assert result.exit_code == 1
-    assert "file not found" in result.output
+    # Rich wraps the message at the terminal width (80 cols under CliRunner in
+    # CI), which can split "file not found" across a line. Normalise whitespace
+    # so the assertion is width-independent.
+    assert "file not found" in " ".join(result.output.split())
 
 
 def test_schema_export_stdout() -> None:
