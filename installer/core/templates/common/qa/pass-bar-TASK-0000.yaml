@@ -5,11 +5,17 @@
 # This stub is an example — real pass bars are written per task at spec/plan
 # time (headless /feature-spec + /feature-plan emit them).
 # Validate: guardkit qa validate pass-bar qa/pass-bar-TASK-0000.yaml
-format_version: "1.0"
+format_version: "2.0"
 task_id: TASK-0000               # PLACEHOLDER
 registered_at:
   sha: "00000000"                # the commit that pinned this bar
   date: "2026-01-01"
+# PB-14: does this feature expose an auth surface (login/session/authz)?
+# true  -> all five negative_paths below are mandatory (this stub is true).
+# false -> only dependency_down_degradation is required; drop the four auth
+#          paths for an authless CLI/library/pipeline feature (do NOT fabricate
+#          auth paths you have no surface for). Required — no default; declare it.
+auth_surface_bearing: true
 preconditions:
   - suite_green_vs_ledger
   - analyze_clean
