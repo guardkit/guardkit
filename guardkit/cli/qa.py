@@ -1,18 +1,21 @@
-"""``guardkit qa`` — QA format validation + JSON-Schema export (WS2 session B1).
+"""``guardkit qa`` — QA format validation + the live-gate runner (WS2 B1 + B3).
 
-v1 surface (scope-design §3 CLI table — the remaining subcommands land later:
-``live-gate``/``walk`` in B3/B5, ``mutate``/``probe-boundaries`` in B6):
+v1 surface (scope-design §3 CLI table — ``walk`` (B5) + ``mutate`` /
+``probe-boundaries`` (B6) land later):
 
     guardkit qa validate <kind> <path>     # exit 0 valid, 1 invalid (loud)
     guardkit qa schema <kind> [--out F]    # JSON-Schema export
     guardkit qa kinds                      # list known kinds
+    guardkit qa live-gate --feature <id> --target <env> [--gates ..] [--campaign]
 
-No enforcement lives here — validation is on-demand; the gates that REFUSE on
-missing/invalid instances are session B2's deliverable.
+``validate``/``schema``/``kinds`` are on-demand format tools (no enforcement —
+that is B2). ``live-gate`` runs the repo's registered F4 gates and emits the
+results envelope on stdout for the forge adapter (scope-design §3).
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +32,18 @@ from guardkit.qa.formats import (
 )
 
 console = Console()
+
+#: Exit codes for ``live-gate`` — distinct non-1 codes for the attribution
+#: verdicts so the forge adapter can tell a feature failure (1) from an
+#: instrument/environment fault (3/4), which per DF-017 never count against the
+#: feature. (The authoritative verdict is the envelope's ``verdict`` field on
+#: stdout; the exit code is a convenience mirror.)
+_VERDICT_EXIT_CODES = {
+    "pass": 0,
+    "fail": 1,
+    "instrument_fail": 3,
+    "environment_fail": 4,
+}
 
 
 @click.group()
@@ -48,7 +63,7 @@ def validate(kind: str, path: Path) -> None:
     try:
         instance = validate_instance(kind, path)
     except QAFormatError as exc:
-        console.print(f"[bold red]✗ VALIDATION FAILED[/bold red]")
+        console.print("[bold red]✗ VALIDATION FAILED[/bold red]")
         # Print the full error verbatim — loud, field-level, never summarized.
         console.print(str(exc), highlight=False)
         sys.exit(1)
@@ -81,6 +96,65 @@ def schema(kind: str, out_path: Path | None) -> None:
         console.print(f"[green]Wrote[/green] {out_path}")
     else:
         click.echo(text)
+
+
+@qa.command(name="live-gate")
+@click.option("--feature", "feature_id", required=True, help="Feature id under test.")
+@click.option("--target", "target_env", required=True, help="Target environment id.")
+@click.option(
+    "--gates",
+    "gates",
+    default=None,
+    help="Comma-separated subset of registered gate ids (default: all).",
+)
+@click.option(
+    "--campaign",
+    is_flag=True,
+    default=False,
+    help="Campaign mode (attempts ledger is B4; accepted here, single run in v1).",
+)
+@click.option(
+    "--repo",
+    "repo_root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("."),
+    help="Target repo root (default: cwd). Reads qa/gates/registry.yaml under it.",
+)
+def live_gate(
+    feature_id: str,
+    target_env: str,
+    gates: str | None,
+    campaign: bool,
+    repo_root: Path,
+) -> None:
+    """Run the repo's registered F4 gates and emit the results envelope.
+
+    Deterministic runner (DF-015 clause 1). Prints the F4 results envelope as
+    JSON on stdout (the forge adapter parses its ``verdict``); exit code mirrors
+    the verdict (0 pass, 1 fail, 3 instrument_fail, 4 environment_fail).
+    """
+    # Imported lazily so `guardkit qa validate` has no orchestrator import cost.
+    from guardkit.orchestrator.live_gate import LiveGateError, LiveGateRunner
+
+    requested = [g.strip() for g in gates.split(",") if g.strip()] if gates else None
+    runner = LiveGateRunner(repo_root)
+    try:
+        envelope = runner.run(
+            feature_id,
+            target_env,
+            requested_gate_ids=requested,
+            campaign=campaign,
+        )
+    except (QAFormatError, LiveGateError) as exc:
+        # A missing/invalid registry or an unknown gate id is a loud config
+        # error — never a silent green.
+        console.print("[bold red]✗ live-gate could not run[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
+
+    # The envelope on stdout is the contract for the forge adapter.
+    click.echo(json.dumps(envelope.model_dump(mode="json"), indent=2))
+    sys.exit(_VERDICT_EXIT_CODES.get(envelope.verdict, 1))
 
 
 @qa.command()
