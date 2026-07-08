@@ -5,8 +5,18 @@ Execute structured review and analysis workflows for tasks that require assessme
 ## Command Syntax
 
 ```bash
+# ID form — review an existing task
 /task-review TASK-XXX [--mode=MODE] [--depth=DEPTH] [--output=FORMAT] [--capture-knowledge]
+
+# Description form (ad-hoc) — self-creates the review task, then reviews it
+/task-review "free-text description of what to review" [--mode=MODE] [--depth=DEPTH] [--output=FORMAT] [--capture-knowledge]
 ```
+
+**Argument detection**: if the first argument matches the task-id pattern
+`^TASK(-[A-Z0-9]{2,4})?-[A-Fa-f0-9]{4,6}$` it is treated as a task reference (ID form);
+anything else is treated as a description (ad-hoc form, see Phase 0). An argument that
+matches the id pattern but has no matching task file on disk is an error, exactly as today —
+there is NO silent fallback from a missing ID to description mode.
 
 ## Available Flags
 
@@ -38,6 +48,30 @@ The `/task-review` command provides a dedicated workflow for analysis and decisi
 - Refactoring
 - Test creation
 
+## Ad-Hoc Review (Description Form)
+
+Passing a free-text description instead of a task ID removes the two-step friction of
+`/task-create "..." task_type:review` → wait → copy the TASK-REV id → `/task-review TASK-REV-XXXX`.
+The command self-creates the review task (Phase 0) and proceeds directly into the review.
+
+```bash
+/task-review "auth redirect loops after logout" --mode=code-quality
+```
+
+Properties of the ad-hoc form:
+
+- **Same durable record**: a real `TASK-REV-{hash}` task file is created in `tasks/backlog/`
+  BEFORE analysis starts, so provenance, fleet-memory writes, and downstream joins on
+  TASK-REV ids are identical to the two-step flow. Nothing about the report, frontmatter,
+  or decision checkpoint changes.
+- **Deterministic creation**: Phase 0 shells out to `guardkit task create "{description}"
+  --prefix REV --task-type review` (guardkit/cli/task.py) — the same collision-checked
+  hash-ID machinery, not ad-hoc file writing.
+- **All flags apply unchanged**: `--mode`, `--depth`, `--output`, clarification flags, and
+  `--capture-knowledge` behave exactly as in the ID form.
+- **The two-step flow remains valid**: `/task-create ... task_type:review` followed by
+  `/task-review TASK-REV-XXXX` is unchanged (it is what `/feature-plan` uses internally).
+
 ## Automatic Review Task Detection
 
 When creating tasks with `/task-create`, the system automatically detects review/analysis tasks and suggests using `/task-review` instead of `/task-work`.
@@ -68,6 +102,9 @@ Suggested workflow:
   1. Create task: /task-create (current command)
   2. Execute review: /task-review TASK-XXX
   3. (Optional) Implement findings: /task-work TASK-YYY
+
+Shortcut: /task-review "description" does both steps in one command
+(self-creates the review task, then runs the review).
 
 Note: /task-work is for implementation, /task-review is for analysis.
 =========================================================================
@@ -151,6 +188,12 @@ If you want to use `/task-work` for a task that was detected as review:
 
 # Security audit with detailed report
 /task-review TASK-045 --mode=security --output=detailed
+
+# Ad-hoc (description form): self-creates the review task, then reviews
+/task-review "auth redirect loops after logout" --mode=code-quality
+
+# Ad-hoc decision analysis
+/task-review "should the exporter batch or stream?" --mode=decision --depth=quick
 ```
 
 ## Clarification Integration
@@ -587,6 +630,40 @@ Questions are generated based on review mode and findings:
 ## Workflow Phases
 
 The `/task-review` command executes these phases automatically:
+
+### Phase 0: Ad-Hoc Task Creation (Description Form Only)
+
+Runs ONLY when the first argument is a description (does not match the task-id pattern
+`^TASK(-[A-Z0-9]{2,4})?-[A-Fa-f0-9]{4,6}$`). ID-form invocations skip straight to Phase 1.
+
+**GUARD**: if the argument DOES match the id pattern but no task file exists in any
+`tasks/{state}/` directory, fail with the standard "Task TASK-XXX not found" error.
+Never reinterpret a missing ID as a description.
+
+**EXECUTE** (Bash):
+```bash
+guardkit task create "{description}" --prefix REV --task-type review
+```
+
+**PARSE** the created task id and path from the command output
+(`Created task: TASK-REV-{hash}-{slug}.md` / `Location: {path}`). The created file carries
+`task_type: review` frontmatter and a `## Review Scope` section seeded with the description,
+so it satisfies this command's Execution Protocol prerequisites without editing.
+
+**ON FAILURE** (non-zero exit, missing `guardkit` binary, or unparseable output): STOP with
+the error and suggest the two-step fallback (`/task-create "..." task_type:review` then
+`/task-review TASK-REV-XXXX`). Do NOT hand-write a task file.
+
+**DISPLAY**:
+```
+Phase 0: Ad-hoc review task created
+  Task: {task_id} — {description}
+  File: tasks/backlog/{filename}
+  Proceeding to review (mode: {mode}, depth: {depth})
+```
+
+**Continue to Phase 1 with {task_id}** — from this point the ad-hoc form is
+indistinguishable from the ID form.
 
 ### Phase 1: Load Review Context (with Optional Clarification)
 
@@ -1528,9 +1605,11 @@ review_results:                      # NEW: Added after review
 ## Execution Protocol
 
 ### Prerequisites
-1. Task must exist in `tasks/` directory
+1. Task must exist in `tasks/` directory (ID form) — the description form satisfies this
+   itself via Phase 0's `guardkit task create --task-type review`
 2. Task must have `task_type: review` in frontmatter (optional, defaults to review)
-3. Review scope must be defined in task description
+3. Review scope must be defined in task description (Phase 0 seeds it from the ad-hoc
+   description)
 
 ### Validation
 - Validates `--mode` against allowed values
@@ -1547,8 +1626,12 @@ review_results:                      # NEW: Added after review
 ❌ Error: Invalid review mode 'invalid-mode'
    Allowed: architectural, code-quality, decision, technical-debt, security
 
-# Task not found
+# Task not found (an id-shaped argument NEVER falls back to description mode)
 ❌ Error: Task TASK-XXX not found in any task directory
+
+# Ad-hoc creation failed (description form)
+❌ Error: guardkit task create failed — {stderr}
+   Fallback: /task-create "..." task_type:review, then /task-review TASK-REV-XXXX
 
 # Missing review scope
 ❌ Error: Task TASK-XXX missing review scope in description

@@ -7,6 +7,7 @@ These commands provide a CLI interface to Python entry points.
 Example:
     $ guardkit task create "Add user authentication"
     $ guardkit task create "Fix login bug" --priority high
+    $ guardkit task create "Review auth session handling" --prefix REV --task-type review
 """
 
 from __future__ import annotations
@@ -26,6 +27,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Mirrors the "Task Type Values" list in installer/core/commands/task-create.md.
+VALID_TASK_TYPES = (
+    "feature",
+    "scaffolding",
+    "infrastructure",
+    "integration",
+    "documentation",
+    "testing",
+    "refactor",
+    "declarative",
+    "review",
+)
+
 
 # ============================================================================
 # Python Entry Points (Layer B)
@@ -37,6 +51,7 @@ def create_task(
     priority: str = "medium",
     prefix: Optional[str] = None,
     repo_root: Optional[Path] = None,
+    task_type: str = "feature",
 ) -> Path:
     """
     Create a task file in the backlog directory.
@@ -54,6 +69,10 @@ def create_task(
         Optional prefix for task ID (e.g., "FIX", "DOC")
     repo_root : Path, optional
         Repository root (defaults to current directory)
+    task_type : str
+        Task type (see VALID_TASK_TYPES; default "feature"). "review" tasks
+        get a review-shaped body with a "Review Scope" section so
+        /task-review's Phase 0 ad-hoc entry can run them without editing.
 
     Returns
     -------
@@ -63,7 +82,7 @@ def create_task(
     Raises
     ------
     ValueError
-        If title is empty or priority is invalid
+        If title is empty or priority/task_type is invalid
     OSError
         If task directory cannot be created or file cannot be written
     """
@@ -73,9 +92,15 @@ def create_task(
 
     title = title.strip()
     priority = priority.lower()
+    task_type = task_type.lower()
 
     if priority not in ("high", "medium", "low"):
         raise ValueError(f"Invalid priority: {priority}. Must be high, medium, or low")
+
+    if task_type not in VALID_TASK_TYPES:
+        raise ValueError(
+            f"Invalid task_type: {task_type}. Must be one of {', '.join(VALID_TASK_TYPES)}"
+        )
 
     # Determine repo root
     if repo_root is None:
@@ -94,7 +119,7 @@ def create_task(
     task_path = backlog_dir / filename
 
     # Generate task content
-    content = _generate_task_content(task_id, title, priority)
+    content = _generate_task_content(task_id, title, priority, task_type)
 
     # Write task file
     task_path.write_text(content, encoding="utf-8")
@@ -133,7 +158,9 @@ def _generate_task_id(title: str, prefix: Optional[str] = None) -> str:
 
 
 
-def _generate_task_content(task_id: str, title: str, priority: str) -> str:
+def _generate_task_content(
+    task_id: str, title: str, priority: str, task_type: str = "feature"
+) -> str:
     """
     Generate task markdown content with frontmatter.
 
@@ -145,18 +172,48 @@ def _generate_task_content(task_id: str, title: str, priority: str) -> str:
         Task title
     priority : str
         Task priority
+    task_type : str
+        Task type; "review" emits a review-shaped body (Review Scope section)
 
     Returns
     -------
     str
         Task markdown content
     """
+    if task_type == "review":
+        # Review-shaped body: /task-review's Execution Protocol errors on a
+        # missing "Review Scope" section, so the ad-hoc description becomes
+        # the scope and the task is runnable the moment it is created.
+        return f"""---
+id: {task_id}
+title: {title}
+priority: {priority}
+status: backlog
+task_type: review
+---
+
+# {title}
+
+## Review Scope
+
+{title}
+
+## Objective
+
+Analyze and produce findings/recommendations; this task carries no implementation.
+
+## Acceptance Criteria
+
+- [ ] Review report generated at .claude/reviews/{task_id}-review-report.md
+- [ ] Decision checkpoint completed ([A]ccept / [R]evise / [I]mplement / [C]ancel)
+"""
+
     return f"""---
 id: {task_id}
 title: {title}
 priority: {priority}
 status: backlog
-task_type: feature
+task_type: {task_type}
 ---
 
 # {title}
@@ -202,7 +259,14 @@ def task():
     default=None,
     help="Task ID prefix (e.g., FIX, DOC)",
 )
-def create(title: str, priority: str, prefix: Optional[str]) -> None:
+@click.option(
+    "--task-type",
+    "task_type",
+    type=click.Choice(VALID_TASK_TYPES, case_sensitive=False),
+    default="feature",
+    help="Task type (default: feature); 'review' emits a review-shaped body",
+)
+def create(title: str, priority: str, prefix: Optional[str], task_type: str) -> None:
     """
     Create a new task in the backlog.
 
@@ -213,9 +277,12 @@ def create(title: str, priority: str, prefix: Optional[str]) -> None:
         guardkit task create "Add user authentication"
         guardkit task create "Fix login bug" --priority high
         guardkit task create "Update docs" --prefix DOC
+        guardkit task create "Review auth session handling" --prefix REV --task-type review
     """
     try:
-        task_path = create_task(title=title, priority=priority, prefix=prefix)
+        task_path = create_task(
+            title=title, priority=priority, prefix=prefix, task_type=task_type
+        )
         click.echo(f"Created task: {task_path.name}")
         click.echo(f"Location: {task_path}")
     except ValueError as e:
@@ -231,4 +298,5 @@ def create(title: str, priority: str, prefix: Optional[str]) -> None:
 __all__ = [
     "task",
     "create_task",
+    "VALID_TASK_TYPES",
 ]
