@@ -39,7 +39,23 @@ def install_qa_scaffold(project_dir: Path) -> List[str]:
     try:
         src_root = Path(_get_templates_base_dir()).joinpath(*_QA_TEMPLATE_RELPATH)
         if not src_root.is_dir():
-            logger.info("No common/qa template dir found; skipping qa scaffold")
+            # DF-011: a missing template payload is a distribution defect, not a
+            # routine skip — the F1-F5 validator code ships without the data it
+            # scaffolds. A silent info-level skip was the absence-of-failure
+            # shape applied to packaging (the review's DIM1-F2 finding). Surface
+            # it at WARNING with the named remediation (Session C's
+            # TemplateSourceError pattern): the wheel must carry
+            # guardkit/_installer_core/templates/common/qa (hatch force-include
+            # in pyproject.toml), and an editable checkout must expose
+            # installer/core/templates.
+            logger.warning(
+                "qa scaffold skipped: template payload not found at %s. The "
+                "GuardKit distribution is missing its template data — reinstall "
+                "from a wheel built with the DF-011 hatch force-include "
+                "(installer/core -> guardkit/_installer_core), or run from an "
+                "editable/source checkout that exposes installer/core/templates.",
+                src_root,
+            )
             return copied
 
         target_root = project_dir / "qa"

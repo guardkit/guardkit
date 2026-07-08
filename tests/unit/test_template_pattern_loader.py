@@ -121,25 +121,23 @@ class TestResolverReuse:
         result = resolve_template_source_dir("fastapi-python")
         assert isinstance(result, Path) or result is None
 
-    def test_resolver_user_template_fallback(self, tmp_path: Path) -> None:
-        """Resolver falls back to user templates dir when package template missing."""
+    def test_resolver_no_user_fallback(self, tmp_path: Path) -> None:
+        """DF-011: the ~/.guardkit/templates user fallback was removed.
+
+        A template present only outside the templates base dir must NOT resolve.
+        """
         from guardkit.templates.resolver import resolve_template_source_dir
 
-        # Create a user template directory
-        user_tpl = tmp_path / "custom-user-tpl"
-        user_tpl.mkdir()
+        # A template dir that exists somewhere else on disk.
+        (tmp_path / "custom-user-tpl").mkdir()
 
         with patch(
-            "guardkit.templates.resolver._get_user_templates_dir",
-            return_value=tmp_path,
-        ), patch(
             "guardkit.templates.resolver._get_templates_base_dir",
             return_value=tmp_path / "nonexistent_pkg",
         ):
             result = resolve_template_source_dir("custom-user-tpl")
 
-        assert result is not None
-        assert result.name == "custom-user-tpl"
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

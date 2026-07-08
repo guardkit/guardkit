@@ -976,31 +976,28 @@ class TestResolveTemplateSourceDir:
 
         assert result is None
 
-    def test_falls_back_to_user_templates(self, tmp_path):
-        """Falls back to ~/.guardkit/templates/ for user-installed templates."""
+    def test_no_user_template_fallback(self, tmp_path):
+        """DF-011: the ~/.guardkit/templates user-override fallback was removed.
+
+        A template that exists only outside the packaged templates base dir must
+        NOT resolve — there is exactly one resolution path now.
+        """
         from guardkit.cli.init import _resolve_template_source_dir
 
-        # Package templates: no match
         pkg_templates = tmp_path / "pkg_templates"
         pkg_templates.mkdir()
 
-        # User templates: has match
-        user_templates = tmp_path / "user_templates"
-        user_template_dir = user_templates / "custom-template"
-        user_template_dir.mkdir(parents=True)
-        (user_template_dir / "manifest.json").write_text("{}")
+        # A stray template elsewhere on disk must be invisible.
+        stray = tmp_path / "user_templates" / "custom-template"
+        stray.mkdir(parents=True)
 
         with patch(
             "guardkit.cli.init._get_templates_base_dir",
             return_value=pkg_templates,
-        ), patch(
-            "guardkit.cli.init._get_user_templates_dir",
-            return_value=user_templates,
         ):
             result = _resolve_template_source_dir("custom-template")
 
-        assert result is not None
-        assert result == user_template_dir
+        assert result is None
 
 
 class TestApplyTemplateSkipsScaffolds:

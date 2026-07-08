@@ -1,0 +1,121 @@
+# GitHub Actions Workflow: DF-011 template-data packaging acceptance gate
+# Proposal: PB-1 (ADR-A) — "Template data ships in the wheel under the guardkit
+# namespace." Decision: docs/decisions/DECISION-DF-011-*.md §2.6.
+#
+# Purpose
+#   Prove — in CI, so the gap cannot silently reopen — that a wheel built from a
+#   CLEAN checkout is self-contained: a plain `pip install` of the wheel, with no
+#   repo checkout and no install.sh / ~/.agentecflow, resolves templates, scaffolds
+#   qa/, and imports the orchestrator (the installer.core alias). The original gap
+#   (DIM1-F2 / DIM3-F1): `packages = ["guardkit"]` omitted installer/ entirely, so
+#   the F1-F5 validator code shipped with none of the data it enforces and the qa
+#   scaffold was silently inert on wheel installs.
+#
+#   Two consumer paths are exercised:
+#     * pip   — the baseline channel (`pip install <wheel>` into a clean venv).
+#     * uvx   — the harshest ephemeral consumer (no install.sh, no ~/.agentecflow,
+#               no repo checkout). If uvx is self-contained, the wheel is.
+#
+#   The template BYTES-unchanged guard (the specialist-agent Session C content-hash
+#   pins) rides the normal test suite (tests/packaging/test_df011_template_pins.py)
+#   and is re-run here for locality.
+#
+# HARD CONSTRAINT (DF-011 §2.2 / namespace-hygiene): the wheel must NEVER ship a
+# top-level `installer` package (PyPI pypa/installer collision). This job asserts
+# the wheel carries zero top-level `installer/` entries.
+
+name: Packaging Acceptance (DF-011 wheel)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheel-acceptance:
+    name: Clean-venv + uvx wheel install
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout guardkit (clean tree)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist .
+          echo "WHEEL=$(ls dist/*.whl | head -1)" >> "$GITHUB_ENV"
+
+      - name: Assert wheel is namespace-clean and carries the payload
+        # DF-011 §2.2: NO top-level `installer/` entries (PyPI collision guard).
+        # The payload must ride under guardkit/_installer_core, including the two
+        # pinned templates.
+        run: |
+          python - "$WHEEL" <<'PY'
+          import sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1]); names = z.namelist()
+          top_installer = [n for n in names if n.startswith("installer/")]
+          assert not top_installer, f"FORBIDDEN top-level installer/ entries: {top_installer[:5]}"
+          need = [
+              "guardkit/_installer_core/commands/feature-spec.md",
+              "guardkit/_installer_core/commands/feature-plan.md",
+              "guardkit/_installer_core/templates/common/qa/README.md",
+              "guardkit/_installer_core/templates/common/features/conftest.py.template",
+          ]
+          missing = [n for n in need if n not in names]
+          assert not missing, f"payload missing from wheel: {missing}"
+          pyc = [n for n in names if n.endswith(".pyc")]
+          assert not pyc, f"compiled artefacts leaked into wheel: {pyc[:5]}"
+          print("wheel namespace-clean; payload present; no pyc")
+          PY
+
+      - name: Acceptance (pip) — clean venv install + init default
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/accept
+          /tmp/accept/bin/pip install --quiet "$WHEEL"
+          # Orchestrator import must work in a wheel (installer.core alias).
+          /tmp/accept/bin/python - <<'PY'
+          import installer.core  # noqa: F401  (the DF-011 wheel alias)
+          import guardkit.orchestrator.agent_invoker  # noqa: F401
+          from guardkit.templates.resolver import resolve_template_source_dir
+          assert resolve_template_source_dir("fastapi-python") is not None, "stack template did not resolve from wheel"
+          print("wheel import + template resolution OK")
+          PY
+          rm -rf /tmp/proj && mkdir -p /tmp/proj
+          cd /tmp/proj
+          /tmp/accept/bin/guardkit-py init default
+          test -f qa/known-failures.yaml
+          test -f qa/pass-bar-TASK-0000.yaml
+          test -f qa/README.md
+          echo "pip acceptance: qa/ stubs produced"
+
+      - name: Acceptance (uvx) — harshest ephemeral consumer
+        run: |
+          set -euo pipefail
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+          rm -rf /tmp/uvxproj && mkdir -p /tmp/uvxproj
+          cd /tmp/uvxproj
+          uvx --from "$GITHUB_WORKSPACE/$WHEEL" guardkit-py init default
+          test -f qa/known-failures.yaml
+          echo "uvx acceptance: qa/ stubs produced"
+
+      - name: Template BYTES-unchanged pins (specialist seam guard)
+        run: |
+          python -m pip install --quiet -e ".[dev]"
+          python -m pytest tests/packaging/test_df011_template_pins.py \
+            -o addopts="" --strict-markers -v
