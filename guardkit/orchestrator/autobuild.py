@@ -1309,7 +1309,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -1868,6 +1868,43 @@ class AutoBuildOrchestrator:
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
 
+                # WS2 B2: Coach task-start precondition (flag-gated,
+                # qa.enforce_tier1, default OFF). A task cannot start without a
+                # pinned F1 pass bar (qa/pass-bar-<TASK-ID>.yaml) whose
+                # registered_at.sha predates implementation commits. Fresh-start
+                # only (a resume has already passed this gate). The worktree is
+                # created first so a refusal still returns a well-formed,
+                # preserved result; no implementation runs.
+                precondition = self._check_qa_pass_bar_precondition(task_id)
+                if precondition is not None and not precondition.passed:
+                    logger.warning(
+                        "QA pass-bar precondition blocked %s: %s",
+                        task_id,
+                        precondition.detail,
+                    )
+                    self._emit_task_failed(task_id, "qa_precondition_blocked")
+                    self._finalize_phase(
+                        worktree=worktree,
+                        final_decision="qa_precondition_blocked",
+                        turn_history=[],
+                    )
+                    if task_file_path:
+                        self._save_state(task_file_path, worktree, "blocked")
+                    return OrchestrationResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="qa_precondition_blocked",
+                        turn_history=[],
+                        worktree=worktree,
+                        error=(
+                            "QA tier-1 pass-bar precondition failed: "
+                            + precondition.detail
+                        ),
+                        ablation_mode=self.ablation_mode,
+                        recovery_count=self.recovery_count,
+                    )
+
             # Phase 2: Pre-Loop Quality Gates (if enabled)
             if self.enable_pre_loop and not self.resume:
                 try:
@@ -2022,6 +2059,35 @@ class AutoBuildOrchestrator:
         except Exception as e:
             logger.error(f"Orchestration failed for {task_id}: {e}", exc_info=True)
             raise OrchestrationError(f"Orchestration failed: {e}") from e
+
+    def _check_qa_pass_bar_precondition(self, task_id: str):
+        """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
+
+        Returns ``None`` when ``qa.enforce_tier1`` is OFF for the repo (the
+        default) — so autobuild behaviour is byte-for-byte unchanged unless a
+        repo has explicitly opted in. When ON, returns the
+        ``PassBarPreconditionResult`` (``.passed`` gates task start). The check
+        is defensive: any unexpected error while evaluating the precondition
+        degrades to ``None`` (do not block a build on a bug in the gate itself),
+        logged loudly.
+        """
+        try:
+            from guardkit.qa.enforcement import (
+                check_pass_bar_precondition,
+                is_tier1_enforced,
+            )
+
+            if not is_tier1_enforced(self.repo_root):
+                return None
+            return check_pass_bar_precondition(self.repo_root, task_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "QA pass-bar precondition check errored for %s (%s) — not "
+                "blocking task start",
+                task_id,
+                exc,
+            )
+            return None
 
     def _setup_phase(
         self,
@@ -4016,7 +4082,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
