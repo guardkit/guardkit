@@ -64,7 +64,10 @@ MUTANTS = [
 @pytest.mark.parametrize("kind,rel_path", EXEMPLARS)
 def test_exemplar_validates(kind: str, rel_path: str) -> None:
     instance = validate_instance(kind, FIXTURES / rel_path)
-    assert instance.format_version == "1.0"
+    # pass-bar majored to 2.0 at PB-14 (required auth_surface_bearing field);
+    # the other four tier-1 formats are still at 1.0.
+    expected = "2.0" if kind == "pass-bar" else "1.0"
+    assert instance.format_version == expected
 
 
 @pytest.mark.parametrize("kind,rel_path,expected_mentions", MUTANTS)

@@ -38,7 +38,9 @@ from guardkit.qa.formats.gate_registry import (
 from guardkit.qa.formats.known_failures import KnownFailureEntry, KnownFailureLedger
 from guardkit.qa.formats.leak_sweep import LeakSweepManifest, Surface
 from guardkit.qa.formats.pass_bar import (
+    AUTH_NEGATIVE_PATHS,
     REQUIRED_NEGATIVE_PATHS,
+    UNIVERSAL_NEGATIVE_PATHS,
     PassBar,
     PassBarCriterion,
 )
@@ -92,7 +94,9 @@ __all__ = [
     "KIND_ALIASES",
     "QAFormatError",
     "QAFormatModel",
+    "AUTH_NEGATIVE_PATHS",
     "REQUIRED_NEGATIVE_PATHS",
+    "UNIVERSAL_NEGATIVE_PATHS",
     "AssertionResult",
     "EvidenceEntry",
     "EvidenceIndex",

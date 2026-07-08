@@ -6,11 +6,12 @@
 # real in-repo instance. registered_at is the B0 rescue pin — the real
 # pass bar predated the gates as session prompts; the committed pack is the
 # earliest durable pin available.
-format_version: "1.0"
+format_version: "2.0"
 task_id: FEAT-POC-DEMO-0705
 registered_at:
   sha: 8980af1
   date: "2026-07-05"
+auth_surface_bearing: true      # PB-14: Keycloak auth surface -> all five negative paths mandatory
 preconditions:
   - suite_green_vs_ledger      # 1021 passed + the 2 ledgered transformers-import failures
   - analyze_clean

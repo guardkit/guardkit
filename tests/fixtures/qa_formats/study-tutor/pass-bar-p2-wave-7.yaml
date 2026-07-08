@@ -8,11 +8,12 @@
 # instance. registered_at pins the phase-2 range start (retro evidence base:
 # git history 4be98b2^..aa94365 — the bar was in the build plan before the
 # work).
-format_version: "1.0"
+format_version: "2.0"
 task_id: p2-wave-7
 registered_at:
   sha: 4be98b2
   date: "2026-07-04"
+auth_surface_bearing: true      # PB-14: dev-token auth surface -> all five negative paths mandatory
 preconditions:
   - suite_green_vs_ledger      # hermetic 125/125 (flutter analyze + test)
   - analyze_clean
