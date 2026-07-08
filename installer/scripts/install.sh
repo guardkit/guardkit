@@ -20,10 +20,17 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Installation configuration
-AGENTECFLOW_VERSION="2.0.0"
 INSTALL_DIR="$HOME/.agentecflow"
 CONFIG_DIR="$HOME/.config/agentecflow"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# PB-3 (DIM3-F3): the package version is derived from the SINGLE source
+# guardkit/__init__.py — killing the 3-4 unrelated hardcoded version stamps that
+# copy generations carried (was "2.0.0" here, "1.0.0" in the embedded guardkit
+# bin + init-project.sh settings.json). Every stamp below now reads this.
+GUARDKIT_INIT_PY="$INSTALLER_DIR/../guardkit/__init__.py"
+AGENTECFLOW_VERSION="$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' "$GUARDKIT_INIT_PY" 2>/dev/null | head -1)"
+[ -n "$AGENTECFLOW_VERSION" ] || AGENTECFLOW_VERSION="0.0.0"
 GITHUB_REPO="https://github.com/guardkit/guardkit"
 GITHUB_BRANCH="main"
 INSTALL_METHOD="git-clone"  # Default, updated if running via curl
@@ -566,6 +573,22 @@ install_global_files() {
         # Copy markdown command files
         find "$INSTALLER_DIR/core/commands" -maxdepth 1 -name "*.md" -exec cp {} "$INSTALL_DIR/commands/" \; 2>/dev/null || true
 
+        # PB-3: ship the command-distribution MANIFEST (provenance: per-file
+        # sha256 + source commit + version) so `guardkit doctor` can report drift.
+        if [ -f "$INSTALLER_DIR/core/commands/MANIFEST.json" ]; then
+            cp "$INSTALLER_DIR/core/commands/MANIFEST.json" "$INSTALL_DIR/commands/MANIFEST.json" 2>/dev/null || true
+        fi
+
+        # PB-3: prune RETIRED command names from an already-installed commands dir.
+        # The install has historically been additive-copy with no removal path, so
+        # a name deleted from installer/core/commands (e.g. impact-analysis.md,
+        # system-overview.md) lingered forever in ~/.agentecflow/commands and stayed
+        # invocable. Mirror the prune_stale_bin_symlinks guard: remove ONLY the exact
+        # tombstone names declared in the manifest — never a user-added file. Python
+        # is required by guardkit, so parse the manifest with it (single source; no
+        # second content file).
+        prune_retired_command_files "$INSTALL_DIR/commands" "$INSTALLER_DIR/core/commands/MANIFEST.json"
+
         # Copy lib directory (excluding test files, cache, and artifacts)
         if [ -d "$INSTALLER_DIR/core/commands/lib" ]; then
             mkdir -p "$INSTALL_DIR/commands/lib"
@@ -848,7 +871,7 @@ EOF
 # Main command-line interface for GuardKit
 
 AGENTECFLOW_HOME="$HOME/.agentecflow"
-AGENTECFLOW_VERSION="1.0.0"
+AGENTECFLOW_VERSION="__GUARDKIT_VERSION__"
 
 # Color codes
 RED='\033[0;31m'
@@ -1147,6 +1170,11 @@ case "$1" in
         ;;
 esac
 EOF
+
+    # PB-3: the embedded guardkit bin is a single-quoted heredoc (no expansion),
+    # so its version placeholder is substituted here from the single source
+    # (guardkit/__init__.py, read into AGENTECFLOW_VERSION at the top).
+    sed -i.bak "s/__GUARDKIT_VERSION__/$AGENTECFLOW_VERSION/g" "$INSTALL_DIR/bin/guardkit" && rm -f "$INSTALL_DIR/bin/guardkit.bak"
 
     chmod +x "$INSTALL_DIR/bin/guardkit"
 
@@ -1687,6 +1715,47 @@ setup_claude_integration() {
         print_error "Failed to create symlinks for Claude Code integration"
         print_warning "Commands and agents may not be available in Claude Code"
     fi
+}
+
+# PB-3: prune retired command markdowns from an installed commands dir.
+# Removes ONLY the exact tombstone names declared in the shipped MANIFEST.json
+# (retired command names deleted from installer/core/commands). Never touches a
+# user-added file or any current command — same guard shape as
+# prune_stale_bin_symlinks (only known, manifest-declared names are removed).
+prune_retired_command_files() {
+    local COMMANDS_DIR="$1"
+    local MANIFEST="$2"
+    [ -d "$COMMANDS_DIR" ] || return 0
+    [ -f "$MANIFEST" ] || return 0
+
+    local python_bin
+    python_bin="$(command -v python3 || command -v python)"
+    [ -n "$python_bin" ] || return 0
+
+    # Parse the tombstone names from the manifest (single source; JSON via Python).
+    local tombstones
+    tombstones="$("$python_bin" -c "
+import json, sys
+try:
+    m = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for t in m.get('tombstones', []):
+    name = t.get('name') if isinstance(t, dict) else t
+    if name:
+        print(name)
+" "$MANIFEST" 2>/dev/null)"
+
+    local name
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        local target="$COMMANDS_DIR/$name"
+        # Only remove a real file whose exact name is a declared tombstone.
+        if [ -f "$target" ]; then
+            rm -f "$target"
+            print_info "  Pruned retired command: $name"
+        fi
+    done <<< "$tombstones"
 }
 
 # Create symlinks for Python command scripts in ~/.agentecflow/bin/

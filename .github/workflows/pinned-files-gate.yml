@@ -1,0 +1,99 @@
+# GitHub Actions Workflow: pinned-contract-files release gate (PB-3 / DIM3-F5)
+#
+# Purpose
+#   ce914f7c (Jul 2), 111b02ac (Jul 4), 5ad48fcf (Jul 5) all edited the
+#   now-pinned spec/plan templates BEFORE the specialist-agent Session C contract
+#   pin existed — an uncoordinated pin break, landed silently. This gate closes
+#   that window: any PR or push that changes one of the six FEAT-SPL-007/008
+#   contract artifacts (docs/decisions/PINNED-FILES.txt) is RED unless the SAME
+#   diff also touches the dated correction ledger
+#   (docs/decisions/pinned-template-corrections.md).
+#
+#   Cross-repo mechanism (honest): guardkit CI cannot read specialist-agent's
+#   contract doc, so the correction note is MIRRORED here as the ledger. See
+#   PINNED-FILES.txt for the full G2b re-freeze procedure the failure names.
+
+name: Pinned Files Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pinned-files-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-files:
+    name: Pinned contract files require a correction note
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for the diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce the pinned-files / correction-note contract
+        env:
+          LEDGER: docs/decisions/pinned-template-corrections.md
+          PINNED_LIST: docs/decisions/PINNED-FILES.txt
+        run: |
+          set -euo pipefail
+
+          # Resolve the diff range: PR = base..head, push = before..after.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+          # A first push (all-zero before) or a missing base: nothing to diff.
+          if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
+            echo "No resolvable base commit ($BASE); skipping pinned-files gate."
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "Changed files:"; echo "$CHANGED" | sed 's/^/  /'
+
+          # The pinned set (strip comments / blanks).
+          PINNED="$(grep -vE '^\s*#|^\s*$' "$PINNED_LIST")"
+
+          TOUCHED="$(comm -12 <(echo "$CHANGED" | sort -u) <(echo "$PINNED" | sort -u) || true)"
+
+          if [ -z "$TOUCHED" ]; then
+            echo "No pinned contract files touched — gate passes."
+            exit 0
+          fi
+
+          echo "Pinned contract files touched:"; echo "$TOUCHED" | sed 's/^/  /'
+
+          if echo "$CHANGED" | grep -qxF "$LEDGER"; then
+            echo "Correction ledger ($LEDGER) updated in the same diff — gate passes."
+            exit 0
+          fi
+
+          cat >&2 <<EOF
+          ::error::A PINNED contract file was changed without a dated correction note.
+
+          Touched pinned file(s):
+          $TOUCHED
+
+          A change to these files is the G2b RE-FREEZE procedure (DF-012 / ADR-D),
+          not an ordinary edit. In the SAME diff you must add a dated entry to:
+            $LEDGER
+
+          Full procedure (see docs/decisions/PINNED-FILES.txt):
+            1. dated correction note in the specialist-agent contract doc §0
+            2. re-run the feature-YAML round-trip fixtures (prove unchanged)
+            3. Session C re-pins the TemplatePin sha256
+            4. Rich approves the G2b / FEAT-EVAL-SPEC re-freeze
+            5. add the dated entry to $LEDGER
+          EOF
+          exit 1

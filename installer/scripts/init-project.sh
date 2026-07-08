@@ -400,9 +400,22 @@ create_config() {
     # Use ~ for portability instead of absolute path
     local extends_path="~/.agentecflow/templates/$TEMPLATE"
 
+    # PB-3: derive the version from the single source (the installed command
+    # MANIFEST, itself stamped from guardkit/__init__.py) rather than a hardcoded
+    # "1.0.0" stamp. Falls back to "unknown" if the manifest is absent.
+    local guardkit_version="unknown"
+    local manifest="$AGENTECFLOW_HOME/commands/MANIFEST.json"
+    if [ -f "$manifest" ]; then
+        local py_bin
+        py_bin="$(command -v python3 || command -v python)"
+        if [ -n "$py_bin" ]; then
+            guardkit_version="$("$py_bin" -c "import json,sys; print(json.load(open(sys.argv[1])).get('version','unknown'))" "$manifest" 2>/dev/null || echo unknown)"
+        fi
+    fi
+
     cat > .claude/settings.json << EOF
 {
-  "version": "1.0.0",
+  "version": "$guardkit_version",
   "extends": "$extends_path",
   "project": {
     "name": "$project_name",
