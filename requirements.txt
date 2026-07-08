@@ -19,6 +19,8 @@ fastapi==0.104.1
 uvicorn==0.24.0
 
 # Testing dependencies
-pytest==7.4.3
-pytest-cov==4.1.0
+# pytest floored at 9.0.3 (patched — clears the Dependabot advisory);
+# pytest-cov bumped to a pytest-9-compatible release.
+pytest>=9.0.3
+pytest-cov>=6.0.0
 httpx==0.25.1
