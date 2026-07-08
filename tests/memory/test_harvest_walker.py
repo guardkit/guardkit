@@ -17,6 +17,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+# The `memory` extra (nats-core, a [tool.uv.sources] editable sibling) is not
+# installed in CI. Skip the whole module cleanly when it is absent rather than
+# erroring at collection.
+pytest.importorskip("nats_core.events")
+
 from nats_core.events import MAX_EPISODE_BODY_BYTES, MemoryEpisodeV1
 
 from guardkit.memory.harvest_walker import HarvestResult, walk_harvest_dirs

@@ -9,6 +9,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+# The `memory` extra (nats-core, a [tool.uv.sources] editable sibling) is not
+# installed in CI. Skip the whole module cleanly when it is absent rather than
+# erroring at collection.
+pytest.importorskip("nats_core.events")
+
 from nats_core.events import MemoryEpisodeV1
 from pydantic import SecretStr
 

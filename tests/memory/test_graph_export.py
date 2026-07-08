@@ -16,15 +16,18 @@ import json
 
 import pytest
 
+# guardkit.memory.graph_export imports nats_core at module load, and the built
+# episode body must validate against the REAL DocumentPayload. The `memory` extra
+# (nats-core / fleet-memory) is not installed in CI, so guard BEFORE the
+# guardkit.memory import to skip cleanly instead of erroring at collection.
+pytest.importorskip("nats_core.events")
+fm_registry = pytest.importorskip("fleet_memory.payloads.registry")
+
 from guardkit.memory.graph_export import (
     build_document_episode,
     build_export_episodes,
     graph_name_to_project_group,
 )
-
-# The built episode body must validate against the REAL DocumentPayload (with content).
-pytest.importorskip("nats_core.events")
-fm_registry = pytest.importorskip("fleet_memory.payloads.registry")
 
 
 def _node(content="some prose content", name="n1", uuid="uuid-abc", created_at=None):

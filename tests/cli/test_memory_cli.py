@@ -19,6 +19,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+# The `memory` extra (nats-core, a [tool.uv.sources] editable sibling) is not
+# installed in CI, and guardkit.memory.* import nats_core at module load. Skip
+# the whole module cleanly when it is absent rather than erroring at collection.
+pytest.importorskip("nats_core")
+
 from guardkit.cli.main import cli
 from guardkit.memory.harvest_walker import HarvestResult
 from guardkit.memory.harvest_publisher import PublishSummary
