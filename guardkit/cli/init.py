@@ -47,7 +47,6 @@ from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 from guardkit.templates.qa_scaffold import install_qa_scaffold
 from guardkit.templates.resolver import (
     _get_templates_base_dir as _get_templates_base_dir,
-    _get_user_templates_dir as _get_user_templates_dir,
     resolve_template_source_dir as resolve_template_source_dir,
 )
 
@@ -72,8 +71,14 @@ def _resolve_template_source_dir(template_name: str) -> Optional[Path]:
     """Resolve the source directory for a template.
 
     Thin wrapper kept for backward compatibility with existing call sites
-    and test mocks.  Delegates to :func:`resolve_template_source_dir` in
-    ``guardkit.templates.resolver`` via module-level helper imports.
+    and test mocks (which patch ``_get_templates_base_dir`` on this module).
+    Resolves against the ``installer/core/templates`` payload — packaged under
+    the guardkit namespace in a wheel, or the repo checkout for editable
+    installs (see :func:`guardkit.templates.resolver._get_installer_core_dir`).
+
+    The former ``~/.guardkit/templates`` user-override fallback was removed in
+    DF-011: no installer ever populated it (install.sh writes ``~/.agentecflow``),
+    so it only ever resolved to ``None``.
 
     Args:
         template_name: Name of the template to resolve.
@@ -81,18 +86,9 @@ def _resolve_template_source_dir(template_name: str) -> Optional[Path]:
     Returns:
         Path to the template source directory, or None if not found.
     """
-    # Check package-installed templates
-    pkg_templates = _get_templates_base_dir()
-    pkg_candidate = pkg_templates / template_name
+    pkg_candidate = _get_templates_base_dir() / template_name
     if pkg_candidate.is_dir():
         return pkg_candidate
-
-    # Fallback: user-installed templates
-    user_templates = _get_user_templates_dir()
-    user_candidate = user_templates / template_name
-    if user_candidate.is_dir():
-        return user_candidate
-
     return None
 
 
