@@ -520,6 +520,9 @@ Suggested workflow:
   2. Execute review: /task-review TASK-XXX
   3. (Optional) Implement findings: /task-work TASK-YYY
 
+Shortcut: /task-review "description" does both steps in one command
+(self-creates the review task, then runs the review).
+
 Note: /task-work is for implementation, /task-review is for analysis.
 =========================================================================
 

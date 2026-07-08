@@ -78,7 +78,7 @@
       "source_commit": "ce914f7c"
     },
     "task-create.md": {
-      "sha256": "5939601ddc7c89c2aafca1f890dcc34e098f5129b0f1954dd3039e0a47253b2e",
+      "sha256": "89b82175744512a51f1b3aa6ca592ea4805b07a50557cf58ea80edf4d655b322",
       "source_commit": "ce914f7c"
     },
     "task-refine.md": {
@@ -86,7 +86,7 @@
       "source_commit": "60a5dffc7"
     },
     "task-review.md": {
-      "sha256": "d2d46e199486c19dcdfd745e8b6d15a988882101ea3c86fb8f920faa68870d71",
+      "sha256": "55a0beda8f70a42120643a058e8580868500e951a9cec46e8f595939e402e91f",
       "source_commit": "ce914f7c"
     },
     "task-status.md": {

@@ -354,6 +354,63 @@ class TestTaskCreateSeam:
             f"Expected prefix='FIX', got {captured_args.get('prefix')}"
         )
 
+    def test_task_create_passes_task_type_to_entry_point(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """
+        Test: guardkit task create with --task-type flag passes task_type to create_task().
+
+        The /task-review Phase 0 ad-hoc entry depends on this wiring
+        (--prefix REV --task-type review).
+        """
+        captured_args: dict[str, Any] = {}
+        mock_task_path = tmp_path / "tasks" / "backlog" / "TASK-REV-abc1-test.md"
+        mock_task_path.parent.mkdir(parents=True, exist_ok=True)
+        mock_task_path.write_text("---\nid: TASK-REV-abc1\n---\n")
+
+        def mock_create_task(**kwargs: Any) -> Path:
+            captured_args.update(kwargs)
+            return mock_task_path
+
+        with patch(
+            "guardkit.cli.task.create_task",
+            side_effect=mock_create_task,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "task",
+                    "create",
+                    "Review auth session handling",
+                    "--prefix",
+                    "REV",
+                    "--task-type",
+                    "review",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        assert captured_args.get("task_type") == "review", (
+            f"Expected task_type='review', got {captured_args.get('task_type')}"
+        )
+        assert captured_args.get("prefix") == "REV", (
+            f"Expected prefix='REV', got {captured_args.get('prefix')}"
+        )
+
+    def test_task_create_rejects_invalid_task_type(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """An invalid --task-type is rejected at the CLI boundary (click.Choice)."""
+        result = runner.invoke(
+            cli,
+            ["task", "create", "Some task", "--task-type", "not-a-type"],
+        )
+        assert result.exit_code != 0, "Should fail with invalid task type"
+        assert "task-type" in result.output.lower() or "invalid" in result.output.lower(), (
+            f"Expected task-type validation error: {result.output}"
+        )
+
     def test_task_create_returns_meaningful_output(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
