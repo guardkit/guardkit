@@ -4,7 +4,7 @@ paths: guardkit/**/*.py, .guardkit/**/*
 
 # AutoBuild - Autonomous Task Implementation
 
-AutoBuild provides fully autonomous task implementation using a Player-Coach adversarial workflow. **The Player delegates to task-work** to leverage the full subagent infrastructure, achieving 100% code reuse of quality gates.
+AutoBuild provides fully autonomous task implementation using a Player-Coach adversarial workflow. **The Player runs an inline execution protocol** (since TASK-ACO-002); quality gates are enforced by orchestrator code and Coach evidence, not by shelling `task-work`. See the mechanism note below.
 
 ## How It Works
 
@@ -14,12 +14,12 @@ AutoBuild uses a three-phase execution pattern:
 2. **Loop Phase**: Executes Player-Coach adversarial turns until approval or max turns
 3. **Finalize Phase**: Preserves worktree for human review (never auto-merges)
 
-## Task-Work Delegation Architecture
+## Execution Architecture
 
 ```
 AutoBuild Orchestrator
          │
-         ├── PreLoop: task-work --design-only
+         ├── PreLoop: task-work --design-only   (design phases; delegation path)
          │              ├── Clarification (Phase 1.6)
          │              ├── Planning (Phase 2)
          │              ├── Architectural Review (Phase 2.5)
@@ -27,24 +27,50 @@ AutoBuild Orchestrator
          │
          └── Loop: Player↔Coach
                     │
-                    └── Player: task-work --implement-only --mode=tdd
-                                  ├── Stack-specific specialist
-                                  ├── test-orchestrator
-                                  ├── code-reviewer
-                                  └── Phase 4.5 fix loop
+                    └── Player: INLINE execution protocol (NOT a task-work subprocess)
+                                  ├── prompt built by _build_autobuild_implementation_prompt
+                                  ├── protocol file backend-selected (full/medium/slim)
+                                  └── orchestrator runs the gates:
+                                        ├── test-orchestrator   (Phase 4)
+                                        ├── code-reviewer       (Phase 5)
+                                        └── Phase 4.5 fix loop  (orchestrator code)
 ```
+
+### Player mechanism (corrected — TASK-ACO-002)
+
+The **loop-phase Player does not shell `guardkit task-work --implement-only`** and
+does not read `installer/core/commands/task-work.md`. The orchestrator builds the
+Player's SDK prompt **inline**:
+
+- **Protocol path (default).** `AgentInvoker._invoke_task_work_implement` →
+  `_build_autobuild_implementation_prompt` loads a **backend-selected** execution
+  protocol from `guardkit/orchestrator/prompts/autobuild_execution_protocol.md`
+  (~19 KB) / `_medium.md` (~10 KB) / `_slim.md` (~5.5 KB), chosen at
+  `agent_invoker.py:7866-7876`, and injects requirements, Coach feedback, memory
+  context, and turn context. The legacy flag `use_task_work_delegation` (hardwired
+  `True` at `autobuild.py:2086/:2118/:8146`) selects this path; the name predates
+  ACO-002 and no longer implies a subprocess.
+- **Direct path.** Tasks with `implementation_mode: direct` route through
+  `_invoke_player_direct`, which uses the compact `_build_player_prompt` (~58-line
+  prompt) instead of a protocol file.
+
+Quality is **not** "100% code reuse of quality gates" via a task-work subprocess:
+the gates run as orchestrator code (Phase 4.5, plan audit) and Coach evidence
+(`coach_validator.py`), with `test-orchestrator` / `code-reviewer` invoked directly
+by the orchestrator. (The **pre-loop** design phase is a separate concern and still
+delegates via `task-work --design-only`.)
 
 ## Player-Coach Workflow
 
 The adversarial loop ensures high-quality implementations:
 
-- **Player Agent**: Delegates to task-work, monitors quality gates, creates report
-  - Delegates to `task-work --implement-only` (Phases 3-5.5)
+- **Player Agent**: Implements code from the inline execution protocol, creates report
+  - Runs the inline protocol (Phases 3-5.5) — no `task-work` subprocess (§ mechanism)
   - Works in isolated worktree
   - Reports implementation status and concerns
-  - Leverages stack-specific specialists and test-orchestrator
+  - The orchestrator invokes `test-orchestrator` / `code-reviewer` specialists
 
-- **Coach Agent**: Validates task-work quality gate results independently
+- **Coach Agent**: Validates quality gate results independently
   - Read-only access (Read, Bash only)
   - Reads task-work results from `task_work_results.json`
   - Runs tests independently (trust but verify)

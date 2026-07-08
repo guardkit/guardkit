@@ -23,10 +23,32 @@ manifest.json                 → .claude/manifest.json
 ```
 
 In addition, `init` creates top-level `.claude/`, `tasks/`, and
-`.guardkit/` scaffolding, optionally seeds project-level Graphiti
-knowledge, and optionally writes `.mcp.json`. The contract is documented
-at [guardkit/cli/init.py](../../guardkit/cli/init.py) (`apply_template`
+`.guardkit/` scaffolding. The contract is documented at
+[guardkit/cli/init.py](../../guardkit/cli/init.py) (`apply_template`
 and `_apply_single_template`).
+
+> **Retired (FEAT-MEM-09):** `init` no longer "seeds project-level Graphiti
+> knowledge" nor writes `.mcp.json` / `graphiti.yaml`. Knowledge capture is now
+> the fleet-memory backend, which is entirely env-driven (`FLEET_MEMORY_*` /
+> `GUARDKIT_MEMORY_BACKEND`) and needs **no** init-time configuration — see the
+> module docstring at [guardkit/cli/init.py:7-10](../../guardkit/cli/init.py#L7).
+
+### A third install product: per-file project seeds
+
+Beyond copying the config layer, `init` also writes a small set of **project
+seed** files that are **not part of any template layer**. They are seeded
+**per-file-if-absent** — each is written only when missing and **never clobbers**
+an existing instance, because the project owns and evolves them thereafter (the
+DF-007 ownership boundary):
+
+- the tier-1 **`qa/` format stubs** (WS2 B1, `23ae2ddb`; `install_qa_scaffold`,
+  [init.py:775-780](../../guardkit/cli/init.py#L775) — see the generated
+  `qa/README.md`), and
+- the **`features/conftest.py` BDD bridge** (`install_features_conftest_bridge`).
+
+Keep these distinct from the two template layers below: they are neither the
+config layer (copied verbatim from the template) nor the pattern layer (shipped
+in the template and never rendered at init). They are seeds the *project* owns.
 
 ## What `guardkit init` does NOT do
 
