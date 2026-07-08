@@ -82,6 +82,22 @@ dev = [
     # series as the stable surface — re-audit before bumping.
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
+    # Deterministic template render+parse gate (DIM1-F4 / PB-8). The gate
+    # renders every `.template`/`.j2` scaffold and parses the output with ONE
+    # tree-sitter parser per language (stack-plugin-architecture.md: one parser +
+    # per-language DATA descriptors, never a python-ast monolith). tree-sitter is
+    # a guardkit-tooling dep (it parses TARGET-project template files), so it
+    # lives in dev/templates, not the runtime deps. Lower bounds = the tested
+    # floor; the language-pack ships precompiled grammars for
+    # python/javascript/typescript/csharp.
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
+]
+# Deterministic template gate deps as a standalone extra so CI (and template
+# authors) can install just the render+parse tooling without the full dev set.
+templates = [
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
 ]
 # Memory path: FEAT-HARV writes + FEAT-MEM-08 reads. nats-core is the NATS
 # publisher helper (NATSClient.publish_episode + MemoryEpisodeV1, writes);
@@ -108,6 +124,9 @@ all = [
     "pytest-timeout>=2.1,<3",
     "pytest-bdd>=8.1,<9",
     "httpx>=0.25.1",
+    # Deterministic template gate (DIM1-F4 / PB-8) — see the dev group above.
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
 ]
 
 [tool.uv.sources]
