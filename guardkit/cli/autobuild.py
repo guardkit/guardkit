@@ -1251,7 +1251,25 @@ def complete(
                 timeout=verify_timeout or DEFAULT_VERIFY_TIMEOUT,
             )
             _display_verification_result(verification)
-            sys.exit(0 if verification.status == "passed" else 4)
+
+            # WS2 B2: post-merge known-failure ledger sweep. Flag-gated
+            # (qa.enforce_tier1, default OFF); an un-ledgered failure or a stale
+            # ledger entry fails the gate even when the exit-code verdict looked
+            # plausible. Report-only towards completion (nothing un-completes)
+            # but the process exits non-zero so a caller/CI sees the gate fail.
+            exit_code = 0 if verification.status == "passed" else 4
+            from guardkit.qa.enforcement import is_tier1_enforced
+
+            if is_tier1_enforced(repo_root):
+                from guardkit.orchestrator.completion_verification import (
+                    sweep_completion_against_ledger,
+                )
+
+                sweep = sweep_completion_against_ledger(repo_root, verification)
+                _display_ledger_sweep_result(sweep)
+                if sweep.status == "fail" or sweep.status == "error":
+                    exit_code = 4
+            sys.exit(exit_code)
 
         sys.exit(0)
 
@@ -1530,6 +1548,43 @@ def _display_verification_result(verification) -> None:
     if verification.output_tail:
         body += f"\n\n[dim]{escape(verification.output_tail[-800:])}[/dim]"
     console.print(Panel(body, title=f"Verification {label}", border_style="red"))
+
+
+def _display_ledger_sweep_result(sweep) -> None:
+    """Render the WS2 B2 known-failure ledger sweep outcome (flag-gated path)."""
+    from rich.markup import escape
+
+    console.print()
+    if sweep.status == "pass":
+        console.print(
+            Panel(
+                f"[green]✓ Known-failure ledger sweep clean[/green]\n\n"
+                f"{escape(sweep.detail)}",
+                title="Ledger Sweep Passed",
+                border_style="green",
+            )
+        )
+        return
+    if sweep.status == "unverified":
+        console.print(
+            Panel(
+                f"[yellow]○ Ledger sweep not run[/yellow]\n\n{escape(sweep.detail)}",
+                title="Ledger Sweep Skipped",
+                border_style="yellow",
+            )
+        )
+        return
+    # fail | error
+    console.print(
+        Panel(
+            f"[red]✗ Known-failure ledger sweep {sweep.status.upper()}[/red]\n\n"
+            f"{escape(sweep.detail)}\n\n"
+            "Triage the failure into qa/known-failures.yaml (human/Coach only), "
+            "or fix the code, before shipping.",
+            title=f"Ledger Sweep {sweep.status.upper()}",
+            border_style="red",
+        )
+    )
 
 
 # ============================================================================

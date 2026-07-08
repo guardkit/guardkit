@@ -47,6 +47,7 @@ __all__ = [
     "VerificationResult",
     "resolve_verify_command",
     "run_completion_verification",
+    "sweep_completion_against_ledger",
 ]
 
 # Full-suite verification needs more headroom than the 120s between-wave
@@ -247,3 +248,70 @@ def run_completion_verification(
         detail=detail,
         output_tail=output[-2000:],
     )
+
+
+# ---------------------------------------------------------------------------
+# Post-merge known-failure ledger sweep (WS2 session B2)
+# ---------------------------------------------------------------------------
+#
+# WS2 build-plan §B2 ownership note (2026-07-07): the ledger-sweep enforcement
+# lives in THIS module and is built ONCE, here (WS3-S4 is the same deliverable —
+# no double-dispatch). It diffs the completion suite result against the F2
+# ledger ``qa/known-failures.yaml``: an un-ledgered failure fails the gate; an
+# unexpectedly-passing unconditional ledger entry fails the gate. The pure diff
+# + pytest-output parsing live in ``guardkit.qa.enforcement`` (kept there so the
+# schema/enforcement library is unit-testable without the CLI); this function is
+# the completion-time consumer. Flag-gated by ``qa.enforce_tier1`` at the CALL
+# site (``cli/autobuild.py``), default OFF — this function itself is pure and
+# does not read the flag, so it stays testable in isolation.
+
+
+def sweep_completion_against_ledger(
+    repo_root: Path,
+    verification: "VerificationResult",
+    ledger_path: Optional[Path] = None,
+):
+    """Diff a completion :class:`VerificationResult` against the F2 ledger.
+
+    ``ledger_path`` defaults to ``<repo_root>/qa/known-failures.yaml``. Returns
+    a ``guardkit.qa.enforcement.LedgerSweepResult``:
+
+    - The suite output is parsed for failing node ids + summary counts.
+    - A run with no positive evidence it executed (``unverified``) yields
+      ``status="unverified"`` — never a fail (absence-of-failure-is-not-success).
+    - Otherwise the parsed failures are diffed against the ledger (un-ledgered
+      failure or stale unconditional entry ⇒ ``status="fail"``).
+
+    Custom / non-pytest verification commands emit output shapes this parser
+    does not understand; when the verification status is ``passed``/``failed``
+    on a custom command, the sweep only has the exit-code verdict to go on and
+    returns ``unverified`` for the ledger dimension (the exit-code verdict from
+    ``run_completion_verification`` still stands on its own).
+    """
+    from guardkit.qa.enforcement import (
+        LedgerSweepResult,
+        diff_failures_against_ledger,
+        parse_pytest_outcome,
+    )
+
+    ledger_path = ledger_path or (repo_root / "qa" / "known-failures.yaml")
+
+    # A non-pytest / custom command's output is not ledger-diffable here (its
+    # per-test shape is unknowable — the same reason its verdict is exit-code
+    # only). Report the ledger dimension as unverified, never a fail.
+    is_pytest_shaped = "pytest" in (verification.command or "") or _PYTEST_PASSED_RE.search(
+        verification.output_tail or ""
+    )
+    if not is_pytest_shaped:
+        return LedgerSweepResult(
+            status="unverified",
+            unledgered_failures=(),
+            stale_ledger_entries=(),
+            detail=(
+                "ledger sweep not applicable: verification used a non-pytest "
+                "command whose per-test output shape is unknowable"
+            ),
+        )
+
+    outcome = parse_pytest_outcome(verification.output_tail)
+    return diff_failures_against_ledger(outcome, ledger_path)

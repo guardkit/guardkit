@@ -422,6 +422,12 @@ class FeatureCompleteOrchestrator:
                         "Use --force to override."
                     )
 
+        # WS2 B2: a feature whose pass bar declares a runtime surface cannot
+        # reach feature-complete without at least one registered, green F4 gate.
+        # Flag-gated (qa.enforce_tier1, default OFF) — a no-op unless the repo
+        # has opted in, so existing feature-complete behaviour is unchanged.
+        self._check_runtime_surface_gate(feature)
+
         # Find worktree if it exists
         worktree = None
         if feature.execution.worktree_path:
@@ -440,6 +446,55 @@ class FeatureCompleteOrchestrator:
         console.print("[green]✓[/green] Validation complete\n")
 
         return feature, worktree
+
+    def _check_runtime_surface_gate(self, feature: Feature) -> None:
+        """WS2 B2: refuse feature-complete for a runtime-surface feature with
+        no registered green gate (flag-gated by ``qa.enforce_tier1``).
+
+        No-op when enforcement is OFF (the default). When ON and the feature
+        declares a runtime surface via its committed F1 pass bars but has no
+        green F4 gate, this refuses — printing the reason and raising
+        :class:`FeatureCompleteError` (unless ``--dry-run``, mirroring the
+        incomplete-tasks refusal). A gate-internal error never blocks
+        completion (degrades to a warning).
+        """
+        try:
+            from guardkit.qa.enforcement import (
+                check_runtime_surface_gate,
+                is_tier1_enforced,
+            )
+
+            if not is_tier1_enforced(self.repo_root):
+                return
+            task_ids = [task.id for task in feature.tasks]
+            result = check_runtime_surface_gate(self.repo_root, task_ids)
+        except FeatureCompleteError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "QA runtime-surface gate check errored for %s (%s) — not "
+                "blocking feature-complete",
+                feature.id,
+                exc,
+            )
+            return
+
+        if result.passed:
+            if result.runtime_surface:
+                console.print(
+                    f"[green]✓[/green] QA runtime-surface gate: {result.detail}"
+                )
+            return
+
+        console.print(
+            f"[red]✗ QA runtime-surface gate refusal:[/red] {result.detail}"
+        )
+        if not self.dry_run:
+            raise FeatureCompleteError(
+                f"Cannot complete feature {feature.id}: {result.detail}. "
+                "Register a live gate and take it green (qa/gates/registry.yaml), "
+                "or use --dry-run to inspect."
+            )
 
     def _completion_phase(self, feature: Feature) -> None:
         """
