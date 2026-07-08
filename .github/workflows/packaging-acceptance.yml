@@ -41,6 +41,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  manifest-check:
+    name: Command MANIFEST is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for source-commit provenance)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify the committed command MANIFEST matches the repo
+        # PB-3: fails if installer/core/commands/MANIFEST.json is stale (content
+        # hashes / version / tombstones / command set drifted). Regenerate with
+        # `python scripts/generate_command_manifest.py`.
+        run: python scripts/generate_command_manifest.py --check
+
   wheel-acceptance:
     name: Clean-venv + uvx wheel install
     runs-on: ubuntu-latest

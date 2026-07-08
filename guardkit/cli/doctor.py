@@ -508,6 +508,149 @@ class SDKConnectivityCheck(Check):
             )
 
 
+class CommandManifestDriftCheck(Check):
+    """Report drift between an installed commands dir and the shipped MANIFEST.
+
+    PB-3 (DIM3-F6): Gen-1 (~/.agentecflow/commands) and Gen-2 (project
+    .claude/commands) copies are write-once with no staleness signal — the
+    ~/.agentecflow drift sat undetected ~7 weeks. This check compares each
+    installed command markdown's sha256 against the manifest install.sh ships,
+    reporting per-file: current / modified / missing / retired-present / untracked.
+
+    REPORT-ONLY (KEEP K10): it never auto-refreshes and never clobbers the
+    per-file-if-absent copy semantics — detection, not mutation. It is optional
+    (a missing manifest or commands dir is a clean PASS, not a failure).
+    """
+
+    def __init__(self, required: bool = False):
+        super().__init__(required=required)
+        self.name = "Command Drift"
+
+    @staticmethod
+    def _installed_dirs() -> List[tuple]:
+        """Candidate installed command dirs as ``(path, is_global)`` pairs.
+
+        ~/.claude/commands is a symlink to ~/.agentecflow/commands, so only the
+        agentecflow path is scanned for the global surface. A project
+        .claude/commands (a real dir, not the global symlink) is added when
+        present in the cwd and is NOT global — its per-file-if-absent copies
+        (K10) legitimately hold only a subset, so "missing" is never drift there.
+        """
+        pairs: List[tuple] = []
+        seen: set = set()
+        agentecflow = Path.home() / ".agentecflow" / "commands"
+        proj = Path.cwd() / ".claude" / "commands"
+        for d, is_global in ((agentecflow, True), (proj, False)):
+            try:
+                real = d.resolve()
+            except OSError:
+                continue
+            if d.is_dir() and real not in seen:
+                seen.add(real)
+                pairs.append((d, is_global))
+        return pairs
+
+    def run(self) -> CheckResult:
+        import hashlib
+        import json
+
+        dirs = self._installed_dirs()
+        if not dirs:
+            return CheckResult(
+                name=self.name,
+                status=CheckStatus.PASS,
+                message="No installed commands dir found (nothing to check)",
+                required=self.required,
+            )
+
+        # Locate the manifest (shipped alongside the installed commands).
+        manifest = None
+        for d, _is_global in dirs:
+            candidate = d / "MANIFEST.json"
+            if candidate.is_file():
+                try:
+                    manifest = json.loads(candidate.read_text(encoding="utf-8"))
+                    break
+                except (OSError, ValueError):
+                    continue
+        if manifest is None:
+            return CheckResult(
+                name=self.name,
+                status=CheckStatus.WARNING,
+                message="No command MANIFEST.json found; cannot check drift",
+                details="Reinstall via install.sh to ship the provenance manifest.",
+                required=self.required,
+            )
+
+        expected = {
+            name: entry.get("sha256")
+            for name, entry in manifest.get("commands", {}).items()
+        }
+        tombstones = {
+            (t.get("name") if isinstance(t, dict) else t)
+            for t in manifest.get("tombstones", [])
+        }
+        version = manifest.get("version", "unknown")
+
+        modified: List[str] = []
+        missing: List[str] = []
+        retired_present: List[str] = []
+        current = 0
+        for d, is_global in dirs:
+            present = {p.name for p in d.glob("*.md")}
+            # A non-global (project) dir is only a command surface if it holds at
+            # least one tracked command; skip an unrelated / de-forked .claude
+            # dir entirely so it does not report spurious drift.
+            if not is_global and not (present & set(expected)):
+                continue
+            for name, sha in expected.items():
+                target = d / name
+                if not target.is_file():
+                    # Per-file-if-absent (K10): a project dir legitimately holds a
+                    # subset — "missing" is drift only for the global install.
+                    if is_global:
+                        missing.append(name)
+                    continue
+                actual = hashlib.sha256(target.read_bytes()).hexdigest()
+                if actual == sha:
+                    current += 1
+                else:
+                    modified.append(name if is_global else f"{name} ({d})")
+            for name in sorted(tombstones & present):
+                retired_present.append(name if is_global else f"{name} ({d})")
+
+        drift = modified or missing or retired_present
+        detail_lines: List[str] = [f"manifest version {version}; current: {current}"]
+        if modified:
+            detail_lines.append(f"modified ({len(modified)}): " + ", ".join(modified))
+        if missing:
+            detail_lines.append(f"missing ({len(missing)}): " + ", ".join(missing))
+        if retired_present:
+            detail_lines.append(
+                f"retired-still-present ({len(retired_present)}): "
+                + ", ".join(retired_present)
+                + " — re-run install.sh to prune"
+            )
+
+        if drift:
+            return CheckResult(
+                name=self.name,
+                status=CheckStatus.WARNING,
+                message=(
+                    f"{len(modified)} modified, {len(missing)} missing, "
+                    f"{len(retired_present)} retired-present (report-only)"
+                ),
+                details="; ".join(detail_lines),
+                required=self.required,
+            )
+        return CheckResult(
+            name=self.name,
+            status=CheckStatus.PASS,
+            message=f"{current} command files current @ v{version}",
+            required=self.required,
+        )
+
+
 # ============================================================================
 # Doctor Runner (Orchestration)
 # ============================================================================
@@ -553,6 +696,7 @@ class DoctorRunner:
             # Configuration
             FileExistsCheck(Path.cwd() / "CLAUDE.md", "CLAUDE.md", required=False),
             FileExistsCheck(Path.cwd() / "tasks", "tasks/", required=False, is_dir=True),
+            CommandManifestDriftCheck(required=False),
         ]
 
     def run(self) -> List[CheckResult]:

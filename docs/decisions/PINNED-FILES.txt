@@ -1,0 +1,33 @@
+# PINNED-FILES — the FEAT-SPL-007/008 output-contract artifacts (PB-3 / DIM3-F5)
+#
+# These six files are the guardkit half of the pinned spec/plan output contract
+# consumed by specialist-agent's Session C loader. The contract is pinned in
+# specialist-agent at commit `e1081aa`
+# (docs/design/contracts/CONTRACT-feature-spec-plan-outputs.md §0); the two
+# templates are additionally content-hash-pinned by that loader
+# (feature-spec.md sha256 79a6c306…, feature-plan.md sha256 cb440952…).
+#
+# CI GATE (.github/workflows/pinned-files-gate.yml): a PR or push that changes
+# ANY file listed below MUST, in the SAME diff, also touch the dated correction
+# ledger docs/decisions/pinned-template-corrections.md — otherwise the build is
+# RED and un-mergeable. This makes an uncoordinated pin break impossible to land
+# silently (ce914f7c / 111b02ac / 5ad48fcf all edited the now-pinned templates
+# BEFORE the pin existed; this gate closes that window).
+#
+# CROSS-REPO MECHANISM (honest note): guardkit CI cannot read specialist-agent's
+# repo, so the correction note is MIRRORED guardkit-side as the ledger above.
+# The real re-pin lives in specialist-agent (the TemplatePin hash + the contract
+# §0 dated note); the ledger here is the lockstep guardkit-side record that the
+# gate can verify. A byte change to a pinned template is the G2b RE-FREEZE
+# procedure (DF-012 / ADR-D): dated correction note in the contract doc §0 +
+# re-run round-trip fixtures + Session C re-pin + G2b/FEAT-EVAL-SPEC re-freeze,
+# batched into ONE coordinated re-pin event — never a piecemeal edit.
+#
+# One repo-relative path per line; blank lines and # comments ignored.
+
+installer/core/commands/feature-spec.md
+installer/core/commands/feature-plan.md
+installer/core/commands/lib/feature_spec_normalize.py
+guardkit/orchestrator/feature_loader.py
+guardkit/cli/feature.py
+guardkit/models/task_types.py
