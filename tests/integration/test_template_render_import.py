@@ -19,10 +19,12 @@ Interface contract:
       target. See ``_LCDWE_LAYOUT`` for a worked example.
     - It does NOT call ``guardkit init`` (that CLI deliberately skips
       ``.template`` scaffold files — see ``guardkit.cli.init.apply_template``).
-      If the installer ever grows a first-class ``.template`` / ``.j2``
-      renderer (``guardkit render`` or an importable ``render_template(...)``
-      API), swap the local ``_render_template`` helper for it — see
-      ``_RENDER_IMPL`` sentinel.
+      The first-class renderer this test anticipated now exists as
+      ``guardkit.templates.render`` (DIM1-F4 / PB-8): the local
+      ``_render_template`` / ``_render_text`` / ``_resolve_target`` helpers
+      delegate to it (``_RENDER_IMPL`` sentinel is now ``"library"``). The parse
+      tier of the same gate lives in ``guardkit.templates.parse_gate`` and runs
+      via ``guardkit template validate --deterministic``.
     - For each template in ``TEMPLATES``, the test renders ``.template`` files into
       a ``tmp_path`` scratch tree with ``{{ProjectName}}=scratch`` and invokes a
       subprocess ``python -c "import scratch.<entry>"`` per declared entrypoint.
@@ -61,6 +63,19 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pytest
+
+# The render shim was promoted to a library (DIM1-F4 / PB-8): the local
+# ``_render_text`` / ``_resolve_target`` / ``_render_template`` helpers below now
+# delegate to ``guardkit.templates.render`` (the ``_RENDER_IMPL`` swap this
+# module's docstring anticipated). The surrounding import-tier logic is unchanged
+# — this test still renders a whole template into a scratch tree via each
+# template's ``layout`` and import-checks it, which is stricter than the parse
+# tier and catches the literal TASK-LCL-001 runtime failure.
+from guardkit.templates.render import (
+    render_template as _lib_render_template,
+    render_text as _lib_render_text,
+    resolve_target as _lib_resolve_target,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -388,57 +403,17 @@ def _entrypoint_params():
 
 
 def _render_text(source: str, placeholders: Dict[str, str]) -> str:
-    """Substitute ``{{Key}}`` placeholders. Simple string replacement, no Jinja."""
-    rendered = source
-    for key, value in placeholders.items():
-        rendered = rendered.replace("{{" + key + "}}", value)
-    return rendered
+    """Substitute ``{{Key}}`` placeholders. Delegates to the promoted library."""
+    return _lib_render_text(source, placeholders)
 
 
 def _resolve_target(
     src_rel: Path, layout: List[tuple]
 ) -> Optional[Path]:
     """Map a source path under ``installer/core/templates/<name>/`` to its
-    target under the scratch project root.
-
-    Uses longest-prefix match against ``layout``. ``None`` target = skip.
-    Returns the project-relative destination with ``.template`` stripped.
+    target under the scratch project root. Delegates to the promoted library.
     """
-    src_str = src_rel.as_posix()
-
-    # Longest match wins — order layout specific-to-general at construction time
-    best_prefix = ""
-    best_target = ""
-    matched = False
-    for source_prefix, target in layout:
-        if src_str == source_prefix or src_str.startswith(source_prefix):
-            if len(source_prefix) > len(best_prefix):
-                best_prefix = source_prefix
-                best_target = target
-                matched = True
-
-    if not matched:
-        return None
-    if best_target is None:
-        return None
-
-    # Exact file mapping (source_prefix was a file)
-    if best_prefix.endswith(".template") or best_prefix.endswith(".j2"):
-        dest_str = best_target
-    else:
-        # Directory mapping — replace the prefix and strip the template suffix.
-        # ``.template`` is the base-template convention (simple ``{{Key}}`` sub).
-        # ``.j2`` is used by extension templates that normally require Jinja2
-        # evaluation; this test only does literal ``{{Key}}`` substitution, so
-        # files with real Jinja expressions must be skipped via layout ``None``.
-        suffix = src_str[len(best_prefix):]
-        dest_str = best_target + suffix
-        if dest_str.endswith(".template"):
-            dest_str = dest_str[: -len(".template")]
-        elif dest_str.endswith(".j2"):
-            dest_str = dest_str[: -len(".j2")]
-
-    return Path(dest_str)
+    return _lib_resolve_target(src_rel, layout)
 
 
 def _render_template(
@@ -451,38 +426,14 @@ def _render_template(
 
     Returns the list of rendered file paths (relative to ``output_root``).
 
-    This is the local render shim that stands in for an installer-level
-    ``.template`` renderer. If guardkit ever gains one, replace the body of
-    this function with a call to it — the surrounding test logic does not care.
+    The render shim guardkit "ever gained" is ``guardkit.templates.render``
+    (DIM1-F4 / PB-8); this now delegates to it — the ``_RENDER_IMPL`` sentinel the
+    docstring named is now ``"library"``.
     """
-    _RENDER_IMPL = "local"  # noqa: F841 — sentinel for future grep
-
-    # Pick up both ``.template`` (base-template convention) and ``.j2``
-    # (extension-template convention, e.g. langchain-deepagents-weighted-evaluation).
-    # NOTE: substitution is literal ``{{Key}} -> value``, not Jinja evaluation.
-    # Files that contain real Jinja expressions (``{% for %}``, filters, ``|
-    # default(...)``) must be skipped via the layout's ``None`` target or they
-    # will render with unresolved Jinja syntax.
-    template_files = sorted(
-        list(template_root.rglob("*.template")) + list(template_root.rglob("*.j2"))
+    _RENDER_IMPL = "library"  # noqa: F841 — sentinel for future grep
+    return _lib_render_template(
+        template_root, case.placeholders, case.layout, output_root
     )
-
-    rendered: List[Path] = []
-    for template_path in template_files:
-        src_rel = template_path.relative_to(template_root)
-        dest_rel = _resolve_target(src_rel, case.layout)
-        if dest_rel is None:
-            continue
-
-        content = template_path.read_text(encoding="utf-8")
-        rendered_content = _render_text(content, case.placeholders)
-
-        dest_abs = output_root / dest_rel
-        dest_abs.parent.mkdir(parents=True, exist_ok=True)
-        dest_abs.write_text(rendered_content, encoding="utf-8")
-        rendered.append(dest_rel)
-
-    return rendered
 
 
 def _runtime_deps_available(deps: List[str]) -> Optional[str]:

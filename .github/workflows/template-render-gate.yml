@@ -1,0 +1,81 @@
+# GitHub Actions Workflow: deterministic template render+parse gate
+# DIM1-F4 / PB-8 (guardkit-modernization-review-2026-07-08.md §2)
+#
+# Purpose
+#   Turn the TASK-LCL-001 class of defect — a placeholder sweep mangling a
+#   scaffold `.template`/`.j2` file so the rendered output no longer parses —
+#   from a post-release surprise into a red build. Before this gate, only the
+#   langchain family (3 of 13 stacks) had ANY render check, and only at
+#   pytest-time (import smoke), never at CI time for the other stacks.
+#
+# What it runs
+#   1. `guardkit-py template validate --deterministic` — renders every scaffold
+#      and parses the output with ONE tree-sitter parser + per-language
+#      descriptors (stack-plugin-architecture.md). Exit 1 on any parse error,
+#      exit 2 if the tree-sitter runtime is missing (a gate that could not run is
+#      NOT a pass — absence-of-failure-is-not-success).
+#   2. The parse-gate unit tests (descriptor mapping, opt-out, the TASK-LCL-001
+#      red repro, whole-suite green).
+#
+# The AI prose audit (`/template-validate` skill) is a separate, unchanged tier.
+
+name: Template Render Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "installer/core/templates/**"
+      - "guardkit/templates/**"
+      - "guardkit/cli/template.py"
+      - "tests/unit/templates/**"
+      - "tests/integration/test_template_render_import.py"
+      - ".github/workflows/template-render-gate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "installer/core/templates/**"
+      - "guardkit/templates/**"
+      - "guardkit/cli/template.py"
+      - "tests/unit/templates/**"
+      - "tests/integration/test_template_render_import.py"
+      - ".github/workflows/template-render-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: template-render-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  template-gate:
+    name: template render+parse gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install guardkit + tree-sitter (templates extra)
+        # The `templates` extra is exactly the render+parse tooling
+        # (tree-sitter + tree-sitter-language-pack) — no project runtime deps,
+        # no autobuild/guardkitfactory resolution.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[templates]"
+
+      - name: Deterministic template gate (all stacks)
+        run: guardkit-py template validate --deterministic
+
+      - name: Parse-gate unit tests
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/unit/templates/test_parse_gate.py \
+            -o addopts="" -p no:cacheprovider -q -rfE

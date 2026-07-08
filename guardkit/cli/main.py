@@ -25,6 +25,7 @@ from guardkit.cli.review import review
 from guardkit.cli.system_plan import system_plan
 from guardkit.cli.system_context import context_switch
 from guardkit.cli.task import task
+from guardkit.cli.template import template
 
 # Load .env files automatically
 # Priority: .env in current directory, then traverse up to find project root
@@ -128,6 +129,9 @@ cli.add_command(context_switch)
 
 # Add Task command group
 cli.add_command(task)
+
+# Add Template command group (deterministic render+parse gate, DIM1-F4/PB-8)
+cli.add_command(template)
 
 
 # ============================================================================
