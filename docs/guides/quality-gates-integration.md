@@ -416,13 +416,10 @@ Recommendations:
 
 **Resolution**:
 ```bash
-# Option 1: Update plan to match implementation
-/task-refine TASK-a3f8 --update-plan
-
-# Option 2: Remove extra features
+# Option 1: Remove extra features
 /task-work TASK-a3f8 --simplify
 
-# Option 3: Split into multiple tasks
+# Option 2: Split into multiple tasks
 /task-create "Extract feature X to separate task" parent:TASK-a3f8
 ```
 

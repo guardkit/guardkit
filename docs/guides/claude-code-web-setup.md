@@ -76,7 +76,7 @@ cd /home/user/guardkit
 ### What Gets Installed
 
 **Global Components** (`~/.agentecflow/`):
-- **Commands**: 9 slash commands (task-create, task-work, etc.)
+- **Commands**: 8 slash commands (task-create, task-work, etc.)
 - **Agents**: 55 AI agents (14 global + 41 stack-specific)
 - **Templates**: 5 high-quality templates (react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, default)
 - **Libraries**: Python modules for complexity evaluation, plan rendering
@@ -97,7 +97,7 @@ cd /home/user/guardkit
 ✅ Installation Complete!
 
 Installed Components:
-- 9 slash commands available
+- 8 slash commands available
 - 55 AI agents (14 global + 41 stack-specific)
 - 4 high-quality project templates
 - Python dependencies (Jinja2, python-frontmatter)
@@ -107,7 +107,6 @@ Commands Available:
 - /task-work
 - /task-complete
 - /task-status
-- /task-refine
 - /debug
 - /figma-to-react
 - /zeplin-to-maui
@@ -227,7 +226,6 @@ cd /home/user/my-project
 | `/task-status` | ✅ Yes | Shows tasks from current directory |
 | `/task-work` | ✅ Yes | **Must run from project root** (see below) |
 | `/task-complete` | ✅ Yes | Works on tasks in current directory |
-| `/task-refine` | ✅ Yes | Works on tasks in current directory |
 | `/debug` | ✅ Yes | Troubleshooting for current context |
 
 ### Repository-Specific Usage
@@ -455,7 +453,6 @@ cd /home/user/my-web-app
 | `/task-work` | Execute task workflow (Phases 2-5.5) | `/task-work TASK-001` |
 | `/task-complete` | Mark task as complete and archive | `/task-complete TASK-001` |
 | `/task-status` | View task status and summary | `/task-status TASK-001` |
-| `/task-refine` | Lightweight improvements without re-work | `/task-refine TASK-001` |
 | `/task-review` | Analysis and decision workflows | `/task-review TASK-001 --mode=architectural --depth=standard` |
 
 ### Design Integration Commands
@@ -687,7 +684,7 @@ cd /home/user/your-project
 ```
 /root/.agentecflow/              # Global installation
 ├── agents/                      # 55 AI agents
-├── commands/                    # 9 slash commands
+├── commands/                    # 8 slash commands
 ├── templates/                   # 5 high-quality templates
 └── bin/                        # CLI commands (guardkit, gk)
 

@@ -12,7 +12,7 @@ receives on stdin, so the same script handles both events.
 Allowlisted commands (others ignored): system-arch, system-design,
 system-plan, arch-refine, design-refine, feature-spec, feature-plan,
 feature-build, feature-complete, task-create, task-work, task-review,
-task-refine, task-complete, agent-validate, agent-format, agent-enhance,
+task-complete, agent-validate, agent-format, agent-enhance,
 review.
 
 Output:
@@ -40,7 +40,7 @@ CAPTURE_COMMANDS = {
     "system-arch", "system-design", "system-plan",
     "arch-refine", "design-refine",
     "feature-spec", "feature-plan", "feature-build", "feature-complete",
-    "task-create", "task-work", "task-review", "task-refine", "task-complete",
+    "task-create", "task-work", "task-review", "task-complete",
     "agent-validate", "agent-format", "agent-enhance",
     "review",
 }

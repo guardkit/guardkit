@@ -30,7 +30,6 @@ A lightweight, pragmatic task workflow system with built-in quality gates that p
 /task-work TASK-XXX [--mode=standard|tdd] [--intensity=minimal|light|standard|strict] [--micro]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
-/task-refine TASK-XXX
 ```
 
 ### Review Workflow

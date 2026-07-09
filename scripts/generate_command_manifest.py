@@ -67,6 +67,16 @@ TOMBSTONES = [
         "retired_in": "71becc51",
         "reason": "Retired from installer/core/commands; superseded workflow.",
     },
+    {
+        "name": "task-refine.md",
+        "retired_in": "2026-07-09",  # retirement commit; see DEC-task-refine-retirement
+        "reason": (
+            "Retired per DEC-task-refine-retirement (ADR-C consolidation, "
+            "2026-07-09): zero inbound command references; claimed module "
+            "refinement_handler.py never existed; role absorbed by re-running "
+            "/task-work and /task-review's [I]mplement flow."
+        ),
+    },
 ]
 
 

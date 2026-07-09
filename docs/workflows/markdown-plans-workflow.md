@@ -611,7 +611,7 @@ A: Yes! Create a file following the standard structure. System will validate and
 A: Set `"format": "json"` in settings. But Markdown is strongly recommended for team collaboration.
 
 **Q: Can I edit plans after implementation starts?**
-A: Yes, but plan becomes read-only after Phase 3 (implementation) begins. Use `/task-refine` for post-completion changes.
+A: Yes, but plan becomes read-only after Phase 3 (implementation) begins. Re-run `/task-work TASK-XXX` for post-completion changes.
 
 **Q: Do Markdown plans work with `/task-work --implement-only`?**
 A: Yes! System loads the Markdown plan saved during `--design-only` run.

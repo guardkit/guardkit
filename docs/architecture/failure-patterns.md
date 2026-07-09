@@ -21,7 +21,7 @@
 ## FP-004: Rabbit Hole Divergence
 
 - **Pattern**: Without structured checkpoints, conversations go down rabbit holes. Tasks aren't implemented completely.
-- **Prevention**: Quality gates force structured progression. Plan audit at Phase 5.5 detects scope drift. /task-refine for mid-implementation course correction.
+- **Prevention**: Quality gates force structured progression. Plan audit at Phase 5.5 detects scope drift. Re-running /task-work for course correction.
 
 ## FP-005: Scope Creep in Implementation
 
