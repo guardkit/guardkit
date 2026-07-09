@@ -25,6 +25,11 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureParseError,
 )
+from guardkit.qa.enforcement import (
+    check_plan_does_not_author_ledger,
+    git_changed_paths,
+    is_tier1_enforced,
+)
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -250,6 +255,19 @@ def validate(feature_id: str, output_json_flag: bool) -> None:
             )
         except (FeatureParseError, FeatureNotFoundError) as e:
             structural_errors = [str(e)]
+
+    # Step 3.5: Plan-time known-failure-ledger authorship reject-lint (B2 / DIM5-F3).
+    #
+    # `guardkit feature validate` is the plan-output oracle /feature-plan runs
+    # (feature-plan.md step 8.5) and the SPL FEAT-SPL-007/008 named oracle, so
+    # this is the deterministic Python seam that fires on a planning session's
+    # outputs — the same surface B2 wired its other flag-gated refusals into,
+    # never the LLM skill markdown. Flag OFF is a byte-for-byte no-op: when
+    # enforcement is off the check is not invoked and validate is unchanged.
+    if is_tier1_enforced(repo_root):
+        ledger_lint = check_plan_does_not_author_ledger(git_changed_paths(repo_root))
+        if not ledger_lint.passed:
+            structural_errors = list(structural_errors) + [ledger_lint.detail]
 
     # Step 4: Output results
     all_errors = schema_errors + structural_errors
