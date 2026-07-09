@@ -645,12 +645,17 @@ Never reinterpret a missing ID as a description.
 guardkit task create "{description}" --prefix REV --task-type review
 ```
 
+**BINARY FALLBACK**: the installed `guardkit` shell wrapper may not dispatch the `task`
+subcommand ("Unknown command: task") — the subcommand lives in the Python CLI. If the first
+form fails that way, retry with the Python entry point: `guardkit-py task create ...`, or the
+repo venv's `.venv/bin/guardkit-py` when working inside the guardkit repo itself.
+
 **PARSE** the created task id and path from the command output
 (`Created task: TASK-REV-{hash}-{slug}.md` / `Location: {path}`). The created file carries
 `task_type: review` frontmatter and a `## Review Scope` section seeded with the description,
 so it satisfies this command's Execution Protocol prerequisites without editing.
 
-**ON FAILURE** (non-zero exit, missing `guardkit` binary, or unparseable output): STOP with
+**ON FAILURE** (non-zero exit after the binary fallback, or unparseable output): STOP with
 the error and suggest the two-step fallback (`/task-create "..." task_type:review` then
 `/task-review TASK-REV-XXXX`). Do NOT hand-write a task file.
 
