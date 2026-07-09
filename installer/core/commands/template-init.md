@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Template Init - Greenfield Template Creation from Q&A Session
 
 Orchestrates greenfield template creation through interactive Q&A session without requiring existing codebase.

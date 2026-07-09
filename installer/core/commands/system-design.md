@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /system-design - Interactive System Design Command
 
 Designs API contracts, data models, and multi-protocol surfaces per bounded context. This command sits downstream of `/system-arch` in the command pipeline: `/system-arch` (structural decisions) → `/system-design` (detailed design) → `/system-plan` (feature planning). It reads the architecture context seeded by `/system-arch` and produces design artefacts that ground subsequent `/feature-spec` and `/feature-plan` sessions.

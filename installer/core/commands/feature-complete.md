@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Feature Complete - Merge and Archive AutoBuild Results
 
 Complete autonomous task implementation by merging approved worktree changes to main branch and archiving AutoBuild state. Use after reviewing and approving AutoBuild output from `/feature-build`.

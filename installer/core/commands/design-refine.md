@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /design-refine - Iterative Design Refinement Command
 
 Enables iterative refinement of design decisions (DDRs, API contracts, data models) with temporal superseding and feature spec staleness detection. This command sits downstream of `/system-design` in the command pipeline: `/system-arch` (architecture) → `/system-design` (detailed design) → `/design-refine` (iterative refinement).

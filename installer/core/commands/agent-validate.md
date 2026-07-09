@@ -1,4 +1,5 @@
 ---
+format_version: 1
 name: agent-validate
 category: Development Tools
 summary: Objective quality validation for agent files using GitHub best practices and measurable metrics

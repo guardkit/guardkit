@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /agent-format - Format Agent Documentation
 
 Automatically format agent markdown files according to GitHub best practices research (2,500+ repositories).

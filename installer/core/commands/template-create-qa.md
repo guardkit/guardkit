@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Template Create Q&A - Interactive Greenfield Template Creation
 
 Interactive Q&A session for creating project templates from scratch (greenfield).

@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /context-switch - Multi-Project Navigation
 
 Switches the active project context and displays an orientation summary. Enables seamless navigation between multiple projects managed by GuardKit.

@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /arch-refine - Iterative Architecture Decision Refinement Command
 
 Enables iterative refinement of architecture decisions with temporal superseding, downstream impact analysis, and staleness flagging. This command sits alongside `/system-arch` in the architecture pipeline: while `/system-arch` defines or broadly refines architecture, `/arch-refine` targets specific existing ADRs for precise updates.

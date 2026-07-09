@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Template Q&A - Interactive Template Customization
 
 Run interactive Q&A session to customize template generation settings.

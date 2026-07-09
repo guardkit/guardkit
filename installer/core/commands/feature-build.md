@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Feature Build - Autonomous Task Implementation
 
 Execute autonomous task implementation using the Player-Coach adversarial workflow. Creates an isolated worktree, runs iterative implementation cycles, and preserves all work for human review.

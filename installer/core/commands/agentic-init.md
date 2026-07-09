@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /agentic-init Command
 
 ## Overview

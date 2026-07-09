@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /system-plan - Interactive Architecture Planning Command
 
 Establishes and maintains system-level architecture context in fleet-memory. This is the third specialization in GuardKit's command hierarchy: `/task-review` (code level), `/feature-plan` (feature level), and `/system-plan` (system/architecture level).

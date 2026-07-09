@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Task Complete - Finalize Task with Feature/Epic Progress Rollup
 
 Complete tasks with comprehensive validation, automatic progress rollup to features and epics, and external PM tool synchronization.

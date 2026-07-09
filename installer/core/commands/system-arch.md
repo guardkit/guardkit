@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # /system-arch - System Architecture Definition Command
 
 Defines system-level architecture decisions before any feature work begins. This is the first command in the upstream pipeline: `/system-arch` (architecture) → `/system-design` (API contracts) → `/system-plan` (planning) → `/feature-spec` (specification).

@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Debug - Systematic Bug Investigation and Root Cause Analysis
 
 ## Command
