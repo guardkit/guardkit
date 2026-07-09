@@ -81,13 +81,9 @@
       "sha256": "89b82175744512a51f1b3aa6ca592ea4805b07a50557cf58ea80edf4d655b322",
       "source_commit": "546a82d4"
     },
-    "task-refine.md": {
-      "sha256": "cf03ecfcd8d40caeed73e8647203235c6662a6c7a68b40e77a46abe3f1464aec",
-      "source_commit": "60a5dffc7"
-    },
     "task-review.md": {
       "sha256": "54231f597a3765f83996389dfe2793b70a23cb9b34b5f7801610f48d6c96fce7",
-      "source_commit": "546a82d4"
+      "source_commit": "10f9e44f"
     },
     "task-status.md": {
       "sha256": "502d6036d769cb7ba6bbebc332a3307a3dc36bc126e93fbffafcf3818d2a225c",
@@ -132,6 +128,11 @@
       "name": "system-overview.md",
       "retired_in": "71becc51",
       "reason": "Retired from installer/core/commands; superseded workflow."
+    },
+    {
+      "name": "task-refine.md",
+      "retired_in": "2026-07-09",
+      "reason": "Retired per DEC-task-refine-retirement (ADR-C consolidation, 2026-07-09): zero inbound command references; claimed module refinement_handler.py never existed; role absorbed by re-running /task-work and /task-review's [I]mplement flow."
     }
   ]
 }

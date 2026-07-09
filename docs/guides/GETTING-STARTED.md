@@ -241,11 +241,11 @@ Beyond the basic `/task-work` command, these specialized workflows handle specif
 ```
 Auto-detected for simple tasks. [Details: task-work.md](../../installer/core/commands/task-work.md#flag---micro)
 
-**Iterative Refinement (minor tweaks)**:
+**Review-Feedback Fixes (minor tweaks)**:
 ```bash
-/task-refine TASK-XXX          # Quick fixes after code review
+/task-work TASK-XXX            # Re-run for quick fixes after code review
 ```
-For small adjustments without full re-work. [Details: GuardKit Workflow](guardkit-workflow.md#37-iterative-refinement)
+Re-running an IN_REVIEW task applies targeted fixes and re-runs quality gates. [Details: GuardKit Workflow](guardkit-workflow.md#38-iterative-refinement)
 
 **Analysis & Reviews (decisions, audits)**:
 ```bash
@@ -268,7 +268,6 @@ For architectural reviews, security audits, technical decisions (no implementati
 /task-work TASK-XXX [--mode=standard|tdd] [--design-only|--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
-/task-refine TASK-XXX
 ```
 
 ### Options for task-work

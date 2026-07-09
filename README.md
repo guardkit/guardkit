@@ -188,7 +188,6 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 /task-work TASK-XXX [--mode=standard|tdd] [--micro] [--design-only] [--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
-/task-refine TASK-XXX  # Lightweight improvements
 ```
 
 ### Development Modes

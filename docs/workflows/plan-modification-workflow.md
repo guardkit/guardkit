@@ -891,4 +891,4 @@ Example: `plan-TASK-042-v2-20251019143000.md`
 
 ### Q: Can I modify a plan after approving it?
 
-**A:** Not during the same task-work session. Once you approve and proceed to Phase 3 (Implementation), the plan is locked for that run. If you discover issues during implementation, use `/task-refine` after completion or cancel the task-work session and restart with a modified plan.
+**A:** Not during the same task-work session. Once you approve and proceed to Phase 3 (Implementation), the plan is locked for that run. If you discover issues during implementation, re-run `/task-work` after completion or cancel the task-work session and restart with a modified plan.

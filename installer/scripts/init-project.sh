@@ -641,7 +641,6 @@ print_next_steps() {
     echo "    /task-work        - Work on task (with quality gates)"
     echo "    /task-complete    - Complete and archive task"
     echo "    /task-status      - View task status"
-    echo "    /task-refine      - Iterative refinement"
     echo ""
     echo "  Design-First Workflow (complex tasks):"
     echo "    /task-work --design-only      - Plan approval checkpoint"

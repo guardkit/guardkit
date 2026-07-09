@@ -36,8 +36,8 @@ guardkit init default                # Language-agnostic (Go, Rust, Ruby, etc.)
 /task-status
 /task-status TASK-XXX
 
-# Refine implementation
-/task-refine TASK-XXX
+# Apply review-feedback fixes (targeted re-run, quality gates re-run)
+/task-work TASK-XXX
 ```
 
 ## Command Parameters

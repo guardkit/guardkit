@@ -35,7 +35,7 @@ Learn when and how to use design-first workflow for critical tasks.
 
 ## 🔄 [Iterative Refinement](guides/guardkit-workflow.md#iterative-refinement)
 
-Lightweight improvements without full re-work using `/task-refine`.
+Lightweight improvements without full re-work by re-running `/task-work` on an IN_REVIEW task.
 
 **Use For:**
 
@@ -46,15 +46,15 @@ Lightweight improvements without full re-work using `/task-refine`.
 
 **Don't Use For:**
 
-- New features (use `/task-work`)
+- New features (create a new task)
 - Architecture changes
 - Major refactoring
 
 **Example:**
 
 ```bash
-/task-refine TASK-042
-# Makes targeted improvements without full workflow
+/task-work TASK-042
+# Re-run applies targeted improvements and re-runs quality gates
 ```
 
 Learn when refinement is faster than re-implementation.

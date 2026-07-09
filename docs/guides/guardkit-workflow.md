@@ -462,7 +462,7 @@ The `/task-work` command executes 10 phases automatically:
 │   └─ Scope Creep Detection                   │
 │                                              │
 └─ PHASE 6: Iterative Refinement               │
-    └─ /task-refine Command ───────────────────┘
+    └─ Re-run /task-work ──────────────────────┘
 ```
 
 ### Phase Descriptions
@@ -542,10 +542,9 @@ The `/task-work` command executes 10 phases automatically:
 - Requires explanation for deviations
 
 **Phase 6: Iterative Refinement**
-- `/task-refine` command for IN_REVIEW tasks
-- Preserves original context
+- Re-run `/task-work TASK-XXX` for IN_REVIEW tasks (targeted fixes)
 - Re-runs quality gates
-- Lightweight improvement cycle
+- For review findings, use `/task-review`'s [I]mplement flow
 
 ---
 
@@ -643,7 +642,7 @@ BACKLOG
 - `/task-work` moves BACKLOG → IN_PROGRESS
 - Quality gates determine IN_PROGRESS → IN_REVIEW or BLOCKED
 - `/task-complete` moves IN_REVIEW → COMPLETED
-- `/task-refine` keeps in IN_REVIEW (iterative improvement)
+- Re-running `/task-work` on an IN_REVIEW task keeps it in IN_REVIEW (targeted fixes, quality gates re-run)
 
 **Automatic Transitions (Review)**:
 - `/task-review` moves BACKLOG → IN_PROGRESS
@@ -1363,8 +1362,8 @@ Why were these files and dependencies added?
 
 ## 3.8 Iterative Refinement
 
-**Phase**: 6 (separate `/task-refine` command)
-**Purpose**: Lightweight improvements for tasks in IN_REVIEW state without full re-work.
+**Phase**: 6 (re-run `/task-work`)
+**Purpose**: Targeted fixes for tasks in IN_REVIEW state without full re-work.
 
 ### Quick Start
 
@@ -1377,29 +1376,8 @@ State: IN_REVIEW
 Tests: 100% passing
 Coverage: 85%
 
-# Make iterative improvements
-/task-refine TASK-042
-
-🔄 Iterative Refinement Mode
-
-What would you like to refine?
-1. Code quality (linting, formatting)
-2. Test coverage (add missing tests)
-3. Documentation (add comments, docstrings)
-4. Performance (optimize hot paths)
-5. Error handling (improve error messages)
-
-Your choice (1-5): 2
-
-Analyzing coverage gaps...
-
-UNCOVERED CODE:
-  - src/auth/AuthService.ts:45-52 (error handling branch)
-  - src/auth/AuthService.ts:78-81 (token refresh logic)
-
-Adding tests...
-  ✅ test_auth_service_error_handling
-  ✅ test_auth_service_token_refresh
+# Apply targeted fixes (quality gates re-run)
+/task-work TASK-042
 
 🧪 Running tests...
 Tests: 17/17 PASSED ✅
@@ -1408,9 +1386,10 @@ Coverage: 92% (+7%)
 ✅ Refinement complete. Task remains in IN_REVIEW.
 ```
 
-### When to Use /task-refine
+### When to Re-run /task-work
 
-**Use /task-refine for**:
+**Re-run /task-work for**:
+- Review-feedback fixes
 - Minor code improvements
 - Increasing test coverage
 - Adding documentation
@@ -1418,11 +1397,11 @@ Coverage: 92% (+7%)
 - Renaming/formatting
 - Performance optimizations
 
-**Don't use /task-refine for**:
+**Don't re-run /task-work for**:
 - New features (use `/task-create` + `/task-work`)
-- Architecture changes (use `/task-work` with new plan)
+- Architecture changes (create new task with new plan)
 - Major refactoring (create new task)
-- Bug fixes (create new task)
+- Review findings (use `/task-review`'s [I]mplement flow to generate fix tasks)
 
 ### Refinement Categories
 
@@ -1600,8 +1579,8 @@ When design-to-code workflows are available, additional gates will apply:
 # Coverage: 89%
 # State: DESIGN_APPROVED → IN_REVIEW
 
-# Refine to improve coverage
-/task-refine TASK-003
+# Re-run to improve coverage
+/task-work TASK-003
 
 # Output:
 # Coverage: 93% (+4%)
@@ -1735,7 +1714,7 @@ Scope creep detected?
   ↓ No/Approved
 IN_REVIEW
   ↓
-/task-refine TASK-XXX (optional)
+/task-work TASK-XXX (optional re-run for targeted fixes)
   ↓
 /task-complete TASK-XXX
   ↓
@@ -1778,8 +1757,8 @@ A: Fix the issues manually (tests, compilation, etc.), then run `/task-unblock T
 **Q: Can I skip test enforcement?**
 A: No. Test enforcement is mandatory. If tests fail after 3 fix attempts, task moves to BLOCKED and requires manual intervention.
 
-**Q: What's the difference between /task-work and /task-refine?**
-A: `/task-work` is the full workflow (planning through code review). `/task-refine` is lightweight improvements on already-completed tasks (IN_REVIEW state). Use `/task-refine` for minor tweaks without full re-work.
+**Q: How do I make minor tweaks to a task in IN_REVIEW?**
+A: Re-run `/task-work TASK-XXX`. It applies targeted fixes and re-runs quality gates without full re-work. For review findings, use `/task-review`'s [I]mplement flow to generate fix tasks.
 
 **Q: Can I configure complexity thresholds?**
 A: Yes. Edit `.claude/settings.json` to adjust `auto_split_threshold`, `auto_proceed_max`, and `quick_review_max`.

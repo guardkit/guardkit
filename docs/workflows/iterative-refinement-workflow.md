@@ -1,5 +1,11 @@
 # Iterative Refinement Workflow
 
+> **⚠️ RETIRED 2026-07-09** — the `/task-refine` command was removed
+> (`docs/decisions/DEC-task-refine-retirement.md`). To iterate on review
+> feedback, re-run `/task-work TASK-XXX`; for review findings, use
+> `/task-review`'s [I]mplement flow. This document is preserved as a
+> historical record of the workflow it described.
+
 ## Overview
 
 The `/task-refine` command enables lightweight, iterative improvements to completed tasks without triggering the full `/task-work` workflow. Use this for minor code quality improvements, clarifications, and polish after a task passes quality gates.
