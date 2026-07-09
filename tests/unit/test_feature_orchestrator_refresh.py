@@ -154,128 +154,212 @@ class TestRefreshInit:
 # ============================================================================
 
 
-class TestRefreshWorktree:
-    """Test _refresh_worktree method."""
+def _git(*args, cwd, check=True):
+    return subprocess.run(
+        ["git", *args], cwd=str(cwd), check=check,
+        capture_output=True, text=True,
+    )
 
-    def test_refresh_success_path(self, mock_worktree_manager, sample_worktree):
-        """Verify successful fetch + rebase completes without error."""
-        orch = FeatureOrchestrator(
-            repo_root=Path("/tmp"),
-            refresh=True,
-            worktree_manager=mock_worktree_manager,
-        )
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            orch._refresh_worktree(sample_worktree, "main")
+def _build_refresh_repo(tmp_path: Path):
+    """Build origin(bare) + clone with `main` and a `feat` branch.
 
-        assert mock_run.call_count == 2
-        # First call: git fetch
-        fetch_call = mock_run.call_args_list[0]
-        assert fetch_call[0][0] == ["git", "fetch", "origin", "main"]
-        assert fetch_call[1]["cwd"] == sample_worktree.path
-        # Second call: git rebase
-        rebase_call = mock_run.call_args_list[1]
-        assert rebase_call[0][0] == ["git", "rebase", "origin/main"]
-        assert rebase_call[1]["cwd"] == sample_worktree.path
+    The clone's checkout on `feat` stands in for the autobuild worktree
+    (``_refresh_worktree`` just runs git in ``worktree.path``). Returns
+    ``(clone_path, worktree)``.
+    """
+    origin = tmp_path / "origin.git"
+    _git("init", "--bare", "--initial-branch=main", cwd=tmp_path.parent, check=False)
+    subprocess.run(
+        ["git", "init", "--bare", "--initial-branch=main", str(origin)],
+        check=True, capture_output=True, text=True,
+    )
 
-    def test_refresh_fetch_failure(self, mock_worktree_manager, sample_worktree):
-        """Verify FeatureOrchestrationError raised when fetch fails."""
-        orch = FeatureOrchestrator(
-            repo_root=Path("/tmp"),
-            refresh=True,
-            worktree_manager=mock_worktree_manager,
-        )
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", str(origin), str(clone)],
+        check=True, capture_output=True, text=True,
+    )
+    _git("config", "user.email", "t@e.com", cwd=clone)
+    _git("config", "user.name", "T", cwd=clone)
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.CalledProcessError(
-                1, "git fetch", stderr="fatal: could not read from remote"
-            )
-            with pytest.raises(
-                FeatureOrchestrationError, match="Failed to fetch origin/main"
-            ):
-                orch._refresh_worktree(sample_worktree, "main")
+    # Base commit on main, pushed to origin.
+    (clone / "base.txt").write_text("base\n")
+    (clone / "app.py").write_text("VALUE = 1\n")
+    _git("add", "-A", cwd=clone)
+    _git("commit", "-m", "base", cwd=clone)
+    _git("push", "origin", "main", cwd=clone)
 
-    def test_refresh_rebase_conflict_aborts(
-        self, mock_worktree_manager, sample_worktree
+    # Feature branch off main with its own commit.
+    _git("checkout", "-b", "feat", cwd=clone)
+    (clone / "feature.txt").write_text("feature work\n")
+    _git("add", "-A", cwd=clone)
+    _git("commit", "-m", "feature", cwd=clone)
+
+    worktree = Worktree(
+        task_id="FEAT-TEST",
+        branch_name="feat",
+        path=clone,
+        base_branch="main",
+    )
+    return clone, worktree
+
+
+class TestResolveRefreshTarget:
+    """Item 4: prefer local <base> when it is ahead of origin/<base>."""
+
+    def test_prefers_local_when_ahead(
+        self, tmp_path, mock_worktree_manager,
     ):
-        """Verify rebase conflict triggers abort and raises error."""
+        clone, _ = _build_refresh_repo(tmp_path)
+        # Advance local main WITHOUT pushing (the operator's unpushed fix).
+        _git("checkout", "main", cwd=clone)
+        (clone / "app.py").write_text("VALUE = 2  # baseline fix\n")
+        _git("commit", "-am", "fix baseline", cwd=clone)
+        _git("checkout", "feat", cwd=clone)
+
         orch = FeatureOrchestrator(
-            repo_root=Path("/tmp"),
-            refresh=True,
+            repo_root=tmp_path, refresh=True,
             worktree_manager=mock_worktree_manager,
         )
+        target, desc = orch._resolve_refresh_target(clone, "main")
+        assert target == "main"
+        assert "ahead of origin/main" in desc
 
-        def side_effect(*args, **kwargs):
-            cmd = args[0]
-            if cmd == ["git", "fetch", "origin", "main"]:
-                return MagicMock(returncode=0)
-            elif cmd == ["git", "rebase", "origin/main"]:
-                raise subprocess.CalledProcessError(1, "git rebase")
-            elif cmd == ["git", "rebase", "--abort"]:
-                return MagicMock(returncode=0)
-            return MagicMock(returncode=0)
-
-        with patch("subprocess.run", side_effect=side_effect) as mock_run:
-            with pytest.raises(
-                FeatureOrchestrationError,
-                match="Rebase onto origin/main failed due to conflicts",
-            ):
-                orch._refresh_worktree(sample_worktree, "main")
-
-        # Verify abort was called
-        abort_call = mock_run.call_args_list[2]
-        assert abort_call[0][0] == ["git", "rebase", "--abort"]
-
-    def test_refresh_rebase_conflict_abort_also_fails(
-        self, mock_worktree_manager, sample_worktree
+    def test_falls_back_to_origin_when_not_ahead(
+        self, tmp_path, mock_worktree_manager,
     ):
-        """Verify error raised even if rebase --abort also fails."""
+        clone, _ = _build_refresh_repo(tmp_path)
         orch = FeatureOrchestrator(
-            repo_root=Path("/tmp"),
-            refresh=True,
+            repo_root=tmp_path, refresh=True,
             worktree_manager=mock_worktree_manager,
         )
+        target, desc = orch._resolve_refresh_target(clone, "main")
+        assert target == "origin/main"
 
-        call_count = 0
 
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            cmd = args[0]
-            if cmd == ["git", "fetch", "origin", "main"]:
-                return MagicMock(returncode=0)
-            elif cmd == ["git", "rebase", "origin/main"]:
-                raise subprocess.CalledProcessError(1, "git rebase")
-            elif cmd == ["git", "rebase", "--abort"]:
-                raise subprocess.CalledProcessError(1, "git rebase --abort")
-            return MagicMock(returncode=0)
+class TestRefreshWorktreeRealGit:
+    """Items 4 + 5 exercised end-to-end against real git repos."""
 
-        with patch("subprocess.run", side_effect=side_effect):
-            with pytest.raises(
-                FeatureOrchestrationError,
-                match="Rebase onto origin/main failed due to conflicts",
-            ):
-                orch._refresh_worktree(sample_worktree, "main")
-
-    def test_refresh_custom_base_branch(
-        self, mock_worktree_manager, sample_worktree
+    def test_refresh_success_onto_origin(
+        self, tmp_path, mock_worktree_manager,
     ):
-        """Verify refresh uses custom base branch."""
+        clone, worktree = _build_refresh_repo(tmp_path)
         orch = FeatureOrchestrator(
-            repo_root=Path("/tmp"),
-            refresh=True,
+            repo_root=tmp_path, refresh=True,
             worktree_manager=mock_worktree_manager,
         )
+        # Should not raise; feat is already on top of origin/main.
+        orch._refresh_worktree(worktree, "main")
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            orch._refresh_worktree(sample_worktree, "develop")
+    def test_refresh_brings_unpushed_local_baseline_fix(
+        self, tmp_path, mock_worktree_manager,
+    ):
+        """Item 4 core: the operator's local, unpushed baseline fix reaches
+        the feature branch via --refresh (it did NOT pre-fix, when we
+        rebased onto stale origin/main)."""
+        clone, worktree = _build_refresh_repo(tmp_path)
+        _git("checkout", "main", cwd=clone)
+        (clone / "app.py").write_text("VALUE = 2  # baseline fix\n")
+        _git("commit", "-am", "fix baseline (unpushed)", cwd=clone)
+        _git("checkout", "feat", cwd=clone)
+        # Pre-refresh the feature branch does NOT have the fix.
+        assert (clone / "app.py").read_text() == "VALUE = 1\n"
 
-        fetch_call = mock_run.call_args_list[0]
-        assert fetch_call[0][0] == ["git", "fetch", "origin", "develop"]
-        rebase_call = mock_run.call_args_list[1]
-        assert rebase_call[0][0] == ["git", "rebase", "origin/develop"]
+        orch = FeatureOrchestrator(
+            repo_root=tmp_path, refresh=True,
+            worktree_manager=mock_worktree_manager,
+        )
+        orch._refresh_worktree(worktree, "main")
+
+        # The unpushed fix is now on the feature branch.
+        assert "VALUE = 2" in (clone / "app.py").read_text()
+
+    def test_refresh_autostashes_dirty_autobuild_artifact(
+        self, tmp_path, mock_worktree_manager,
+    ):
+        """Item 5a: a dirty tracked file (checkpoints.json class) no longer
+        blows up the rebase; --autostash restores it afterwards."""
+        clone, worktree = _build_refresh_repo(tmp_path)
+        # Commit an autobuild-managed artifact on feat.
+        ab_dir = clone / ".guardkit" / "autobuild" / "TASK-T-001"
+        ab_dir.mkdir(parents=True)
+        cp = ab_dir / "checkpoints.json"
+        cp.write_text('{"turn": 1}\n')
+        _git("add", "-A", cwd=clone)
+        _git("commit", "-m", "checkpoint", cwd=clone)
+
+        # Advance origin/main so a real rebase happens (while the tree is
+        # clean — do this BEFORE dirtying the checkpoint).
+        _git("checkout", "main", cwd=clone)
+        (clone / "base.txt").write_text("base v2\n")
+        _git("commit", "-am", "advance main", cwd=clone)
+        _git("push", "origin", "main", cwd=clone)
+        _git("reset", "--hard", "HEAD~1", cwd=clone)  # local main back to stale
+        _git("checkout", "feat", cwd=clone)
+
+        # Now dirty the checkpoint (the FEAT-VOICE-003 unstaged-artifact class).
+        cp.write_text('{"turn": 2}\n')
+
+        orch = FeatureOrchestrator(
+            repo_root=tmp_path, refresh=True,
+            worktree_manager=mock_worktree_manager,
+        )
+        # Would raise "cannot rebase: you have unstaged changes" pre-fix.
+        orch._refresh_worktree(worktree, "main")
+
+        # Rebase applied AND the dirty checkpoint change was restored.
+        assert "base v2" in (clone / "base.txt").read_text()
+        assert cp.read_text() == '{"turn": 2}\n'
+
+    def test_refresh_conflict_aborts_and_reports_truthful_state(
+        self, tmp_path, mock_worktree_manager, capsys,
+    ):
+        """Item 5b: on conflict the abort restores the worktree and the
+        message reflects the VERIFIED state, not an unverified 'inconsistent'
+        assertion."""
+        clone, worktree = _build_refresh_repo(tmp_path)
+        # Conflicting edits to app.py on origin/main and on feat.
+        _git("checkout", "main", cwd=clone)
+        (clone / "app.py").write_text("VALUE = 99  # main\n")
+        _git("commit", "-am", "main edits app", cwd=clone)
+        _git("push", "origin", "main", cwd=clone)
+        _git("reset", "--hard", "HEAD~1", cwd=clone)
+        _git("checkout", "feat", cwd=clone)
+        (clone / "app.py").write_text("VALUE = 42  # feat\n")
+        _git("commit", "-am", "feat edits app", cwd=clone)
+        feat_head = _git("rev-parse", "HEAD", cwd=clone).stdout.strip()
+
+        orch = FeatureOrchestrator(
+            repo_root=tmp_path, refresh=True,
+            worktree_manager=mock_worktree_manager,
+        )
+        with pytest.raises(FeatureOrchestrationError, match="failed due to conflicts"):
+            orch._refresh_worktree(worktree, "main")
+
+        # The worktree was restored: HEAD unchanged, no rebase in progress.
+        assert _git("rev-parse", "HEAD", cwd=clone).stdout.strip() == feat_head
+        is_clean, msg = orch._describe_worktree_git_state(clone)
+        assert is_clean is True
+        assert "verified restored" in msg
+        out = capsys.readouterr().out
+        assert "may be in inconsistent state" not in out
+
+
+class TestDescribeWorktreeGitState:
+    """Item 5b: truthful state description."""
+
+    def test_clean_repo_reports_verified(
+        self, tmp_path, mock_worktree_manager,
+    ):
+        clone, _ = _build_refresh_repo(tmp_path)
+        orch = FeatureOrchestrator(
+            repo_root=tmp_path, refresh=True,
+            worktree_manager=mock_worktree_manager,
+        )
+        is_clean, msg = orch._describe_worktree_git_state(clone)
+        assert is_clean is True
+        assert "no rebase in progress" in msg
 
 
 # ============================================================================

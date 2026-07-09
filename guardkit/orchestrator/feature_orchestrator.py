@@ -1242,6 +1242,102 @@ class FeatureOrchestrator:
 
         return feature, worktree
 
+    def _resolve_refresh_target(
+        self,
+        worktree_path: Path,
+        base_branch: str,
+    ) -> tuple[str, str]:
+        """Resolve which ref ``--refresh`` should rebase the worktree onto.
+
+        Resolution order (red-baseline retro, L12 item 4):
+
+          1. **Local ``<base_branch>``** when it exists AND is ahead of
+             ``origin/<base_branch>``. Operators routinely fix a red baseline
+             on their *local* main and deliberately leave it unpushed;
+             rebasing onto a stale ``origin/main`` would bring none of the fix
+             and conflict (the FEAT-VOICE-003 ``--refresh`` failure).
+          2. **``origin/<base_branch>``** otherwise (the pushed baseline, the
+             historical default).
+
+        Returns ``(target_ref, human_description)``. Any git probe failure
+        falls back to ``origin/<base_branch>`` — the historical behaviour.
+        """
+        import subprocess
+
+        def _run(args: List[str]) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["git", *args],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        local_exists = (
+            _run(["rev-parse", "--verify", "--quiet", base_branch]).returncode == 0
+        )
+        if local_exists:
+            ahead = _run(
+                ["rev-list", "--count", f"origin/{base_branch}..{base_branch}"]
+            )
+            try:
+                ahead_count = int(ahead.stdout.strip()) if ahead.returncode == 0 else 0
+            except ValueError:
+                ahead_count = 0
+            if ahead_count > 0:
+                return base_branch, (
+                    f"local {base_branch} (ahead of origin/{base_branch} by "
+                    f"{ahead_count} unpushed commit(s))"
+                )
+        return f"origin/{base_branch}", f"origin/{base_branch}"
+
+    def _describe_worktree_git_state(
+        self,
+        worktree_path: Path,
+    ) -> tuple[bool, str]:
+        """Truthfully describe the worktree's git state after a rebase abort.
+
+        Red-baseline retro (L12 item 5b): the old code printed "worktree may
+        be in inconsistent state" *unconditionally* on any abort hiccup, even
+        when the abort had restored the worktree cleanly (the FEAT-VOICE-003
+        false alarm). This checks the *actual* state — whether a rebase is
+        still in progress and where HEAD points — and reports what it found.
+
+        Returns ``(is_clean, message)``.
+        """
+        import subprocess
+
+        def _run(args: List[str]) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["git", *args],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        def _rebase_dir_exists(name: str) -> bool:
+            raw = _run(["rev-parse", "--git-path", name]).stdout.strip()
+            if not raw:
+                return False
+            p = Path(raw)
+            if not p.is_absolute():
+                p = worktree_path / p
+            return p.exists()
+
+        in_progress = _rebase_dir_exists("rebase-merge") or _rebase_dir_exists(
+            "rebase-apply"
+        )
+        head = _run(["rev-parse", "--short", "HEAD"]).stdout.strip() or "unknown"
+        if in_progress:
+            return False, (
+                f"rebase IS still in progress (HEAD at {head}); manual cleanup "
+                f"needed: cd {worktree_path} && git rebase --abort"
+            )
+        return True, (
+            f"verified restored: no rebase in progress, HEAD at {head}"
+        )
+
     def _refresh_worktree(
         self,
         worktree: Worktree,
@@ -1250,16 +1346,23 @@ class FeatureOrchestrator:
         """
         Refresh worktree by rebasing onto the latest base branch.
 
-        Fetches the latest changes from origin and rebases the worktree's
-        branch on top of origin/{base_branch}. If conflicts occur, the
-        rebase is aborted and an error is raised.
+        Fetches origin, then rebases the worktree's branch onto the ref the
+        operator most likely fixed (see :meth:`_resolve_refresh_target`):
+        **local ``<base_branch>`` when it is ahead of ``origin/<base_branch>``**,
+        otherwise ``origin/<base_branch>``. The rebase runs with
+        ``--autostash`` so an unstaged autobuild-managed artifact (e.g.
+        ``.guardkit/autobuild/**/checkpoints.json``) does not abort it. On
+        conflict the rebase is aborted and the worktree's *actual* state is
+        verified and reported (never an unverified "inconsistent state"
+        assertion). Red-baseline retro (L12 items 4 + 5).
 
         Parameters
         ----------
         worktree : Worktree
             Worktree to refresh
         base_branch : str, optional
-            Remote branch to rebase onto (default: "main")
+            Base branch to rebase onto (default: "main"). The effective target
+            is resolved by :meth:`_resolve_refresh_target`.
 
         Raises
         ------
@@ -1287,47 +1390,53 @@ class FeatureOrchestrator:
                 f"{e.stderr.strip() if e.stderr else str(e)}"
             )
 
-        # Step 2: Rebase onto origin/base_branch
-        console.print(f"[cyan]↻[/cyan] Rebasing onto origin/{base_branch}...")
+        # Step 2: Resolve the rebase target (item 4 — prefer local base when
+        # it holds the operator's unpushed fix).
+        target_ref, target_desc = self._resolve_refresh_target(
+            worktree_path, base_branch
+        )
+
+        # Step 3: Rebase onto the resolved target. --autostash (item 5a)
+        # stashes any dirty tracked state (the autobuild checkpoints.json
+        # class) before rebasing and restores it afterwards — including on
+        # abort — so a dirty worktree no longer blows the rebase up.
+        console.print(f"[cyan]↻[/cyan] Rebasing onto {target_desc}...")
         try:
             subprocess.run(
-                ["git", "rebase", f"origin/{base_branch}"],
+                ["git", "rebase", "--autostash", target_ref],
                 cwd=worktree_path,
                 check=True,
                 capture_output=True,
                 text=True,
             )
             console.print(
-                f"[green]✓[/green] Successfully rebased onto origin/{base_branch}"
+                f"[green]✓[/green] Successfully rebased onto {target_desc}"
             )
         except subprocess.CalledProcessError:
-            # Rebase failed (likely conflicts) -- abort to restore clean state
+            # Rebase failed (likely conflicts) -- abort to restore clean state.
             console.print(
                 "[red]✗[/red] Rebase conflicts detected, aborting rebase..."
             )
-            try:
-                subprocess.run(
-                    ["git", "rebase", "--abort"],
-                    cwd=worktree_path,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                console.print(
-                    "[green]✓[/green] Rebase aborted -- worktree restored to pre-refresh state"
-                )
-            except subprocess.CalledProcessError:
-                console.print(
-                    "[yellow]⚠[/yellow] Rebase abort failed -- "
-                    "worktree may be in inconsistent state"
-                )
+            subprocess.run(
+                ["git", "rebase", "--abort"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # Item 5b: verify the ACTUAL state rather than asserting it.
+            is_clean, state_msg = self._describe_worktree_git_state(worktree_path)
+            if is_clean:
+                console.print(f"[green]✓[/green] Rebase aborted — {state_msg}")
+            else:
+                console.print(f"[yellow]⚠[/yellow] {state_msg}")
 
             raise FeatureOrchestrationError(
-                f"Rebase onto origin/{base_branch} failed due to conflicts. "
-                f"The worktree has been restored to its previous state.\n"
+                f"Rebase onto {target_ref} failed due to conflicts "
+                f"({state_msg}).\n"
                 f"To resolve manually:\n"
                 f"  cd {worktree_path}\n"
-                f"  git rebase origin/{base_branch}\n"
+                f"  git rebase {target_ref}\n"
                 f"  # resolve conflicts\n"
                 f"  git rebase --continue"
             )

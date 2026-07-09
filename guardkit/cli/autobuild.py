@@ -705,7 +705,12 @@ def status(ctx, task_id: str, verbose: bool):
 @click.option(
     "--refresh",
     is_flag=True,
-    help="Rebase worktree onto latest main before resuming (implies --resume)",
+    help=(
+        "Rebase worktree onto the latest base before resuming (implies "
+        "--resume). Target resolution: local <base> when it is ahead of "
+        "origin/<base> (unpushed operator fixes), else origin/<base>. Runs "
+        "with --autostash so autobuild artifacts don't abort the rebase."
+    ),
 )
 @click.option(
     "--task",
