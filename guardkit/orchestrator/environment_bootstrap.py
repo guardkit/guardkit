@@ -1657,6 +1657,22 @@ class EnvironmentBootstrapper:
                 f".claude/rules/absence-of-failure-is-not-success.md."
             )
 
+        # WS3-S3 ENVTAMPER-a (§5.1): post-install skip-guard dependency parity +
+        # resolution-origin probe. Removes the motive for the ABL-001 self-mock by
+        # surfacing missing skip-guarded extras (and vendored-stub directories,
+        # RENV-1) as advisories BEFORE the Player is tempted to stub. Advisory
+        # only — NEVER fails bootstrap (AC-003). Fail-open.
+        try:
+            from guardkit.orchestrator.env_parity import analyze_env_parity
+            parity = analyze_env_parity(
+                Path(self._root),
+                str(self._venv_python) if self._venv_python else None,
+            )
+            for f in parity.findings:
+                logger.warning("ENV-PARITY (%s): %s", f.kind, f.detail)
+        except Exception as exc:  # noqa: BLE001 — advisory must never block bootstrap
+            logger.debug("env-parity probe skipped: %s", exc)
+
         # Persist state hash with outcome so failed attempts can be retried
         self._save_state(content_hash, success=overall_success)
 
