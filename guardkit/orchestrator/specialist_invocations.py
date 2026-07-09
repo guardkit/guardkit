@@ -1029,6 +1029,9 @@ def _run_deterministic_phase_4(
     # Lazy import: avoid any import-time coupling between this module and the
     # quality-gates package (no cycle today, but keep it loose).
     try:
+        from guardkit.orchestrator.coach_verification import (
+            InterpreterResolutionError,
+        )
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
         )
@@ -1055,6 +1058,10 @@ def _run_deterministic_phase_4(
             coach_test_execution="subprocess",  # never an LLM turn — cannot hang
             test_timeout=test_timeout,
             venv_python=venv_python,
+            # WS3-S1 Q1 SPLIT: this is THE independent-test verdict path inside
+            # autobuild — an unresolved interpreter here is exactly the poison
+            # the hard-abort exists to stop.
+            in_autobuild_context=True,
             turn=turn or 1,
             # TASK-AB-NPDET01: the non-Python whole-suite guard needs the real
             # wave size — without it the runner believes wave_size=1 and would
@@ -1069,6 +1076,13 @@ def _run_deterministic_phase_4(
         result = validator.run_independent_tests(
             task_work_results=task_work_results, turn=turn
         )
+    except InterpreterResolutionError:
+        # WS3-S1 Q1 SPLIT: an interpreter-resolution hard-abort must NOT
+        # degrade to the LLM test-orchestrator specialist (which would run
+        # pytest under the same broken interpreter and re-open the DD4F
+        # soft-fail). Propagate so the run fails loud with the named
+        # remediation.
+        raise
     except Exception as exc:  # noqa: BLE001 — degrade to the specialist path
         logger.warning(
             "[%s] deterministic Phase-4 run raised (%s); falling back to "
@@ -1183,7 +1197,13 @@ async def invoke_test_orchestrator(
     delegates SDK invocation to :func:`run_specialist`, then writes the
     ``phase_4`` block to ``.guardkit/autobuild/{task_id}/specialist_results.json``
     while preserving any pre-existing ``phase_5`` block. The function
-    never raises — the autobuild turn loop owns recovery.
+    never raises for recoverable specialist failures — the autobuild turn
+    loop owns recovery. The one exception is
+    :class:`~guardkit.orchestrator.coach_verification.InterpreterResolutionError`
+    from the deterministic Phase-4 runner: inside an autobuild run an
+    unresolved interpreter is a HARD-ABORT (Q1 SPLIT, WS3-S1) that MUST
+    propagate — falling back to the LLM specialist would run pytest under the
+    same broken interpreter and re-open the DD4F soft-fail.
 
     Args:
         worktree_path: Worktree the specialist operates against.

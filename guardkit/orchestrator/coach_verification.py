@@ -46,6 +46,26 @@ _PYTHON_PROJECT_MARKERS = (
 )
 
 
+class InterpreterResolutionError(RuntimeError):
+    """No worktree venv interpreter resolved for a Python-project worktree
+    *inside an autobuild run*.
+
+    Q1 SPLIT posture (WS3-S1, decided by Rich 2026-07-09 — see WS3 §7): the
+    shipped behaviour logged one WARNING and fell back to ``sys.executable``,
+    which kept runs alive but is exactly the soft-fail shape that hid DD4F's
+    TypeError. A wrong interpreter poisons **every** downstream Coach verdict
+    (pytest collects 0 tests -> an absent signal that reads like a quality
+    rejection, FEAT-ABL-005 run 4). So resolution failure is now a HARD-ABORT
+    when ``in_autobuild_context=True`` — the run fails loud and the operator
+    fixes the environment rather than the orchestrator silently mis-verdicting.
+
+    The split is EXPLICIT (the ``in_autobuild_context`` flag), not a heuristic:
+    interactive CLI use (the default, ``False``) keeps the WARNING +
+    ``sys.executable`` fallback so a developer's ad-hoc invocation is not
+    aborted.
+    """
+
+
 def _check_ignore_match_is_negation(check_ignore_stdout: str) -> bool:
     """Whether ``git check-ignore -v --no-index`` matched a ``!``-negation.
 
@@ -75,6 +95,8 @@ def _check_ignore_match_is_negation(check_ignore_stdout: str) -> bool:
 def _resolve_venv_python(
     worktree_path: Path,
     explicit: Optional[Union[str, Path]],
+    *,
+    in_autobuild_context: bool = False,
 ) -> Optional[Path]:
     """Resolve the Python interpreter Coach should use for pytest.
 
@@ -87,11 +109,33 @@ def _resolve_venv_python(
          ``--resume`` hash-match skip).
       3. ``<worktree>/.guardkit/venv/bin/python`` when it exists on disk —
          the legacy PEP 668 fallback layout (old worktrees exist).
-      4. None — caller falls back to PATH ``pytest`` / ``sys.executable``
-         behaviour for non-Python projects. For a PYTHON project worktree
-         this is the FEAT-ABL-005 run-4 blind-verifier shape, so it logs
-         ONE WARNING naming the probed locations and the interpreter the
-         caller will actually use.
+      4. For a PYTHON project worktree that resolved nothing, the split
+         posture (Q1, WS3-S1) applies:
+           * ``in_autobuild_context=True`` -> raise
+             :class:`InterpreterResolutionError` (HARD-ABORT — a wrong
+             interpreter poisons every downstream Coach verdict; the
+             DD4F-shaped soft-fail closes).
+           * ``in_autobuild_context=False`` (interactive CLI, the default) ->
+             log ONE WARNING naming the probed locations and the interpreter
+             the caller will fall back to, then return None (warn-and-fallback
+             preserved).
+      5. For a non-Python project, return None either way (the caller's
+         PATH ``pytest`` / ``sys.executable`` behaviour is correct — there is
+         no project venv to miss).
+
+    Args:
+        worktree_path: The worktree whose venv is being resolved.
+        explicit: An explicit interpreter path (typically
+            ``BootstrapResult.venv_python``); wins when it exists on disk.
+        in_autobuild_context: When True, a Python-project resolution failure
+            is a HARD-ABORT (raises :class:`InterpreterResolutionError`)
+            instead of warn-and-fallback. Set True ONLY by autobuild
+            orchestrator call sites (Coach verdict paths). The interactive
+            default (False) keeps the shipped warn-and-fallback behaviour.
+
+    Raises:
+        InterpreterResolutionError: Python-project worktree, no interpreter
+            resolved, and ``in_autobuild_context=True``.
     """
     if explicit:
         candidate = Path(explicit)
@@ -112,9 +156,30 @@ def _resolve_venv_python(
     # interpreter, which almost certainly lacks the target project's deps —
     # pytest then collects 0 tests and every turn records an absent signal
     # that looks exactly like a quality rejection (FEAT-ABL-005 run 4).
-    if any(
+    is_python_project = any(
         (worktree_path / marker).exists() for marker in _PYTHON_PROJECT_MARKERS
-    ):
+    )
+    if is_python_project:
+        probed_venv = worktree_path / ".venv" / "bin" / "python"
+        probed_legacy = worktree_path / ".guardkit" / "venv" / "bin" / "python"
+        if in_autobuild_context:
+            # Q1 SPLIT (WS3-S1, Rich 2026-07-09): HARD-ABORT inside autobuild.
+            # The remediation is named so the operator fixes the environment,
+            # not the (poisoned) verdict.
+            raise InterpreterResolutionError(
+                "Autobuild interpreter-resolution FAILED for Python project at "
+                f"{worktree_path}: no worktree venv interpreter resolved "
+                f"(explicit={explicit}; probed {probed_venv} and "
+                f"{probed_legacy}). Inside an autobuild run this is a "
+                "HARD-ABORT (Q1 SPLIT, WS3-S1) — falling back to the "
+                "orchestrator's own interpreter would poison every downstream "
+                "Coach verdict (pytest collects 0 tests, the DD4F-shaped "
+                "soft-fail). Remediation: re-run environment bootstrap so the "
+                f"worktree venv exists (verify {probed_venv} was created, or "
+                "delete the worktree and re-run the autobuild), or thread an "
+                "explicit venv_python through. Interactive CLI use keeps the "
+                "warn-and-fallback behaviour."
+            )
         logger.warning(
             "TASK-AB-RESUMEVENV01: no worktree venv interpreter resolved for "
             "Python project at %s — probed %s and %s (explicit=%s). Callers "
@@ -122,8 +187,8 @@ def _resolve_venv_python(
             "likely lacks the project's deps; check the worktree venv or "
             "re-run environment bootstrap.",
             worktree_path,
-            worktree_path / ".venv" / "bin" / "python",
-            worktree_path / ".guardkit" / "venv" / "bin" / "python",
+            probed_venv,
+            probed_legacy,
             explicit,
             sys.executable,
         )
@@ -260,6 +325,7 @@ class CoachVerifier:
         task_id: Optional[str] = None,
         state_bridge: Optional["TaskStateBridge"] = None,
         evidence_repos: Optional[List["EvidenceRepo"]] = None,
+        in_autobuild_context: bool = False,
     ):
         """Initialize CoachVerifier.
 
@@ -288,11 +354,20 @@ class CoachVerifier:
                 (skipped, never a new false-red) per
                 ``path-string-mismatch-is-not-dishonesty``. Default None ->
                 exact worktree-only behaviour preserved.
+            in_autobuild_context: When True, an unresolved interpreter for a
+                Python-project worktree is a HARD-ABORT
+                (:class:`InterpreterResolutionError`) instead of
+                warn-and-fallback (Q1 SPLIT, WS3-S1). Autobuild orchestrator
+                call sites pass True; interactive / recovery callers keep the
+                default False.
         """
         self.worktree_path = Path(worktree_path)
         self._cached_test_result: Optional[TestResult] = None
+        self._in_autobuild_context = in_autobuild_context
         self._venv_python: Optional[Path] = _resolve_venv_python(
-            self.worktree_path, venv_python
+            self.worktree_path,
+            venv_python,
+            in_autobuild_context=in_autobuild_context,
         )
         if self._venv_python is not None:
             logger.debug(
@@ -1520,6 +1595,7 @@ __all__ = [
     "CoachVerifier",
     "Discrepancy",
     "HonestyVerification",
+    "InterpreterResolutionError",
     "ResolvedPath",
     "TestResult",
     "_resolve_venv_python",

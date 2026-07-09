@@ -36,7 +36,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardkit.orchestrator import specialist_invocations as si
-from guardkit.orchestrator.coach_verification import _resolve_venv_python
+from guardkit.orchestrator.coach_verification import (
+    CoachVerifier,
+    InterpreterResolutionError,
+    _resolve_venv_python,
+)
 from guardkit.orchestrator.environment_bootstrap import (
     DetectedManifest,
     EnvironmentBootstrapper,
@@ -174,6 +178,108 @@ class TestResolveVenvPythonProbeOrder:
             if r.levelno == logging.WARNING
             and "TASK-AB-RESUMEVENV01" in r.getMessage()
         ]
+
+
+# ---------------------------------------------------------------------------
+# WS3-S1 — Q1 SPLIT posture: hard-abort inside autobuild, warn+fallback
+# interactive. Decided by Rich 2026-07-09 (WS3 §7). The interactive path is
+# already covered above via the default ``in_autobuild_context=False``; these
+# pin the autobuild-context branch and the explicit (not heuristic) split.
+# ---------------------------------------------------------------------------
+
+
+class TestInterpreterResolutionSplitPosture:
+    def test_autobuild_context_python_project_hard_aborts(
+        self, tmp_path: Path
+    ) -> None:
+        """Python project + no venv + autobuild context → HARD-ABORT."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with pytest.raises(InterpreterResolutionError) as exc_info:
+            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
+        message = str(exc_info.value)
+        # GATE: the message names the remediation.
+        assert "HARD-ABORT" in message
+        assert "re-run environment bootstrap" in message
+        assert str(tmp_path / ".venv" / "bin" / "python") in message
+
+    def test_interactive_default_still_warns_and_falls_back(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The DEFAULT (interactive) path is unchanged: WARNING + None,
+        never a raise. The split is an explicit flag, not a heuristic."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with caplog.at_level(logging.WARNING):
+            # No in_autobuild_context → warn-and-fallback preserved.
+            assert _resolve_venv_python(tmp_path, None) is None
+            assert (
+                _resolve_venv_python(
+                    tmp_path, None, in_autobuild_context=False
+                )
+                is None
+            )
+
+    def test_autobuild_context_non_python_project_is_silent_none(
+        self, tmp_path: Path
+    ) -> None:
+        """Non-Python worktree never hard-aborts even inside autobuild —
+        there is no project venv to miss."""
+        assert (
+            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
+            is None
+        )
+
+    def test_autobuild_context_resolves_when_venv_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """A healthy autobuild worktree (venv present) resolves normally and
+        never raises — the hard-abort fires ONLY on the genuinely-broken env."""
+        current = _make_venv(tmp_path, "current")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        assert (
+            _resolve_venv_python(tmp_path, None, in_autobuild_context=True)
+            == current
+        )
+
+    def test_coach_verifier_autobuild_context_propagates_raise(
+        self, tmp_path: Path
+    ) -> None:
+        """CoachVerifier(in_autobuild_context=True) hard-aborts in __init__."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with pytest.raises(InterpreterResolutionError):
+            CoachVerifier(tmp_path, in_autobuild_context=True)
+        # Default construction (interactive) still succeeds.
+        assert CoachVerifier(tmp_path)._venv_python is None
+
+    def test_coach_validator_autobuild_context_propagates_raise(
+        self, tmp_path: Path
+    ) -> None:
+        """CoachValidator(in_autobuild_context=True) hard-aborts in __init__;
+        the default construction is unchanged."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with pytest.raises(InterpreterResolutionError):
+            CoachValidator(str(tmp_path), in_autobuild_context=True)
+        # Default (interactive) construction still succeeds.
+        CoachValidator(str(tmp_path))
+
+    def test_deterministic_phase4_reraises_hard_abort(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The deterministic Phase-4 runner must PROPAGATE the hard-abort, not
+        degrade to the LLM specialist (which would run under the broken
+        interpreter and re-open the DD4F soft-fail)."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+        agent_invoker = MagicMock()
+        agent_invoker._venv_python = None
+        with pytest.raises(InterpreterResolutionError):
+            si._run_deterministic_phase_4(
+                worktree_path=tmp_path,
+                task_id="TASK-TEST-0001",
+                agent_invoker=agent_invoker,
+                sdk_timeout=300,
+                turn=1,
+                wave_size=1,
+            )
 
 
 # ---------------------------------------------------------------------------

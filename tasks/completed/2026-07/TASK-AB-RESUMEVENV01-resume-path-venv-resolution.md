@@ -1,13 +1,28 @@
 ---
 id: TASK-AB-RESUMEVENV01
 title: Resume-path venv resolution — probe <worktree>/.venv, thread venv_python through hash-match skip, never silently fall back to sys.executable
-status: backlog
+status: completed
 created: 2026-07-04T10:05:00Z
+closed: 2026-07-09
+closed_by: WS3-S1 (L17)
 priority: high
 tags: [autobuild, bootstrap, resume, venv, coach, false-red]
 complexity: 5
 source: docs/retro/abl005-autobuild-infra-chain-2026-07-04.md
 ---
+
+> **CLOSED 2026-07-09 (WS3-S1, L17) — closed-as-decided.** The probe-order /
+> resume-threading body of this task is IMPLEMENTED on guardkit main in
+> `111b02ac` (the resume path further superseded by `fc33a23e` — resume now
+> re-bootstraps). The one semantic this file (and its FIX duplicate,
+> TASK-FIX-RESUMEVENV01) left open — warn-and-fallback vs hard-abort on an
+> unresolved interpreter — is now **decided by Rich (2026-07-09, WS3 §7): Q1 =
+> SPLIT.** Inside autobuild runs an interpreter-resolution failure is a
+> HARD-ABORT (`InterpreterResolutionError`,
+> `guardkit/orchestrator/coach_verification.py`, threaded through the Coach
+> verdict paths); interactive CLI keeps the WARNING + `sys.executable`
+> fallback. Split implemented in WS3-S1. One of the four FIX/AB duplicate
+> files closed together (WS3 §3 disposition) — closed, not silently deleted.
 
 # Task: Resume-path venv resolution must match the bootstrap layout, or fail loudly
 

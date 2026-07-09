@@ -23,6 +23,8 @@ Seam Definition:
 from __future__ import annotations
 
 import json
+import sys
+
 import pytest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -59,6 +61,15 @@ def tmp_worktree(tmp_path: Path) -> Path:
 
     # Create pyproject.toml to trigger pytest detection
     (worktree / "pyproject.toml").write_text("[tool.pytest]\n")
+
+    # WS3-S1 Q1 SPLIT: this fixture drives the real autobuild Coach path
+    # (in_autobuild_context=True), where a Python-project worktree with NO
+    # resolvable interpreter now HARD-ABORTS (InterpreterResolutionError). Give
+    # it a resolvable .venv interpreter (existence is all probe_worktree_venv
+    # checks) so the seam test exercises its intended path instead of the abort.
+    venv_python = worktree / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.symlink_to(sys.executable)
 
     return worktree
 

@@ -52,6 +52,7 @@ from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
     HonestyVerification,
+    InterpreterResolutionError,
     format_verification_context,
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
@@ -3762,6 +3763,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 self.worktree_path,
                 venv_python=self._venv_python,
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
             )
             verification = verifier.verify_player_report(player_report)
 
@@ -3782,6 +3784,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
             return verification
 
+        except InterpreterResolutionError:
+            # WS3-S1 Q1 SPLIT: an interpreter-resolution hard-abort must NOT be
+            # softened to a default "assume honest" verification — that is the
+            # exact soft-fail (verify against a poisoned interpreter, then wave
+            # it through) the hard-abort exists to close. Propagate so the run
+            # fails loud with the named remediation.
+            raise
         except Exception as e:
             logger.warning(f"Failed to verify Player claims: {e}")
             # Return default verification (assume honest) to not block workflow
