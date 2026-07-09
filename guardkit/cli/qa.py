@@ -132,9 +132,20 @@ def live_gate(
     Deterministic runner (DF-015 clause 1). Prints the F4 results envelope as
     JSON on stdout (the forge adapter parses its ``verdict``); exit code mirrors
     the verdict (0 pass, 1 fail, 3 instrument_fail, 4 environment_fail).
+
+    ``--campaign`` records the run as attempt 1 of an F9 attempts ledger
+    (``qa/attempts-<feature>.yaml``) and stamps the envelope's
+    ``attempts_ledger_ref``. v1 has no live multi-attempt driver, so a single
+    unattended run must be green or a pre-flight short-circuit — a run with reds
+    that no arbiter has binned is honestly reported UNCLOSED (exit 2, DF-017
+    §2.1), never a silent green.
     """
     # Imported lazily so `guardkit qa validate` has no orchestrator import cost.
-    from guardkit.orchestrator.live_gate import LiveGateError, LiveGateRunner
+    from guardkit.orchestrator.live_gate import (
+        LiveGateError,
+        LiveGateRunner,
+        UndispositionedRedError,
+    )
 
     requested = [g.strip() for g in gates.split(",") if g.strip()] if gates else None
     runner = LiveGateRunner(repo_root)
@@ -145,6 +156,13 @@ def live_gate(
             requested_gate_ids=requested,
             campaign=campaign,
         )
+        if campaign:
+            envelope = _record_single_run_campaign(envelope, repo_root)
+    except UndispositionedRedError as exc:
+        # The run has reds no arbiter binned — UNCLOSED (never a silent green).
+        console.print("[bold red]✗ live-gate run is UNCLOSED[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
     except (QAFormatError, LiveGateError) as exc:
         # A missing/invalid registry or an unknown gate id is a loud config
         # error — never a silent green.
@@ -155,6 +173,26 @@ def live_gate(
     # The envelope on stdout is the contract for the forge adapter.
     click.echo(json.dumps(envelope.model_dump(mode="json"), indent=2))
     sys.exit(_VERDICT_EXIT_CODES.get(envelope.verdict, 1))
+
+
+def _record_single_run_campaign(envelope, repo_root: Path):
+    """Wrap a single B3 run as attempt 1 of an F9 ledger and stamp the envelope.
+
+    Returns the finalized envelope (with ``attempts_ledger_ref`` /
+    ``dispositions_ref`` set). Raises ``UndispositionedRedError`` if the run has
+    unbinned reds — the CLI has no arbiter to bin them unattended.
+    """
+    from guardkit.orchestrator.live_gate import (
+        finalize_envelope,
+        single_run_campaign,
+        write_campaign,
+    )
+
+    # The started timestamp's date part (YYYY-MM-DD) anchors the ledger entry.
+    run_date = envelope.started[:10]
+    result = single_run_campaign(envelope, date=run_date)
+    refs = write_campaign(result, repo_root, run_id=envelope.run_id)
+    return finalize_envelope(envelope, result, refs)
 
 
 @qa.command()

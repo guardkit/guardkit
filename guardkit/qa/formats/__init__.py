@@ -13,6 +13,12 @@ DF-007: gates travel with the agent):
     F4  gate-registry     qa/gates/registry.yaml
     F4  results-envelope  qa/gates/history/<run>.json   (runner-emitted, B3)
     F5  evidence-index    <evidence-dir>/EVIDENCE.yaml
+    F8  disposition-record qa/dispositions-<run>.yaml   (runner-written, B4)
+    F9  attempts-ledger   qa/attempts-<campaign>.yaml   (campaign-written, B4)
+
+F8/F9 are defined MINIMALLY here per scope-design §2 ahead of B10 (which owns
+tier-2/3 schemas) — reconcile with a dated note in B10 if they diverge (WS2
+build-plan §B4).
 """
 
 from __future__ import annotations
@@ -20,12 +26,26 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Type
 
+from guardkit.qa.formats.attempts_ledger import (
+    Attempt,
+    AttemptsLedger,
+    DeploymentState,
+    HarnessSetting,
+    Probe,
+)
 from guardkit.qa.formats.base import (
     QAFormatError,
     QAFormatModel,
     export_json_schema,
     load_yaml_or_json,
     validate_file,
+)
+from guardkit.qa.formats.disposition_record import (
+    Attribution,
+    AttributionRevision,
+    Disposition,
+    DispositionRecord,
+    FailureDisposition,
 )
 from guardkit.qa.formats.evidence_index import EvidenceEntry, EvidenceIndex
 from guardkit.qa.formats.gate_registry import (
@@ -53,6 +73,8 @@ FORMAT_KINDS: Dict[str, Type[QAFormatModel]] = {
     "gate-registry": GateRegistry,
     "results-envelope": ResultsEnvelope,
     "evidence-index": EvidenceIndex,
+    "disposition-record": DispositionRecord,
+    "attempts-ledger": AttemptsLedger,
 }
 
 #: F-number aliases (scope-design §2 numbering). F4 covers both the registry
@@ -64,6 +86,8 @@ KIND_ALIASES: Dict[str, str] = {
     "f3": "leak-sweep",
     "f4": "gate-registry",
     "f5": "evidence-index",
+    "f8": "disposition-record",
+    "f9": "attempts-ledger",
 }
 
 
@@ -98,16 +122,26 @@ __all__ = [
     "REQUIRED_NEGATIVE_PATHS",
     "UNIVERSAL_NEGATIVE_PATHS",
     "AssertionResult",
+    "Attempt",
+    "AttemptsLedger",
+    "Attribution",
+    "AttributionRevision",
+    "DeploymentState",
+    "Disposition",
+    "DispositionRecord",
     "EvidenceEntry",
     "EvidenceIndex",
+    "FailureDisposition",
     "GateEntry",
     "GateRegistry",
     "GateResult",
+    "HarnessSetting",
     "KnownFailureEntry",
     "KnownFailureLedger",
     "LeakSweepManifest",
     "PassBar",
     "PassBarCriterion",
+    "Probe",
     "ResultsEnvelope",
     "Surface",
     "export_json_schema",
