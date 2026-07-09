@@ -119,6 +119,10 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     resolve_coach_test_execution,
 )
 
+# WS3-S1 Q1 SPLIT: the interpreter-resolution hard-abort must propagate past
+# the Coach exception-fallback paths below (never degrade to the LLM Coach).
+from guardkit.orchestrator.coach_verification import InterpreterResolutionError
+
 # Import criteria classifier for runtime command verification (TASK-CRV-537E)
 from guardkit.orchestrator.quality_gates.criteria_classifier import (
     classify_acceptance_criteria,
@@ -6296,6 +6300,7 @@ class AutoBuildOrchestrator:
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
                 smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
                 smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
             )
 
             # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
@@ -6380,6 +6385,12 @@ class AutoBuildOrchestrator:
                 error=None,
             )
 
+        except InterpreterResolutionError:
+            # WS3-S1 Q1 SPLIT: do NOT fall back to the SDK LLM Coach on an
+            # interpreter-resolution hard-abort — the LLM Coach would run its
+            # own tests under the same broken interpreter, re-opening the DD4F
+            # soft-fail. Propagate so the run fails loud with the remediation.
+            raise
         except Exception as e:
             logger.warning(f"CoachValidator failed, falling back to SDK: {e}")
             try:
@@ -6487,6 +6498,7 @@ class AutoBuildOrchestrator:
             evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-002)
             smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+            in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on

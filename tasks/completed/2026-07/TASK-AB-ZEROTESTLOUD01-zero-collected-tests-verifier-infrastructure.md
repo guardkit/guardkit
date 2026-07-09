@@ -1,13 +1,28 @@
 ---
 id: TASK-AB-ZEROTESTLOUD01
 title: Zero-collected-tests must surface as verifier infrastructure, not Player quality — loud diagnosis, stall co-fire, honest feedback framing
-status: backlog
+status: completed
 created: 2026-07-04T10:06:00Z
+closed: 2026-07-09
+closed_by: WS3-S1 (L17)
 priority: high
 tags: [autobuild, absent-signal, stall-classification, phase-4, actionability]
 complexity: 5
 source: docs/retro/abl005-autobuild-infra-chain-2026-07-04.md
 ---
+
+> **CLOSED 2026-07-09 (WS3-S1, L17) — closed-as-decided.** The
+> verifier-infrastructure marker + honest-framing body of this task is
+> IMPLEMENTED on guardkit main in `111b02ac` (the resume path further
+> superseded by `fc33a23e`). A `tests_run=0` deterministic Phase-4 record
+> already carries `verifier_infrastructure: True` + `resolved_interpreter`
+> (see `specialist_invocations._run_deterministic_phase_4`). The escalation
+> this file argued for — a broken verifier environment should ABORT the run
+> rather than be read as a quality signal — is now the **Q1 = SPLIT** verdict
+> (Rich 2026-07-09, WS3 §7): inside autobuild, an interpreter-resolution
+> failure hard-aborts (`InterpreterResolutionError`), implemented in WS3-S1.
+> Duplicate of TASK-FIX-TESTSIGNAL01. One of the four FIX/AB duplicate files
+> closed together (WS3 §3) — closed, not silently deleted.
 
 # Task: A Phase-4 record with zero collected tests can never mean "Player code is bad" — say so
 

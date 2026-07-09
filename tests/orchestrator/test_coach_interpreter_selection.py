@@ -289,8 +289,15 @@ class TestAgentInvokerPlumbing:
 
             invoker._verify_player_claims({"tests_run": False})
 
+            # WS3-S1 Q1 SPLIT: the agent_invoker honesty verifier runs inside
+            # autobuild, so it constructs CoachVerifier with
+            # in_autobuild_context=True (interpreter-resolution failure is a
+            # hard-abort on the Coach verdict path).
             mock_verifier_cls.assert_called_once_with(
-                tmp_path, venv_python=str(fake_venv), evidence_repos=[]
+                tmp_path,
+                venv_python=str(fake_venv),
+                evidence_repos=[],
+                in_autobuild_context=True,
             )
 
     def test_agent_invoker_defaults_venv_python_to_none(

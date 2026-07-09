@@ -1731,6 +1731,7 @@ class CoachValidator:
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
+        in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
     ):
         """
         Initialize CoachValidator.
@@ -1861,9 +1862,18 @@ class CoachValidator:
         # non-Python projects). Reuses the helper already battle-tested for
         # CoachVerifier (TASK-FIX-7A05) so the two Coach verification surfaces
         # resolve interpreters identically.
+        # WS3-S1 Q1 SPLIT (Rich 2026-07-09): inside an autobuild run a Python
+        # project that resolves no worktree venv is a HARD-ABORT — a wrong
+        # interpreter poisons every downstream Coach verdict (the DD4F-shaped
+        # soft-fail). Interactive CLI callers keep the default (False =
+        # warn-and-fallback). The distinction is an EXPLICIT flag, not a
+        # heuristic. See coach_verification._resolve_venv_python.
+        self._in_autobuild_context = in_autobuild_context
         self._configured_venv_python: Optional[str] = venv_python
         self._venv_python: Optional[Path] = _resolve_venv_python(
-            self.worktree_path, venv_python
+            self.worktree_path,
+            venv_python,
+            in_autobuild_context=in_autobuild_context,
         )
         if venv_python and (
             self._venv_python is None
@@ -8964,6 +8974,12 @@ class CoachValidator:
                 # caught here. The agent_invoker-side CoachVerifier has it too;
                 # this is the load-bearing adversarial check.
                 evidence_repos=self._evidence_repos,
+                # WS3-S1 Q1 SPLIT: propagate the validator's context so the
+                # inner honesty verifier hard-aborts identically inside
+                # autobuild (in practice the validator __init__ already
+                # resolved the interpreter, so this only differs on a venv
+                # that disappeared mid-turn).
+                in_autobuild_context=self._in_autobuild_context,
             )
             discrepancies = []
             discrepancies.extend(verifier._verify_files_exist(task_work_results))

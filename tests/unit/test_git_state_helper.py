@@ -34,6 +34,50 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core
 from git_state_helper import get_git_root, resolve_state_dir, commit_state_files
 
 
+# ---------------------------------------------------------------------------
+# TASK-FIX-GITSTATETEST01 (WS3-S1) — hermetic git isolation.
+#
+# ``git_state_helper`` resolves the repo via ``git rev-parse --show-toplevel``
+# from CWD, and ``commit_state_files`` runs a bare ``git commit`` (NO pathspec)
+# — which commits the ENTIRE index, not just ``docs/state/<task>``. Run against
+# the enclosing guardkit repo (the pre-fix behaviour) this: (a) swept an agent's
+# staged work into a junk "Save state for TASK-031" commit during the
+# FEAT-ABL-001 hand-finish, and (b) dirtied ``docs/state/TASK-TEST-*`` /
+# ``.guardkit/memory-query-log.jsonl``. This autouse fixture chdir's EVERY test
+# in this module into a throwaway ``tmp_path`` git repo, so real git operations
+# can only ever touch that temp repo. Acceptance: a full ``pytest tests/unit``
+# with files deliberately staged in the enclosing repo leaves its index + HEAD
+# untouched.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolated_git_repo(tmp_path, monkeypatch):
+    """chdir into a fresh, identity-configured temp git repo for the whole
+    module so no real git op can reach the enclosing repository."""
+    repo = tmp_path / "hermetic_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Local identity + no signing so ``git commit`` succeeds without the host's
+    # global config (and cannot hang on a gpg prompt).
+    for key, val in (
+        ("user.email", "gitstatetest@example.invalid"),
+        ("user.name", "GitStateTest"),
+        ("commit.gpgsign", "false"),
+    ):
+        subprocess.run(
+            ["git", "config", key, val], cwd=repo, check=True, capture_output=True
+        )
+    # An initial commit so HEAD exists (some helpers/tests assume a valid HEAD).
+    (repo / ".gitkeep").write_text("")
+    subprocess.run(["git", "add", ".gitkeep"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True
+    )
+    monkeypatch.chdir(repo)
+    return repo
+
+
 class TestGetGitRoot:
     """Test suite for get_git_root() function."""
 
@@ -328,6 +372,62 @@ class TestIntegrationScenarios:
 
         except subprocess.CalledProcessError:
             pytest.skip("Not in a git repository")
+
+    def test_workflow_leaves_an_outer_repo_index_and_head_untouched(
+        self, tmp_path, monkeypatch
+    ):
+        """TASK-FIX-GITSTATETEST01 acceptance: the workflow must NOT touch any
+        repo it is not chdir'd into — even with work deliberately staged there.
+
+        Simulates the enclosing guardkit repo: a second git repo with a file
+        staged in its index. Running the full commit workflow (from inside the
+        hermetic repo the autouse fixture put us in) must leave the outer repo's
+        HEAD and staged index exactly as they were — the pre-fix bug swept that
+        staged work into a junk 'Save state' commit.
+        """
+        outer = tmp_path / "outer_repo"
+        outer.mkdir()
+        subprocess.run(["git", "init"], cwd=outer, check=True, capture_output=True)
+        for key, val in (
+            ("user.email", "outer@example.invalid"),
+            ("user.name", "Outer"),
+            ("commit.gpgsign", "false"),
+        ):
+            subprocess.run(
+                ["git", "config", key, val], cwd=outer, check=True, capture_output=True
+            )
+        (outer / "seed.txt").write_text("seed")
+        subprocess.run(["git", "add", "seed.txt"], cwd=outer, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "seed"], cwd=outer, check=True, capture_output=True
+        )
+        # Deliberately stage uncommitted work in the outer repo's index.
+        (outer / "agent_work.py").write_text("print('important agent work')\n")
+        subprocess.run(
+            ["git", "add", "agent_work.py"], cwd=outer, check=True, capture_output=True
+        )
+
+        def _outer(*args):
+            return subprocess.run(
+                ["git", *args], cwd=outer, capture_output=True, text=True, check=True
+            ).stdout.strip()
+
+        head_before = _outer("rev-parse", "HEAD")
+        staged_before = _outer("diff", "--cached", "--name-only")
+        assert "agent_work.py" in staged_before
+
+        # Run the real workflow. The autouse fixture has us chdir'd into the
+        # hermetic repo, NOT `outer`, so nothing here may reach `outer`.
+        task_id = "TASK-TEST-WORKFLOW"
+        state_dir = resolve_state_dir(task_id)
+        (state_dir / "test_state.txt").write_text("Test state data")
+        commit_state_files(task_id, "Test workflow commit")
+
+        # The outer repo is untouched: same HEAD, same staged file.
+        assert _outer("rev-parse", "HEAD") == head_before
+        assert "agent_work.py" in _outer("diff", "--cached", "--name-only")
+        # And the state commit landed in the hermetic repo instead.
+        assert get_git_root() != outer
 
     def test_multiple_tasks_separate_directories(self):
         """Test that multiple tasks get separate state directories."""

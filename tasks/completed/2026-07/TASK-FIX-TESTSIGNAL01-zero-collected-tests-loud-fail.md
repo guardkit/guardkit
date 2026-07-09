@@ -1,12 +1,25 @@
 ---
 id: TASK-FIX-TESTSIGNAL01
 title: Phase-4 tests_run=0 must abort as verifier-infrastructure failure
-status: backlog
+status: completed
 task_type: bugfix
 priority: high
 created: 2026-07-05
+closed: 2026-07-09
+closed_by: WS3-S1 (L17)
 tags: [autobuild, quality-gates, verifier-infrastructure]
 ---
+
+> **CLOSED 2026-07-09 (WS3-S1, L17) — closed-as-decided (duplicate).** This FIX
+> file duplicates the shipped AB half TASK-AB-ZEROTESTLOUD01, implemented on
+> guardkit main in `111b02ac` (resume superseded by `fc33a23e`). A `tests_run=0`
+> deterministic Phase-4 record already carries the `verifier_infrastructure`
+> marker + `resolved_interpreter` and never counts as a Player-quality pass
+> (absence-of-failure). The stronger "must ABORT" this file's title demanded is
+> now the **Q1 = SPLIT** verdict (Rich 2026-07-09, WS3 §7): inside autobuild an
+> interpreter-resolution failure hard-aborts the run
+> (`InterpreterResolutionError`), while interactive CLI keeps warn-and-fallback.
+> Implemented in WS3-S1. No further work — closed, not silently deleted.
 
 # tests_run=0 is never a quality verdict
 
