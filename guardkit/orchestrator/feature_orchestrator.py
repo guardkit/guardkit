@@ -2729,6 +2729,111 @@ The detailed specifications are in the task markdown file.
 
         return findings
 
+    def _surface_advisory_seam_findings(
+        self,
+        wiring_result: Optional[Dict[str, Any]],
+        authored: List[str],
+        worktree: Any,
+        wave_number: int,
+    ) -> None:
+        """Surface WS3-S3 CALLSITE_DRIFT + SYS_MODULES_TAMPER as advisory (§8).
+
+        CALLSITE_DRIFT aperture B is already in ``wiring_result`` (analyze_wiring
+        runs it without a baseline). Aperture A (changed-signature × stale-site)
+        needs the feature-base file contents, resolved here and passed to
+        ``analyze_callsite_drift``; the merged findings are attached back onto
+        ``wiring_result["callsite_drift"]`` for Coach evidence and logged as an
+        advisory. Never turn-rejecting until the §8 promotion gate flips it.
+        Fail-open: any error leaves the aperture-B result untouched.
+        """
+        if not isinstance(wiring_result, dict):
+            return
+        try:
+            advisory: List[Dict[str, Any]] = []
+            cd = wiring_result.get("callsite_drift") or {}
+            if cd.get("status") == "ran":
+                advisory.extend(cd.get("findings", []))
+            # Aperture A: feature-base sources of the authored files.
+            base_sources = self._feature_base_sources(worktree, authored)
+            if base_sources:
+                try:
+                    from guardkitfactory.wiring.callsite_drift import (
+                        analyze_callsite_drift,
+                    )
+                    cd_a = analyze_callsite_drift(
+                        authored, worktree.path, "feature",
+                        baseline_sources=base_sources, stack=None,
+                    )
+                    if cd_a and cd_a.get("status") == "ran":
+                        existing = {
+                            (f.get("file"), f.get("lineno"), f.get("form"))
+                            for f in advisory
+                        }
+                        for f in cd_a.get("findings", []):
+                            key = (f.get("file"), f.get("lineno"), f.get("form"))
+                            if key not in existing:
+                                advisory.append(f)
+                                existing.add(key)
+                        # Attach the merged (A∪B) result for downstream evidence.
+                        wiring_result["callsite_drift"] = cd_a
+                        cd_a["findings"] = advisory
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("aperture-A callsite drift skipped: %s", exc)
+
+            env = wiring_result.get("env_tamper") or {}
+            env_findings = env.get("findings", []) if env.get("status") == "ran" else []
+
+            if advisory or env_findings:
+                logger.warning(
+                    "[wave %s] WS3-S3 advisory seam findings (not turn-rejecting): "
+                    "%d CALLSITE_DRIFT, %d SYS_MODULES_TAMPER",
+                    wave_number, len(advisory), len(env_findings),
+                )
+                for f in advisory[:10]:
+                    logger.warning(
+                        "  CALLSITE_DRIFT %s:%s %s — %s",
+                        f.get("file"), f.get("lineno"), f.get("form"), f.get("why", ""),
+                    )
+                for f in env_findings[:10]:
+                    logger.warning(
+                        "  SYS_MODULES_TAMPER %s:%s %s",
+                        f.get("file"), f.get("lineno"), f.get("module_key"),
+                    )
+        except Exception as exc:  # noqa: BLE001 — advisory must never break the gate
+            logger.debug("advisory seam surfacing failed: %s", exc)
+
+    def _feature_base_sources(
+        self, worktree: Any, authored: List[str]
+    ) -> Dict[str, bytes]:
+        """Read the feature-base version of each authored source file (aperture A).
+
+        Resolves the feature-base commit (§1.3) and returns
+        ``{rel_path: bytes}`` for the authored files that existed at base. Empty
+        on any failure (aperture A simply does not run — fail-open).
+        """
+        try:
+            import subprocess
+
+            from guardkit.orchestrator.seam_checks import resolve_feature_base
+            wt = Path(worktree.path)
+            ref = resolve_feature_base(wt)
+            if not ref:
+                return {}
+            sources: Dict[str, bytes] = {}
+            for rel in authored:
+                if not rel.endswith(".py"):
+                    continue
+                proc = subprocess.run(
+                    ["git", "show", f"{ref}:{rel}"],
+                    cwd=str(wt), capture_output=True, timeout=15,
+                )
+                if proc.returncode == 0 and proc.stdout:
+                    sources[rel] = proc.stdout
+            return sources
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("feature-base source read failed: %s", exc)
+            return {}
+
     @staticmethod
     def _build_wiring_feedback(findings: List[Dict[str, Any]]) -> str:
         """Compose Player-facing feedback from turn-rejecting wiring findings.
@@ -2841,6 +2946,15 @@ The detailed specifications are in the task markdown file.
                 return WiringGatePhaseOutcome(
                     terminate=False, final_wave_result=wave_result
                 )
+
+            # WS3-S3 (advisory-only; §8 promotion gate not yet passed): surface
+            # CALLSITE_DRIFT (aperture A via feature-base sources + aperture B
+            # from analyze_wiring) and SYS_MODULES_TAMPER as advisory evidence.
+            # These are NOT added to the turn-rejecting set until the §8
+            # fixture+cohort gate flips them. Fail-open.
+            self._surface_advisory_seam_findings(
+                wiring_result, authored, worktree, wave_number
+            )
 
             findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
             if not findings:
