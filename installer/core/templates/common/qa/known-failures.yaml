@@ -2,7 +2,11 @@
 # Every suite run is diffed against this ledger, never against "all green":
 # an un-ledgered failure fails the gate; an unexpectedly-PASSING entry also
 # fails (stale ledger is a finding).
-# Written by human/Coach at triage time only — never by the Player mid-build.
+# Written by human/Coach at triage time only — never by the Player mid-build,
+# and never by a headless /feature-spec|/feature-plan planning session (K15 /
+# LPA-09: the ledger is writable by nothing automated). When qa.enforce_tier1
+# is on, `guardkit feature validate` refuses any planning diff that touches this
+# file (guardkit/qa/enforcement.py::check_plan_does_not_author_ledger).
 # Validate: guardkit qa validate known-failures qa/known-failures.yaml
 format_version: "1.0"
 suite_id: default-suite          # PLACEHOLDER — name this repo's suite

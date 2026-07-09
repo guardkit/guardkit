@@ -24,9 +24,12 @@ import pytest
 
 from guardkit.qa.enforcement import (
     ENFORCE_ENV,
+    LEDGER_RELPATH,
     check_pass_bar_precondition,
+    check_plan_does_not_author_ledger,
     check_runtime_surface_gate,
     diff_failures_against_ledger,
+    git_changed_paths,
     is_tier1_enforced,
     parse_pytest_outcome,
 )
@@ -454,3 +457,103 @@ class TestRuntimeSurfaceGate:
         res = check_runtime_surface_gate(repo, [task_id])
         assert res.passed is True, res.detail
         assert res.runtime_surface is True
+
+
+# ---------------------------------------------------------------------------
+# 4. Plan-time ledger-authorship reject-lint (F2 · K15 / LPA-09) — DIM5-F3
+# ---------------------------------------------------------------------------
+
+
+class TestPlanDoesNotAuthorLedger:
+    def test_clean_plan_passes(self):
+        res = check_plan_does_not_author_ledger(
+            [
+                ".guardkit/features/FEAT-XYZ.yaml",
+                "tasks/backlog/TASK-XYZ-t1.md",
+                "features/foo/foo.feature",
+            ]
+        )
+        assert res.passed is True
+        assert res.offending_paths == ()
+
+    def test_empty_diff_passes(self):
+        assert check_plan_does_not_author_ledger([]).passed is True
+
+    def test_ledger_add_fails(self):
+        res = check_plan_does_not_author_ledger(
+            [".guardkit/features/FEAT-XYZ.yaml", LEDGER_RELPATH]
+        )
+        assert res.status == "fail"
+        assert res.offending_paths == (LEDGER_RELPATH,)
+        assert "human/Coach at triage only" in res.detail
+        assert "qa.enforce_tier1 is on" in res.detail
+
+    def test_ledger_leading_dot_slash_fails(self):
+        res = check_plan_does_not_author_ledger(["./qa/known-failures.yaml"])
+        assert res.status == "fail"
+        assert res.offending_paths == (LEDGER_RELPATH,)
+
+    def test_sibling_repo_ledger_fails(self):
+        res = check_plan_does_not_author_ledger(
+            ["../guardkitfactory/qa/known-failures.yaml"]
+        )
+        assert res.status == "fail"
+        assert res.offending_paths == ("../guardkitfactory/qa/known-failures.yaml",)
+
+    def test_repo_qualified_ledger_fails(self):
+        # Evidence-repo qualifier <repo>:<path> resolves to the bare path.
+        res = check_plan_does_not_author_ledger(["guardkit:qa/known-failures.yaml"])
+        assert res.status == "fail"
+        assert res.offending_paths == (LEDGER_RELPATH,)
+
+    def test_similarly_named_file_does_not_fail(self):
+        # A different file under qa/ is not the ledger.
+        res = check_plan_does_not_author_ledger(
+            ["qa/known-failures.yaml.bak", "qa/pass-bar-TASK-X.yaml", "docs/known-failures.md"]
+        )
+        assert res.passed is True
+
+
+class TestGitChangedPaths:
+    def _stub_git(self, porcelain: str, returncode: int = 0):
+        def _run(args):
+            return subprocess.CompletedProcess(args, returncode, stdout=porcelain, stderr="")
+
+        return _run
+
+    def test_parses_modified_staged_and_untracked(self, tmp_path):
+        porcelain = (
+            " M qa/known-failures.yaml\n"
+            "A  .guardkit/features/FEAT-X.yaml\n"
+            "?? tasks/backlog/TASK-X-t1.md\n"
+        )
+        paths = git_changed_paths(tmp_path, git_run=self._stub_git(porcelain))
+        assert set(paths) == {
+            "qa/known-failures.yaml",
+            ".guardkit/features/FEAT-X.yaml",
+            "tasks/backlog/TASK-X-t1.md",
+        }
+
+    def test_rename_takes_destination(self, tmp_path):
+        porcelain = "R  qa/old.yaml -> qa/known-failures.yaml\n"
+        paths = git_changed_paths(tmp_path, git_run=self._stub_git(porcelain))
+        assert paths == ("qa/known-failures.yaml",)
+
+    def test_git_failure_returns_empty(self, tmp_path):
+        paths = git_changed_paths(tmp_path, git_run=self._stub_git("", returncode=128))
+        assert paths == ()
+
+    def test_git_unavailable_returns_empty(self, tmp_path):
+        def _boom(args):
+            raise OSError("git not found")
+
+        assert git_changed_paths(tmp_path, git_run=_boom) == ()
+
+    def test_end_to_end_ledger_edit_is_refused(self, tmp_path):
+        # git_changed_paths → check_plan_does_not_author_ledger composition.
+        porcelain = " M qa/known-failures.yaml\nA  .guardkit/features/FEAT-X.yaml\n"
+        res = check_plan_does_not_author_ledger(
+            git_changed_paths(tmp_path, git_run=self._stub_git(porcelain))
+        )
+        assert res.status == "fail"
+        assert res.offending_paths == ("qa/known-failures.yaml",)
