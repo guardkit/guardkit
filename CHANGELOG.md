@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### install.sh no longer wholesale-moves `~/.claude` on re-runs (TASK-FIX-ac2e)
+
+`backup_existing()` swept `~/.claude` into the same whole-directory
+`mv`-to-backup treatment as the guardkit-owned install dirs, silently
+destroying Claude Code user state (per-project auto-memory, `settings.json`,
+session transcripts, todos) on **every** installer re-run — a live data-loss
+incident on 2026-07-08. `~/.claude` is a shared directory: guardkit owns only
+the `commands`/`agents` symlinks inside it, which `setup_claude_integration()`
+already backs up and re-links surgically. The whole-dir sweep is removed
+(decision record TASK-REV-ac2e, Option A, 92/100) and guarded by
+`tests/unit/test_claude_dir_backup_safety.py` — a two-sided grep-signature
+test: `.claude` must stay out of the sweep AND the surgical mechanism must
+keep existing. Recovery for anyone previously bitten:
+`rsync -a --ignore-existing ~/.claude.backup.<latest>/ ~/.claude/`.
+
 ### Breaking Changes
 
 #### AutoBuild: `bootstrap_failure_mode` smart default (TASK-ABSR-A1B2)

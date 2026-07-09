@@ -470,8 +470,15 @@ backup_existing() {
     [ -d "$HOME/.agentecflow" ] && existing_dirs+=(".agentecflow")
     [ -d "$HOME/.agenticflow" ] && existing_dirs+=(".agenticflow")
     [ -d "$HOME/.agentic-flow" ] && existing_dirs+=(".agentic-flow")
-    [ -d "$HOME/.claude" ] && existing_dirs+=(".claude")
-    
+    # NOTE: Do NOT wholesale-move ~/.claude here. It is Claude Code's own state
+    # directory (settings.json, projects/ session history, user CLAUDE.md memory,
+    # plugins, MCP config, keybindings), NOT a GuardKit install dir — GuardKit
+    # installs into ~/.agentecflow and only owns the commands/ and agents/
+    # subdirs of ~/.claude, which are backed up surgically in
+    # setup_claude_integration (~/.claude/commands, ~/.claude/agents). Moving the
+    # whole dir with `mv` would detach the user's live Claude Code state on every
+    # (re)install. Decision record: TASK-REV-ac2e (2026-07-09, Option A).
+
     if [ ${#existing_dirs[@]} -gt 0 ]; then
         print_warning "Found existing installations: ${existing_dirs[*]}"
         
