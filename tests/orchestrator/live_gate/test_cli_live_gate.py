@@ -76,3 +76,25 @@ def test_live_gate_unknown_gate_id_is_loud_exit_2(tmp_path):
     )
     assert result.exit_code == 2
     assert "unknown gate id" in result.output
+
+
+def test_live_gate_campaign_writes_ledger_and_stamps_ref(tmp_path):
+    # A single (unattended) run under --campaign is recorded as attempt 1 of an
+    # F9 ledger, and the envelope's attempts_ledger_ref is stamped. Here the run
+    # is a pre-flight environment_fail (no reds) → closes trivially, verdict
+    # preserved, exit 4.
+    repo = _build_repo(tmp_path)
+    result = CliRunner().invoke(
+        qa,
+        ["live-gate", "--feature", "FEAT-X", "--target", "gb10", "--repo", str(repo), "--campaign"],
+    )
+    assert result.exit_code == 4, result.output
+    envelope = json.loads(result.output)
+    assert envelope["verdict"] == "environment_fail"
+    assert envelope["attempts_ledger_ref"] == "qa/attempts-FEAT-X.yaml"
+    ledger = tmp_path / "qa" / "attempts-FEAT-X.yaml"
+    assert ledger.is_file()
+    parsed = yaml.safe_load(ledger.read_text())
+    assert parsed["campaign"] == "FEAT-X"
+    assert len(parsed["attempts"]) == 1
+    assert parsed["attempts"][0]["n"] == 1
