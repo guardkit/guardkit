@@ -132,6 +132,50 @@ class TestCheckIgnoreOne:
         assert rule is not None
         assert rule.startswith("src/.gitignore:")
 
+    def test_negation_reincluded_path_is_not_ignored(
+        self, worktree: Path
+    ) -> None:
+        """Red-baseline retro (L12 item 6): a path re-included by a
+        ``!``-negation rule must NOT block the pre-turn gate, even though
+        ``check-ignore -v --no-index`` reports it with exit 0."""
+        _write_gitignore(worktree, "lib/\n!app/lib/\n!app/lib/**")
+        # Planned (not-yet-created) target under the re-included tree.
+        rule = check_ignore_one(worktree, "app/lib/ui/session_screen.dart")
+        assert rule is None
+
+    def test_tracked_path_matching_broad_rule_is_not_ignored(
+        self, worktree: Path
+    ) -> None:
+        """A committed (tracked) file matched by a broad ignore rule is
+        never silently dropped by ``git add -A`` → the gate must not block
+        it (tracking-state short-circuit, L12 item 6)."""
+        _write_gitignore(worktree, "*.log")
+        tracked = worktree / "keep.log"
+        tracked.write_text("kept\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "-f", "keep.log"], cwd=str(worktree), check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "force-add tracked log"],
+            cwd=str(worktree), check=True,
+        )
+        assert check_ignore_one(worktree, "keep.log") is None
+
+    def test_negation_helper_and_tracked_helper(self, worktree: Path) -> None:
+        """Direct coverage of the two self-contained helpers."""
+        from guardkit.orchestrator.preflight_ignore_gate import (
+            _path_is_tracked,
+            _rule_is_negation,
+        )
+
+        assert _rule_is_negation(".gitignore:3:!app/lib/**") is True
+        assert _rule_is_negation(".gitignore:1:lib/") is False
+        assert _rule_is_negation("") is False
+        assert _rule_is_negation("garbage") is False
+        # keep.txt is untracked here.
+        (worktree / "untracked.txt").write_text("u\n", encoding="utf-8")
+        assert _path_is_tracked(worktree, "untracked.txt") is False
+
 
 class TestIsProjectRootGitignore:
     """Coverage for the rebase-hint heuristic."""

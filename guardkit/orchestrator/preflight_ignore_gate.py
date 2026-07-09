@@ -356,9 +356,24 @@ def check_ignore_one(worktree_path: Path, path: str) -> Optional[str]:
         return None
     if result.returncode == 0 and result.stdout:
         first_line = result.stdout.splitlines()[0]
-        if "\t" in first_line:
-            return first_line.split("\t", 1)[0]
-        return first_line
+        rule = first_line.split("\t", 1)[0] if "\t" in first_line else first_line
+        # Red-baseline retro (2026-07-08, L12 item 6): ``check-ignore -v
+        # --no-index`` reports the *last matching* pattern regardless of
+        # tracking state. For a re-included tree (``!app/lib/**``) that
+        # pattern is a **negation** returned with exit 0 — the path is
+        # RE-INCLUDED, not ignored, so the fail-fast gate must NOT block it.
+        # (FEAT-VOICE-003: every turn's Coach was flooded with phantom
+        # gitignore discrepancies; the pre-turn gate would have blocked the
+        # turn outright.)
+        if _rule_is_negation(rule):
+            return None
+        # A TRACKED file is never silently dropped by ``git add -A``, so an
+        # ignore match against it is not a real block (force-added file, or a
+        # planned edit to a committed path under a broad rule). ls-files is
+        # the authority. Only probed on a matched path (rare), so ~zero cost.
+        if _path_is_tracked(worktree_path, path):
+            return None
+        return rule
     if result.returncode == 0:
         # Exit 0 with no stdout shouldn't happen; treat as not-ignored.
         return None
@@ -372,6 +387,44 @@ def check_ignore_one(worktree_path: Path, path: str) -> Optional[str]:
         result.stderr.strip(),
     )
     return None
+
+
+def _rule_is_negation(rule: str) -> bool:
+    """Whether a ``<source>:<linenum>:<pattern>`` rule is a ``!``-negation.
+
+    A negation pattern RE-INCLUDES the path (the opposite of a drop). Kept
+    self-contained here per this module's duplication-for-independence design
+    (mirrors ``CoachVerifier``'s parser). Returns ``False`` on an unparseable
+    rule (fail toward the pre-existing behaviour). Red-baseline retro, L12.
+    """
+    if not rule:
+        return False
+    parts = rule.split(":", 2)
+    if len(parts) < 3:
+        return False
+    return parts[2].strip().startswith("!")
+
+
+def _path_is_tracked(worktree_path: Path, path: str) -> bool:
+    """Whether ``path`` is tracked in ``worktree_path``'s git index.
+
+    ``True`` only when ``git ls-files --error-unmatch`` exits 0. Any probe
+    failure returns ``False`` so the gate does not silently pass a genuinely
+    ignored path when git is unavailable (the Coach still verifies at turn
+    end). Red-baseline retro, L12 item 6.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", path],
+            cwd=str(worktree_path),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_CHECK_IGNORE_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
 
 
 def is_project_root_gitignore(rule: str) -> bool:

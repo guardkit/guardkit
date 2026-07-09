@@ -956,3 +956,109 @@ def test_xrepo_declared_evidence_repo_file_is_silent(
     discrepancies = verifier._verify_claims_were_staged(report)
 
     assert discrepancies == []
+
+
+# ---------------------------------------------------------------------------
+# Red-baseline retro (2026-07-08, L12 item 6): claim_audit_gitignored must
+# NOT false-positive on a tracked file re-included by a ``!``-negation rule.
+# ``git check-ignore -v --no-index`` reports the last matching pattern
+# regardless of tracking state; for a re-included tree (``!app/lib/**``) that
+# pattern is a NEGATION returned with exit 0, which the pre-fix classifier
+# mis-read as "gitignored" for demonstrably tracked, committed files
+# (FEAT-VOICE-003: 3 phantom should_fix items every turn).
+# ---------------------------------------------------------------------------
+
+
+from guardkit.orchestrator.coach_verification import (  # noqa: E402
+    _check_ignore_match_is_negation,
+)
+
+
+def _setup_negation_reinclude(git_worktree: Path) -> str:
+    """Recreate the retro's exact .gitignore + a tracked re-included file.
+
+    Returns the worktree-relative path of the committed, re-included file.
+    """
+    # .gitignore: ``lib/`` (ignores app/lib), then the intentional
+    # re-includes (the verbatim study-tutor case, lines 18/330/331).
+    (git_worktree / ".gitignore").write_text("lib/\n!app/lib/\n!app/lib/**\n")
+    rel = "app/lib/ui/session_screen.dart"
+    src = git_worktree / "app" / "lib" / "ui"
+    src.mkdir(parents=True)
+    (src / "session_screen.dart").write_text("class SessionScreen {}\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "session screen under re-included app/lib", cwd=git_worktree)
+    return rel
+
+
+def test_negation_reincluded_tracked_file_classified_tracked_not_gitignored(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """The retro's core defect: a tracked file matched by ``!app/lib/**``
+    classifies as ``tracked_unmodified`` (never ``gitignored``)."""
+    rel = _setup_negation_reinclude(git_worktree)
+
+    # Guard: git really does report the negation with exit 0 here (the quirk
+    # this fix defends against). If git ever changes this, the assertion
+    # below still holds — the fix is authoritative on tracking state.
+    ci = subprocess.run(
+        ["git", "check-ignore", "-v", "--no-index", "--", rel],
+        cwd=git_worktree, capture_output=True, text=True, check=False,
+    )
+    if ci.returncode == 0:
+        assert _check_ignore_match_is_negation(ci.stdout) is True
+
+    assert verifier._classify_dropped_path(rel) == "tracked_unmodified"
+
+
+def test_negation_reincluded_file_emits_no_gitignored_discrepancy(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """End-to-end: a Player claim on the tracked re-included file produces
+    ZERO ``claim_audit_gitignored`` items and ZERO critical items — the
+    exact phantom-feedback loop that dominated every FEAT-VOICE-003 turn."""
+    rel = _setup_negation_reinclude(git_worktree)
+
+    report: Dict[str, Any] = {"files_modified": [rel]}
+    discrepancies = verifier._verify_claims_were_staged(report)
+
+    assert not any(
+        d.claim_type == "claim_audit_gitignored" for d in discrepancies
+    ), "negation re-include must not manufacture a gitignored discrepancy"
+    assert not any(d.severity == "critical" for d in discrepancies)
+    # It surfaces (if at all) only as the accurate tracked-unmodified advisory.
+    for d in discrepancies:
+        assert d.claim_type == "claim_audit_unmodified"
+        assert d.severity == "should_fix"
+
+
+def test_genuinely_gitignored_untracked_file_still_flagged(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """Guardrail: the fix must NOT silence the real signal. An UNtracked
+    file matched by a plain (non-negation) ignore rule is still
+    ``gitignored`` — git add -A would silently skip it."""
+    (git_worktree / ".gitignore").write_text("build/\n")
+    d = git_worktree / "build"
+    d.mkdir()
+    (d / "artifact.py").write_text("x = 1\n")  # exists, ignored, untracked
+
+    assert verifier._classify_dropped_path("build/artifact.py") == "gitignored"
+
+
+class TestCheckIgnoreNegationHelper:
+    """Unit coverage for the ``!``-negation detector."""
+
+    def test_negation_pattern_detected(self):
+        line = ".gitignore:3:!app/lib/**\tapp/lib/ui/session_screen.dart"
+        assert _check_ignore_match_is_negation(line) is True
+
+    def test_plain_pattern_not_negation(self):
+        line = ".gitignore:1:lib/\tlib/foo.py"
+        assert _check_ignore_match_is_negation(line) is False
+
+    def test_empty_output_is_not_negation(self):
+        assert _check_ignore_match_is_negation("") is False
+
+    def test_unparseable_line_is_not_negation(self):
+        assert _check_ignore_match_is_negation("garbage-no-colons\n") is False

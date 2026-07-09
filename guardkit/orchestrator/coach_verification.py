@@ -46,6 +46,32 @@ _PYTHON_PROJECT_MARKERS = (
 )
 
 
+def _check_ignore_match_is_negation(check_ignore_stdout: str) -> bool:
+    """Whether ``git check-ignore -v --no-index`` matched a ``!``-negation.
+
+    The ``-v`` line format is ``<source>:<linenum>:<pattern>\\t<path>``. A
+    pattern beginning with ``!`` RE-INCLUDES the path (the opposite of a
+    drop): git reports it with exit 0 under ``--no-index`` even for tracked,
+    re-included trees (e.g. ``!app/lib/**``). This helper lets the claim-audit
+    classifier tell "silently dropped by gitignore" from "explicitly
+    re-included" so it stops manufacturing ``claim_audit_gitignored`` false
+    positives (red-baseline retro, L12 item 6). Returns ``False`` on empty or
+    unparseable output (fail toward the pre-existing behaviour).
+    """
+    for line in check_ignore_stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Everything before the tab is ``<source>:<linenum>:<pattern>``.
+        rule_field = line.split("\t", 1)[0]
+        parts = rule_field.split(":", 2)
+        if len(parts) < 3:
+            continue
+        pattern = parts[2].strip()
+        return pattern.startswith("!")
+    return False
+
+
 def _resolve_venv_python(
     worktree_path: Path,
     explicit: Optional[Union[str, Path]],
@@ -927,6 +953,29 @@ class CoachVerifier:
             ):
                 return "cross_repo"
 
+        # Red-baseline retro (2026-07-08, L12 item 6): a TRACKED file is
+        # never silently skipped by ``git add -A`` — so tracking state is the
+        # authority on "was this dropped", and it must be consulted BEFORE
+        # trusting ``git check-ignore --no-index``. The ``--no-index`` probe
+        # reports the *last matching* pattern regardless of tracking, and for
+        # a re-included tree (``!app/lib/**``) that last pattern is a
+        # **negation** returned with exit 0 — which the old exit-0→"gitignored"
+        # shortcut mis-read for demonstrably tracked, committed files
+        # (FEAT-VOICE-003: 3 phantom ``claim_audit_gitignored`` should_fix
+        # items every turn, steering the Player off the one real red test).
+        # ``git ls-files --error-unmatch`` short-circuits the whole class.
+        tracked = self._git_path_is_tracked(path)
+        if tracked is None:
+            # ls-files probe itself failed (git missing / timeout) — preserve
+            # the detection floor rather than guess. Consistent with the
+            # check-ignore infra_error posture below.
+            return "infra_error"
+        if tracked:
+            return "tracked_unmodified"
+
+        # Untracked and on disk. Distinguish a genuinely-gitignored file
+        # (``git add -A`` would silently skip it — a real honesty signal)
+        # from an unaccounted / fabricated one.
         try:
             result = subprocess.run(
                 ["git", "check-ignore", "-v", "--no-index", "--", path],
@@ -945,33 +994,17 @@ class CoachVerifier:
             return "infra_error"
 
         if result.returncode == 0:
+            # ``check-ignore -v --no-index`` matched a rule. Honour negations:
+            # a ``!pattern`` match RE-INCLUDES the path, so ``git add -A``
+            # would stage it — it is NOT silently dropped by gitignore. An
+            # untracked, re-included path absent from porcelain is unaccounted
+            # → fabricated, not ``gitignored``.
+            if _check_ignore_match_is_negation(result.stdout):
+                return "fabricated"
             return "gitignored"
         if result.returncode == 1:
-            # Not gitignored and the path exists on disk. Two remaining
-            # cases: tracked-but-unmodified (TASK-FIX-PCN) or genuinely
-            # fabricated (rare given porcelain --untracked-files=all
-            # would have surfaced an untracked file). Use ls-files
-            # --error-unmatch to distinguish so the caller can demote
-            # the tracked-but-unmodified case to should_fix.
-            try:
-                ls_result = subprocess.run(
-                    ["git", "ls-files", "--error-unmatch", "--", path],
-                    cwd=self.worktree_path,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=30,
-                )
-            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                logger.warning(
-                    "claim_audit: 'git ls-files --error-unmatch' failed "
-                    "(%s) for path %s in %s; falling back to fabricated "
-                    "classification.",
-                    exc, path, self.worktree_path,
-                )
-                return "fabricated"
-            if ls_result.returncode == 0:
-                return "tracked_unmodified"
+            # Not ignored and (from the short-circuit above) not tracked, yet
+            # on disk and absent from porcelain → genuinely unaccounted.
             return "fabricated"
         # 128 or any other non-{0,1} exit: log + fall back.
         logger.warning(
@@ -981,6 +1014,35 @@ class CoachVerifier:
             result.stderr.strip(),
         )
         return "infra_error"
+
+    def _git_path_is_tracked(self, path: str) -> Optional[bool]:
+        """Return whether ``path`` is tracked in the worktree's git index.
+
+        ``True`` when ``git ls-files --error-unmatch`` reports the path
+        tracked (exit 0), ``False`` when it is untracked (exit 1), and
+        ``None`` when the probe itself failed (git missing / timeout) — the
+        caller treats ``None`` as ``infra_error`` to preserve the detection
+        floor. A tracked file is never silently dropped by ``git add -A``,
+        so this is the authoritative short-circuit for the check-ignore
+        ``!``-negation false-positive (red-baseline retro, L12 item 6).
+        """
+        try:
+            ls_result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", "--", path],
+                cwd=self.worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            logger.warning(
+                "claim_audit: 'git ls-files --error-unmatch' failed "
+                "(%s) for path %s in %s.",
+                exc, path, self.worktree_path,
+            )
+            return None
+        return ls_result.returncode == 0
 
     def _git_toplevel(self, start: Path) -> Optional[Path]:
         """Return the git working-tree root that owns ``start``, or None.
