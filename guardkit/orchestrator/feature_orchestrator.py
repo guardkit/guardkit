@@ -129,8 +129,9 @@ def _estimate_timeout_factor() -> float:
     deriving the per-task timeout floor (red-baseline retro, L12 item 3).
 
     A large task budgeted below its own estimate is guaranteed to time out,
-    and the timeout MASKS the real failure (FEAT-VOICE-003 run 1: TASK-VC-005
-    was estimated at 113 min but the flat 50-min floor timed it out mid-run,
+    and the timeout MASKS the real failure (FEAT-VOICE-003 run 1: the 113-min
+    UI task was budgeted below its own estimate — the flat 50-min floor timed
+    it out mid-run,
     hiding the true — test — failure until run 2). Default 1.5×; operator
     policy via ``GUARDKIT_AUTOBUILD_ESTIMATE_TIMEOUT_FACTOR``. A non-positive
     or unparseable value falls back to the default.
@@ -3703,7 +3704,7 @@ The detailed specifications are in the task markdown file.
         estimate, so the task is at risk of a timeout that would MASK its real
         failure. The default path applies the estimate-derived floor and so
         never trips this; the warning catches the operator-under-budgeted case
-        (FEAT-VOICE-003 run 1: TASK-VC-005 estimated 113 min, budgeted 50).
+        (FEAT-VOICE-003 run 1: a 113-min task budgeted at the flat 50-min floor).
         """
         multiplier = self.timeout_multiplier
         for task_ids in feature.orchestration.parallel_groups:
