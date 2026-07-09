@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### `guardkit` wrapper delegates unknown commands to guardkit-py
+
+The installed `~/.agentecflow/bin/guardkit` shell wrapper rejected every
+Python-CLI group it didn't explicitly enumerate — `guardkit task create …`
+(the /task-review Phase 0 ad-hoc entry), `guardkit memory status`, `qa`,
+`template`, `review` all died with "Unknown command". TASK-FPSG-004 had
+already added an explicit delegation block for `feature`; that pattern is now
+generalized: a shared `find_guardkit_py()` + delegation in the `*)` catch-all
+forwards any unrecognized command to the Python CLI, so new groups never need
+wrapper re-enumeration. Guarded by `tests/unit/test_wrapper_delegation.py`.
+Re-run `installer/scripts/install.sh` to refresh the installed wrapper.
+
 #### install.sh no longer wholesale-moves `~/.claude` on re-runs (TASK-FIX-ac2e)
 
 `backup_existing()` swept `~/.claude` into the same whole-directory

@@ -900,6 +900,10 @@ print_help() {
     echo "  version             Show version information"
     echo "  help                Show this help message"
     echo ""
+    echo "Any other command (task, memory, qa, template, review, system-plan,"
+    echo "context-switch, ...) is delegated to the guardkit-py Python CLI —"
+    echo "run 'guardkit-py --help' for the full list."
+    echo ""
     echo "AutoBuild Commands:"
     echo "  autobuild task TASK-XXX     Execute Player-Coach loop for a task"
     echo "  autobuild status TASK-XXX   Check worktree status"
@@ -933,6 +937,22 @@ detect_project_context() {
         depth=$((depth + 1))
     done
     return 1
+}
+
+# Locate the guardkit-py Python CLI (same search order as the TASK-FPSG-004
+# feature delegation). Echoes the path; empty if not found.
+find_guardkit_py() {
+    if command -v guardkit-py &> /dev/null; then
+        command -v guardkit-py
+    elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
+        echo "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
+    elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
+        echo "$HOME/.local/bin/guardkit-py"
+    elif [ -x "/usr/local/bin/guardkit-py" ]; then
+        echo "/usr/local/bin/guardkit-py"
+    else
+        python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null
+    fi
 }
 
 case "$1" in
@@ -1171,9 +1191,24 @@ case "$1" in
         print_help
         ;;
     *)
-        echo -e "${RED}Unknown command: $1${NC}"
-        echo "Run 'guardkit help' for usage information"
-        exit 1
+        # Delegate every unrecognized command to the guardkit-py Python CLI
+        # (task, memory, qa, template, review, system-plan, context-switch, …).
+        # Generalizes the TASK-FPSG-004 feature delegation so this wrapper never
+        # has to re-enumerate Python CLI groups — the 2026-07-09 /task-review
+        # Phase 0 failure ("Unknown command: task") is the incident class this
+        # closes (see DEC-task-refine-retirement's sibling notes / TASK-REV-ac2e).
+        GUARDKIT_PY="$(find_guardkit_py)"
+        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
+            exec "$GUARDKIT_PY" "$@"
+        else
+            echo -e "${RED}Unknown command: $1${NC}"
+            echo "Run 'guardkit help' for usage information"
+            echo ""
+            echo "Commands beyond this wrapper's built-ins (task, memory, qa, template,"
+            echo "review, ...) require the guardkit-py Python package, which was not found."
+            echo "To install:  pip install -e /path/to/guardkit"
+            exit 1
+        fi
         ;;
 esac
 EOF
