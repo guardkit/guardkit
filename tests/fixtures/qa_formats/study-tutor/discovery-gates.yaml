@@ -1,0 +1,41 @@
+# F12 discovery gates (W0) — study-tutor voice preflight (WS2-B10 exemplar)
+# Derived from study-tutor W0 / R-G1..6
+# (docs/runbooks/evidence/voice-w0-preflight-2026-07-05/EVIDENCE.md).
+format_version: "1.0"
+feature_id: FEAT-APP-001
+
+external_claims:
+  - claim: "GB10 llama-swap exposes the voice model over the OpenAI-compatible API"
+    load_bearing: true
+    probe:
+      cmd: "curl -sf http://gb10:9000/v1/models"
+      consumer_artifact_shape: "the same /v1/models JSON the backend client parses"
+      run_against: live_system
+    result: verified
+
+  - claim: "the app can reach the GB10 backend over the tailnet from a real device"
+    load_bearing: true
+    probe:
+      cmd: "adb shell curl -sf http://gb10:8080/healthz"
+      consumer_artifact_shape: "device-originated HTTP (not host curl)"
+      run_against: live_system
+    result: gate
+    gate:
+      id: R-G3-device-reachability
+      pass_criteria: "device curl returns healthz 200 within 3s"
+      fallback: "fall back to USB-tethered reverse proxy (pre-agreed before the run)"
+      evidence_file: evidence/voice-w0-preflight-2026-07-05/R-G3.png
+      status: passed
+
+  - claim: "GPU stays resident for the acceptance window (no LPA bulk contention)"
+    load_bearing: false
+    probe:
+      cmd: "nvidia-smi --query-gpu=memory.used --format=csv"
+      consumer_artifact_shape: "the eviction signal llama-swap actually observes"
+      run_against: live_system
+    result: gate
+    gate:
+      id: R-G6-gpu-quiet
+      pass_criteria: "no eviction during a 10-turn dry run"
+      fallback: "reschedule the acceptance run to a reserved quiet window"
+      status: open

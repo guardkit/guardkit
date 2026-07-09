@@ -1,0 +1,25 @@
+# F7 deploy record — study-tutor GB10 voice backend (WS2-B10 exemplar)
+# Structured form of the house deploy-record markdown (the TASK-MP-012 addenda
+# pattern: header + claims-with-same-day-artifacts + dated addenda accreting).
+format_version: "1.0"
+header:
+  env: gb10-voice
+  date: "2026-07-05"
+  deployer: fable-session-p2-wave-7
+  runbook_ref: docs/runbooks/RUNBOOK-gb10-voice-unified-2026-07.md
+  deploy_profile_ref: deploy/profile.yaml
+
+claims:
+  - runtime_claim: "voice backend healthy on GB10 after redeploy"
+    evidence_artifact: "boot-log: 'uvicorn running on :8080; healthz healthy'"
+    committed_at: "2026-07-05"
+  - runtime_claim: "llama-swap voice model warm before the acceptance run"
+    evidence_artifact: "curl /v1/models -> gemma model resident; warm-up turn 200 OK"
+    committed_at: "2026-07-05"
+
+addenda:
+  - date: "2026-07-05"
+    note: >-
+      Attempt 3/5 lost the GPU to LPA-workload contention (llama-swap eviction);
+      reclassified backend->environment as an ST-09 revision. Attempt 5 ran on a
+      quiet GPU and passed 35/35.

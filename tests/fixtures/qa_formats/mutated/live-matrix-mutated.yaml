@@ -1,0 +1,11 @@
+# MUTATED F10 — must FAIL loudly: missing risk_rank, bad last_driven, missing redrive_policy.
+format_version: "1.0"
+feature_id: FEAT-APP-001
+# MUTATION: redrive_policy removed (required)
+hops:
+  - id: gb10-turn-latency
+    # MUTATION: risk_rank removed (required)
+    validation_debt:
+      last_driven: soon        # MUTATION: not a YYYY-MM-DD date nor 'never'
+    load_bearing: true
+scenarios: []

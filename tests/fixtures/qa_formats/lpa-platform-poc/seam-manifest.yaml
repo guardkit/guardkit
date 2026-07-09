@@ -1,0 +1,32 @@
+# F6 seam manifest — lpa-platform-poc (WS2-B10 exemplar)
+# Derived from the lpa POC's HTTP (Keycloak-authed API) + Playwright-verified
+# UI seams and the scope-design §2 F6 field list.
+format_version: "1.0"
+system: lpa-platform-poc
+
+seams:
+  - id: api-to-keycloak-oidc
+    kind: http
+    sides: [finproxy-api, keycloak]
+    arbiter_doc:
+      path: docs/poc/CONTRACT-oidc-token-introspection.md
+      sha: 8980af1
+    attribution_sides: [finproxy-api, keycloak]
+    expectation_seams:
+      - name: token-introspection
+        fake_expectation: "introspect() returns {active: true, sub, roles}"
+        live_expectation: "Keycloak /token/introspect returns RFC7662 body with realm roles"
+
+  - id: ui-to-api-donor-accounts
+    kind: http
+    sides: [web-ui, finproxy-api]
+    arbiter_doc:
+      path: docs/poc/CONTRACT-donor-accounts-api.md
+      sha: 8980af1
+    attribution_sides: [web-ui, finproxy-api]
+    expectation_seams:
+      - name: donor-accounts-shape
+        fake_expectation: "GET /donors returns [] for anonymous"
+        live_expectation: "authed GET /donors returns real donor rows; 403 UI for unauthorized"
+
+broker: []

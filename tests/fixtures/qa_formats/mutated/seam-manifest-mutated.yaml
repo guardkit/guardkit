@@ -1,0 +1,13 @@
+# MUTATED F6 — must FAIL loudly: bad kind, missing arbiter sha, missing attribution_sides.
+format_version: "1.0"
+system: lpa-platform-poc
+seams:
+  - id: api-to-keycloak-oidc
+    kind: grpc            # MUTATION: not one of http|broker|lib_call|process
+    sides: [finproxy-api, keycloak]
+    arbiter_doc:
+      path: docs/poc/CONTRACT-oidc.md
+      # MUTATION: sha removed (FROZEN arbiter sha is required)
+    # MUTATION: attribution_sides removed (required)
+    expectation_seams: []
+broker: []

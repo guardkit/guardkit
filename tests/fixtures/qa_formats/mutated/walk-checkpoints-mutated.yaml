@@ -1,0 +1,13 @@
+# MUTATED F15 — must FAIL loudly: missing install_cmd, bad act.kind, missing evidence_artifact.
+format_version: "1.0"
+feature_id: FEAT-APP-001
+artifact:
+  build_cmd: "flutter build apk --flavor prod"
+  # MUTATION: install_cmd removed (required)
+checkpoints:
+  - n: 1
+    act:
+      kind: swipe        # MUTATION: not one of tap|text|curl|wait|none
+      params: {}
+    verify: "recording indicator visible"
+    # MUTATION: evidence_artifact removed (an unobserved step is a failed step)

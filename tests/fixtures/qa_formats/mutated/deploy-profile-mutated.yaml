@@ -1,0 +1,9 @@
+# MUTATED deploy-profile — must FAIL loudly: missing env_id, value-bearing secret,
+# missing compose.file.
+format_version: "1.0"
+# MUTATION: env_id removed (required)
+compose:
+  profile: poc
+  # MUTATION: compose.file removed (required)
+secret_injection:
+  - "FLEET_MEMORY_PG_DSN=postgres://user:pw@nas:5432/db"   # MUTATION: value, not a ref

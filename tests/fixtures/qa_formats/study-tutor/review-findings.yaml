@@ -1,0 +1,46 @@
+# F14 review-findings / refutation record — study-tutor merge review (WS2-B10 exemplar)
+# Structured form of a docs/reviews/<id>.md block, shaped after the forge
+# FEAT-DD4F post-merge review discipline (confirmed => executed reproduction;
+# >=2 independent refuters per critical/high; default refuted).
+format_version: "1.0"
+review_id: REV-STUDYTUTOR-VOICE-P2
+subject:
+  kind: merge
+  ref: d13d88f..1fcb72c
+dimensions:
+  - correctness
+  - wire-topology
+  - assumptions-digest
+
+findings:
+  - id: F-1
+    dimension: correctness
+    severity: critical
+    status: confirmed
+    summary: "turn-latency timeout not validated against real human cadence (LPA-20)"
+    executed_reproduction: >-
+      Ran the acceptance walk with a 5s turn timeout; the app cancelled mid-turn
+      on a live 18s GB10 response. Screenshot evidence attached.
+    refuters:
+      - who: refuter-a
+        verdict: refuted
+        note: "could not refute — reproduced on two devices"
+      - who: refuter-b
+        verdict: refuted
+        note: "confirmed the cancel fires below human cadence"
+
+  - id: F-2
+    dimension: assumptions-digest
+    severity: low
+    status: refuted
+    summary: "suspected stale RESULTS date in the p2 ledger"
+    refuters:
+      - who: refuter-a
+        verdict: not_refuted
+        note: "the date was correct; finding does not stand"
+
+stats:
+  findings_total: 2
+  confirmed: 1
+  refuted: 1
+  refutations_attempted: 3

@@ -1,0 +1,13 @@
+# MUTATED F13 — must FAIL loudly: empty guardrails, missing deliverable.gate_ref.
+format_version: "1.0"
+task_ref: TASK-POC-LOVABLE-INTEGRATION
+decisions_already_made:
+  - "Keycloak OIDC is the auth surface"
+context_you_can_rely_on:
+  - "compose stands up the stack"
+deliverable:
+  description: "wire the donor UI"
+  # MUTATION: gate_ref removed (required — a deliverable with no gate)
+guardrails: []           # MUTATION: empty — a missing mandatory section
+evidence_expectations:
+  - "Playwright screenshots"

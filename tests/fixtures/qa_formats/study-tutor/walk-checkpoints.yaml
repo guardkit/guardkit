@@ -1,0 +1,35 @@
+# F15 walk checkpoints — study-tutor voice walk (WS2-B10 exemplar)
+# Derived from the study-tutor retro §2 walk table. Written by /feature-spec,
+# executed by the walk driver (B5). Pass = every step observed.
+format_version: "1.0"
+feature_id: FEAT-APP-001
+
+artifact:
+  build_cmd: "flutter build apk --flavor prod --dart-define=API_BASE_URL=http://gb10:8080"
+  compose_defines:
+    - "API_BASE_URL=http://gb10:8080"
+  install_cmd: "adb install -r build/app/outputs/flutter-apk/app-prod-release.apk"
+
+preconditions:
+  - health_check_cmd: "curl -sf http://gb10:8080/healthz"
+    warm_up_action: "one voice turn to warm the model"
+    blank_slate: "fresh install, no prior session state"
+
+checkpoints:
+  - n: 1
+    act:
+      kind: tap
+      params: {x: 540, y: 1600, label: mic-button}
+      coordinate_scaling_note: "coords are for 1080x2400; scale for other devices"
+      wait_s: 1.0
+    verify: "recording indicator visible; waveform animating"
+    evidence_artifact: shots-voice/01-recording.png
+    negative_space: "send button is disabled while recording"
+  - n: 2
+    act:
+      kind: wait
+      params: {reason: llm-turn}
+      wait_s: 20.0
+    verify: "tutor reply bubble rendered with non-empty text"
+    evidence_artifact: shots-voice/02-reply.png
+    negative_space: "no error toast; mic button re-enabled"

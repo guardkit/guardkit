@@ -1,0 +1,42 @@
+# F6 seam manifest — study-tutor (WS2-B10 exemplar)
+# Derived from the study-tutor voice loop (Flutter app ↔ GB10 backend) + the
+# NATS pipeline seam. Broker section is the pre-flight diff target (LPA-16).
+format_version: "1.0"
+system: study-tutor
+
+seams:
+  - id: app-to-voice-backend
+    kind: http
+    sides: [study-tutor-app, gb10-voice-backend]
+    arbiter_doc:
+      path: docs/runbooks/CONTRACT-voice-turn-api.md
+      sha: 208ebf1
+    attribution_sides: [study-tutor-app, gb10-voice-backend]
+    expectation_seams:
+      - name: turn-latency
+        fake_expectation: "turn() returns within test timeout"
+        live_expectation: "live turn completes in ~20s under quiet-GPU; validated vs human cadence"
+
+  - id: backend-to-llama-swap
+    kind: process
+    sides: [gb10-voice-backend, llama-swap]
+    arbiter_doc:
+      path: docs/runbooks/CONTRACT-llama-swap-eviction.md
+      sha: 208ebf1
+    attribution_sides: [llama-swap, environment]
+    expectation_seams:
+      - name: model-resident
+        fake_expectation: "model always loaded"
+        live_expectation: "GPU eviction under LPA-workload contention is an environment confound (ST-08)"
+
+broker:
+  - stream: PIPELINE
+    subjects: [pipeline.build-queued.*, pipeline.planning-queued.*]
+    retention: workqueue
+    no_ack: false
+    max_ack_pending: 10
+    ack_wait: 1h
+    durable_consumers:
+      - name: forge-serve
+        filter: pipeline.build-queued.*
+    publish_pattern: js

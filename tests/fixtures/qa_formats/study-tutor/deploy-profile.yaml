@@ -1,0 +1,35 @@
+# deploy-profile — study-tutor GB10 voice backend (WS2-B10 exemplar)
+# Conforms to the canonical B10 schema AND the WS2-B8 forge loader
+# (env_id + compose.file required; secrets are register REFS only).
+format_version: "1.0"
+env_id: study-tutor-gb10-voice
+
+hosts:
+  - host: gb10
+    role: voice-backend
+
+compose:
+  file: deploy/gb10/docker-compose.yml
+  profile: voice
+  script: deploy.sh
+  env_file: .env.deploy
+
+secret_injection:
+  - STUDY_TUTOR_API_TOKEN
+  - LLAMA_SWAP_ADMIN_KEY
+
+models_required:
+  - model: gemma-voice
+    warm_up_action: "one warm-up turn before the acceptance run"
+
+health_checks:
+  - cmd: smoke.sh
+    expected: "exit 0"
+
+broker_contract_ref: contracts/manifest.yaml#/broker
+
+reservation:
+  resource: gb10-gpu
+  quiet_window: "acceptance-run window (no LPA bulk workload)"
+
+cwd: deploy/gb10

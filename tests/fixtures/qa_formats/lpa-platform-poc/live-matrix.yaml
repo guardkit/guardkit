@@ -1,0 +1,32 @@
+# F10 live-validation hop/scenario matrix — lpa-platform-poc (WS2-B10 exemplar)
+format_version: "1.0"
+feature_id: FEAT-POC-DEMO-0705
+redrive_policy: >-
+  Re-drive the authed donor/attorney journey end-to-end after each fix; the
+  leak sweep runs against the DEPLOYED app, not a mock.
+
+hops:
+  - id: keycloak-login-journey
+    risk_rank: 1
+    validation_debt:
+      last_driven: "2026-07-05"
+      evidence_ref: evidence-2026-07-05/shots-login/01-consent.png
+    load_bearing: true
+  - id: donor-accounts-leak-sweep
+    risk_rank: 2
+    validation_debt:
+      last_driven: "2026-07-05"
+      evidence_ref: evidence-2026-07-05/shots-gate-phase6/attorney-accounts.png
+    load_bearing: true
+  - id: dependency-down-degradation
+    risk_rank: 4
+    validation_debt:
+      last_driven: never
+    load_bearing: false
+
+scenarios:
+  - id: authed-donor-walk
+    hops_covered: [keycloak-login-journey, donor-accounts-leak-sweep]
+    human_latency_sensitive: false
+    result: pass
+    evidence: evidence-2026-07-05/EVIDENCE.yaml
