@@ -1,0 +1,10 @@
+# MUTATED F7 — must FAIL loudly: missing deployer, empty evidence_artifact, bad committed_at.
+format_version: "1.0"
+header:
+  env: gb10-voice
+  date: "2026-07-05"
+  # MUTATION: deployer removed (required)
+claims:
+  - runtime_claim: "voice backend healthy"
+    evidence_artifact: ""            # MUTATION: empty — a claim with no artifact is unverified
+    committed_at: "yesterday"        # MUTATION: not a YYYY-MM-DD date

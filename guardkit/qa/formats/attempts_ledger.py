@@ -23,12 +23,22 @@ Two guardrails are structural, not advisory (WS2 build-plan §B4):
 - **Probe-before-rerun is a checked field.** ``probes_run_first`` records the
   ST-08 probes; the campaign loop refuses an expensive rerun with an empty list.
 
-> **B4 minimal definition (2026-07-09) — reconcile in B10.** F9's field list is
-> defined here per scope-design §2 ahead of B10. B10 must retrofit/supersede this
-> with a dated note if it diverges. See the WS2 build-plan §B4 / §B10 note.
+> **B10 reconcile (2026-07-09) — RATIFIED, no fields moved.** F9's field list
+> was defined here minimally by B4 ahead of B10. B10 reviewed it against
+> scope-design §2 and ratifies it AS-IS: every §2 field
+> (``attempts[].{n, date, deployment_state{repo_shas, image_digests,
+> backend_config}, harness_settings[]{param, status, vs_contract_value, reason,
+> documented_where}, warm_up_performed, result, failure_disposition_refs,
+> probes_run_first[]}``) is present. Three additions beyond §2, each ratified:
+> (a) ``HarnessSetting.value`` (the value actually used this attempt — the
+> honest companion to ``vs_contract_value``); (b) ``Attempt.passed`` (an explicit
+> pre-registered-bar verdict, so a "22/35" ``result`` string is never
+> re-parsed); (c) the ``campaign``/``feature_id``/``target_env`` root anchors (the
+> container the ``attempts`` list belongs to). No §2 field was renamed or moved,
+> so B4's F9 tests stay green. See the WS2 build-plan §B10 dated reconcile note.
 
 Field list pinned by scope-design §2 (2026-07-07). Additions require a dated
-note in that doc.
+note in that doc (the B1 rule).
 """
 
 from __future__ import annotations

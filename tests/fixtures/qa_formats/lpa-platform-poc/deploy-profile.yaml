@@ -1,0 +1,32 @@
+# deploy-profile — lpa-platform-poc tailnet (WS2-B10 exemplar)
+# A richer profile: realm import (Keycloak) + seed fixtures. Conforms to the
+# canonical B10 schema AND the WS2-B8 forge loader.
+format_version: "1.0"
+env_id: lpa-poc-tailnet
+
+hosts:
+  - host: poc-host
+    role: app
+
+compose:
+  file: docker-compose.poc.yml
+  profile: poc
+  script: deploy.sh
+
+secret_injection:
+  - KEYCLOAK_ADMIN_PASSWORD
+  - POC_DB_PASSWORD
+
+seed_fixture_contract:
+  - script: scripts/seed_donors.py
+    golden_state_ref: fixtures/golden/donor-accounts.json
+
+realm_import: keycloak/finproxy-realm-export.json
+
+health_checks:
+  - cmd: "curl -sf localhost:8000/health"
+    expected: '{"status": "ok"}'
+  - cmd: "pg_isready -h localhost -p 5432"
+    expected: "accepting connections"
+
+cwd: "."

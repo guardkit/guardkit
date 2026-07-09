@@ -1,0 +1,31 @@
+# MUTATED F14 — must FAIL loudly: a confirmed finding with no executed_reproduction,
+# and a high-severity finding with <2 refuters. (Two findings so both rigor
+# violations surface: the per-finding validator raises on the first breach it sees.)
+format_version: "1.0"
+review_id: REV-STUDYTUTOR-VOICE-P2
+subject:
+  kind: merge
+  ref: d13d88f..1fcb72c
+dimensions:
+  - correctness
+findings:
+  - id: F-1
+    dimension: correctness
+    severity: medium
+    status: confirmed
+    summary: "confirmed but never reproduced"
+    # MUTATION: executed_reproduction removed (required for confirmed — reading is not a verdict)
+    refuters: []
+  - id: F-2
+    dimension: correctness
+    severity: high
+    status: refuted
+    summary: "high-severity finding under-refuted"
+    refuters:
+      - who: refuter-a       # MUTATION: only 1 refuter (critical/high needs >=2)
+        verdict: not_refuted
+stats:
+  findings_total: 2
+  confirmed: 1
+  refuted: 1
+  refutations_attempted: 1

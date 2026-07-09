@@ -1,0 +1,32 @@
+# F10 live-validation hop/scenario matrix — study-tutor voice (WS2-B10 exemplar)
+format_version: "1.0"
+feature_id: FEAT-APP-001
+redrive_policy: >-
+  After each fix, re-drive the full voice turn end-to-end; defects stack behind
+  unexercised hops (LPA-21).
+
+hops:
+  - id: app-mic-capture
+    risk_rank: 2
+    validation_debt:
+      last_driven: "2026-07-05"
+      evidence_ref: evidence-2026-07-05/shots-voice/02-mic-capture.png
+    load_bearing: true
+  - id: gb10-turn-latency
+    risk_rank: 1
+    validation_debt:
+      last_driven: "2026-07-05"
+      evidence_ref: RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md
+    load_bearing: true
+  - id: llama-swap-eviction-recovery
+    risk_rank: 3
+    validation_debt:
+      last_driven: never
+    load_bearing: false
+
+scenarios:
+  - id: full-turn-quiet-gpu
+    hops_covered: [app-mic-capture, gb10-turn-latency]
+    human_latency_sensitive: true
+    result: "35/35 (attempt 5)"
+    evidence: RESULTS-study-tutor-p2-live-acceptance-2026-07-05.md

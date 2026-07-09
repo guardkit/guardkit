@@ -21,13 +21,18 @@ controlled rerun — the study-tutor GPU-eviction case is the worked example), t
 correction is appended as an ``AttributionRevision`` **same-day**, never a silent
 overwrite. A verifier that never revises verdicts trains people to ignore them.
 
-> **B4 minimal definition (2026-07-09) — reconcile in B10.** F8's field list is
-> defined here per scope-design §2 ahead of B10 (which owns tier-2/3 schemas).
-> B10 must retrofit/supersede this with a dated note if it diverges. See the WS2
-> build-plan §B4 / §B10 dated reconcile note.
+> **B10 reconcile (2026-07-09) — RATIFIED, no fields moved.** F8's field list
+> was defined here minimally by B4 ahead of B10 (which owns tier-2/3 schemas).
+> B10 reviewed it against scope-design §2 and ratifies it AS-IS: every §2 field
+> (``failures[].{failure_id, assertion, observed, expected, evidence_ref,
+> attribution, disposition, fix_ref, rescope_rationale, revisions[]}``) is
+> present with the §2 vocabulary. The one addition beyond §2 is the ``run_id``
+> root anchor (the container the ``failures`` list belongs to — B3 stamps the
+> results-envelope run id here). No field was renamed or moved, so B4's F8 tests
+> stay green. See the WS2 build-plan §B10 dated reconcile note.
 
 Field list pinned by scope-design §2 (2026-07-07). Additions require a dated
-note in that doc, never silent invention.
+note in that doc, never silent invention (the B1 rule).
 """
 
 from __future__ import annotations

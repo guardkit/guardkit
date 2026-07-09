@@ -25,6 +25,8 @@ from rich.console import Console
 from guardkit.qa.formats import (
     FORMAT_KINDS,
     KIND_ALIASES,
+    MARKDOWN_KINDS,
+    MarkdownFormat,
     QAFormatError,
     export_json_schema,
     resolve_kind,
@@ -48,7 +50,7 @@ _VERDICT_EXIT_CODES = {
 
 @click.group()
 def qa() -> None:
-    """QA verification formats (tier-1 F1–F5) and validators."""
+    """QA verification formats (tier-1 F1–F5, tier-2/3 F6–F15 + deploy-profile)."""
 
 
 @qa.command()
@@ -57,8 +59,12 @@ def qa() -> None:
 def validate(kind: str, path: Path) -> None:
     """Validate a QA format instance file against its schema.
 
-    KIND is one of the canonical kinds (pass-bar, known-failures, leak-sweep,
-    gate-registry, results-envelope, evidence-index) or an f1..f5 alias.
+    KIND is any canonical kind (pass-bar, known-failures, leak-sweep,
+    gate-registry, results-envelope, evidence-index, seam-manifest,
+    deploy-record, disposition-record, attempts-ledger, live-matrix,
+    deploy-profile, runbook, discovery-gates, kickoff-prompt, review-findings,
+    walk-checkpoints) or an f1..f15 alias. ``runbook`` (F11) is validated as a
+    markdown-convention document; all others as YAML/JSON.
     """
     try:
         instance = validate_instance(kind, path)
@@ -89,7 +95,12 @@ def schema(kind: str, out_path: Path | None) -> None:
     except QAFormatError as exc:
         console.print(f"[bold red]✗[/bold red] {exc}", highlight=False)
         sys.exit(1)
-    text = export_json_schema(model)
+    # F11 (runbook) is a markdown-convention format — it has no JSON-Schema;
+    # print its human-readable convention description instead.
+    if isinstance(model, type) and issubclass(model, MarkdownFormat):
+        text = model.describe_schema()
+    else:
+        text = export_json_schema(model)
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(text + "\n", encoding="utf-8")
@@ -199,9 +210,11 @@ def _record_single_run_campaign(envelope, repo_root: Path):
 def kinds() -> None:
     """List the known QA format kinds and their aliases."""
     alias_by_kind = {v: k for k, v in KIND_ALIASES.items()}
-    for name, model in FORMAT_KINDS.items():
+    all_kinds = {**FORMAT_KINDS, **MARKDOWN_KINDS}
+    for name, model in all_kinds.items():
         alias = alias_by_kind.get(name, "")
         alias_txt = f"  (alias: {alias})" if alias else ""
+        medium = " [markdown]" if name in MARKDOWN_KINDS else ""
         console.print(
-            f"  {name:<18} v{model.CURRENT_FORMAT_VERSION}{alias_txt}"
+            f"  {name:<18} v{model.CURRENT_FORMAT_VERSION}{alias_txt}{medium}"
         )

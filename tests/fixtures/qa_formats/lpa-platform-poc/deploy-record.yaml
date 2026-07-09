@@ -1,0 +1,16 @@
+# F7 deploy record — lpa-platform-poc tailnet demo push (WS2-B10 exemplar)
+format_version: "1.0"
+header:
+  env: lpa-poc-tailnet
+  date: "2026-07-05"
+  deployer: operator-demo-push
+  runbook_ref: docs/runbooks/RUNBOOK-foundation-infrastructure.md
+  deploy_profile_ref: deploy/profile.yaml
+
+claims:
+  - runtime_claim: "three services (postgres/keycloak/api) Up (healthy)"
+    evidence_artifact: "docker compose ps -> all Up (healthy); shots-deploy/01-compose-ps.png"
+    committed_at: "2026-07-05"
+  - runtime_claim: "phase-6 leak sweep found zero mock identities in donor/attorney scopes"
+    evidence_artifact: "qa/gates/evidence-2026-07-05/shots-gate-phase6/attorney-accounts.png"
+    committed_at: "2026-07-05"

@@ -1,0 +1,16 @@
+# MUTATED F12 — must FAIL loudly: load-bearing unverified claim with no gate,
+# and a claim missing its probe.
+format_version: "1.0"
+feature_id: FEAT-APP-001
+external_claims:
+  - claim: "device can reach the GB10 backend"
+    load_bearing: true
+    probe:
+      cmd: "adb shell curl -sf http://gb10:8080/healthz"
+      consumer_artifact_shape: "device-originated HTTP"
+    result: gate
+    # MUTATION: result is 'gate' + load_bearing but no gate block (build start blocked)
+  - claim: "gpu stays resident"
+    load_bearing: false
+    # MUTATION: probe removed (required)
+    result: verified

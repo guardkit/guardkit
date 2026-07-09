@@ -1,0 +1,26 @@
+# F13 kickoff prompt — lpa-platform-poc lovable-integration session (WS2-B10 exemplar)
+# Structured form of docs/poc/lovable-integration-KICKOFF-prompt.md — the six
+# mandatory sections the forge Mode P dispatcher renders (render fails on any
+# missing section).
+format_version: "1.0"
+task_ref: TASK-POC-LOVABLE-INTEGRATION
+
+decisions_already_made:
+  - "Keycloak OIDC is the auth surface; do not add a second identity provider"
+  - "Playwright drives the real authed login journey via the pwenv helper (LPA-03)"
+
+context_you_can_rely_on:
+  - "docker-compose.poc.yml stands up postgres/keycloak/api; all three healthy"
+  - "The finproxy realm export is committed and re-importable"
+
+deliverable:
+  description: "Wire the Lovable-generated donor UI onto the authed /donors API and prove no mock identities leak"
+  gate_ref: qa/pass-bar-FEAT-POC-DEMO-0705.yaml
+
+guardrails:
+  - "No mock identity strings in any claimed-real scope (F3 leak-sweep is the gate)"
+  - "Do not commit secrets; register refs only"
+
+evidence_expectations:
+  - "Playwright screenshots under evidence-<date>/shots-login/ + EVIDENCE.yaml index"
+  - "A green phase-6 leak sweep against the deployed app"
