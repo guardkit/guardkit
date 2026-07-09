@@ -820,7 +820,20 @@ def _resolve_uv_sources_symlinks(
             # symlink. They're out of scope for AB61.
             continue
 
-        worktree_resolved = (worktree_dir / path_value).resolve()
+        # AB61 hardening (red-baseline retro 2026-07-08 / L12): do NOT
+        # ``.resolve()`` THROUGH a pre-existing symlink at the intended link
+        # location. The final component of ``worktree_dir / path_value`` is
+        # the symlink this bootstrap manages; a stale/dangling link left there
+        # by an earlier environment (e.g. a different ``$HOME``) would be
+        # *followed* by a plain ``.resolve()`` into a foreign path, which the
+        # creator then ``mkdir(parents=True)``'d — the run-0 ``Errno 45``
+        # autofs crash class. Resolve the *parent* (real dirs + ``..``) but
+        # keep the managed final component un-followed so the link location is
+        # correct regardless of any stale link sitting there. The creator
+        # (:func:`_create_worktree_uv_sources_symlinks`) then detects the
+        # wrong/dangling link and replaces it.
+        worktree_target = worktree_dir / path_value
+        worktree_resolved = worktree_target.parent.resolve() / worktree_target.name
         source_resolved = (source_dir / path_value).resolve()
 
         if worktree_resolved == source_resolved:
