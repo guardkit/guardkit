@@ -2276,6 +2276,177 @@ class TestResolveTaskTimeout:
         assert "TASK-T-001" in info_records[0].message
         assert "4500" in info_records[0].message
 
+    # --- Estimate-derived floor (red-baseline retro, L12 item 3) -----------
+
+    def test_estimate_floor_raises_default_for_large_task(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """FEAT-VOICE-003 fixture: a 113-min task is floored to
+        113*60*1.5 = 10170s, well above the flat feature default that timed
+        it out on run 1."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"autobuild": {}}}
+        resolved = orch._resolve_task_timeout(
+            task_data, "TASK-VC-005", estimated_minutes=113
+        )
+        assert resolved == int(113 * 60 * 1.5)  # 10170
+
+    def test_estimate_floor_second_voice_task(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """The 170-min sibling (TASK-VC-006) floors to 15300s."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        resolved = orch._resolve_task_timeout(
+            {"frontmatter": {}}, "TASK-VC-006", estimated_minutes=170
+        )
+        assert resolved == int(170 * 60 * 1.5)  # 15300
+
+    def test_small_estimate_does_not_lower_default(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """A 30-min estimate (floor 2700s) does NOT lower a 3000s default."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        resolved = orch._resolve_task_timeout(
+            {"frontmatter": {}}, "TASK-T-001", estimated_minutes=30
+        )
+        assert resolved == 3000
+
+    def test_estimate_floor_applies_multiplier(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """The estimate floor scales with the timeout multiplier."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=2.0,
+        )
+        resolved = orch._resolve_task_timeout(
+            {"frontmatter": {}}, "TASK-VC-005", estimated_minutes=113
+        )
+        assert resolved == int(113 * 60 * 1.5 * 2.0)  # 20340
+
+    def test_explicit_override_not_raised_by_estimate_floor(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """An explicit per-task override is honoured verbatim even when it
+        sits BELOW the estimate floor — the operator's deliberate choice."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0, max_turns=5,
+        )
+        task_data = {"frontmatter": {"autobuild": {"task_timeout": 3600}}}
+        resolved = orch._resolve_task_timeout(
+            task_data, "TASK-VC-005", estimated_minutes=113
+        )
+        assert resolved == 3600  # override wins, not the 10170 floor
+
+    def test_estimate_from_markdown_frontmatter_used_when_no_arg(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """When the explicit arg is absent, a task-markdown
+        ``estimated_minutes`` is consulted."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        task_data = {"frontmatter": {"estimated_minutes": 113}}
+        resolved = orch._resolve_task_timeout(task_data, "TASK-VC-005")
+        assert resolved == int(113 * 60 * 1.5)
+
+    def test_estimate_floor_logs_at_info(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """The floor-raise is logged at INFO for operator audit."""
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        with caplog.at_level(logging.INFO):
+            orch._resolve_task_timeout(
+                {"frontmatter": {}}, "TASK-VC-005", estimated_minutes=113
+            )
+        assert any(
+            "estimate-derived" in r.message and "TASK-VC-005" in r.message
+            for r in caplog.records
+        )
+
+    def test_estimate_factor_env_override(
+        self, temp_repo, mock_worktree_manager, monkeypatch,
+    ):
+        """GUARDKIT_AUTOBUILD_ESTIMATE_TIMEOUT_FACTOR tunes the factor."""
+        monkeypatch.setenv(
+            "GUARDKIT_AUTOBUILD_ESTIMATE_TIMEOUT_FACTOR", "2.0"
+        )
+        orch = self._make_orchestrator(
+            temp_repo, mock_worktree_manager, task_timeout=3000,
+            timeout_multiplier=1.0,
+        )
+        resolved = orch._resolve_task_timeout(
+            {"frontmatter": {}}, "TASK-VC-005", estimated_minutes=113
+        )
+        assert resolved == int(113 * 60 * 2.0)  # 13560
+
+
+class TestWave0TimeoutWarnings:
+    """_emit_wave0_timeout_warnings surfaces under-budgeted estimates."""
+
+    def _orch(self, temp_repo, mock_worktree_manager, task_timeout):
+        return FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=task_timeout,
+            timeout_multiplier=1.0,
+            max_turns=5,
+        )
+
+    def test_warns_when_explicit_override_below_estimate(
+        self, temp_repo, mock_worktree_manager, sample_feature,
+        monkeypatch, caplog,
+    ):
+        """A per-task override (3600s) below the task's 113-min estimate
+        trips the wave-0 warning."""
+        # TASK-T-001 gets a large estimate + a low explicit override.
+        sample_feature.tasks[0].estimated_minutes = 113
+        monkeypatch.setattr(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            lambda task_id, repo_root=None: {
+                "frontmatter": {"autobuild": {"task_timeout": 3600}}
+            },
+        )
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        with caplog.at_level(logging.WARNING):
+            orch._emit_wave0_timeout_warnings(sample_feature)
+        assert any(
+            "TASK-T-001" in r.message and "may time out" in r.message
+            for r in caplog.records
+        )
+
+    def test_no_warning_when_default_floor_covers_estimate(
+        self, temp_repo, mock_worktree_manager, sample_feature,
+        monkeypatch, caplog,
+    ):
+        """With no override, the estimate-derived floor covers the estimate →
+        no wave-0 warning."""
+        sample_feature.tasks[0].estimated_minutes = 113
+        monkeypatch.setattr(
+            "guardkit.orchestrator.feature_orchestrator.TaskLoader.load_task",
+            lambda task_id, repo_root=None: {"frontmatter": {"autobuild": {}}},
+        )
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        with caplog.at_level(logging.WARNING):
+            orch._emit_wave0_timeout_warnings(sample_feature)
+        assert not any(
+            "may time out" in r.message for r in caplog.records
+        )
+
 
 @pytest.mark.asyncio
 async def test_wave_loop_uses_per_task_timeout_from_frontmatter(

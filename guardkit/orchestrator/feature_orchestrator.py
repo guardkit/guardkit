@@ -116,6 +116,25 @@ console = Console()
 TERMINAL_SATISFIED: frozenset[str] = frozenset({"completed", "deferred"})
 
 
+def _estimate_timeout_factor() -> float:
+    """Safety factor applied to a task's own ``estimated_minutes`` when
+    deriving the per-task timeout floor (red-baseline retro, L12 item 3).
+
+    A large task budgeted below its own estimate is guaranteed to time out,
+    and the timeout MASKS the real failure (FEAT-VOICE-003 run 1: TASK-VC-005
+    was estimated at 113 min but the flat 50-min floor timed it out mid-run,
+    hiding the true — test — failure until run 2). Default 1.5×; operator
+    policy via ``GUARDKIT_AUTOBUILD_ESTIMATE_TIMEOUT_FACTOR``. A non-positive
+    or unparseable value falls back to the default.
+    """
+    raw = os.environ.get("GUARDKIT_AUTOBUILD_ESTIMATE_TIMEOUT_FACTOR", "1.5")
+    try:
+        factor = float(raw)
+    except (TypeError, ValueError):
+        return 1.5
+    return factor if factor > 0 else 1.5
+
+
 # ============================================================================
 # Data Models
 # ============================================================================
@@ -2113,6 +2132,12 @@ The detailed specifications are in the task markdown file.
         # Detect unreachable FalkorDB upfront to avoid per-task retry latency
         self._preflight_check()
 
+        # Wave-0 estimate-vs-timeout warnings (red-baseline retro, L12 item 3):
+        # surface any task whose own estimate exceeds its effective per-task
+        # budget BEFORE the run burns hours hitting a timeout that masks the
+        # real failure.
+        self._emit_wave0_timeout_warnings(feature)
+
         console.print()
         console.print(
             f"[bold]Starting Wave Execution[/bold] "
@@ -2887,7 +2912,11 @@ The detailed specifications are in the task markdown file.
             # wave_size = total tasks in the wave, used by Coach for isolation (TASK-ABFIX-005).
             try:
                 task_data_for_timeout = TaskLoader.load_task(task_id, repo_root=self.repo_root)
-                effective_task_timeout = self._resolve_task_timeout(task_data_for_timeout, task_id)
+                effective_task_timeout = self._resolve_task_timeout(
+                    task_data_for_timeout,
+                    task_id,
+                    estimated_minutes=getattr(task, "estimated_minutes", None),
+                )
             except Exception as e:
                 logger.warning(
                     f"[{task_id}] Could not pre-load task data for timeout "
@@ -3456,33 +3485,128 @@ The detailed specifications are in the task markdown file.
         logger.debug("enable_pre_loop using default for feature-build: False")
         return False
 
+    def _task_estimate_floor_seconds(
+        self, estimated_minutes: Optional[int]
+    ) -> int:
+        """Estimate-derived per-task timeout floor, or ``0`` when absent.
+
+        ``estimated_minutes × 60 × factor × multiplier`` (red-baseline retro,
+        L12 item 3). Returns ``0`` for a missing / non-positive estimate so
+        callers can ``max()`` it against the feature default without effect.
+        """
+        if estimated_minutes is None or estimated_minutes <= 0:
+            return 0
+        return int(
+            estimated_minutes * 60 * _estimate_timeout_factor()
+            * self.timeout_multiplier
+        )
+
+    def _emit_wave0_timeout_warnings(self, feature: Feature) -> None:
+        """Wave-0 warning when a task's estimate exceeds its effective timeout.
+
+        Red-baseline retro (L12 item 3). Runs once before wave 1. For each
+        task, resolves the effective per-task timeout and warns (log +
+        console) when the task's own ``estimated_minutes`` exceeds that budget
+        — i.e. an explicit per-task override (or a hard cap) sits below the
+        estimate, so the task is at risk of a timeout that would MASK its real
+        failure. The default path applies the estimate-derived floor and so
+        never trips this; the warning catches the operator-under-budgeted case
+        (FEAT-VOICE-003 run 1: TASK-VC-005 estimated 113 min, budgeted 50).
+        """
+        multiplier = self.timeout_multiplier
+        for task_ids in feature.orchestration.parallel_groups:
+            for task_id in task_ids:
+                task = FeatureLoader.find_task(feature, task_id)
+                if task is None:
+                    continue
+                est = getattr(task, "estimated_minutes", None)
+                if not est or est <= 0:
+                    continue
+                try:
+                    task_data = TaskLoader.load_task(
+                        task_id, repo_root=self.repo_root
+                    )
+                except Exception:
+                    task_data = {}
+                effective = self._resolve_task_timeout(
+                    task_data, task_id, estimated_minutes=est
+                )
+                estimate_seconds = int(est * 60 * multiplier)
+                if estimate_seconds > effective:
+                    msg = (
+                        f"[{task_id}] estimated_minutes={est} "
+                        f"(~{estimate_seconds}s at multiplier {multiplier}) "
+                        f"exceeds its effective per-task timeout of "
+                        f"{effective}s — this task may time out before "
+                        f"completing, masking its real failure. Raise "
+                        f"frontmatter.autobuild.task_timeout or "
+                        f"GUARDKIT_AUTOBUILD_TASK_TIMEOUT_FLOOR."
+                    )
+                    logger.warning(msg)
+                    console.print(f"[yellow]⚠[/yellow] {msg}")
+
     def _resolve_task_timeout(
         self,
         task_data: Dict[str, Any],
         task_id: str,
+        estimated_minutes: Optional[int] = None,
     ) -> int:
         """
         Resolve the per-task feature-level timeout (TASK-ATR-001).
 
         Resolution order:
-            1. ``frontmatter.autobuild.task_timeout`` (per-task override)
-            2. ``self.task_timeout`` (feature-level default; multiplier and
-               feature-level floor have already been applied at construction)
+            1. ``frontmatter.autobuild.task_timeout`` (explicit per-task
+               override — honoured verbatim; the operator's deliberate budget)
+            2. ``max(self.task_timeout, estimate-derived floor)`` — the
+               feature-level default, RAISED to the task's own
+               ``estimated_minutes``-derived floor when that is larger
+               (red-baseline retro, L12 item 3). The flat feature floor alone
+               guaranteed timeouts on the large tasks these features routinely
+               carry, and a timeout masks whatever the real failure is.
 
-        When the override is present, the raw frontmatter value is multiplied
-        by ``self.timeout_multiplier`` and floored at
-        ``MIN_TURN_BUDGET_SECONDS * self.max_turns`` to guarantee at least
-        one minimum-budget turn per max-turn slot. Non-positive or non-integer
+        ``estimated_minutes`` is taken from the feature YAML's ``FeatureTask``
+        (passed by the caller); when absent it falls back to a task-markdown
+        ``frontmatter.estimated_minutes`` if present.
+
+        When the explicit override is present, the raw frontmatter value is
+        multiplied by ``self.timeout_multiplier`` and floored at
+        ``MIN_TURN_BUDGET_SECONDS * self.max_turns`` to guarantee at least one
+        minimum-budget turn per max-turn slot. Non-positive or non-integer
         overrides are rejected with a warning and the feature-level default
-        is used instead.
+        (with the estimate floor applied) is used instead. An explicit
+        override is NOT raised to the estimate floor — it is the operator's
+        choice — but the wave-0 warning (:meth:`_emit_wave0_timeout_warnings`)
+        surfaces it when it sits below the task's estimate.
 
-        Successful overrides are logged at INFO so operators can audit the
-        per-task budget that was applied.
+        Successful overrides / floor-raises are logged at INFO so operators
+        can audit the per-task budget that was applied.
         """
         frontmatter = task_data.get("frontmatter", {}) or {}
         autobuild_cfg = frontmatter.get("autobuild", {}) or {}
+
+        # Resolve the estimate: explicit arg (feature YAML) wins; else a
+        # task-markdown frontmatter value if the author put one there.
+        est = estimated_minutes
+        if est is None:
+            raw_est = frontmatter.get("estimated_minutes")
+            try:
+                est = int(raw_est) if raw_est is not None else None
+            except (TypeError, ValueError):
+                est = None
+        estimate_floor = self._task_estimate_floor_seconds(est)
+
         if "task_timeout" not in autobuild_cfg:
-            return self.task_timeout
+            resolved = self.task_timeout
+            if estimate_floor > resolved:
+                logger.info(
+                    f"[{task_id}] Raising task_timeout to estimate-derived "
+                    f"floor: estimated_minutes={est} × 60 × "
+                    f"{_estimate_timeout_factor()} × multiplier="
+                    f"{self.timeout_multiplier} = {estimate_floor}s "
+                    f"(feature default was {self.task_timeout}s)"
+                )
+                resolved = estimate_floor
+            return resolved
 
         raw = autobuild_cfg.get("task_timeout")
         try:
@@ -3493,7 +3617,7 @@ The detailed specifications are in the task markdown file.
                 f"{raw!r} (must be a positive integer); falling back to "
                 f"feature-level task_timeout={self.task_timeout}s"
             )
-            return self.task_timeout
+            return max(self.task_timeout, estimate_floor)
 
         if override_int <= 0:
             logger.warning(
@@ -3501,7 +3625,7 @@ The detailed specifications are in the task markdown file.
                 f"{override_int}s must be > 0; falling back to "
                 f"feature-level task_timeout={self.task_timeout}s"
             )
-            return self.task_timeout
+            return max(self.task_timeout, estimate_floor)
 
         from guardkit.orchestrator.autobuild import MIN_TURN_BUDGET_SECONDS
 
