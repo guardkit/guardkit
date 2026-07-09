@@ -11,14 +11,12 @@ Tests validation logic for GitHub best practices including:
 """
 
 import pytest
-import sys
-from pathlib import Path
 
-# Add .claude/commands/shared to path for imports
-shared_path = Path(__file__).parent.parent.parent.parent / '.claude' / 'commands' / 'shared'
-sys.path.insert(0, str(shared_path))
-
-from agent_validation import (
+# Re-homed from .claude/commands/shared/ to the canonical library location
+# (PB-2 residue, DEC-claude-commands-fork-disposition §(d)). The editable
+# install puts the repo root on sys.path, so this resolves structurally with
+# no sys.path.insert — the last live artifact has left the tombstoned fork dir.
+from installer.core.commands.lib.agent_validation import (
     validate_enhanced_content,
     _calculate_example_density,
     _check_boundary_sections,

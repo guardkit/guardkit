@@ -81,6 +81,15 @@ the tombstone. **Follow-up (out of scope for PB-2):** re-home it to a canonical
 location (e.g. `installer/core/commands/lib/` or the test tree) and drop the
 `sys.path.insert`, so the last live artifact leaves the tombstoned fork dir.
 
+> **LANDED 2026-07-09 (PB-2 residue):** `agent_validation.py` was `git mv`d to
+> `installer/core/commands/lib/agent_validation.py`;
+> `tests/lib/agent_enhancement/test_validation.py` now does a structural
+> `from installer.core.commands.lib.agent_validation import ...` (the editable
+> install puts the repo root on `sys.path`) — the `sys.path.insert` is gone. The
+> now-empty `.claude/commands/shared/` directory was removed; the
+> `.claude/commands/README.md` tombstone stays. The `agent-content-enhancer`
+> agent def carries no baked path to the module (verified). 17 tests green.
+
 ## Consequences
 
 - **Frozen items:** none touched. Installer specs, the pinned templates, and the
