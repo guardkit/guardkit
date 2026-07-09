@@ -1,0 +1,18 @@
+format_version: "1.0"
+system: fixture-system
+seams:
+  - id: deploy-envelope
+    kind: broker
+    sides: [forge, guardkit]
+    arbiter_doc:
+      path: docs/contracts/deploy-envelope.md
+      sha: deadbeef
+    attribution_sides: [forge]
+    expectation_seams:
+      - name: kind-discriminator
+        fake_expectation: "kind in {queued, started, complete}"
+        live_expectation: "kind in {queued, started, complete}"
+broker:
+  - stream: DEPLOY
+    subjects: ["deploy.>"]
+    publish_pattern: js
