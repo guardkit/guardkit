@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Task Status - View Task Progress with Epic/Feature Context
 
 Display comprehensive task status with epic/feature hierarchy context, progress tracking, PM tool sync status, and Agentecflow Stage 3 integration.

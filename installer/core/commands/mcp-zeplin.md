@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # MCP Zeplin - Reference and Utilities
 
 Reference guide for Zeplin MCP server tools, setup, and troubleshooting.

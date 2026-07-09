@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Template Create - AI-Powered Template Generation from Existing Codebase
 
 Orchestrates complete template creation from existing codebases using AI-powered analysis and generation.

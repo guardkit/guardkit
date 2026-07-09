@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Agent Enhance - Single Agent Enhancement Command
 
 Enhance a single agent with template-specific content.

@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Figma to React - UX Design Integration Command
 
 Convert Figma designs to pixel-perfect TypeScript React components with visual regression testing.

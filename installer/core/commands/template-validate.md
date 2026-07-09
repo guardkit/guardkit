@@ -1,4 +1,5 @@
 ---
+format_version: 1
 name: template-validate
 category: Development Tools
 summary: Comprehensive interactive template audit using 16-section validation framework
