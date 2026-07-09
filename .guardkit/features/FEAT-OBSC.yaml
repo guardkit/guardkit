@@ -1,0 +1,65 @@
+id: FEAT-OBSC
+name: AutoBuild Capture Cluster
+description: Emitter live-wiring (OBS-1), run-artifact durability with archive-before-prune
+  (OBS-2 + L12 baseline.json rider), default-on redacted sdk_debug trace capture via repo
+  allowlist (OBS-3, gated on D-OBS-2 prerequisites), and the M2 structure-lint token-budget
+  flip. Decisions of record D-OBS-1..4 (FILED 2026-07-09). Reconciles and supersedes the
+  FEAT-CF57 TASK-INST backlog and the FEAT-AOF observability-fixes folder — see
+  tasks/backlog/autobuild-capture-cluster/README.md Disposition Register.
+created: '2026-07-09T20:30:00'
+status: planned
+complexity: 5
+estimated_tasks: 6
+tasks:
+- id: TASK-OBS-4899
+  name: Wire the emitter through the three AgentInvoker construction sites and task-mode CLI
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-4899-wire-emitter-agent-invoker-sites.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
+- id: TASK-OBS-F3F5
+  name: Flip template structure-lint token budgets INFO to WARNING at the committed 32K-floor figure
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-F3F5-structure-lint-token-budget-warning.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
+- id: TASK-OBS-9F43
+  name: Real model attribution and joinable correlation identity on instrumentation events
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-9F43-model-attribution-correlation-identity.md
+  complexity: 4
+  dependencies:
+  - TASK-OBS-4899
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
+- id: TASK-OBS-80FE
+  name: Archive run artifacts before worktree prune, with a stated durable home
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-80FE-archive-run-artifacts-before-prune.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
+- id: TASK-OBS-C440
+  name: Extend secret redaction to sdk_debug message streams
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-C440-redact-sdk-debug-message-streams.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
+- id: TASK-OBS-396E
+  name: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git guarantee, Appendix A conformance
+  file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-396E-sdk-debug-default-on-allowlist.md
+  complexity: 6
+  dependencies:
+  - TASK-OBS-C440
+  - TASK-OBS-80FE
+  - TASK-OBS-9F43
+  status: pending
+  implementation_mode: task-work
+  requires_infrastructure: []
