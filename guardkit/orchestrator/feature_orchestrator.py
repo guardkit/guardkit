@@ -1235,6 +1235,20 @@ class FeatureOrchestrator:
                 f"Failed to create worktree for {feature_id}: {e}"
             ) from e
 
+        # WS3-S3 §1.3: capture the feature-base commit (the pre-wave-1 creation
+        # commit) BEFORE any task copy / wave commit mutates the tree, so 2b/2d
+        # config reads and CONFIG_TAMPER resolve against the un-launderable
+        # referent (NOT the per-task _record_baseline HEAD). Fail-open.
+        try:
+            from guardkit.orchestrator.seam_checks import record_feature_base
+            sha = record_feature_base(
+                Path(worktree.path), feature_id, Path(worktree.path), base_branch
+            )
+            if sha:
+                logger.debug("WS3-S3: recorded feature-base %s for %s", sha[:8], feature_id)
+        except Exception as exc:  # noqa: BLE001 — never block worktree creation
+            logger.warning("WS3-S3: feature-base capture failed for %s: %s", feature_id, exc)
+
         # Copy task files to worktree
         self._copy_tasks_to_worktree(feature, worktree)
 
