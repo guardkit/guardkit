@@ -27,8 +27,52 @@ from guardkit.templates.parse_gate import (
     ParseGateUnavailable,
     validate_templates,
 )
+from guardkit.templates.structure_lint import (
+    Severity,
+    lint_command_templates,
+)
 
 console = Console()
+
+
+def _print_structure_lint() -> None:
+    """Report-only template-structure lint over the sliceable command specs.
+
+    PB-5 / DIM2-F4. Advisory ONLY — every finding needs a pinned-byte fix
+    (an ADR-D re-pin event), so this NEVER changes the exit code. It surfaces
+    the ambiguous anchors, missing protocol sections, oversized sections
+    (report-only until WS4 commits a serving-window figure) and unmarked
+    example blocks that a fence-naive slicer would trip over.
+    """
+    results = lint_command_templates()
+    total_warn = sum(
+        1 for fs in results.values() for f in fs if f.severity is Severity.WARNING
+    )
+    console.print()
+    console.print(
+        "[bold]Template-structure lint[/bold] "
+        "[dim](PB-5/DIM2-F4 — report-only, advisory)[/dim]"
+    )
+    if not results:
+        console.print("  [dim]no sliceable command specs found — skipped[/dim]")
+        return
+    for name, findings in results.items():
+        if not findings:
+            console.print(f"  [green]✓[/green] {name} — no structure findings")
+            continue
+        console.print(f"  {name}:")
+        for f in findings:
+            tag = (
+                "[yellow]WARN[/yellow]"
+                if f.severity is Severity.WARNING
+                else "[dim]info[/dim]"
+            )
+            loc = f"L{f.line}" if f.line else "file"
+            console.print(f"    {tag} [{f.check}] {loc}: {f.message}", highlight=False)
+    console.print(
+        f"  [dim]{total_warn} warning(s) — advisory; fixing pinned-template "
+        f"anchors is an ADR-D re-pin event, not a gate failure.[/dim]"
+    )
 
 
 @click.group()
@@ -94,4 +138,10 @@ def validate(names: Tuple[str, ...], deterministic: bool, verbose: bool) -> None
         console.print(f"[bold green]✓ TEMPLATE GATE PASSED[/bold green] ({summary})")
     else:
         console.print(f"[bold red]✗ TEMPLATE GATE FAILED[/bold red] ({summary})")
+
+    # Second check: the report-only structure lint (PB-5/DIM2-F4). It runs
+    # regardless of the parse-gate outcome and NEVER affects the exit code.
+    _print_structure_lint()
+
+    if not result.ok:
         sys.exit(1)
