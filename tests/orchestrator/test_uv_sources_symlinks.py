@@ -422,3 +422,110 @@ class TestEndToEnd:
         # The only thing inside .guardkit/worktrees/ should be FEAT-TEST.
         worktrees_dir = guardkit_dir / "worktrees"
         assert sorted(p.name for p in worktrees_dir.iterdir()) == ["FEAT-TEST"]
+
+
+# ---------------------------------------------------------------------------
+# TestStaleLinkHardening — the red-baseline retro Errno-45 class (L12, item 7)
+# ---------------------------------------------------------------------------
+
+
+class TestStaleLinkHardening:
+    """
+    Regression for the FEAT-VOICE-003 run-0 setup crash
+    (retro 2026-07-08): a stale symlink already sitting at the intended
+    worktree-side link location must NOT be followed by ``.resolve()``
+    into a foreign (un-``mkdir``-able) path. The resolver must report the
+    real link location; the creator must replace the stale/dangling link.
+    """
+
+    def test_resolver_does_not_follow_stale_link_at_link_location(self, tmp_path):
+        """
+        A stale symlink at ``.guardkit/worktrees/<sibling>`` pointing at a
+        foreign path must not divert the computed link location.
+        """
+        source_pyproject, worktree_pyproject, sibling = _portfolio_layout(tmp_path)
+        rel = os.path.relpath(sibling, source_pyproject.parent)
+        body = f'[tool.uv.sources]\nsibling = {{ path = "{rel}" }}\n'
+        _write_uv_sources(source_pyproject, body)
+        _write_uv_sources(worktree_pyproject, body)
+
+        # The intended link location is <source>/.guardkit/worktrees/sibling.
+        link_location = source_pyproject.parent / ".guardkit" / "worktrees" / "sibling"
+        # Plant a STALE symlink there pointing at a foreign absolute path
+        # (mirrors the run-0 nats-core -> /home/... left by another $HOME).
+        foreign = tmp_path / "foreign_home" / "sibling"
+        foreign.mkdir(parents=True)
+        os.symlink(foreign, link_location)
+        assert link_location.is_symlink()
+        assert link_location.resolve() == foreign.resolve()
+
+        symlinks = _resolve_uv_sources_symlinks(
+            source_pyproject, worktree_pyproject
+        )
+
+        assert len(symlinks) == 1
+        symlink_path, target_path = symlinks[0]
+        # The computed link location is the un-followed managed location
+        # (a path STRING under .guardkit/worktrees/), NOT the foreign target
+        # the stale link points at. (Calling .resolve() on it would still
+        # follow the on-disk stale link — the point is the path string is the
+        # real link location, so the creator repoints it rather than mkdir-ing
+        # through it.)
+        assert symlink_path == link_location
+        assert symlink_path.parent == link_location.parent
+        # Target is the real sibling source, never the foreign tree.
+        assert target_path == sibling.resolve()
+        assert foreign.resolve() not in (symlink_path, target_path)
+
+    def test_end_to_end_replaces_stale_link_without_escaping(self, tmp_path):
+        """
+        Full chain over a stale link: no crash, the link is repointed at the
+        real sibling, and nothing is created under the foreign tree
+        (the Errno-45 mkdir-through-autofs class is gone).
+        """
+        source_pyproject, worktree_pyproject, sibling = _portfolio_layout(tmp_path)
+        rel = os.path.relpath(sibling, source_pyproject.parent)
+        body = f'[tool.uv.sources]\nsibling = {{ path = "{rel}" }}\n'
+        _write_uv_sources(source_pyproject, body)
+        _write_uv_sources(worktree_pyproject, body)
+
+        link_location = source_pyproject.parent / ".guardkit" / "worktrees" / "sibling"
+        foreign = tmp_path / "foreign_home" / "sibling"
+        foreign.mkdir(parents=True)
+        os.symlink(foreign, link_location)
+
+        symlinks = _resolve_uv_sources_symlinks(
+            source_pyproject, worktree_pyproject
+        )
+        # This is exactly the call that raised Errno 45 pre-fix.
+        _create_worktree_uv_sources_symlinks(symlinks)
+
+        assert link_location.is_symlink()
+        assert link_location.resolve() == sibling.resolve()
+        # The foreign tree gained no bootstrap-created children.
+        assert sorted(p.name for p in foreign.iterdir()) == []
+
+    def test_end_to_end_replaces_dangling_link(self, tmp_path):
+        """
+        A DANGLING stale link (target no longer exists) is replaced, not
+        followed — ``is_symlink()`` is True even though the target is gone.
+        """
+        source_pyproject, worktree_pyproject, sibling = _portfolio_layout(tmp_path)
+        rel = os.path.relpath(sibling, source_pyproject.parent)
+        body = f'[tool.uv.sources]\nsibling = {{ path = "{rel}" }}\n'
+        _write_uv_sources(source_pyproject, body)
+        _write_uv_sources(worktree_pyproject, body)
+
+        link_location = source_pyproject.parent / ".guardkit" / "worktrees" / "sibling"
+        dangling_target = tmp_path / "gone" / "sibling"
+        os.symlink(dangling_target, link_location)
+        assert link_location.is_symlink()
+        assert not link_location.exists()  # dangling
+
+        symlinks = _resolve_uv_sources_symlinks(
+            source_pyproject, worktree_pyproject
+        )
+        _create_worktree_uv_sources_symlinks(symlinks)
+
+        assert link_location.is_symlink()
+        assert link_location.resolve() == sibling.resolve()
