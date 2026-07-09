@@ -5515,6 +5515,17 @@ class AutoBuildOrchestrator:
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return None
         if proc.returncode == 0 and proc.stdout.strip():
+            # Red-baseline retro (2026-07-08, L12 item 6): ``check-ignore -v
+            # --no-index`` returns exit 0 reporting the last matching pattern
+            # even when it is a ``!``-negation that RE-INCLUDES the path. A
+            # negation match is not a real "matches a .gitignore rule"
+            # recommendation — suppress it rather than steer the operator/Player
+            # toward a phantom gitignore fix (the FEAT-VOICE-003 churn).
+            first_line = proc.stdout.strip().splitlines()[0]
+            rule_field = first_line.split("\t", 1)[0]
+            rule_parts = rule_field.split(":", 2)
+            if len(rule_parts) >= 3 and rule_parts[2].strip().startswith("!"):
+                return None
             return (
                 f"Path matches a .gitignore rule "
                 f"(git check-ignore -v): {proc.stdout.strip()}"
