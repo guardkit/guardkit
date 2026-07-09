@@ -69,7 +69,7 @@ TOMBSTONES = [
     },
     {
         "name": "task-refine.md",
-        "retired_in": "2026-07-09",  # retirement commit; see DEC-task-refine-retirement
+        "retired_in": "f20e0b68",
         "reason": (
             "Retired per DEC-task-refine-retirement (ADR-C consolidation, "
             "2026-07-09): zero inbound command references; claimed module "
