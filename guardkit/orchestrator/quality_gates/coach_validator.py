@@ -40,7 +40,7 @@ import subprocess
 import sys
 import time
 from contextlib import aclosing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -71,6 +71,13 @@ from guardkit.orchestrator.docker_fixtures import (
     is_known_service,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.baseline import (
+    baseline_diff_enabled,
+    compute_charged_failures,
+    failing_node_ids,
+    load_known_failure_ids,
+    read_baseline_from_worktree,
+)
 from guardkit.orchestrator.phase_specialists import (
     PHASE_DESCRIPTIONS,
     detect_stack_template,
@@ -2533,6 +2540,11 @@ class CoachValidator:
                 task=task,
                 turn=turn,
             )
+            # Red-baseline retro (L12 item 2): suppress a ran-and-failed
+            # verdict whose failures are ALL pre-existing (measured baseline ∪
+            # F2 ledger) and not in a file this task authored. Inert unless a
+            # red baseline exists; only removes false charges.
+            test_result = self._apply_baseline_diff(test_result, task_work_results)
 
         conditional_approval = False
         environment_conditional_approval = False
@@ -4200,6 +4212,122 @@ class CoachValidator:
             )
         return results
 
+    # ------------------------------------------------------------------
+    # Baseline diff (red-baseline retro, L12 item 2)
+    # ------------------------------------------------------------------
+
+    def _baseline_context(self):
+        """Load (once) the measured baseline + F2 ledger IDs for this worktree.
+
+        Returns ``(baseline_result_or_None, ledger_id_set)``. The measured
+        baseline is the session-scoped observation written by the wave-0 probe
+        (``read_baseline_from_worktree``); the ledger is the human-curated
+        ``qa/known-failures.yaml`` (READ-ONLY). Cached on the instance; both
+        fail open to ``None`` / ``set()``.
+        """
+        cached = getattr(self, "_baseline_ctx_cache", "unset")
+        if cached != "unset":
+            return cached
+        baseline = None
+        ledger: set = set()
+        try:
+            baseline = read_baseline_from_worktree(self.worktree_path)
+            ledger = load_known_failure_ids(self.worktree_path)
+        except Exception as exc:  # noqa: BLE001 — fail open, diff stays inert
+            logger.debug("baseline diff: context load failed: %s", exc)
+        self._baseline_ctx_cache = (baseline, ledger)
+        return self._baseline_ctx_cache
+
+    def _baseline_diff_active(self) -> bool:
+        """Whether the baseline diff should act: flag ON + a red baseline exists.
+
+        A GREEN baseline (or no baseline.json / diff disabled) leaves every
+        gate byte-identical to today — the diff only ever suppresses charges
+        for failures already-red before wave 1.
+        """
+        if not baseline_diff_enabled():
+            return False
+        baseline, ledger = self._baseline_context()
+        has_baseline_reds = baseline is not None and not baseline.passed and bool(
+            baseline.failing_node_ids
+        )
+        return has_baseline_reds or bool(ledger)
+
+    def _authored_test_files(self, task_work_results: Dict[str, Any]) -> list:
+        """Worktree-relative files the current task touched (created/modified).
+
+        Used to RE-CHARGE a baseline/ledger failure whose test file the task
+        itself worked on — a task cannot hide behind the baseline for a test
+        it was meant to fix (the retro's fixed-then-still-red constraint). The
+        broad touched-union is deliberate here: it re-charges MORE, which is
+        the safe (against-false-green) direction.
+        """
+        files: set = set()
+        for key in ("files_authored", "files_created", "files_modified"):
+            for f in task_work_results.get(key) or []:
+                if isinstance(f, str) and f.strip():
+                    files.add(f.strip())
+        return sorted(files)
+
+    def _apply_baseline_diff(
+        self,
+        test_result: "IndependentTestResult",
+        task_work_results: Dict[str, Any],
+    ) -> "IndependentTestResult":
+        """Suppress a ran-and-failed verdict whose failures are ALL pre-existing.
+
+        Red-baseline retro (L12 item 2). When the independent run failed
+        (``tests_passed is False``, signal present) and every observed failing
+        node ID is in ``measured baseline ∪ F2 ledger`` — minus any whose test
+        file the current task authored — the failures are not attributable to
+        this task, so the verdict is flipped to a pass annotated with the
+        attribution. Otherwise the result is returned UNCHANGED.
+
+        Fail CLOSED: an absent signal is never flipped; if no failing node IDs
+        parse (non-pytest stack output) the charge stands; any exception leaves
+        the original verdict intact.
+        """
+        try:
+            if test_result.signal_absent or test_result.tests_passed is not False:
+                return test_result
+            if not self._baseline_diff_active():
+                return test_result
+            observed = failing_node_ids(test_result.raw_output)
+            if not observed:
+                # Could not identify the failures → cannot safely attribute.
+                return test_result
+            baseline, ledger = self._baseline_context()
+            baseline_ids = baseline.failing_node_ids if baseline else []
+            charged = compute_charged_failures(
+                observed_node_ids=observed,
+                baseline_node_ids=baseline_ids,
+                ledger_ids=ledger,
+                authored_test_files=self._authored_test_files(task_work_results),
+            )
+            if charged:
+                # At least one genuine regression → leave the failure standing.
+                return test_result
+            attributed = sorted(set(observed))
+            summary = (
+                f"Independent tests: {len(attributed)} failure(s) attributed to "
+                f"the measured baseline / F2 ledger (pre-existing before wave 1, "
+                f"not this task): {', '.join(attributed)}. No regressions "
+                f"introduced by this task (GUARDKIT_AUTOBUILD_BASELINE_DIFF)."
+            )
+            logger.info(
+                "baseline diff: suppressed %d pre-existing failure(s) as "
+                "environmental (no task regression): %s",
+                len(attributed), attributed,
+            )
+            return dataclass_replace(
+                test_result,
+                tests_passed=True,
+                test_output_summary=summary,
+            )
+        except Exception as exc:  # noqa: BLE001 — fail closed to the real verdict
+            logger.debug("baseline diff: apply skipped (%s); verdict unchanged", exc)
+            return test_result
+
     def verify_quality_gates(
         self,
         task_work_results: Dict[str, Any],
@@ -4299,6 +4427,30 @@ class CoachValidator:
             # No quality_gates data at all - assume failure
             tests_passed = False
             logger.debug("No tests_passed or tests_failed found in quality_gates, defaulting to False")
+
+        # Red-baseline retro (L12 item 2): DEFER a Player-self-reported test
+        # failure to the authoritative independent run when a red baseline is
+        # on record. The deterministic gate reads the Player's COUNT (no test
+        # IDs), so it cannot itself tell a pre-existing failure from a
+        # regression — but the Coach's own ``run_independent_tests`` (which
+        # runs iff ``profile.tests_required``) can, and ``_apply_baseline_diff``
+        # adjudicates it there. Guard tightly: only flip an explicit ``False``
+        # (never ``None``/UNKNOWN — absence-of-failure), only when tests are
+        # required (so the independent run WILL run and catch any regression),
+        # and only when a red baseline actually exists. When the independent
+        # run finds a genuine regression it fails there and the turn is fed
+        # back — this deferral cannot approve a real regression on its own.
+        if (
+            tests_passed is False
+            and profile.tests_required
+            and self._baseline_diff_active()
+        ):
+            logger.info(
+                "baseline diff: deferring the deterministic test gate to the "
+                "independent run (a red baseline is on record; the count-based "
+                "gate cannot attribute failures — the independent run will)."
+            )
+            tests_passed = True
 
         # Coverage - read from quality_gates.coverage_met
         # If coverage not required by profile, default to True (skip gate)

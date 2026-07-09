@@ -60,6 +60,14 @@ from guardkit.orchestrator.stale_test_attribution import (
     smoke_gate_header,
     stale_test_notes,
 )
+from guardkit.orchestrator.baseline import (
+    BaselineResult,
+    feature_baseline_path,
+    now_isoformat,
+    probe_baseline_result,
+    wave0_baseline_warning,
+    write_baseline,
+)
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
     validate_feature_environment,
@@ -828,6 +836,9 @@ class FeatureOrchestrator:
         # every AutoBuildOrchestrator so Coach's pytest runs against the
         # same interpreter the Player's install targeted.
         self._bootstrap_venv_python: Optional[str] = None
+        # Red-baseline retro (L12 item 1): the wave-0 baseline probe result,
+        # a session-scoped observation (NOT the F2 ledger).
+        self._measured_baseline: Optional[BaselineResult] = None
 
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
@@ -2241,6 +2252,12 @@ The detailed specifications are in the task markdown file.
         # Detect unreachable FalkorDB upfront to avoid per-task retry latency
         self._preflight_check()
 
+        # Wave-0 baseline-green probe (red-baseline retro, L12 item 1):
+        # run the feature suite ONCE before wave 1 so a pre-existing red is
+        # surfaced as a wave-0 warning rather than masquerading as the first
+        # task's failure. Report-only — never blocks.
+        self._run_baseline_probe(feature, worktree)
+
         # Wave-0 estimate-vs-timeout warnings (red-baseline retro, L12 item 3):
         # surface any task whose own estimate exceeds its effective per-task
         # budget BEFORE the run burns hours hitting a timeout that masks the
@@ -3609,6 +3626,72 @@ The detailed specifications are in the task markdown file.
             estimated_minutes * 60 * _estimate_timeout_factor()
             * self.timeout_multiplier
         )
+
+    def _run_baseline_probe(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> None:
+        """Wave-0 baseline-green probe (red-baseline retro, L12 item 1).
+
+        After bootstrap, before wave 1, run the feature's smoke/test command
+        once and record the result to
+        ``<worktree>/.guardkit/autobuild/<feature>/baseline.json`` (failing
+        test IDs + counts + command + timestamp). When red, emit a wave-0
+        WARNING naming the pre-existing failures — "not attributable to any
+        task". **Report-only**: never blocks the run. Activates by artefact —
+        skipped when the feature declares no ``smoke_gates`` command.
+
+        Stores the result on ``self._measured_baseline`` so the Coach
+        test-gate baseline diff (item 2) can suppress mid-build
+        mis-attribution of these pre-existing failures.
+        """
+        self._measured_baseline = None
+        smoke = getattr(feature, "smoke_gates", None)
+        if smoke is None:
+            return
+        try:
+            smoke_result = run_smoke_gate(
+                smoke,
+                cwd=worktree.path,
+                wave_number=0,
+                venv_python=self._bootstrap_venv_python,
+            )
+        except Exception as exc:  # noqa: BLE001 — probe is best-effort/report-only
+            logger.warning(
+                "Baseline probe could not run '%s' in %s: %s "
+                "(continuing; probe is report-only).",
+                smoke.command, worktree.path, exc,
+            )
+            return
+
+        combined = f"{smoke_result.stdout or ''}\n{smoke_result.stderr or ''}"
+        result = probe_baseline_result(
+            command=smoke_result.command,
+            expected_exit=smoke.expected_exit,
+            passed=smoke_result.passed,
+            exit_code=smoke_result.exit_code,
+            output=combined,
+            timestamp=now_isoformat(),
+        )
+        self._measured_baseline = result
+
+        try:
+            write_baseline(
+                feature_baseline_path(worktree.path, feature.id), result
+            )
+        except OSError as exc:
+            logger.warning("Could not write baseline.json: %s", exc)
+
+        warning = wave0_baseline_warning(result)
+        if warning is not None:
+            logger.warning(warning)
+            console.print(f"[yellow]⚠[/yellow] {warning}")
+        else:
+            logger.info(
+                "Baseline probe: feature suite GREEN before wave 1 "
+                "(command: %s).", result.command
+            )
 
     def _emit_wave0_timeout_warnings(self, feature: Feature) -> None:
         """Wave-0 warning when a task's estimate exceeds its effective timeout.
