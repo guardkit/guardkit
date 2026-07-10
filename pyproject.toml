@@ -54,7 +54,7 @@ autobuild = [
     # HarnessAdapter substrate seam. Resolved from a sibling repo in
     # operator-side dev via [tool.uv.sources] below; end-user installs
     # pick up whichever release matches the version contract.
-    "guardkitfactory>=0.1,<1",
+    "guardkitfactory>=0.2.0,<1",
 ]
 # FalkorDB Python client. Used by `guardkit memory migrate-graph`
 # (guardkit/memory/graph_export.py reads Episodic nodes directly). Formerly
@@ -113,7 +113,7 @@ memory = [
 ]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
-    "guardkitfactory>=0.1,<1",
+    "guardkitfactory>=0.2.0,<1",
     "nats-core>=0.4,<1",
     "fleet-memory>=0.1,<1",
     "falkordb>=1.6,<2",

@@ -815,7 +815,7 @@ provides-extras = ["all", "autobuild", "dev", "falkordb", "memory", "templates"]
 
 [[package]]
 name = "guardkitfactory"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../guardkitfactory" }
 dependencies = [
     { name = "deepagents" },
@@ -1446,7 +1446,7 @@ wheels = [
 
 [[package]]
 name = "nats-core"
-version = "0.5.0"
+version = "0.7.0"
 source = { editable = "../nats-core" }
 dependencies = [
     { name = "nats-py" },
