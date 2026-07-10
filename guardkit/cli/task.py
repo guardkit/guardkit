@@ -13,7 +13,9 @@ Example:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -289,6 +291,150 @@ def create(title: str, priority: str, prefix: Optional[str], task_type: str) -> 
         raise click.ClickException(str(e))
     except OSError as e:
         raise click.ClickException(f"Failed to create task: {e}")
+
+
+@task.command()
+@click.option(
+    "--root",
+    "root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Repository root to audit (default: current directory). Runs against ANY repo.",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    help="Human summary table (default) or machine-readable JSON to stdout.",
+)
+@click.option(
+    "--json",
+    "json_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write the full machine-readable divergence report to this path.",
+)
+@click.option(
+    "--all",
+    "include_clean",
+    is_flag=True,
+    default=False,
+    help="Include clean (non-divergent) task rows in the machine-readable report.",
+)
+@click.option(
+    "--reference-glob",
+    "reference_globs",
+    multiple=True,
+    default=None,
+    help="Repo-relative glob(s) scanned for dangling task-id references "
+    "(repeatable; overrides the defaults). E.g. --reference-glob 'src/**/*.py'.",
+)
+def audit(
+    root: "Optional[Path]",
+    output_format: str,
+    json_path: "Optional[Path]",
+    include_clean: bool,
+    reference_globs: tuple,
+) -> None:
+    """Audit task-tracker health: declared-vs-inferred status + dangling refs.
+
+    The task-level twin of ``guardkit feature audit``. For every
+    ``tasks/**/TASK-*.md`` file it compares the DECLARED status (frontmatter
+    ``status`` + the ``tasks/`` subtree) against the status INFERRED from git
+    (completion commits, feature-YAML rollups), and separately reports dangling
+    references — task ids named by features/code that no task file declares
+    (the dead-task-id-baseline class). Deterministic; no LLM calls.
+
+    READ-ONLY: this command reports, it never edits the audited repo.
+
+    \b
+    Exit codes:
+        0  no divergences (clean tracker)
+        1  divergences found (so CI / sweep sessions can gate)
+    """
+    # Imported lazily so ``guardkit task create`` has no audit dependencies.
+    from guardkit.orchestrator.task_audit import audit_tasks
+
+    repo_root = root if root is not None else Path.cwd()
+    globs = list(reference_globs) if reference_globs else None
+    report = audit_tasks(repo_root, reference_globs=globs)
+
+    if json_path is not None:
+        json_path.write_text(
+            json.dumps(report.to_dict(include_clean_rows=include_clean), indent=2),
+            encoding="utf-8",
+        )
+        click.echo(f"Wrote divergence report to {json_path}")
+
+    if output_format == "json":
+        click.echo(json.dumps(report.to_dict(include_clean_rows=include_clean), indent=2))
+    else:
+        _render_task_audit_table(report)
+
+    sys.exit(1 if report.total_divergences else 0)
+
+
+def _render_task_audit_table(report) -> None:
+    """Print the human summary (rich if available, plain otherwise)."""
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+    except Exception:  # pragma: no cover - rich always present in guardkit
+        console = None
+
+    divergent = report.divergent_rows
+    if console is not None:
+        if divergent:
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("Task")
+            table.add_column("Subtree")
+            table.add_column("Declared")
+            table.add_column("Inferred")
+            table.add_column("Divergences")
+            for r in divergent:
+                table.add_row(
+                    r.task_id,
+                    r.subtree,
+                    r.frontmatter_status or "(none)",
+                    r.inferred_status,
+                    ", ".join(r.divergences),
+                )
+            console.print(table)
+        if report.dangling:
+            dtable = Table(show_header=True, header_style="bold magenta", title="Dangling references")
+            dtable.add_column("Task id")
+            dtable.add_column("State doc?")
+            dtable.add_column("Referenced by")
+            for d in report.dangling:
+                dtable.add_row(
+                    d.task_id,
+                    "yes" if d.state_doc_exists else "no",
+                    ", ".join(d.referenced_by),
+                )
+            console.print(dtable)
+        console.print(
+            f"\nTask files: {report.task_file_count} | "
+            f"divergent tasks: {report.divergent_task_count} | "
+            f"dangling references: {report.dangling_count} | "
+            f"total divergences: {report.total_divergences}"
+        )
+        breakdown = report.divergence_breakdown()
+        if breakdown:
+            console.print(
+                "By class: "
+                + ", ".join(f"{k}={v}" for k, v in breakdown.items())
+            )
+        if report.total_divergences == 0:
+            console.print("[green]No tracker divergences.[/green]")
+    else:  # pragma: no cover
+        click.echo(
+            f"Task files: {report.task_file_count} | "
+            f"divergent tasks: {report.divergent_task_count} | "
+            f"dangling references: {report.dangling_count}"
+        )
 
 
 # ============================================================================
