@@ -57,7 +57,7 @@ def _pinned_specs() -> list[Path]:
 #     (e421eff5) without bumping this count; fixed 2026-07-10 (M5 commit C0).
 #   PB-13 wave-1 (M5) adds 7 reference slices ({name}*-ext.md), stepped
 #     per restructure commit — final 30.
-_EXPECTED_UNPINNED = 25
+_EXPECTED_UNPINNED = 26
 
 
 def test_unpinned_spec_population_is_deliberate():

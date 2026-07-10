@@ -13,8 +13,12 @@
       "sha256": "84cc2b6f202ae0f731e722f4b7102f2f145075bfe2de4f1abd07a86416724bf9",
       "source_commit": "1b89804d"
     },
+    "agent-validate-ext.md": {
+      "sha256": "8ea996fed4930e3a914512d3cf55cd15855a4252e803f3e4d6a21b2569a82a15",
+      "source_commit": "unknown"
+    },
     "agent-validate.md": {
-      "sha256": "6dae7e0ecae6567b928caf0a39dba16f206b9311b111ab9c2c2dccf789ec9684",
+      "sha256": "69f6d119fa8ccae18f7f14816424cb967f45311bfb3283c46b2ec293018aa725",
       "source_commit": "1b89804d"
     },
     "agentic-init.md": {
@@ -91,7 +95,7 @@
     },
     "template-create-ext.md": {
       "sha256": "adf3904ecc7dfb728312ce200825b7d9486758b1d98af49806d75230455ebf68",
-      "source_commit": "unknown"
+      "source_commit": "b1b8cc69"
     },
     "template-create-qa.md": {
       "sha256": "dcfa121f44e76cf5dcbbb67f2771b11cc306526df3865c84f4551760b08dc840",
@@ -99,7 +103,7 @@
     },
     "template-create.md": {
       "sha256": "e45da6d8526eccfe4f438dda039fcbc3693e24b9cc7dafce6c233d7d16271d7a",
-      "source_commit": "1b89804d"
+      "source_commit": "b1b8cc69"
     },
     "template-init.md": {
       "sha256": "fff78f6efb652d0da1d9c06968a19b105fa03b787f81db09ec3cf6c7cc6f0e1f",
