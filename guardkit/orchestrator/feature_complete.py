@@ -517,7 +517,14 @@ class FeatureCompleteOrchestrator:
         """
         Phase 3: Archive feature and cleanup resources.
 
-        This is a placeholder for TASK-FC-003 implementation.
+        Run artifact archival is now handled automatically by:
+        - WorktreeManager.cleanup() - Archives before worktree removal (TASK-OBS-80FE)
+        - RunArtifactArchiver - Provides archival to ~/.guardkit/archive/
+
+        See guardkit.worktrees.archive for the archival implementation.
+        See docs/guides/autobuild-instrumentation-guide.md for NAS rsync procedures.
+
+        This placeholder is retained for potential feature YAML archival (TASK-FC-003).
 
         Parameters
         ----------
@@ -526,12 +533,15 @@ class FeatureCompleteOrchestrator:
         worktree : Optional[Worktree]
             Worktree to cleanup (if exists)
         """
-        logger.info(f"Phase 3 (Archival): Placeholder for TASK-FC-003")
+        logger.info(
+            f"Phase 3 (Archival): Run artifacts archived via WorktreeManager.cleanup() "
+            f"(TASK-OBS-80FE). Feature YAML archival placeholder (TASK-FC-003)."
+        )
 
         console.print("[bold cyan]Phase 3:[/bold cyan] Archival")
-        console.print("[dim]  → Placeholder for TASK-FC-003[/dim]")
-        console.print("[dim]  → Will archive feature YAML[/dim]")
-        console.print("[dim]  → Will cleanup worktree[/dim]\n")
+        console.print("[dim]  → Run artifacts: Archived via WorktreeManager.cleanup()[/dim]")
+        console.print("[dim]  → Feature YAML: Placeholder for TASK-FC-003[/dim]")
+        console.print("[dim]  → Worktree cleanup: Handled by WorktreeManager[/dim]\n")
 
     def _handoff_phase(self, feature: Feature, worktree: Optional[Worktree]) -> None:
         """

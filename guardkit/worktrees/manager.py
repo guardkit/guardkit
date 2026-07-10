@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol, Optional
 
 from guardkit.templates.conftest_bridge import install_features_conftest_bridge
+from guardkit.worktrees.archive import RunArtifactArchiver, get_archive_root_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -515,21 +516,55 @@ class WorktreeManager:
         Remove worktree directory and branch.
 
         This cleans up after successful merge or when abandoning work.
+        Before removal, archives all run artifacts to the durable archive location.
 
         Args:
             worktree: Worktree to remove
             force: Force removal even if worktree has uncommitted changes
 
         Raises:
-            WorktreeError: If cleanup fails
+            WorktreeError: If cleanup fails (archive failure does not block cleanup)
 
         Example:
             >>> manager.cleanup(worktree)
-            >>> # Worktree directory and branch are now removed
+            >>> # Artifacts archived, then worktree directory and branch removed
             >>>
             >>> # Or force removal if worktree has uncommitted changes
             >>> manager.cleanup(worktree, force=True)
         """
+        # Archive artifacts before cleanup (TASK-OBS-80FE AC-1, AC-4)
+        # This is the "braces" to incremental archival's "belt"
+        try:
+            archive_root = get_archive_root_from_env()
+            archiver = RunArtifactArchiver(
+                repo_root=self.repo_root,
+                archive_root=archive_root
+            )
+
+            result = archiver.archive_worktree_artifacts(
+                worktree_path=worktree.path,
+                feature_or_task_id=worktree.task_id
+            )
+
+            if result.success:
+                logger.info(
+                    f"Archived {result.files_archived} artifact files "
+                    f"to {result.archive_path} before cleanup"
+                )
+            else:
+                # Archive failure does not block cleanup (AC-4)
+                logger.warning(
+                    f"Failed to archive artifacts for {worktree.task_id}: "
+                    f"{result.error}. Proceeding with cleanup."
+                )
+        except Exception as e:
+            # Archive failure must not block cleanup but must be loud (AC-4)
+            logger.warning(
+                f"Archive hook failed for {worktree.task_id}: {e}. "
+                f"Proceeding with cleanup.",
+                exc_info=True
+            )
+
         # Remove worktree directory
         try:
             remove_args = ["worktree", "remove", str(worktree.path)]

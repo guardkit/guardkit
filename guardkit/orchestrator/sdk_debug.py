@@ -1,16 +1,23 @@
 """SDK debug preservation for diagnostic post-mortem analysis.
 
-When the ``GUARDKIT_AUTOBUILD_PRESERVE_DEBUG`` environment variable is truthy,
-this module preserves the rendered Player/Coach prompt, the SDK options, and
-the full SDK message stream to disk under
+TASK-OBS-396E: Default-on via repo allowlist with size-capped rotation.
+
+Preservation defaults ON in named non-client repos (guardkit, study-tutor, forge,
+fleet-*) per D-OBS-2, with structural flip-gating — the default-on path activates
+ONLY when rotation caps resolve to positive values AND the keep-out-of-git check
+passes. Client/FinProxy repos stay opt-in per run.
+
+When enabled, this module preserves the rendered Player/Coach prompt, the SDK
+options, and the full SDK message stream to disk under
 ``<worktree>/.guardkit/autobuild/<task_id>/sdk_debug/turn_<n>/[coach/[test_run/]]``.
 
 Closes the wire-level opacity gap identified in TASK-REV-F4A1 / Diagram 2 so
 later analyses can verify Hops D-F (SDK stdin, HTTPS payload, LLM tool-use
 decision) with quoted artefacts rather than inferred behaviour.
 
-Default behaviour with the env var unset is zero disk cost — no directory is
-created and the helper short-circuits on every call.
+Size caps: per-turn cap on messages.jsonl (default 20MB), per-task total cap on
+sdk_debug/ dir (default 200MB). Rotation never makes capture silently absent —
+truncation writes explicit marker, pruning leaves PRUNED.marker.
 
 The helper must NEVER raise into the AutoBuild hot path. All preservation
 failures are logged as warnings and swallowed.
@@ -23,14 +30,67 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Optional, Union
+
+from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 
 logger = logging.getLogger(__name__)
 
 ENV_VAR = "GUARDKIT_AUTOBUILD_PRESERVE_DEBUG"
 
 _TRUTHY = frozenset({"1", "true", "yes", "y", "on"})
+_FALSY = frozenset({"0", "false", "no", "n", "off"})
+
+# Marker written when redaction fails — fail-closed for content, fail-open for control flow
+_REDACTION_FAILED_MARKER = "[REDACTION-FAILED]\n"
+
+# Module-level SecretRedactor instance (cached singleton for performance)
+_redactor: Optional[SecretRedactor] = None
+
+# Repo allowlist for default-on behavior (D-OBS-2)
+# DATA constant, greppable, per TASK-OBS-396E Change 1
+DEFAULT_ON_REPOS = frozenset({
+    "guardkit",
+    "study-tutor",
+    "forge",
+})
+
+# fleet-* pattern matches fleet-gateway, fleet-common, etc.
+def _is_fleet_repo(repo_name: str) -> bool:
+    """Check if repo name matches fleet-* pattern."""
+    return repo_name.startswith("fleet-")
+
+# Size caps (TASK-OBS-396E Change 2)
+# Defaults: 20MB/turn, 200MB/task (operator policy, env-tunable)
+def _get_per_turn_cap() -> int:
+    """Get per-turn cap from env, with fallback to default."""
+    try:
+        return int(os.environ.get("GUARDKIT_SDK_DEBUG_PER_TURN_CAP", 20 * 1024 * 1024))
+    except (ValueError, TypeError):
+        return 20 * 1024 * 1024
+
+def _get_per_task_cap() -> int:
+    """Get per-task cap from env, with fallback to default."""
+    try:
+        return int(os.environ.get("GUARDKIT_SDK_DEBUG_PER_TASK_CAP", 200 * 1024 * 1024))
+    except (ValueError, TypeError):
+        return 200 * 1024 * 1024
+
+# Module-level constants (for backward compat with tests that patch them)
+PER_TURN_CAP_BYTES = _get_per_turn_cap()
+PER_TASK_CAP_BYTES = _get_per_task_cap()
+
+_TRUNCATION_MARKER_TEMPLATE = "\n[TRUNCATED at {size} bytes]\n"
+
+
+def _get_redactor() -> SecretRedactor:
+    """Lazy-initialize and return the module-level SecretRedactor instance."""
+    global _redactor
+    if _redactor is None:
+        _redactor = SecretRedactor()
+    return _redactor
 
 _ROLE_SUBPATH = {
     "player": (),
@@ -39,10 +99,215 @@ _ROLE_SUBPATH = {
 }
 
 
+def _get_repo_name(repo_root: Union[str, Path]) -> Optional[str]:
+    """Derive repo name from directory name with git remote cross-check.
+
+    Returns the repo root directory name if git remote confirms it, else None.
+    Defensive: swallows git subprocess failures and returns None.
+    """
+    try:
+        repo_path = Path(repo_root)
+        if not repo_path.exists():
+            return None
+
+        # Try git remote to confirm repo identity
+        result = subprocess.run(
+            ["git", "remote", "-v"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode != 0:
+            # Not a git repo or git failed — fall back to directory name only
+            return repo_path.name
+
+        # Extract repo name from remote (origin line)
+        # Example: "origin  git@github.com:org/guardkit.git"
+        for line in result.stdout.splitlines():
+            if line.startswith("origin"):
+                # Remote confirmed — use directory name
+                return repo_path.name
+
+        # No origin remote found — use directory name
+        return repo_path.name
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sdk_debug: failed to get repo name from %s: %s", repo_root, exc)
+        return None
+
+
+def _check_gitignore_coverage(repo_root: Union[str, Path], sdk_debug_path: Path) -> bool:
+    """Check that sdk_debug path is properly ignored by git.
+
+    Returns True if git check-ignore confirms the path is ignored, False otherwise.
+    Defensive: swallows subprocess failures and returns False.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", str(sdk_debug_path)],
+            cwd=repo_root,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        # git check-ignore returns 0 if path is ignored, 1 if not
+        return result.returncode == 0
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "sdk_debug: gitignore check failed for %s: %s",
+            sdk_debug_path,
+            exc,
+        )
+        return False
+
+
+def _validate_rotation_caps() -> bool:
+    """Check that rotation caps are configured to positive values.
+
+    Returns True if both caps are valid (positive integers), False otherwise.
+    """
+    # Check env vars directly to catch invalid values at runtime
+    per_turn_raw = os.environ.get("GUARDKIT_SDK_DEBUG_PER_TURN_CAP", "")
+    per_task_raw = os.environ.get("GUARDKIT_SDK_DEBUG_PER_TASK_CAP", "")
+
+    # If env vars are set but not parseable, fail validation
+    if per_turn_raw:
+        try:
+            per_turn = int(per_turn_raw)
+            if per_turn <= 0:
+                logger.warning(
+                    "sdk_debug: invalid GUARDKIT_SDK_DEBUG_PER_TURN_CAP=%r (must be > 0)",
+                    per_turn_raw,
+                )
+                return False
+        except (ValueError, TypeError):
+            logger.warning(
+                "sdk_debug: invalid GUARDKIT_SDK_DEBUG_PER_TURN_CAP=%r (not an integer)",
+                per_turn_raw,
+            )
+            return False
+
+    if per_task_raw:
+        try:
+            per_task = int(per_task_raw)
+            if per_task <= 0:
+                logger.warning(
+                    "sdk_debug: invalid GUARDKIT_SDK_DEBUG_PER_TASK_CAP=%r (must be > 0)",
+                    per_task_raw,
+                )
+                return False
+        except (ValueError, TypeError):
+            logger.warning(
+                "sdk_debug: invalid GUARDKIT_SDK_DEBUG_PER_TASK_CAP=%r (not an integer)",
+                per_task_raw,
+            )
+            return False
+
+    return True
+
+
+def preservation_enabled_for_repo(
+    repo_root: Union[str, Path],
+    sdk_debug_dir: Optional[Path] = None,
+) -> bool:
+    """Check if SDK debug preservation should be enabled for this repo.
+
+    TASK-OBS-396E: Repo allowlist with structural flip-gating.
+
+    Returns True if:
+    - ENV_VAR is explicitly truthy (=1), OR
+    - ENV_VAR is not explicitly falsy (=0) AND repo is allowlisted AND guards pass
+
+    Returns False if:
+    - ENV_VAR is explicitly falsy (=0), OR
+    - ENV_VAR unset/empty AND repo is not allowlisted, OR
+    - ENV_VAR unset/empty AND repo is allowlisted BUT guards fail
+
+    Guards (both must pass for default-on):
+    1. Rotation caps resolve to positive values
+    2. Keep-out-of-git check passes (sdk_debug path is in .gitignore)
+
+    Args:
+        repo_root: Repository root directory
+        sdk_debug_dir: Optional sdk_debug path to check against .gitignore.
+                      If None, constructs a representative path for checking.
+    """
+    env_value = os.environ.get(ENV_VAR, "").strip().lower()
+
+    # Explicit override: ENV_VAR =1 forces ON
+    if env_value in _TRUTHY:
+        return True
+
+    # Explicit override: ENV_VAR =0 forces OFF
+    if env_value in _FALSY:
+        return False
+
+    # ENV_VAR unset or empty — check allowlist and guards
+    repo_name = _get_repo_name(repo_root)
+    if repo_name is None:
+        # Could not determine repo — default OFF
+        return False
+
+    # Check if repo is allowlisted
+    is_allowlisted = (
+        repo_name in DEFAULT_ON_REPOS
+        or _is_fleet_repo(repo_name)
+    )
+
+    if not is_allowlisted:
+        # Not allowlisted — default OFF
+        return False
+
+    # Repo is allowlisted — apply structural flip-gating (Change 3a)
+    # Guard 1: rotation caps valid
+    if not _validate_rotation_caps():
+        logger.warning(
+            "sdk_debug: allowlisted repo %s but rotation caps invalid — "
+            "capture disabled (failed prerequisite: rotation caps)",
+            repo_name,
+        )
+        return False
+
+    # Guard 2: keep-out-of-git check
+    if sdk_debug_dir is None:
+        # Construct representative path for checking
+        sdk_debug_dir = Path(repo_root) / ".guardkit" / "autobuild" / "TASK-TEST" / "sdk_debug"
+
+    if not _check_gitignore_coverage(repo_root, sdk_debug_dir):
+        logger.warning(
+            "sdk_debug: allowlisted repo %s but keep-out-of-git check failed — "
+            "capture disabled (failed prerequisite: gitignore coverage)",
+            repo_name,
+        )
+        return False
+
+    # Both guards passed — default ON for allowlisted repo
+    return True
+
+
 def preservation_enabled() -> bool:
-    """Return True if SDK debug preservation is enabled via env var."""
-    raw = os.environ.get(ENV_VAR, "")
-    return raw.strip().lower() in _TRUTHY
+    """Return True if SDK debug preservation is enabled.
+
+    Legacy function for backward compatibility. Uses current working directory
+    as repo root. For explicit repo control, use preservation_enabled_for_repo().
+    """
+    env_value = os.environ.get(ENV_VAR, "").strip().lower()
+
+    # Explicit override always wins
+    if env_value in _TRUTHY:
+        return True
+    if env_value in _FALSY:
+        return False
+
+    # Fallback: try to detect repo from cwd
+    try:
+        cwd = Path.cwd()
+        return preservation_enabled_for_repo(cwd)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sdk_debug: failed to check repo allowlist from cwd: %s", exc)
+        return False
 
 
 def _role_segments(role: str) -> tuple[str, ...]:
@@ -246,7 +511,9 @@ def preserve_prompt(
     :func:`preserve_event` calls. Idempotent: an existing turn directory
     is wiped and recreated to avoid stale state from interrupted runs.
 
-    This function never raises into the caller.
+    This function never raises into the caller. Secret redaction is applied
+    to both the prompt and options before writing. If redaction fails, the
+    [REDACTION-FAILED] marker is written instead of the raw payload.
     """
     if not preservation_enabled():
         return None
@@ -259,15 +526,37 @@ def preserve_prompt(
             shutil.rmtree(debug_dir, ignore_errors=True)
         debug_dir.mkdir(parents=True, exist_ok=True)
 
+        # Redact prompt before writing (fail-closed: no raw payload on error)
         prompt_path = debug_dir / "prompt.txt"
-        prompt_path.write_text(prompt or "", encoding="utf-8")
+        try:
+            redacted_prompt = _get_redactor().redact(prompt or "")
+            prompt_path.write_text(redacted_prompt, encoding="utf-8")
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning(
+                "sdk_debug: prompt redaction failed for %s turn %s: %s",
+                task_id,
+                turn,
+                redact_exc,
+            )
+            # Write placeholder marker instead of raw payload
+            prompt_path.write_text(_REDACTION_FAILED_MARKER, encoding="utf-8")
 
+        # Redact options before writing (fail-closed: no raw payload on error)
         options_path = debug_dir / "options.json"
-        options_payload = _options_to_jsonable(options)
-        options_path.write_text(
-            json.dumps(options_payload, indent=2, default=repr) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            options_payload = _options_to_jsonable(options)
+            options_json = json.dumps(options_payload, indent=2, default=repr) + "\n"
+            redacted_options = _get_redactor().redact(options_json)
+            options_path.write_text(redacted_options, encoding="utf-8")
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning(
+                "sdk_debug: options redaction failed for %s turn %s: %s",
+                task_id,
+                turn,
+                redact_exc,
+            )
+            # Write placeholder marker instead of raw payload
+            options_path.write_text(_REDACTION_FAILED_MARKER, encoding="utf-8")
 
         # Pre-create empty messages.jsonl so a turn that crashes before
         # the first stream message still produces an artefact triple.
@@ -297,24 +586,138 @@ def preserve_prompt(
 def preserve_event(debug_dir: Optional[Path], event: Any) -> None:
     """Append one event to messages.jsonl as a single JSON line.
 
+    TASK-OBS-396E Change 2: Size-capped rotation with truncation marker.
+
     No-op when ``debug_dir`` is None (preservation disabled or
-    :func:`preserve_prompt` failed). Never raises.
+    :func:`preserve_prompt` failed). Never raises. Secret redaction is
+    applied to the JSON line before writing. If redaction fails, the
+    [REDACTION-FAILED] marker is written instead of the raw payload.
+
+    If appending would exceed PER_TURN_CAP_BYTES, writes truncation marker
+    and stops appending. Rotation never makes capture silently absent.
     """
     if debug_dir is None:
         return
     try:
+        messages_path = debug_dir / "messages.jsonl"
+
+        # Check if already truncated
+        if messages_path.exists():
+            content = messages_path.read_text(encoding="utf-8")
+            if "[TRUNCATED at" in content:
+                # Already truncated — do not append further
+                return
+
+            # Check current size against cap
+            current_size = messages_path.stat().st_size
+            if current_size >= PER_TURN_CAP_BYTES:
+                # Hit cap — write truncation marker and stop
+                truncation_marker = _TRUNCATION_MARKER_TEMPLATE.format(
+                    size=current_size
+                )
+                with messages_path.open("a", encoding="utf-8") as fh:
+                    fh.write(truncation_marker)
+                logger.info(
+                    "sdk_debug: messages.jsonl truncated at %d bytes (cap: %d)",
+                    current_size,
+                    PER_TURN_CAP_BYTES,
+                )
+                return
+
+        # Not yet at cap — append event
         line = json.dumps(_event_to_jsonable(event), default=repr)
-        with (debug_dir / "messages.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(line)
+        # Redact the JSON line before writing (fail-closed: no raw payload on error)
+        try:
+            redacted_line = _get_redactor().redact(line)
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning("sdk_debug: event redaction failed: %s", redact_exc)
+            # Write placeholder marker instead of raw payload
+            redacted_line = _REDACTION_FAILED_MARKER.rstrip("\n")
+
+        with messages_path.open("a", encoding="utf-8") as fh:
+            fh.write(redacted_line)
             fh.write("\n")
+
     except Exception as exc:  # noqa: BLE001 — diagnostic-only path
         logger.warning("sdk_debug: failed to preserve event: %s", exc)
+
+
+def prune_old_turns_if_needed(task_sdk_debug_dir: Path) -> None:
+    """Prune oldest turns if per-task total exceeds PER_TASK_CAP_BYTES.
+
+    TASK-OBS-396E Change 2: Per-task cap with PRUNED.marker.
+
+    Args:
+        task_sdk_debug_dir: Path to .guardkit/autobuild/<task_id>/sdk_debug/
+
+    Oldest turns are deleted first. A pruned turn leaves PRUNED.marker naming
+    what was dropped. Never raises — diagnostic-only path.
+    """
+    try:
+        if not task_sdk_debug_dir.exists():
+            return
+
+        # Collect all turn_* directories
+        turn_dirs = sorted(
+            [d for d in task_sdk_debug_dir.iterdir() if d.is_dir() and d.name.startswith("turn_")],
+            key=lambda d: d.name,  # turn_1, turn_2, ...
+        )
+
+        if not turn_dirs:
+            return
+
+        # Calculate total size
+        total_size = 0
+        turn_sizes: list[tuple[Path, int]] = []
+        for turn_dir in turn_dirs:
+            size = sum(f.stat().st_size for f in turn_dir.rglob("*") if f.is_file())
+            turn_sizes.append((turn_dir, size))
+            total_size += size
+
+        # Check if over cap
+        if total_size <= PER_TASK_CAP_BYTES:
+            return
+
+        # Prune oldest turns until under cap
+        pruned_turns: list[str] = []
+        for turn_dir, turn_size in turn_sizes:
+            if total_size <= PER_TASK_CAP_BYTES:
+                break
+
+            # Remove this turn
+            shutil.rmtree(turn_dir, ignore_errors=True)
+            pruned_turns.append(turn_dir.name)
+            total_size -= turn_size
+            logger.info(
+                "sdk_debug: pruned %s (%d bytes) to stay under cap (%d bytes)",
+                turn_dir.name,
+                turn_size,
+                PER_TASK_CAP_BYTES,
+            )
+
+        # Write PRUNED.marker
+        if pruned_turns:
+            marker_path = task_sdk_debug_dir / "PRUNED.marker"
+            marker_content = (
+                f"Pruned turns (oldest-first, per-task cap {PER_TASK_CAP_BYTES} bytes):\n"
+                + "\n".join(f"  - {t}" for t in pruned_turns)
+                + "\n"
+            )
+            marker_path.write_text(marker_content, encoding="utf-8")
+
+    except Exception as exc:  # noqa: BLE001 — diagnostic-only path
+        logger.warning("sdk_debug: failed to prune old turns: %s", exc)
 
 
 __all__ = [
     "ENV_VAR",
     "preservation_enabled",
+    "preservation_enabled_for_repo",
     "compute_debug_dir",
     "preserve_prompt",
     "preserve_event",
+    "prune_old_turns_if_needed",
+    "DEFAULT_ON_REPOS",
+    "PER_TURN_CAP_BYTES",
+    "PER_TASK_CAP_BYTES",
 ]

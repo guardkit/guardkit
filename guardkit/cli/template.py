@@ -28,6 +28,7 @@ from guardkit.templates.parse_gate import (
     validate_templates,
 )
 from guardkit.templates.structure_lint import (
+    COMMITTED_SERVING_WINDOW_TOKENS,
     Severity,
     lint_command_templates,
 )
@@ -41,10 +42,12 @@ def _print_structure_lint() -> None:
     PB-5 / DIM2-F4. Advisory ONLY — every finding needs a pinned-byte fix
     (an ADR-D re-pin event), so this NEVER changes the exit code. It surfaces
     the ambiguous anchors, missing protocol sections, oversized sections
-    (report-only until WS4 commits a serving-window figure) and unmarked
-    example blocks that a fence-naive slicer would trip over.
+    (now WARNING at the committed 32K floor, per WS4 Amendment M3), and
+    unmarked example blocks that a fence-naive slicer would trip over.
     """
-    results = lint_command_templates()
+    results = lint_command_templates(
+        serving_window_tokens=COMMITTED_SERVING_WINDOW_TOKENS
+    )
     total_warn = sum(
         1 for fs in results.values() for f in fs if f.severity is Severity.WARNING
     )

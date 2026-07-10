@@ -379,6 +379,119 @@ Emitted for each Graphiti knowledge graph query.
 
 ---
 
+## Artifact Archival and Durable Storage
+
+### Local Archive
+
+All AutoBuild run artifacts are automatically archived to a durable location outside the repository working tree **before** worktree cleanup. This ensures artifacts survive:
+- `git worktree remove --force`
+- `git clean -fdx`
+- Repository deletion
+- Worktree prune operations
+
+**Default archive location:**
+```
+~/.guardkit/archive/<repo-name>/<feature-or-task-id>/
+```
+
+**Custom archive root:**
+Set the `GUARDKIT_ARCHIVE_ROOT` environment variable:
+```bash
+export GUARDKIT_ARCHIVE_ROOT=/path/to/custom/archive
+guardkit autobuild feature FEAT-ABC
+```
+
+**What gets archived:**
+- All task directories: `.guardkit/autobuild/<task_id>/`
+  - `player_turn_N.json` - Player implementation reports
+  - `coach_turn_N.json` - Coach validation reports  
+  - `task_work_results.json` - Task execution results
+  - `design_results.json` - Design phase outputs
+  - `specialist_results.json` - Test orchestrator / code reviewer results
+  - `sdk_debug/turn_N/` - SDK debug artifacts
+  - `_rollback_archive/` - Checkpoint rollback history
+  - `state_transitions.json` - Task state transitions
+- Feature-level files:
+  - `baseline.json` - Wave-0 baseline probe output (L12)
+  - `events.jsonl` - Full event stream
+- Both feature-level and task-mode `events.jsonl` files
+
+**Archive timing:**
+- **Primary (cleanup hook):** Archives at worktree removal (D-OBS-1 decision)
+- **Incremental (task finalize):** Archives after each task completes
+  - Crash between finalize and cleanup loses at most the in-flight task
+  - "Belt and braces" redundancy
+
+**Important:** The local archive root (`~/.guardkit/archive/`) is **one copy on one machine** until the NAS rsync runs (see below). It is gitignored local disk storage, not the final durable home.
+
+### NAS Durable Home (D-OBS-4)
+
+The archive root is node-local (self-contained agents rule). For multi-machine durable storage, rsync archived runs to the NAS after completion.
+
+**NAS destination:**
+```
+whitestocks:~/factory-corpora/<feature-or-task-id>/
+```
+
+**NAS user home:** `/var/services/homes/RichardWoollcott/`  
+(Regular users cannot mkdir at the `/volume1` root)
+
+**rsync command:**
+```bash
+# After a feature run completes
+rsync -avz ~/.guardkit/archive/<repo-name>/<feature-id>/ \
+  whitestocks:~/factory-corpora/<feature-id>/
+
+# For task-mode runs
+rsync -avz ~/.guardkit/archive/<repo-name>/<task-id>/ \
+  whitestocks:~/factory-corpora/<task-id>/
+```
+
+**Recommended cadence:**
+- After each feature completion (via `/feature-complete`)
+- Daily for long-running feature development
+- Before machine shutdown or cleanup
+
+**Automation option:**
+Add to your shell profile or cron:
+```bash
+# ~/.bashrc or ~/.zshrc
+alias guardkit-archive-sync='rsync -avz ~/.guardkit/archive/ whitestocks:~/factory-corpora/'
+
+# Run after each feature
+guardkit autobuild feature FEAT-ABC && guardkit-archive-sync
+```
+
+### Verifying Archive Integrity
+
+```bash
+# Check local archive exists
+ls -lh ~/.guardkit/archive/<repo-name>/<feature-id>/
+
+# Count archived turn files
+find ~/.guardkit/archive/<repo-name>/<feature-id>/ -name "*turn_*.json" | wc -l
+
+# Verify baseline.json is present (AC-3)
+ls ~/.guardkit/archive/<repo-name>/<feature-id>/baseline.json
+
+# Check NAS copy
+ssh whitestocks "ls -lh ~/factory-corpora/<feature-id>/"
+```
+
+### Archive Failure Handling
+
+Archive operations are **fail-open** (AC-4):
+- Archive failure logs a WARNING with lost paths
+- Archive failure does NOT block worktree cleanup
+- An absent archive is surfaced, never silent
+
+Check logs for warnings:
+```bash
+grep "Failed to archive" <autobuild-log-file>
+```
+
+---
+
 ## How to Use
 
 ### Viewing Events
@@ -1073,6 +1186,69 @@ jq 'select(.event_type == "llm.call" and .error_type == "rate_limited") |
   {timestamp, model, provider}' \
   .guardkit/autobuild/TASK-001/events.jsonl
 ```
+
+---
+
+## WS4 Learning Flywheel: Appendix A Conformance (TASK-OBS-396E AC-4)
+
+**Source**: TASK-OBS-396E Change 4, mapping to WS4 Learning Flywheel Appendix A
+(`ai-transition/docs/ws4-learning-flywheel-scope-and-build-plan-2026-07-07.md`).
+
+This section documents how GuardKit autobuild capture maps to the Appendix A
+contract that defines what makes a role session valid teacher data for the
+learning flywheel. Each field is either **captured-with-location** or an
+**explicit gap with an owner**. A role session that is not captured to this
+contract is not a flywheel input.
+
+### Appendix A Field Map
+
+| # | Appendix A Field | Where Captured in GuardKit | Notes |
+|---|---|---|---|
+| 1 | **Player input** (full assembled prompt + injected context refs) | `<sdk_debug>/turn_N/prompt.txt` per turn/role | Injected context refs: if fleet-memory retrievals are injected, their IDs+scopes are recorded alongside `prompt.txt` in `memory_context.json`; if none injected on this run, that is a verified N/A (not silence). |
+| 2 | **Raw pre-strip output** (+ post-strip) | `<sdk_debug>/turn_N/messages.jsonl` (raw stream); post-strip = player reports in `task_work_results.json` / `player_turn_N.json` (archived by TASK-OBS-80FE) | Raw stream includes all LLM tool-use blocks, text content, and harness events. Post-strip reports are the structured Player/Coach verdicts. |
+| 3 | **Human curation events** | **N/A in autobuild** — no human in the loop | **Explicit gap**: autobuild is fully autonomous (Player-Coach adversarial loop). Human curation is out of scope. **Owner**: FEAT-SPL-005 (specialist-agent project) for specialist curation flows (e.g. learning-loop human-in-the-loop specialist refinement). |
+| 4 | **Artifact identity** (trained-prompt hash, model/checkpoint id, role.yaml sha) | Model: `events.jsonl` `llm.call` events carry `model` + `provider` (e.g. `claude-sonnet-4-5-20250929` / `anthropic`); Prompt profile: TASK-OBS-9F43 wires `prompt_profile` (trained-prompt-hash analogue); Role: `turn_N/` dir structure encodes role (`player` / `coach` / `coach/test_run`); Agent definition: hash of active agent `.md` or digest file recorded in `agent_identity.json` alongside `prompt.txt`. | Each sub-field is captured or explicit N/A. `prompt_profile` per-call identifies digest-only vs digest+rules_bundle strategies for A/B comparison. |
+| 5 | **Correlation IDs** (planning correlation_id, task/feature IDs, spec-id, run_id) | Task/feature IDs: `sdk_debug` dir structure under `.guardkit/autobuild/<TASK-ID>/sdk_debug/`; `events.jsonl` carries `task_id` + `feature_id` per event; Run ID: TASK-OBS-9F43 adds `run_id` join; Planning correlation_id + spec-id: **explicit N/A for autobuild** — these originate in the WS1/forge planning loop, not autobuild. | **Verified N/A, not silence**: planning correlation_id and spec-id are forge/specialist-agent concerns. Autobuild tasks have `task_id` as primary correlation. **Owner**: FEAT-SPL-005 for planning-loop traceability. |
+| 6 | **Memory retrievals actually injected** (entry IDs + scopes) | If fleet-memory retrievals are injected into prompts (via `ContextLoader`), record IDs+scopes in `memory_context.json` alongside `prompt.txt`; if no retrievals injected on the autobuild path, state that as **verified N/A** (not silence). | Autobuild may or may not inject memory context depending on feature. When injected, full IDs+scopes are preserved. When not injected, that is an explicit, documented gap (not inferred from absence). |
+
+### Capture Activation: Default-On with Structural Flip-Gating
+
+Per TASK-OBS-396E Change 1-3a, capture defaults **ON** in named non-client repos
+(guardkit, study-tutor, forge, fleet-*) with **structural flip-gating** — the
+default-on path activates ONLY when:
+
+1. **Rotation caps** resolve to positive values (per-turn: 20MB default, per-task: 200MB default), AND
+2. **Keep-out-of-git** check passes (`git check-ignore` confirms sdk_debug paths are ignored)
+
+If either guard fails, capture stays OFF with a WARNING naming the failed prerequisite.
+Client/FinProxy repos stay opt-in per run via `GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1`.
+
+### Harness Verification (AC-5): LangGraph Default
+
+Capture is verified on the **LangGraph harness** (default since TASK-HMIG-011).
+The buffered-yield substrate differs from the streaming SDK harness:
+
+- **Prompt preservation**: Guaranteed on both substrates (happens in `agent_invoker`
+  before harness selection, `agent_invoker.py:3966`).
+- **Message stream preservation**: On SDK harness, per-event stream is preserved.
+  On LangGraph harness (buffered `ainvoke`), message-level events may not be
+  available per-event; `messages.jsonl` captures the final assembled response.
+  If the LangGraph path yields no per-event stream, that is a **surfaced,
+  documented gap** (absent signal ≠ captured), with `prompt.txt` capture still
+  guaranteed.
+
+### Size-Capped Rotation (AC-2)
+
+Per-turn cap on `messages.jsonl`: truncates at configured byte cap (default 20MB)
+with explicit `[TRUNCATED at <N> bytes]` marker. Per-task total cap on `sdk_debug/`
+dir (default 200MB): oldest-turn pruning leaves `PRUNED.marker` naming what was
+dropped. Rotation **never** makes capture silently absent.
+
+### Archive Durability (AC-6)
+
+Captured dirs survive worktree cleanup via TASK-OBS-80FE archive. Integration test
+joins the two: autobuild run → `guardkit worktree cleanup` → archived sdk_debug
+present under `.guardkit/archive/<run_id>/<task_id>/sdk_debug/`.
 
 ---
 

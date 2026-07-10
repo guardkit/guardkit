@@ -1564,6 +1564,9 @@ class AutoBuildOrchestrator:
         self.rollback_on_pollution = rollback_on_pollution
         self.ablation_mode = ablation_mode
         self._emitter = emitter if emitter is not None else NullEmitter()  # TASK-INST-004
+        # TASK-OBS-9F43 AC-2: Mint run_id once per orchestration
+        # All events (lifecycle + llm.call + tool.exec) share this run_id for joinability
+        self._run_id = f"run-{datetime.now().strftime('%Y%m%d%H%M%S')}-{id(self)}"
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
         # from BootstrapResult.venv_python in the feature orchestrator so
@@ -2160,6 +2163,7 @@ class AutoBuildOrchestrator:
                         model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                         coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                         evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                        emitter=self._emitter,  # TASK-OBS-4899
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -2191,6 +2195,7 @@ class AutoBuildOrchestrator:
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                    emitter=self._emitter,  # TASK-OBS-4899
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -2846,6 +2851,12 @@ class AutoBuildOrchestrator:
                     remaining_budget = None
 
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
+
+                # TASK-OBS-9F43 AC-2, AC-3: Thread run_id and current attempt to AgentInvoker
+                # so llm.call and tool.exec events join with lifecycle events by run_id
+                if self._agent_invoker is not None:
+                    self._agent_invoker._run_id = self._run_id
+                    self._agent_invoker._current_attempt = turn
 
                 # Check if perspective should be reset to prevent anchoring bias
                 # When reset triggered, Player receives only original requirements (no feedback)
@@ -5764,13 +5775,15 @@ class AutoBuildOrchestrator:
     def _emit_task_started(self, task_id: str) -> None:
         """Emit task.started lifecycle event.
 
+        TASK-OBS-9F43 AC-2: Uses orchestrator's shared run_id for joinability.
+
         Parameters
         ----------
         task_id : str
             Task identifier being started.
         """
         event = TaskStartedEvent(
-            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            run_id=self._run_id,  # Shared run_id from orchestrator
             task_id=task_id,
             agent_role="player",
             attempt=1,
@@ -5787,6 +5800,8 @@ class AutoBuildOrchestrator:
         turn_history: List["TurnRecord"],
     ) -> None:
         """Emit task.completed lifecycle event on successful orchestration.
+
+        TASK-OBS-9F43 AC-2: Uses orchestrator's shared run_id for joinability.
 
         Parameters
         ----------
@@ -5808,10 +5823,11 @@ class AutoBuildOrchestrator:
         prompt_profile = "digest+rules_bundle"
 
         event = TaskCompletedEvent(
-            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            run_id=self._run_id,  # Shared run_id from orchestrator
             task_id=task_id,
             agent_role="player",
-            attempt=1,
+            # attempt is >= 1 by schema (ge=1); clamp for the empty-history edge.
+            attempt=max(1, len(turn_history)),  # Final attempt number
             timestamp=datetime.now().isoformat(),
             turn_count=len(turn_history),
             diff_stats=diff_stats,
@@ -5826,6 +5842,8 @@ class AutoBuildOrchestrator:
     def _emit_task_failed(self, task_id: str, final_decision: str) -> None:
         """Emit task.failed lifecycle event on orchestration failure.
 
+        TASK-OBS-9F43 AC-2: Uses orchestrator's shared run_id for joinability.
+
         Maps the final_decision to a FailureCategory using FAILURE_CATEGORY_MAP.
 
         Parameters
@@ -5838,10 +5856,12 @@ class AutoBuildOrchestrator:
         failure_category = FAILURE_CATEGORY_MAP.get(final_decision, "other")
 
         event = TaskFailedEvent(
-            run_id=f"run-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            run_id=self._run_id,  # Shared run_id from orchestrator
             task_id=task_id,
             agent_role="player",
-            attempt=1,
+            # attempt is >= 1 by schema (ge=1); an early failure before any
+            # turn completes still counts as attempt #1.
+            attempt=max(1, len(self._turn_history)),
             timestamp=datetime.now().isoformat(),
             failure_category=failure_category,
         )
@@ -8238,6 +8258,7 @@ class AutoBuildOrchestrator:
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                    emitter=self._emitter,  # TASK-OBS-4899
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:

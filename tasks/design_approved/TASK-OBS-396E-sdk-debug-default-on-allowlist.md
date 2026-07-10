@@ -1,36 +1,20 @@
 ---
-id: TASK-OBS-396E
-title: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git
-  guarantee, Appendix A conformance
-task_type: feature
-priority: high
-feature_id: FEAT-OBSC
-wave: 4
-implementation_mode: task-work
 complexity: 6
+created: 2026-07-09
+decision_of_record: D-OBS-2 (FILED 2026-07-09) — gates OBS-3
 dependencies:
 - TASK-OBS-C440
 - TASK-OBS-80FE
 - TASK-OBS-9F43
-status: in_review
-decision_of_record: "D-OBS-2 (FILED 2026-07-09) \u2014 gates OBS-3"
-created: 2026-07-09
-autobuild_state:
-  current_turn: 1
-  max_turns: 5
-  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
-  base_branch: main
-  started_at: '2026-07-10T08:49:24.043625'
-  last_updated: '2026-07-10T09:07:11.173331'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-07-10T08:49:24.043625'
-    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
-      actual: 0'
-    player_success: true
-    coach_success: true
+feature_id: FEAT-OBSC
+id: TASK-OBS-396E
+implementation_mode: task-work
+priority: high
+status: design_approved
+task_type: feature
+title: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git
+  guarantee, Appendix A conformance
+wave: 4
 ---
 
 # TASK-OBS-396E: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git guarantee, Appendix A conformance
