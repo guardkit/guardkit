@@ -422,6 +422,45 @@ Generates comprehensive project documentation with:
   - Extracts metadata from agent frontmatter
   - Groups agents by category (domain, ui, testing, etc.)
 
+## QA Verification Seeds (Phase 3.5 · PB-6)
+
+An **additive** harvest phase that turns two facts the harvest already has — the
+source repo's observable suite outcome, and its `settings.json` `layer_mappings`
+— into tier-1 QA verification data. It runs after Phase 3 (layer_mappings exist)
+and Phase 1 (framework/language detection); the emitter is
+`guardkit/templates/qa_seed.py` (`seed_qa_verification`), wired into the
+orchestrator's terminal success path so the assembled template dir is on disk
+for the E2 stubs. Design of record:
+`ai-transition/docs/pb6-harvest-verification-seeds-scope-2026-07-09.md`.
+
+**What it emits (each write is per-file-if-absent — K5, never clobbers):**
+
+| # | Artifact | Target | Kind |
+|---|---|---|---|
+| E1 | `qa/known-failures.yaml` (F2) | **source repo** | INSTANCE — `expected.passed` = the count observed by running the source suite once; `framework`/`language` from Phase 1. Observed reds are recorded as entries with `owner`+`review_by`+a "triage me" reason AND surfaced as a finding (never swallowed). |
+| E2 | stack-typed `qa/` stubs (F2/F3) | **generated template dir** | STUBS — placeholder content carrying the correct `framework`/`language`; never the source repo's instance data. |
+| E3 | `qa/leak-sweep.yaml` `deny_patterns` (F3) | **source repo** | INSTANCE — seeded from the source repo's real mock identities; claims NO surface as real (`claimed_by: TASK-0000` placeholder — `/feature-plan` is the surface-claimer). |
+| E4 | `qa/discovery-gates-<layer>.yaml` (F12) | **source repo** | STUB — one per `settings.json` `layer_mapping`; a pre-registration scaffold the planner fills. |
+
+**Writer-restriction discipline (scope §3).** Harvest records *observed truth
+about the source repo* as an instance (E1 F2 baseline, E3 real mock strings);
+anything that is a *claim about a future build* (F1 bars, F3 claimed-real
+surfaces, F12 verified claims) is emitted only as a stub for the named writer to
+fill. Harvest is a one-time, human-initiated authoring at template-create time —
+it is NOT the Player mid-build and NOT a headless `/feature-plan` session, so
+K15/LPA-09 and the DIM5-F3 plan-time reject-lint remain the sole authority over
+who authors ledger entries at build time.
+
+**Absence-of-failure / DF-011 safety.** A suite that cannot be auto-observed
+(non-pytest stack, runner error, timeout) yields NO fabricated green baseline —
+E1 is skipped with a named WARNING. A repo with no detectable mock identities
+skips E3 with a WARNING. Non-fatal throughout: any single-emission problem is a
+warning, never a harvest failure.
+
+**Non-goals.** No `guardkit/qa/formats/*` schema edit (emitter work only); no
+enforcement flip (`qa.enforce_tier1` stays OFF per repo until placeholders are
+replaced); no 007/008 pin touch and no re-freeze.
+
 ## Understanding Boundary Sections
 
 As of TASK-STND-773D (2025-11-22), all enhanced agents include **ALWAYS/NEVER/ASK boundary sections** conforming to GitHub best practices (analysis of 2,500+ repositories).

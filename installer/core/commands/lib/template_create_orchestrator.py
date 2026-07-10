@@ -791,6 +791,68 @@ class TemplateCreateOrchestrator:
             logger.error(f"Failed to write templates: {e}")
             return False
 
+    def _phase_qa_seed_generation(self, output_path: Path) -> None:
+        """Additive qa-seed harvest phase (PB-6): emit tier-1 verification seeds.
+
+        Runs AFTER Phase 3 (settings.json layer_mappings exist) and Phase 1
+        (framework/language detection) — placed here on the terminal success path
+        so the generated template dir is on disk for E2 stubs. Emits four
+        artifacts, each per-file-if-absent (K5, never clobbers):
+
+        - E1  F2 known-failures.yaml INSTANCE into the SOURCE repo (expected.passed
+              = one observed suite run's count).
+        - E2  stack-typed qa/ STUBS into the generated TEMPLATE dir.
+        - E3  F3 leak-sweep.yaml deny_patterns into the SOURCE repo, from real mocks.
+        - E4  one F12 discovery-gate STUB per settings.json layer_mapping.
+
+        Non-fatal: any problem is logged/warned, never blocks harvest. See
+        guardkit/templates/qa_seed.py and
+        ai-transition/docs/pb6-harvest-verification-seeds-scope-2026-07-09.md.
+        """
+        self._print_phase_header("Phase 3.5: QA Verification Seeds (PB-6)")
+        if self.config.dry_run:
+            self._print_info("  (dry-run) qa-seed generation skipped")
+            return
+        try:
+            from guardkit.templates.qa_seed import seed_qa_verification
+        except Exception as exc:  # emitter unavailable — never break harvest
+            self._print_warning(f"qa-seed skipped: emitter unavailable ({exc})")
+            return
+
+        source_repo = Path(self.config.codebase_path or Path.cwd())
+        tech = getattr(self.analysis, "technology", None) if self.analysis else None
+        language = getattr(tech, "primary_language", "") or ""
+        test_frameworks = getattr(tech, "testing_framework_list", []) or []
+        test_framework = test_frameworks[0] if test_frameworks else ""
+        layer_keys = list(self.settings.layer_mappings.keys()) if self.settings else []
+
+        try:
+            result = seed_qa_verification(
+                source_repo,
+                Path(output_path),
+                language=language,
+                test_framework=test_framework,
+                layer_mapping_keys=layer_keys,
+            )
+        except Exception as exc:  # defensive — never break harvest
+            self._print_warning(f"qa-seed generation failed (non-fatal): {exc}")
+            return
+
+        for rel in result.source_seeds:
+            self._print_success_line(f"seeded {source_repo}/{rel}")
+        for rel in result.template_stubs:
+            self._print_success_line(f"template stub qa/{rel.split('/', 1)[-1]}")
+        # Findings (observed reds) and warnings (DF-011 skips) are surfaced, never
+        # swallowed — a seed step that emits nothing must say so.
+        for finding in result.findings:
+            self._print_warning(finding)
+            self.warnings.append(finding)
+        for warning in result.warnings:
+            self._print_warning(warning)
+            self.warnings.append(warning)
+        if not result.source_seeds and not result.template_stubs:
+            self._print_info("  no qa-seeds emitted (see warnings above)")
+
     def _complete_workflow_from_phase_8(self, output_path: Path) -> OrchestrationResult:
         """
         Complete phases 8-10.5 (TASK-PHASE-8-INCREMENTAL).
@@ -827,6 +889,11 @@ class TemplateCreateOrchestrator:
 
         if not output_path:
             return self._create_error_result("Package assembly failed")
+
+        # ===== Phase 3.5 (additive, PB-6): QA Verification Seeds =====
+        # Emitted here (not at Phase 3) so the assembled template dir exists on
+        # disk for E2 stubs; source-repo seeds (E1/E3/E4) also land now. Non-fatal.
+        self._phase_qa_seed_generation(output_path)
 
         # ===== Phase 9.5: Extended Validation (TASK-043) =====
         # Run after package assembly when all files are in place

@@ -67,6 +67,10 @@ Phase 3: Settings Generation (TASK-006)
 ├─ Code style inference
 └─ Generation options
 
+Phase 3.5: QA Verification Seeds (PB-6, additive — see template-create-ext.md)
+├─ E1/E3 F2+F3 INSTANCES into SOURCE repo; E2 stack-typed qa/ stubs into template dir
+└─ E4 F12 stub per layer_mapping; every write per-file-if-absent (K5)
+
 Phase 4: Template File Generation (TASK-008)
 ├─ AI-powered placeholder extraction
 ├─ Template content generation
@@ -114,14 +118,8 @@ Phase 7: Package Assembly
 └─ Validation summary
 
 Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
-├─ Placeholder consistency validation
-├─ Pattern fidelity spot-checks (5 random templates)
-├─ Documentation completeness verification
-├─ Agent reference validation
-├─ Manifest accuracy checks
-├─ Overall quality score calculation (0-10)
-├─ Validation report generation (validation-report.md)
-└─ Exit code assignment (0/1/2)
+└─ Placeholder/pattern/docs/agent/manifest checks → quality score (0-10),
+   validation-report.md, exit 0/1/2 (detail: ext)
 
 Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A8D, TASK-DOC-1C5A) [DEFAULT - skip with --no-create-agent-tasks]
 ├─ Creates one task per agent file
