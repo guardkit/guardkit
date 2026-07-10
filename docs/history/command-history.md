@@ -501,3 +501,98 @@ I'll execute this decision review. First, Phase 0 (ad-hoc task creation) and loc
 `guardkit task` isn't a subcommand. Let me check the CLI and read the actual code.
 
 The concern is confirmed: `backup_existing()` does `mv "$HOME/.claude"` — it **moves the entire directory**, not a copy. Let me check `INSTALL_DIR`, the call site, and the more surgical backup logic that also exists (lines 1677–1689).
+
+
+---
+
+## /feature-build FEAT-OBSC — 2026-07-09T23:09:19Z
+
+### Prompt
+
+```
+/feature-build FEAT-OBSC
+```
+
+### Assistant response
+
+I'll start by reviewing the feature file and my memory about FEAT-OBSC before executing the build.
+
+No `orchestration:` block in the YAML — waves must be derived from dependencies. Let me check how the CLI feature command handles this before launching.
+
+CLI derives waves from dependencies. Everything checks out:
+- **6 tasks present**, all markdown files exist, feature `status: planned`
+- **CLI available**, waves computed from the `dependencies` fields:
+  - Wave 1: `4899`, `F3F5`, `80FE`, `C440` (no deps)
+  - Wave 2: `9F43` (needs 4899)
+  - Wave 3: `396E` (needs C440 + 80FE + 9F43)
+
+This is a long autonomous run, so I'll launch it in the background and monitor. Logging to a file so I can track wave/turn progress.
+
+The build is running in the background. Let me check that it started up cleanly (worktree setup, wave 1 dispatch) before settling into a monitoring cadence.
+
+The build completed with exit code 0 already. Let me read the full output.
+
+The build did **not** run — it failed validation immediately. The feature YAML is missing the `orchestration:` block with `parallel_groups`, so the loader reported "Waves: 0" and rejected all 6 tasks as "not in orchestration". (The exit-0 was just the log wrapper; the orchestration error is fatal.)
+
+The CLI requires an explicit `orchestration.parallel_groups` block — it does **not** derive waves from the `dependencies` fields. Let me check the README for the intended wave structure (my memory noted "4 waves"), then add the block.
+
+Nothing ran (no worktree). Let me read the README's wave table (line 71+) to use the author's intended 4-wave grouping.
+
+The README defines the author's intended **4-wave** structure (stricter than a bare topo-sort — it deliberately places C440 redaction in wave 3, right before the wave-4 default-on flip). The feature YAML is just missing the `orchestration:` block that `/feature-plan` normally emits. I'll reconstruct it faithfully from the README wave table.
+
+Let me confirm the exact tail of the YAML before appending.
+
+Now I'll append the `orchestration:` block, using the author's 4-wave grouping from the README (all dependencies are satisfied by this ordering).
+
+Now let me re-launch the feature build. This time I'll confirm it passes validation and creates the worktree before letting it run to completion in the background.
+
+Let me verify it cleared validation and set up the worktree (using a Monitor-style wait for the worktree to appear or the process to error early).
+
+
+---
+
+## /feature-complete FEAT-OBSC — 2026-07-10T10:02:51Z
+
+### Prompt
+
+```
+/feature-complete FEAT-OBSC
+```
+
+### Assistant response
+
+I'll run `/feature-complete FEAT-OBSC`. Merging to `main` and deleting worktrees is significant and hard to reverse, and this feature had a non-standard setup — so I'll **preview with `--dry-run` first**, then do the real merge once it looks clean.
+
+Note: I committed the feature record on `main` (`85fe4bbe`) after the branch's baseline, so the merge will be a merge commit (not fast-forward), and the branch moved task files to `tasks/design_approved/` while `main` has them in `tasks/backlog/` — worth checking for conflicts before committing.
+
+The CLI `complete` has no `--verbose`. Let me check its options and run the dry-run.
+
+The CLI `complete` does completion + archive + worktree cleanup + handoff — but **not the git merge** (the markdown's "Step 0" merge is the operator/agent's responsibility). So I must merge `autobuild/FEAT-OBSC` → `main` *first*, then run the CLI for archival/cleanup — otherwise cleanup would remove the worktree with the code still unmerged. Let me preview the CLI plan and the merge (checking for conflicts given the task-file location divergence) before doing anything destructive.
+
+The CLI confirms: it does **not** merge — it hands me the merge command (`git merge --no-ff autobuild/FEAT-OBSC`) then archival/cleanup. The merge diff is the full deliverable (36 files, +5299 — including `sdk_debug.py` +441 and all the new test suites). Conflict check looked clean, but modify/delete conflicts (branch moved task files `backlog`→`design_approved`; my `85fe4bbe` modified the `backlog` copies) wouldn't show as `<<<<` markers. Let me do the definitive check with an abortable `--no-commit` merge.
+
+Confirmed: conflicts are **only in 3 task-record `.md` files** (git detected `backlog`→`design_approved` as renames; both my `85fe4bbe` and the branch edited content). **All production code and tests auto-merged cleanly.** I'll resolve by taking the branch's authoritative build version for all 3, then re-apply my 9F43 operator addendum (the full record also survives in the README, which merged clean).
+
+All 3 resolved. The branch's 9F43 lacks my addendum (the README cross-reference to it would dangle), so I'll re-add it. First let me verify no duplicate task files remain (backlog vs design_approved) and read the 9F43 tail.
+
+There's a duplication issue: git detected renames for 4899/80FE/9F43 (→ design_approved only) but **not** for 396E/C440/F3F5, so those exist in **both** `backlog` and `design_approved`. I'll remove the 3 backlog duplicates (keep design_approved, consistent with the other 3), re-add the 9F43 addendum, then commit the merge.
+
+All 6 task files now live only at `design_approved` (no duplicates); the `FEAT-OBSC.yaml` orchestration block survived the merge. Now re-add the 9F43 operator addendum. Let me read the merged 9F43 file.
+
+Now stage the addendum and verify the full staged state before committing the merge (making sure unrelated dirty files aren't swept in).
+
+Clean: production code + all sdk_debug tests staged (37 files), unrelated dirty files excluded, zero conflict markers. Committing the merge:
+
+Merge committed (`25c04cbd`) — `archive.py` and the `attempt`-clamp fix are on `main`. Now let me verify the merged code is green on `main` before running archival/cleanup.
+
+**583 tests pass on `main`** across every feature area — the merge is verified green. Now run the CLI to archive state, clean up the worktree, and produce the handoff. (Skipping `--verify`'s full-suite re-run since I've already verified the feature areas.)
+
+The CLI guards on `status: completed` (which the autobuild run set) and wants `--force` to proceed with archival. Since the feature is genuinely built + merged, forcing the archival/cleanup/handoff is correct:
+
+The CLI ran its archival/handoff (note: feature-YAML archival is a placeholder in this version, and it always prints the "ready for merge" box — I've already merged, so that's informational). The worktree still exists; let me clean it up and remove the now-merged branch.
+
+The `guardkit worktree` command isn't in this version, and `main..autobuild/FEAT-OBSC` is empty — **the branch is fully merged**. I'll remove the worktree and merged branch directly with git (force needed for the worktree's build artifacts like `.venv`; nothing is lost since every commit is on `main`).
+
+Worktree and merged branch are gone. Let me confirm the final state on `main` and update memory to reflect completion.
+
+Everything is complete and clean. Let me update memory to reflect the merge, then summarize.

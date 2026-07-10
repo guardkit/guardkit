@@ -43,6 +43,11 @@ ENV_VAR = "GUARDKIT_AUTOBUILD_PRESERVE_DEBUG"
 _TRUTHY = frozenset({"1", "true", "yes", "y", "on"})
 _FALSY = frozenset({"0", "false", "no", "n", "off"})
 
+# Warn-once latch for an explicit-but-unrecognized ENV_VAR value (TASK-OBS-396E,
+# unrecognized-env decision 2026-07-10 — Option B, fail-safe OFF + warn once).
+# Reset by tests via the _clear_env fixture.
+_unrecognized_env_warned = False
+
 # Marker written when redaction fails — fail-closed for content, fail-open for control flow
 _REDACTION_FAILED_MARKER = "[REDACTION-FAILED]\n"
 
@@ -208,6 +213,48 @@ def _validate_rotation_caps() -> bool:
     return True
 
 
+def _explicit_env_verdict() -> Optional[bool]:
+    """Classify the ENV_VAR value into an explicit on/off verdict, or defer.
+
+    TASK-OBS-396E unrecognized-env decision (2026-07-10, Option B — fail-safe):
+
+    - Explicitly truthy (``1``/``true``/``yes``/``y``/``on``) → ``True``.
+    - Explicitly falsy  (``0``/``false``/``no``/``n``/``off``) → ``False``.
+    - Explicit but **unrecognized** (a typo like ``enabled``/``tru``) → ``False``
+      (fail-safe OFF) with a one-time warning. An uninterpretable *explicit*
+      signal is NOT the same as an *absent* one; it must not silently ride the
+      default-on allowlist path.
+    - Unset or empty (``""``) → ``None`` (an absent signal — the caller defers to
+      the repo allowlist / default-off logic).
+
+    Returning ``None`` means "no explicit signal; decide by allowlist".
+    """
+    global _unrecognized_env_warned
+    raw = os.environ.get(ENV_VAR)
+    if raw is None:
+        return None
+    env_value = raw.strip().lower()
+    if env_value == "":
+        # Exported-but-empty is conventionally equivalent to unset.
+        return None
+    if env_value in _TRUTHY:
+        return True
+    if env_value in _FALSY:
+        return False
+    # Explicit but unrecognized — fail-safe OFF, warn once (Option B).
+    if not _unrecognized_env_warned:
+        logger.warning(
+            "sdk_debug: unrecognized %s=%r — treating as OFF (fail-safe). "
+            "Recognized truthy=%s, falsy=%s; unset defers to the repo allowlist.",
+            ENV_VAR,
+            raw,
+            sorted(_TRUTHY),
+            sorted(_FALSY),
+        )
+        _unrecognized_env_warned = True
+    return False
+
+
 def preservation_enabled_for_repo(
     repo_root: Union[str, Path],
     sdk_debug_dir: Optional[Path] = None,
@@ -218,10 +265,11 @@ def preservation_enabled_for_repo(
 
     Returns True if:
     - ENV_VAR is explicitly truthy (=1), OR
-    - ENV_VAR is not explicitly falsy (=0) AND repo is allowlisted AND guards pass
+    - ENV_VAR is unset/empty AND repo is allowlisted AND guards pass
 
     Returns False if:
     - ENV_VAR is explicitly falsy (=0), OR
+    - ENV_VAR is explicitly set but unrecognized (fail-safe OFF + warn once), OR
     - ENV_VAR unset/empty AND repo is not allowlisted, OR
     - ENV_VAR unset/empty AND repo is allowlisted BUT guards fail
 
@@ -234,15 +282,10 @@ def preservation_enabled_for_repo(
         sdk_debug_dir: Optional sdk_debug path to check against .gitignore.
                       If None, constructs a representative path for checking.
     """
-    env_value = os.environ.get(ENV_VAR, "").strip().lower()
-
-    # Explicit override: ENV_VAR =1 forces ON
-    if env_value in _TRUTHY:
-        return True
-
-    # Explicit override: ENV_VAR =0 forces OFF
-    if env_value in _FALSY:
-        return False
+    # Explicit ENV_VAR value (truthy/falsy/unrecognized) wins over the allowlist.
+    verdict = _explicit_env_verdict()
+    if verdict is not None:
+        return verdict
 
     # ENV_VAR unset or empty — check allowlist and guards
     repo_name = _get_repo_name(repo_root)
@@ -293,13 +336,10 @@ def preservation_enabled() -> bool:
     Legacy function for backward compatibility. Uses current working directory
     as repo root. For explicit repo control, use preservation_enabled_for_repo().
     """
-    env_value = os.environ.get(ENV_VAR, "").strip().lower()
-
-    # Explicit override always wins
-    if env_value in _TRUTHY:
-        return True
-    if env_value in _FALSY:
-        return False
+    # Explicit ENV_VAR value (truthy/falsy/unrecognized) always wins.
+    verdict = _explicit_env_verdict()
+    if verdict is not None:
+        return verdict
 
     # Fallback: try to detect repo from cwd
     try:

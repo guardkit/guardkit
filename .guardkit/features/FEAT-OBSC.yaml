@@ -5,7 +5,7 @@ description: "Emitter live-wiring (OBS-1), run-artifact durability with archive-
   \ via repo allowlist (OBS-3, gated on D-OBS-2 prerequisites), and the M2 structure-lint\
   \ token-budget flip. Decisions of record D-OBS-1..4 (FILED 2026-07-09). Reconciles\
   \ and supersedes the FEAT-CF57 TASK-INST backlog and the FEAT-AOF observability-fixes\
-  \ folder \u2014 see tasks/backlog/autobuild-capture-cluster/README.md Disposition\
+  \ folder \u2014 see tasks/completed/2026-07/README-autobuild-capture-cluster.md Disposition\
   \ Register."
 created: '2026-07-09T20:30:00'
 status: completed
