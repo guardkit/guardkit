@@ -3939,9 +3939,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # rather than duck-typing on SDK shapes.
         harness_events: List[HarnessEvent] = []
 
-        # TASK-OBS-9F43 AC-3: Track current agent role for tool.exec events
-        # Set at each _invoke_with_role entry so tool executions emit the correct agent_role
+        # TASK-OBS-9F43 AC-3: Track current agent role and attempt for tool.exec events
+        # Set at each _invoke_with_role entry so tool executions emit the correct agent_role and attempt
         self._current_agent_role = agent_type
+        self._current_attempt = turn if turn is not None else 1
 
         # TASK-FIX-SPECHANG2: reset the model-activity clock at the start of
         # the invocation so the specialist watchdog measures the no-activity
