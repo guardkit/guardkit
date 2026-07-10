@@ -1189,6 +1189,69 @@ jq 'select(.event_type == "llm.call" and .error_type == "rate_limited") |
 
 ---
 
+## WS4 Learning Flywheel: Appendix A Conformance (TASK-OBS-396E AC-4)
+
+**Source**: TASK-OBS-396E Change 4, mapping to WS4 Learning Flywheel Appendix A
+(`ai-transition/docs/ws4-learning-flywheel-scope-and-build-plan-2026-07-07.md`).
+
+This section documents how GuardKit autobuild capture maps to the Appendix A
+contract that defines what makes a role session valid teacher data for the
+learning flywheel. Each field is either **captured-with-location** or an
+**explicit gap with an owner**. A role session that is not captured to this
+contract is not a flywheel input.
+
+### Appendix A Field Map
+
+| # | Appendix A Field | Where Captured in GuardKit | Notes |
+|---|---|---|---|
+| 1 | **Player input** (full assembled prompt + injected context refs) | `<sdk_debug>/turn_N/prompt.txt` per turn/role | Injected context refs: if fleet-memory retrievals are injected, their IDs+scopes are recorded alongside `prompt.txt` in `memory_context.json`; if none injected on this run, that is a verified N/A (not silence). |
+| 2 | **Raw pre-strip output** (+ post-strip) | `<sdk_debug>/turn_N/messages.jsonl` (raw stream); post-strip = player reports in `task_work_results.json` / `player_turn_N.json` (archived by TASK-OBS-80FE) | Raw stream includes all LLM tool-use blocks, text content, and harness events. Post-strip reports are the structured Player/Coach verdicts. |
+| 3 | **Human curation events** | **N/A in autobuild** — no human in the loop | **Explicit gap**: autobuild is fully autonomous (Player-Coach adversarial loop). Human curation is out of scope. **Owner**: FEAT-SPL-005 (specialist-agent project) for specialist curation flows (e.g. learning-loop human-in-the-loop specialist refinement). |
+| 4 | **Artifact identity** (trained-prompt hash, model/checkpoint id, role.yaml sha) | Model: `events.jsonl` `llm.call` events carry `model` + `provider` (e.g. `claude-sonnet-4-5-20250929` / `anthropic`); Prompt profile: TASK-OBS-9F43 wires `prompt_profile` (trained-prompt-hash analogue); Role: `turn_N/` dir structure encodes role (`player` / `coach` / `coach/test_run`); Agent definition: hash of active agent `.md` or digest file recorded in `agent_identity.json` alongside `prompt.txt`. | Each sub-field is captured or explicit N/A. `prompt_profile` per-call identifies digest-only vs digest+rules_bundle strategies for A/B comparison. |
+| 5 | **Correlation IDs** (planning correlation_id, task/feature IDs, spec-id, run_id) | Task/feature IDs: `sdk_debug` dir structure under `.guardkit/autobuild/<TASK-ID>/sdk_debug/`; `events.jsonl` carries `task_id` + `feature_id` per event; Run ID: TASK-OBS-9F43 adds `run_id` join; Planning correlation_id + spec-id: **explicit N/A for autobuild** — these originate in the WS1/forge planning loop, not autobuild. | **Verified N/A, not silence**: planning correlation_id and spec-id are forge/specialist-agent concerns. Autobuild tasks have `task_id` as primary correlation. **Owner**: FEAT-SPL-005 for planning-loop traceability. |
+| 6 | **Memory retrievals actually injected** (entry IDs + scopes) | If fleet-memory retrievals are injected into prompts (via `ContextLoader`), record IDs+scopes in `memory_context.json` alongside `prompt.txt`; if no retrievals injected on the autobuild path, state that as **verified N/A** (not silence). | Autobuild may or may not inject memory context depending on feature. When injected, full IDs+scopes are preserved. When not injected, that is an explicit, documented gap (not inferred from absence). |
+
+### Capture Activation: Default-On with Structural Flip-Gating
+
+Per TASK-OBS-396E Change 1-3a, capture defaults **ON** in named non-client repos
+(guardkit, study-tutor, forge, fleet-*) with **structural flip-gating** — the
+default-on path activates ONLY when:
+
+1. **Rotation caps** resolve to positive values (per-turn: 20MB default, per-task: 200MB default), AND
+2. **Keep-out-of-git** check passes (`git check-ignore` confirms sdk_debug paths are ignored)
+
+If either guard fails, capture stays OFF with a WARNING naming the failed prerequisite.
+Client/FinProxy repos stay opt-in per run via `GUARDKIT_AUTOBUILD_PRESERVE_DEBUG=1`.
+
+### Harness Verification (AC-5): LangGraph Default
+
+Capture is verified on the **LangGraph harness** (default since TASK-HMIG-011).
+The buffered-yield substrate differs from the streaming SDK harness:
+
+- **Prompt preservation**: Guaranteed on both substrates (happens in `agent_invoker`
+  before harness selection, `agent_invoker.py:3966`).
+- **Message stream preservation**: On SDK harness, per-event stream is preserved.
+  On LangGraph harness (buffered `ainvoke`), message-level events may not be
+  available per-event; `messages.jsonl` captures the final assembled response.
+  If the LangGraph path yields no per-event stream, that is a **surfaced,
+  documented gap** (absent signal ≠ captured), with `prompt.txt` capture still
+  guaranteed.
+
+### Size-Capped Rotation (AC-2)
+
+Per-turn cap on `messages.jsonl`: truncates at configured byte cap (default 20MB)
+with explicit `[TRUNCATED at <N> bytes]` marker. Per-task total cap on `sdk_debug/`
+dir (default 200MB): oldest-turn pruning leaves `PRUNED.marker` naming what was
+dropped. Rotation **never** makes capture silently absent.
+
+### Archive Durability (AC-6)
+
+Captured dirs survive worktree cleanup via TASK-OBS-80FE archive. Integration test
+joins the two: autobuild run → `guardkit worktree cleanup` → archived sdk_debug
+present under `.guardkit/archive/<run_id>/<task_id>/sdk_debug/`.
+
+---
+
 ### Related Documentation
 
 - [AutoBuild Workflow Guide](autobuild-workflow.md) — Full AutoBuild architecture, Player-Coach loop, and CLI usage
