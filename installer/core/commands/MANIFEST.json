@@ -75,11 +75,11 @@
     },
     "task-review-ext.md": {
       "sha256": "00fd452da1efb86bfff1f7dd9dcd2eb90e8de8f591b4510975ced8a8c03e1390",
-      "source_commit": "unknown"
+      "source_commit": "965faf6c"
     },
     "task-review.md": {
       "sha256": "5ba0300bc2df517830117b86fc45306795d7a32ef1772c445897ea4b1446f207",
-      "source_commit": "1b89804d"
+      "source_commit": "965faf6c"
     },
     "task-status.md": {
       "sha256": "6e51431090810b81a3247dd911842d93a97887abc96728e63d5b406f79a1e521",
@@ -89,12 +89,16 @@
       "sha256": "a238e632a5d5c4ac9c1c5dabddf4242fdfa119c34e4fe7ea0d9e3c4060413858",
       "source_commit": "1b89804d"
     },
+    "template-create-ext.md": {
+      "sha256": "adf3904ecc7dfb728312ce200825b7d9486758b1d98af49806d75230455ebf68",
+      "source_commit": "unknown"
+    },
     "template-create-qa.md": {
       "sha256": "dcfa121f44e76cf5dcbbb67f2771b11cc306526df3865c84f4551760b08dc840",
       "source_commit": "1b89804d"
     },
     "template-create.md": {
-      "sha256": "942afa9b1ec5c44408c134bc3ca1ab4b393b9e6628068eaf4790ef388b51ed60",
+      "sha256": "e45da6d8526eccfe4f438dda039fcbc3693e24b9cc7dafce6c233d7d16271d7a",
       "source_commit": "1b89804d"
     },
     "template-init.md": {
