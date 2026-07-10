@@ -7,7 +7,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-80FE
 implementation_mode: task-work
 priority: high
-status: design_approved
+status: completed
 task_type: feature
 title: Archive run artifacts before worktree prune, with a stated durable home
 wave: 2

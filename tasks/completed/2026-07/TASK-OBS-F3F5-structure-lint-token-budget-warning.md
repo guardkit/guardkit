@@ -66,7 +66,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-F3F5
 implementation_mode: task-work
 priority: medium
-status: design_approved
+status: completed
 task_type: feature
 title: Flip template structure-lint token budgets INFO→WARNING at the committed 32K-floor
   figure

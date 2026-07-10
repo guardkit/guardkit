@@ -10,7 +10,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-396E
 implementation_mode: task-work
 priority: high
-status: design_approved
+status: completed
 task_type: feature
 title: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git
   guarantee, Appendix A conformance
