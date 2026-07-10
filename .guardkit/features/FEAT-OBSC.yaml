@@ -1,65 +1,158 @@
 id: FEAT-OBSC
 name: AutoBuild Capture Cluster
-description: Emitter live-wiring (OBS-1), run-artifact durability with archive-before-prune
-  (OBS-2 + L12 baseline.json rider), default-on redacted sdk_debug trace capture via repo
-  allowlist (OBS-3, gated on D-OBS-2 prerequisites), and the M2 structure-lint token-budget
-  flip. Decisions of record D-OBS-1..4 (FILED 2026-07-09). Reconciles and supersedes the
-  FEAT-CF57 TASK-INST backlog and the FEAT-AOF observability-fixes folder — see
-  tasks/backlog/autobuild-capture-cluster/README.md Disposition Register.
+description: "Emitter live-wiring (OBS-1), run-artifact durability with archive-before-prune\
+  \ (OBS-2 + L12 baseline.json rider), default-on redacted sdk_debug trace capture\
+  \ via repo allowlist (OBS-3, gated on D-OBS-2 prerequisites), and the M2 structure-lint\
+  \ token-budget flip. Decisions of record D-OBS-1..4 (FILED 2026-07-09). Reconciles\
+  \ and supersedes the FEAT-CF57 TASK-INST backlog and the FEAT-AOF observability-fixes\
+  \ folder \u2014 see tasks/backlog/autobuild-capture-cluster/README.md Disposition\
+  \ Register."
 created: '2026-07-09T20:30:00'
-status: planned
+status: completed
 complexity: 5
 estimated_tasks: 6
 tasks:
 - id: TASK-OBS-4899
-  name: Wire the emitter through the three AgentInvoker construction sites and task-mode CLI
+  name: Wire the emitter through the three AgentInvoker construction sites and task-mode
+    CLI
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-4899-wire-emitter-agent-invoker-sites.md
   complexity: 3
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-10T07:12:04.098621'
+  completed_at: '2026-07-10T07:39:41.536747'
 - id: TASK-OBS-F3F5
-  name: Flip template structure-lint token budgets INFO to WARNING at the committed 32K-floor figure
+  name: Flip template structure-lint token budgets INFO to WARNING at the committed
+    32K-floor figure
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-F3F5-structure-lint-token-budget-warning.md
   complexity: 2
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-10T06:36:33.865084'
+  completed_at: '2026-07-10T06:53:50.442793'
 - id: TASK-OBS-9F43
-  name: Real model attribution and joinable correlation identity on instrumentation events
+  name: Real model attribution and joinable correlation identity on instrumentation
+    events
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-9F43-model-attribution-correlation-identity.md
   complexity: 4
   dependencies:
   - TASK-OBS-4899
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-10T08:21:57.308430'
+  completed_at: '2026-07-10T08:36:44.383675'
 - id: TASK-OBS-80FE
   name: Archive run artifacts before worktree prune, with a stated durable home
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-80FE-archive-run-artifacts-before-prune.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-10T08:21:57.312697'
+  completed_at: '2026-07-10T08:36:44.386105'
 - id: TASK-OBS-C440
   name: Extend secret redaction to sdk_debug message streams
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-C440-redact-sdk-debug-message-streams.md
   complexity: 4
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-10T08:36:50.528163'
+  completed_at: '2026-07-10T08:49:08.542054'
 - id: TASK-OBS-396E
-  name: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git guarantee, Appendix A conformance
+  name: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git
+    guarantee, Appendix A conformance
   file_path: tasks/backlog/autobuild-capture-cluster/TASK-OBS-396E-sdk-debug-default-on-allowlist.md
   complexity: 6
   dependencies:
   - TASK-OBS-C440
   - TASK-OBS-80FE
   - TASK-OBS-9F43
-  status: pending
+  status: completed
   implementation_mode: task-work
+  estimated_minutes: 30
   requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-10T08:49:24.032550'
+  completed_at: '2026-07-10T09:07:11.175860'
+orchestration:
+  parallel_groups:
+  - - TASK-OBS-4899
+    - TASK-OBS-F3F5
+  - - TASK-OBS-9F43
+    - TASK-OBS-80FE
+  - - TASK-OBS-C440
+  - - TASK-OBS-396E
+  estimated_duration_minutes: 240
+  recommended_parallel: 2
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-10T06:36:31.854339'
+  completed_at: '2026-07-10T09:07:18.380717'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
+  total_turns: 7
+  tasks_completed: 6
+  tasks_failed: 0
+  current_wave: 4
+  completed_waves:
+  - 1
+  - 2
+  - 3
+  - 4
+  last_updated: '2026-07-10T09:07:18.378233'
+  archived_at: null
+  archived_to: null
