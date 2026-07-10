@@ -27,8 +27,6 @@ from guardkit.orchestrator import (
     AutoBuildOrchestrator,
     OrchestrationResult,
 )
-from guardkit.orchestrator.instrumentation.backends import JSONLFileBackend
-from guardkit.orchestrator.instrumentation.emitter import CompositeBackend
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     FeatureOrchestrationError,
