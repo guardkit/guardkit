@@ -79,7 +79,7 @@ TOMBSTONES = [
     },
     {
         "name": "figma-to-react.md",
-        "retired_in": "PENDING",
+        "retired_in": "e421eff5",
         "reason": (
             "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
             "Option A, ACCEPTED Rich 2026-07-09): revives+executes "
@@ -91,7 +91,7 @@ TOMBSTONES = [
     },
     {
         "name": "zeplin-to-maui.md",
-        "retired_in": "PENDING",
+        "retired_in": "e421eff5",
         "reason": (
             "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
             "Option A, ACCEPTED Rich 2026-07-09): revives+executes "
@@ -101,7 +101,7 @@ TOMBSTONES = [
     },
     {
         "name": "mcp-zeplin.md",
-        "retired_in": "PENDING",
+        "retired_in": "e421eff5",
         "reason": (
             "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
             "Option A, ACCEPTED Rich 2026-07-09): documents a Zeplin MCP "
