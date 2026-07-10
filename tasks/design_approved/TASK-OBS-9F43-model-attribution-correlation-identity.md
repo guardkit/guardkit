@@ -1,20 +1,23 @@
 ---
-id: TASK-OBS-9F43
-title: Real model attribution and joinable correlation identity on instrumentation events
-task_type: feature
-priority: high
-feature_id: FEAT-OBSC
-wave: 2
-implementation_mode: task-work
-complexity: 4
-dependencies: [TASK-OBS-4899]
-status: backlog
-decision_of_record: D-OBS-1 (OBS-1) + WS4 Appendix A fields 4-5 (artifact identity, correlation ids)
-created: 2026-07-09
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
+complexity: 4
+created: 2026-07-09
+decision_of_record: D-OBS-1 (OBS-1) + WS4 Appendix A fields 4-5 (artifact identity,
+  correlation ids)
+dependencies:
+- TASK-OBS-4899
+feature_id: FEAT-OBSC
+id: TASK-OBS-9F43
+implementation_mode: task-work
+priority: high
+status: design_approved
+task_type: feature
+title: Real model attribution and joinable correlation identity on instrumentation
+  events
+wave: 2
 ---
 
 # TASK-OBS-9F43: Real model attribution and joinable correlation identity on instrumentation events

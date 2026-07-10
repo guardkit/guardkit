@@ -1,16 +1,16 @@
 ---
-id: TASK-OBS-80FE
-title: Archive run artifacts before worktree prune, with a stated durable home
-task_type: feature
-priority: high
-feature_id: FEAT-OBSC
-wave: 2
-implementation_mode: task-work
 complexity: 5
-dependencies: []
-status: backlog
-decision_of_record: D-OBS-1 (OBS-2) + D-OBS-4 (NAS home) + L12 rider (baseline.json)
 created: 2026-07-09
+decision_of_record: D-OBS-1 (OBS-2) + D-OBS-4 (NAS home) + L12 rider (baseline.json)
+dependencies: []
+feature_id: FEAT-OBSC
+id: TASK-OBS-80FE
+implementation_mode: task-work
+priority: high
+status: design_approved
+task_type: feature
+title: Archive run artifacts before worktree prune, with a stated durable home
+wave: 2
 ---
 
 # TASK-OBS-80FE: Archive run artifacts before worktree prune, with a stated durable home

@@ -379,6 +379,119 @@ Emitted for each Graphiti knowledge graph query.
 
 ---
 
+## Artifact Archival and Durable Storage
+
+### Local Archive
+
+All AutoBuild run artifacts are automatically archived to a durable location outside the repository working tree **before** worktree cleanup. This ensures artifacts survive:
+- `git worktree remove --force`
+- `git clean -fdx`
+- Repository deletion
+- Worktree prune operations
+
+**Default archive location:**
+```
+~/.guardkit/archive/<repo-name>/<feature-or-task-id>/
+```
+
+**Custom archive root:**
+Set the `GUARDKIT_ARCHIVE_ROOT` environment variable:
+```bash
+export GUARDKIT_ARCHIVE_ROOT=/path/to/custom/archive
+guardkit autobuild feature FEAT-ABC
+```
+
+**What gets archived:**
+- All task directories: `.guardkit/autobuild/<task_id>/`
+  - `player_turn_N.json` - Player implementation reports
+  - `coach_turn_N.json` - Coach validation reports  
+  - `task_work_results.json` - Task execution results
+  - `design_results.json` - Design phase outputs
+  - `specialist_results.json` - Test orchestrator / code reviewer results
+  - `sdk_debug/turn_N/` - SDK debug artifacts
+  - `_rollback_archive/` - Checkpoint rollback history
+  - `state_transitions.json` - Task state transitions
+- Feature-level files:
+  - `baseline.json` - Wave-0 baseline probe output (L12)
+  - `events.jsonl` - Full event stream
+- Both feature-level and task-mode `events.jsonl` files
+
+**Archive timing:**
+- **Primary (cleanup hook):** Archives at worktree removal (D-OBS-1 decision)
+- **Incremental (task finalize):** Archives after each task completes
+  - Crash between finalize and cleanup loses at most the in-flight task
+  - "Belt and braces" redundancy
+
+**Important:** The local archive root (`~/.guardkit/archive/`) is **one copy on one machine** until the NAS rsync runs (see below). It is gitignored local disk storage, not the final durable home.
+
+### NAS Durable Home (D-OBS-4)
+
+The archive root is node-local (self-contained agents rule). For multi-machine durable storage, rsync archived runs to the NAS after completion.
+
+**NAS destination:**
+```
+whitestocks:~/factory-corpora/<feature-or-task-id>/
+```
+
+**NAS user home:** `/var/services/homes/RichardWoollcott/`  
+(Regular users cannot mkdir at the `/volume1` root)
+
+**rsync command:**
+```bash
+# After a feature run completes
+rsync -avz ~/.guardkit/archive/<repo-name>/<feature-id>/ \
+  whitestocks:~/factory-corpora/<feature-id>/
+
+# For task-mode runs
+rsync -avz ~/.guardkit/archive/<repo-name>/<task-id>/ \
+  whitestocks:~/factory-corpora/<task-id>/
+```
+
+**Recommended cadence:**
+- After each feature completion (via `/feature-complete`)
+- Daily for long-running feature development
+- Before machine shutdown or cleanup
+
+**Automation option:**
+Add to your shell profile or cron:
+```bash
+# ~/.bashrc or ~/.zshrc
+alias guardkit-archive-sync='rsync -avz ~/.guardkit/archive/ whitestocks:~/factory-corpora/'
+
+# Run after each feature
+guardkit autobuild feature FEAT-ABC && guardkit-archive-sync
+```
+
+### Verifying Archive Integrity
+
+```bash
+# Check local archive exists
+ls -lh ~/.guardkit/archive/<repo-name>/<feature-id>/
+
+# Count archived turn files
+find ~/.guardkit/archive/<repo-name>/<feature-id>/ -name "*turn_*.json" | wc -l
+
+# Verify baseline.json is present (AC-3)
+ls ~/.guardkit/archive/<repo-name>/<feature-id>/baseline.json
+
+# Check NAS copy
+ssh whitestocks "ls -lh ~/factory-corpora/<feature-id>/"
+```
+
+### Archive Failure Handling
+
+Archive operations are **fail-open** (AC-4):
+- Archive failure logs a WARNING with lost paths
+- Archive failure does NOT block worktree cleanup
+- An absent archive is surfaced, never silent
+
+Check logs for warnings:
+```bash
+grep "Failed to archive" <autobuild-log-file>
+```
+
+---
+
 ## How to Use
 
 ### Viewing Events
