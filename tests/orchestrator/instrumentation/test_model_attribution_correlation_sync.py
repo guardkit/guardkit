@@ -103,9 +103,14 @@ class TestModelAttribution:
 class TestRunIDCorrelation:
     """Test single run_id minting and threading."""
 
-    def test_orchestrator_mints_run_id_on_init(self):
+    def test_orchestrator_mints_run_id_on_init(self, monkeypatch):
         """Orchestrator mints run_id once during initialization."""
         from pathlib import Path
+        from unittest.mock import Mock
+
+        # Mock WorktreeManager to avoid git dependency
+        mock_manager = Mock()
+        monkeypatch.setattr("guardkit.orchestrator.autobuild.WorktreeManager", lambda *args, **kwargs: mock_manager)
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path("/tmp"),
