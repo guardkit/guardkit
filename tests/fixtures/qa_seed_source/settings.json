@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {},
+  "layer_mappings": {
+    "domain": {"name": "Domain", "directory": "src/domain", "file_patterns": ["*.py"]},
+    "service": {"name": "Application", "directory": "src/service", "file_patterns": ["*.py"]}
+  }
+}

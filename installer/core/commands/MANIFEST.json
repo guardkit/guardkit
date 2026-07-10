@@ -70,8 +70,8 @@
       "source_commit": "1b89804d"
     },
     "task-complete.md": {
-      "sha256": "7c795d699961020b12eae884bdf99718a060f772cb17cc76f9b7bb69e1c87a64",
-      "source_commit": "1b89804d"
+      "sha256": "d3bd3e214f2562085dbf521cea76482734fa6ba1b4f427618075af7e9e8e3188",
+      "source_commit": "51151e1e"
     },
     "task-create.md": {
       "sha256": "10fed07e5fac8606cb04921577ddabaa8fcd8fc86bc684ce4a2fdb413782d13a",
@@ -91,26 +91,26 @@
     },
     "task-work-flags-ext.md": {
       "sha256": "882348b970c2aee5540b616b705126fc9bb0d7fad9d8b5d52afc07546ad23f2e",
-      "source_commit": "unknown"
+      "source_commit": "1fd40769"
     },
     "task-work-phases-build-ext.md": {
-      "sha256": "a97151d2b00dd69326c8cf0699e8ba1db34acfa008d48b0bd9f78524ff299de6",
-      "source_commit": "unknown"
+      "sha256": "aaa58a0350f660a141c02cd0c33ae64dfd5c74f7f40fe983630c4ea8a02b3a52",
+      "source_commit": "51151e1e"
     },
     "task-work-phases-plan-ext.md": {
-      "sha256": "a6daec91ac2d6af346e27b976da2a804b8186bd7f8a1c26db47308b9cfafbd6b",
-      "source_commit": "unknown"
+      "sha256": "5b81bd1713f43f9b575449f2b046d95bcf8b51c98f4f65dcb2707d40beab7adc",
+      "source_commit": "51151e1e"
     },
     "task-work-reference-ext.md": {
       "sha256": "a64202166edb1b67be1259e78052fd1cbd50f054fa52a4b30fef51dacc3c8827",
-      "source_commit": "unknown"
+      "source_commit": "1fd40769"
     },
     "task-work.md": {
       "sha256": "e78150d2a8bd3ba745b76bf3759702893c9185e2fc7aa995b566dacdcd107ec8",
-      "source_commit": "1b89804d"
+      "source_commit": "1fd40769"
     },
     "template-create-ext.md": {
-      "sha256": "adf3904ecc7dfb728312ce200825b7d9486758b1d98af49806d75230455ebf68",
+      "sha256": "917882c41a26ea0ac252b6219e05bda4c4f5281e9203b8c04fbfa3788bd84e3b",
       "source_commit": "b1b8cc69"
     },
     "template-create-qa.md": {
@@ -118,7 +118,7 @@
       "source_commit": "1b89804d"
     },
     "template-create.md": {
-      "sha256": "e45da6d8526eccfe4f438dda039fcbc3693e24b9cc7dafce6c233d7d16271d7a",
+      "sha256": "faab27635d8ba6c355eb438ce7d911c9ea6ffa605f59ae96b9a059105fbc87ba",
       "source_commit": "b1b8cc69"
     },
     "template-init.md": {
