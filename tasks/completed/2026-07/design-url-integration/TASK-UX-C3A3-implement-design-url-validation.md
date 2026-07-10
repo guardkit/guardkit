@@ -1,9 +1,9 @@
 ---
 id: TASK-UX-C3A3
 title: Implement design URL validation
-status: backlog
+status: completed
 created: 2025-11-11T10:35:00Z
-updated: 2025-11-11T10:35:00Z
+updated: 2026-07-10T00:00:00Z
 priority: high
 tags: [ux-integration, validation]
 complexity: 0
@@ -188,3 +188,15 @@ After completing this task:
 ## Test Execution Log
 
 _Automatically populated by /task-work_
+
+
+## Outcome (2026-07-10 — CLOSED, superseded)
+
+Closed to `completed/` as part of the design-tool trio retirement
+(`docs/decisions/DEC-design-tool-trio-retirement.md`; DF-018 §2.4 Option A, ACCEPTED
+Rich 2026-07-09). The migration's *from*-side — the stack-specific `/figma-to-react`,
+`/zeplin-to-maui`, `/mcp-zeplin` commands — was **retired** (deleted + tombstoned) that day.
+The technology-agnostic design capability the folder planned toward shipped separately at the
+orchestrator layer (`guardkit/orchestrator/mcp_design_extractor.py` + `guardkit/design/`), not
+via these 2025-11-11 command-integration tasks. This task is therefore **superseded/obsolete**,
+not individually delivered — closed for tracker hygiene (WS3-S8a declared-vs-inferred divergence).

@@ -20,9 +20,10 @@ Users need comprehensive reference documentation for all GuardKit commands, thei
 ### 2. Review Workflow Commands
 - `/task-review`
 
-### 3. Design-to-Code Commands
-- `/figma-to-react`
-- `/zeplin-to-maui`
+### 3. Design-to-Code
+- Unified `design_url` workflow: `/task-create "Component" design:<url>` → `/task-work`
+  (the stack-specific `/figma-to-react` + `/zeplin-to-maui` commands were retired 2026-07-10,
+  DEC-design-tool-trio-retirement)
 
 ### 4. Template Management Commands
 - `/template-create`

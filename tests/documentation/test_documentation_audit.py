@@ -326,8 +326,6 @@ class DocumentationValidator:
             "task-work",
             "task-complete",
             "task-status",
-            "figma-to-react",
-            "zeplin-to-maui",
             "debug",
         }
 
