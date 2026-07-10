@@ -121,3 +121,33 @@ with prune without it; archive home per D-OBS-4), and model attribution
 Fixture repos for allowlist identity; synthetic oversized streams for rotation;
 `git check-ignore` assertions for the guarantee; one end-to-end joining capture →
 archive. Every positive AC asserts presence of the artifact, never absence of error.
+## Post-completion note — unrecognized-env semantics pinned (2026-07-10)
+
+During FEAT-OBSC fence closure, an under-specified corner of the D-OBS-2 flip was
+decided and pinned: how `GUARDKIT_AUTOBUILD_PRESERVE_DEBUG` treats an **explicit
+but unrecognized** value (e.g. a typo like `enabled` or `tru`).
+
+**Prior behaviour (defect):** an explicit-but-unrecognized value silently fell
+through to the allowlist path — behaving identically to *unset*, so it would
+*enable* capture in an allowlisted repo, with no warning. This conflated an
+uninterpretable explicit signal with an absent one.
+
+**Decision — Option B (fail-safe OFF + warn once).** An explicit-but-unrecognized
+value now resolves to **OFF** and emits a one-time WARNING; it never rides the
+default-on allowlist path. Rationale, grounded in this repo's low-fidelity-oracle
+meta-frame (`absence-of-failure-is-not-success` and siblings): *absent* and
+*explicit-but-uninterpretable* are different dispositions and must not collapse
+into one. Absent → allowlist decides; explicit-garbage → OFF + loud. This is also
+the conservative choice for a feature that writes prompt payloads to disk. The
+rejected Option A (keep fall-through + warn) would have preserved the silent
+default-on in allowlisted repos on a typo.
+
+- Empty/whitespace-only (`""`) remains equivalent to *unset* (defers to allowlist).
+- Recognized truthy/falsy unchanged.
+- Implemented in `sdk_debug._explicit_env_verdict()` (shared by
+  `preservation_enabled()` / `preservation_enabled_for_repo()`); warn-once latch
+  `_unrecognized_env_warned`.
+- Tests: `test_preservation_unrecognized_env_is_off_even_in_allowlisted_repo`,
+  `test_preservation_unrecognized_env_warns_only_once`,
+  `test_preservation_empty_env_defers_to_allowlist`, plus the reworked
+  allowlist/explicit-falsy cases in `tests/orchestrator/test_sdk_debug_preservation.py`.

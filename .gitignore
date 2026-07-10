@@ -163,6 +163,9 @@ debug-*.md
 .claude/state/*.lock
 /.guardkit-git.lock
 
+# Slash-command capture-hook runtime state (machine-local; per-session JSON + log)
+.claude/hooks/.state/
+
 # Archived documents (keep structure but ignore temp/session files in root)
 /root-files-inventory.txt
 /categorized-inventory.txt

@@ -4,7 +4,10 @@ Verifies the diagnostic preservation of rendered Player/Coach prompts and
 SDK message streams under sdk_debug/turn_<n>/[coach/[test_run/]].
 
 The tests cover:
-  * Default-off behaviour (env var unset → no directory)
+  * Default-on-by-allowlist behaviour (D-OBS-2 / TASK-OBS-396E): env var unset →
+    ON in allowlisted repos (guards permitting), OFF elsewhere
+  * Explicit env override: truthy → ON, falsy → OFF, unrecognized → fail-safe OFF
+    + warn once (unrecognized-env decision 2026-07-10, Option B)
   * On behaviour (env var set → triple of files written)
   * Byte-equality of preserved prompt vs the prompt the SDK saw
   * JSONL message stream is one parseable JSON per line
@@ -30,8 +33,22 @@ from guardkit.orchestrator import sdk_debug
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    """Each test starts with the preservation env var unset."""
+    """Each test starts with the preservation env var unset and the warn latch reset."""
     monkeypatch.delenv(sdk_debug.ENV_VAR, raising=False)
+    # Reset the one-time unrecognized-env warning latch (TASK-OBS-396E).
+    monkeypatch.setattr(sdk_debug, "_unrecognized_env_warned", False, raising=False)
+
+
+@pytest.fixture
+def _non_allowlisted_repo(monkeypatch):
+    """Force repo detection to a non-allowlisted (client-style) repo.
+
+    Under the D-OBS-2 default-on-by-allowlist contract, preservation defaults
+    ON in allowlisted repos (guardkit/forge/study-tutor/fleet-*). These tests
+    run inside a checkout named ``guardkit``, so they must pin the repo name to
+    something non-allowlisted to exercise the default-OFF path.
+    """
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "some-client-repo")
 
 
 @dataclass
@@ -65,8 +82,27 @@ class FakeAssistantMessage:
 # ---------------------------------------------------------------------------
 
 
-def test_preservation_disabled_by_default():
+def test_preservation_disabled_outside_allowlisted_repos(_non_allowlisted_repo):
+    """D-OBS-2: with the env var unset, a non-allowlisted repo defaults OFF."""
     assert sdk_debug.preservation_enabled() is False
+
+
+def test_preservation_enabled_by_default_in_allowlisted_repo(monkeypatch, tmp_path):
+    """D-OBS-2: with the env var unset, an allowlisted repo defaults ON once guards pass."""
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "guardkit")
+    # Neutralise the structural flip-gates so the test asserts the allowlist path,
+    # not the ambient git/gitignore state of the checkout it happens to run in.
+    monkeypatch.setattr(sdk_debug, "_validate_rotation_caps", lambda: True)
+    monkeypatch.setattr(sdk_debug, "_check_gitignore_coverage", lambda *_: True)
+    assert sdk_debug.preservation_enabled_for_repo(tmp_path) is True
+
+
+def test_preservation_default_on_gated_by_structural_guards(monkeypatch, tmp_path):
+    """An allowlisted repo still defaults OFF if a flip-gate fails (fail-safe)."""
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "guardkit")
+    monkeypatch.setattr(sdk_debug, "_validate_rotation_caps", lambda: True)
+    monkeypatch.setattr(sdk_debug, "_check_gitignore_coverage", lambda *_: False)
+    assert sdk_debug.preservation_enabled_for_repo(tmp_path) is False
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "Y", "on"])
@@ -75,10 +111,55 @@ def test_preservation_enabled_truthy_values(monkeypatch, value):
     assert sdk_debug.preservation_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "anything-else"])
-def test_preservation_enabled_falsy_values(monkeypatch, value):
+@pytest.mark.parametrize("value", ["0", "false", "no", "off"])
+def test_preservation_enabled_explicit_falsy_values(monkeypatch, value):
+    """Explicit falsy values force OFF regardless of repo allowlist."""
+    # Even in an allowlisted repo with passing guards, explicit-off wins.
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "guardkit")
+    monkeypatch.setattr(sdk_debug, "_validate_rotation_caps", lambda: True)
+    monkeypatch.setattr(sdk_debug, "_check_gitignore_coverage", lambda *_: True)
     monkeypatch.setenv(sdk_debug.ENV_VAR, value)
     assert sdk_debug.preservation_enabled() is False
+
+
+@pytest.mark.parametrize("value", ["", "  "])
+def test_preservation_empty_env_defers_to_allowlist(monkeypatch, value):
+    """An exported-but-empty env var is equivalent to unset (defers to allowlist)."""
+    # Non-allowlisted → OFF.
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "some-client-repo")
+    monkeypatch.setenv(sdk_debug.ENV_VAR, value)
+    assert sdk_debug.preservation_enabled() is False
+
+
+def test_preservation_unrecognized_env_is_off_even_in_allowlisted_repo(
+    monkeypatch, tmp_path, caplog
+):
+    """TASK-OBS-396E decision (2026-07-10, Option B): an explicit-but-unrecognized
+    value is fail-safe OFF and warns — it must NOT silently ride the default-on
+    allowlist path the way an *absent* value does."""
+    # Allowlisted repo with passing guards: if unrecognized fell through to the
+    # allowlist (Option A), this would be True. Option B makes it False.
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "guardkit")
+    monkeypatch.setattr(sdk_debug, "_validate_rotation_caps", lambda: True)
+    monkeypatch.setattr(sdk_debug, "_check_gitignore_coverage", lambda *_: True)
+    monkeypatch.setenv(sdk_debug.ENV_VAR, "enabled")  # a plausible typo
+
+    with caplog.at_level("WARNING"):
+        assert sdk_debug.preservation_enabled_for_repo(tmp_path) is False
+    assert any("unrecognized" in rec.message.lower() for rec in caplog.records)
+
+
+def test_preservation_unrecognized_env_warns_only_once(monkeypatch, caplog):
+    """The fail-safe warning is latched to fire once, not on every hot-path call."""
+    monkeypatch.setattr(sdk_debug, "_get_repo_name", lambda _root: "some-client-repo")
+    monkeypatch.setenv(sdk_debug.ENV_VAR, "banana")
+
+    with caplog.at_level("WARNING"):
+        assert sdk_debug.preservation_enabled() is False
+        assert sdk_debug.preservation_enabled() is False
+        assert sdk_debug.preservation_enabled() is False
+    warnings = [r for r in caplog.records if "unrecognized" in r.message.lower()]
+    assert len(warnings) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +196,7 @@ def test_compute_debug_dir_unknown_role_falls_back_to_player(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_preserve_prompt_default_off_writes_nothing(tmp_path):
+def test_preserve_prompt_default_off_writes_nothing(tmp_path, _non_allowlisted_repo):
     result = sdk_debug.preserve_prompt(
         workspace_root=tmp_path,
         task_id="TASK-X",
@@ -399,8 +480,8 @@ def test_event_to_jsonable_none_event():
     assert sdk_debug._event_to_jsonable(None) == {"type": "None"}
 
 
-def test_default_off_no_sdk_debug_directory(tmp_path):
-    """With the env var unset, no preservation directory is produced."""
+def test_default_off_no_sdk_debug_directory(tmp_path, _non_allowlisted_repo):
+    """With the env var unset in a non-allowlisted repo, no preservation dir is produced."""
     # Even when callers go through the full helper, nothing is written.
     sdk_debug.preserve_prompt(tmp_path, "TASK-X", 1, "player", "p", FakeOptions())
     sdk_debug.preserve_event(None, FakeAssistantMessage())
