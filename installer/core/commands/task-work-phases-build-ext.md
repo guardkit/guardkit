@@ -732,6 +732,16 @@ Reason: Unable to achieve passing tests after 3 fix attempts
 The trigger matrix and tri-state routing are normative in the core
 (`task-work.md` § Phase 6). This section carries the display + rollout detail.
 
+**Deterministic decision reference.** The tri-state + carve-out algorithm is
+encoded — pure and unit-tested — in
+`installer/core/commands/lib/task_finalize.py` (`decide_finalize`): the
+reached-IN_REVIEW gate → hard carve-outs (autobuild / operator_handoff → SKIP) →
+`--complete` opt-in → RED → `--pause` (AMBER) → audit-clean+review-clean (GREEN /
+else AMBER). On GREEN, invoke `guardkit task complete {task_id}` (the shared
+atomic routine); the CLI itself re-checks the carve-out via
+`task_finalize.carveout_refusal` and fails closed through `qa.enforce_tier1`, so
+an autobuild-mode completion is refused even if reached by mistake.
+
 ### Verify-then-record banner (Green path)
 
 ```

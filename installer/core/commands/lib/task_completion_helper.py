@@ -16,16 +16,36 @@ Created: 2025-11-27
 
 import os
 import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 from datetime import datetime
 import logging
 
-from git_state_helper import get_git_root
+# Context-robust import: the CLI (`guardkit task complete`) runs in the installed
+# guardkit context where the repo root is on sys.path, so the package path
+# resolves; the legacy bin-script context puts commands/lib/ directly on sys.path,
+# where the bare name resolves. Supporting BOTH makes this the genuinely shared
+# routine (demotion scope §2) rather than one importable from a single context.
+try:  # installed-guardkit / CLI context
+    from installer.core.commands.lib.git_state_helper import get_git_root
+except ImportError:  # bin-script context (commands/lib on sys.path)
+    from git_state_helper import get_git_root
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class CompletionRefused(Exception):
+    """A pre-completion gate refused to finalize the task.
+
+    Raised by :func:`complete_task` for a carve-out (autobuild / operator_handoff)
+    or a fail-closed ``qa.enforce_tier1`` refusal. The task file is left UNTOUCHED
+    (no flip, no move) — a refusal must never half-complete a task.
+    """
 
 
 def find_task_file(task_id_or_path: str) -> Optional[Path]:
@@ -246,51 +266,303 @@ def move_task_to_completed(
     return new_task_path, completed_dir
 
 
+def _repo_root() -> Path:
+    """Git root, or cwd fallback (mirrors the module's other lookups)."""
+    try:
+        return get_git_root()
+    except Exception:
+        return Path.cwd()
+
+
+def _apply_completion_frontmatter(
+    content: str,
+    *,
+    completed_timestamp: str,
+    completed_location: Optional[str] = None,
+) -> str:
+    """Return ``content`` with the completion frontmatter applied (PURE — no I/O).
+
+    Flips ``status`` to ``completed`` and stamps ``completed`` / ``updated``
+    (and ``completed_location`` when given). Operates on a string so the caller
+    can write the flipped content to the *destination* and never to the source
+    location — the load-bearing half of :func:`atomic_flip_and_move`'s invariant.
+    """
+    # Context-robust import (see module header rationale).
+    try:
+        from installer.core.commands.lib.task_utils import (
+            parse_task_frontmatter,
+            write_task_frontmatter,
+        )
+    except ImportError:
+        from task_utils import parse_task_frontmatter, write_task_frontmatter
+
+    frontmatter = parse_task_frontmatter(content)
+    parts = content.split("---", 2)
+    body = parts[2] if len(parts) >= 3 else ""
+
+    frontmatter["status"] = "completed"
+    frontmatter["completed"] = completed_timestamp
+    if completed_location is not None:
+        frontmatter["completed_location"] = completed_location
+    frontmatter["updated"] = completed_timestamp
+    return write_task_frontmatter(frontmatter, body)
+
+
+def atomic_flip_and_move(
+    task_path: Path,
+    *,
+    month_subfolder: bool = True,
+) -> Tuple[Path, Path]:
+    """Atomically flip ``status: completed`` AND move the file to ``tasks/completed/``.
+
+    **This is the WS3-S8 deliverable** (one operation, so "completed but sitting
+    in backlog" is unrepresentable — demotion scope §2 step 2).
+
+    Mechanism — the flip is baked into the *destination* content, and a single
+    ``os.replace`` of a temp file (written in the destination dir, same
+    filesystem) is the commit point; the source is unlinked LAST:
+
+    - crash BEFORE the ``os.replace`` → source untouched, still its original
+      status in its original directory (task simply not completed — retryable);
+    - crash AFTER the ``os.replace`` → the destination is the authoritative
+      completed copy; at worst the source lingers as a stale duplicate whose
+      status is still the ORIGINAL (never ``completed``).
+
+    So at no observable instant does a file carrying ``status: completed`` sit
+    under a non-completed directory. ``status: completed`` is never written to
+    the source path — the invariant the atomicity test pins.
+
+    Returns ``(new_task_path, completed_dir)``, matching
+    :func:`move_task_to_completed`.
+    """
+    git_root = _repo_root()
+    if month_subfolder:
+        completed_dir = git_root / "tasks" / "completed" / datetime.now().strftime("%Y-%m")
+    else:
+        completed_dir = git_root / "tasks" / "completed"
+    completed_dir.mkdir(parents=True, exist_ok=True)
+    new_task_path = completed_dir / task_path.name
+
+    try:
+        completed_location = str(completed_dir.relative_to(git_root))
+    except ValueError:
+        completed_location = str(completed_dir)
+
+    content = task_path.read_text(encoding="utf-8")
+    completed_timestamp = datetime.utcnow().isoformat() + "Z"
+    flipped = _apply_completion_frontmatter(
+        content,
+        completed_timestamp=completed_timestamp,
+        completed_location=completed_location,
+    )
+
+    # Write the flipped content to a temp file IN THE DESTINATION DIR (same
+    # filesystem as the final path → os.replace is a true atomic rename), fsync,
+    # then atomically replace into place. On any failure the source is untouched.
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(completed_dir), prefix=f".{task_path.stem}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(flipped)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, str(new_task_path))  # ← atomic commit point
+    except BaseException:
+        # Commit did not happen: remove the temp, leave the source untouched so
+        # the task is simply "not completed" (never a half-state).
+        try:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+    # Commit succeeded — destination is authoritative. Remove the (original,
+    # NOT-completed) source last. If this fails the completion still SUCCEEDED;
+    # the leftover source's status is still the original, so the
+    # "completed-but-in-backlog" invariant holds regardless.
+    if task_path.resolve() != new_task_path.resolve():
+        try:
+            task_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning(
+                "⚠️  Completed copy written to %s but could not remove source %s "
+                "(%s) — the completed copy is authoritative; source is a stale "
+                "duplicate (its status is unchanged, so no completed-in-backlog state)",
+                new_task_path,
+                task_path,
+                exc,
+            )
+
+    logger.info("✅ Atomic flip+move: %s → %s (status: completed)", task_path, new_task_path)
+    return new_task_path, completed_dir
+
+
+def _enforce_tier1_completion(
+    repo_root: Path,
+    task_id: str,
+    *,
+    test_output: Optional[str] = None,
+) -> Optional[str]:
+    """Fail-closed ``qa.enforce_tier1`` completion gate (demotion scope §3.3).
+
+    Returns ``None`` when enforcement is OFF or passes; returns a refusal reason
+    string when the flag is ON and a check fails. The single completion-time call
+    site for WS2-B2 so BOTH entry points (task-work Phase 6 + the CLI) inherit it.
+
+    When ON, runs the pinned-pass-bar precondition, and — if a completion-suite
+    ``test_output`` is supplied — the known-failure ledger diff. An ABSENT test
+    signal never blocks (``absence-of-failure-is-not-success``); a malformed
+    ledger fails closed. Enforcement is opt-in, so a repo that turns it on always
+    has ``guardkit`` importable; if the checker cannot be imported the gate is
+    treated as OFF (there is nothing to enforce against).
+    """
+    try:
+        from guardkit.qa.enforcement import (
+            is_tier1_enforced,
+            check_pass_bar_precondition,
+            parse_pytest_outcome,
+            diff_failures_against_ledger,
+        )
+    except ImportError:
+        logger.debug("qa.enforcement not importable — tier-1 completion gate treated as OFF")
+        return None
+
+    if not is_tier1_enforced(repo_root):
+        return None
+
+    precondition = check_pass_bar_precondition(repo_root, task_id)
+    if not precondition.passed:
+        return f"qa.enforce_tier1 pass-bar precondition failed: {precondition.detail}"
+
+    if test_output is not None:
+        outcome = parse_pytest_outcome(test_output)
+        sweep = diff_failures_against_ledger(
+            outcome, repo_root / "qa" / "known-failures.yaml"
+        )
+        # "pass" and "unverified" (absent signal) proceed; "fail"/"error" refuse.
+        if sweep.status in ("fail", "error"):
+            return f"qa.enforce_tier1 known-failure ledger sweep failed: {sweep.detail}"
+
+    return None
+
+
+def _capture_outcome_best_effort(new_task_path: Path, *, success: bool = True) -> str:
+    """Best-effort fleet-memory capture-outcome (the flywheel's ONLY write path).
+
+    Shells the SAME acquisition path the ``guardkit memory capture-outcome`` CLI
+    uses (cli-wrapper-shares-client-acquisition rule) as a subprocess so the CLI
+    completion path — which has no AI orchestrator to run the markdown's capture
+    step — still enriches fleet-memory. Silent-fail class → LOUD log line
+    (demotion scope §2.5). Returns a short status string for the banner.
+    """
+    cmd = [
+        sys.executable,
+        "-m",
+        "guardkit.cli.main",
+        "memory",
+        "capture-outcome",
+        "--from-task-file",
+        str(new_task_path),
+        "--success" if success else "--failure",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("⚠️  fleet-memory capture-outcome could not run (%s) — outcome NOT captured", exc)
+        return f"skipped ({exc})"
+    if proc.returncode != 0:
+        logger.warning(
+            "⚠️  fleet-memory capture-outcome exited %s — outcome NOT captured; stderr: %s",
+            proc.returncode,
+            (proc.stderr or "").strip()[:400],
+        )
+        return f"failed (exit {proc.returncode})"
+    logger.info("✅ fleet-memory capture-outcome recorded for %s", new_task_path.name)
+    return "recorded"
+
+
+def _commit_git_state_best_effort(task_id: str) -> str:
+    """Best-effort conductor git-state commit (never blocks completion)."""
+    try:
+        from installer.core.commands.lib.git_state_helper import commit_state_files
+    except ImportError:
+        from git_state_helper import commit_state_files
+    try:
+        commit_state_files(task_id=task_id, message=f"Complete {task_id} and update state")
+        logger.info("✅ Conductor git-state committed for %s", task_id)
+        return "committed"
+    except Exception as exc:  # not in a git repo / git unavailable / nothing to commit
+        logger.warning("⚠️  Could not commit conductor git-state for %s (%s) — non-critical", task_id, exc)
+        return f"skipped ({exc})"
+
+
 def complete_task(
     task_id_or_path: str,
     update_metadata: bool = True,
-    archive_documents: bool = True
+    archive_documents: bool = True,
+    *,
+    refuse_autobuild: bool = False,
+    refuse_operator_handoff: bool = False,
+    enforce_tier1: bool = True,
+    test_output: Optional[str] = None,
+    capture_outcome: bool = False,
+    commit_git_state: bool = False,
+    repo_root: Optional[Path] = None,
 ) -> dict:
     """
-    Complete task with full workflow (Conductor-aware).
+    Complete task with the full shared workflow (Conductor-aware).
 
-    Performs the following steps:
-    1. Find task file (using Conductor-aware lookup)
-    2. Move task to completed directory
-    3. Update task metadata (status, completed timestamp)
-    4. Archive related documents (plans, summaries)
-    5. Return completion summary
+    THE shared atomic completion routine (demotion scope §2), called from both
+    entry points: task-work Phase 6 Finalize and the ``guardkit task complete``
+    CLI. Carries, in order:
+
+    1. Find task file (Conductor-aware, location-agnostic);
+    2. Pre-completion carve-out gates + fail-closed ``qa.enforce_tier1``;
+    3. ATOMIC status-flip + file-move (:func:`atomic_flip_and_move`) — one
+       operation, so "completed but sitting in backlog" is unrepresentable;
+    4. Related-file archival;
+    5. fleet-memory ``capture-outcome`` (best-effort, loud on failure);
+    6. Conductor git-state commit (best-effort).
 
     Args:
-        task_id_or_path: Task ID or full path
-        update_metadata: Update task frontmatter (default: True)
-        archive_documents: Archive plans and summaries (default: True)
+        task_id_or_path: Task ID or full path.
+        update_metadata: Flip ``status`` to ``completed`` during the move
+            (default True). When True the move is atomic (flip+move as one
+            commit); when False the file is moved with its status unchanged.
+        archive_documents: Archive plans and summaries (default True).
+        refuse_autobuild: Raise :class:`CompletionRefused` — the guard-metric
+            carve-out (never auto-complete an unmerged autobuild branch; the
+            autobuild lane finalizes via feature-complete post-merge).
+        refuse_operator_handoff: Raise :class:`CompletionRefused` when the task
+            is ``task_type: operator_handoff`` (Phase-6 carve-out; the CLI/manual
+            lane leaves this False so it CAN complete deferred operator_handoff).
+        enforce_tier1: Run the fail-closed ``qa.enforce_tier1`` completion gate
+            when the repo flag is on (default True; a no-op when the flag is off).
+        test_output: Optional completion-suite pytest text, fed to the tier-1
+            known-failure ledger diff. Absent → the ledger check is skipped.
+        capture_outcome: Run the fleet-memory ``capture-outcome`` write
+            (default False; the CLI/Phase-6 path passes True — it has no AI
+            orchestrator to run the markdown's capture step).
+        commit_git_state: Commit conductor state files (default False).
+        repo_root: Repo root for the enforcement gate (default: git root / cwd).
 
     Returns:
-        Dictionary with completion details:
-        - task_id: Task identifier
-        - old_path: Original task path
-        - new_path: New task path in completed/
-        - documents_archived: Number of documents archived
-        - completed_at: ISO timestamp
+        Dict with: task_id, old_path, new_path, completed_dir,
+        documents_archived, completed_at, status_flipped, task_type,
+        capture_status, git_state_status.
 
     Raises:
-        FileNotFoundError: If task not found
-
-    Examples:
-        >>> result = complete_task("TASK-001")
-        >>> print(result['new_path'])
-        /path/to/repo/tasks/completed/2025-11/TASK-001.md
-
-        >>> # Works with full path
-        >>> result = complete_task("/path/to/tasks/backlog/TASK-001.md")
-
-        >>> # Works in Conductor worktree
-        >>> result = complete_task("TASK-001")  # Resolves to main repo
+        FileNotFoundError: If task not found.
+        CompletionRefused: If a carve-out or the tier-1 gate refuses (the task
+            file is left UNTOUCHED — no flip, no move).
     """
-    from task_utils import update_task_frontmatter
+    repo_root = repo_root or _repo_root()
 
-    # 1. Find task file (Conductor-aware)
+    # 1. Find task file (Conductor-aware, location-agnostic — see find_task_file).
     logger.info(f"🔍 Finding task: {task_id_or_path}")
     task_path = find_task_file(task_id_or_path)
 
@@ -299,40 +571,73 @@ def complete_task(
     logger.info(f"📋 Task ID: {task_id}")
     logger.info(f"📁 Current path: {task_path}")
 
-    # 2. Move to completed directory
-    logger.info(f"🏁 Moving task to completed directory")
-    new_task_path, completed_dir = move_task_to_completed(task_path)
+    # Read task_type for the operator_handoff carve-out (before any mutation).
+    try:
+        from installer.core.commands.lib.task_utils import read_task_file
+    except ImportError:
+        from task_utils import read_task_file
+    try:
+        frontmatter, _ = read_task_file(task_path)
+        task_type = str(frontmatter.get("task_type", "") or "").strip().lower()
+    except Exception:
+        task_type = ""
 
-    # 3. Update metadata
-    documents_archived = 0
+    # 2. Pre-completion gates — REFUSE before touching the file (no half-state).
+    if refuse_autobuild:
+        raise CompletionRefused(
+            f"refusing to complete {task_id} in autobuild mode: feature-build merges "
+            f"BEFORE completion; the autobuild lane finalizes via feature-complete "
+            f"calling this routine post-merge (guard metric: no completion for an "
+            f"unmerged autobuild branch)"
+        )
+    if refuse_operator_handoff and task_type == "operator_handoff":
+        raise CompletionRefused(
+            f"refusing to auto-complete {task_id}: task_type is operator_handoff — "
+            f"those tasks never run task-work; their completion path is feature-complete"
+        )
+    if enforce_tier1:
+        refusal = _enforce_tier1_completion(repo_root, task_id, test_output=test_output)
+        if refusal:
+            raise CompletionRefused(f"refusing to complete {task_id}: {refusal}")
+
+    # 3. Atomic status-flip + move (the WS3-S8 deliverable).
     if update_metadata:
-        logger.info(f"📝 Updating task metadata")
-        try:
-            completed_timestamp = datetime.utcnow().isoformat() + 'Z'
-            update_task_frontmatter(
-                new_task_path,
-                {
-                    'status': 'completed',
-                    'completed': completed_timestamp
-                }
-            )
-            logger.info(f"✅ Updated status to 'completed'")
-        except Exception as e:
-            logger.warning(f"⚠️  Failed to update metadata: {e}")
+        logger.info(f"🏁 Atomic flip+move → tasks/completed/")
+        new_task_path, completed_dir = atomic_flip_and_move(task_path)
+        status_flipped = True
+    else:
+        logger.info(f"🏁 Moving task to completed directory (status unchanged)")
+        new_task_path, completed_dir = move_task_to_completed(task_path)
+        status_flipped = False
 
     # 4. Archive documents
+    documents_archived = 0
     if archive_documents:
         logger.info(f"📦 Archiving related documents")
         documents_archived = archive_task_documents(task_id, completed_dir)
 
-    # 5. Return summary
+    # 5. fleet-memory capture-outcome (best-effort, loud on failure).
+    capture_status = "not_requested"
+    if capture_outcome:
+        capture_status = _capture_outcome_best_effort(new_task_path, success=True)
+
+    # 6. Conductor git-state commit (best-effort).
+    git_state_status = "not_requested"
+    if commit_git_state:
+        git_state_status = _commit_git_state_best_effort(task_id)
+
+    # 7. Return summary
     result = {
         'task_id': task_id,
         'old_path': str(task_path),
         'new_path': str(new_task_path),
         'completed_dir': str(completed_dir),
         'documents_archived': documents_archived,
-        'completed_at': datetime.utcnow().isoformat() + 'Z'
+        'completed_at': datetime.utcnow().isoformat() + 'Z',
+        'status_flipped': status_flipped,
+        'task_type': task_type,
+        'capture_status': capture_status,
+        'git_state_status': git_state_status,
     }
 
     logger.info(f"")

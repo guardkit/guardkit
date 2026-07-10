@@ -1744,14 +1744,28 @@ Your choice [A/M/V/C]:
 
 #### Phase 2.9: Workflow Routing
 
-GuardKit's only supported workflow today is the standard end-to-end run:
-continue from Phase 2.8 straight into Phase 3. Earlier drafts of this
-spec described `--design-only` / `--implement-only` flags with their own
-save/load plumbing (`plan_persistence.save_plan` / `load_plan`,
-`execute_implementation_phases`, `StateValidationError`); those modules
-and flags were never fully wired and were removed in TASK-FIX-RWOP1.3.3.
-If you need to run design and implementation on different days, commit
-the plan file (`docs/state/{task_id}/implementation_plan.md`) and resume
-from a fresh `/task-work` invocation — Phase 2 re-loads the plan if it's
-present.
+GuardKit supports two workflows: the standard end-to-end run (continue from
+Phase 2.8 straight into Phase 3) and the **design-first split** — `--design-only`
+stops at the Phase 2.8 checkpoint and saves the approved plan to
+`docs/state/{task_id}/implementation_plan.md` with the task in DESIGN_APPROVED;
+`--implement-only` resumes from that saved plan at Phase 3. Both flags are
+normative in the core `## Available Flags` table and are exercised live above
+(the `--implement-only` clarification-skip branch) and by
+`feature-build.md`'s `implementation_mode: task-work` path.
+
+> **Reconciliation (task-complete demotion scope §4, Phase 0, 2026-07-10):** an
+> earlier draft here claimed these flags "were removed … only the standard
+> workflow is supported." That over-claimed: TASK-FIX-RWOP1.3.3 removed the old
+> *per-flag save/load modules* (`plan_persistence.save_plan` / `load_plan`,
+> `execute_implementation_phases`, `StateValidationError`), but the
+> `--design-only` / `--implement-only` flags themselves survive via the
+> DESIGN_APPROVED state + the committed plan file below — not those deleted
+> modules. The stale sentence contradicted this file's own `--implement-only`
+> handling, the core flag table (SSOT), CLAUDE.md's Design-First Workflow, and
+> feature-build.md:377; it is corrected here.
+
+To run design and implementation on different days, use `--design-only` then
+`--implement-only`, or commit the plan file
+(`docs/state/{task_id}/implementation_plan.md`) and resume from a fresh
+`/task-work` invocation — Phase 2 re-loads the plan if it's present.
 
