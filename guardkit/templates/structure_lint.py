@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 # ---------------------------------------------------------------------------
-# Tunables (DATA — no committed serving-window figure yet, so report-only)
+# Tunables (DATA)
 # ---------------------------------------------------------------------------
 
 # chars-per-token heuristic. The review measured the protocol slice at
@@ -51,9 +51,19 @@ from typing import Dict, List, Optional, Sequence
 _CHARS_PER_TOKEN = 4
 
 # Soft per-section reference used ONLY to decide which sections are worth
-# reporting. It is NOT a budget — no serving-window figure is committed (WS4),
-# so section-size findings stay INFO / report-only regardless of this value.
+# reporting. It is NOT a budget — the committed serving-window figure below
+# is the load-bearing gate.
 _SOFT_SECTION_TOKEN_REFERENCE = 4000
+
+# Committed serving-window figure per WS4 Amendment M3 (§Amendment A-B of
+# ai-transition/docs/ws4-learning-flywheel-scope-and-build-plan-2026-07-07.md).
+# **32K (32768 tokens) is the worst-case serving floor; a task-generating slice
+# must fit ≤ ~20k tokens against it; the 64K seat is headroom, not the gate.**
+# This figure is NOT derived from the actual seat size (64K) — do not "helpfully"
+# raise it to 64K. The 32K floor is the committed minimum for worst-case serving,
+# and the per-slice budget is ~20k (leaving room for fixed prompt components and
+# conversation history).
+COMMITTED_SERVING_WINDOW_TOKENS = 32768
 
 # A header is a "protocol section" if its normalized text contains any of these.
 _PROTOCOL_MARKERS = (
@@ -255,15 +265,15 @@ def _check_section_token_budgets(
     if cur_header is not None:
         sections.append((cur_header, cur_start, cur_chars))
 
-    # Report-only unless a serving-window figure is committed. None today (WS4
-    # has not landed the M3 amendment — the "32k" figure has circular
-    # provenance), so every finding here is INFO and never fails a build.
+    # Severity depends on whether a serving-window figure is provided. When
+    # provided (as of WS4 Amendment M3), findings are WARNING; without it,
+    # they remain INFO/report-only.
     reference = serving_window_tokens or _SOFT_SECTION_TOKEN_REFERENCE
     report_only = serving_window_tokens is None
     note = (
-        "report-only (no committed serving-window figure — WS4)"
+        "report-only (no committed serving-window figure)"
         if report_only
-        else f"serving-window budget {serving_window_tokens} tokens"
+        else f"committed serving-window floor {serving_window_tokens} tokens (WS4 Amendment M3)"
     )
 
     findings: List[StructureFinding] = []
@@ -274,8 +284,8 @@ def _check_section_token_budgets(
         findings.append(
             StructureFinding(
                 check="section-token-budget",
-                # Always INFO while report_only; a committed figure would make
-                # this a WARNING (a future WS4 wiring change, not this session).
+                # INFO when no figure provided; WARNING when committed figure is
+                # passed (as of TASK-OBS-F3F5, threads COMMITTED_SERVING_WINDOW_TOKENS).
                 severity=Severity.INFO if report_only else Severity.WARNING,
                 line=start,
                 anchor=header,
@@ -355,8 +365,9 @@ def lint_structure(
 ) -> List[StructureFinding]:
     """Run all four structure checks over a command-spec markdown ``text``.
 
-    ``serving_window_tokens`` is ``None`` until WS4 commits a serving-window
-    figure; while ``None`` the token-budget check is report-only (INFO).
+    ``serving_window_tokens`` controls the token-budget check severity: when
+    ``None``, findings are INFO/report-only; when provided (e.g.,
+    ``COMMITTED_SERVING_WINDOW_TOKENS``), findings are WARNING.
     """
     lines = text.splitlines()
     fences = _fence_flags(lines)

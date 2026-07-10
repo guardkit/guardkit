@@ -2160,6 +2160,7 @@ class AutoBuildOrchestrator:
                         model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                         coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                         evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                        emitter=self._emitter,  # TASK-OBS-4899
                     )
                 # TASK-FIX-OBS2: Attach progress logger to agent invoker
                 if self._progress_logger and self._agent_invoker:
@@ -2191,6 +2192,7 @@ class AutoBuildOrchestrator:
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                    emitter=self._emitter,  # TASK-OBS-4899
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
@@ -8238,6 +8240,7 @@ class AutoBuildOrchestrator:
                     model_name=self._model_name,  # TASK-FIX-MODELPLUMB
                     coach_model_name=self._coach_model_name,  # TASK-FIX-COACHBUDG01
                     evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01
+                    emitter=self._emitter,  # TASK-OBS-4899
                 )
             # TASK-FIX-OBS2: Attach progress logger to agent invoker
             if self._progress_logger and self._agent_invoker:
