@@ -51,12 +51,21 @@ def _pinned_specs() -> list[Path]:
     return sorted(_COMMANDS / name for name in _PINNED)
 
 
-def test_there_are_exactly_26_unpinned_specs():
-    """Guard the phase-1 population size (28 specs total minus the 2 pinned)."""
+# Population history (step this count DELIBERATELY, one commit per change):
+#   28 files / 26 unpinned — PB-10 phase 1 baseline (M2, 1b89804d).
+#   25 files / 23 unpinned — 2026-07-10: M6/PB-17 retired the design-tool trio
+#     (e421eff5) without bumping this count; fixed 2026-07-10 (M5 commit C0).
+#   PB-13 wave-1 (M5) adds 7 reference slices ({name}*-ext.md), stepped
+#     per restructure commit — final 30.
+_EXPECTED_UNPINNED = 23
+
+
+def test_unpinned_spec_population_is_deliberate():
+    """Guard the population size — any add/retire must step _EXPECTED_UNPINNED."""
     unpinned = _unpinned_specs()
-    assert len(unpinned) == 26, (
-        f"expected 26 unpinned command specs, found {len(unpinned)}: "
-        f"{[p.name for p in unpinned]}"
+    assert len(unpinned) == _EXPECTED_UNPINNED, (
+        f"expected {_EXPECTED_UNPINNED} unpinned command specs, "
+        f"found {len(unpinned)}: {[p.name for p in unpinned]}"
     )
 
 
