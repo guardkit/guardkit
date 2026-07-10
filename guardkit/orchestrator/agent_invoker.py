@@ -3939,6 +3939,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # rather than duck-typing on SDK shapes.
         harness_events: List[HarnessEvent] = []
 
+        # TASK-OBS-9F43 AC-3: Track current agent role for tool.exec events
+        # Set at each _invoke_with_role entry so tool executions emit the correct agent_role
+        self._current_agent_role = agent_type
+
         # TASK-FIX-SPECHANG2: reset the model-activity clock at the start of
         # the invocation so the specialist watchdog measures the no-activity
         # gap from "this invocation began" rather than from a previous one.
@@ -4381,6 +4385,39 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             return (None, harness_events)
         return None
 
+    def _extract_server_resolved_model(self, response_messages: List[Any]) -> Optional[str]:
+        """Extract server-resolved model from SDK response messages.
+
+        TASK-OBS-9F43: Prefer server-resolved model over literal "default" fallback.
+
+        Args:
+            response_messages: Raw SDK response messages (AssistantMessage, ResultMessage, etc.)
+
+        Returns:
+            Server-resolved model name if available, else None.
+
+        Priority:
+            1. AssistantMessage.model (SDK harness)
+            2. First key in ResultMessage.model_usage (both harnesses)
+        """
+        for msg in response_messages:
+            # Try AssistantMessage.model (SDK harness)
+            if hasattr(msg, "model") and hasattr(msg, "type"):
+                if getattr(msg, "type", None) == "assistant":
+                    model_val = getattr(msg, "model", None)
+                    if model_val and isinstance(model_val, str):
+                        return model_val
+
+            # Try ResultMessage.model_usage (keyed by model name)
+            if hasattr(msg, "model_usage") and hasattr(msg, "type"):
+                if getattr(msg, "type", None) == "result":
+                    model_usage = getattr(msg, "model_usage", None)
+                    if model_usage and isinstance(model_usage, dict) and len(model_usage) > 0:
+                        # Return first key (model name)
+                        return next(iter(model_usage.keys()))
+
+        return None
+
     def _emit_llm_call_event(
         self,
         agent_type: Literal["player", "coach"],
@@ -4418,6 +4455,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Read current attempt from instance or default to 1
             attempt = getattr(self, "_current_attempt", None) or 1
 
+            # TASK-OBS-9F43 AC-1: Prefer server-resolved model
+            # Priority: configured model -> server-resolved -> "default"
+            resolved_model = model
+            if resolved_model is None:
+                # Try to extract from response messages
+                server_model = self._extract_server_resolved_model(response_messages)
+                resolved_model = server_model if server_model else "default"
+
             # Detect provider from environment base URL
             base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
 
@@ -4427,8 +4472,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 agent_role=agent_type,
                 attempt=attempt,
                 timestamp=datetime.now().isoformat(),
-                provider=detect_provider(base_url, model),
-                model=model or "default",
+                provider=detect_provider(base_url, resolved_model),
+                model=resolved_model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=latency_ms,
@@ -8475,13 +8520,20 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                     (time.monotonic_ns() - _bash_info["start_ns"])
                                                     / 1_000_000
                                                 )
+                                                # TASK-OBS-9F43 AC-4: Extract real exit_code and stderr
+                                                # from ToolResultBlock instead of hardcoding
+                                                _exit_code = getattr(block, "exit_code", 0)
+                                                _stderr = getattr(block, "stderr", "")
+                                                # Fallback to stdout for content if no separate stdout field
+                                                _stdout = getattr(block, "stdout", _content_str)
+
                                                 self._emit_tool_exec_event(
                                                     tool_name="Bash",
                                                     cmd=_bash_info["cmd"],
-                                                    exit_code=0,
+                                                    exit_code=_exit_code,  # Real exit code
                                                     latency_ms=_latency,
-                                                    stdout_tail=_content_str,
-                                                    stderr_tail="",
+                                                    stdout_tail=_stdout,
+                                                    stderr_tail=_stderr,  # Real stderr
                                                     task_id=task_id,
                                                 )
                                             # Extract content from tool results
