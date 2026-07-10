@@ -31,7 +31,7 @@
     },
     "debug.md": {
       "sha256": "6497b9fe3717e8f115727b81b921124df57394c3210cf56ec3e4274d1c478b5d",
-      "source_commit": "1b89804d"
+      "source_commit": "e421eff5"
     },
     "design-refine.md": {
       "sha256": "6cf4c04accca0f8515faadce489eb07eda1380623280d2464db078da0e82bc66",
@@ -124,17 +124,17 @@
     },
     {
       "name": "figma-to-react.md",
-      "retired_in": "PENDING",
+      "retired_in": "e421eff5",
       "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): revives+executes TASK-UX-2DAB. Stack-specific Figma->React design-to-code, superseded by the unified design_url path (guardkit/orchestrator/mcp_design_extractor.py); no live guardkit/installer consumer; lapsed removal_planned 2026-06-01."
     },
     {
       "name": "zeplin-to-maui.md",
-      "retired_in": "PENDING",
+      "retired_in": "e421eff5",
       "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): revives+executes TASK-UX-2DAB. Stack-specific Zeplin->.NET MAUI design-to-code, superseded by the unified design_url path; no live consumer."
     },
     {
       "name": "mcp-zeplin.md",
-      "retired_in": "PENDING",
+      "retired_in": "e421eff5",
       "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): documents a Zeplin MCP integration the orchestrator does not implement; extended into the TASK-UX-2DAB retirement per DF-018 \u00a72.4."
     }
   ]
