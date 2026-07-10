@@ -208,6 +208,7 @@ class TestEmitterConstructionSiteSeam:
 class TestTaskModeCLIEmitter:
     """Test that task-mode CLI creates and wires emitter correctly."""
 
+    @patch("guardkit.cli.autobuild._require_sdk")
     @patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
     @patch("guardkit.cli.autobuild.CompositeBackend")
     @patch("guardkit.cli.autobuild.JSONLFileBackend")
@@ -216,6 +217,7 @@ class TestTaskModeCLIEmitter:
         mock_jsonl_backend: Mock,
         mock_composite: Mock,
         mock_orchestrator: Mock,
+        mock_require_sdk: Mock,
         tmp_path: Path,
         monkeypatch,
     ) -> None:
@@ -268,12 +270,14 @@ class TestTaskModeCLIEmitter:
         assert "emitter" in orch_kwargs
 
 
+    @patch("guardkit.cli.autobuild._require_sdk")
     @patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
     @patch("guardkit.cli.autobuild.CompositeBackend")
     def test_task_mode_flushes_and_closes_emitter(
         self,
         mock_composite: Mock,
         mock_orchestrator: Mock,
+        mock_require_sdk: Mock,
         tmp_path: Path,
         monkeypatch,
     ) -> None:
