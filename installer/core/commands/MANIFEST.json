@@ -15,11 +15,11 @@
     },
     "agent-validate-ext.md": {
       "sha256": "8ea996fed4930e3a914512d3cf55cd15855a4252e803f3e4d6a21b2569a82a15",
-      "source_commit": "unknown"
+      "source_commit": "66ef3391"
     },
     "agent-validate.md": {
       "sha256": "69f6d119fa8ccae18f7f14816424cb967f45311bfb3283c46b2ec293018aa725",
-      "source_commit": "1b89804d"
+      "source_commit": "66ef3391"
     },
     "agentic-init.md": {
       "sha256": "9eadc860edbaab728764d5ac8a1bbb3ea93446c5a0feb8f96d951d745003f3d8",
@@ -89,8 +89,24 @@
       "sha256": "6e51431090810b81a3247dd911842d93a97887abc96728e63d5b406f79a1e521",
       "source_commit": "1b89804d"
     },
+    "task-work-flags-ext.md": {
+      "sha256": "882348b970c2aee5540b616b705126fc9bb0d7fad9d8b5d52afc07546ad23f2e",
+      "source_commit": "unknown"
+    },
+    "task-work-phases-build-ext.md": {
+      "sha256": "a97151d2b00dd69326c8cf0699e8ba1db34acfa008d48b0bd9f78524ff299de6",
+      "source_commit": "unknown"
+    },
+    "task-work-phases-plan-ext.md": {
+      "sha256": "a6daec91ac2d6af346e27b976da2a804b8186bd7f8a1c26db47308b9cfafbd6b",
+      "source_commit": "unknown"
+    },
+    "task-work-reference-ext.md": {
+      "sha256": "a64202166edb1b67be1259e78052fd1cbd50f054fa52a4b30fef51dacc3c8827",
+      "source_commit": "unknown"
+    },
     "task-work.md": {
-      "sha256": "a238e632a5d5c4ac9c1c5dabddf4242fdfa119c34e4fe7ea0d9e3c4060413858",
+      "sha256": "e78150d2a8bd3ba745b76bf3759702893c9185e2fc7aa995b566dacdcd107ec8",
       "source_commit": "1b89804d"
     },
     "template-create-ext.md": {
