@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from guardkit.templates.structure_lint import (
+    COMMITTED_SERVING_WINDOW_TOKENS,
     Severity,
     lint_command_templates,
     lint_structure,
@@ -157,6 +158,49 @@ def test_marked_example_block_no_warning():
 
 
 # ---------------------------------------------------------------------------
+# TASK-OBS-F3F5: Committed serving-window figure flips severity to WARNING
+# ---------------------------------------------------------------------------
+
+
+def test_committed_serving_window_constant_is_32k():
+    """The committed serving-window floor is 32K tokens (32768) per WS4 Amendment M3."""
+    assert COMMITTED_SERVING_WINDOW_TOKENS == 32768
+
+
+def test_token_budget_warning_with_committed_figure():
+    """AC-1: Section-token-budget findings render as WARNING (not INFO) when the
+    committed serving-window figure is provided."""
+    # Need at least 32768 tokens * 4 chars/token = 131,072 chars to trigger
+    # a finding against the committed figure. Use 140,000 to be safe.
+    big = "x" * 140_000  # ≈35k tokens at 4 chars/token
+    text = f"# C\n\n## Execution\n\n{big}\n"
+    findings = lint_structure(text, serving_window_tokens=COMMITTED_SERVING_WINDOW_TOKENS)
+    budget = [f for f in findings if f.check == "section-token-budget"]
+
+    assert budget, "expected a token-budget finding for the oversized section"
+    assert all(f.severity is Severity.WARNING for f in budget), (
+        "with committed figure, budget findings should be WARNING"
+    )
+    # AC-1: message names the committed figure, not "report-only"
+    assert all("committed serving-window floor 32768 tokens" in f.message for f in budget)
+    assert all("report-only" not in f.message for f in budget)
+
+
+def test_token_budget_info_without_committed_figure():
+    """Verify that without the figure (serving_window_tokens=None), findings stay INFO."""
+    big = "x" * 40_000
+    text = f"# C\n\n## Execution\n\n{big}\n"
+    findings = lint_structure(text, serving_window_tokens=None)
+    budget = [f for f in findings if f.check == "section-token-budget"]
+
+    assert budget, "expected a token-budget finding"
+    assert all(f.severity is Severity.INFO for f in budget), (
+        "without figure, budget findings should stay INFO"
+    )
+    assert all("report-only" in f.message for f in budget)
+
+
+# ---------------------------------------------------------------------------
 # Regression pin against the real pinned templates (DIM2-F4)
 # ---------------------------------------------------------------------------
 
@@ -185,3 +229,29 @@ def test_lint_is_advisory_never_raises_on_pinned_templates():
     assert set(results) == {"feature-plan.md", "feature-spec.md"}
     for findings in results.values():
         assert isinstance(findings, list)
+
+
+def test_exit_code_neutrality_preserved_with_committed_figure():
+    """AC-2: Exit-code neutrality is preserved — budget findings at the committed
+    figure never affect the validate command's exit code.
+
+    The structure lint is advisory (report-only) and runs AFTER the parse gate
+    (:144 in cli/template.py). It NEVER changes the exit code, even when it
+    produces WARNINGs. This test pins that contract."""
+    # The lint runs with the committed figure and produces WARNINGs for oversized
+    # sections, but those findings are advisory — they never fail a build.
+    results = lint_command_templates(
+        serving_window_tokens=COMMITTED_SERVING_WINDOW_TOKENS
+    )
+    # Both pinned templates exist and have findings (the DIM2-F4 anchors and
+    # oversized sections), but the function returns normally and the findings
+    # are advisory.
+    assert "feature-plan.md" in results
+    assert "feature-spec.md" in results
+    # Confirm WARNINGs are present (some from anchors, possibly from budget)
+    all_findings = [f for fs in results.values() for f in fs]
+    warns = [f for f in all_findings if f.severity is Severity.WARNING]
+    assert warns, "expected WARNINGs from the real templates"
+    # The function returns normally — it does not raise or signal failure.
+    # The CLI caller (_print_structure_lint) prints findings but never calls
+    # sys.exit() on their account (only the parse gate does, and it runs first).

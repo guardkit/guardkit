@@ -1,39 +1,23 @@
 ---
-id: TASK-OBS-9F43
-title: Real model attribution and joinable correlation identity on instrumentation
-  events
-task_type: feature
-priority: high
-feature_id: FEAT-OBSC
-wave: 2
-implementation_mode: task-work
-complexity: 4
-dependencies:
-- TASK-OBS-4899
-status: in_review
-decision_of_record: D-OBS-1 (OBS-1) + WS4 Appendix A fields 4-5 (artifact identity,
-  correlation ids)
-created: 2026-07-09
 autobuild:
   enabled: true
   max_turns: 5
   mode: tdd
-autobuild_state:
-  current_turn: 1
-  max_turns: 5
-  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
-  base_branch: main
-  started_at: '2026-07-10T08:21:57.330936'
-  last_updated: '2026-07-10T08:36:44.381035'
-  turns:
-  - turn: 1
-    decision: approve
-    feedback: null
-    timestamp: '2026-07-10T08:21:57.330936'
-    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
-      actual: 0'
-    player_success: true
-    coach_success: true
+complexity: 4
+created: 2026-07-09
+decision_of_record: D-OBS-1 (OBS-1) + WS4 Appendix A fields 4-5 (artifact identity,
+  correlation ids)
+dependencies:
+- TASK-OBS-4899
+feature_id: FEAT-OBSC
+id: TASK-OBS-9F43
+implementation_mode: task-work
+priority: high
+status: design_approved
+task_type: feature
+title: Real model attribution and joinable correlation identity on instrumentation
+  events
+wave: 2
 ---
 
 # TASK-OBS-9F43: Real model attribution and joinable correlation identity on instrumentation events
@@ -114,9 +98,8 @@ every "carries X" AC asserts the positive value, never just absence of "default"
 
 Built via `/feature-build FEAT-OBSC` on the **SDK harness** (`GUARDKIT_HARNESS=sdk`;
 the default LangGraph harness is unusable on this machine — see the feature-level
-build notes in `README.md`). Coach approved in 1 turn, but two post-build operator
-fixes were required and committed on top of the autobuild checkpoints on branch
-`autobuild/FEAT-OBSC`:
+build notes in the cluster README). Coach approved in 1 turn, but two post-build
+operator fixes were required and committed on top of the autobuild checkpoints:
 
 1. **`f6944681` (test-side, brittle tests)** — the AC-2/AC-3/AC-4/AC-5 tests in
    `tests/orchestrator/instrumentation/test_model_attribution_and_correlation.py`
@@ -125,21 +108,17 @@ fixes were required and committed on top of the autobuild checkpoints on branch
    skip when no loop is running — the documented TASK-INST-005b contract) with no
    running event loop, so **zero events were captured**. Made them `async` + a
    short `await asyncio.sleep()`; the two `TestRunIDCorrelation` tests also passed
-   wrong `AutoBuildOrchestrator` kwargs (`task_id`/`worktree_path`/`base_branch`/
-   `sdk_timeout_seconds`) — corrected to `repo_root`/`max_turns`/`sdk_timeout` +
-   patched `WorktreeManager`, kept sync (the lifecycle emits use a blocking
-   `asyncio.run()`). **Production attribution/correlation code was correct.**
+   wrong `AutoBuildOrchestrator` kwargs — corrected to `repo_root`/`max_turns`/
+   `sdk_timeout` + patched `WorktreeManager`, kept sync (the lifecycle emits use a
+   blocking `asyncio.run()`). **Production attribution/correlation code was correct.**
 
 2. **`cc416cd2` (PRODUCTION bug — regression introduced by this task)** —
    `_emit_task_failed` and `_emit_task_completed` built `TaskFailedEvent` /
    `TaskCompletedEvent` with `attempt=len(turn_history)`, which is `0` on an early
-   failure (before any turn completes) and violates the events' `ge=1` schema
-   constraint, raising `ValidationError` on the finalize path (the event is built
-   *outside* the `try/except`, so it propagates). This silently regressed **12
-   pre-existing tests in `tests/orchestrator/instrumentation/test_orchestrator_events.py`**
+   failure and violates the events' `ge=1` schema constraint, raising
+   `ValidationError` on the finalize path. This silently regressed **12 pre-existing
+   tests in `tests/orchestrator/instrumentation/test_orchestrator_events.py`**
    (green on `main`, unmodified by this feature) that **no task-scoped Phase-4 gate
-   ran** — a live instance of the `per-task-green-is-not-feature-green` /
-   `absence-must-survive` gate-aperture class. Fixed by clamping
-   `attempt = max(1, len(...))` (an early failure is attempt #1). Caught only by
-   running the full instrumentation suite post-build; verified green: instrumentation
-   509, orchestrator/worktrees/templates 2582, cli 148.
+   ran** — a live instance of the `per-task-green-is-not-feature-green` gate-aperture
+   class. Fixed by clamping `attempt = max(1, len(...))`. Verified green post-fix:
+   instrumentation 509, orchestrator/worktrees/templates 2582, cli 148.
