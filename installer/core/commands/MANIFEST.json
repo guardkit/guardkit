@@ -73,8 +73,12 @@
       "sha256": "10fed07e5fac8606cb04921577ddabaa8fcd8fc86bc684ce4a2fdb413782d13a",
       "source_commit": "1b89804d"
     },
+    "task-review-ext.md": {
+      "sha256": "00fd452da1efb86bfff1f7dd9dcd2eb90e8de8f591b4510975ced8a8c03e1390",
+      "source_commit": "unknown"
+    },
     "task-review.md": {
-      "sha256": "dd95afc2e309ff2712f453579af0e6669a37af5fc3d041b2559db4652a077d96",
+      "sha256": "5ba0300bc2df517830117b86fc45306795d7a32ef1772c445897ea4b1446f207",
       "source_commit": "1b89804d"
     },
     "task-status.md": {
