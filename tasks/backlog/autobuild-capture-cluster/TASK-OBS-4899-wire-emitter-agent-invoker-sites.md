@@ -1,6 +1,7 @@
 ---
 id: TASK-OBS-4899
-title: Wire the emitter through the three AgentInvoker construction sites and task-mode CLI
+title: Wire the emitter through the three AgentInvoker construction sites and task-mode
+  CLI
 task_type: feature
 priority: high
 feature_id: FEAT-OBSC
@@ -8,7 +9,7 @@ wave: 1
 implementation_mode: task-work
 complexity: 3
 dependencies: []
-status: backlog
+status: in_review
 created: 2026-07-09
 decision_of_record: D-OBS-1 (OBS-1, dashboard ask A-4b)
 autobuild:
@@ -16,14 +17,61 @@ autobuild:
   max_turns: 5
   mode: tdd
 consumer_context:
-  - producer: TASK-INST-002 (completed 2026-03)
-    contract: EVENT_EMITTER
-    driver: guardkit/orchestrator/instrumentation/emitter.py
-    format_note: "EventEmitter protocol (async emit/flush/close); CompositeBackend fan-out; NullEmitter default"
-  - producer: TASK-INST-005b / TASK-INST-005c (completed 2026-03)
-    contract: agent_invoker emit paths
-    driver: guardkit/orchestrator/agent_invoker.py
-    format_note: "LLMCallEvent emit at :4443, ToolExecEvent emit at :4546 — built, test-proven, dead in production via NullEmitter"
+- producer: TASK-INST-002 (completed 2026-03)
+  contract: EVENT_EMITTER
+  driver: guardkit/orchestrator/instrumentation/emitter.py
+  format_note: EventEmitter protocol (async emit/flush/close); CompositeBackend fan-out;
+    NullEmitter default
+- producer: TASK-INST-005b / TASK-INST-005c (completed 2026-03)
+  contract: agent_invoker emit paths
+  driver: guardkit/orchestrator/agent_invoker.py
+  format_note: "LLMCallEvent emit at :4443, ToolExecEvent emit at :4546 \u2014 built,\
+    \ test-proven, dead in production via NullEmitter"
+autobuild_state:
+  current_turn: 2
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
+  base_branch: main
+  started_at: '2026-07-10T07:12:04.108794'
+  last_updated: '2026-07-10T07:39:41.534296'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: "- Deterministic honesty record (claim_audit_unmodified, severity=should_fix):\
+      \ Player claim: Player claimed file guardkit/cli/autobuild.py. Actual: Path\
+      \ is tracked in git but 'git status --porcelain' shows no change for it \u2014\
+      \ the Player claimed work on a file it did not actually modify this turn. Most\
+      \ likely cause: the report writer swept an orchestrator-managed path (e.g. a\
+      \ file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth\
+      \ for the agent_invoker-side filter; this is a warning, not a turn-rejecting\
+      \ fabrication..\n- Deterministic honesty record (claim_audit_unmodified, severity=should_fix):\
+      \ Player claim: Player claimed file guardkit/orchestrator/autobuild.py. Actual:\
+      \ Path is tracked in git but 'git status --porcelain' shows no change for it\
+      \ \u2014 the Player claimed work on a file it did not actually modify this turn.\
+      \ Most likely cause: the report writer swept an orchestrator-managed path (e.g.\
+      \ a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified.\
+      \ Defence-in-depth for the agent_invoker-side filter; this is a warning, not\
+      \ a turn-rejecting fabrication..\n- Honesty discrepancy: Player claims to have\
+      \ modified guardkit/orchestrator/autobuild.py and guardkit/cli/autobuild.py\
+      \ with specific line numbers (2151, 2183, 8230, ~555), but git status shows\
+      \ these files were NOT modified this turn.: Clarify what was actually implemented\
+      \ this turn vs what already existed. If the implementation already exists and\
+      \ only tests were added, report accurately: 'Added verification tests for existing\
+      \ emitter wiring' rather than claiming to have implemented the wiring itself.\n\
+      ... and 2 more issues"
+    timestamp: '2026-07-10T07:12:04.108794'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-10T07:29:13.324941'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-OBS-4899: Wire the emitter through the three AgentInvoker construction sites and task-mode CLI

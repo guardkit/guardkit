@@ -12,6 +12,39 @@
 > backlogs — see the Disposition Register below. No INST duplicates remain in
 > `tasks/backlog/` or `tasks/design_approved/`.
 
+## Operator build notes (BUILT 2026-07-10)
+
+Built via `/feature-build FEAT-OBSC` — **6/6 tasks approved**, work on branch
+`autobuild/FEAT-OBSC` in worktree `.guardkit/worktrees/FEAT-OBSC`, **awaiting review +
+`/feature-complete`** (not yet merged). Getting there required three operator
+interventions worth recording:
+
+1. **Missing `orchestration.parallel_groups` in `FEAT-OBSC.yaml`.** `/feature-plan`
+   produced the feature YAML **without** an `orchestration:` block, so the
+   feature-build loader reported "Waves: 0" and rejected all 6 tasks. The loader
+   requires an explicit `parallel_groups` list — it does **not** derive waves from
+   the per-task `dependencies`. Reconstructed the 4-wave block from the "Tasks (6
+   tasks, 4 waves)" table below and committed it into the YAML (`[[4899,F3F5],
+   [9F43,80FE],[C440],[396E]]`, dependency-consistent). **This YAML edit is part of
+   the feature record and should be included in the merge.**
+
+2. **Ran on the SDK harness, not the default LangGraph harness.** The default
+   `GUARDKIT_HARNESS=langgraph` is unusable on this machine: it needs `guardkitfactory`
+   (editable-installed into `.venv312`) and even then auto-prefixes `openai:` onto the
+   Claude model name and 401s against api.openai.com (invalid `sk-proj-…` key in
+   `.env`, no local endpoint). Built with `GUARDKIT_HARNESS=sdk` (the documented
+   fallback, uses this session's Claude Code auth).
+
+3. **Two post-build fixes** on top of the autobuild checkpoints — see the
+   "Operator build addendum" in
+   [`TASK-OBS-9F43-model-attribution-correlation-identity.md`](TASK-OBS-9F43-model-attribution-correlation-identity.md):
+   `f6944681` (4899 + 9F43 **brittle tests** — production code was correct) and
+   `cc416cd2` (a genuine **production regression** from 9F43: lifecycle events built
+   with `attempt=0` → `ge=1` `ValidationError`; regressed 12 pre-existing
+   `test_orchestrator_events.py` tests **no task-scoped Phase-4 gate covered**;
+   fixed by clamping `attempt=max(1, …)`). Post-fix verified green: instrumentation
+   509, orchestrator/worktrees/templates 2582, cli 148.
+
 ## Problem
 
 The instrumentation layer built in 2026-03 (FEAT-CF57, TASK-INST series) is **built

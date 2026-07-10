@@ -8,9 +8,25 @@ wave: 2
 implementation_mode: task-work
 complexity: 5
 dependencies: []
-status: backlog
+status: in_review
 decision_of_record: D-OBS-1 (OBS-2) + D-OBS-4 (NAS home) + L12 rider (baseline.json)
 created: 2026-07-09
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
+  base_branch: main
+  started_at: '2026-07-10T08:21:57.344036'
+  last_updated: '2026-07-10T08:36:14.477897'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-10T08:21:57.344036'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-OBS-80FE: Archive run artifacts before worktree prune, with a stated durable home

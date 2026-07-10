@@ -1,6 +1,7 @@
 ---
 id: TASK-OBS-F3F5
-title: Flip template structure-lint token budgets INFO→WARNING at the committed 32K-floor figure
+title: "Flip template structure-lint token budgets INFO\u2192WARNING at the committed\
+  \ 32K-floor figure"
 task_type: feature
 priority: medium
 feature_id: FEAT-OBSC
@@ -8,9 +9,25 @@ wave: 1
 implementation_mode: task-work
 complexity: 2
 dependencies: []
-status: backlog
+status: in_review
 decision_of_record: M2 lint-budget rider (kickoff Step 4) per WS4 Amendment M3
 created: 2026-07-09
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-OBSC
+  base_branch: main
+  started_at: '2026-07-10T06:36:33.879102'
+  last_updated: '2026-07-10T06:47:32.944225'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-07-10T06:36:33.879102'
+    player_summary: 'Implementation via task-work delegation. Files planned: 0, Files
+      actual: 0'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-OBS-F3F5: Flip template structure-lint token budgets INFO→WARNING at the committed 32K-floor figure
