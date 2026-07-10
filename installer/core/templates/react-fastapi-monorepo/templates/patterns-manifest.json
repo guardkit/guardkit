@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "apps/backend/crud.py.template",
+      "layer": "backend",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "apps/backend/model.py.template",
+      "layer": "backend",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "apps/backend/router.py.template",
+      "layer": "backend",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "apps/backend/schema.py.template",
+      "layer": "backend",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "docker/docker-compose.service.yml.template",
+      "layer": "docker",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "apps/frontend/api-hook.ts.template",
+      "layer": "frontend",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "apps/frontend/component.tsx.template",
+      "layer": "frontend",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    }
+  ]
+}

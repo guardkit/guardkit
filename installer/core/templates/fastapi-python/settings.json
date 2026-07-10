@@ -129,7 +129,8 @@
       "directory": "tests/{{feature}}",
       "description": "Test files organized by feature",
       "file_patterns": ["test_*.py", "conftest.py"],
-      "responsibilities": ["Unit tests", "Integration tests", "Fixtures"]
+      "responsibilities": ["Unit tests", "Integration tests", "Fixtures"],
+      "template_subdir": "testing"
     }
   },
   "code_style": {

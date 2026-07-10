@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "other/agents/__init__.py.template",
+      "layer": "agents",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/agents/agents.py.template",
+      "layer": "agents",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/example-domain/DOMAIN.md.template",
+      "layer": "example-domain",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/lib/factory_guards.py.template",
+      "layer": "lib",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/lib/retry_context.py.template",
+      "layer": "lib",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/lib/session_logging.py.template",
+      "layer": "lib",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/AGENTS.md.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/agent.py.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/langgraph.json.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/orchestrator-config.yaml.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/pyproject.toml.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 5,
+      "pairs_with": []
+    },
+    {
+      "file": "other/prompts/__init__.py.template",
+      "layer": "prompts",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/prompts/evaluator_prompts.py.template",
+      "layer": "prompts",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/prompts/implementer_prompts.py.template",
+      "layer": "prompts",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "other/prompts/orchestrator_prompts.py.template",
+      "layer": "prompts",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/test_agents.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/test_scaffold.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/tools/__init__.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/tools/execute_command.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/tools/orchestrator_tools.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "config/Dockerfile.template",
+      "layer": "config",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "config/pyproject.toml.template",
+      "layer": "config",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "resources/resource.py.template",
+      "layer": "resources",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "server/__main__.py.template",
+      "layer": "server",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "server/server.py.template",
+      "layer": "server",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/conftest.py.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/test_tool.py.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "tools/health_check_tool.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "tools/paginated_tool.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "tools/streaming_tool.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "tools/tool.py.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    }
+  ]
+}

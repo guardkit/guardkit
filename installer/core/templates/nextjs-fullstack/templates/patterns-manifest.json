@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "actions/entity-actions.ts.template",
+      "layer": "actions",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "api/entity-route.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "app/page-server-component.tsx.template",
+      "layer": "app",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "components/EntityForm.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "components/EntityList.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "lib/db.ts.template",
+      "layer": "lib",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "prisma/schema.prisma.template",
+      "layer": "prisma",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "workflows-ci.yml.template",
+      "layer": "templates",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "tests/ComponentTest.test.tsx.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "tests/e2e.spec.ts.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    }
+  ]
+}

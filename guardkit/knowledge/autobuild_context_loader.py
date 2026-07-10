@@ -304,12 +304,22 @@ class AutoBuildContextLoader:
         Returns:
             AutoBuildContextResult with Player-tailored context
         """
+        # PB-7: real file_path_hints are resolved ONLY under
+        # GUARDKIT_PATTERN_SELECTION_V2 — wiring this dead parameter is
+        # itself behavioural (v1's hint-matching step 1 has been dormant in
+        # production since every call site passed none), so it must not
+        # activate outside the flag. See template_pattern_loader module
+        # docstring.
+        file_path_hints = self._resolve_file_path_hints(task_id)
+
         if self.retriever is None:
             # Graceful degradation - return empty context
             logger.debug(f"Memory backend not available, skipping Player context for {task_id}")
             result = self._empty_result(task_id)
             # Still attempt template pattern injection (does not require the memory backend)
-            self._append_template_patterns(result, tech_stack=tech_stack)
+            self._append_template_patterns(
+                result, tech_stack=tech_stack, file_path_hints=file_path_hints
+            )
             return result
 
         logger.info("[Memory] Loading Player context (turn %d)...", turn_number)
@@ -366,7 +376,9 @@ class AutoBuildContextLoader:
             result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
 
             # Append template pattern context (TASK-TPL-004)
-            self._append_template_patterns(result, tech_stack=tech_stack)
+            self._append_template_patterns(
+                result, tech_stack=tech_stack, file_path_hints=file_path_hints
+            )
 
             # Log similar outcomes count
             similar_outcomes_count = len(context.similar_outcomes) if context.similar_outcomes else 0
@@ -392,7 +404,9 @@ class AutoBuildContextLoader:
                 task_id, context_duration, e,
             )
             result = self._empty_result(task_id)
-            self._append_template_patterns(result, tech_stack=tech_stack)
+            self._append_template_patterns(
+                result, tech_stack=tech_stack, file_path_hints=file_path_hints
+            )
             return result
 
     async def get_coach_context(
@@ -502,6 +516,40 @@ class AutoBuildContextLoader:
                 task_id, context_duration, e,
             )
             return self._empty_result(task_id)
+
+    def _resolve_file_path_hints(self, task_id: str) -> Optional[List[str]]:
+        """Resolve the task's planned target files as pattern-selection hints.
+
+        Reuses ``preflight_ignore_gate.load_planned_targets`` — the same
+        implementation-plan / frontmatter ``files_to_create`` /
+        ``files_to_modify`` lookup the pre-turn-1 ignore gate already uses —
+        so this doesn't invent a second "task file list" concept.
+
+        Returns ``None`` (never ``[]``) whenever selection v2 is off, when
+        ``worktree_path`` is unset, or when no planned-target source is
+        available/importable — ``_append_template_patterns`` treats ``None``
+        identically to "no hints", i.e. exactly today's behaviour. Never
+        raises (K4's degradation contract).
+        """
+        from guardkit.knowledge.template_pattern_loader import (
+            pattern_selection_v2_enabled,
+        )
+
+        if not pattern_selection_v2_enabled():
+            return None
+        if self.worktree_path is None:
+            return None
+
+        try:
+            from guardkit.orchestrator.preflight_ignore_gate import load_planned_targets
+
+            return load_planned_targets(task_id, self.worktree_path)
+        except Exception as exc:
+            logger.debug(
+                "[TemplatePattern] Failed to resolve file_path_hints for %s: %s",
+                task_id, exc,
+            )
+            return None
 
     def _append_template_patterns(
         self,

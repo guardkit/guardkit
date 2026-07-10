@@ -1,0 +1,136 @@
+"""
+{{FeatureName}} Service
+
+This module implements the business-logic layer for {{entity_name_plural}}:
+domain rules, cross-entity orchestration, and error translation that should
+not live in the router (HTTP concerns) or the CRUD layer (persistence only).
+"""
+
+from typing import List
+
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.{{FeatureName}} import crud
+from src.{{FeatureName}}.schemas import {{EntityName}}Create, {{EntityName}}InDB, {{EntityName}}Update
+
+
+class {{EntityName}}Service:
+    """
+    Business logic for {{EntityName}}.
+
+    Wraps the CRUD layer with the domain rules a router should never contain
+    directly: duplicate checks, existence checks, and translating "not found"
+    into the right HTTP response.
+    """
+
+    async def create(
+        self,
+        db: AsyncSession,
+        *,
+        data: {{EntityName}}Create,
+    ) -> {{EntityName}}InDB:
+        """
+        Create a new {{entity_name}}, rejecting duplicate names.
+
+        Args:
+            db: Database session
+            data: Validated creation payload
+
+        Returns:
+            The newly created {{entity_name}}
+
+        Raises:
+            HTTPException: 409 if a {{entity_name}} with the same name already exists
+        """
+        existing = await crud.{{entity_name}}.get_by_name(db, name=data.name)
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{{EntityName}} with name '{data.name}' already exists",
+            )
+        return await crud.{{entity_name}}.create(db, obj_in=data)
+
+    async def update(
+        self,
+        db: AsyncSession,
+        *,
+        entity_id: int,
+        data: {{EntityName}}Update,
+    ) -> {{EntityName}}InDB:
+        """
+        Update an existing {{entity_name}} by ID.
+
+        Args:
+            db: Database session
+            entity_id: ID of the {{entity_name}} to update
+            data: Fields to update
+
+        Returns:
+            The updated {{entity_name}}
+
+        Raises:
+            HTTPException: 404 if no {{entity_name}} exists with the given ID
+        """
+        existing = await crud.{{entity_name}}.get(db, id=entity_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="{{EntityName}} not found",
+            )
+        return await crud.{{entity_name}}.update(db, db_obj=existing, obj_in=data)
+
+    async def deactivate(
+        self,
+        db: AsyncSession,
+        *,
+        entity_id: int,
+    ) -> {{EntityName}}InDB:
+        """
+        Deactivate a {{entity_name}}, delegating the soft-delete to CRUD.
+
+        Args:
+            db: Database session
+            entity_id: ID of the {{entity_name}} to deactivate
+
+        Returns:
+            The deactivated {{entity_name}}
+
+        Raises:
+            HTTPException: 404 if no {{entity_name}} exists with the given ID
+        """
+        deactivated = await crud.{{entity_name}}.deactivate(db, id=entity_id)
+        if deactivated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="{{EntityName}} not found",
+            )
+        return deactivated
+
+    async def search(
+        self,
+        db: AsyncSession,
+        *,
+        query: str,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[{{EntityName}}InDB]:
+        """
+        Search active {{entity_name_plural}} by name.
+
+        Args:
+            db: Database session
+            query: Search term
+            skip: Pagination offset
+            limit: Maximum number of results
+
+        Returns:
+            Matching {{entity_name_plural}}
+        """
+        return await crud.{{entity_name}}.search_by_name(
+            db, search_term=query, skip=skip, limit=limit
+        )
+
+
+# Instantiate service object for use in routers
+{{entity_name}} = {{EntityName}}Service()

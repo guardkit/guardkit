@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "api/create-entity.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "api/delete-entity.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "api/get-entities.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "api/get-entity.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "api/update-entity.ts.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 5,
+      "pairs_with": []
+    },
+    {
+      "file": "components/create-entity.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "components/delete-entity.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "components/entities-list.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "components/update-entity.tsx.template",
+      "layer": "components",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "mocks/entity-handlers.ts.template",
+      "layer": "mocks",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "routes/entities.tsx.template",
+      "layer": "routes",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    }
+  ]
+}
