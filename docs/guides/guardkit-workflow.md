@@ -1490,9 +1490,11 @@ Implementing with latest patterns...
 - Visual regression testing integration
 - Zero scope creep enforcement
 
-**Planned Supported Design Systems**:
-- Figma → TypeScript React + Tailwind (`/figma-to-react`)
-- Zeplin → XAML + C# + platform tests (`/zeplin-to-maui`)
+**Planned Supported Design Systems** (via the technology-agnostic `design_url` workflow —
+`/task-create "Component" design:<url>` → `/task-work`; the stack-specific `/figma-to-react`
+and `/zeplin-to-maui` commands were retired 2026-07-10, DEC-design-tool-trio-retirement):
+- Figma → TypeScript React + Tailwind
+- Zeplin → XAML + C# + platform tests
 
 ### Design Workflow Quality Gates (Planned)
 

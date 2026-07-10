@@ -1,5 +1,11 @@
 # MCP Optimization Guide
 
+> **Retirement note (2026-07-10):** the `/figma-to-react`, `/zeplin-to-maui`, and `/mcp-zeplin`
+> commands used below as lazy-MCP-loading examples were **retired** (DEC-design-tool-trio-retirement,
+> DF-018 §2.4). The live design path is the technology-agnostic `design_url` workflow
+> (`guardkit/orchestrator/mcp_design_extractor.py`). The examples are preserved for their
+> MCP-optimization pedagogy, not as invocable commands.
+
 ## Overview
 
 **Model Context Protocol (MCP)** servers provide specialized capabilities to AI agents in the Agentecflow system. This guide covers best practices for integrating and optimizing MCP usage to maximize value while minimizing context window consumption.

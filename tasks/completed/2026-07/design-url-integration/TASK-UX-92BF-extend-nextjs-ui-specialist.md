@@ -1,11 +1,11 @@
 ---
-id: TASK-UX-71BD
-title: Extend react-ui-specialist to handle design contexts
-status: backlog
-created: 2025-11-11T11:10:00Z
-updated: 2025-11-11T11:10:00Z
+id: TASK-UX-92BF
+title: Extend nextjs-ui-specialist to handle design contexts
+status: completed
+created: 2025-11-11T11:15:00Z
+updated: 2026-07-10T00:00:00Z
 priority: high
-tags: [ux-integration, ui-specialist, react]
+tags: [ux-integration, ui-specialist, nextjs]
 complexity: 0
 test_results:
   status: pending
@@ -13,13 +13,13 @@ test_results:
   last_run: null
 ---
 
-# Task: Extend react-ui-specialist to handle design contexts
+# Task: Extend nextjs-ui-specialist to handle design contexts
 
 ## Description
 
-Extend the existing `react-ui-specialist.md` agent in the react-typescript template to handle design contexts passed from orchestrators (figma-orchestrator, zeplin-orchestrator).
+Extend the existing `nextjs-ui-specialist.md` agent in the nextjs-fullstack template to handle design contexts passed from orchestrators (figma-orchestrator, zeplin-orchestrator).
 
-The agent should detect when a design context is present and switch to design-driven implementation mode, generating components that match design specifications exactly while maintaining visual fidelity.
+The agent should detect when a design context is present and switch to design-driven implementation mode, generating Next.js components that match design specifications exactly while maintaining visual fidelity.
 
 This is part of Phase 3 of the Design URL Integration project (see [design-url-integration-implementation-guide.md](../../docs/proposals/design-url-integration-implementation-guide.md)).
 
@@ -27,18 +27,19 @@ This is part of Phase 3 of the Design URL Integration project (see [design-url-i
 
 - [ ] Agent detects design context from orchestrator input
 - [ ] Design-driven implementation mode activated when context present
-- [ ] Components generated match design specifications exactly
+- [ ] Next.js components generated match design specifications exactly
+- [ ] Appropriate use of Client Components ('use client') for interactive elements
 - [ ] Visual regression tests run automatically (Playwright)
 - [ ] Results returned to orchestrator in expected format
 - [ ] Graceful fallback to standard UI implementation when no design context
 - [ ] Zero scope creep enforcement (only implement visible design elements)
-- [ ] Agent updated in react-typescript template directory
+- [ ] Agent updated in nextjs-fullstack template directory
 - [ ] Tests updated to cover design context scenarios
 
 ## Implementation Notes
 
 ### Source File
-- **File**: `installer/core/templates/react-typescript/agents/react-ui-specialist.md`
+- **File**: `installer/core/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md`
 
 ### Key Changes Required
 
@@ -71,14 +72,16 @@ Add capabilities section to frontmatter:
 
 ```markdown
 ---
-name: react-ui-specialist
-description: React component specialist with design context support
+name: nextjs-ui-specialist
+description: Next.js component specialist with design context support
 tools: Read, Write, Edit, Bash, Grep, Glob
 capabilities:
   - standard_ui_implementation
   - design_driven_implementation
   - visual_regression_testing
   - constraint_validation
+  - server_component_optimization
+  - client_component_generation
 design_sources:
   - figma
   - zeplin
@@ -97,13 +100,17 @@ When design context is present:
 - Identify component structure (hierarchy, layout)
 - Extract styling requirements (colors, fonts, spacing)
 - Note interactive elements (buttons, inputs, links)
+- Determine if Client Component is needed ('use client' directive)
 
-**Step 2: Generate Component**
-- Create TypeScript React component matching design exactly
+**Step 2: Generate Next.js Component**
+- Create TypeScript Next.js component matching design exactly
+- Add 'use client' directive if component has interactivity (onClick, onChange, useState, etc.)
+- Use Server Component by default for static design elements
 - Apply Tailwind CSS classes for styling (match design specs pixel-perfect)
 - Implement ONLY props for visible design elements
 - NO loading states, error states, or API integrations
 - NO logic beyond what's visible in the design
+- Follow Next.js 14+ App Router conventions
 
 **Step 3: Apply Design Constraints**
 - Review prohibition checklist from orchestrator
@@ -147,10 +154,10 @@ Keep existing behavior when no design context present:
 When NO design context is present (default behavior):
 
 1. Analyze user requirements from task description
-2. Generate React component with appropriate props
+2. Generate Next.js component (Server or Client as appropriate)
 3. Apply Tailwind CSS styling
-4. Write unit tests (Vitest)
-5. Follow React best practices
+4. Write unit tests (Vitest or Jest)
+5. Follow Next.js best practices (App Router)
 6. Return generated files list
 ```
 
@@ -216,7 +223,47 @@ interface ProhibitionChecklist {
 }
 ```
 
-**6. Visual Regression Testing with Playwright**
+**6. Client vs Server Component Decision**
+
+```typescript
+/**
+ * Determine if component needs 'use client' directive
+ */
+function needsClientComponent(designElements: ExtractedElement[]): boolean {
+  // Check for interactive elements
+  const hasInteractivity = designElements.some(element =>
+    element.type === 'button' ||
+    element.type === 'input' ||
+    element.properties.onClick !== undefined
+  );
+
+  // Client Component required if any interactivity detected
+  return hasInteractivity;
+}
+
+// Example generated component
+'use client'; // Only if needsClientComponent() returns true
+
+import { cn } from '@/lib/utils';
+
+interface LoginButtonProps {
+  label: string;
+  onClick?: () => void;
+}
+
+export function LoginButton({ label, onClick }: LoginButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+    >
+      {label}
+    </button>
+  );
+}
+```
+
+**7. Visual Regression Testing with Playwright**
 
 Generate Playwright test for visual regression:
 
@@ -225,7 +272,7 @@ Generate Playwright test for visual regression:
 import { test, expect } from '@playwright/test';
 
 test('LoginButton matches design specification', async ({ page }) => {
-  // Render component in isolation
+  // Render component in Next.js app
   await page.goto('/component-preview/LoginButton');
 
   // Wait for component to render
@@ -243,7 +290,7 @@ test('LoginButton matches design specification', async ({ page }) => {
 });
 ```
 
-**7. Error Handling**
+**8. Error Handling**
 
 Handle cases where design context is invalid:
 
@@ -263,7 +310,7 @@ if (hasDesignContext) {
 }
 ```
 
-**8. Constraint Validation**
+**9. Constraint Validation**
 
 Before returning results, validate against constraints:
 
@@ -275,7 +322,7 @@ function validateConstraints(
   const violations: string[] = [];
 
   // Check for prohibited patterns
-  if (constraints.prohibitions.no_api_integration && generatedCode.includes('fetch(') || generatedCode.includes('axios')) {
+  if (constraints.prohibitions.no_api_integration && (generatedCode.includes('fetch(') || generatedCode.includes('axios'))) {
     violations.push("API integration detected (prohibited)");
   }
 
@@ -287,9 +334,38 @@ function validateConstraints(
     violations.push("Loading state detected (prohibited)");
   }
 
+  if (constraints.prohibitions.no_routing && (generatedCode.includes('useRouter') || generatedCode.includes('redirect'))) {
+    violations.push("Routing logic detected (prohibited)");
+  }
+
   // Add more checks for other prohibitions...
 
   return violations;
+}
+```
+
+**10. Next.js Specific Patterns**
+
+Ensure generated components follow Next.js best practices:
+
+```typescript
+// Use Next.js Image component for images (when appropriate)
+import Image from 'next/image';
+
+// Use Next.js Link component for navigation (when appropriate)
+import Link from 'next/link';
+
+// Use Server Components by default, Client Components only when needed
+// Server Component (default - no 'use client')
+export function StaticDesignElement() {
+  return <div>Static content</div>;
+}
+
+// Client Component (only for interactivity)
+'use client';
+export function InteractiveDesignElement() {
+  const [state, setState] = useState();
+  return <button onClick={() => setState(...)}>Click me</button>;
 }
 ```
 
@@ -299,12 +375,14 @@ function validateConstraints(
 - Test design context detection (with/without context)
 - Test mode switching (design-driven vs standard)
 - Test design element parsing
+- Test Client vs Server Component decision logic
 - Test constraint validation logic
 - Test result format
 
 **Integration Tests**:
 - Full flow with mock design context from orchestrator
 - Verify component generation matches design specs
+- Verify correct 'use client' directive usage
 - Verify Playwright visual regression test generation
 - Verify result format returned to orchestrator
 
@@ -312,6 +390,8 @@ function validateConstraints(
 - Test with figma-orchestrator (after UX-003 is complete)
 - Test with zeplin-orchestrator (after UX-004 is complete)
 - Verify visual fidelity >95% with real designs
+- Test Server Component rendering
+- Test Client Component interactivity
 
 ## Test Requirements
 
@@ -319,16 +399,19 @@ function validateConstraints(
 - [ ] Unit test: Design context detection (absent)
 - [ ] Unit test: Mode switching (design-driven vs standard)
 - [ ] Unit test: Design element parsing
+- [ ] Unit test: Client vs Server Component decision logic
 - [ ] Unit test: Constraint validation logic
 - [ ] Unit test: Result format validation
 - [ ] Integration test: Full design-driven flow with mock context
 - [ ] Integration test: Component generation matches design specs
+- [ ] Integration test: Correct 'use client' directive usage
 - [ ] Integration test: Playwright test generation
 - [ ] Integration test: Result returned to orchestrator
 - [ ] Edge case test: Invalid design context
 - [ ] Edge case test: Missing visual reference
 - [ ] Edge case test: Empty design elements array
 - [ ] Edge case test: Constraint violation detected
+- [ ] Edge case test: Complex nested design elements
 
 ## Dependencies
 
@@ -336,7 +419,7 @@ function validateConstraints(
 - TASK-UX-2A61: Refactor figma-react-orchestrator to figma-orchestrator
 - TASK-UX-EFC3: Refactor zeplin-maui-orchestrator to zeplin-orchestrator
 
-**Parallel Development**: Can be developed in parallel with TASK-UX-006 (nextjs-ui-specialist) using Conductor + git worktrees.
+**Parallel Development**: Can be developed in parallel with TASK-UX-71BD (react-ui-specialist) using Conductor + git worktrees.
 
 ## Parallel Development
 
@@ -351,23 +434,25 @@ cd .conductor/ux-react-ui-specialist
 # Terminal 2 (simultaneously)
 conductor start ux-nextjs-ui-specialist main
 cd .conductor/ux-nextjs-ui-specialist
-/task-work TASK-UX-<nextjs-task-id>
+/task-work TASK-UX-92BF
 ```
 
 ## Next Steps
 
 After completing this task:
-1. TASK-UX-006: Extend nextjs-ui-specialist to handle design contexts
-2. TASK-UX-007: Update task-work Phase 1 to load design URL
-3. TASK-UX-008: Update task-work Phase 3 to route to orchestrators
+1. TASK-UX-007: Update task-work Phase 1 to load design URL
+2. TASK-UX-008: Update task-work Phase 3 to route to orchestrators
+3. TASK-UX-009: Update task-refine for design context awareness
 
 ## References
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 3](../../docs/proposals/design-url-integration-implementation-guide.md#phase-3-extend-ui-specialists-parallel)
-- [Existing React UI Specialist](../../installer/core/templates/react-typescript/agents/react-ui-specialist.md)
+- [Existing Next.js UI Specialist](../../installer/core/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md)
 - [Figma Orchestrator](../../installer/core/agents/figma-orchestrator.md) (after UX-003)
 - [Zeplin Orchestrator](../../installer/core/agents/zeplin-orchestrator.md) (after UX-004)
+- [Next.js App Router Documentation](https://nextjs.org/docs/app)
+- [Next.js Server and Client Components](https://nextjs.org/docs/app/building-your-application/rendering/server-components)
 
 ## Implementation Estimate
 
@@ -376,6 +461,7 @@ After completing this task:
 **Complexity**: 6/10 (Medium-High)
 - Extend existing agent with design context detection
 - Add design-driven implementation mode
+- Handle Next.js specific patterns (Server/Client Components)
 - Generate Playwright visual regression tests
 - Implement constraint validation
 - Maintain backward compatibility (standard mode)
@@ -384,3 +470,15 @@ After completing this task:
 ## Test Execution Log
 
 _Automatically populated by /task-work_
+
+
+## Outcome (2026-07-10 — CLOSED, superseded)
+
+Closed to `completed/` as part of the design-tool trio retirement
+(`docs/decisions/DEC-design-tool-trio-retirement.md`; DF-018 §2.4 Option A, ACCEPTED
+Rich 2026-07-09). The migration's *from*-side — the stack-specific `/figma-to-react`,
+`/zeplin-to-maui`, `/mcp-zeplin` commands — was **retired** (deleted + tombstoned) that day.
+The technology-agnostic design capability the folder planned toward shipped separately at the
+orchestrator layer (`guardkit/orchestrator/mcp_design_extractor.py` + `guardkit/design/`), not
+via these 2025-11-11 command-integration tasks. This task is therefore **superseded/obsolete**,
+not individually delivered — closed for tracker hygiene (WS3-S8a declared-vs-inferred divergence).

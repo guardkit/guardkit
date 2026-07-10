@@ -77,6 +77,38 @@ TOMBSTONES = [
             "/task-work and /task-review's [I]mplement flow."
         ),
     },
+    {
+        "name": "figma-to-react.md",
+        "retired_in": "PENDING",
+        "reason": (
+            "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
+            "Option A, ACCEPTED Rich 2026-07-09): revives+executes "
+            "TASK-UX-2DAB. Stack-specific Figma->React design-to-code, "
+            "superseded by the unified design_url path "
+            "(guardkit/orchestrator/mcp_design_extractor.py); no live "
+            "guardkit/installer consumer; lapsed removal_planned 2026-06-01."
+        ),
+    },
+    {
+        "name": "zeplin-to-maui.md",
+        "retired_in": "PENDING",
+        "reason": (
+            "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
+            "Option A, ACCEPTED Rich 2026-07-09): revives+executes "
+            "TASK-UX-2DAB. Stack-specific Zeplin->.NET MAUI design-to-code, "
+            "superseded by the unified design_url path; no live consumer."
+        ),
+    },
+    {
+        "name": "mcp-zeplin.md",
+        "retired_in": "PENDING",
+        "reason": (
+            "Retired per DEC-design-tool-trio-retirement (DF-018 §2.4 "
+            "Option A, ACCEPTED Rich 2026-07-09): documents a Zeplin MCP "
+            "integration the orchestrator does not implement; extended into "
+            "the TASK-UX-2DAB retirement per DF-018 §2.4."
+        ),
+    },
 ]
 
 

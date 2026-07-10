@@ -1,8 +1,14 @@
 # Design-to-Code Common Patterns
 
+> **Retirement note (2026-07-10):** the `/figma-to-react` and `/zeplin-to-maui` commands this
+> document supported were **retired** (DEC-design-tool-trio-retirement, DF-018 §2.4). The live
+> design path is the technology-agnostic `design_url` workflow
+> (`guardkit/orchestrator/mcp_design_extractor.py` + `guardkit/design/`). This file is preserved
+> as a historical record of the MCP-setup / design-system patterns.
+
 **Purpose**: Shared documentation for design system integration commands (Figma, Zeplin) to maintain DRY principles and consistency across all design-to-code workflows.
 
-**Referenced By**:
+**Formerly Referenced By** (both retired 2026-07-10):
 - `installer/core/commands/figma-to-react.md`
 - `installer/core/commands/zeplin-to-maui.md`
 

@@ -108,9 +108,6 @@ Commands Available:
 - /task-complete
 - /task-status
 - /debug
-- /figma-to-react
-- /zeplin-to-maui
-- /mcp-zeplin
 
 Installation size: ~4.0 MB
 ```

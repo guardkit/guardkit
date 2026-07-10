@@ -7,43 +7,43 @@
   "commands": {
     "agent-enhance.md": {
       "sha256": "747abeb977ad591d8e4980b761b76b974d2ea56859ed521308f9281b08b9090a",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "agent-format.md": {
       "sha256": "84cc2b6f202ae0f731e722f4b7102f2f145075bfe2de4f1abd07a86416724bf9",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "agent-validate.md": {
       "sha256": "6dae7e0ecae6567b928caf0a39dba16f206b9311b111ab9c2c2dccf789ec9684",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "agentic-init.md": {
       "sha256": "9eadc860edbaab728764d5ac8a1bbb3ea93446c5a0feb8f96d951d745003f3d8",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "arch-refine.md": {
       "sha256": "5d96852255c32be300980ed654b26d5f0cfd5ffaccc1458b6df28376c3f005f3",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "context-switch.md": {
       "sha256": "dd5a01daeb835042dd0addaf21a9b5f9dba55aca2ab5afa3638fd0153b392a52",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "debug.md": {
-      "sha256": "ea0edd97349440a5a7deea20291a30dd880ab7af005ca738a5b44e96a1ee18a0",
-      "source_commit": "60a5dffc7"
+      "sha256": "6497b9fe3717e8f115727b81b921124df57394c3210cf56ec3e4274d1c478b5d",
+      "source_commit": "1b89804d"
     },
     "design-refine.md": {
       "sha256": "6cf4c04accca0f8515faadce489eb07eda1380623280d2464db078da0e82bc66",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "feature-build.md": {
       "sha256": "d1d5b616a5951e15cabb4209b3265a6959a0ba662cae85ddfeddf4af89a88c8a",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "feature-complete.md": {
       "sha256": "3d9b94b91e86d16bd64e8c1f648b3ecf11fb708ad8cb16c1723d21f32f13a3ff",
-      "source_commit": "5ad48fcf"
+      "source_commit": "1b89804d"
     },
     "feature-plan.md": {
       "sha256": "cb4409528a1fcefb6522667b6c9ae198dbac4cdd655cbd510e6916a1dbbd3807",
@@ -53,69 +53,57 @@
       "sha256": "79a6c306d0d56c059e102ec745531e0e37d0c5d07edc9ce95046bd6223445e2a",
       "source_commit": "ce914f7c"
     },
-    "figma-to-react.md": {
-      "sha256": "f7fa079cb33bba1cbc23412ba66eb27ee7d236e5e0e2117ff54bae1c7ae97cea",
-      "source_commit": "60a5dffc7"
-    },
-    "mcp-zeplin.md": {
-      "sha256": "9f32018ec331074b513d2adb56ffa6c41d3b9d5b60fd6e14558678591a9dd5de",
-      "source_commit": "60a5dffc7"
-    },
     "system-arch.md": {
       "sha256": "196282001c528dc5c12d4025555616b90eaa981857d771295ff8405cbe405eee",
-      "source_commit": "71becc51"
+      "source_commit": "1b89804d"
     },
     "system-design.md": {
       "sha256": "afe817375b7172234a68b0dc47ff154ebd2a8e35bc5fc326f0722d215ebab416",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "system-plan.md": {
       "sha256": "a45fbe4d88f29b9be66081ce0aef8999d904105c302ea1fa2e209c9b4794a02c",
-      "source_commit": "71becc51"
+      "source_commit": "1b89804d"
     },
     "task-complete.md": {
       "sha256": "7c795d699961020b12eae884bdf99718a060f772cb17cc76f9b7bb69e1c87a64",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "task-create.md": {
       "sha256": "10fed07e5fac8606cb04921577ddabaa8fcd8fc86bc684ce4a2fdb413782d13a",
-      "source_commit": "546a82d4"
+      "source_commit": "1b89804d"
     },
     "task-review.md": {
       "sha256": "dd95afc2e309ff2712f453579af0e6669a37af5fc3d041b2559db4652a077d96",
-      "source_commit": "10f9e44f"
+      "source_commit": "1b89804d"
     },
     "task-status.md": {
       "sha256": "6e51431090810b81a3247dd911842d93a97887abc96728e63d5b406f79a1e521",
-      "source_commit": "73026653"
+      "source_commit": "1b89804d"
     },
     "task-work.md": {
       "sha256": "a238e632a5d5c4ac9c1c5dabddf4242fdfa119c34e4fe7ea0d9e3c4060413858",
-      "source_commit": "ce914f7c"
+      "source_commit": "1b89804d"
     },
     "template-create-qa.md": {
       "sha256": "dcfa121f44e76cf5dcbbb67f2771b11cc306526df3865c84f4551760b08dc840",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "template-create.md": {
       "sha256": "942afa9b1ec5c44408c134bc3ca1ab4b393b9e6628068eaf4790ef388b51ed60",
-      "source_commit": "6271e513a"
+      "source_commit": "1b89804d"
     },
     "template-init.md": {
       "sha256": "fff78f6efb652d0da1d9c06968a19b105fa03b787f81db09ec3cf6c7cc6f0e1f",
-      "source_commit": "6271e513a"
+      "source_commit": "1b89804d"
     },
     "template-qa.md": {
       "sha256": "ec35a9a8f2ab8b041f3724710b4c803a44ead40856308fc7e9d3d9cbc758783b",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     },
     "template-validate.md": {
       "sha256": "87f36fb5ab4ec54cbff245513bba4ddba5df9d31dad8067f0cd8357348c89b2d",
-      "source_commit": "d8b90828"
-    },
-    "zeplin-to-maui.md": {
-      "sha256": "e1c7f1b9b66b2580a806f457350f5058e0d167f8f79feb5a7cd785850bf149ce",
-      "source_commit": "60a5dffc7"
+      "source_commit": "1b89804d"
     }
   },
   "tombstones": [
@@ -133,6 +121,21 @@
       "name": "task-refine.md",
       "retired_in": "f20e0b68",
       "reason": "Retired per DEC-task-refine-retirement (ADR-C consolidation, 2026-07-09): zero inbound command references; claimed module refinement_handler.py never existed; role absorbed by re-running /task-work and /task-review's [I]mplement flow."
+    },
+    {
+      "name": "figma-to-react.md",
+      "retired_in": "PENDING",
+      "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): revives+executes TASK-UX-2DAB. Stack-specific Figma->React design-to-code, superseded by the unified design_url path (guardkit/orchestrator/mcp_design_extractor.py); no live guardkit/installer consumer; lapsed removal_planned 2026-06-01."
+    },
+    {
+      "name": "zeplin-to-maui.md",
+      "retired_in": "PENDING",
+      "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): revives+executes TASK-UX-2DAB. Stack-specific Zeplin->.NET MAUI design-to-code, superseded by the unified design_url path; no live consumer."
+    },
+    {
+      "name": "mcp-zeplin.md",
+      "retired_in": "PENDING",
+      "reason": "Retired per DEC-design-tool-trio-retirement (DF-018 \u00a72.4 Option A, ACCEPTED Rich 2026-07-09): documents a Zeplin MCP integration the orchestrator does not implement; extended into the TASK-UX-2DAB retirement per DF-018 \u00a72.4."
     }
   ]
 }

@@ -75,7 +75,6 @@ Status: 3/4 MCPs available (75%)
 Impact: Minimal - all core features functional
 
 Notes:
-  - Zeplin MCP required only for /zeplin-to-maui command
   - Context7 provides up-to-date library docs (recommended)
   - System falls back to training data if MCPs unavailable
 
