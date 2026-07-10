@@ -1,16 +1,20 @@
 ---
-id: TASK-OBS-396E
-title: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git guarantee, Appendix A conformance
-task_type: feature
-priority: high
-feature_id: FEAT-OBSC
-wave: 4
-implementation_mode: task-work
 complexity: 6
-dependencies: [TASK-OBS-C440, TASK-OBS-80FE, TASK-OBS-9F43]
-status: backlog
-decision_of_record: D-OBS-2 (FILED 2026-07-09) — gates OBS-3
 created: 2026-07-09
+decision_of_record: D-OBS-2 (FILED 2026-07-09) — gates OBS-3
+dependencies:
+- TASK-OBS-C440
+- TASK-OBS-80FE
+- TASK-OBS-9F43
+feature_id: FEAT-OBSC
+id: TASK-OBS-396E
+implementation_mode: task-work
+priority: high
+status: design_approved
+task_type: feature
+title: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git
+  guarantee, Appendix A conformance
+wave: 4
 ---
 
 # TASK-OBS-396E: sdk_debug default-on via repo allowlist, size-capped rotation, keep-out-of-git guarantee, Appendix A conformance
