@@ -5826,7 +5826,8 @@ class AutoBuildOrchestrator:
             run_id=self._run_id,  # Shared run_id from orchestrator
             task_id=task_id,
             agent_role="player",
-            attempt=len(turn_history),  # Final attempt number
+            # attempt is >= 1 by schema (ge=1); clamp for the empty-history edge.
+            attempt=max(1, len(turn_history)),  # Final attempt number
             timestamp=datetime.now().isoformat(),
             turn_count=len(turn_history),
             diff_stats=diff_stats,
@@ -5858,7 +5859,9 @@ class AutoBuildOrchestrator:
             run_id=self._run_id,  # Shared run_id from orchestrator
             task_id=task_id,
             agent_role="player",
-            attempt=len(self._turn_history),  # Current attempt number
+            # attempt is >= 1 by schema (ge=1); an early failure before any
+            # turn completes still counts as attempt #1.
+            attempt=max(1, len(self._turn_history)),
             timestamp=datetime.now().isoformat(),
             failure_category=failure_category,
         )
