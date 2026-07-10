@@ -26,11 +26,27 @@ import shutil
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
+
 logger = logging.getLogger(__name__)
 
 ENV_VAR = "GUARDKIT_AUTOBUILD_PRESERVE_DEBUG"
 
 _TRUTHY = frozenset({"1", "true", "yes", "y", "on"})
+
+# Marker written when redaction fails — fail-closed for content, fail-open for control flow
+_REDACTION_FAILED_MARKER = "[REDACTION-FAILED]\n"
+
+# Module-level SecretRedactor instance (cached singleton for performance)
+_redactor: Optional[SecretRedactor] = None
+
+
+def _get_redactor() -> SecretRedactor:
+    """Lazy-initialize and return the module-level SecretRedactor instance."""
+    global _redactor
+    if _redactor is None:
+        _redactor = SecretRedactor()
+    return _redactor
 
 _ROLE_SUBPATH = {
     "player": (),
@@ -246,7 +262,9 @@ def preserve_prompt(
     :func:`preserve_event` calls. Idempotent: an existing turn directory
     is wiped and recreated to avoid stale state from interrupted runs.
 
-    This function never raises into the caller.
+    This function never raises into the caller. Secret redaction is applied
+    to both the prompt and options before writing. If redaction fails, the
+    [REDACTION-FAILED] marker is written instead of the raw payload.
     """
     if not preservation_enabled():
         return None
@@ -259,15 +277,37 @@ def preserve_prompt(
             shutil.rmtree(debug_dir, ignore_errors=True)
         debug_dir.mkdir(parents=True, exist_ok=True)
 
+        # Redact prompt before writing (fail-closed: no raw payload on error)
         prompt_path = debug_dir / "prompt.txt"
-        prompt_path.write_text(prompt or "", encoding="utf-8")
+        try:
+            redacted_prompt = _get_redactor().redact(prompt or "")
+            prompt_path.write_text(redacted_prompt, encoding="utf-8")
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning(
+                "sdk_debug: prompt redaction failed for %s turn %s: %s",
+                task_id,
+                turn,
+                redact_exc,
+            )
+            # Write placeholder marker instead of raw payload
+            prompt_path.write_text(_REDACTION_FAILED_MARKER, encoding="utf-8")
 
+        # Redact options before writing (fail-closed: no raw payload on error)
         options_path = debug_dir / "options.json"
-        options_payload = _options_to_jsonable(options)
-        options_path.write_text(
-            json.dumps(options_payload, indent=2, default=repr) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            options_payload = _options_to_jsonable(options)
+            options_json = json.dumps(options_payload, indent=2, default=repr) + "\n"
+            redacted_options = _get_redactor().redact(options_json)
+            options_path.write_text(redacted_options, encoding="utf-8")
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning(
+                "sdk_debug: options redaction failed for %s turn %s: %s",
+                task_id,
+                turn,
+                redact_exc,
+            )
+            # Write placeholder marker instead of raw payload
+            options_path.write_text(_REDACTION_FAILED_MARKER, encoding="utf-8")
 
         # Pre-create empty messages.jsonl so a turn that crashes before
         # the first stream message still produces an artefact triple.
@@ -298,14 +338,24 @@ def preserve_event(debug_dir: Optional[Path], event: Any) -> None:
     """Append one event to messages.jsonl as a single JSON line.
 
     No-op when ``debug_dir`` is None (preservation disabled or
-    :func:`preserve_prompt` failed). Never raises.
+    :func:`preserve_prompt` failed). Never raises. Secret redaction is
+    applied to the JSON line before writing. If redaction fails, the
+    [REDACTION-FAILED] marker is written instead of the raw payload.
     """
     if debug_dir is None:
         return
     try:
         line = json.dumps(_event_to_jsonable(event), default=repr)
+        # Redact the JSON line before writing (fail-closed: no raw payload on error)
+        try:
+            redacted_line = _get_redactor().redact(line)
+        except Exception as redact_exc:  # noqa: BLE001
+            logger.warning("sdk_debug: event redaction failed: %s", redact_exc)
+            # Write placeholder marker instead of raw payload
+            redacted_line = _REDACTION_FAILED_MARKER.rstrip("\n")
+
         with (debug_dir / "messages.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(line)
+            fh.write(redacted_line)
             fh.write("\n")
     except Exception as exc:  # noqa: BLE001 — diagnostic-only path
         logger.warning("sdk_debug: failed to preserve event: %s", exc)
