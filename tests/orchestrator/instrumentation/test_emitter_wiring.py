@@ -38,13 +38,13 @@ if TYPE_CHECKING:
 
 def _make_mock_emitter() -> MagicMock:
     """Create a mock emitter for testing identity propagation."""
+    async def async_noop():
+        return None
+
     emitter = MagicMock()
-    emitter.emit = Mock(return_value=asyncio.Future())
-    emitter.emit.return_value.set_result(None)
-    emitter.flush = Mock(return_value=asyncio.Future())
-    emitter.flush.return_value.set_result(None)
-    emitter.close = Mock(return_value=asyncio.Future())
-    emitter.close.return_value.set_result(None)
+    emitter.emit = Mock(side_effect=lambda *args, **kwargs: async_noop())
+    emitter.flush = Mock(side_effect=lambda *args, **kwargs: async_noop())
+    emitter.close = Mock(side_effect=lambda *args, **kwargs: async_noop())
     return emitter
 
 
