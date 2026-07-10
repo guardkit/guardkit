@@ -13,6 +13,7 @@ Tests follow TDD RED-GREEN-REFACTOR pattern.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -119,7 +120,8 @@ class TestModelAttribution:
         # Should extract from response_messages, not fall back to "default"
         assert events[0].model == "claude-sonnet-4-20250514"
 
-    def test_model_from_result_message_model_usage(self):
+    @pytest.mark.asyncio
+    async def test_model_from_result_message_model_usage(self):
         """RED: Model from ResultMessage.model_usage when available."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -142,11 +144,15 @@ class TestModelAttribution:
             task_id="TASK-TEST",
         )
 
+        # Emission is fire-and-forget via loop.create_task(); yield so it runs.
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
         assert events[0].model == "claude-sonnet-4-20250514"
 
-    def test_model_from_flag_when_set(self):
+    @pytest.mark.asyncio
+    async def test_model_from_flag_when_set(self):
         """Model from configured flag takes precedence."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -165,12 +171,15 @@ class TestModelAttribution:
             task_id="TASK-TEST",
         )
 
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
         # Configured model takes precedence
         assert events[0].model == "custom-model-override"
 
-    def test_model_fallback_to_default_only_when_no_source(self):
+    @pytest.mark.asyncio
+    async def test_model_fallback_to_default_only_when_no_source(self):
         """Default only when neither flag nor server-resolved available."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -187,6 +196,8 @@ class TestModelAttribution:
             task_id="TASK-TEST",
         )
 
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
         # Only falls back to default when no other source
@@ -201,15 +212,16 @@ class TestModelAttribution:
 class TestRunIDCorrelation:
     """Test single run_id across all event types."""
 
-    def test_lifecycle_events_share_run_id(self):
+    @patch("guardkit.orchestrator.autobuild.WorktreeManager")
+    def test_lifecycle_events_share_run_id(self, mock_wm):
         """RED: task.started and task.completed share same run_id."""
-        # This will fail until we thread run_id through orchestrator
+        # Lifecycle emits (_emit_task_started/_emit_task_completed) use a blocking
+        # asyncio.run() internally, so this test stays synchronous (asyncio.run
+        # cannot be nested inside a running loop).
         orchestrator = AutoBuildOrchestrator(
-            task_id="TASK-TEST",
-            worktree_path="/tmp/test",
-            base_branch="main",
+            repo_root=Path("/tmp/test"),
             max_turns=5,
-            sdk_timeout_seconds=900,
+            sdk_timeout=900,
         )
         orchestrator._emitter = MockEmitter()
 
@@ -220,8 +232,10 @@ class TestRunIDCorrelation:
         # Emit lifecycle events
         orchestrator._emit_task_started("TASK-TEST")
 
-        # Simulate completion
-        orchestrator._emit_task_completed("TASK-TEST", turn_history=[])
+        # Simulate completion (non-empty turn_history: attempt/turn_count are ge=1)
+        orchestrator._emit_task_completed(
+            "TASK-TEST", turn_history=[Mock(decision="approved")]
+        )
 
         started_events = orchestrator._emitter.get_events_by_type(TaskStartedEvent)
         completed_events = orchestrator._emitter.get_events_by_type(TaskCompletedEvent)
@@ -233,17 +247,16 @@ class TestRunIDCorrelation:
         assert started_events[0].run_id == "run-test-abc-123"
         assert completed_events[0].run_id == "run-test-abc-123"
 
-    def test_llm_call_and_lifecycle_share_run_id(self):
+    @patch("guardkit.orchestrator.autobuild.WorktreeManager")
+    def test_llm_call_and_lifecycle_share_run_id(self, mock_wm):
         """RED: llm.call events join with task lifecycle by run_id."""
         # Create shared run_id
         shared_run_id = "run-test-xyz-456"
 
         orchestrator = AutoBuildOrchestrator(
-            task_id="TASK-TEST",
-            worktree_path="/tmp/test",
-            base_branch="main",
+            repo_root=Path("/tmp/test"),
             max_turns=5,
-            sdk_timeout_seconds=900,
+            sdk_timeout=900,
         )
         orchestrator._emitter = MockEmitter()
         orchestrator._run_id = shared_run_id
@@ -252,19 +265,26 @@ class TestRunIDCorrelation:
         invoker._emitter = orchestrator._emitter
         invoker._run_id = shared_run_id  # Thread from orchestrator
 
-        # Emit lifecycle event
+        # Lifecycle emit uses a blocking asyncio.run() — call it from this
+        # synchronous context.
         orchestrator._emit_task_started("TASK-TEST")
 
-        # Emit LLM call event
-        invoker._emit_llm_call_event(
-            agent_type="player",
-            model="claude-sonnet-4-20250514",
-            latency_ms=1000.0,
-            response_messages=[],
-            status="ok",
-            error=None,
-            task_id="TASK-TEST",
-        )
+        # The llm.call emit is fire-and-forget via loop.create_task(), so it
+        # needs a running loop: drive it inside asyncio.run() and yield so the
+        # scheduled task runs before we inspect the shared emitter.
+        async def _emit_llm_and_drain():
+            invoker._emit_llm_call_event(
+                agent_type="player",
+                model="claude-sonnet-4-20250514",
+                latency_ms=1000.0,
+                response_messages=[],
+                status="ok",
+                error=None,
+                task_id="TASK-TEST",
+            )
+            await asyncio.sleep(0.05)
+
+        asyncio.run(_emit_llm_and_drain())
 
         started = orchestrator._emitter.get_events_by_type(TaskStartedEvent)
         llm_calls = orchestrator._emitter.get_events_by_type(LLMCallEvent)
@@ -284,7 +304,8 @@ class TestRunIDCorrelation:
 class TestAttemptAndAgentRole:
     """Test correct attempt numbering and agent_role tracking."""
 
-    def test_attempt_increments_across_turns(self):
+    @pytest.mark.asyncio
+    async def test_attempt_increments_across_turns(self):
         """RED: Attempt reflects actual turn number."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -314,12 +335,16 @@ class TestAttemptAndAgentRole:
             task_id="TASK-TEST",
         )
 
+        # Emission is fire-and-forget via loop.create_task(); yield so both run.
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 2
         assert events[0].attempt == 1
         assert events[1].attempt == 2
 
-    def test_tool_exec_agent_role_from_coach(self):
+    @pytest.mark.asyncio
+    async def test_tool_exec_agent_role_from_coach(self):
         """RED: tool.exec during coach turn has agent_role=coach."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -336,6 +361,9 @@ class TestAttemptAndAgentRole:
             task_id="TASK-TEST",
         )
 
+        # Emission is fire-and-forget via loop.create_task(); yield so it runs.
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(ToolExecEvent)
         assert len(events) == 1
         assert events[0].agent_role == "coach"
@@ -349,7 +377,8 @@ class TestAttemptAndAgentRole:
 class TestToolExecutionFidelity:
     """Test real exit_code and stderr_tail extraction."""
 
-    def test_tool_exec_real_exit_code_nonzero(self):
+    @pytest.mark.asyncio
+    async def test_tool_exec_real_exit_code_nonzero(self):
         """RED: Non-zero exit_code from failing Bash call."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -366,12 +395,16 @@ class TestToolExecutionFidelity:
             task_id="TASK-TEST",
         )
 
+        # Emission is fire-and-forget via loop.create_task(); yield so it runs.
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(ToolExecEvent)
         assert len(events) == 1
         assert events[0].exit_code == 127
         assert "command not found" in events[0].stderr_tail
 
-    def test_tool_exec_stderr_tail_populated(self):
+    @pytest.mark.asyncio
+    async def test_tool_exec_stderr_tail_populated(self):
         """RED: stderr_tail contains actual stderr when produced."""
         invoker = AgentInvoker(worktree_path="/tmp/test")
         invoker._emitter = MockEmitter()
@@ -389,6 +422,8 @@ class TestToolExecutionFidelity:
             task_id="TASK-TEST",
         )
 
+        await asyncio.sleep(0.05)
+
         events = invoker._emitter.get_events_by_type(ToolExecEvent)
         assert len(events) == 1
         assert events[0].stderr_tail == stderr_content
@@ -402,7 +437,8 @@ class TestToolExecutionFidelity:
 class TestLangGraphSubstrateParity:
     """Test attribution works on LangGraph harness."""
 
-    def test_langgraph_gets_configured_model_when_no_server_resolved(self):
+    @pytest.mark.asyncio
+    async def test_langgraph_gets_configured_model_when_no_server_resolved(self):
         """LangGraph uses configured/resolved model name when server field absent."""
         # LangGraph may not expose server-resolved model in same way as SDK
         # Should use the resolved/configured name
@@ -421,6 +457,9 @@ class TestLangGraphSubstrateParity:
             error=None,
             task_id="TASK-TEST",
         )
+
+        # Emission is fire-and-forget via loop.create_task(); yield so it runs.
+        await asyncio.sleep(0.05)
 
         events = invoker._emitter.get_events_by_type(LLMCallEvent)
         assert len(events) == 1
