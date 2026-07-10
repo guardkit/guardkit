@@ -294,6 +294,101 @@ def create(title: str, priority: str, prefix: Optional[str], task_type: str) -> 
 
 
 @task.command()
+@click.argument("task_id")
+@click.option(
+    "--root",
+    "root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Repository root (default: current directory / git root).",
+)
+@click.option(
+    "--autobuild-mode",
+    "autobuild_mode",
+    is_flag=True,
+    default=False,
+    help="Phase-6 carve-out: REFUSE to complete (autobuild finalizes post-merge "
+    "via feature-complete; never complete an unmerged branch).",
+)
+@click.option(
+    "--pause",
+    "pause",
+    is_flag=True,
+    default=False,
+    help="Do not complete — report that the task stays at IN_REVIEW (Amber).",
+)
+@click.option(
+    "--no-capture",
+    "no_capture",
+    is_flag=True,
+    default=False,
+    help="Skip the fleet-memory capture-outcome write.",
+)
+@click.option(
+    "--no-git-commit",
+    "no_git_commit",
+    is_flag=True,
+    default=False,
+    help="Skip the conductor git-state commit.",
+)
+def complete(
+    task_id: str,
+    root: "Optional[Path]",
+    autobuild_mode: bool,
+    pause: bool,
+    no_capture: bool,
+    no_git_commit: bool,
+) -> None:
+    """Finalize a task via the shared atomic completion routine.
+
+    TASK_ID is the task id (or a full path to the task file).
+
+    The single completion path behind task-work § Phase 6 (Green) and the
+    /task-complete slash wrapper: atomic status-flip + move into
+    ``tasks/completed/``, related-file archival, fleet-memory capture-outcome,
+    and the conductor git-state commit. Fail-closed through ``qa.enforce_tier1``
+    when that flag is on. Location-agnostic: it finds the task in IN_REVIEW (the
+    normal task-work terminal) or any other state.
+
+    \b
+    Examples:
+        guardkit task complete TASK-045
+        guardkit task complete TASK-045 --pause        # stay at IN_REVIEW
+        guardkit task complete TASK-045 --no-capture
+    """
+    from installer.core.commands.lib.task_completion_helper import (
+        complete_task,
+        CompletionRefused,
+    )
+
+    if pause:
+        click.echo(f"⏸  {task_id} left at IN_REVIEW (--pause). Complete later with: "
+                   f"guardkit task complete {task_id}")
+        return
+
+    try:
+        result = complete_task(
+            task_id,
+            refuse_autobuild=autobuild_mode,
+            capture_outcome=not no_capture,
+            commit_git_state=not no_git_commit,
+            repo_root=root,
+        )
+    except CompletionRefused as exc:
+        raise click.ClickException(str(exc))
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc))
+
+    click.echo(f"✅ Completed {result['task_id']}")
+    click.echo(f"   Moved: {result['old_path']} → {result['new_path']} (atomic flip+move)")
+    click.echo(f"   Archived: {result['documents_archived']} related file(s)")
+    if not no_capture:
+        click.echo(f"   fleet-memory capture-outcome: {result['capture_status']}")
+    if not no_git_commit:
+        click.echo(f"   conductor git-state: {result['git_state_status']}")
+
+
+@task.command()
 @click.option(
     "--root",
     "root",
