@@ -1,0 +1,93 @@
+id: FEAT-0D1C
+name: Outcome-Label Sidecar
+description: 'OBS-6: append-only JSONL outcome-label records (coach_correct|operator_caught|merge_review_caught|live_gate_caught)
+  written adjacent to .guardkit/autobuild/{task_id}/ artifacts at disposition time;
+  9F43 run_id/attempt join, 80FE archive-safe, D-S10-1 coverage report. Closes gap
+  G6 (labels for free).'
+created: '2026-07-10T13:57:56.413921'
+status: planned
+complexity: 4
+estimated_tasks: 6
+tasks:
+- id: TASK-LBL-001
+  name: Labels package - schema, label_id, append-only writer
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-001-labels-package-schema-writer.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+- id: TASK-LBL-002
+  name: Identity resolver - absence-safe run_id/attempt over events.jsonl
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-002-identity-resolver.md
+  complexity: 3
+  dependencies:
+  - TASK-LBL-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-LBL-003
+  name: Paths resolver - live vs archive sidecar target
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-003-paths-resolver.md
+  complexity: 3
+  dependencies:
+  - TASK-LBL-001
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-LBL-004
+  name: Label CLI - guardkit label record + coverage
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-004-label-cli.md
+  complexity: 4
+  dependencies:
+  - TASK-LBL-001
+  - TASK-LBL-002
+  - TASK-LBL-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-LBL-005
+  name: Wire EXECUTE hooks into disposition commands
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-005-wire-disposition-hooks.md
+  complexity: 2
+  dependencies:
+  - TASK-LBL-004
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+- id: TASK-LBL-006
+  name: Regression test suite
+  file_path: tasks/backlog/outcome-label-sidecar/TASK-LBL-006-test-suite.md
+  complexity: 3
+  dependencies:
+  - TASK-LBL-001
+  - TASK-LBL-002
+  - TASK-LBL-003
+  - TASK-LBL-004
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+smoke_gates:
+  after_wave: [3, 4]
+  command: |
+    set -e
+    python -c "from guardkit.labels import append_label_record, OutcomeLabelRecord"
+    python -m guardkit.cli.main label --help
+  expected_exit: 0
+  timeout: 60
+orchestration:
+  parallel_groups:
+  - - TASK-LBL-001
+  - - TASK-LBL-002
+    - TASK-LBL-003
+  - - TASK-LBL-004
+  - - TASK-LBL-005
+    - TASK-LBL-006
+  estimated_duration_minutes: 193
+  recommended_parallel: 2
