@@ -22,7 +22,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-4899
 implementation_mode: task-work
 priority: high
-status: design_approved
+status: completed
 task_type: feature
 title: Wire the emitter through the three AgentInvoker construction sites and task-mode
   CLI

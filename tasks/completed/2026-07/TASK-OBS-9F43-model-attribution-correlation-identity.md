@@ -13,7 +13,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-9F43
 implementation_mode: task-work
 priority: high
-status: design_approved
+status: completed
 task_type: feature
 title: Real model attribution and joinable correlation identity on instrumentation
   events

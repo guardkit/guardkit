@@ -13,7 +13,7 @@ feature_id: FEAT-OBSC
 id: TASK-OBS-C440
 implementation_mode: task-work
 priority: high
-status: design_approved
+status: completed
 task_type: feature
 title: Extend secret redaction to sdk_debug message streams
 wave: 3
