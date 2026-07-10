@@ -27,6 +27,8 @@ from guardkit.orchestrator import (
     AutoBuildOrchestrator,
     OrchestrationResult,
 )
+from guardkit.orchestrator.instrumentation.backends import JSONLFileBackend
+from guardkit.orchestrator.instrumentation.emitter import CompositeBackend
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     FeatureOrchestrationError,
@@ -552,44 +554,63 @@ def task(
         f"ablation_mode={ablation_mode}, "
         f"timeout_multiplier={effective_timeout_multiplier})"
     )
-    orchestrator = AutoBuildOrchestrator(
-        repo_root=Path.cwd(),
-        max_turns=max_turns,
-        resume=resume,
-        enable_pre_loop=enable_pre_loop,
-        development_mode=effective_mode,
-        sdk_timeout=effective_sdk_timeout,
-        skip_arch_review=effective_skip_arch_review,
-        enable_checkpoints=enable_checkpoints,
-        rollback_on_pollution=rollback_on_pollution,
-        ablation_mode=ablation_mode,
-        enable_context=enable_context,
-        timeout_multiplier=effective_timeout_multiplier,
-        honesty_early_abort_threshold=float(effective_honesty_threshold),
-        honesty_early_abort_window=int(effective_honesty_window),
-        model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
-        coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
-    )
 
-    # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
-    effective_base_branch = base_branch or _detect_base_branch()
-    logger.info(f"Base branch for worktree: {effective_base_branch}")
+    # Create instrumentation emitter (TASK-OBS-4899)
+    events_dir = Path(".guardkit/autobuild") / task_id
+    emitter = CompositeBackend(backends=[JSONLFileBackend(events_dir=events_dir)])
 
-    # Phase 3: Execute orchestration
-    logger.info(f"Starting orchestration for {task_id} (resume={resume})")
-    result = orchestrator.orchestrate(
-        task_id=task_id,
-        requirements=task_data["requirements"],
-        acceptance_criteria=task_data["acceptance_criteria"],
-        base_branch=effective_base_branch,
-        task_file_path=task_data.get("file_path"),  # Pass task file for state persistence
-    )
+    try:
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=max_turns,
+            resume=resume,
+            enable_pre_loop=enable_pre_loop,
+            development_mode=effective_mode,
+            sdk_timeout=effective_sdk_timeout,
+            skip_arch_review=effective_skip_arch_review,
+            enable_checkpoints=enable_checkpoints,
+            rollback_on_pollution=rollback_on_pollution,
+            ablation_mode=ablation_mode,
+            enable_context=enable_context,
+            timeout_multiplier=effective_timeout_multiplier,
+            honesty_early_abort_threshold=float(effective_honesty_threshold),
+            honesty_early_abort_window=int(effective_honesty_window),
+            model=model,  # TASK-FIX-MODELPLUMB: thread --model to harness construction (load-bearing for LangGraph)
+            coach_model=coach_model,  # TASK-FIX-COACHBUDG01: optional per-role override for Coach
+            emitter=emitter,  # TASK-OBS-4899
+        )
 
-    # Phase 4: Display results
-    _display_result(result, verbose=verbose)
+        # Resolve base branch: --base-branch > cwd HEAD > "main" (TASK-FIX-WTBC)
+        effective_base_branch = base_branch or _detect_base_branch()
+        logger.info(f"Base branch for worktree: {effective_base_branch}")
 
-    # Exit with appropriate code
-    sys.exit(0 if result.success else 2)
+        # Phase 3: Execute orchestration
+        logger.info(f"Starting orchestration for {task_id} (resume={resume})")
+        result = orchestrator.orchestrate(
+            task_id=task_id,
+            requirements=task_data["requirements"],
+            acceptance_criteria=task_data["acceptance_criteria"],
+            base_branch=effective_base_branch,
+            task_file_path=task_data.get("file_path"),  # Pass task file for state persistence
+        )
+
+        # Phase 4: Display results
+        _display_result(result, verbose=verbose)
+
+        # Exit with appropriate code
+        sys.exit(0 if result.success else 2)
+
+    finally:
+        # Emitter lifecycle: flush and close (TASK-OBS-4899)
+        import asyncio as _asyncio
+        try:
+            _asyncio.run(emitter.flush())
+        except Exception as exc:
+            logger.warning("Failed to flush emitter: %s", exc)
+        try:
+            _asyncio.run(emitter.close())
+        except Exception as exc:
+            logger.warning("Failed to close emitter: %s", exc)
 
 
 # ============================================================================
