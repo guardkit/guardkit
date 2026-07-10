@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "host / composition root/authentication/AuthenticationExtensions.cs.template",
+      "layer": "authentication",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "domain/domain/Customer.cs.template",
+      "layer": "domain",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "cross-cutting core/endpoints/EndpointResultExtensions.cs.template",
+      "layer": "endpoints",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "endpoints/endpoints/CreateCustomer.cs.template",
+      "layer": "endpoints",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "endpoints/endpoints/GetAddressesByCustomerId.cs.template",
+      "layer": "endpoints",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "cross-cutting core/errors/BaseError.cs.template",
+      "layer": "errors",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "domain/errors/CustomerError.cs.template",
+      "layer": "errors",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "host / composition root/exemplar.api/Program.cs.template",
+      "layer": "exemplar.api",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "contracts (anti-corruption layer)/exemplar.customers.contracts/ICustomerLookup.cs.template",
+      "layer": "exemplar.customers.contracts",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "tests (e2e)/factories/ExemplarApiFactory.cs.template",
+      "layer": "factories",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "cross-cutting core/functional/Result.cs.template",
+      "layer": "functional",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "cross-cutting core/functional/ResultExtensions.cs.template",
+      "layer": "functional",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "infrastructure/infrastructure/ServiceCollectionExtensions.cs.template",
+      "layer": "infrastructure",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "fleet/registry/InMemoryManifestRegistry.cs.template",
+      "layer": "registry",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "infrastructure/repositories/CustomerRepository.cs.template",
+      "layer": "repositories",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "application/services/AddressService.cs.template",
+      "layer": "services",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "application/services/CustomerService.cs.template",
+      "layer": "services",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "fleet/services/FleetDiscoveryService.cs.template",
+      "layer": "services",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "tests (unit)/unit/CustomerServiceTests.cs.template",
+      "layer": "unit",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "application/validators/CreateCustomerValidator.cs.template",
+      "layer": "validators",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    }
+  ]
+}

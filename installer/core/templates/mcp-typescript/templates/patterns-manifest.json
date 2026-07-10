@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "prompts/prompt.ts.template",
+      "layer": "prompts",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "resources/resource.ts.template",
+      "layer": "resources",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "server/index.ts.template",
+      "layer": "server",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/protocol.sh.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/setup.ts.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tool.test.ts.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/vitest.config.ts.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "tools/tool.ts.template",
+      "layer": "tools",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    }
+  ]
+}

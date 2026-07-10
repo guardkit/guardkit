@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "src/__init__.py.template",
+      "layer": "src",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    }
+  ]
+}

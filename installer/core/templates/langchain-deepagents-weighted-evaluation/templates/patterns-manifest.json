@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "other/other/.env.example.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    }
+  ]
+}

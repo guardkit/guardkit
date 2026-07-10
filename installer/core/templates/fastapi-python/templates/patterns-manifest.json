@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "api/router.py.template",
+      "layer": "api",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "config/alembic.ini.template",
+      "layer": "config",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "config/pyproject.toml.template",
+      "layer": "config",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "core/config.py.template",
+      "layer": "core",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "core/security.py.template",
+      "layer": "core",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "crud/crud.py.template",
+      "layer": "crud",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "crud/crud_base.py.template",
+      "layer": "crud",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "db/session.py.template",
+      "layer": "db",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "dependencies/dependencies.py.template",
+      "layer": "dependencies",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "models/models.py.template",
+      "layer": "models",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "schemas/schemas.py.template",
+      "layer": "schemas",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "services/service.py.template",
+      "layer": "services",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/conftest.py.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/test_router.py.template",
+      "layer": "testing",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    }
+  ]
+}

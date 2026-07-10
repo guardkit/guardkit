@@ -113,6 +113,7 @@ class OrchestrationConfig:
     dry_run: bool = False
     save_analysis: bool = False
     no_agents: bool = False
+    agents_opt_in: bool = False  # PB-7: explicit --agents opt-in (headless default is now skip)
     verbose: bool = False
     skip_validation: bool = False  # TASK-040: Skip Phase 5.5 validation
     auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
@@ -342,6 +343,12 @@ class TemplateCreateOrchestrator:
         # TASK-IMP-D93B: Track whether agent response was successfully loaded during resume
         self._phase1_cached_response = None
 
+        # PB-7: cached agent-generation opt-in decision, resolved lazily on
+        # first Phase 5 entry (see _should_generate_agents) rather than at
+        # construction — a dry-run or an early-error exit should never
+        # trigger the interactive prompt.
+        self._generate_agents_decision: Optional[bool] = None
+
         # Configure logging
         if config.verbose:
             logging.basicConfig(level=logging.DEBUG)
@@ -515,7 +522,7 @@ class TemplateCreateOrchestrator:
 
         # Phase 5: Agent Recommendation
         self.agents = []
-        if not self.config.no_agents:
+        if self._should_generate_agents():
             self.agents = self._phase5_agent_recommendation(self.analysis)
 
         # Phase 6-7: Complete workflow
@@ -583,7 +590,7 @@ class TemplateCreateOrchestrator:
 
         # Phase 5: Agent Recommendation (may exit with code 42)
         self.agents = []
-        if not self.config.no_agents:
+        if self._should_generate_agents():
             self.agents = self._phase5_agent_recommendation(self.analysis)
 
         # Phase 6-7: Complete workflow
@@ -603,7 +610,7 @@ class TemplateCreateOrchestrator:
 
         # Phase 5: Complete agent generation with loaded response
         self.agents = []
-        if not self.config.no_agents:
+        if self._should_generate_agents():
             self.agents = self._phase5_agent_recommendation(self.analysis)
 
         # Phase 6-7: Complete workflow
@@ -853,6 +860,58 @@ class TemplateCreateOrchestrator:
         if not result.source_seeds and not result.template_stubs:
             self._print_info("  no qa-seeds emitted (see warnings above)")
 
+    def _phase_coverage_matrix_report(self, output_path: Path) -> None:
+        """Closing harvest step (PB-7 §5): report exemplar-layer coverage.
+
+        Runs after Phase 9 package assembly, once ``settings.json`` and
+        every ``.template`` file are on disk at ``output_path`` — the same
+        placement reasoning as ``_phase_qa_seed_generation`` (PB-6): the
+        report needs the assembled template dir to exist, not a
+        pre-packaging snapshot.
+
+        Report-only: never fails the harvest, never affects the exit code
+        (``COVERAGE_ENFORCED`` gating is a CI/CLI concern for the *shipped*
+        template set, not a harvest-time gate on a single freshly-created
+        template). This is deliberately the LAST thing harvest prints before
+        the success banner — the freed default path (agent generation now
+        opt-in, §5) ends with "here is your exemplar coverage" instead of a
+        directory of prose no build-time consumer reads.
+        """
+        self._print_phase_header("Exemplar Coverage Report (PB-7)")
+        try:
+            from guardkit.templates.coverage_matrix import (
+                CoverageStatus,
+                compute_coverage_for_dir,
+                gate_is_available,
+            )
+        except Exception as exc:  # never break harvest over a reporting step
+            self._print_warning(f"coverage report skipped: unavailable ({exc})")
+            return
+
+        check_gate = gate_is_available()
+        if not check_gate:
+            self._print_warning(
+                "tree-sitter runtime not installed — reporting presence/"
+                "reachability only, not gate-validated coverage"
+            )
+
+        try:
+            result = compute_coverage_for_dir(Path(output_path), check_gate=check_gate)
+        except Exception as exc:  # defensive — never break harvest
+            self._print_warning(f"coverage report failed (non-fatal): {exc}")
+            return
+
+        if not result.layers:
+            self._print_info("  no layer_mappings declared — nothing to report")
+            return
+
+        self._print_info(f"  {result.covered_count}/{result.total_count} layers covered")
+        for layer_cov in result.layers:
+            if layer_cov.status is CoverageStatus.COVERED:
+                self._print_success_line(f"{layer_cov.layer}: covered")
+            else:
+                self._print_warning(f"{layer_cov.layer}: {layer_cov.status.value}")
+
     def _complete_workflow_from_phase_8(self, output_path: Path) -> OrchestrationResult:
         """
         Complete phases 8-10.5 (TASK-PHASE-8-INCREMENTAL).
@@ -908,6 +967,12 @@ class TemplateCreateOrchestrator:
                 agents=self.agents,
                 output_path=output_path
             )
+
+        # ===== PB-7 §5: Exemplar Coverage Report (closing harvest step) =====
+        # The freed default path (agent generation now opt-in) ends here
+        # instead — harvest's closing artifact is exemplar coverage, not a
+        # directory of agent prose no build-time consumer reads.
+        self._phase_coverage_matrix_report(output_path)
 
         # Cleanup state on success
         self.state_manager.cleanup()
@@ -1135,6 +1200,49 @@ class TemplateCreateOrchestrator:
             self._print_error(f"Template generation failed: {e}")
             logger.exception("Template generation error")
             return None
+
+    def _should_generate_agents(self) -> bool:
+        """PB-7: resolve (and cache) the agent-generation opt-in decision.
+
+        Precedence:
+        1. ``--no-agents`` (explicit opt-out) always wins — backward compatible.
+        2. ``--agents`` (explicit opt-in) — headless harvest.
+        3. Interactive TTY, neither flag given — prompt once, default N.
+        4. Headless/non-interactive, neither flag given — skip (new default).
+
+        K6 is unaffected: this only changes WHETHER/WHEN harvest reaches the
+        existing agent-generation phase, not the two-tier auto-format quality
+        (still 6/10) or the enhancement flow (`/agent-enhance`, untouched).
+        Zero new AI-enhancement calls are added.
+
+        Cached on first call so a resumed run (which re-enters Phase 5 from a
+        fresh process) does not re-prompt mid-checkpoint-resume.
+        """
+        if self._generate_agents_decision is not None:
+            return self._generate_agents_decision
+
+        if self.config.no_agents:
+            decision = False
+        elif self.config.agents_opt_in:
+            decision = True
+        else:
+            use_interactive = self.config.interactive_validation
+            if use_interactive is None:
+                use_interactive = sys.stdin.isatty()
+            if not use_interactive:
+                decision = False
+            else:
+                try:
+                    answer = input(
+                        "\n  Generate agent stubs for this template? [y/N]: "
+                    ).strip().lower()
+                except (EOFError, OSError):
+                    decision = False
+                else:
+                    decision = answer in {"y", "yes"}
+
+        self._generate_agents_decision = decision
+        return decision
 
     def _phase5_agent_recommendation(self, analysis: Any) -> List[Any]:
         """
@@ -2976,6 +3084,7 @@ def run_template_create(
     dry_run: bool = False,
     save_analysis: bool = False,
     no_agents: bool = False,
+    agents_opt_in: bool = False,  # PB-7: explicit --agents opt-in (headless default is now skip)
     validate: bool = False,
     create_agent_tasks: bool = True,  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
@@ -2998,7 +3107,8 @@ def run_template_create(
         max_templates: Maximum template files to generate
         dry_run: Analyze and show plan without saving
         save_analysis: Save analysis JSON for debugging
-        no_agents: Skip agent generation
+        no_agents: Skip agent generation (explicit opt-out, always wins)
+        agents_opt_in: Generate agents (PB-7 explicit opt-in; headless default is skip)
         validate: Run extended validation and generate quality report
         create_agent_tasks: Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
         custom_name: Custom template name (overrides AI-generated name)
@@ -3048,6 +3158,7 @@ def run_template_create(
         dry_run=dry_run,
         save_analysis=save_analysis,
         no_agents=no_agents,
+        agents_opt_in=agents_opt_in,  # PB-7
         validate=validate,
         create_agent_tasks=create_agent_tasks,  # TASK-PHASE-8-INCREMENTAL
         resume=resume,  # TASK-BRIDGE-002
@@ -3083,7 +3194,11 @@ if __name__ == "__main__":
     parser.add_argument("--max-templates", type=int,
                         help="Maximum template files to generate")
     parser.add_argument("--no-agents", action="store_true",
-                        help="Skip agent generation")
+                        help="Skip agent generation (explicit opt-out, always wins)")
+    parser.add_argument("--agents", action="store_true", dest="agents_opt_in",
+                        help="Generate agent stubs (PB-7: opt-in — headless "
+                             "harvest skips agent generation unless passed; "
+                             "interactive harvest prompts instead)")
     parser.add_argument("--create-agent-tasks", action="store_true", default=True,
                         dest="create_agent_tasks",
                         help="Create individual enhancement tasks for each agent (default: enabled)")
@@ -3124,6 +3239,7 @@ if __name__ == "__main__":
         validate=args.validate,
         max_templates=args.max_templates,
         no_agents=args.no_agents,
+        agents_opt_in=args.agents_opt_in,  # PB-7
         create_agent_tasks=args.create_agent_tasks,
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2

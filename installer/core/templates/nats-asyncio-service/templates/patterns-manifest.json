@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {
+      "file": "infrastructure/example_service/app.py.template",
+      "layer": "example_service",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/example_service/__init__.py.template",
+      "layer": "example_service",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/example_service/__main__.py.template",
+      "layer": "example_service",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "other/example_service/config.py.template",
+      "layer": "example_service",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "handlers/handlers/domain.py.template",
+      "layer": "handlers",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/.env.example.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/AGENTS.md.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/Dockerfile.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/docker-compose.yml.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    },
+    {
+      "file": "other/other/pyproject.toml.template",
+      "layer": "other",
+      "keywords": [],
+      "priority": 5,
+      "pairs_with": []
+    },
+    {
+      "file": "other/schemas/__init__.py.template",
+      "layer": "schemas",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "services/services/domain.py.template",
+      "layer": "services",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/conftest.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 1,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/test_handler.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 2,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/test_integration.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 3,
+      "pairs_with": []
+    },
+    {
+      "file": "testing/tests/test_service.py.template",
+      "layer": "tests",
+      "keywords": [],
+      "priority": 4,
+      "pairs_with": []
+    }
+  ]
+}
