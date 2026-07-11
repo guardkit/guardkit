@@ -35,6 +35,27 @@
 - reason: <one line>
 -->
 
+### 2026-07-11 — DF-019 re-pin window: PB-4 emission text + PB-10 phase 2 + DF-018 Phase 3 (feature-spec.md, feature-plan.md)
+- specialist-agent re-pin commit / contract §0 note: the DF-019 window correction note in
+  specialist-agent `docs/design/contracts/CONTRACT-feature-spec-plan-outputs.md` §0 (dated
+  2026-07-11), enumerating every byte change in the batch. Both content-hash pins re-pinned in
+  `src/specialist_agent/templates/pins.py` (Session C):
+  `feature-spec.md` `79a6c306…` → `f1bd5e60…` (937 → 947 lines, git-commit pin `ce914f7c` → this window's guardkit commit);
+  `feature-plan.md` `cb440952…` → `6e4c87b9…` (2910 → 2925 lines, git-commit pin `5ad48fcf` → this window's guardkit commit).
+- G2b re-freeze: Rich's in-window go/no-go is step 6 of the runbook (attended window
+  2026-07-11); this ledger entry rides steps 2→4 and is reverted verbatim with the batch if
+  Rich declines (plan §2 rollback). Approval recorded in the plan doc + WS1 §4 on GO.
+- reason: the ONE DF-019 coordinated re-pin event (DF-012 / ADR-D). Members riding: **PB-4**
+  emission-step text (the F1 per-task pass-bar + the feature-grain seed + F3 leak-sweep + the
+  F13 guarantee the FEAT-DF12 emitter already writes — `9e47101`); **PB-10 phase 2**
+  (`format_version: 1` frontmatter on both templates + hygiene-test flip); **DF-018 Phase 3**
+  (feature-plan.md operator text `/task-complete` → `guardkit task complete`, feature-complete
+  wiring is the unpinned code half). **JOIN-1** (glue/wiring oracle) landed ahead at `a493bdc9`
+  (paired below). **PB-5** anchor de-dup = inspected, **zero bytes** — the duplicate `## §4:
+  Integration Contracts` headings sit inside marked Template/Example fences; a fence-aware lint
+  does not see them as document anchors. **PB-13 wave-2 + PB-15** = DEFERRED (no design exists;
+  a future one is its own window).
+
 ### 2026-07-11 — JOIN-1: glue/wiring TaskType class added to the oracle (guardkit/models/task_types.py)
 - specialist-agent re-pin commit / contract §0 note: RIDES THE DF-019 WINDOW — per the plan of
   record (specialist-agent `docs/design/df012-emitter-delta-repin-plan-2026-07-11.md` §4

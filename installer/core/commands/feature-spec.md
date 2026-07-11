@@ -1,4 +1,5 @@
 ---
+format_version: 1
 name: feature-spec
 description: "Generate BDD Gherkin specifications using Propose-Review methodology"
 arguments:
@@ -905,6 +906,15 @@ When the user runs `/feature-spec`, execute the six phases in sequence. This is 
 
    On `exit 0`: continue to display the output summary. On `exit 1`: report the parser error to the operator (the file already on disk is the LLM's last output — investigate and re-run rather than silently shipping an unparseable spec).
 
+### Quality-bar seed emission (F1 — additive QA data)
+
+Beyond the three spec files, `/feature-spec` emits a single **feature-grain quality-bar seed** as `qa/pass-bar-seed-{kebab-feature-name}.yaml` into the repository's `qa/` directory. This is QA data, not a spec-output file — the three-file `{--output}` contract above is unchanged. The seed carries:
+
+- **criteria** — mechanically derived from the accepted `@key-example` / `@smoke` scenarios (never authored);
+- **`auth_surface_bearing`** — the PB-14 determination (a mandatory, no-default flag). The value is a **deferred, human-confirmable assumption at low confidence**, never an auto-applied guess laundered into a concrete bar.
+
+`/feature-plan` consumes this seed (via the `_summary.md`) and specialises it into per-task `qa/pass-bar-<TASK-ID>.yaml` bars. The seed is **never** a per-task F1 sidecar — it has no TASK-ID and a distinct `kind`, so per-task bar semantics stay clean. A seed that fails to build surfaces as a note in the output summary, never a hard error.
+
 ### Behavioural rules
 
 - **Never ask questions before showing the proposal.** The proposal comes first; curation follows.
@@ -914,7 +924,7 @@ When the user runs `/feature-spec`, execute the six phases in sequence. This is 
 - **Always produce just-inside and just-outside boundary pairs** for every documented numeric or enumerated limit.
 - **Always annotate inferred values** with `# [ASSUMPTION: confidence=level]` in the Gherkin output.
 - **Always write domain language.** If you find yourself writing an HTTP status code, a SQL fragment, or a file path into a scenario step, rewrite it in domain terms.
-- **This command is purely additive.** It does not modify existing `.feature` files, task files, or any other workflow artefacts. It only creates new files in the output directory.
+- **This command is purely additive.** It does not modify existing `.feature` files, task files, or any other workflow artefacts. It only creates new files: the three spec files in the `{--output}` directory, plus the additive `qa/pass-bar-seed-*.yaml` QA-data seed (see *Quality-bar seed emission* above).
 
 ### --auto mode summary
 

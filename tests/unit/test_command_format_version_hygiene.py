@@ -27,9 +27,12 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COMMANDS = _REPO_ROOT / "installer" / "core" / "commands"
 
-# The two sha256-pinned templates. Phase 2 gives them the field only inside the
-# ADR-D batched re-pin — until then they MUST NOT carry it.
-_PINNED = {"feature-spec.md", "feature-plan.md"}
+# The two sha256-pinned templates. Phase 2 (the ADR-D batched re-pin, DF-019
+# window 2026-07-11) gave them ``format_version: 1`` as a versioned migration —
+# so they are no longer exempt from the carries-format_version invariant. The
+# set is now empty; kept as a named marker so a future re-pin of some other
+# template has an obvious home.
+_PINNED: set[str] = set()
 
 
 def _frontmatter(md: Path) -> str | None:
@@ -57,7 +60,10 @@ def _pinned_specs() -> list[Path]:
 #     (e421eff5) without bumping this count; fixed 2026-07-10 (M5 commit C0).
 #   PB-13 wave-1 (M5) adds 7 reference slices ({name}*-ext.md), stepped
 #     per restructure commit — final 30.
-_EXPECTED_UNPINNED = 30
+#   PB-10 phase 2 (DF-019 window, 2026-07-11): the two formerly-pinned
+#     templates gained format_version and left _PINNED, so they now count as
+#     unpinned specs subject to the invariant — 30 → 32.
+_EXPECTED_UNPINNED = 32
 
 
 def test_unpinned_spec_population_is_deliberate():
