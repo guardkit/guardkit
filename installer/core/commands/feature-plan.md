@@ -1,3 +1,7 @@
+---
+format_version: 1
+---
+
 # Feature Plan - Single Command Feature Planning
 
 Orchestrates the feature planning workflow in a single user-facing command by automatically creating a review task and executing the decision-making analysis.
@@ -1485,7 +1489,7 @@ Mark this task as `task_type: operator_handoff` and skip autobuild? [Y/n]:
 
    This task is `task_type: operator_handoff` — AutoBuild will not attempt
    it. The operator must verify the runtime acceptance criteria below
-   manually, then mark the task complete via `/task-complete`.
+   manually, then mark the task complete via `guardkit task complete`.
 
    - **AC-{id}**: {verbatim AC text}
    - **AC-{id}**: {verbatim AC text}
@@ -1532,6 +1536,17 @@ TASK-REV-A3F2 has been moved to cancelled state.
 The review findings are preserved for future reference at:
   tasks/cancelled/TASK-REV-A3F2-plan-implement-dark-mode.md
 ```
+
+### Quality-bar emission (F1) — per generated task
+
+When `/feature-plan` generates task files it additionally emits **one `qa/pass-bar-<TASK-ID>.yaml` per task** into the **target repository's** `qa/` directory (never this planning repo). Each bar records:
+
+- **criteria** — mechanically derived from the task's `@smoke` / `@task`-linked scenarios and acceptance material (no Player authorship);
+- **`auth_surface_bearing`** — threaded from the `/feature-spec` seed's determination (PB-14), never guessed;
+- **`registered_at.sha`** — the target-repo HEAD at emit (DF-012 §2.3);
+- for a `task_type: operator_handoff` task, a `class: operator` block with a `runbook_ref` pointing at the operator runbook.
+
+The `task_type` assigned per task follows the CONTRACT §B.4 heuristics, **including the DF-016 §6(a) `glue` / `wiring` class** for glue-authoring tasks (composition-root / DI / route-binding; BDD step definitions are always `glue`). Emission is **validation-as-data**: a bar that fails to build surfaces as a red entry in the `pass_bars` summary of `validation.json`, never a raised error. Because `/feature-plan` owns the TASK-IDs, it is the **primary** per-task bar writer. The same postprocess pass writes the F3 leak-surface manifest (`qa/leak-sweep.yaml`) and fills the F13 renderable-field guarantee (`gate_ref` + `decisions_already_made`); forge remains the sole writer of F13 kickoff content.
 
 ## What This Provides
 
