@@ -61,4 +61,22 @@ The FEAT-SPL-007/008 output contracts are refusal-pinned by content hash: every 
 
 ---
 
+## 6 · First execution — the 2026-07-11 window (dated note)
+
+The policy ran for the first time on **2026-07-11** (attended, Rich's in-session go/no-go). The
+plan of record (specialist-agent `df012-emitter-delta-repin-plan-2026-07-11.md`) added, and this
+window **exercised**, the one thing the canonical §2.2 procedure lacked: an **explicit rollback
+path**. Because §2.2 puts Rich's approval *last* (step 6), after the Session C re-pin (step 4),
+the plan pinned the recovery for a NO: revert the Session C content-hash pins to
+`79a6c306…`/`cb440952…`, revert the guardkit step-2 pinned-byte commits + the §0 git-commit pins,
+and hold the G2b re-freeze — tools reopen on the OLD contract, batch re-queues. In practice the
+whole batch was staged **locally, unpushed**, so a NO would have been a clean local reset (no
+public revert-commits); Rich gave GO, so the batch shipped (guardkit `95ea3e08`, specialist-agent
+`6684222`, fleet-evals `557d6f9`; pinned-files gate green; 0 net-new). **Members shipped in ONE
+event:** PB-4 emission text · PB-10 phase 2 · DF-018 Phase 3 · JOIN-1 (landed ahead `a493bdc9`) ·
+PB-5 (inspected → zero bytes). **Deferred (undesigned):** PB-13 wave-2 · PB-15 — each a future
+window per §5. The policy held: one correction note, one re-freeze, one tool-down.
+
+---
+
 *Drafted 2026-07-09 (ADR-D candidate). "Every pinned byte pays the coordination cost once — the window opens, everything in it ships, the seeds re-freeze once."*
