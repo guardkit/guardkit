@@ -169,6 +169,27 @@ class TestValidateFeaturePreflight:
         assert "enhancement" in result.warnings[0].message
         assert "feature" in result.warnings[0].suggestion
 
+    @pytest.mark.parametrize("task_type", ["glue", "wiring"])
+    def test_glue_wiring_task_type_accepted_clean(self, tmp_path, task_type):
+        """JOIN-1 / DF-016 §6(a): the oracle accepts glue/wiring end-to-end.
+
+        Canonical (not aliases) → is_valid with NO error and NO warning. This is
+        the acceptance side of FEAT-DF12 DFEM-013's oracle-green `glue` cutover.
+        """
+        _create_task_file(
+            tmp_path,
+            "tasks/backlog/TASK-001.md",
+            f"id: TASK-001\ntitle: Task One\ntask_type: {task_type}\ncomplexity: 5",
+        )
+        task = _make_task("TASK-001", "tasks/backlog/TASK-001.md")
+        feature = _make_feature([task])
+
+        result = validate_feature_preflight(feature, tmp_path)
+
+        assert result.is_valid
+        assert not result.has_errors
+        assert not result.has_warnings
+
     def test_missing_required_field_complexity(self, tmp_path):
         """Missing 'complexity' field produces an error."""
         _create_task_file(

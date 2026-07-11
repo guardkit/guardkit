@@ -28,9 +28,12 @@ from guardkit.models.task_types import (
 class TestTaskTypeEnum:
     """Test TaskType enumeration."""
 
-    def test_task_type_enum_has_nine_values(self):
-        """Test that TaskType enum has exactly 9 values."""
-        assert len(TaskType) == 9
+    def test_task_type_enum_has_eleven_values(self):
+        """Test that TaskType enum has exactly 11 values.
+
+        JOIN-1 (DF-016 §6(a)) added GLUE + WIRING to the prior 9.
+        """
+        assert len(TaskType) == 11
 
     def test_task_type_scaffolding_value(self):
         """Test SCAFFOLDING task type value."""
@@ -64,6 +67,14 @@ class TestTaskTypeEnum:
         """Test OPERATOR_HANDOFF task type value."""
         assert TaskType.OPERATOR_HANDOFF.value == "operator_handoff"
 
+    def test_task_type_glue_value(self):
+        """Test GLUE task type value (JOIN-1 / DF-016 §6(a))."""
+        assert TaskType.GLUE.value == "glue"
+
+    def test_task_type_wiring_value(self):
+        """Test WIRING task type value (JOIN-1 / DF-016 §6(a))."""
+        assert TaskType.WIRING.value == "wiring"
+
     def test_task_type_enum_lookup_by_value(self):
         """Test looking up enum members by value."""
         assert TaskType("scaffolding") == TaskType.SCAFFOLDING
@@ -73,6 +84,8 @@ class TestTaskTypeEnum:
         assert TaskType("testing") == TaskType.TESTING
         assert TaskType("refactor") == TaskType.REFACTOR
         assert TaskType("declarative") == TaskType.DECLARATIVE
+        assert TaskType("glue") == TaskType.GLUE
+        assert TaskType("wiring") == TaskType.WIRING
         assert TaskType("operator_handoff") == TaskType.OPERATOR_HANDOFF
 
 
@@ -1049,3 +1062,99 @@ class TestOperatorHandoffTaskType:
     def test_default_profiles_contains_operator_handoff(self):
         """DEFAULT_PROFILES registry includes OPERATOR_HANDOFF entry."""
         assert TaskType.OPERATOR_HANDOFF in DEFAULT_PROFILES
+
+
+# ============================================================================
+# 15. GLUE / WIRING Task Type Tests (JOIN-1 / DF-016 §6(a))
+# ============================================================================
+
+class TestGlueWiringTaskType:
+    """Test the DF-016 §6(a) glue/wiring task class: enum, strict profile, lookup.
+
+    DF-016 §6(a) resolution: guardkit marks glue-authoring tasks with an
+    explicit `glue`/`wiring` class so the clause-5 Coach posture keys
+    mechanically. Consumer: FEAT-DF12 DFEM-013's oracle-green `glue` cutover.
+    """
+
+    # The strictest posture — clause 5 "highest-risk task class".
+    _STRICT_FIELDS = dict(
+        arch_review_required=True,
+        arch_review_threshold=60,
+        coverage_required=True,
+        coverage_threshold=80.0,
+        tests_required=True,
+        plan_audit_required=True,
+        zero_test_blocking=True,
+        seam_tests_recommended=True,
+    )
+
+    def test_glue_enum_value(self):
+        """TaskType.GLUE exists with value 'glue'."""
+        assert TaskType.GLUE.value == "glue"
+
+    def test_wiring_enum_value(self):
+        """TaskType.WIRING exists with value 'wiring'."""
+        assert TaskType.WIRING.value == "wiring"
+
+    def test_glue_enum_lookup_by_value(self):
+        """TaskType('glue') constructs without error."""
+        assert TaskType("glue") == TaskType.GLUE
+
+    def test_wiring_enum_lookup_by_value(self):
+        """TaskType('wiring') constructs without error."""
+        assert TaskType("wiring") == TaskType.WIRING
+
+    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
+    def test_glue_wiring_profile_is_strictest(self, task_type):
+        """Both GLUE and WIRING carry the strictest (clause-5) posture."""
+        profile = DEFAULT_PROFILES[task_type]
+        for field, expected in self._STRICT_FIELDS.items():
+            assert getattr(profile, field) == expected, field
+
+    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
+    def test_get_profile_glue_wiring(self, task_type):
+        """get_profile resolves the strict profile for GLUE and WIRING."""
+        profile = get_profile(task_type)
+        assert profile.tests_required is True
+        assert profile.zero_test_blocking is True
+        assert profile.seam_tests_recommended is True
+        assert profile.arch_review_required is True
+
+    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
+    def test_for_type_glue_wiring(self, task_type):
+        """QualityGateProfile.for_type resolves the strict profile."""
+        profile = QualityGateProfile.for_type(task_type)
+        assert profile.zero_test_blocking is True
+        assert profile.seam_tests_recommended is True
+
+    @pytest.mark.parametrize("task_type", [TaskType.GLUE, TaskType.WIRING])
+    def test_default_profiles_contains_glue_wiring(self, task_type):
+        """DEFAULT_PROFILES registry includes GLUE and WIRING entries."""
+        assert task_type in DEFAULT_PROFILES
+
+    def test_glue_wiring_share_one_posture(self):
+        """DF-016 names 'glue/wiring' ONE class — the two profiles are equal."""
+        assert DEFAULT_PROFILES[TaskType.GLUE] == DEFAULT_PROFILES[TaskType.WIRING]
+
+    def test_glue_is_stricter_than_integration(self):
+        """The whole point of DF-016: glue is stricter than INTEGRATION.
+
+        INTEGRATION's relaxed gates (no arch review, no coverage, no zero-test
+        blocking) are what let the glue-class escapes through (POC-006, SMP-002).
+        """
+        glue = get_profile(TaskType.GLUE)
+        integration = get_profile(TaskType.INTEGRATION)
+        assert glue.arch_review_required and not integration.arch_review_required
+        assert glue.coverage_required and not integration.coverage_required
+        assert glue.zero_test_blocking and not integration.zero_test_blocking
+        assert glue.seam_tests_recommended and not integration.seam_tests_recommended
+
+    @pytest.mark.parametrize("value", ["glue", "wiring"])
+    def test_normalise_glue_wiring_passes_through(self, value):
+        """Canonical 'glue'/'wiring' strings pass through normalise unchanged."""
+        assert normalise_task_type(value) == value
+
+    @pytest.mark.parametrize("value", ["glue", "wiring"])
+    def test_glue_wiring_not_aliases(self, value):
+        """GLUE/WIRING are canonical enum values, not legacy aliases."""
+        assert value not in TASK_TYPE_ALIASES
