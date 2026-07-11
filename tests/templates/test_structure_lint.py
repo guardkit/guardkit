@@ -207,7 +207,10 @@ def test_token_budget_info_without_committed_figure():
 
 def test_real_feature_plan_flags_four_integration_contract_anchors():
     """The DIM2-F4 finding: feature-plan.md's 4 colliding Integration-Contracts
-    headers (:1827/:1888/:1895/:1918) must be surfaced as warnings."""
+    headers must be surfaced as warnings. Lines shifted +15 after the DF-019
+    re-pin (2026-07-11) added the frontmatter block + the F1-emission subsection
+    above them (:1827/:1888/:1895/:1918 → :1842/:1903/:1910/:1933); PB-5 kept the
+    anchor BYTES unchanged (fence-aware disposition), only positions moved."""
     results = lint_command_templates()
     assert "feature-plan.md" in results
     ic = [
@@ -217,7 +220,7 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
         and "integration contracts" in f.message.lower()
     ]
     lines = {f.line for f in ic}
-    assert {1827, 1888, 1895, 1918} <= lines, (
+    assert {1842, 1903, 1910, 1933} <= lines, (
         f"expected the 4 Integration-Contracts anchors flagged, got lines {lines}"
     )
 
