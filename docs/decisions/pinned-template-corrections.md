@@ -35,7 +35,21 @@
 - reason: <one line>
 -->
 
-_None yet. The pinned bytes are unchanged since the contract was pinned
+### 2026-07-11 — JOIN-1: glue/wiring TaskType class added to the oracle (guardkit/models/task_types.py)
+- specialist-agent re-pin commit / contract §0 note: RIDES THE DF-019 WINDOW — per the plan of
+  record (specialist-agent `docs/design/df012-emitter-delta-repin-plan-2026-07-11.md` §4
+  JOIN-1: "its CONTRACT §0 `task_type` pin + round-trip re-run ride this window"). The §0
+  task_type pin update + fixtures re-run land with the window's correction note.
+- G2b re-freeze: n/a for this entry (oracle code, not template bytes; templates verified
+  byte-identical at `a493bdc9`: `79a6c306…` / `cb440952…`). The window's re-freeze covers the
+  batch.
+- reason: ADDITIVE enum + strict QualityGateProfile per DF-016 §6(a) (accepted, binding),
+  landed ahead of the window so DFEM-013's oracle-green glue cutover has its target
+  (guardkit `a493bdc9`, 24 tests). This entry pairs that commit retroactively — the
+  pinned-files gate correctly went RED on `a493bdc9` because the pairing was missed; filed
+  by the board 2026-07-11.
+
+_Prior state: pinned bytes unchanged since the contract was pinned
 (specialist-agent `e1081aa`; templates `ce914f7c` / `5ad48fcf`). DF-011's
 packaging change is additive and touched **zero** pinned bytes — no entry
 required._
