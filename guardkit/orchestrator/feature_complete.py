@@ -191,7 +191,7 @@ def render_operator_followup_panel(
         "[dim]These tasks were deferred during AutoBuild because their "
         "acceptance criteria require runtime/operator verification. "
         "Verify each AC manually, then run "
-        "`/task-complete TASK-XXX` per task.[/dim]",
+        "`guardkit task complete TASK-XXX` per task.[/dim]",
         "",
     ]
 

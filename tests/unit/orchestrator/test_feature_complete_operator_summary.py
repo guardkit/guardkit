@@ -69,7 +69,7 @@ def _operator_handoff_body(
         "This task is `task_type: operator_handoff` — AutoBuild will not "
         "attempt it. The operator must verify the runtime acceptance "
         "criteria below manually, then mark the task complete via "
-        "`/task-complete`.",
+        "`guardkit task complete`.",
         "",
     ]
     lines.extend(ac_bullets)

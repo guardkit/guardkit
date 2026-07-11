@@ -46,16 +46,16 @@
       "source_commit": "1b89804d"
     },
     "feature-complete.md": {
-      "sha256": "3d9b94b91e86d16bd64e8c1f648b3ecf11fb708ad8cb16c1723d21f32f13a3ff",
+      "sha256": "81ee67e73d05c638263f8770f2f8c367e3b224468e1a557bf4397d264e577beb",
       "source_commit": "1b89804d"
     },
     "feature-plan.md": {
       "sha256": "6e4c87b9a324eb355f7e33844c0558b565987ae8f0bc5ff64d7bfeaaf7447ffb",
-      "source_commit": "5ad48fcf"
+      "source_commit": "c55bcc6e"
     },
     "feature-spec.md": {
       "sha256": "f1bd5e603dece5030f746d65e82ac0ab0a899c3689bd16ca093294474d6acf67",
-      "source_commit": "ce914f7c"
+      "source_commit": "c55bcc6e"
     },
     "system-arch.md": {
       "sha256": "196282001c528dc5c12d4025555616b90eaa981857d771295ff8405cbe405eee",

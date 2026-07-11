@@ -352,7 +352,7 @@ empty header is emitted in the merge summary.
 ╭───────────────── 📋 Required operator follow-up ──────────────────╮
 │ These tasks were deferred during AutoBuild because their           │
 │ acceptance criteria require runtime/operator verification. Verify  │
-│ each AC manually, then run `/task-complete TASK-XXX` per task.     │
+│ each AC manually, then `guardkit task complete TASK-XXX` per task. │
 │                                                                    │
 │ TASK-OP-A — Rotate prod credentials                                │
 │ - **AC-OPA-01**: Confirm `kubectl rollout status` exits 0.         │
@@ -364,7 +364,7 @@ empty header is emitted in the merge summary.
 ```
 
 After completing each AC manually, the operator runs
-`/task-complete TASK-XXX` per deferred task to mark it done. This is the
+`guardkit task complete TASK-XXX` per deferred task to mark it done. This is the
 only path by which an operator_handoff task transitions out of the
 `deferred` state.
 
