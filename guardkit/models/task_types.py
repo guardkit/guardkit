@@ -32,6 +32,10 @@ class TaskType(Enum):
     - DOCUMENTATION: Documentation and guides (minimal validation)
     - TESTING: Test creation, test refactoring, coverage improvements (minimal validation)
     - REFACTOR: Code improvements, performance optimization, pattern implementation
+    - GLUE / WIRING: Hand-written glue that binds factory-generated components at
+        declared seams (composition-root registration, DI wiring, route/handler
+        binding, BDD step definitions, adapter shims). The highest-risk task class
+        (DF-016 clause 5): strictest evidence posture, no gate relaxation.
     - OPERATOR_HANDOFF: Tasks that hand off to a human operator (every gate disabled)
 
     Attributes:
@@ -43,6 +47,14 @@ class TaskType(Enum):
         TESTING: Test files, test utilities, coverage improvements
         REFACTOR: Code cleanup, performance optimization, pattern refactoring
         DECLARATIVE: Pydantic models, DTOs, Settings classes, constants, app init
+        GLUE: Hand-written glue at a declared seam — the DF-016 §6(a) glue-authoring
+            class. Distinct from INTEGRATION: where INTEGRATION relaxes gates
+            (that relaxation is what let glue escapes through — POC-006, SMP-002),
+            GLUE is the *strictest* posture so the Coach treats glue adversarially
+            as production code. The value the /feature-plan emitter assigns
+            (DF-016 clause 5 keys the Coach posture mechanically off this class).
+        WIRING: Co-equal spelling of the GLUE class named in DF-016 §6(a)
+            ("a `glue`/`wiring` task class"); carries the identical strict profile.
         OPERATOR_HANDOFF: Tasks the orchestrator must skip and route to a human
             operator (e.g. external configuration, registry edits, manual
             credential rotation). Every quality gate is disabled so the
@@ -58,6 +70,11 @@ class TaskType(Enum):
     TESTING = "testing"
     REFACTOR = "refactor"
     DECLARATIVE = "declarative"
+    # DF-016 §6(a): explicit glue-authoring class so the clause-5 Coach posture
+    # keys mechanically, never inferred. GLUE is the /feature-plan emitter's
+    # cutover target (FEAT-DF12 DFEM-013); WIRING is the co-equal DF-016 spelling.
+    GLUE = "glue"
+    WIRING = "wiring"
     OPERATOR_HANDOFF = "operator_handoff"
 
 
@@ -277,6 +294,35 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         plan_audit_required=True,  # Verify completeness
         zero_test_blocking=False,
         seam_tests_recommended=False,
+    ),
+    # DF-016 §6(a) / clause 5: the glue-authoring task is the *highest-risk*
+    # task class, so its profile is the strictest available — every gate on,
+    # seam tests recommended (glue exists to bind seams), zero-test blocking
+    # (a glue task with no tests binds nothing verifiably). Deliberately
+    # stricter than INTEGRATION, whose relaxed gates are exactly what let the
+    # glue-class escapes through (POC-006, SMP-002). GLUE and WIRING share this
+    # one posture — the DF-016 "glue/wiring" class named twice, not two classes.
+    # (This encodes the *numeric* gates; the "no honesty-abort bypass around the
+    # wiring oracle" Coach posture keys off the enum identity in WS3-S3.)
+    TaskType.GLUE: QualityGateProfile(
+        arch_review_required=True,
+        arch_review_threshold=60,
+        coverage_required=True,
+        coverage_threshold=80.0,
+        tests_required=True,
+        plan_audit_required=True,
+        zero_test_blocking=True,
+        seam_tests_recommended=True,
+    ),
+    TaskType.WIRING: QualityGateProfile(
+        arch_review_required=True,
+        arch_review_threshold=60,
+        coverage_required=True,
+        coverage_threshold=80.0,
+        tests_required=True,
+        plan_audit_required=True,
+        zero_test_blocking=True,
+        seam_tests_recommended=True,
     ),
     # Skip-everything profile: orchestrator branches on the enum value to
     # skip the task entirely; gate values exist so any code path that
