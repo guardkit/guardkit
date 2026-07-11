@@ -20,10 +20,12 @@ from pathlib import Path
 import pytest
 
 from guardkit.templates.parse_gate import (
+    LANGUAGE_BY_EXT,
     FileStatus,
     OPTOUT_MARKER,
     PARSE_OPTOUT,
     ParseGateUnavailable,
+    _get_parser,
     available_languages,
     check_file,
     language_for_rendered_name,
@@ -185,6 +187,75 @@ class TestAllShippedTemplates:
         langs = {fr.language for fr in result.files if fr.status is FileStatus.OK}
         # python + typescript + tsx + csharp all exercised (3/13 -> N/N).
         assert {"python", "typescript", "tsx", "csharp"} <= langs
+
+
+# ---------------------------------------------------------------------------
+# Locked-runtime API compat guard (PARSEGATE-025)
+# ---------------------------------------------------------------------------
+#
+# The gate broke silently under the repo's own uv.lock (tree-sitter 0.25.2 +
+# tree-sitter-language-pack 1.10.9) because the pack rewrote get_parser to return
+# a native Rust binding whose surface diverges from the documented tree_sitter
+# API (parse wants str not bytes; root_node is a method; nodes expose .kind /
+# .start_position, not .type / .start_point). parse_gate now pins itself to the
+# stable tree_sitter.Parser(get_language(...)) pairing. These tests execute ONE
+# REAL PARSE per supported grammar against the LOCKED binding and assert the
+# stable node-API surface the walker depends on — so a future lock bump that
+# reintroduces the divergence fails LOUD in CI instead of silently killing the
+# gate. (Extends O4's "raises rather than reports green" to API mismatch.)
+
+# The five grammars the gate must support (task-named; every LANGUAGE_BY_EXT
+# value must be one of these — a new descriptor row without a real parse here is
+# a coverage hole).
+_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp")
+
+# A clean, valid one-liner per grammar — must parse with zero ERROR/MISSING.
+_CLEAN_SOURCE = {
+    "python": "x = 1\n",
+    "typescript": "const x: number = 1;\n",
+    "tsx": "const x = <div>{1}</div>;\n",
+    "javascript": "const x = 1;\n",
+    "csharp": "namespace N { public class C { } }\n",
+}
+
+
+@requires_treesitter
+class TestTreeSitter025ApiCompat:
+    def test_every_descriptor_grammar_is_covered(self):
+        # No descriptor row may name a grammar this guard does not exercise.
+        assert set(LANGUAGE_BY_EXT.values()) <= set(_SUPPORTED_GRAMMARS)
+
+    @pytest.mark.parametrize("grammar", _SUPPORTED_GRAMMARS)
+    def test_real_parse_uses_stable_tree_sitter_api(self, grammar):
+        # Build the parser exactly as the gate does, against the locked binding.
+        parser = _get_parser(grammar)
+
+        # The stable tree_sitter 0.25 API: parse() takes BYTES (the pack's Rust
+        # get_parser wants str and would raise TypeError here — PARSEGATE-025).
+        tree = parser.parse(_CLEAN_SOURCE[grammar].encode("utf-8"))
+
+        # root_node is a PROPERTY (the Rust binding exposes it as a method).
+        root = tree.root_node
+
+        # The node-API surface _collect_error_findings depends on. Any of these
+        # attribute accesses would raise on the divergent Rust binding, so a
+        # lock bump that swaps it back in fails loud right here.
+        assert isinstance(root.type, str)
+        assert root.has_error is False  # clean source -> no ERROR subtree
+        assert root.is_missing is False
+        assert isinstance(root.children, list)
+        row, col = root.start_point  # Point is (row, column) — not start_position
+        assert (row, col) == (0, 0)
+        assert isinstance(root.start_byte, int)
+        assert isinstance(root.end_byte, int)
+
+    @pytest.mark.parametrize("grammar", _SUPPORTED_GRAMMARS)
+    def test_real_parse_detects_error_per_grammar(self, grammar):
+        # A deliberately mangled render must surface as has_error under the
+        # locked binding — the gate's whole reason to exist.
+        parser = _get_parser(grammar)
+        tree = parser.parse(b"{{Broken(:\n")
+        assert tree.root_node.has_error is True
 
 
 class TestUnavailableRuntime:

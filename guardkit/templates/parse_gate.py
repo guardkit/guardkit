@@ -279,17 +279,33 @@ def _get_parser(language: str):
 
     ONE parser instance per language, reused across every file — the single
     tree-sitter engine mandated by stack-plugin-architecture.md.
+
+    The parser is built against the **stable ``tree_sitter`` 0.25 API**
+    (``tree_sitter.Parser(tree_sitter.Language)``) using the grammar handle from
+    ``tree_sitter_language_pack.get_language`` — NOT the pack's own
+    ``get_parser``. As of tree-sitter-language-pack 1.10.9 the pack rewrote
+    ``get_parser`` to return a native Rust binding whose surface diverges from
+    the documented ``tree_sitter`` API (``parse`` wants ``str`` not ``bytes``,
+    ``root_node`` is a method, nodes expose ``.kind``/``.start_position``
+    instead of ``.type``/``.start_point``). ``get_language`` still yields a real
+    ``tree_sitter.Language``, so pairing it with ``tree_sitter.Parser`` keeps
+    this module on the stable API the node walker (``_collect_error_findings``)
+    is written against, independent of the pack's binding choice. The
+    compat-guard test (``test_parse_gate_ts025_compat``) exercises a real parse
+    per grammar so a future lock bump that breaks this pairing fails loud in CI
+    rather than silently killing the gate.
     """
     parser = _PARSERS.get(language)
     if parser is None:
         try:
-            from tree_sitter_language_pack import get_parser
+            from tree_sitter import Parser
+            from tree_sitter_language_pack import get_language
         except ImportError as exc:  # pragma: no cover - exercised via CLI message
             raise ParseGateUnavailable(
                 "tree-sitter runtime not installed. Install with "
                 "`pip install 'guardkit-py[templates]'`."
             ) from exc
-        parser = get_parser(language)
+        parser = Parser(get_language(language))
         _PARSERS[language] = parser
     return parser
 
@@ -297,6 +313,7 @@ def _get_parser(language: str):
 def available_languages() -> bool:
     """True if the tree-sitter runtime is importable (gate can run)."""
     try:
+        import tree_sitter  # noqa: F401
         import tree_sitter_language_pack  # noqa: F401
     except ImportError:
         return False
