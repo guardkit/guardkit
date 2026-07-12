@@ -1,6 +1,6 @@
 # DECISION-DF-003 — Hybrid Pipeline Boundary: Frontier Planning, Local Build
 
-**Status:** PROPOSED — preferred direction; challenge only with new evidence
+**Status:** PROPOSED — preferred direction; challenge only with new evidence · **AMENDED 2026-07-12 (§7, Rich): `/feature-spec` + `/feature-plan` move to the unattended-local half**
 **Date:** 2026-06-10
 **Author:** Rich (worked through with Claude in Claude Desktop)
 **Companions:** DECISION-DF-001 (stands unchanged — governs the unattended critical path) · DECISION-DF-002 (ledger-based tool selection — the same boundary applied to the commercial ledger)
@@ -45,7 +45,7 @@ Three subsequent developments forced the question to be answered properly rather
 |---|---|---|---|---|
 | Ideation / conversation starters | Attended | Frontier (subscription) | Claude Desktop | Human |
 | `/system-arch` · `/system-design` · `/system-plan` | Attended | Frontier (subscription) | Claude Code / OpenCode | Human |
-| `/feature-spec` · `/feature-plan` | Attended | Frontier (subscription) | Claude Code / OpenCode | Human (defaults-acceptance logged as training signal) |
+| `/feature-spec` · `/feature-plan` | ~~Attended~~ **Unattended (§7 amendment, 2026-07-12)** | ~~Frontier (subscription)~~ **Local** (specialist-agent `po_feature_spec`/`architect_feature_plan`) | ~~Claude Code / OpenCode~~ specialist seats | ~~Human~~ Machine, behind Mode P's phone approval gate |
 | AutoBuild (Player-Coach) · `/task-work` · `/task-review` loops | **Unattended** | **Local** (llama-swap :9000) | LangGraph/DeepAgents harness (guardkitfactory) | **Forge** |
 | Gate evaluation, checkpoint management, re-dispatch | Unattended | Local | Forge | Forge (confidence-gated; human at checkpoints) |
 
@@ -89,6 +89,31 @@ The fine-tuned architect / product-owner / QA-verifier models remain first-class
 - ✅ Banner the superseded full-autonomy framing in `forge/docs/research/ideas/fleet-master-index.md` and `forge-pipeline-orchestrator-refresh.md` (2026-06-10).
 - Seed this decision into Graphiti (`guardkit-py graphiti add-context` or MCP `add_memory`) so agents retrieve it at context-load and an autonomous session never re-litigates the boundary.
 - Carry the boundary into Thread 3 positioning: the one-liner is *"the market runs implementation on metered frontier models; the factory runs frontier only where leverage-per-token is highest."*
+
+---
+
+## 7. Amendment — 2026-07-12 (Rich): the spec/plan stages cross the boundary
+
+**`/feature-spec` and `/feature-plan` move from the attended-frontier half to the
+unattended-local half.** Ratified by Rich in the Factory-2 session (2026-07-12: *"happy to make
+the permanent change to DF-003"*), following DF-009's reframe (attendance is an approval-gate
+property, not a substrate/operator property): Mode P's identity-pinned phone approval gate is
+RETAINED; the spec/plan **content** is machine-produced on local seats (specialist-agent
+`po_feature_spec` / `architect_feature_plan`, FEAT-SPL-007/008 — merged 2026-07-09).
+
+What replaces §1.2(b)'s two-model diagnostic *for these two stages*: the WS2 QA tail — registered
+live gates authored from the request text plus the DF-017 disposition/fix loop — makes an
+underspecified or drifted spec fail **visibly at the live gate** instead of relying on the weaker
+build seat to surface it.
+
+**Unchanged:** ideation, `/system-arch`, and `/system-design` stay attended on frontier — the
+blast-radius argument (§1.2(a)) holds undiminished at the architecture apex; §4's revisit
+conditions still govern those stages. DF-001 governs unchanged (local seats only on any unattended
+path — this amendment satisfies it by construction). The Forge's orchestration scope (§2.2)
+extends forward to spec/plan dispatch (the target-terminal lane) as a direct consequence.
+
+Vehicle + first evidence: `ai-transition/docs/ways-of-working/factory-2-outer-loop-handoff.md`
+(ai-transition `fcd8362`) and the Factory-2 pass record it files.
 
 ---
 
