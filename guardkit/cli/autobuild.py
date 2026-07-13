@@ -1293,6 +1293,21 @@ def complete(
                 _display_ledger_sweep_result(sweep)
                 if sweep.status == "fail" or sweep.status == "error":
                     exit_code = 4
+
+            # S5: the R-b advisory review as a step in the gate flow (pre-merge
+            # advisory placement). Flag-gated (qa.review_seat, default OFF) — a
+            # provable no-op unless the repo opts in. ADVISORY: it emits an F14
+            # record as a flow artifact and NEVER changes exit_code. Promotion to
+            # blocking is the S-4 calibration bar (Rich's numbers), not here.
+            from guardkit.qa.review_seat import is_review_seat_enabled
+
+            if is_review_seat_enabled(repo_root):
+                from guardkit.cli.qa import _display_review_outcome
+                from guardkit.qa.review_seat import run_review_gate_step
+
+                review_outcome = run_review_gate_step(repo_root, write=True)
+                _display_review_outcome(review_outcome)
+                # exit_code deliberately UNTOUCHED — advisory never fails the flow.
             sys.exit(exit_code)
 
         sys.exit(0)
