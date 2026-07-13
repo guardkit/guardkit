@@ -8,6 +8,7 @@ v1 surface (scope-design §3 CLI table — ``walk`` is B5):
     guardkit qa live-gate --feature <id> --target <env> [--gates ..] [--campaign]
     guardkit qa mutate --task <id> ...            # ST-05 mutation stage (B6)
     guardkit qa probe-boundaries --seam <id> ...  # ST-06 boundary probes (B6)
+    guardkit qa review [range selectors]          # R-b advisory code review (S5)
 
 ``validate``/``schema``/``kinds`` are on-demand format tools (no enforcement —
 that is B2). ``live-gate`` runs the repo's registered F4 gates and emits the
@@ -17,6 +18,18 @@ not consume them in v1), and **advisory by default**: findings file as
 task-shaped records and do NOT block (exit 0). ``--strict`` opts a run into a
 non-zero exit when findings exist (the gate-promotion path; see WS2 §B6 STATUS
 for the gate-vs-advisory verdict).
+
+``review`` (R-b, options paper ``factory-code-quality-seat-options-2026-07.md``
+stage S-5) is the **on-demand advisory code-review entry**: the coordinator runs
+it over any range — the R-b inspector reads a git diff on a local seat and emits
+an F14 review-findings record with reasons. It is **advisory-only and flag-gated
+default-OFF** (``qa.review_seat`` / ``GUARDKIT_QA_REVIEW_SEAT``): when the flag is
+OFF the command is a provable no-op (exit 0, no git, no seat); when ON it emits
+and exits 0 — it NEVER blocks. Promotion to a blocking gate is the S-4
+calibration bar (Rich's numbers), not this command. The same advisory review is
+wired as a step in the ``autobuild complete --verify`` gate flow (behind the
+same flag), where it attaches its F14 record as a flow artifact and never
+changes the completion's exit code.
 """
 
 from __future__ import annotations
@@ -27,6 +40,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.panel import Panel
 
 from guardkit.qa.formats import (
     FORMAT_KINDS,
@@ -434,6 +448,247 @@ def probe_boundaries(
     if strict and findings:
         sys.exit(_FINDINGS_STRICT_EXIT)
     sys.exit(0)
+
+
+@qa.command(name="review")
+@click.option(
+    "--repo",
+    "repo_root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("."),
+    help="Repo root to review (default: cwd).",
+)
+@click.option(
+    "--base",
+    default=None,
+    help="Review a range: 'git diff <base> [<head>]' (any range, e.g. main, "
+    "or a 'main..feature' expression).",
+)
+@click.option(
+    "--head",
+    default=None,
+    help="Range head, paired with --base. Omit for a single-ended range/expr.",
+)
+@click.option("--commit", "commit", default=None, help="Review one commit's diff (git show).")
+@click.option("--merge", "merge", default=None, help="Review a merge commit vs its first parent.")
+@click.option(
+    "--staged",
+    is_flag=True,
+    default=False,
+    help="Review the staged working tree only (git diff --cached).",
+)
+@click.option(
+    "--unstaged",
+    is_flag=True,
+    default=False,
+    help="Review unstaged working-tree changes only (git diff).",
+)
+@click.option(
+    "--seat",
+    "model",
+    default=None,
+    help="Local reviewer seat (qwen36-workhorse | gemma4-coach; default: workhorse).",
+)
+@click.option(
+    "--write/--no-write",
+    "write",
+    default=True,
+    help="Write the F14 record to qa/review-<id>.yaml (default: write).",
+)
+@click.option(
+    "--advisory/--blocking",
+    "advisory",
+    default=True,
+    help="Advisory (default; exit 0 always). Blocking mode is gated on the S-4 "
+    "calibration bar and not yet available.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Also emit the F14 record as JSON on stdout.",
+)
+def review(
+    repo_root: Path,
+    base: str | None,
+    head: str | None,
+    commit: str | None,
+    merge: str | None,
+    staged: bool,
+    unstaged: bool,
+    model: str | None,
+    write: bool,
+    advisory: bool,
+    as_json: bool,
+) -> None:
+    """R-b advisory code review over any range — emit F14 findings, never block.
+
+    The inspector: reads a git diff on a local seat and writes up findings with
+    reasons (F14 review-findings). Advisory-only and flag-gated default-OFF
+    (``qa.review_seat`` / ``GUARDKIT_QA_REVIEW_SEAT``) — when OFF it is a provable
+    no-op; when ON it emits and exits 0. Promotion to a blocking gate is the S-4
+    calibration bar, not this command.
+
+    \b
+    Subject (choose one; default = the whole working tree):
+        --base main [--head feat]   an arbitrary range
+        --commit <sha>              one commit
+        --merge <sha>               a merge vs its first parent
+        --staged / --unstaged       the working tree, narrowed
+
+    \b
+    Exit codes:
+        0  advisory outcome (no-op / clean / findings / a named seat error)
+        2  the requested range could not be read, or bad options
+    """
+    from guardkit.qa.diff_ingest import (
+        DiffIngestError,
+        ingest_commit,
+        ingest_merge,
+        ingest_range,
+        ingest_working_tree,
+    )
+    from guardkit.qa.review_seat import (
+        DEFAULT_SEAT,
+        is_review_seat_enabled,
+        run_advisory_review,
+    )
+
+    if not advisory:
+        console.print(
+            "[bold red]✗[/bold red] --blocking is not available: a blocking "
+            "review gate is gated on the S-4 calibration bar (Rich's catch-rate "
+            "floor + over-flag ceiling). This lane ships advisory-only.",
+            highlight=False,
+        )
+        sys.exit(2)
+
+    # Exactly one subject selector (working-tree scope flags are one group).
+    selectors = [
+        ("--base", base is not None),
+        ("--commit", commit is not None),
+        ("--merge", merge is not None),
+        ("--staged/--unstaged", staged or unstaged),
+    ]
+    chosen = [name for name, on in selectors if on]
+    if len(chosen) > 1:
+        console.print(
+            f"[bold red]✗[/bold red] choose one review subject, got: "
+            f"{', '.join(chosen)}",
+            highlight=False,
+        )
+        sys.exit(2)
+    if staged and unstaged:
+        console.print(
+            "[bold red]✗[/bold red] --staged and --unstaged are mutually exclusive.",
+            highlight=False,
+        )
+        sys.exit(2)
+    if head is not None and base is None:
+        console.print(
+            "[bold red]✗[/bold red] --head requires --base.", highlight=False
+        )
+        sys.exit(2)
+
+    seat = model or DEFAULT_SEAT
+
+    # Flag-gate FIRST: default-OFF ⇒ a provable no-op (no git, no seat). The
+    # coordinator opts in per run with GUARDKIT_QA_REVIEW_SEAT=1 (or the repo's
+    # qa.review_seat), mirroring qa.enforce_tier1.
+    if not is_review_seat_enabled(Path(repo_root)):
+        console.print(
+            "[yellow]○ review seat OFF[/yellow] (qa.review_seat / "
+            "GUARDKIT_QA_REVIEW_SEAT) — no-op. Set the flag to run the advisory "
+            "review. This never blocks; it is advisory until the S-4 bar."
+        )
+        sys.exit(0)
+
+    # Build the review subject (the one genuinely-new S-1 piece). A range that
+    # cannot be read is a loud config error (exit 2) — never a faked empty review.
+    try:
+        if base is not None:
+            payload = ingest_range(Path(repo_root), base, head)
+        elif commit is not None:
+            payload = ingest_commit(Path(repo_root), commit)
+        elif merge is not None:
+            payload = ingest_merge(Path(repo_root), merge)
+        elif staged:
+            payload = ingest_working_tree(Path(repo_root), scope="staged")
+        elif unstaged:
+            payload = ingest_working_tree(Path(repo_root), scope="unstaged")
+        else:
+            payload = ingest_working_tree(Path(repo_root), scope="all")
+    except DiffIngestError as exc:
+        console.print("[bold red]✗ could not read the review subject[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
+
+    outcome = run_advisory_review(
+        Path(repo_root), payload, model=seat, write=write
+    )
+    _display_review_outcome(outcome, as_json=as_json)
+    # Advisory: ALWAYS exit 0. A seat outage / parse failure is a named result,
+    # not a failure of this command.
+    sys.exit(0)
+
+
+def _display_review_outcome(outcome, as_json: bool = False) -> None:
+    """Render an advisory :class:`ReviewOutcome` — used by the CLI and the
+    autobuild gate-flow step. Advisory throughout: an error is a NAMED line,
+    never a non-zero verdict."""
+    import json as _json
+
+    from rich.markup import escape
+
+    console.print()
+    if not outcome.enabled:
+        note = outcome.notes[0] if outcome.notes else "review seat OFF — no-op"
+        console.print(f"[yellow]○ {escape(note)}[/yellow]")
+        return
+    if outcome.error is not None:
+        # ON but the seat could not be reached / its output could not be parsed.
+        console.print(
+            Panel(
+                f"[yellow]○ advisory review did not emit[/yellow]\n\n"
+                f"{escape(outcome.error)}\n\n"
+                "Advisory: this never blocks. The seat outage/parse failure is "
+                "recorded as-is (honesty-to-state), not a faked clean review.",
+                title="Review Advisory (no record)",
+                border_style="yellow",
+            )
+        )
+        return
+
+    record = outcome.record
+    total = record.stats.findings_total
+    header = (
+        f"[green]✓ clean[/green]" if total == 0 else f"[yellow]⚠ {total} finding(s)[/yellow]"
+    )
+    lines = [
+        f"{header}  ·  subject: {escape(record.subject.kind)} "
+        f"{escape(record.subject.ref)}",
+        f"confirmed {record.stats.confirmed} · refuted {record.stats.refuted} "
+        f"· refutations attempted {record.stats.refutations_attempted}",
+    ]
+    if outcome.emitted_path:
+        lines.append(f"[dim]F14 record →[/dim] {escape(outcome.emitted_path)}")
+    for note in outcome.notes:
+        lines.append(f"[dim]note:[/dim] {escape(note)}")
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="Advisory Code Review (R-b) — advisory, never blocks",
+            border_style="green" if total == 0 else "yellow",
+        )
+    )
+    for f in record.findings:
+        console.print(
+            f"  [yellow]•[/yellow] [{escape(f.severity)}/{escape(f.dimension)}/"
+            f"{escape(f.status)}] {escape(f.summary)}"
+        )
+    if as_json:
+        click.echo(_json.dumps(record.model_dump(mode="json"), indent=2))
 
 
 @qa.command()

@@ -55,14 +55,20 @@ import re
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
-from guardkit.qa.diff_ingest import FileDiff, ReviewPayload
+from guardkit.qa.diff_ingest import (
+    DiffIngestError,
+    FileDiff,
+    ReviewPayload,
+    ingest_commit,
+    ingest_merge,
+)
 from guardkit.qa.formats.review_findings import (
     Finding,
     ReviewFindings,
@@ -87,6 +93,10 @@ __all__ = [
     "check_single_slot",
     "emit_review_findings",
     "run_advisory_review",
+    "PayloadFactory",
+    "FindingRouter",
+    "default_merge_candidate_payload",
+    "run_review_gate_step",
 ]
 
 # ---------------------------------------------------------------------------
@@ -799,3 +809,131 @@ def _write_record(repo_root: Path, record: ReviewFindings) -> str:
         encoding="utf-8",
     )
     return str(path)
+
+
+# ===========================================================================
+# 6. The gate-flow advisory step (S5 — the pre-merge advisory placement).
+# ===========================================================================
+#
+# S5 wires the S3 advisory review as a STEP IN THE GATE FLOW: an advisory stage,
+# behind the same default-OFF flag, that emits an F14 record as a flow artifact
+# and NEVER fails the flow. It mirrors ``qa.enforce_tier1``'s stage discipline
+# (the tier-1 ledger sweep wired into ``autobuild complete --verify``): a
+# provable no-op when the flag is OFF, informative and non-blocking when ON.
+#
+# Scope note (options paper R-b, §"Where it attaches"): this is the *pre-merge
+# advisory* placement — emit-and-attach. The *post-merge* placement (a finding
+# as a DF-021 trust-ledger demotion signal) is deliberately OUT OF SCOPE here:
+# DF-021 is designed-only today (STATE-ANCHORS WC-7). The ``route`` hook below is
+# the seam a future DF-021 co-lane injects; in this placement it defaults to None
+# and the F14 record IS the routing (attached as a flow artifact).
+
+#: Builds the review payload for the gate step. Injectable so the wiring can pick
+#: the merge-candidate subject and tests can supply a fixture payload without
+#: touching git.
+PayloadFactory = Callable[[], ReviewPayload]
+
+#: The DF-017 disposition seam "where it exists": routes an emitted F14 record
+#: once the review has run. There is no live-gate envelope to bin a review
+#: finding against in the pre-merge advisory placement, so this defaults to None
+#: (attaching the record as an artifact is the routing). A future DF-021
+#: post-merge co-lane injects a real router here. A router that raises is caught
+#: and named — an advisory step never fails a flow, not even on a routing bug.
+FindingRouter = Callable[[ReviewFindings], None]
+
+
+def default_merge_candidate_payload(
+    repo_root: Path,
+    *,
+    ref: str = "HEAD",
+    git_run: Optional[Callable[..., Any]] = None,
+) -> ReviewPayload:
+    """Ingest the delivered merge candidate at ``ref`` as the review subject.
+
+    Tries the merge view first — the branch's contribution vs its first parent
+    (:func:`ingest_merge`, the reviewable surface for a delivered change). If
+    ``ref`` is not a merge commit that git call fails, so it falls back to the
+    single-commit diff (:func:`ingest_commit`). Either way the subject is "what
+    this change delivered".
+    """
+    try:
+        return ingest_merge(repo_root, ref, git_run=git_run)
+    except DiffIngestError:
+        return ingest_commit(repo_root, ref, git_run=git_run)
+
+
+def run_review_gate_step(
+    repo_root: Path,
+    *,
+    payload_factory: Optional[PayloadFactory] = None,
+    review_id: Optional[str] = None,
+    model: str = DEFAULT_SEAT,
+    base_url: str = DEFAULT_BASE_URL,
+    write: bool = True,
+    route: Optional[FindingRouter] = None,
+    repo_context: Optional[str] = None,
+    trust_seat_reproduction: bool = False,
+    seat_call: Optional[SeatCall] = None,
+    running_probe: Optional[RunningProbe] = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> ReviewOutcome:
+    """Run the advisory review as a STEP in the gate flow (S5, pre-merge placement).
+
+    Flag-gated on ``qa.review_seat`` (default OFF). When OFF this is a **provable
+    no-op**: ``payload_factory`` is never called (no git), no seat call, nothing
+    written — the tier-1-stage discipline applied to the review seat.
+
+    When ON it builds the merge-candidate payload (default:
+    :func:`default_merge_candidate_payload`), runs :func:`run_advisory_review`
+    (which writes the F14 record as a flow artifact when ``write=True``), and —
+    if a ``route`` hook is supplied (the DF-017 seam "where it exists") — routes
+    the emitted record. It ALWAYS returns ``blocking=False`` and NEVER raises: an
+    advisory step can inform a flow but must never fail it. Promotion to blocking
+    is the S-4 calibration gate (Rich's bar), outside this function.
+    """
+    if not is_review_seat_enabled(repo_root):
+        return ReviewOutcome(
+            enabled=False,
+            notes=(
+                "review gate step: flag OFF (qa.review_seat) — no-op, "
+                "payload not built, no seat call",
+            ),
+        )
+
+    factory = payload_factory or (lambda: default_merge_candidate_payload(repo_root))
+    try:
+        payload = factory()
+    except Exception as exc:  # noqa: BLE001 — advisory: an unreadable subject is named, not raised
+        return ReviewOutcome(
+            enabled=True,
+            error=(
+                f"review gate step: could not build the review subject "
+                f"({type(exc).__name__}): {exc}"
+            ),
+        )
+
+    outcome = run_advisory_review(
+        repo_root,
+        payload,
+        review_id=review_id,
+        model=model,
+        base_url=base_url,
+        repo_context=repo_context,
+        write=write,
+        trust_seat_reproduction=trust_seat_reproduction,
+        seat_call=seat_call,
+        running_probe=running_probe,
+        sleep=sleep,
+    )
+
+    if route is not None and outcome.record is not None:
+        try:
+            route(outcome.record)
+        except Exception as exc:  # noqa: BLE001 — advisory: a routing bug is named, never raised
+            outcome = replace(
+                outcome,
+                notes=outcome.notes
+                + (f"finding router raised (ignored, advisory): {exc}",),
+            )
+
+    return outcome
