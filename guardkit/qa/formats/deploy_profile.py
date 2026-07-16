@@ -147,9 +147,15 @@ class LiveGateSpec(BaseModel):
 
     @field_validator("timeout_seconds", mode="before")
     @classmethod
-    def _reject_bool_timeout(cls, value: Any) -> Any:
-        """A bool is not a timeout (B8 loader parity: int, not bool, > 0)."""
-        if isinstance(value, bool):
+    def _int_only_timeout(cls, value: Any) -> Any:
+        """Exactly an int (not bool/float/str) — B8 loader parity.
+
+        Pydantic's lax mode would coerce "600"/600.0 where the forge loader's
+        ``isinstance(..., int)`` check refuses; a canonical-green profile the
+        DEPLOY stage refuses is the fatal direction of the superset invariant
+        (parity-coach catch, 2026-07-16).
+        """
+        if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError("live_gate.timeout_seconds must be a positive integer")
         return value
 
@@ -194,6 +200,21 @@ class DeployProfile(QAFormatModel):
     # live gate (dated addition 2026-07-16; B8 loader parity since WS2-C1).
     rollback_image_ref: Optional[str] = Field(default=None, min_length=1)
     cwd: Optional[str] = None
+
+    @field_validator("rollback_image_ref")
+    @classmethod
+    def _rollback_ref_non_blank(cls, value: Optional[str]) -> Optional[str]:
+        """Strip + refuse blank — B8 loader parity (forge strips and refuses
+        whitespace-only). A blank ref validating green would feed the O-32
+        revert garbage (parity-coach catch, 2026-07-16)."""
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError(
+                "rollback_image_ref must be a non-empty string when present"
+            )
+        return stripped
     # The per-target F16 live-gate driver (dated addition 2026-07-16; forge
     # loader b101933). Absent ⇒ the live-gate seam stays Unconfigured (loud).
     live_gate: Optional[LiveGateSpec] = None

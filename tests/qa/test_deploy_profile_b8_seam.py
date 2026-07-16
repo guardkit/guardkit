@@ -123,6 +123,12 @@ def _base_profile_with_live_gate(live_gate: dict) -> dict:
         {"driver": ["python3", "d.py"], "env": {"base_url": "http://x"}},
         # non-string env value
         {"driver": ["python3", "d.py"], "env": {"BASE_URL": 8100}},
+        # parity-coach catches 2026-07-16: pydantic lax mode coerced these
+        # where the forge loader's isinstance(int) check refuses — the fatal
+        # direction of the superset invariant. Both sides must refuse.
+        {"driver": ["python3", "d.py"], "timeout_seconds": "600"},
+        {"driver": ["python3", "d.py"], "timeout_seconds": 600.0},
+        {"driver": ["python3", "d.py"], "timeout_seconds": " 600 "},
     ],
 )
 def test_malformed_live_gate_refused_on_both_sides(live_gate: dict) -> None:
@@ -137,3 +143,36 @@ def test_malformed_live_gate_refused_on_both_sides(live_gate: dict) -> None:
 
     with pytest.raises(Exception):
         DeployProfile.model_validate(bad)
+
+
+def test_blank_rollback_ref_refused_on_both_sides() -> None:
+    """A whitespace-only rollback_image_ref is refused by BOTH validators.
+
+    Parity-coach catch 2026-07-16: min_length counted raw chars while the
+    forge loader strips-and-refuses — a blank ref validating green would feed
+    the O-32 revert garbage (the fatal direction of the superset invariant).
+    """
+    bad = {
+        "format_version": "1.0",
+        "env_id": "x",
+        "compose": {"file": "c.yml"},
+        "rollback_image_ref": "   ",
+    }
+
+    forge = _load_forge_loader()
+    with pytest.raises(forge.DeployProfileError):
+        forge.parse_deploy_profile(bad)
+
+    from guardkit.qa.formats import DeployProfile
+
+    with pytest.raises(Exception):
+        DeployProfile.model_validate(bad)
+
+    # And the padded-but-non-blank case NORMALIZES identically on both sides
+    # (forge strips at profile.py:548; the canonical validator now strips too),
+    # keeping the exemplar equality assertions meaningful.
+    padded = dict(bad, rollback_image_ref="  tag:rollback-x  ")
+    assert DeployProfile.model_validate(padded).rollback_image_ref == "tag:rollback-x"
+    assert (
+        forge.parse_deploy_profile(padded).rollback_image_ref == "tag:rollback-x"
+    )
