@@ -62,6 +62,18 @@ from guardkit.qa.formats.base import (
     validate_file,
     validate_markdown_file,
 )
+from guardkit.qa.formats.dcl_binding import (
+    CapabilityBinding,
+    DclBinding,
+    FieldBinding,
+    IntentBinding,
+)
+from guardkit.qa.formats.dcl_derivation import (
+    AssertionsByDisposition,
+    CheckerSummary,
+    DclDerivation,
+    ToolIdentity,
+)
 from guardkit.qa.formats.deploy_profile import (
     ComposeSpec,
     DeployHost,
@@ -151,6 +163,9 @@ FORMAT_KINDS: Dict[str, Type[QAFormatModel]] = {
     "kickoff-prompt": KickoffPrompt,
     "review-findings": ReviewFindings,
     "walk-checkpoints": WalkCheckpoints,
+    # DCL adoption (D2, design §2) — additive; the gherkin track never sees these.
+    "dcl-binding": DclBinding,
+    "dcl-derivation": DclDerivation,
 }
 
 #: Markdown-convention kinds → format class (validated as conventions, not YAML).
@@ -177,6 +192,11 @@ KIND_ALIASES: Dict[str, str] = {
     "f13": "kickoff-prompt",
     "f14": "review-findings",
     "f15": "walk-checkpoints",
+    # f16 is reserved as the WS5-owned register consumer interface (no model
+    # here — see the module docstring), so the DCL kinds take the next free
+    # aliases f17/f18.
+    "f17": "dcl-binding",
+    "f18": "dcl-derivation",
 }
 
 
@@ -298,6 +318,15 @@ __all__ = [
     "WalkArtifact",
     "WalkCheckpoint",
     "WalkCheckpoints",
+    # DCL adoption (D2)
+    "CapabilityBinding",
+    "DclBinding",
+    "FieldBinding",
+    "IntentBinding",
+    "AssertionsByDisposition",
+    "CheckerSummary",
+    "DclDerivation",
+    "ToolIdentity",
     # helpers
     "check_format_version_window",
     "export_json_schema",
