@@ -9146,6 +9146,48 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return None
         return result.to_dict()
 
+    def _run_dcl_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Run the hermetic task-level DCL oracle (Phase D, design §1 / D1).
+
+        The ``dcl`` spec-track sibling of :meth:`_run_bdd_oracle`. Runs ONLY when
+        the repo is on the ``dcl`` track (``get_spec_track(worktree) == "dcl"``);
+        on the default ``gherkin`` track this returns ``None`` immediately and the
+        code path is dead — the existing BDD chain is neither removed, reordered,
+        nor conditioned (design §0.1 Fallback law).
+
+        Activation is otherwise by artefact presence, exactly like the BDD
+        oracle: if no ``features/**/*.dcl`` carries a ``@task:<TASK-ID>`` marker
+        (absence discipline), :func:`run_dcl_for_task` returns ``None`` and the
+        existing chain proceeds untouched. The oracle is hermetic — it runs the
+        compile gate + derivation only, never assertions against a live URL
+        (that is the live-gate stage's job, design §3).
+
+        Errors during execution are swallowed and logged (including an instrument
+        fault such as a missing node runtime) — DCL failures must never break
+        task-work result writing, mirroring ``_run_bdd_oracle``.
+        """
+        try:
+            from guardkit.qa.spec_track import get_spec_track
+
+            if get_spec_track(self.worktree_path) != "dcl":
+                return None
+
+            from guardkit.qa.dcl import run_dcl_for_task
+
+            logger.info("DCL oracle invoking run_dcl_for_task for %s", task_id)
+            result = run_dcl_for_task(task_id, self.worktree_path)
+        except Exception as exc:  # noqa: BLE001 — protect task-work writer
+            logger.warning(
+                "DCL oracle raised %s for %s; treating as skipped.",
+                exc.__class__.__name__,
+                task_id,
+            )
+            return None
+
+        if result is None:
+            return None
+        return result.to_dict()
+
     def _run_bdd_authoring_sweep(
         self, task_id: str, results: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
@@ -10489,6 +10531,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         bdd_results = self._run_bdd_oracle(task_id)
         if bdd_results is not None:
             results["bdd_results"] = bdd_results
+
+        # Phase D (design §1): the DCL oracle — the optional dcl spec-track
+        # sibling. Gated on get_spec_track(worktree) == "dcl" INSIDE the method;
+        # on the default gherkin track it returns None and this key never
+        # appears, so task_work_results is byte-identical to today (the BDD call
+        # above is untouched, unconditioned, and runs first exactly as before).
+        # Activation is otherwise by artefact presence (a @task-tagged .dcl);
+        # absent artifact = absent key at every layer (absence discipline).
+        dcl_results = self._run_dcl_oracle(task_id)
+        if dcl_results is not None:
+            results["dcl_results"] = dcl_results
 
         # TASK-AB-BDDAUTHOR01: authoring sweep — the second BDD leg, activated
         # by authored OWNED glue (artefact presence, no flag). Distinct key;
