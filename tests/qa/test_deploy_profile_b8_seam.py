@@ -29,6 +29,9 @@ _FORGE_LOADER = (
 _EXEMPLARS = [
     "lpa-platform-poc/deploy-profile.yaml",
     "study-tutor/deploy-profile.yaml",
+    # Dated addition 2026-07-16 (C4-prep): exercises rollback_image_ref +
+    # live_gate — the superset-invariant restore, proven on both sides.
+    "study-tutor/deploy-profile-live-gate.yaml",
 ]
 
 
@@ -63,6 +66,14 @@ def test_exemplar_validates_on_both_sides(rel_path: str) -> None:
     assert profile.env_id == instance.env_id
     assert profile.compose.file == instance.compose.file
     assert list(profile.secret_injection) == list(instance.secret_injection)
+    # The 2026-07-16 additions agree wherever the instance carries them.
+    assert getattr(profile, "rollback_image_ref", None) == instance.rollback_image_ref
+    if instance.live_gate is not None:
+        assert profile.live_gate is not None, "forge loader dropped live_gate"
+        assert list(profile.live_gate.driver) == list(instance.live_gate.driver)
+        assert list(profile.live_gate.gates) == list(instance.live_gate.gates)
+        assert profile.live_gate.timeout_seconds == instance.live_gate.timeout_seconds
+        assert dict(profile.live_gate.env) == dict(instance.live_gate.env)
 
 
 def test_value_bearing_secret_refused_on_both_sides() -> None:
@@ -86,3 +97,43 @@ def test_value_bearing_secret_refused_on_both_sides() -> None:
     assert "REFS ONLY" in str(exc.value) or "register-key" in str(exc.value)
     # And through the public validator path (write to a temp file), loudly.
     _ = QAFormatError  # imported for symmetry with the loud-failure convention
+
+
+def _base_profile_with_live_gate(live_gate: dict) -> dict:
+    return {
+        "format_version": "1.0",
+        "env_id": "x",
+        "compose": {"file": "c.yml"},
+        "live_gate": live_gate,
+    }
+
+
+@pytest.mark.parametrize(
+    "live_gate",
+    [
+        # empty driver argv
+        {"driver": []},
+        # empty-string argv part
+        {"driver": ["python3", ""]},
+        # bool timeout (a bool is not a timeout)
+        {"driver": ["python3", "d.py"], "timeout_seconds": True},
+        # zero timeout
+        {"driver": ["python3", "d.py"], "timeout_seconds": 0},
+        # lower-case env name (not an UPPER_SNAKE env-var NAME)
+        {"driver": ["python3", "d.py"], "env": {"base_url": "http://x"}},
+        # non-string env value
+        {"driver": ["python3", "d.py"], "env": {"BASE_URL": 8100}},
+    ],
+)
+def test_malformed_live_gate_refused_on_both_sides(live_gate: dict) -> None:
+    """Every malformed live_gate shape is refused by BOTH validators (parity)."""
+    bad = _base_profile_with_live_gate(live_gate)
+
+    forge = _load_forge_loader()
+    with pytest.raises(forge.DeployProfileError):
+        forge.parse_deploy_profile(bad)
+
+    from guardkit.qa.formats import DeployProfile
+
+    with pytest.raises(Exception):
+        DeployProfile.model_validate(bad)

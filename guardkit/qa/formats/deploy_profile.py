@@ -26,6 +26,18 @@ The FLEET_MEMORY_PG_DSN leak of 2026-07-04 is exactly why.
 
 Field list pinned by scope-design §4 (2026-07-07) + the B8 reconcile note.
 Additions require a dated note, never silent invention.
+
+Dated additions:
+
+- 2026-07-16 (C4-prep, superset-invariant restore): ``rollback_image_ref`` —
+  the kept ``:rollback-*`` image tag the O-32 revert re-deploys on a failing
+  live gate; the B8 loader has carried it since WS2-C1, so a profile that set
+  it failed here while the DEPLOY stage required it. ``live_gate`` — the
+  per-target F16 repo-driver backend (forge loader ``b101933``): the target
+  repo's own honest live-gate driver argv (+ optional gate subset, timeout,
+  NON-SECRET UPPER_SNAKE env overlay). Absent ⇒ the deploy stage's live-gate
+  seam stays Unconfigured and loud-fails (deny by default). Field parity with
+  ``forge.deploy.profile._parse_live_gate`` is proven by the B8 seam test.
 """
 
 from __future__ import annotations
@@ -101,6 +113,67 @@ class Reservation(BaseModel):
     quiet_window: Optional[str] = None
 
 
+#: An UPPER_SNAKE env-var NAME for the live-gate driver's non-secret overlay.
+#: Mirrors ``forge.deploy.profile._ENV_NAME_RE`` (parity proven by the seam test).
+_LIVE_GATE_ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+class LiveGateSpec(BaseModel):
+    """The per-target live-gate driver spec (the F16 real backend, C4-prep).
+
+    Names the target repo's own live-gate driver — the honest per-target
+    command that injects a minimal F16 perishable-prereq provider into the
+    UNMODIFIED guardkit ``LiveGateRunner`` (see the forge
+    ``RepoDriverLiveGateInvoker`` for the full F16 story). Absent from a
+    profile ⇒ the deploy stage's live-gate seam stays Unconfigured and
+    loud-fails (deny by default — a fake pass is worse than none).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    driver: List[str] = Field(min_length=1)
+    gates: List[str] = Field(default_factory=list)
+    timeout_seconds: int = Field(default=600, gt=0)
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("driver", "gates")
+    @classmethod
+    def _non_empty_parts(cls, value: List[str]) -> List[str]:
+        """Every argv part / gate id is a non-empty string (B8 loader parity)."""
+        for i, part in enumerate(value):
+            if not isinstance(part, str) or not part.strip():
+                raise ValueError(f"element [{i}] must be a non-empty string")
+        return value
+
+    @field_validator("timeout_seconds", mode="before")
+    @classmethod
+    def _reject_bool_timeout(cls, value: Any) -> Any:
+        """A bool is not a timeout (B8 loader parity: int, not bool, > 0)."""
+        if isinstance(value, bool):
+            raise ValueError("live_gate.timeout_seconds must be a positive integer")
+        return value
+
+    @field_validator("env")
+    @classmethod
+    def _upper_snake_names(cls, value: dict[str, str]) -> dict[str, str]:
+        """Env keys are UPPER_SNAKE names; values are non-secret strings.
+
+        Secrets stay register REFS (``secret_injection``) — never inlined here.
+        """
+        for name, val in value.items():
+            if not isinstance(name, str) or not _LIVE_GATE_ENV_NAME_RE.match(name):
+                raise ValueError(
+                    f"live_gate.env key {name!r} must be UPPER_SNAKE_CASE "
+                    "(a non-secret env-var NAME, e.g. API_TEST_BASE_URL)"
+                )
+            if not isinstance(val, str):
+                raise ValueError(
+                    f"live_gate.env[{name!r}] must be a string value "
+                    "(non-secret, e.g. a base URL; secrets stay register REFS)"
+                )
+        return value
+
+
 class DeployProfile(QAFormatModel):
     """Canonical deploy-profile schema (B10). Faithful superset of the B8 loader."""
 
@@ -117,7 +190,13 @@ class DeployProfile(QAFormatModel):
     health_checks: List[HealthCheck] = Field(default_factory=list)
     broker_contract_ref: Optional[str] = None
     reservation: Optional[Reservation] = None
+    # The kept :rollback-* image tag the O-32 revert re-deploys on a failing
+    # live gate (dated addition 2026-07-16; B8 loader parity since WS2-C1).
+    rollback_image_ref: Optional[str] = Field(default=None, min_length=1)
     cwd: Optional[str] = None
+    # The per-target F16 live-gate driver (dated addition 2026-07-16; forge
+    # loader b101933). Absent ⇒ the live-gate seam stays Unconfigured (loud).
+    live_gate: Optional[LiveGateSpec] = None
 
     @field_validator("models_required", mode="before")
     @classmethod
