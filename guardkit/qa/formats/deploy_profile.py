@@ -38,6 +38,18 @@ Dated additions:
   NON-SECRET UPPER_SNAKE env overlay). Absent ⇒ the deploy stage's live-gate
   seam stays Unconfigured and loud-fails (deny by default). Field parity with
   ``forge.deploy.profile._parse_live_gate`` is proven by the B8 seam test.
+
+- 2026-07-16 (S2F, candidate-then-promote): ``candidate`` — the optional
+  execution-surface overlay (forge loader ``c20f28e``). When present, the
+  DEPLOY stage stands the build up first under a SEPARATE ``<live>-cand``
+  compose project, gates it, and re-tags-and-promotes it to the live name only
+  on a PASS — the live name is never touched by a candidate that fails. Its
+  ``env`` (NON-SECRET UPPER_SNAKE overlay, e.g. ``CANDIDATE_PORT``) is threaded,
+  alongside ``CANDIDATE=1``, to the candidate-leg compose / health-check /
+  live-gate driver so they address the candidate instance; ``keep`` (default
+  False) leaves the candidate project up after a successful promote. Absent ⇒
+  byte-identical to the direct-live flow. Field parity with
+  ``forge.deploy.profile._parse_candidate`` is proven by the B8 seam test.
 """
 
 from __future__ import annotations
@@ -180,6 +192,63 @@ class LiveGateSpec(BaseModel):
         return value
 
 
+class CandidateSpec(BaseModel):
+    """The candidate-then-promote overlay (S2F, execution-surface design).
+
+    When a profile carries a ``candidate`` section, the DEPLOY stage stands the
+    build up first under a SEPARATE compose project (``<live project>-cand``),
+    gates it, and only re-tags-and-promotes it to the live name on a PASS — the
+    live name is never touched by a candidate that fails its gate. Absent ⇒
+    ``None`` ⇒ byte-identical to the direct-live flow. Refusal parity with
+    ``forge.deploy.profile._parse_candidate`` (loader ``c20f28e``) is proven by
+    the B8 seam test.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    env: dict[str, str] = Field(default_factory=dict)
+    keep: bool = False
+
+    @field_validator("env")
+    @classmethod
+    def _upper_snake_names(cls, value: dict[str, str]) -> dict[str, str]:
+        """Env keys are UPPER_SNAKE names; values are non-secret strings.
+
+        The candidate-leg NON-SECRET overlay (e.g. ``CANDIDATE_PORT=8902``);
+        secrets stay register REFS (``secret_injection``), never inlined here.
+        Same validation idiom as :class:`LiveGateSpec.env` (forge ``_ENV_NAME_RE``).
+        """
+        for name, val in value.items():
+            if not isinstance(name, str) or not _LIVE_GATE_ENV_NAME_RE.match(name):
+                raise ValueError(
+                    f"candidate.env key {name!r} must be UPPER_SNAKE_CASE "
+                    "(a non-secret env-var NAME, e.g. CANDIDATE_PORT)"
+                )
+            if not isinstance(val, str):
+                raise ValueError(
+                    f"candidate.env[{name!r}] must be a string value "
+                    "(non-secret, e.g. a port/base URL; secrets stay register REFS)"
+                )
+        return value
+
+    @field_validator("keep", mode="before")
+    @classmethod
+    def _bool_only_keep(cls, value: Any) -> Any:
+        """Exactly a bool (not int/float/str) — B8 loader parity.
+
+        Pydantic's lax mode would coerce 1 / "true" / 1.0 where the forge
+        loader's ``isinstance(keep, bool)`` check refuses; a canonical-green
+        profile the DEPLOY stage refuses is the fatal direction of the superset
+        invariant (the timeout_seconds lesson, applied to keep).
+        """
+        if not isinstance(value, bool):
+            raise ValueError(
+                "candidate.keep must be a boolean when present "
+                "(True keeps the candidate project up after promote; default False)"
+            )
+        return value
+
+
 class DeployProfile(QAFormatModel):
     """Canonical deploy-profile schema (B10). Faithful superset of the B8 loader."""
 
@@ -218,6 +287,9 @@ class DeployProfile(QAFormatModel):
     # The per-target F16 live-gate driver (dated addition 2026-07-16; forge
     # loader b101933). Absent ⇒ the live-gate seam stays Unconfigured (loud).
     live_gate: Optional[LiveGateSpec] = None
+    # The candidate-then-promote overlay (dated addition 2026-07-16; forge
+    # loader c20f28e). Absent ⇒ byte-identical to the direct-live flow.
+    candidate: Optional[CandidateSpec] = None
 
     @field_validator("models_required", mode="before")
     @classmethod

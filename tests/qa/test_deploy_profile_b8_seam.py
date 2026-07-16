@@ -32,6 +32,9 @@ _EXEMPLARS = [
     # Dated addition 2026-07-16 (C4-prep): exercises rollback_image_ref +
     # live_gate — the superset-invariant restore, proven on both sides.
     "study-tutor/deploy-profile-live-gate.yaml",
+    # Dated addition 2026-07-16 (S2F): exercises the candidate-then-promote
+    # overlay — the optional execution-surface section, proven on both sides.
+    "study-tutor/deploy-profile-candidate.yaml",
 ]
 
 
@@ -74,6 +77,10 @@ def test_exemplar_validates_on_both_sides(rel_path: str) -> None:
         assert list(profile.live_gate.gates) == list(instance.live_gate.gates)
         assert profile.live_gate.timeout_seconds == instance.live_gate.timeout_seconds
         assert dict(profile.live_gate.env) == dict(instance.live_gate.env)
+    if instance.candidate is not None:
+        assert profile.candidate is not None, "forge loader dropped candidate"
+        assert dict(profile.candidate.env) == dict(instance.candidate.env)
+        assert profile.candidate.keep == instance.candidate.keep
 
 
 def test_value_bearing_secret_refused_on_both_sides() -> None:
@@ -176,3 +183,46 @@ def test_blank_rollback_ref_refused_on_both_sides() -> None:
     assert (
         forge.parse_deploy_profile(padded).rollback_image_ref == "tag:rollback-x"
     )
+
+
+def _base_profile_with_candidate(candidate) -> dict:
+    return {
+        "format_version": "1.0",
+        "env_id": "x",
+        "compose": {"file": "c.yml"},
+        "candidate": candidate,
+    }
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        # candidate is not a mapping
+        "yes",
+        ["env"],
+        # lower-case env name (not an UPPER_SNAKE env-var NAME)
+        {"env": {"candidate_port": "8902"}},
+        # non-string env value (a bare int port slips lax coercion otherwise)
+        {"env": {"CANDIDATE_PORT": 8902}},
+        # keep=1/"true"/1.0/0: pydantic lax mode coerces these to bool where the
+        # forge loader's isinstance(keep, bool) check refuses — the fatal
+        # direction of the superset invariant (the timeout_seconds lesson).
+        {"keep": 1},
+        {"keep": 0},
+        {"keep": "true"},
+        {"keep": "false"},
+        {"keep": 1.0},
+    ],
+)
+def test_malformed_candidate_refused_on_both_sides(candidate) -> None:
+    """Every malformed candidate shape is refused by BOTH validators (parity)."""
+    bad = _base_profile_with_candidate(candidate)
+
+    forge = _load_forge_loader()
+    with pytest.raises(forge.DeployProfileError):
+        forge.parse_deploy_profile(bad)
+
+    from guardkit.qa.formats import DeployProfile
+
+    with pytest.raises(Exception):
+        DeployProfile.model_validate(bad)
