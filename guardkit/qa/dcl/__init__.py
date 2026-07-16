@@ -17,6 +17,8 @@ from guardkit.qa.dcl.deriver import (
     derive,
     make_receipt,
 )
+from guardkit.qa.dcl.discovery import find_dcl_files_with_tag, task_tag
+from guardkit.qa.dcl.oracle import DclOracleResult, run_dcl_for_task
 
 __all__ = [
     "CHECKER_PIN",
@@ -29,4 +31,8 @@ __all__ = [
     "DerivationResult",
     "derive",
     "make_receipt",
+    "find_dcl_files_with_tag",
+    "task_tag",
+    "DclOracleResult",
+    "run_dcl_for_task",
 ]
