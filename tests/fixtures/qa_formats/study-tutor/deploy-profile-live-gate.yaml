@@ -1,0 +1,36 @@
+# deploy-profile — study-tutor local http front door (C4-prep exemplar,
+# dated addition 2026-07-16). Exercises the two superset-invariant-restore
+# fields: rollback_image_ref (the O-32 revert tag, B8-loader parity since
+# WS2-C1) and live_gate (the per-target F16 repo-driver backend, forge loader
+# b101933). Conforms to the canonical B10 schema AND the WS2-B8 forge loader.
+format_version: "1.0"
+env_id: study-tutor-local-http
+
+hosts:
+  - host: localhost
+    role: app
+
+compose:
+  file: deploy/http/docker-compose.yml
+
+secret_injection:
+  - STUDY_TUTOR_PG_DSN
+  - STUDY_TUTOR_HTTP_TOKENS
+
+health_checks:
+  - cmd: "curl -fsS http://localhost:8100/healthz"
+    expected: "ok"
+
+rollback_image_ref: "study-tutor-http:rollback-pre-deploy"
+
+cwd: "."
+
+live_gate:
+  driver:
+    - python3
+    - qa/gates/local_live_gate.py
+  gates:
+    - healthz
+  timeout_seconds: 600
+  env:
+    STUDY_TUTOR_BASE_URL: "http://localhost:8100"
