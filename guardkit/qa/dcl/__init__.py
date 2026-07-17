@@ -15,6 +15,7 @@ from guardkit.qa.dcl.author import (
     compose_author_prompt,
     resolve_endpoint_model,
 )
+from guardkit.qa.dcl.capture import append_brief, compile_shadow
 from guardkit.qa.dcl.checker import CHECKER_PIN, CheckerError, check, ir
 from guardkit.qa.dcl.deriver import (
     Assertion,
@@ -32,6 +33,8 @@ __all__ = [
     "CheckerError",
     "check",
     "ir",
+    "compile_shadow",
+    "append_brief",
     "AuthoringInstrumentError",
     "AuthoringResult",
     "author_dcl",
