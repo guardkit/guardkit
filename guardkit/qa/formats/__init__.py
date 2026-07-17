@@ -68,6 +68,17 @@ from guardkit.qa.formats.dcl_binding import (
     FieldBinding,
     IntentBinding,
 )
+from guardkit.qa.formats.dcl_authoring import (
+    AuthoringEnvelope,
+    AuthoringEnvelopes,
+    AuthoringFinishReasons,
+    AuthoringPrompt,
+    AuthoringSampling,
+    AuthoringToolIdentity,
+    AuthoringVocabRef,
+    DclAuthoring,
+    SingleSlotProbe,
+)
 from guardkit.qa.formats.dcl_derivation import (
     AssertionsByDisposition,
     CheckerSummary,
@@ -166,6 +177,8 @@ FORMAT_KINDS: Dict[str, Type[QAFormatModel]] = {
     # DCL adoption (D2, design §2) — additive; the gherkin track never sees these.
     "dcl-binding": DclBinding,
     "dcl-derivation": DclDerivation,
+    # DCL machine-authoring (W1-S1) — the seat-authoring receipt.
+    "dcl-authoring": DclAuthoring,
 }
 
 #: Markdown-convention kinds → format class (validated as conventions, not YAML).
@@ -197,6 +210,7 @@ KIND_ALIASES: Dict[str, str] = {
     # aliases f17/f18.
     "f17": "dcl-binding",
     "f18": "dcl-derivation",
+    "f19": "dcl-authoring",
 }
 
 
@@ -327,6 +341,16 @@ __all__ = [
     "CheckerSummary",
     "DclDerivation",
     "ToolIdentity",
+    # DCL machine-authoring (W1-S1)
+    "AuthoringEnvelope",
+    "AuthoringEnvelopes",
+    "AuthoringFinishReasons",
+    "AuthoringPrompt",
+    "AuthoringSampling",
+    "AuthoringToolIdentity",
+    "AuthoringVocabRef",
+    "DclAuthoring",
+    "SingleSlotProbe",
     # helpers
     "check_format_version_window",
     "export_json_schema",
