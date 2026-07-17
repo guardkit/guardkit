@@ -1,6 +1,7 @@
 """``guardkit dcl`` — the DCL derivation surface (D2, design §2).
 
     guardkit dcl check <file> [--json]                 # compile gate
+    guardkit dcl author --feature <slug> --task <ID>   # seat authors the .dcl (§10)
     guardkit dcl derive --feature <ID> [--repo .]      # write derived set + receipt
     guardkit dcl run --assertions <file> [--base-url-env VAR]   # execute, F4 envelope
 
@@ -62,6 +63,95 @@ def check(dcl_file: Path, as_json: bool) -> None:
     )
     for d in errors:
         console.print(f"  - [{d.get('code')}] {d.get('message')}", highlight=False)
+    sys.exit(1)
+
+
+@dcl.command()
+@click.option("--feature", "feature", required=True, help="Feature slug (also the .dcl file stem).")
+@click.option("--task", "task", required=True, help="Task id (stamped as the // @task: marker).")
+@click.option(
+    "--repo",
+    "repo_root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("."),
+    help="Target repo root (default: cwd).",
+)
+@click.option(
+    "--request",
+    "request_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Recorded feature Request markdown (default: "
+    "feature_spec_inputs/<feature>.md under the repo).",
+)
+@click.option(
+    "--criteria",
+    "criteria_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Machine criteria YAML — a pass-bar or pass-bar-seed (default: "
+    "qa/pass-bar-<task>.yaml under the repo).",
+)
+@click.option("--capability", "capability", default=None, help="Capability name (recorded on the receipt).")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit the authoring envelope as JSON.")
+def author(
+    feature: str,
+    task: str,
+    repo_root: Path,
+    request_path: Path | None,
+    criteria_path: Path | None,
+    capability: str | None,
+    as_json: bool,
+) -> None:
+    """Author features/<feature>/<feature>.dcl via the seat (the §10 protocol).
+
+    ONE seat call under the sha-pinned vocabulary reference; if it compiles dirty,
+    exactly ONE bounded repair call carrying the checker's verbatim diagnostics.
+    Endpoint/model resolve from ``qa.dcl_author`` (config) with env overrides.
+
+    Exit: 0 authored (artifact + receipt written), 1 LOUD authoring failure
+    (receipt written authored:false, artifact NOT written, any pre-existing
+    artifact left untouched), 2 instrument/usage error (nothing written).
+    """
+    from guardkit.qa.dcl.author import AuthoringInstrumentError, author_dcl
+
+    repo = Path(repo_root)
+    req = Path(request_path) if request_path else repo / "feature_spec_inputs" / f"{feature}.md"
+    crit = Path(criteria_path) if criteria_path else repo / "qa" / f"pass-bar-{task}.yaml"
+
+    try:
+        result = author_dcl(
+            feature=feature,
+            task=task,
+            repo_root=repo,
+            request_path=req,
+            criteria_path=crit,
+            capability=capability,
+        )
+    except AuthoringInstrumentError as exc:
+        # Exit 2: nothing written except this error message.
+        console.print("[bold red]✗ authoring instrument error[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
+
+    if as_json:
+        click.echo(json.dumps(result.envelope(), indent=2))
+
+    if result.authored:
+        console.print(
+            f"[bold green]✓ AUTHORED[/bold green] {feature} "
+            f"({result.attempts} attempt(s), "
+            f"{'zero-shot' if result.zero_shot_clean else 'repaired'} clean)"
+        )
+        console.print(f"  [dim]artifact →[/dim] {result.artifact}")
+        console.print(f"  [dim]receipt  →[/dim] {result.receipt}")
+        sys.exit(0)
+
+    console.print(
+        f"[bold red]✗ AUTHORING FAILED[/bold red] {feature}: {result.failure_reason}",
+        highlight=False,
+    )
+    console.print(f"  [dim]receipt →[/dim] {result.receipt} [dim](authored: false)[/dim]")
     sys.exit(1)
 
 

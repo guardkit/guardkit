@@ -8,6 +8,13 @@ executor in :mod:`assertion_runner`.
 
 from __future__ import annotations
 
+from guardkit.qa.dcl.author import (
+    AuthoringInstrumentError,
+    AuthoringResult,
+    author_dcl,
+    compose_author_prompt,
+    resolve_endpoint_model,
+)
 from guardkit.qa.dcl.checker import CHECKER_PIN, CheckerError, check, ir
 from guardkit.qa.dcl.deriver import (
     Assertion,
@@ -25,6 +32,11 @@ __all__ = [
     "CheckerError",
     "check",
     "ir",
+    "AuthoringInstrumentError",
+    "AuthoringResult",
+    "author_dcl",
+    "compose_author_prompt",
+    "resolve_endpoint_model",
     "Assertion",
     "AssertionSet",
     "DerivationError",
