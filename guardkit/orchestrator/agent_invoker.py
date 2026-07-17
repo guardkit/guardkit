@@ -10543,6 +10543,30 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         if dcl_results is not None:
             results["dcl_results"] = dcl_results
 
+        # dcl/W2ab: the every-run compile-shadow capture lane. This is THE single
+        # once-per-verification-run hook (the coach_validator seam runs factory
+        # BDD plugin discovery, not this oracle, so wiring here fires exactly once
+        # per run — see capture.py's module docstring for the seam choice). It
+        # runs on EVERY track (unlike the dcl oracle above), but is flag-gated
+        # (dcl.capture, default OFF) INSIDE compile_shadow: on the default gherkin
+        # track with the flag off it returns after the config read — zero reads,
+        # no sink, no checker call, byte-identical task_work_results. compile_shadow
+        # never raises; this guard is belt-and-suspenders so NO capture path can
+        # ever touch the verdict/flow (Fallback law).
+        try:
+            from guardkit.qa.dcl.capture import compile_shadow
+
+            compile_shadow(
+                self.worktree_path,
+                run_id=getattr(self, "_run_id", None) or task_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — capture must never break task-work
+            logger.warning(
+                "DCL compile-shadow raised %s for %s; ignored (verdict untouched).",
+                exc.__class__.__name__,
+                task_id,
+            )
+
         # TASK-AB-BDDAUTHOR01: authoring sweep — the second BDD leg, activated
         # by authored OWNED glue (artefact presence, no flag). Distinct key;
         # absent sweep = absent key at every layer.
