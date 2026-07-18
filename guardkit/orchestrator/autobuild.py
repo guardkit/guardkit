@@ -4145,8 +4145,16 @@ class AutoBuildOrchestrator:
         # drive. Emits ONE clean/CATCH receipt; it does NOT merge or gate (that
         # is Stage 3). Only meaningful on an approved build; fully fail-open so
         # it can never disturb the preserve-for-review contract above.
+        #
+        # H-A Stage 3 — AUTO-MERGE behind the DF-021 trust ledger. The merge only
+        # ever fires for a lane that has GRADUATED (streak≥N of clean MG-3
+        # records), is not a constitutional class, has a clean Stage 1 signal,
+        # AND the master GUARDKIT_AUTO_MERGE switch is ON (default OFF in-window —
+        # nothing auto-merges until the streak matures through real use). Fully
+        # fail-open: it never disturbs the preserve-for-review contract above.
         if final_decision == "approved":
-            self._run_machine_verify_stage(worktree)
+            report = self._run_machine_verify_stage(worktree)
+            self._maybe_auto_merge(worktree, report)
 
         # Check for blocked report in last Player report (escape hatch pattern).
         # honesty_collapse is treated like max_turns_exceeded for this gate
@@ -4285,6 +4293,65 @@ class AutoBuildOrchestrator:
                 report.signal.upper(), worktree.task_id,
             )
         return report
+
+    def _trust_ledger_lane(self, worktree: "Worktree") -> str:
+        """The DF-021 lane identifier for this worktree (per-repo/per-lane).
+
+        A DF-021 "lane" is a persistent merge stream (a product line / repo), not
+        a single task. v1 keys it on ``GUARDKIT_LANE`` when set, else the target
+        repo's directory name — the natural per-repo lane.
+        """
+        override = os.environ.get("GUARDKIT_LANE")
+        if override:
+            return override.strip()
+        repo_root = getattr(self._worktree_manager, "repo_root", None)
+        return Path(repo_root).name if repo_root else worktree.base_branch
+
+    def _maybe_auto_merge(
+        self, worktree: "Worktree", report: Optional[object]
+    ) -> Optional[object]:
+        """H-A Stage 3 auto-merge behind the DF-021 trust ledger (fail-open).
+
+        Reads the per-repo trust ledger from the target repo's ``qa/`` tree
+        (file-based transport v1) and, ONLY when the lane has graduated, the
+        target is non-constitutional, Stage 1's signal is clean, AND the master
+        ``GUARDKIT_AUTO_MERGE`` switch is ON, runs the rebuilt ``manager.merge()``
+        act. Every guard defaults toward NOT merging. Fully fail-open: any
+        exception is swallowed with a warning — the preserve-for-review contract
+        in ``_finalize_phase`` is never disturbed.
+        """
+        try:
+            from guardkit.orchestrator.auto_merge import auto_merge_if_graduated
+            from guardkit.qa.trust_ledger import TrustLedger
+
+            repo_root = getattr(self._worktree_manager, "repo_root", None)
+            if repo_root is None:
+                return None
+            ledger_root = Path(repo_root) / "qa" / "trust-ledger"
+            ledger = TrustLedger(ledger_root)
+            lane = self._trust_ledger_lane(worktree)
+
+            decision = auto_merge_if_graduated(
+                self._worktree_manager, worktree, ledger, lane, report
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-open; never disturb finalize
+            logger.warning(
+                "auto-merge: stage skipped for %s (%s); worktree preserved.",
+                worktree.task_id, exc,
+            )
+            return None
+
+        if decision.fired:
+            logger.info(
+                "auto-merge: FIRED for lane %s → %s (%s).",
+                decision.lane, decision.target, decision.reason,
+            )
+        else:
+            logger.info(
+                "auto-merge: held for lane %s (%s); worktree preserved for review.",
+                decision.lane, decision.reason,
+            )
+        return decision
 
     def _extract_blocked_report(
         self,
