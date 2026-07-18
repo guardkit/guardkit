@@ -4139,6 +4139,15 @@ class AutoBuildOrchestrator:
         # Always preserve worktree for human review
         self._worktree_manager.preserve_on_failure(worktree)
 
+        # H-A Stage 1 — MACHINE-VERIFY STAGE (report-only). Mechanize the
+        # coordinator's by-hand VERIFY: charged-failures vs the feature base,
+        # a junk sweep over the committed diff, and a registered-gate live
+        # drive. Emits ONE clean/CATCH receipt; it does NOT merge or gate (that
+        # is Stage 3). Only meaningful on an approved build; fully fail-open so
+        # it can never disturb the preserve-for-review contract above.
+        if final_decision == "approved":
+            self._run_machine_verify_stage(worktree)
+
         # Check for blocked report in last Player report (escape hatch pattern).
         # honesty_collapse is treated like max_turns_exceeded for this gate
         # (TASK-FIX-HEAB) — both terminate the loop with no Coach approval, so
@@ -4175,6 +4184,107 @@ class AutoBuildOrchestrator:
             f"Worktree preserved at {worktree.path} for human review. "
             f"Decision: {final_decision}"
         )
+
+    def _machine_verify_enabled(self) -> bool:
+        """Whether the H-A Stage 1 machine-verify stage runs (default ON).
+
+        Kill-switch: ``GUARDKIT_MACHINE_VERIFY=0`` (or ``false``/``off``/``no``).
+        Default ON because the stage is report-only — it emits a receipt and
+        never merges, gates, or fails the build (spec §3, Stage 1).
+        """
+        raw = os.environ.get("GUARDKIT_MACHINE_VERIFY")
+        if raw is None:
+            return True
+        return raw.strip().lower() not in {"0", "false", "off", "no"}
+
+    def _observed_reds_in_worktree(self, worktree: "Worktree") -> Optional[List[str]]:
+        """Re-run the recorded suite command in the preserved worktree.
+
+        Round-21 proved the suite runs in the (isolated) preserved worktree with
+        the shared checkout untouched — that IS the throwaway worktree the spec
+        asks for (A1). We re-run the command the wave-0 baseline probe recorded
+        and parse the failing pytest node IDs.
+
+        Returns the observed failing node IDs, or ``None`` when the suite could
+        not be re-run / has no recorded command (the caller records the reds as
+        UNAVAILABLE and forces a human disposition — we never invent a clean).
+        """
+        from guardkit.orchestrator.baseline import (
+            failing_node_ids,
+            read_baseline_from_worktree,
+        )
+
+        baseline = read_baseline_from_worktree(worktree.path)
+        command = baseline.command if baseline else None
+        if not command:
+            logger.debug("machine-verify: no recorded suite command; reds unavailable")
+            return None
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(worktree.path),
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning(
+                "machine-verify: suite re-run '%s' failed in %s: %s "
+                "(reds unavailable; will require disposition).",
+                command, worktree.path, exc,
+            )
+            return None
+        combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+        return failing_node_ids(combined)
+
+    def _run_machine_verify_stage(self, worktree: "Worktree") -> Optional[object]:
+        """H-A Stage 1 machine-verify (report-only). Emits one clean/CATCH receipt.
+
+        Fully fail-open: any exception is swallowed with a warning — the stage
+        must never disturb the preserve-for-review path. Returns the
+        ``MachineVerifyReport`` (or ``None`` when disabled/failed) for testing.
+        """
+        if not self._machine_verify_enabled():
+            return None
+        try:
+            from guardkit.orchestrator.baseline import (
+                load_known_failure_ids,
+                read_baseline_from_worktree,
+            )
+            from guardkit.orchestrator.seam_checks import resolve_feature_base
+            from guardkit.orchestrator.machine_verify import run_machine_verify
+
+            feature_base = resolve_feature_base(
+                worktree.path, base_branch=worktree.base_branch
+            )
+            baseline = read_baseline_from_worktree(worktree.path)
+            ledger = load_known_failure_ids(worktree.path)
+            observed = self._observed_reds_in_worktree(worktree)
+
+            report = run_machine_verify(
+                worktree.path,
+                observed_node_ids=observed,
+                baseline_result=baseline,
+                ledger_ids=ledger,
+                feature_base=feature_base,
+            )
+        except Exception as exc:  # noqa: BLE001 — report-only; never disturb finalize
+            logger.warning(
+                "machine-verify: stage skipped for %s (%s); worktree preserved.",
+                worktree.task_id, exc,
+            )
+            return None
+
+        for line in report.receipt_lines():
+            logger.info("machine-verify: %s", line)
+        if report.disposition_required:
+            logger.warning(
+                "machine-verify: %s — CATCH/disposition required for %s "
+                "(report-only; no merge occurs).",
+                report.signal.upper(), worktree.task_id,
+            )
+        return report
 
     def _extract_blocked_report(
         self,
