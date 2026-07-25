@@ -2399,7 +2399,13 @@ class AgentInvoker:
             from guardkit.orchestrator.coach_output_parser import (
                 extract_and_write as _coach_extract_and_write,
             )
-            coach_output_path = self._get_report_path(task_id, turn, "coach")
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+
+            # TASK-SBHO-002: coach verdict goes to the orchestrator-private
+            # directory so the Player cannot read judge evidence.
+            coach_output_path = TaskArtifactPaths.private_artifact_path(
+                task_id, f"coach_turn_{turn}.json", self.worktree_path
+            )
             _coach_extract_and_write(
                 harness_events=harness_events,
                 task_id=task_id,
@@ -2408,11 +2414,12 @@ class AgentInvoker:
             )
 
             # Load and validate Coach decision — the file on disk was just
-            # written by the parser, so this re-read keeps the existing
-            # consumer contract intact. _validate_coach_decision still owns
-            # the deep schema check (criteria_verification, severity values,
-            # decision-specific field presence) the parser doesn't replicate.
-            decision = self._load_agent_report(task_id, turn, "coach")
+            # written by the parser to the private dir, so this re-read keeps
+            # the existing consumer contract intact. _validate_coach_decision
+            # still owns the deep schema check (criteria_verification, severity
+            # values, decision-specific field presence) the parser doesn't
+            # replicate.
+            decision = self._load_agent_report_from(task_id, turn, "coach", coach_output_path)
             self._validate_coach_decision(decision)
 
             # TASK-AB-NULLEVID01: deterministic fail-closed backstop for the
@@ -5898,6 +5905,58 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 )
 
         # Load and parse JSON
+        try:
+            with open(report_path) as f:
+                report = json.load(f)
+        except json.JSONDecodeError as e:
+            if agent_type == "player":
+                raise PlayerReportInvalidError(
+                    f"Invalid JSON in Player report: {str(e)}"
+                ) from e
+            else:
+                raise CoachDecisionInvalidError(
+                    f"Invalid JSON in Coach decision: {str(e)}"
+                ) from e
+
+        return report
+
+    def _load_agent_report_from(
+        self,
+        task_id: str,
+        turn: int,
+        agent_type: Literal["player", "coach"],
+        report_path: Path,
+    ) -> Dict[str, Any]:
+        """Load and validate agent report JSON from a specific path.
+
+        Used when the report was written to a non-standard location
+        (e.g. the orchestrator-private directory for coach decisions).
+
+        Args:
+            task_id: Task identifier
+            turn: Turn number
+            agent_type: "player" or "coach"
+            report_path: Explicit path to the report file
+
+        Returns:
+            Parsed JSON report
+
+        Raises:
+            PlayerReportNotFoundError: If Player report doesn't exist
+            CoachDecisionNotFoundError: If Coach decision doesn't exist
+            PlayerReportInvalidError: If Player JSON is malformed
+            CoachDecisionInvalidError: If Coach JSON is malformed
+        """
+        if not report_path.exists():
+            if agent_type == "player":
+                raise PlayerReportNotFoundError(
+                    f"Player report not found: {report_path}"
+                )
+            else:
+                raise CoachDecisionNotFoundError(
+                    f"Coach decision not found: {report_path}"
+                )
+
         try:
             with open(report_path) as f:
                 report = json.load(f)

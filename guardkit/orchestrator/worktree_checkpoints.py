@@ -937,28 +937,34 @@ class WorktreeCheckpointManager:
         # Iterate only top-level files in the autobuild dir; we explicitly
         # do NOT descend into _rollback_archive/ so we cannot pick up
         # prior snapshots.
-        for entry in self._autobuild_dir.iterdir():
-            if not entry.is_file():
-                continue
-            for _kind, pattern in self._AUDIT_FILE_PATTERNS:
-                match = pattern.match(entry.name)
-                if not match:
+        # TASK-SBHO-002: also scan the private dir for coach_turn files.
+        private_dir = self._autobuild_dir.parent / "autobuild-private" / self._task_id
+        scan_dirs = [self._autobuild_dir]
+        if private_dir.exists():
+            scan_dirs.append(private_dir)
+        for scan_dir in scan_dirs:
+            for entry in scan_dir.iterdir():
+                if not entry.is_file():
                     continue
-                try:
-                    file_turn = int(match.group(1))
-                except ValueError:
+                for _kind, pattern in self._AUDIT_FILE_PATTERNS:
+                    match = pattern.match(entry.name)
+                    if not match:
+                        continue
+                    try:
+                        file_turn = int(match.group(1))
+                    except ValueError:
+                        break
+                    if file_turn <= target_turn:
+                        break
+                    try:
+                        shutil.copy2(entry, snapshot_dir / entry.name)
+                        archived_count += 1
+                    except OSError as copy_error:
+                        logger.warning(
+                            f"[rollback] Failed to archive {entry.name}: "
+                            f"{copy_error}"
+                        )
                     break
-                if file_turn <= target_turn:
-                    break
-                try:
-                    shutil.copy2(entry, snapshot_dir / entry.name)
-                    archived_count += 1
-                except OSError as copy_error:
-                    logger.warning(
-                        f"[rollback] Failed to archive {entry.name}: "
-                        f"{copy_error}"
-                    )
-                break
 
         logger.info(
             f"[rollback] Archived {archived_count} audit file(s) to "

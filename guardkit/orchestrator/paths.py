@@ -38,6 +38,12 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+# TASK-SBHO-002: Orchestrator-private artifact directory.
+# Coach evidence and verdict are written here instead of the shared worktree
+# so the Player cannot casually read judge evidence.  This relocation removes
+# the casual read, not a determined process; full enforcement = the sandbox lane.
+TASK_PRIVATE_DIR: str = ".guardkit/autobuild-private/{task_id}"
+
 
 class TaskArtifactPaths:
     """Centralized path resolution for task artifacts.
@@ -623,6 +629,141 @@ class TaskArtifactPaths:
         plan_dir = worktree / ".claude" / "task-plans"
         plan_dir.mkdir(parents=True, exist_ok=True)
         return plan_dir
+
+    # =========================================================================
+    # TASK-SBHO-002: Private directory accessors (orchestrator-only evidence)
+    # =========================================================================
+
+    @classmethod
+    def task_private_dir(cls, task_id: str, worktree: Path) -> Path:
+        """Get the orchestrator-private directory for task artifacts.
+
+        Coach evidence and verdict files live here — invisible to the Player
+        running in the shared worktree.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the .guardkit/autobuild-private/{task_id} directory
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.task_private_dir("TASK-001", Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild-private/TASK-001')
+        """
+        return worktree / cls.TASK_PRIVATE_DIR.format(task_id=task_id)
+
+    @classmethod
+    def coach_evidence_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for coach evidence bundle, with legacy fallback.
+
+        Primary location: private directory (`.guardkit/autobuild-private/`).
+        Fallback: legacy worktree location (`.guardkit/autobuild/`) if the
+        private file does not exist (backward compatibility for older runs).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the coach_evidence_turn_{turn}.json file
+            (private dir if present, else legacy worktree path)
+        """
+        private_path = cls.task_private_dir(task_id, worktree) / f"coach_evidence_turn_{turn}.json"
+        if private_path.exists():
+            return private_path
+        legacy_path = cls.autobuild_dir(task_id, worktree) / f"coach_evidence_turn_{turn}.json"
+        if legacy_path.exists():
+            logger.debug("coach_evidence: falling back to legacy path %s", legacy_path)
+            return legacy_path
+        return private_path  # return primary path even if missing (caller handles)
+
+    @classmethod
+    def coach_decision_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for coach decision, with legacy fallback.
+
+        Primary location: private directory (`.guardkit/autobuild-private/`).
+        Fallback: legacy worktree location (`.guardkit/autobuild/`) if the
+        private file does not exist (backward compatibility for older runs).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the coach_turn_{turn}.json file
+            (private dir if present, else legacy worktree path)
+        """
+        private_path = cls.task_private_dir(task_id, worktree) / f"coach_turn_{turn}.json"
+        if private_path.exists():
+            return private_path
+        legacy_path = cls.autobuild_dir(task_id, worktree) / f"coach_turn_{turn}.json"
+        if legacy_path.exists():
+            logger.debug("coach_decision: falling back to legacy path %s", legacy_path)
+            return legacy_path
+        return private_path  # return primary path even if missing (caller handles)
+
+    @classmethod
+    def private_artifact_path(cls, task_id: str, artifact_name: str, worktree: Path) -> Path:
+        """Get path for an artifact in the orchestrator-private directory.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        artifact_name : str
+            File name (e.g., "coach_evidence_turn_1.json")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the artifact in the private directory
+        """
+        return cls.task_private_dir(task_id, worktree) / artifact_name
+
+    @classmethod
+    def legacy_artifact_path(cls, task_id: str, artifact_name: str, worktree: Path) -> Path:
+        """Get path for an artifact in the legacy worktree location.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        artifact_name : str
+            File name (e.g., "coach_turn_1.json")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the artifact in the legacy autobuild directory
+        """
+        return cls.autobuild_dir(task_id, worktree) / artifact_name
 
 
 # ============================================================================
