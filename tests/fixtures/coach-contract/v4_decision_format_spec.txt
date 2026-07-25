@@ -1,0 +1,44 @@
+## Decision Format
+
+Respond with a SINGLE RAW JSON object — no code fences, no prose after it.
+The orchestrator parses your decision directly from this JSON object.
+
+The JSON object MUST appear at the end of your response, after all prose
+reasoning, in this exact form:
+
+```json
+{
+  "verdict": "approve" | "reject",
+  "findings": []
+}
+```
+
+For APPROVAL (no issues found):
+```json
+{
+  "verdict": "approve",
+  "findings": []
+}
+```
+
+For REJECT (issues found):
+```json
+{
+  "verdict": "reject",
+  "findings": [
+    {
+      "locus": "file_path:line_number or module:function",
+      "severity": "major" | "minor",
+      "description": "Specific issue with file paths and line numbers",
+      "requirement": "Which requirement is affected",
+      "suggestion": "How to fix it"
+    }
+  ]
+}
+```
+
+**IMPORTANT**: Each finding in ``findings[]`` corresponds to one acceptance
+criterion that was NOT satisfied. Include one finding per rejected criterion.
+
+**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
+Do not write any prose after the closing ``` fence.

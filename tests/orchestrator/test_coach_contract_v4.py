@@ -27,6 +27,9 @@ from guardkit.orchestrator.agent_invoker import (
     _resolve_coach_contract,
 )
 
+# Path to fixture files for byte-comparison tests.
+_FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "coach-contract"
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -302,3 +305,69 @@ class TestSynthesisBudgetV4Path:
         assert "## Original Requirements" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
         assert "<absence_of_failure_guards>" in prompt
+
+
+# ---------------------------------------------------------------------------
+# AC-1 (byte-compare): v4 Decision Format block matches spec verbatim
+# ---------------------------------------------------------------------------
+
+
+class TestV4SpecByteCompare:
+    def test_v4_prompt_contains_verbatim_spec_block(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-1: The v4 Decision Format block in the rendered prompt must
+        match the normative spec text VERBATIM (byte-compare)."""
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "v4")
+        spec_text = (_FIXTURES_DIR / "v4_decision_format_spec.txt").read_text()
+        prompt = _build_invoker(tmp_path)._build_coach_prompt(
+            task_id="TASK-V4-BYTE-001",
+            turn=1,
+            requirements="test reqs",
+            player_report={"files_modified": []},
+            synthesis=False,
+        )
+        assert spec_text in prompt, (
+            "v4 Decision Format block does not match spec verbatim"
+        )
+
+    def test_v4_spec_file_is_non_empty(self) -> None:
+        """Sanity: the spec file must exist and be non-empty."""
+        spec = (_FIXTURES_DIR / "v4_decision_format_spec.txt").read_text()
+        assert len(spec) > 0, "v4 spec file is empty"
+        assert "## Decision Format" in spec
+
+
+# ---------------------------------------------------------------------------
+# AC-3 (golden): coachsplit prompt is byte-identical to baseline
+# ---------------------------------------------------------------------------
+
+
+class TestCoachsplitGoldenBaseline:
+    def test_coachsplit_prompt_matches_golden_baseline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-3: The coachsplit prompt (default contract) must be
+        byte-identical to the golden baseline file."""
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
+        baseline = (_FIXTURES_DIR / "coachsplit_golden_baseline.txt").read_text()
+        prompt = _build_invoker(tmp_path)._build_coach_prompt(
+            task_id="TASK-GOLDEN-CS-001",
+            turn=1,
+            requirements="test requirements",
+            player_report={
+                "files_modified": ["src/test.py"],
+                "files_created": [],
+                "tests_written": ["tests/test.py"],
+            },
+            synthesis=False,
+        )
+        assert prompt == baseline, (
+            "coachsplit prompt is NOT byte-identical to golden baseline"
+        )
+
+    def test_golden_baseline_file_is_non_empty(self) -> None:
+        """Sanity: the golden baseline file must exist and be non-empty."""
+        baseline = (_FIXTURES_DIR / "coachsplit_golden_baseline.txt").read_text()
+        assert len(baseline) > 0, "coachsplit golden baseline is empty"
+        assert "## Decision Format" in baseline
