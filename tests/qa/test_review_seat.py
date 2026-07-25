@@ -541,6 +541,96 @@ class TestPrompt:
         assert "pkg/calc.py" in user
 
 
+class TestReviewSeatBudget:
+    """TASK-SBHO-001 AC-001: GUARDKIT_REVIEW_SEAT_MAX_CHARS bounds the
+    assembled review-seat user message.
+    """
+
+    def _big_payload(self) -> ReviewPayload:
+        """Create a payload with a large diff to help exceed budget."""
+        big_diff_lines = "\n".join(
+            f"@@ -{i},{i} +{i},{i} @@\n+ line {i} of added content that is deliberately long"
+            for i in range(500)
+        )
+        big_diff = f"diff --git a/pkg/big.py b/pkg/big.py\n{big_diff_lines}"
+        return ReviewPayload(
+            subject_kind="commit",
+            ref="big1234",
+            context_lines=3,
+            files=parse_unified_diff(big_diff),
+        )
+
+    def test_oversized_payload_fits_budget_with_truncation_marker(self):
+        """An oversized payload (huge repo_context + big diff) must fit the
+        budget and contain the loud truncation marker.
+        """
+        huge_repo = "x" * 200_000  # 200k chars of repo context
+        payload = self._big_payload()
+        budget = 200_000  # Tighter budget to force truncation (message ~239k)
+
+        system, user = build_seat_messages(payload, repo_context=huge_repo, max_chars=budget)
+
+        # Must fit within budget
+        assert len(user) <= budget, f"user message {len(user)} chars exceeds budget {budget}"
+        # Must contain truncation marker
+        assert "[...truncated" in user, (
+            f"truncation marker missing from oversized payload (len={len(user)}, budget={budget})"
+        )
+        # Instruction header must NOT be trimmed
+        assert "## Review subject" in user
+        # Finding-schema section must NOT be trimmed
+        assert "## Diff under review" in user
+
+    def test_trims_repo_context_before_diff(self):
+        """When trimming is needed, repo_context must be trimmed before the diff."""
+        huge_repo = "y" * 200_000
+        payload = self._big_payload()
+        budget = 250_000
+
+        system, user = build_seat_messages(payload, repo_context=huge_repo, max_chars=budget)
+
+        # The user message should contain the truncation marker for repo_context
+        # (not for the diff), indicating repo_context was trimmed first
+        assert "repository context truncated" in user.lower() or "repo_context truncated" in user.lower(), (
+            "repo_context should be trimmed before diff"
+        )
+
+    def test_never_trims_instruction_header(self):
+        """The instruction header (review subject) must never be trimmed."""
+        huge_repo = "z" * 500_000
+        payload = self._big_payload()
+        budget = 50_000  # Very tight budget
+
+        system, user = build_seat_messages(payload, repo_context=huge_repo, max_chars=budget)
+
+        # Subject section must always be present
+        assert "## Review subject" in user
+        assert payload.subject_kind in user
+        assert payload.ref in user
+
+    def test_never_trims_finding_schema_section(self):
+        """The finding-schema section (diff header) must never be trimmed."""
+        huge_repo = "w" * 500_000
+        payload = self._big_payload()
+        budget = 50_000  # Very tight budget
+
+        system, user = build_seat_messages(payload, repo_context=huge_repo, max_chars=budget)
+
+        # Diff section header must always be present
+        assert "## Diff under review" in user
+
+    def test_no_truncation_marker_when_under_budget(self):
+        """When the assembled message is under budget, no truncation marker."""
+        small_repo = "small context"
+        payload = self._big_payload()
+        budget = 500_000  # Large budget
+
+        system, user = build_seat_messages(payload, repo_context=small_repo, max_chars=budget)
+
+        assert len(user) <= budget
+        assert "[...truncated" not in user
+
+
 # ===========================================================================
 # 9. ONE real-seat integration smoke (seat-law-checked; auto-skips)
 # ===========================================================================

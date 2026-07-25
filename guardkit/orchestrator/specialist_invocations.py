@@ -173,6 +173,17 @@ def _resolve_phase_4_execution_mode() -> str:
     return mode if mode in ("subprocess", "sdk") else "subprocess"
 
 
+# TASK-SBHO-001: env-tunable ceiling for the final specialist prompt string.
+# Mirrors the _trim_synthesis_prompt pattern: loud truncation marker,
+# WARNING log, degrade-never-raise. Default 300k chars ≈ 85k tokens.
+# Applied as a backstop AFTER the per-builder seed caps (e.g. the ~2000-char
+# seed cap in _build_code_reviewer_prompt).
+SPECIALIST_PROMPT_MAX_CHARS_ENV = "GUARDKIT_SPECIALIST_PROMPT_MAX_CHARS"
+SPECIALIST_PROMPT_MAX_CHARS: int = int(
+    os.environ.get(SPECIALIST_PROMPT_MAX_CHARS_ENV, "300000")
+)
+
+
 # TASK-AB-REVIEWCLEAN01 (item 1): the pytest-summary regex + count semantics
 # now live in guardkit.lib.pytest_summary (the single source of truth shared
 # with coach_validator's advisory skip-count reader). ``_parse_pytest_counts``
@@ -887,6 +898,8 @@ def _build_code_reviewer_prompt(
     task_id: str,
     task_context: str,
     phase_4_summary: dict[str, Any],
+    *,
+    max_chars: int | None = None,
 ) -> str:
     """Render the prompt the code-reviewer specialist receives.
 
@@ -897,7 +910,20 @@ def _build_code_reviewer_prompt(
 
     The string ``"Phase 4 summary"`` is part of the prompt contract — the
     unit test introspects for it (TASK-OSI-005 AC d).
+
+    Two budget layers apply:
+    1. A ~2000-char seed cap (historic, trims task_context first).
+    2. An env-tunable overall backstop
+       (``GUARDKIT_SPECIALIST_PROMPT_MAX_CHARS``, default 300000) applied
+       after the seed cap. This is the **primary** budget for large task
+       contexts.
+
+    Truncation is **loud**: a visible notice is inserted inside the prompt
+    naming what was cut and by how much, and a WARNING is logged.
     """
+    if max_chars is None:
+        max_chars = SPECIALIST_PROMPT_MAX_CHARS
+
     summary_lines = (
         f"- tests_run: {phase_4_summary.get('tests_run', 0)}\n"
         f"- tests_failed: {phase_4_summary.get('tests_failed', 0)}\n"
@@ -925,14 +951,74 @@ def _build_code_reviewer_prompt(
         "withheld from this invocation."
     )
 
-    # Keep the prompt under ~2000 chars to match the test-orchestrator runner's
-    # cap. Trim the variable-length task_context first.
+    # Layer 1: Keep the prompt under ~2000 chars to match the
+    # test-orchestrator runner's seed cap. Trim the variable-length
+    # task_context first.
     if len(prompt) > 2000:
         overflow = len(prompt) - 2000
         trimmed_context = task_context[: max(0, len(task_context) - overflow - 32)]
         prompt = prompt.replace(
             task_context, trimmed_context + "\n[...truncated]"
         )
+
+    # Layer 2: Overall backstop budget (env-tunable). Applied after the
+    # seed cap so the 2000-char historic behaviour is preserved when under
+    # budget. Trim task_context first (it's the variable-length section).
+    if len(prompt) > max_chars:
+        overflow = len(prompt) - max_chars
+        # Reserve space for the truncation marker (~80 chars).
+        marker_reservation = 80
+        overflow += marker_reservation
+        # Find where task_context appears and trim it.
+        task_context_marker = "Task context (from the task markdown):\n"
+        ctx_start = prompt.find(task_context_marker)
+        if ctx_start != -1:
+            ctx_start += len(task_context_marker)
+            # Find the end of the task_context (next double-newline or end)
+            ctx_end = prompt.find("\n\n", ctx_start)
+            if ctx_end != -1:
+                original_ctx = prompt[ctx_start:ctx_end]
+                keep_ctx = max(0, len(original_ctx) - overflow)
+                trimmed_ctx = original_ctx[:keep_ctx]
+                prompt = (
+                    prompt[:ctx_start]
+                    + trimmed_ctx
+                    + f"\n\n[...truncated: {overflow} more chars of task "
+                    f"context elided to fit within {max_chars}-char budget.]"
+                    + prompt[ctx_end:]
+                )
+                logger.warning(
+                    "specialist prompt: task_context truncated (%d chars "
+                    "elided) to fit within %d-char budget",
+                    overflow,
+                    max_chars,
+                )
+            else:
+                prompt = (
+                    prompt[:max_chars]
+                    + f"\n... [specialist prompt truncated at "
+                    f"{max_chars} chars — {len(prompt) - max_chars} more "
+                    f"chars not shown.]"
+                )
+                logger.warning(
+                    "specialist prompt: hard-trimmed at %d chars (%d chars "
+                    "elided)",
+                    max_chars,
+                    len(prompt) - max_chars,
+                )
+        else:
+            prompt = (
+                prompt[:max_chars]
+                + f"\n... [specialist prompt truncated at {max_chars} chars "
+                f"— {len(prompt) - max_chars} more chars not shown.]"
+            )
+            logger.warning(
+                "specialist prompt: hard-trimmed at %d chars (%d chars "
+                "elided)",
+                max_chars,
+                len(prompt) - max_chars,
+            )
+
     return prompt
 
 

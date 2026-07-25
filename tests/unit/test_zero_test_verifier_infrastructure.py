@@ -502,9 +502,13 @@ class TestCoachFeedbackAnnotation:
             verdict="feedback",
         )
 
-        on_disk = json.loads(
-            invoker._get_report_path("TASK-ZTL", 5, "coach").read_text()
+        # TASK-SBHO-002: coach_turn_N.json is now in the private dir.
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        coach_path = TaskArtifactPaths.private_artifact_path(
+            "TASK-ZTL", "coach_turn_5.json", tmp_path
         )
+        on_disk = json.loads(coach_path.read_text())
         assert on_disk["decision"] == "feedback"
         assert len(_marker_issues(on_disk)) == 1
 

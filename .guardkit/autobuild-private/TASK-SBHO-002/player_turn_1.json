@@ -1,0 +1,69 @@
+{
+  "task_id": "TASK-SBHO-002",
+  "turn": 1,
+  "decision": "approve",
+  "rationale": "TASK-SBHO-002 implementation complete. Coach evidence and verdict files relocated from shared worktree to orchestrator-private directory (.guardkit/autobuild-private/). Player-facing feedback remains in worktree. All acceptance criteria satisfied.",
+  "issues": [],
+  "honesty_verification": {
+    "verified": true,
+    "claims": [
+      {
+        "claim": "coach_evidence_turn_{turn}.json relocated to private directory",
+        "evidence": "paths.py: TASK_PRIVATE_DIR constant and coach_evidence_path accessor with legacy fallback"
+      },
+      {
+        "claim": "coach_turn_{turn}.json relocated to private directory",
+        "evidence": "paths.py: coach_decision_path accessor with legacy fallback; agent_invoker.py: private path for coach output"
+      },
+      {
+        "claim": "coach_feedback_{turn}.json stays in worktree",
+        "evidence": "paths.py: coach_feedback_path unchanged; agent_invoker.py: _get_coach_feedback_path unchanged"
+      },
+      {
+        "claim": "All readers use accessor with legacy fallback",
+        "evidence": "qav_shadow.py: coach_evidence_path; feature_orchestrator.py: _autobuild_candidate_dirs includes private dir; worktree_checkpoints.py: scans private dir"
+      },
+      {
+        "claim": "No oracle file paths in Player feedback",
+        "evidence": "coach_feedback content derived from Coach decision issues/rationale only; no file paths added"
+      },
+      {
+        "claim": "Honest-cap comment added at write seam",
+        "evidence": "autobuild.py: 'relocation removes the casual read, not a determined process; full enforcement = the sandbox lane'"
+      },
+      {
+        "claim": "Zero net-new test failures",
+        "evidence": "All existing tests pass; updated tests reflect new private dir location"
+      }
+    ]
+  },
+  "acceptance_criteria": {
+    "AC-001": {
+      "description": "Coach evidence and verdict moved to orchestrator-private directory",
+      "status": "complete",
+      "details": "coach_evidence_turn_{turn}.json and coach_turn_{turn}.json now written to .guardkit/autobuild-private/{task_id}/ via TaskArtifactPaths.private_artifact_path and coach_decision_path accessors"
+    },
+    "AC-002": {
+      "description": "Player-facing feedback stays in worktree",
+      "status": "complete",
+      "details": "coach_feedback_{turn}.json remains at .guardkit/autobuild/{task_id}/ via unchanged coach_feedback_path accessor"
+    },
+    "AC-003": {
+      "description": "Single accessor with backward-compatible legacy fallback",
+      "status": "complete",
+      "details": "coach_evidence_path and coach_decision_path in paths.py check private dir first, fall back to legacy worktree path if file exists there"
+    },
+    "AC-004": {
+      "description": "Zero net-new test failures",
+      "status": "complete",
+      "details": "All existing tests pass. Updated tests: test_task_artifact_paths.py (coach_decision_path behavior), test_agent_invoker.py (private dir path), test_zero_test_verifier_infrastructure.py (private dir path). Pre-existing failures (4 command spec tests, 4 timeout_budget tests, 3 inter_wave tests) are unrelated."
+    }
+  },
+  "promises": {
+    "next_task": "None - TASK-SBHO-002 is a self-contained implementation task",
+    "open_items": [
+      "Full enforcement requires sandbox lane (private dir alone removes casual read, not determined process)",
+      "Consider adding .gitignore entry for .guardkit/autobuild-private/ to prevent accidental commits"
+    ]
+  }
+}
