@@ -3666,6 +3666,7 @@ class CoachValidator:
         try:
             behavioural_oracle_dict = self._produce_behavioural_oracle(
                 authored_files=authored if 'authored' in locals() else [],
+                task=task,
             )
             if behavioural_oracle_dict is not None:
                 logger.info(
@@ -3888,6 +3889,7 @@ class CoachValidator:
     def _produce_behavioural_oracle(
         self,
         authored_files: List[str],
+        task: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Produce the L4 behavioural-oracle result for the bundle.
 
@@ -3895,16 +3897,26 @@ class CoachValidator:
         ``tests/acceptance/*_roundtrip.py`` under the worktree root.
         No opt-in flag — presence of the artefact activates the gate.
 
+        When no roundtrip artefact exists, falls back to a shell command
+        declared in the task's ``behavioural_oracle.command`` YAML field.
+        This is the "non-Python cure" — the command can be ``go test ./...``,
+        ``npm run smoke``, or any shell command.
+
         Independence check: the oracle file must NOT be in the turn's
         authored set (``files_authored`` when present, else
         ``files_created ∪ files_modified``). A Player-authored oracle
         yields ``{"status": "not_independent", ...}`` with a
         ``should_fix`` warning — never trusted, never blocks.
 
+        A YAML-declared ``command`` is operator policy: the result is never
+        downgraded to ``not_independent`` regardless of authored files.
+
         Execution: runs the oracle via the worktree venv interpreter
         (``<venv_python> -m pytest <oracle_path>``) with a bounded
         timeout (default 300s, overridable via ``GUARDKIT_ORACLE_TIMEOUT``
-        env var).
+        env var). Shell commands run via the system shell (``shell=True``)
+        with ``cwd`` set to the worktree root; environment inherits the
+        process's existing ``os.environ``.
 
         Outcome policy:
           * ran-and-failed → ``{"status": "ran", "passed": False, ...}``
@@ -3917,6 +3929,7 @@ class CoachValidator:
         Args:
             authored_files: List of source files authored by the Player
                 this turn (relative to worktree root).
+            task: The task YAML dict (may contain ``behavioural_oracle.command``).
 
         Returns:
             A dict matching the guard's consumed shape, or ``None`` when
@@ -3925,21 +3938,67 @@ class CoachValidator:
         oracle_files = sorted(
             self.worktree_path.glob("tests/acceptance/*_roundtrip.py")
         )
-        if not oracle_files:
+
+        if oracle_files:
+            return self._produce_python_oracle(
+                oracle_files, authored_files, task,
+            )
+
+        # No roundtrip artefact — check for a YAML-declared command.
+        command = self._extract_command(task)
+
+        if not command:
             logger.info(
                 "gather_evidence: no behavioural-oracle artefact found "
-                "(no tests/acceptance/*_roundtrip.py); leaving behavioural_oracle absent."
+                "(no tests/acceptance/*_roundtrip.py) and no "
+                "behavioural_oracle.command declared; leaving "
+                "behavioural_oracle absent."
             )
             return None
 
-        # Use the first discovered oracle file (convention: one per worktree).
+        logger.info(
+            "gather_evidence: no roundtrip artefact; executing "
+            "behavioural_oracle.command: %s",
+            command,
+        )
+        return self._run_shell_command(command, task)
+
+    def _extract_command(
+        self, task: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        """Extract the behavioural_oracle.command from task YAML.
+
+        Supports both ``behavioural_oracle: {command: ...}`` and
+        ``behavioural_oracle: "..."`` (string shortcut).
+
+        Args:
+            task: The task YAML dict.
+
+        Returns:
+            The command string, or ``None`` if not declared.
+        """
+        if not task:
+            return None
+        bo = task.get("behavioural_oracle")
+        if isinstance(bo, dict):
+            return bo.get("command")
+        if isinstance(bo, str) and bo:
+            return bo
+        return None
+
+    def _produce_python_oracle(
+        self,
+        oracle_files: List[Path],
+        authored_files: List[str],
+        task: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Run the Python roundtrip oracle and return its result."""
         oracle_path = oracle_files[0]
         logger.info(
             "gather_evidence: discovered behavioural-oracle artefact at %s",
             oracle_path,
         )
 
-        # Independence check: the oracle file must NOT be in the authored set.
         oracle_rel = str(oracle_path.relative_to(self.worktree_path))
         if oracle_rel in authored_files:
             logger.warning(
@@ -3953,12 +4012,10 @@ class CoachValidator:
                 "provenance": "player_authored",
             }
 
-        # Resolve timeout: env override or default 300s.
         timeout_seconds = float(
             os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
         )
 
-        # Build the pytest command, pinned to the worktree venv interpreter.
         interpreter = self._pytest_interpreter()
         cmd = [interpreter, "-m", "pytest", str(oracle_path)]
         env: Optional[dict] = None
@@ -3970,6 +4027,128 @@ class CoachValidator:
                 + env.get("PATH", "")
             )
 
+        return self._execute_oracle(
+            cmd, oracle_rel, timeout_seconds, env, "python",
+        )
+
+    def _run_shell_command(
+        self,
+        command: str,
+        task: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Execute a shell command as the behavioural oracle.
+
+        Runs via ``subprocess.run(shell=True)`` with ``cwd`` set to the
+        worktree root. Environment inherits the process's ``os.environ``.
+
+        Args:
+            command: The shell command string to execute.
+            task: The task YAML dict (used for provenance naming).
+
+        Returns:
+            A dict with the oracle result shape, or ``None`` on failure.
+        """
+        timeout_seconds = float(
+            os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
+        )
+        provenance = f"yaml_command:{command}"
+
+        start_time = time.time()
+        try:
+            proc = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=os.environ.copy(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration = time.time() - start_time
+            stdout = (
+                exc.stdout.decode() if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            ) or ""
+            stderr = (
+                exc.stderr.decode() if isinstance(exc.stderr, bytes)
+                else (exc.stderr or "")
+            ) or ""
+            output_tail = _combined_output_tail(stdout, stderr)
+            logger.warning(
+                "gather_evidence: behavioural-oracle command timed out after "
+                "%.1fs (command: %s). Treating as ran-and-failed.",
+                duration, command,
+            )
+            return {
+                "status": "ran",
+                "passed": False,
+                "command": command,
+                "exit_code": None,
+                "duration": duration,
+                "timed_out": True,
+                "output_tail": output_tail,
+                "provenance": provenance,
+            }
+        except Exception as exc:
+            logger.warning(
+                "gather_evidence: behavioural-oracle command failed to start "
+                "(command: %s): %s. Treating as absent.",
+                command, exc,
+            )
+            return None
+
+        duration = time.time() - start_time
+        passed = proc.returncode == 0
+        output_tail = _combined_output_tail(proc.stdout, proc.stderr)
+
+        if passed:
+            logger.info(
+                "gather_evidence: behavioural-oracle command passed "
+                "(command: %s, exit_code=0, duration=%.1fs).",
+                command, duration,
+            )
+        else:
+            logger.warning(
+                "gather_evidence: behavioural-oracle command FAILED "
+                "(command: %s, exit_code=%d, duration=%.1fs).",
+                command, proc.returncode, duration,
+            )
+
+        return {
+            "status": "ran",
+            "passed": passed,
+            "command": command,
+            "exit_code": proc.returncode,
+            "duration": duration,
+            "timed_out": False,
+            "output_tail": output_tail,
+            "provenance": provenance,
+        }
+
+    def _execute_oracle(
+        self,
+        cmd: list,
+        oracle_rel: str,
+        timeout_seconds: float,
+        env: Optional[dict],
+        oracle_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Execute an oracle subprocess and return its result.
+
+        Shared logic for running the subprocess and handling all outcome
+        branches (pass, fail, timeout, failed-to-start).
+
+        Args:
+            cmd: The command to execute.
+            oracle_rel: Relative path of the oracle (for logging/provenance).
+            timeout_seconds: Maximum execution time.
+            env: Environment dict or None.
+            oracle_type: Human-readable type label ("python" or "command").
+
+        Returns:
+            A dict with the oracle result shape, or ``None`` on failure.
+        """
         start_time = time.time()
         try:
             proc = subprocess.run(
@@ -3993,25 +4172,24 @@ class CoachValidator:
             output_tail = _combined_output_tail(stdout, stderr)
             logger.warning(
                 "gather_evidence: behavioural-oracle timed out after %.1fs "
-                "(oracle: %s). Treating as ran-and-failed.",
-                duration, oracle_rel,
+                "(%s: %s). Treating as ran-and-failed.",
+                duration, oracle_type, oracle_rel,
             )
             return {
                 "status": "ran",
                 "passed": False,
-                "oracle_path": oracle_rel,
+                "oracle_path" if oracle_type == "python" else "command": oracle_rel,
                 "exit_code": None,
                 "duration": duration,
                 "timed_out": True,
                 "output_tail": output_tail,
-                "provenance": "independent",
+                "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
             }
         except Exception as exc:
-            # Failed to start — absent signal.
             logger.warning(
                 "gather_evidence: behavioural-oracle failed to start "
-                "(oracle: %s): %s. Treating as absent.",
-                oracle_rel, exc,
+                "(%s: %s): %s. Treating as absent.",
+                oracle_type, oracle_rel, exc,
             )
             return None
 
@@ -4021,26 +4199,26 @@ class CoachValidator:
 
         if passed:
             logger.info(
-                "gather_evidence: behavioural-oracle passed (oracle: %s, "
+                "gather_evidence: behavioural-oracle passed (%s: %s, "
                 "duration=%.1fs).",
-                oracle_rel, duration,
+                oracle_type, oracle_rel, duration,
             )
         else:
             logger.warning(
-                "gather_evidence: behavioural-oracle FAILED (oracle: %s, "
+                "gather_evidence: behavioural-oracle FAILED (%s: %s, "
                 "exit_code=%d, duration=%.1fs).",
-                oracle_rel, proc.returncode, duration,
+                oracle_type, oracle_rel, proc.returncode, duration,
             )
 
         return {
             "status": "ran",
             "passed": passed,
-            "oracle_path": oracle_rel,
+            "oracle_path" if oracle_type == "python" else "command": oracle_rel,
             "exit_code": proc.returncode,
             "duration": duration,
             "timed_out": False,
             "output_tail": output_tail,
-            "provenance": "independent",
+            "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
         }
 
     def _compute_agent_invocations_advisory(

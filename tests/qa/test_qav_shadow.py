@@ -519,7 +519,7 @@ def test_schedule_never_raises_when_flag_read_throws(tmp_path, monkeypatch):
 
 
 def test_schedule_on_runs_via_thread(tmp_path):
-    """Flag ON ⇒ schedule spawns a daemon thread that runs the injected runner."""
+    """Flag ON ⇒ schedule spawns a non-daemon thread that runs the injected runner."""
     repo = tmp_path
     _write_config(repo, enabled=True)
     seen = {}
@@ -533,6 +533,139 @@ def test_schedule_on_runs_via_thread(tmp_path):
     assert thread is not None
     thread.join(timeout=5)
     assert seen == {"task_id": "TASK-9", "turn": 3, "decision": "feedback"}
+
+
+# ===========================================================================
+# Durable shadow receipts (non-daemon thread survives scheduling scope exit).
+# ===========================================================================
+
+
+def test_durable_receipt_after_scope_exit(tmp_path):
+    """AC-001: scheduling scope ends immediately — receipt still lands.
+
+    The thread is non-daemon, so it survives the function return. A slow
+    injected seat simulates the real-world delay; the receipt file is
+    verified to exist after the thread completes.
+    """
+    import time as _time
+
+    repo = tmp_path
+    _write_config(repo, enabled=True)
+    _write_bundle(repo, "TASK-DUR", 1, _sample_bundle())
+
+    # A seat that sleeps briefly to simulate a real network call.
+    slow_seat_calls = []
+
+    def _slow_seat(system, user, model, timeout_s):
+        slow_seat_calls.append((system, user, model, timeout_s))
+        _time.sleep(0.2)  # small delay — well under the 60s bound
+        return q.SeatResult(text=_assistant("approve"), usage={"total_tokens": 10})
+
+    # Schedule and let the scheduling scope exit immediately.
+    thread = q.schedule_qav_shadow(
+        repo,
+        task_id="TASK-DUR",
+        turn=1,
+        coach_decision="approve",
+        runner=lambda r, tid, t, d: q.run_qav_shadow(
+            r, tid, t, d, seat_call=_slow_seat, running_probe=_free_probe()
+        ),
+    )
+    assert thread is not None
+    assert not thread.daemon  # the core fix: non-daemon
+
+    # The scheduling scope has exited; the thread is still alive.
+    assert thread.is_alive()
+
+    # Wait for the thread to finish (bounded by seat timeout).
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+
+    # The receipt file must exist — this is the durability guarantee.
+    receipt_path = repo / ".guardkit" / "autobuild" / "TASK-DUR" / "qav_shadow_turn_1.json"
+    assert receipt_path.exists(), "receipt file must survive scope exit"
+    record = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert record["task_id"] == "TASK-DUR"
+    assert record["turn"] == 1
+    assert record["status"] == "ok"
+    assert record["agree"] is True
+
+    # The seat was called exactly once.
+    assert len(slow_seat_calls) == 1
+
+
+def test_hanging_seat_cannot_block_beyond_timeout(tmp_path, monkeypatch):
+    """AC-003: a hanging seat cannot extend process shutdown past the bound.
+
+    The seat call has a timeout parameter (DEFAULT_TIMEOUT_S = 60). A thread
+    that is blocked on a hanging seat will be unblocked after that timeout.
+    The thread is non-daemon, so the receipt still lands — but the process
+    shutdown is never extended beyond the bound.
+
+    We inject a seat that respects the timeout by raising TimeoutError
+    after the timeout period elapses, simulating a hung LLM swap.
+    Uses a short timeout (2s) for test speed.
+    """
+    import time as _time
+
+    repo = tmp_path
+    _write_config(repo, enabled=True, timeout_seconds=2.0)
+    _write_bundle(repo, "TASK-HANG", 1, _sample_bundle())
+
+    def _hang_seat(system, user, model, timeout_s):
+        # Block for the full timeout duration, then raise TimeoutError.
+        # This simulates a hung LLM swap that finally times out.
+        _time.sleep(timeout_s)
+        raise TimeoutError("seat took too long")
+
+    # Schedule the shadow. The runner wraps run_qav_shadow with our hanging seat.
+    thread = q.schedule_qav_shadow(
+        repo,
+        task_id="TASK-HANG",
+        turn=1,
+        coach_decision="approve",
+        runner=lambda r, tid, t, d: q.run_qav_shadow(
+            r, tid, t, d, seat_call=_hang_seat, running_probe=_free_probe()
+        ),
+    )
+    assert thread is not None
+    assert not thread.daemon
+
+    # Wait up to the seat timeout + margin. The thread must finish within
+    # the timeout bound, not block indefinitely.
+    thread.join(timeout=10)  # 2s timeout + 8s margin
+
+    # The thread should have finished (seat call timed out).
+    assert not thread.is_alive(), "thread must not block beyond seat timeout"
+
+    # The receipt must still have been written (absent due to timeout).
+    receipt_path = repo / ".guardkit" / "autobuild" / "TASK-HANG" / "qav_shadow_turn_1.json"
+    assert receipt_path.exists(), "receipt must land even on timeout"
+    record = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert record["status"] == "absent"
+    assert record["absent_reason"] == "timeout"
+
+
+def test_flag_off_no_thread_spawned(tmp_path):
+    """AC-002: Flag-OFF is a provable no-op — no thread spawned.
+
+    With the flag OFF, schedule_qav_shadow returns None and spawns no thread.
+    """
+    repo = tmp_path
+    # No config written — flag defaults to OFF.
+
+    thread = q.schedule_qav_shadow(
+        repo,
+        task_id="TASK-OFF",
+        turn=1,
+        coach_decision="approve",
+    )
+
+    assert thread is None
+
+    # No receipt directory was created.
+    assert not (repo / ".guardkit" / "autobuild").exists()
+    assert not (repo / q.QAV_SHADOW_QUEUE).exists()
 
 
 # ===========================================================================

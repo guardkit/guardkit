@@ -927,9 +927,10 @@ def schedule_qav_shadow(
 
     The coach seam runs synchronously (``invoke_coach`` completes via an internal
     ``asyncio.run`` before returning), so there is no running loop to
-    ``create_task`` onto; the fire-and-forget vehicle here is a daemon thread.
+    ``create_task`` onto; the fire-and-forget vehicle here is a non-daemon thread.
     A warm judgment is ~1.3–1.8 s while a build runs for minutes, so the thread
-    finishes well within the build.
+    finishes well within the build. The existing 60s seat timeout is the natural
+    upper bound — the thread will never block shutdown past that ceiling.
 
     **Provable no-op when OFF:** the flag is read first; if OFF this returns
     ``None`` immediately — no thread, no ``/running`` probe, no seat call, no
@@ -949,7 +950,7 @@ def schedule_qav_shadow(
                 logger.warning("qav_shadow: threaded run swallowed %r", exc)
 
         thread = threading.Thread(
-            target=_body, name=f"qav-shadow-{task_id}-t{turn}", daemon=True
+            target=_body, name=f"qav-shadow-{task_id}-t{turn}", daemon=False
         )
         thread.start()
         return thread
