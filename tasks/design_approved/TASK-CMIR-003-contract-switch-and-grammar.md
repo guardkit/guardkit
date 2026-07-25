@@ -1,12 +1,12 @@
 ---
 complexity: 4
-dependencies: 
+dependencies:
 - TASK-CMIR-001
 - TASK-CMIR-002
 feature_id: FEAT-CV4M
 id: TASK-CMIR-003
 implementation_mode: task-work
-status: backlog
+status: design_approved
 task_type: feature
 title: Contract switch plumbing + v4 grammar
 wave: 2
