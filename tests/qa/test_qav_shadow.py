@@ -674,3 +674,60 @@ def test_agree_is_none_when_coach_errored(tmp_path):
     record = _read_receipt(repo, "TASK-1", 1)
     assert record["agree"] is None
     assert record["shadow"]["verdict"] == "reject"
+
+
+def test_default_probe_url_derivation_handles_both_endpoint_shapes():
+    """The /running URL must derive from scheme+host for BOTH endpoint conventions —
+    the base-/v1 shape and the full completions URL (the B3 live-smoke catch)."""
+    import guardkit.qa.qav_shadow as qs
+    seen = []
+    real_urlopen = qs.urllib.request.urlopen
+
+    class _Resp:
+        def read(self):
+            return b'{"running": []}'
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        seen.append(url)
+        return _Resp()
+
+    qs.urllib.request.urlopen = fake_urlopen
+    try:
+        for ep in ("http://localhost:9000/v1",
+                   "http://localhost:9000/v1/chat/completions",
+                   "http://localhost:9000/v1/"):
+            probe = qs._default_running_probe(ep)
+            assert probe() == []
+    finally:
+        qs.urllib.request.urlopen = real_urlopen
+    assert seen == ["http://localhost:9000/running"] * 3
+
+
+def test_default_seat_base_url_accepts_both_endpoint_shapes(monkeypatch):
+    """The SDK base_url must normalize from either the base-/v1 shape or the full
+    completions URL (the B3 live-smoke 404 catch)."""
+    import guardkit.qa.qav_shadow as qs
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, base_url=None, api_key=None, timeout=None):
+            captured.setdefault("bases", []).append(base_url)
+            raise RuntimeError("stop before any network")
+
+    import sys, types
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = _FakeClient
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    for ep in ("http://h:9000/v1", "http://h:9000/v1/chat/completions",
+               "http://h:9000/v1/chat/completions/"):
+        call = qs._default_seat_call(ep)
+        try:
+            call("s", "u", "m", 1.0)
+        except RuntimeError:
+            pass
+    assert captured["bases"] == ["http://h:9000/v1"] * 3
