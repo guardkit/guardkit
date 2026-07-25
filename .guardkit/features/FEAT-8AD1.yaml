@@ -1,10 +1,10 @@
 id: FEAT-8AD1
-name: Factory self-fix — durable receipts, command oracles, bounded judge input
+name: "Factory self-fix \u2014 durable receipts, command oracles, bounded judge input"
 description: 'Three receipted verification-layer defects from FEAT-8737 fixed by the
   factory itself: durable shadow receipts, behavioural_oracle.command for any stack,
   loud synthesis-prompt budget'
 created: '2026-07-25T14:39:23.729801'
-status: planned
+status: completed
 complexity: 5
 estimated_tasks: 3
 tasks:
@@ -13,19 +13,37 @@ tasks:
   file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-001-durable-shadow-receipts.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-25T14:40:21.218344'
+  completed_at: '2026-07-25T15:21:06.758303'
 - id: TASK-SELFFIX-002
   name: behavioural_oracle.command for any stack
   file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-002-behavioural-oracle-command.md
   complexity: 5
   dependencies: []
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-25T14:40:21.220972'
+  completed_at: '2026-07-25T15:21:06.763564'
 - id: TASK-SELFFIX-003
   name: Loud synthesis-prompt budget
   file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-003-synthesis-prompt-budget.md
@@ -33,10 +51,19 @@ tasks:
   dependencies:
   - TASK-SELFFIX-001
   - TASK-SELFFIX-002
-  status: pending
-  description: ''
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 75
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-25T15:21:13.623596'
+  completed_at: '2026-07-25T15:56:57.855669'
 orchestration:
   parallel_groups:
   - - TASK-SELFFIX-001
@@ -44,12 +71,30 @@ orchestration:
   - - TASK-SELFFIX-003
   estimated_duration_minutes: 200
   recommended_parallel: 2
-
-# Feature smoke gate (R3): the three lane suites — all paths exist on disk today.
 smoke_gates:
   after_wave: 2
-  command: |
-    set -e
-    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_behavioural_oracle_guard.py tests/orchestrator/test_behavioural_oracle_producer.py -x -q
+  command: 'set -e
+
+    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_behavioural_oracle_guard.py
+    tests/orchestrator/test_behavioural_oracle_producer.py -x -q
+
+    '
   expected_exit: 0
   timeout: 300
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-25T14:40:13.041885'
+  completed_at: '2026-07-25T15:57:05.253305'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-8AD1
+  total_turns: 4
+  tasks_completed: 3
+  tasks_failed: 0
+  current_wave: 2
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-07-25T15:57:05.250117'
+  archived_at: null
+  archived_to: null
