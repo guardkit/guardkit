@@ -46,6 +46,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -356,11 +357,16 @@ def _exclusive_tokens(cfg: dict) -> Tuple[str, ...]:
 
 
 def _default_running_probe(endpoint: str) -> RunningProbe:
-    """Build a ``/running`` probe from the seat base URL (``.../v1`` -> ``/running``)."""
-    root = endpoint.rstrip("/")
-    if root.endswith("/v1"):
-        root = root[: -len("/v1")]
-    running_url = root + "/running"
+    """Build a ``/running`` probe from the seat endpoint.
+
+    The endpoint may be configured as a base (``http://host:9000/v1``) or as the full
+    completions URL (``http://host:9000/v1/chat/completions`` — the held-out runner's
+    convention, and the shape the B3 live smoke used when this derivation's original
+    trailing-``/v1``-strip produced ``.../chat/completions/running`` and fail-opened as
+    ``probe_refused``). llama-swap serves ``/running`` at the server root, so derive from
+    scheme+netloc and ignore the path entirely."""
+    parts = urllib.parse.urlsplit(endpoint)
+    running_url = f"{parts.scheme}://{parts.netloc}/running"
 
     def _probe() -> Optional[List[Dict[str, Any]]]:
         try:
@@ -439,12 +445,20 @@ def _default_seat_call(
     which injects its own ``SeatCall``) carry no ``openai`` dependency.
     """
 
+    # The endpoint may be configured as an SDK base (…/v1) or as the full completions
+    # URL (…/v1/chat/completions — the held-out runner's convention; the B3 live smoke
+    # 404'd as absent(transport_aborted) when the full form was passed straight through
+    # as base_url). Normalize to the base the SDK expects, accepting both shapes.
+    base_url = endpoint.rstrip("/")
+    if base_url.endswith("/chat/completions"):
+        base_url = base_url[: -len("/chat/completions")]
+
     def _call(
         system_prompt: str, user_prompt: str, model: str, timeout_s: float
     ) -> SeatResult:
         from openai import OpenAI  # lazy — only the real-seat path needs it
 
-        client = OpenAI(base_url=endpoint, api_key="not-needed", timeout=timeout_s)
+        client = OpenAI(base_url=base_url, api_key="not-needed", timeout=timeout_s)
         resp = client.chat.completions.create(
             model=model,
             temperature=temperature,
