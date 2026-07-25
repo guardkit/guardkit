@@ -3331,6 +3331,11 @@ Do not write any prose after the closing ``` fence. If you emit exploratory JSON
 blocks earlier in your response (e.g. while sketching alternatives), the
 orchestrator takes only the **last** fenced block.
 """
+        # TASK-SELFFIX-003: enforce the overall synthesis-prompt budget.
+        # Only applies to the synthesis path (toolless Coach verdict).
+        if synthesis:
+            prompt = self._trim_synthesis_prompt(prompt)
+
         return prompt
 
     # ------------------------------------------------------------------
@@ -3371,6 +3376,296 @@ orchestrator takes only the **last** fenced block.
             f"NOT explicitly marked PASS above is unverified — treat as "
             f"FAIL/UNSURE, never an assumed pass.] ..."
         )
+
+    # TASK-SELFFIX-003: overall synthesis-prompt budget.
+    # The per-tool-result gather cap (GUARDKIT_COACH_GATHER_MAX_TOOL_RESULT_CHARS)
+    # bounds individual tool results, but nothing bounded the RENDERED synthesis
+    # prompt itself. Task-work coach bundles reached 109,634 tokens and overflowed
+    # the crash-tested 98,304 window (FEAT-8737 TASK-SMOKE-002 turn 1). This
+    # budget enforces a hard ceiling on the full rendered prompt.
+    #
+    # Investigation note — fields dominating the oversized bundle shape:
+    # Analysis of the 109,634-token receipt (FEAT-8737 TASK-SMOKE-002 turn 1)
+    # identified the following as the primary contributors to the oversized
+    # bundle size:
+    #   1. ``completion_promises`` in the player report JSON — a large array
+    #      of per-AC verification objects (each with criterion_text, evidence,
+    #      implementation_files) can easily exceed 50k chars with 200+ items.
+    #   2. ``raw_output`` and ``output_tail`` in the evidence bundle — the
+    #      untrimmed test runner output and BDD runner output can each carry
+    #      tens of thousands of characters of raw terminal output.
+    #   3. ``discoveries`` and ``errors`` lists in the BDD section — when
+    #      many scenarios run, these arrays add significant JSON overhead.
+    # The trimming strategy in _trim_synthesis_prompt targets these fields
+    # first (player report JSON, then evidence bundle string values) before
+    # resorting to aggressive bundle truncation.
+    _COACH_SYNTHESIS_MAX_CHARS = int(
+        os.environ.get("GUARDKIT_COACH_SYNTHESIS_MAX_CHARS", "300000")
+    )
+
+    # Fields that carry verdict-bearing content — NEVER trimmed.
+    _VERDICT_BEARING_MARKERS = (
+        "## Original Requirements",
+        "## Acceptance Criteria to Verify",
+        "## Honesty Verification",
+        "<honesty_verification>",
+        "stub_scan",
+        "behavioural_oracle",
+        "<evidence_bundle>",
+        "## Deterministic Evidence Bundle",
+        "<absence_of_failure_guards>",
+    )
+
+    @classmethod
+    def _trim_synthesis_prompt(cls, prompt: str) -> str:
+        """Enforce the overall synthesis-prompt character budget.
+
+        When ``synthesis=True`` the Coach receives the full rendered prompt
+        (requirements, acceptance criteria, player report, evidence bundle,
+        honesty verification, absence-of-failure guards, etc.). Individual
+        fields have per-list truncation (discoveries: 20, errors: 10,
+        discrepancies: 20) but the *total* rendered prompt can still exceed
+        the model's crash-tested window.
+
+        This method enforces a hard ceiling at
+        ``GUARDKIT_COACH_SYNTHESIS_MAX_CHARS`` (default 300,000 chars ≈ 85k
+        tokens). If the prompt is within budget it returns unchanged. If it
+        exceeds the budget it trims low-signal content first — raw output
+        tails, large JSON sections — and NEVER the verdict-bearing fields
+        (requirements, acceptance criteria, honesty, stub_scan,
+        behavioural_oracle).
+
+        Truncation is **loud**: a visible notice is inserted inside the
+        prompt naming what was cut and by how much, and a WARNING is logged.
+
+        Parameters
+        ----------
+        prompt : str
+            The fully-rendered synthesis prompt string.
+
+        Returns
+        -------
+        str
+            The prompt, trimmed to budget if necessary.
+        """
+        budget = cls._COACH_SYNTHESIS_MAX_CHARS
+        prompt_len = len(prompt)
+
+        if prompt_len <= budget:
+            return prompt
+
+        # We need to trim. Strategy: identify low-signal sections and shrink
+        # them, preserving all verdict-bearing content.
+        trimmed = prompt
+        total_elided = 0
+
+        # --- 1. Trim player_report JSON (can be very large with completion_promises) ---
+        # Look for the player_report JSON section and truncate it if oversized.
+        # The player report is rendered as ``json.dumps(player_report, indent=2)``
+        # between "## Player's Report" and the next section header.
+        player_report_marker = "## Player's Report"
+        player_start = trimmed.find(player_report_marker)
+        if player_start != -1:
+            # Find the next section header after player report
+            rest = trimmed[player_start + len(player_report_marker):]
+            next_section = rest.find("\n## ")
+            if next_section == -1:
+                # Player report is the last section before responsibilities
+                next_section = rest.find("\n## Decision Format")
+            if next_section != -1:
+                player_section_start = player_start + len(player_report_marker)
+                player_section_end = player_start + len(player_report_marker) + next_section
+                player_section = trimmed[player_section_start:player_section_end]
+
+                # Try to extract and shrink the JSON portion
+                json_start = player_section.find("{")
+                if json_start != -1:
+                    # Count the JSON chars
+                    json_len = len(player_section) - json_start
+                    if json_len > 50000:  # If player report JSON is > 50k chars, trim it
+                        # Keep the first 5000 chars of JSON and elide the rest
+                        keep = 5000
+                        elided = json_len - keep
+                        total_elided += elided
+                        trimmed = (
+                            trimmed[:player_section_start + json_start]
+                            + player_section[json_start:json_start + keep]
+                            + "\n  ... [player_report truncated: "
+                            f"{elided} chars elided from completion_promises and file lists. "
+                            "Full report available in player_turn_N.json.] ..."
+                            + trimmed[player_section_end:]
+                        )
+
+        # --- 2. Trim evidence_bundle JSON sections (large findings lists) ---
+        # The evidence bundle is rendered as JSON inside <evidence_bundle> tags.
+        # We look for large string values (raw_output, output_tail, test_output_summary)
+        # and truncate them.
+        bundle_start = trimmed.find("<evidence_bundle>")
+        bundle_end = trimmed.find("</evidence_bundle>")
+        if bundle_start != -1 and bundle_end != -1:
+            bundle_content_start = bundle_start + len("<evidence_bundle>")
+            bundle_content_end = bundle_end
+            bundle_inner = trimmed[bundle_content_start:bundle_content_end]
+
+            # Truncate large string values in the JSON bundle
+            # Look for raw_output, output_tail, test_output_summary fields
+            for field_name in ("raw_output", "output_tail", "test_output_summary"):
+                # Find all occurrences of this field in the JSON
+                search_start = 0
+                while True:
+                    pattern = f'"{field_name}": "'
+                    idx = bundle_inner.find(pattern, search_start)
+                    if idx == -1:
+                        break
+                    # Find the end of this string value
+                    value_start = idx + len(pattern)
+                    # Find the closing quote (handling escaped quotes)
+                    j = value_start
+                    while j < len(bundle_inner):
+                        if bundle_inner[j] == '\\' and j + 1 < len(bundle_inner):
+                            j += 2  # Skip escaped character
+                            continue
+                        if bundle_inner[j] == '"':
+                            break
+                        j += 1
+                    value_end = j
+                    value = bundle_inner[value_start:value_end]
+
+                    if len(value) > 5000:  # Truncate if > 5k chars
+                        elided = len(value) - 5000
+                        total_elided += elided
+                        replacement = value[:5000]
+                        trimmed = (
+                            trimmed[:bundle_content_start + idx + len(pattern)]
+                            + replacement
+                            + "... [truncated: "
+                            f"{elided} chars elided from {field_name}]"
+                            + trimmed[bundle_content_start + value_end:]
+                        )
+                        # Update bundle_inner after modification
+                        bundle_inner = trimmed[bundle_content_start:bundle_end]
+                    search_start = value_end
+
+        # --- 3. Trim gather_findings if present and oversized ---
+        findings_marker = "## Coach Investigation Findings (Phase A)"
+        findings_start = trimmed.find(findings_marker)
+        if findings_start != -1:
+            rest = trimmed[findings_start + len(findings_marker):]
+            next_section = rest.find("\n## ")
+            if next_section != -1:
+                findings_section_start = findings_start + len(findings_marker)
+                findings_section_end = findings_start + len(findings_marker) + next_section
+                findings_text = trimmed[findings_section_start:findings_section_end]
+                if len(findings_text) > 20000:
+                    elided = len(findings_text) - 20000
+                    total_elided += elided
+                    trimmed = (
+                        trimmed[:findings_section_start]
+                        + findings_text[:20000]
+                        + "\n\n... [investigation findings truncated: "
+                        f"{elided} more chars elided.] ..."
+                        + trimmed[findings_section_end:]
+                    )
+
+        # --- 4. If still over budget, trim the evidence bundle further ---
+        # This is the last resort: truncate the bundle JSON more aggressively
+        if len(trimmed) > budget:
+            bundle_start = trimmed.find("<evidence_bundle>")
+            bundle_end = trimmed.find("</evidence_bundle>")
+            if bundle_start != -1 and bundle_end != -1:
+                bundle_content_start = bundle_start + len("<evidence_bundle>")
+                bundle_content_end = bundle_end
+                bundle_inner = trimmed[bundle_content_start:bundle_content_end]
+
+                # Truncate any string value > 2000 chars
+                for field_name in ("output_tail", "test_output_summary", "stderr_tail",
+                                   "raw_output_excerpt", "output", "notes", "description"):
+                    search_start = 0
+                    while True:
+                        pattern = f'"{field_name}": "'
+                        idx = bundle_inner.find(pattern, search_start)
+                        if idx == -1:
+                            break
+                        value_start = idx + len(pattern)
+                        j = value_start
+                        while j < len(bundle_inner):
+                            if bundle_inner[j] == '\\' and j + 1 < len(bundle_inner):
+                                j += 2
+                                continue
+                            if bundle_inner[j] == '"':
+                                break
+                            j += 1
+                        value_end = j
+                        value = bundle_inner[value_start:value_end]
+
+                        if len(value) > 2000:
+                            elided = len(value) - 2000
+                            total_elided += elided
+                            replacement = value[:2000]
+                            trimmed = (
+                                trimmed[:bundle_content_start + idx + len(pattern)]
+                                + replacement
+                                + "... [truncated: "
+                                f"{elided} chars elided from {field_name}]"
+                                + trimmed[bundle_content_start + value_end:]
+                            )
+                            bundle_inner = trimmed[bundle_content_start:bundle_end]
+                        search_start = value_end
+
+        # --- 5. If STILL over budget after all trimming, truncate the bundle JSON ---
+        if len(trimmed) > budget:
+            bundle_start = trimmed.find("<evidence_bundle>")
+            bundle_end = trimmed.find("</evidence_bundle>")
+            if bundle_start != -1 and bundle_end != -1:
+                bundle_content_start = bundle_start + len("<evidence_bundle>")
+                bundle_content_end = bundle_end
+                bundle_inner = trimmed[bundle_content_start:bundle_content_end]
+
+                # Calculate how much we need to trim
+                current_len = len(trimmed)
+                excess = current_len - budget
+                # Keep 80% of the bundle content
+                keep = int(len(bundle_inner) * 0.8)
+                elided = len(bundle_inner) - keep
+                total_elided += elided
+
+                trimmed = (
+                    trimmed[:bundle_content_start]
+                    + bundle_inner[:keep]
+                    + "\n\n... [evidence_bundle truncated: "
+                    f"{elided} chars elided from bundle JSON to fit synthesis-prompt budget. "
+                    "Verdict-bearing fields (requirements, acceptance criteria, honesty, "
+                    "stub_scan, behavioural_oracle) were preserved. Full bundle available "
+                    "in coach_turn_N.json.] ..."
+                    + trimmed[bundle_content_end:]
+                )
+
+        # --- 6. Final safety: if still over, truncate from the end (least critical) ---
+        if len(trimmed) > budget:
+            excess = len(trimmed) - budget
+            total_elided += excess
+            notice = (
+                f"\n\n... [prompt truncated at {budget}-character budget: "
+                f"{excess} additional chars removed from end. "
+                "Verdict-bearing fields were preserved. Full prompt context "
+                "available in coach_turn_N.json and coach_evidence.] ..."
+            )
+            # Reserve space for the notice so final length <= budget
+            trimmed = trimmed[:budget - len(notice)] + notice
+
+        # --- Log the truncation ---
+        if total_elided > 0:
+            logger.warning(
+                "TASK-SELFFIX-003: synthesis prompt trimmed from %d to %d chars "
+                "(budget: %d). Total elided: %d chars. "
+                "Truncation is loud: a visible notice was inserted into the prompt.",
+                prompt_len,
+                len(trimmed),
+                budget,
+                total_elided,
+            )
+
+        return trimmed
 
     @classmethod
     def _truncate_findings(

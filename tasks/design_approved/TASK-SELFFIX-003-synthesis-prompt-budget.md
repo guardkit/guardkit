@@ -1,11 +1,4 @@
 ---
-id: TASK-SELFFIX-003
-title: Loud synthesis-prompt budget
-task_type: feature
-parent_review: TASK-REV-SELFFIX
-feature_id: FEAT-8AD1
-wave: 2
-implementation_mode: task-work
 complexity: 5
 dependencies:
 - TASK-SELFFIX-001
@@ -40,6 +33,7 @@ autobuild_state:
     player_success: true
     coach_success: true
 ---
+
 # Loud synthesis-prompt budget
 
 Task-work coach bundles reached 109,634 tokens and overflowed the normal checker's
