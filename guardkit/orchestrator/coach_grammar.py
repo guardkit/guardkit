@@ -27,23 +27,87 @@ Packaged copies live under ``guardkit/orchestrator/grammars/`` so the
 grammar travels with the orchestrator (the source of truth remains
 ``docs/research/dgx-spark/grammars/`` — the two are kept byte-identical;
 ``tests/unit/test_coach_grammar.py`` pins parity).
+
+Contract resolution (TASK-CMIR-003):
+
+* ``resolve_coach_contract()`` decides the active contract with precedence:
+  env ``GUARDKIT_COACH_CONTRACT`` > ``.guardkit/config.yaml``
+  ``autobuild.coach.contract`` > default ``"coachsplit"``.
+* The grammar loader routes on the resolved contract to select the correct
+  .gbnf file (``coach_verdict`` for ``"coachsplit"``, ``coach_verdict_v4``
+  for ``"v4"``).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
 _GRAMMARS_DIR = Path(__file__).parent / "grammars"
 _PRIMARY = "coach-verdict.gbnf"
 _STRICT = "coach-verdict-strict.gbnf"
+_V4 = "coach-verdict-v4.gbnf"
+
+# Valid contract names recognised by resolve_coach_contract().
+_VALID_CONTRACTS: frozenset[str] = frozenset({"coachsplit", "v4"})
 
 
-@lru_cache(maxsize=2)
-def load_coach_verdict_grammar(strict: bool = False) -> str:
+def resolve_coach_contract() -> str:
+    """Resolve the active Coach contract name.
+
+    Resolution order (highest precedence first):
+
+    1. ``GUARDKIT_COACH_CONTRACT`` environment variable.
+    2. ``.guardkit/config.yaml`` key ``autobuild.coach.contract``.
+    3. Default: ``"coachsplit"``.
+
+    Returns
+    -------
+    str
+        One of the recognised contract names (``"coachsplit"`` or ``"v4"``).
+        If the env var is set to an unrecognised value the function falls
+        through to the next tier rather than raising — this keeps the system
+        resilient to typos in operator configuration.
+    """
+    # Tier 1: environment variable.
+    env_val = os.environ.get("GUARDKIT_COACH_CONTRACT")
+    if env_val and env_val in _VALID_CONTRACTS:
+        return env_val
+
+    # Tier 2: config.yaml (only if the file exists).
+    config_path = Path(".guardkit/config.yaml")
+    if config_path.is_file():
+        try:
+            import yaml  # pyright: ignore[reportUnknownVariableType]
+
+            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            contract = (
+                cfg.get("autobuild", {})
+                .get("coach", {})
+                .get("contract")
+            )
+            if contract and contract in _VALID_CONTRACTS:
+                return str(contract)
+        except Exception:  # noqa: BLE001 — degrade gracefully
+            logger.debug(
+                "coach_grammar: failed to read config.yaml contract; "
+                "falling through to default",
+            )
+
+    # Tier 3: default.
+    return "coachsplit"
+
+
+@lru_cache(maxsize=4)
+def load_coach_verdict_grammar(
+    strict: bool = False,
+    contract: str | None = None,
+) -> str:
     """Return the Coach verdict GBNF grammar string.
 
     Parameters
@@ -56,6 +120,12 @@ def load_coach_verdict_grammar(strict: bool = False) -> str:
         the Coach token budget without emitting a verdict). Default ``False``
         loads the primary grammar (free-reasoning prefix + guaranteed final
         verdict fence).
+
+    contract:
+        The Coach contract to load.  Accepted values are ``"coachsplit"``
+        (loads the primary or strict grammar) and ``"v4"`` (loads the
+        v4 grammar).  When ``None`` the function calls
+        :func:`resolve_coach_contract` to determine the active contract.
 
     Returns
     -------
@@ -71,10 +141,23 @@ def load_coach_verdict_grammar(strict: bool = False) -> str:
         toolless-but-ungrammared synthesis call so a packaging glitch never
         hard-fails the Coach — see that call site for the degraded path.
     """
-    name = _STRICT if strict else _PRIMARY
+    if contract is None:
+        contract = resolve_coach_contract()
+
+    if contract == "v4":
+        name = _V4
+    elif strict:
+        name = _STRICT
+    else:
+        name = _PRIMARY
+
     path = _GRAMMARS_DIR / name
     text = path.read_text(encoding="utf-8")
     logger.debug(
-        "coach_grammar: loaded %s (%d bytes) from %s", name, len(text), path
+        "coach_grammar: loaded %s (contract=%s, %d bytes) from %s",
+        name,
+        contract,
+        len(text),
+        path,
     )
     return text

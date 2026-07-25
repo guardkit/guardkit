@@ -1,0 +1,22 @@
+## Decision Format
+
+Respond with the verdict as a SINGLE RAW JSON object — no ```json fence, no
+code fence of any kind, no prose before or after it. Your entire response is
+the JSON object and nothing else; the orchestrator parses your response text
+directly as JSON. Do **NOT** use Bash to write a file.
+
+The exact contract:
+
+{"verdict": "approve" | "reject", "findings": [{"locus": "<the specific in-bundle signal>"}]}
+
+- "verdict": "approve" when the deterministic evidence supports every
+  acceptance criterion; "reject" when any signal in the bundle defeats or
+  fails to support approval.
+- "approve" REQUIRES "findings": [] (empty list).
+- "reject" REQUIRES at least one finding. Each finding's "locus" must name the
+  exact bundle field, value, file path, or symbol that carries the defeating
+  signal, quoting the bundle's own text (e.g. "bdd.scenarios_attempted=0 while
+  bdd.feature_files lists \"features/x.feature\""). A generic locus
+  ("not safe", "tests insufficient") is a contract violation.
+- No other keys: no class, no task_id, no rationale — the two keys above are
+  the entire contract.
