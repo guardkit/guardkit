@@ -1,0 +1,48 @@
+id: FEAT-SBHO
+name: "Specialist-prompt budget + hold-out relocation (the handoff §3.1 pair)"
+description: 'Two small verification-integrity lanes combined: (A) the FEAT-8AD1
+  follow-up — budget the code-reviewer/advisory prompt seams with the loud-trim
+  pattern; (B) the ruled Dive-3 hold-out relocation — coach evidence dossier and full
+  verdict move to an orchestrator-private dir outside the shared worktree. Binding
+  spec: docs/specialist-budget-and-holdout-scope-and-buildplan.md'
+created: '2026-07-25T23:05:00.000000'
+status: planned
+complexity: 5
+estimated_tasks: 2
+tasks:
+- id: TASK-SBHO-001
+  name: Budget the specialist/advisory prompt seams
+  file_path: tasks/backlog/specialist-budget-holdout/TASK-SBHO-001-specialist-prompt-budget.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+- id: TASK-SBHO-002
+  name: Hold-out relocation — coach dossier out of the shared worktree
+  file_path: tasks/backlog/specialist-budget-holdout/TASK-SBHO-002-holdout-relocation.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 75
+  requires_infrastructure: []
+orchestration:
+  parallel_groups:
+  - - TASK-SBHO-001
+    - TASK-SBHO-002
+  estimated_duration_minutes: 125
+  recommended_parallel: 2
+smoke_gates:
+  after_wave: 1
+  command: 'set -e
+
+    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_synthesis_prompt_budget.py -x -q
+
+    '
+  expected_exit: 0
+  timeout: 300
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos: []
