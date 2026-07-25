@@ -26,6 +26,7 @@ Phase 2.5B architectural-review constraints
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import List
 
@@ -731,3 +732,321 @@ class TestHybridReasoningFallback:
 
         result = extract_and_write(events, "TASK-FIX-COACHBUDG01", 1, out)
         assert result == payload
+
+
+# --------------------------------------------------------------------------- #
+# TASK-CMIR-001 — v4 contract parsing + wire-to-internal adapter
+# --------------------------------------------------------------------------- #
+
+
+def _make_v4_approve_payload(findings: list | None = None) -> dict:
+    """A minimal v4 approval verdict (findings must be empty)."""
+    return {
+        "verdict": "approve",
+        "findings": findings or [],
+    }
+
+
+def _make_v4_reject_payload() -> dict:
+    """A minimal v4 reject verdict with a valid finding."""
+    return {
+        "verdict": "reject",
+        "findings": [
+            {
+                "locus": "guardkit/orchestrator/coach_output_parser.py:150",
+                "category": "major",
+                "recommendation": "Fix the regex",
+            }
+        ],
+    }
+
+
+def _make_v4_reject_payload_empty_locus() -> dict:
+    """A v4 reject verdict with an empty locus (invalid)."""
+    return {
+        "verdict": "reject",
+        "findings": [
+            {
+                "locus": "",
+                "category": "major",
+            }
+        ],
+    }
+
+
+class TestV4RawParsing:
+    """contract=v4: raw v4 JSON parses via whole-text json.loads."""
+
+    def test_v4_approve_raw_parses_and_adapts(self, tmp_path):
+        v4_payload = _make_v4_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert result["decision"] == "approve"
+        assert result["task_id"] == "TASK-CMIR-001"
+        assert result["turn"] == 1
+        assert result["issues"] == []
+        assert result["contract"] == "v4"
+        assert result["findings_provenance"] == "coach-ft-v4"
+        assert out.exists()
+        written = json.loads(out.read_text())
+        assert written["decision"] == "approve"
+
+    def test_v4_reject_raw_parses_and_adapts(self, tmp_path):
+        v4_payload = _make_v4_reject_payload()
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=2)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 2, out, contract="v4")
+
+        assert result["decision"] == "feedback"
+        assert len(result["issues"]) == 1
+        assert result["issues"][0]["type"] == "finding"
+        assert result["issues"][0]["severity"] == "major"
+        assert result["issues"][0]["description"] == "guardkit/orchestrator/coach_output_parser.py:150"
+        assert result["issues"][0]["suggestion"] == ""
+
+    def test_v4_raw_with_stray_prefix_does_not_parse_raw(self, tmp_path):
+        """Text with leading prose fails raw json.loads — falls to balanced."""
+        v4_payload = _make_v4_approve_payload()
+        text = "Some stray text\n\n" + json.dumps(v4_payload)
+        events: List[HarnessEvent] = [_assistant_event(text)]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        assert result["decision"] == "approve"
+
+
+class TestV4BalancedObjectParsing:
+    """contract=v4: v4 object embedded after stray text via last-balanced-object."""
+
+    def test_balanced_object_containing_verdict_found(self, tmp_path):
+        v4_payload = _make_v4_approve_payload()
+        text = (
+            "Here's some analysis:\n"
+            '{"some": "other", "data": true}\n'
+            + json.dumps(v4_payload)
+        )
+        events: List[HarnessEvent] = [_assistant_event(text)]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert result["decision"] == "approve"
+
+    def test_last_balanced_object_wins(self, tmp_path):
+        """When multiple objects contain 'verdict', the last one wins."""
+        first = {"verdict": "reject", "findings": [{"locus": "old"}]}
+        second = _make_v4_approve_payload()
+        text = json.dumps(first) + "\n\n" + json.dumps(second)
+        events: List[HarnessEvent] = [_assistant_event(text)]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert result["decision"] == "approve"
+
+    def test_no_balanced_object_falls_to_legacy(self, tmp_path):
+        """No v4 object found → legacy fenced-block fallback."""
+        legacy_payload = _make_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(_fence(legacy_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        # Should get the legacy shape back
+        assert result["decision"] == "approve"
+        assert "task_id" in result
+
+    def test_balanced_object_without_verdict_ignored(self, tmp_path):
+        """A balanced object without 'verdict' is skipped."""
+        text = json.dumps({"other": "data"})
+        events: List[HarnessEvent] = [_assistant_event(text)]
+        out = _output_path(tmp_path, turn=1)
+
+        with pytest.raises(CoachDecisionNotFoundError):
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+
+class TestV4Adaptation:
+    """Verify the wire-to-internal adapter mapping."""
+
+    def test_severity_is_constant_major_must_fix(self, tmp_path):
+        """Spec §2: every v4 finding is a rejection reason — severity is
+        CONSTANT "major" (the must_fix bucket boundary is critical|major),
+        regardless of any extra keys the wire might carry."""
+        v4_payload = {
+            "verdict": "reject",
+            "findings": [
+                {"locus": "file.py:1", "category": "major"},
+                {"locus": "file.py:2", "category": "minor"},
+                {"locus": "file.py:3"},
+            ],
+        }
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        assert [i["severity"] for i in result["issues"]] == ["major"] * 3
+        assert all(i["type"] == "finding" for i in result["issues"])
+
+
+    def test_suggestion_is_empty_locus_is_description(self, tmp_path):
+        """Spec §2: the wire carries only locus; suggestion/requirement are
+        empty strings — extra wire keys are tolerated but never trusted."""
+        v4_payload = {
+            "verdict": "reject",
+            "findings": [
+                {
+                    "locus": "test.py:42",
+                    "category": "major",
+                    "recommendation": "Update the assertion",
+                }
+            ],
+        }
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        issue = result["issues"][0]
+        assert issue["description"] == "test.py:42"
+        assert issue["suggestion"] == ""
+        assert issue["requirement"] == ""
+        assert issue["severity"] == "major"
+
+class TestV4Validation:
+    """v4-specific validation: approve⇒empty findings, reject⇒non-empty locus."""
+
+    def test_v4_approve_with_findings_raises_invalid(self, tmp_path):
+        v4_payload = _make_v4_approve_payload(
+            findings=[{"locus": "file.py:1"}]
+        )
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        with pytest.raises(CoachDecisionInvalidError) as exc_info:
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        assert "Coach decision invalid" in str(exc_info.value)
+        assert "approve" in str(exc_info.value)
+        assert "empty findings" in str(exc_info.value)
+
+    def test_v4_reject_with_empty_locus_raises_invalid(self, tmp_path):
+        v4_payload = _make_v4_reject_payload_empty_locus()
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        with pytest.raises(CoachDecisionInvalidError) as exc_info:
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        assert "Coach decision invalid" in str(exc_info.value)
+        assert "empty locus" in str(exc_info.value)
+
+    def test_v4_reject_with_valid_locus_passes(self, tmp_path):
+        v4_payload = _make_v4_reject_payload()
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert result["decision"] == "feedback"
+
+
+class TestV4LegacyFallback:
+    """contract=v4: fenced LEGACY reply falls back to unchanged parser."""
+
+    def test_legacy_fenced_block_falls_through(self, tmp_path):
+        legacy_payload = _make_feedback_payload()
+        events: List[HarnessEvent] = [_assistant_event(_fence(legacy_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert result["decision"] == "feedback"
+        assert result["task_id"] == "TASK-FIX-COACHOUT01"
+
+    def test_legacy_fallback_logs_marker(self, tmp_path, caplog):
+        legacy_payload = _make_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(_fence(legacy_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        with caplog.at_level(logging.WARNING):
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert any(
+            "contract=v4" in record.message and "legacy-fallback" in record.message
+            for record in caplog.records
+        )
+
+
+class TestContractCoachsplit:
+    """contract=coachsplit (default): byte-identical to today."""
+
+    def test_default_contract_is_coachsplit(self):
+        from guardkit.orchestrator.coach_output_parser import _resolve_contract
+        # Must run without GUARDKIT_COACH_CONTRACT set
+        import os
+        os.environ.pop("GUARDKIT_COACH_CONTRACT", None)
+        assert _resolve_contract() == "coachsplit"
+
+    def test_explicit_coachsplit_uses_legacy_path(self, tmp_path):
+        payload = _make_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(_fence(payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        result = extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out, contract="coachsplit")
+
+        assert result == payload
+
+    def test_existing_error_paths_unchanged(self, tmp_path):
+        """No block → CoachDecisionNotFoundError with COACHSF01 substring."""
+        events: List[HarnessEvent] = [_assistant_event("no fences")]
+        out = _output_path(tmp_path, turn=1)
+
+        with pytest.raises(CoachDecisionNotFoundError) as exc_info:
+            extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out, contract="coachsplit")
+        assert "Coach decision not found" in str(exc_info.value)
+
+
+class TestV4Logging:
+    """AC-004: every successful parse logs which path fired."""
+
+    def test_v4_raw_path_logged(self, tmp_path, caplog):
+        v4_payload = _make_v4_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        with caplog.at_level(logging.DEBUG):
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert any(
+            "contract=v4" in record.message and "path=raw" in record.message
+            for record in caplog.records
+        )
+
+    def test_v4_balanced_path_logged(self, tmp_path, caplog):
+        v4_payload = _make_v4_approve_payload()
+        text = "stray text\n" + json.dumps(v4_payload)
+        events: List[HarnessEvent] = [_assistant_event(text)]
+        out = _output_path(tmp_path, turn=1)
+
+        with caplog.at_level(logging.DEBUG):
+            extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+
+        assert any(
+            "contract=v4" in record.message and "path=balanced" in record.message
+            for record in caplog.records
+        )
+
+    def test_legacy_path_logged(self, tmp_path, caplog):
+        payload = _make_approve_payload()
+        events: List[HarnessEvent] = [_assistant_event(_fence(payload))]
+        out = _output_path(tmp_path, turn=1)
+
+        with caplog.at_level(logging.DEBUG):
+            extract_and_write(events, "TASK-FIX-COACHOUT01", 1, out)
+
+        assert any(
+            "fenced block" in record.message
+            for record in caplog.records
+        )
