@@ -128,6 +128,169 @@ _FENCE_PATTERN = re.compile(
 # ``"feedback"`` (validated below).
 _REQUIRED_TOP_LEVEL_KEYS = ("task_id", "turn", "decision")
 
+# v4 contract keys — the wire shape Coach v4 emits:
+# {"verdict": "approve"|"reject", "findings": [{"locus": "..."}]}
+_V4_VERDICT_KEY = "verdict"
+_V4_FINDINGS_KEY = "findings"
+_V4_LOCUS_KEY = "locus"
+_V4_VALID_VERDICTS = ("approve", "reject")
+
+# Internal mapping: v4 verdict → internal decision
+_V4_VERDICT_MAP = {"approve": "approve", "reject": "feedback"}
+
+# Severity mapping: v4 category → internal severity
+# "major" findings land in the fix-loop's must-fix bucket
+_V4_SEVERITY_MAP = {
+    "major": "critical",
+    "minor": "warning",
+    "info": "info",
+}
+
+
+def _resolve_contract() -> str:
+    """Resolve which coach contract to use for parsing.
+
+    Reads the ``GUARDKIT_COACH_CONTRACT`` environment variable.
+    Returns ``"v4"`` when set to ``"v4"``, otherwise defaults to
+    ``"coachsplit"`` (the legacy path).
+
+    The contract-resolution helper is intentionally small; it may be
+    replaced by a full contract-mirror in TASK-CMIR-003.
+    """
+    return os.environ.get("GUARDKIT_COACH_CONTRACT", "coachsplit")
+
+
+def _parse_v4_raw(text: str) -> dict | None:
+    """Try to parse *text* as a raw v4 JSON object.
+
+    Returns the parsed dict if the entire text is valid JSON with a
+    ``"verdict"`` key, otherwise returns ``None``.
+    """
+    try:
+        obj = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(obj, dict) or _V4_VERDICT_KEY not in obj:
+        return None
+    return obj
+
+
+def _parse_v4_balanced_object(text: str) -> dict | None:
+    """Find the last balanced JSON object in *text* that contains ``"verdict"``.
+
+    Scans for the rightmost ``{...}`` pair (respecting nesting) that
+    contains a ``"verdict"`` key when parsed.  Returns the parsed dict
+    or ``None`` if no such object exists.
+    """
+    # Collect all balanced JSON objects by finding matching brace pairs
+    objects: list[tuple[int, int]] = []  # (start, end) positions
+    i = 0
+    while i < len(text):
+        if text[i] == '{':
+            depth = 0
+            start = i
+            in_string = False
+            escape = False
+            j = i
+            while j < len(text):
+                ch = text[j]
+                if escape:
+                    escape = False
+                elif ch == '\\' and in_string:
+                    escape = True
+                elif ch == '"' :
+                    in_string = not in_string
+                elif not in_string:
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            objects.append((start, j))
+                            break
+                j += 1
+        i += 1
+
+    # Check from last to first
+    for start, end in reversed(objects):
+        snippet = text[start:end + 1]
+        try:
+            obj = json.loads(snippet)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and _V4_VERDICT_KEY in obj:
+            return obj
+    return None
+
+
+def _adapt_v4_to_internal(
+    v4_obj: dict,
+    task_id: str,
+    turn: int,
+) -> dict:
+    """Adapt a v4 wire object into the internal decision shape.
+
+    Mapping rules (spec §2):
+    - ``verdict`` → ``decision`` via ``_V4_VERDICT_MAP``
+    - ``findings`` → ``issues`` list:
+      - Each finding gets ``type="coach_finding"``,
+        ``severity`` mapped from ``category`` via ``_V4_SEVERITY_MAP``
+        (default "warning" if unknown),
+        ``description`` from ``locus`` (or empty string),
+        ``suggestion`` from ``recommendation`` if present.
+    - ``task_id`` and ``turn`` are injected from the call site.
+    - ``contract`` and ``findings_provenance`` keys are added.
+    """
+    decision = _V4_VERDICT_MAP[v4_obj[_V4_VERDICT_KEY]]
+
+    issues: list[dict[str, Any]] = []
+    for finding in v4_obj.get(_V4_FINDINGS_KEY, []):
+        category = finding.get("category", "")
+        issues.append({
+            "type": "coach_finding",
+            "severity": _V4_SEVERITY_MAP.get(category, "warning"),
+            "description": finding.get(_V4_LOCUS_KEY, ""),
+            "suggestion": finding.get("recommendation", ""),
+        })
+
+    return {
+        "task_id": task_id,
+        "turn": turn,
+        "decision": decision,
+        "issues": issues,
+        "contract": "v4",
+        "findings_provenance": "coach-ft-v4",
+    }
+
+
+def _validate_v4_decision(v4_obj: dict, task_id: str, turn: int) -> None:
+    """Validate v4-specific constraints before writing.
+
+    - approve ⇒ findings must be empty
+    - reject  ⇒ every finding must have a non-empty ``locus``
+
+    Raises ``CoachDecisionInvalidError`` on violation.
+    """
+    findings = v4_obj.get(_V4_FINDINGS_KEY, [])
+
+    verdict = v4_obj.get(_V4_VERDICT_KEY, "")
+
+    if verdict == "approve":
+        if findings:
+            raise CoachDecisionInvalidError(
+                f"Coach decision invalid: v4 approve verdict must have "
+                f"empty findings for {task_id} turn {turn} "
+                f"(got {len(findings)} finding(s))"
+            )
+    elif verdict == "reject":
+        for i, finding in enumerate(findings):
+            locus = finding.get(_V4_LOCUS_KEY, "")
+            if not locus:
+                raise CoachDecisionInvalidError(
+                    f"Coach decision invalid: v4 reject finding[{i}] "
+                    f"has empty locus for {task_id} turn {turn}"
+                )
+
 
 def _collect_assistant_text(harness_events: Iterable[HarnessEvent]) -> str:
     """Concatenate every ``AssistantMessageEvent.text`` from a harness stream.
@@ -193,14 +356,19 @@ def extract_and_write(
     task_id: str,
     turn: int,
     output_path: Path,
+    contract: str | None = None,
 ) -> Dict[str, Any]:
     """Extract the Coach verdict from a harness event stream and persist it.
 
     Concatenates every ``AssistantMessageEvent.text`` in ``harness_events``,
-    finds every fenced ``json`` block in the joined text, takes the **last**
-    block (handles models that emit exploratory JSON mid-reasoning then a
-    corrected final block), parses it, validates required top-level fields,
-    and writes the JSON document atomically to ``output_path``.
+    resolves the active coach contract, and routes to the appropriate parser:
+
+    * ``contract=v4`` — parses Coach v4 wire shape (raw JSON with
+      ``{"verdict": ..., "findings": [...]}``), adapts to the internal
+      decision shape, validates v4-specific constraints, and writes the
+      internal shape to ``output_path``.
+    * ``contract=coachsplit`` (default) — legacy path: finds every fenced
+      ``json`` block, takes the last, validates required fields, and writes.
 
     Args:
         harness_events: The full ``List[HarnessEvent]`` ``_invoke_with_role``
@@ -216,62 +384,143 @@ def extract_and_write(
             writes the document the existing ``_load_agent_report`` consumer
             (``agent_invoker.py:4109``) reads. Parent directory is created
             on demand.
+        contract: Which coach contract to use. ``"v4"`` for the v4-first
+            path, ``"coachsplit"`` for the legacy fenced-block path.
+            Defaults to resolving from ``GUARDKIT_COACH_CONTRACT`` env var
+            via ``_resolve_contract()``.
 
     Returns:
-        The parsed decision dict. The caller (``invoke_coach``) does not
-        currently use the return value — ``_load_agent_report`` re-reads
-        the file by design — but returning the dict makes the parser
+        The parsed decision dict (internal shape). The caller (``invoke_coach``)
+        does not currently use the return value — ``_load_agent_report``
+        re-reads the file by design — but returning the dict makes the parser
         directly testable without round-tripping through disk and gives
         future callers a fast path that skips the second read.
 
     Raises:
-        CoachDecisionNotFoundError: If no fenced ``json`` block is present
-            in any ``AssistantMessageEvent``. ``str(error)`` is prefixed with
-            ``"Coach decision not found"`` so the COACHSF01 safety net in
-            ``autobuild.py:5672-5698`` fires.
-        CoachDecisionInvalidError: If the last fenced block is malformed
-            JSON, is not a JSON object, is missing a required top-level
-            field (``task_id`` / ``turn`` / ``decision``), or has a
-            ``decision`` value other than ``"approve"`` or ``"feedback"``.
-            ``str(error)`` is prefixed with ``"Coach decision invalid"`` so
-            COACHSF01 fires.
+        CoachDecisionNotFoundError: If no verdict can be extracted.
+            ``str(error)`` is prefixed with ``"Coach decision not found"``
+            so the COACHSF01 safety net fires.
+        CoachDecisionInvalidError: If the extracted verdict is malformed
+            or violates contract constraints. ``str(error)`` is prefixed
+            with ``"Coach decision invalid"`` so COACHSF01 fires.
+    """
+    if contract is None:
+        contract = _resolve_contract()
+
+    if contract == "v4":
+        return _extract_and_write_v4(harness_events, task_id, turn, output_path)
+
+    # Legacy path (contract=coachsplit or any unknown value)
+    return _extract_and_write_legacy(harness_events, task_id, turn, output_path)
+
+
+def _extract_and_write_v4(
+    harness_events: List[HarnessEvent],
+    task_id: str,
+    turn: int,
+    output_path: Path,
+) -> Dict[str, Any]:
+    """v4 contract path: parse Coach v4 wire shape and adapt to internal.
+
+    Parsing strategy:
+    1. Try whole-text ``json.loads`` (raw v4 reply — no fence, no prose).
+    2. Fall back to last-balanced-object-containing-"verdict" (v4 object
+       embedded after stray text).
+    3. If both fail, fall through to the legacy fenced-block parser and
+       log ``contract=v4 path=legacy-fallback``.
+
+    Adaptation (spec §2):
+    - ``verdict`` → ``decision`` (approve→approve, reject→feedback)
+    - ``findings`` → ``issues`` (severity mapping, locus→description)
+    - Inject ``task_id``, ``turn``, ``contract``, ``findings_provenance``
+
+    Validation:
+    - approve ⇒ findings must be empty
+    - reject  ⇒ every finding must have non-empty locus
     """
     full_text = _collect_assistant_text(harness_events)
     full_reasoning = _collect_assistant_reasoning(harness_events)
 
-    # No assistant text AND no reasoning text at all is the legacy LangGraph
-    # edge case: a final tool-call-only AIMessage with empty content collapses
-    # to an empty AssistantMessageEvent.text. Hybrid reasoning models
-    # (TASK-FIX-COACHBUDG01) may also emit an empty content stream while
-    # routing the entire turn to reasoning_text — so "no text at all" only
-    # fires when BOTH channels are empty. Treat as "decision not found" so
-    # COACHSF01 fires and the Player gets a retry turn.
+    # No assistant text AND no reasoning text at all
     if not full_text and not full_reasoning:
         raise CoachDecisionNotFoundError(
             f"Coach decision not found: no assistant text in harness "
             f"events for {task_id} turn {turn} (0 AssistantMessageEvent)"
         )
 
-    # TASK-FIX-COACHBUDG01 (2026-06-06) — "prefer content" precedence.
-    # Try the canonical content stream first; this is where instruction-
-    # tuned models emit verdicts under typical prompting. Only fall through
-    # to reasoning_text when content has no fenced block. Rationale:
-    #
-    # 1. A model that emits the verdict cleanly to content is doing what
-    #    Coach was prompted to do — prefer that over the exploratory
-    #    thinking-channel block (which can be earlier-in-time and may be
-    #    superseded by the content version).
-    # 2. When the content stream IS truncated (budget cap, or model emits
-    #    only reasoning and forgot to mirror to content), the reasoning
-    #    block IS the verdict — the fallback rescues the turn.
-    # 3. If both channels are populated AND both contain blocks, content
-    #    wins; the reasoning block is ignored entirely. This is the
-    #    common gemma4-coach pattern when reasoning_mode="auto" plus a
-    #    generous max_tokens budget.
-    #
-    # See §9.14 of AUTOBUILD-ON-LLAMA-SWAP-findings.md for the empirical
-    # probe (content 364 chars + reasoning_content 4450 chars; both held
-    # a fenced block; content was the verdict authority).
+    v4_obj: dict | None = None
+    path: str
+
+    # Step 1: Try whole-text json.loads (raw v4 reply)
+    v4_obj = _parse_v4_raw(full_text)
+    if v4_obj is not None:
+        path = "raw"
+    else:
+        # Step 2: Try last-balanced-object-containing-verdict
+        v4_obj = _parse_v4_balanced_object(full_text)
+        if v4_obj is not None:
+            path = "balanced"
+        else:
+            # Step 3: Also try reasoning_text
+            if full_reasoning:
+                v4_obj = _parse_v4_raw(full_reasoning)
+                if v4_obj is not None:
+                    path = "raw"
+                else:
+                    v4_obj = _parse_v4_balanced_object(full_reasoning)
+                    if v4_obj is not None:
+                        path = "balanced"
+
+            if v4_obj is None:
+                # v4 parse failed — fall back to legacy fenced-block parser
+                logger.warning(
+                    "contract=v4 path=legacy-fallback: v4 parse failed "
+                    "for %s turn %s, falling back to fenced-block parser",
+                    task_id, turn,
+                )
+                return _extract_and_write_legacy(
+                    harness_events, task_id, turn, output_path
+                )
+
+    # Validate v4-specific constraints
+    _validate_v4_decision(v4_obj, task_id, turn)
+
+    # Adapt to internal shape
+    internal = _adapt_v4_to_internal(v4_obj, task_id, turn)
+
+    # Atomic write
+    _atomic_write(output_path, json.dumps(internal, indent=2))
+
+    logger.debug(
+        "coach_output_parser: extracted %s verdict for %s turn %s "
+        "(contract=v4, path=%s, %d findings)",
+        internal["decision"], task_id, turn, path,
+        len(v4_obj.get(_V4_FINDINGS_KEY, [])),
+    )
+
+    return internal
+
+
+def _extract_and_write_legacy(
+    harness_events: List[HarnessEvent],
+    task_id: str,
+    turn: int,
+    output_path: Path,
+) -> Dict[str, Any]:
+    """Legacy contract path: fenced-block parser (unchanged from original).
+
+    This is the pre-v4 parser logic, preserved for byte-identical
+    behaviour under ``contract=coachsplit``.
+    """
+    full_text = _collect_assistant_text(harness_events)
+    full_reasoning = _collect_assistant_reasoning(harness_events)
+
+    if not full_text and not full_reasoning:
+        raise CoachDecisionNotFoundError(
+            f"Coach decision not found: no assistant text in harness "
+            f"events for {task_id} turn {turn} (0 AssistantMessageEvent)"
+        )
+
     matches = _FENCE_PATTERN.findall(full_text) if full_text else []
     source = "content"
     if not matches:
@@ -285,10 +534,6 @@ def extract_and_write(
             f"{len(full_reasoning)} chars reasoning_content)"
         )
 
-    # Take the LAST block — handles "exploratory JSON then corrected final
-    # block" (a real qwen36-workhorse pattern) and is consistent with how
-    # instruction-tuned models are commonly prompted ("end your response
-    # with a fenced JSON block").
     candidate = matches[-1]
 
     try:
@@ -299,9 +544,6 @@ def extract_and_write(
             f"for {task_id} turn {turn}: {e}"
         ) from e
 
-    # Coach's decision must be a JSON object. A bare array or scalar at the
-    # top level would parse but cannot carry the required fields and would
-    # crash _validate_coach_decision downstream with a less helpful error.
     if not isinstance(decision, dict):
         raise CoachDecisionInvalidError(
             f"Coach decision invalid: last fenced JSON block is not an "
@@ -322,8 +564,6 @@ def extract_and_write(
             f"{decision['decision']!r}"
         )
 
-    # Atomic write preserves the existing _load_agent_report consumer
-    # contract — the file on disk is what the rest of the pipeline reads.
     _atomic_write(output_path, json.dumps(decision, indent=2))
 
     logger.debug(
