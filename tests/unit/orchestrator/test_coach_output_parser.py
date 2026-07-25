@@ -803,10 +803,10 @@ class TestV4RawParsing:
 
         assert result["decision"] == "feedback"
         assert len(result["issues"]) == 1
-        assert result["issues"][0]["type"] == "coach_finding"
-        assert result["issues"][0]["severity"] == "critical"
+        assert result["issues"][0]["type"] == "finding"
+        assert result["issues"][0]["severity"] == "major"
         assert result["issues"][0]["description"] == "guardkit/orchestrator/coach_output_parser.py:150"
-        assert result["issues"][0]["suggestion"] == "Fix the regex"
+        assert result["issues"][0]["suggestion"] == ""
 
     def test_v4_raw_with_stray_prefix_does_not_parse_raw(self, tmp_path):
         """Text with leading prose fails raw json.loads — falls to balanced."""
@@ -873,25 +873,29 @@ class TestV4BalancedObjectParsing:
 class TestV4Adaptation:
     """Verify the wire-to-internal adapter mapping."""
 
-    def test_severity_major_maps_to_critical(self, tmp_path):
+    def test_severity_is_constant_major_must_fix(self, tmp_path):
+        """Spec §2: every v4 finding is a rejection reason — severity is
+        CONSTANT "major" (the must_fix bucket boundary is critical|major),
+        regardless of any extra keys the wire might carry."""
         v4_payload = {
             "verdict": "reject",
             "findings": [
                 {"locus": "file.py:1", "category": "major"},
                 {"locus": "file.py:2", "category": "minor"},
-                {"locus": "file.py:3", "category": "unknown"},
+                {"locus": "file.py:3"},
             ],
         }
         events: List[HarnessEvent] = [_assistant_event(json.dumps(v4_payload))]
         out = _output_path(tmp_path, turn=1)
 
         result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
+        assert [i["severity"] for i in result["issues"]] == ["major"] * 3
+        assert all(i["type"] == "finding" for i in result["issues"])
 
-        assert result["issues"][0]["severity"] == "critical"
-        assert result["issues"][1]["severity"] == "warning"
-        assert result["issues"][2]["severity"] == "warning"  # unknown → default
 
-    def test_recommendation_maps_to_suggestion(self, tmp_path):
+    def test_suggestion_is_empty_locus_is_description(self, tmp_path):
+        """Spec §2: the wire carries only locus; suggestion/requirement are
+        empty strings — extra wire keys are tolerated but never trusted."""
         v4_payload = {
             "verdict": "reject",
             "findings": [
@@ -906,21 +910,11 @@ class TestV4Adaptation:
         out = _output_path(tmp_path, turn=1)
 
         result = extract_and_write(events, "TASK-CMIR-001", 1, out, contract="v4")
-
-        assert result["issues"][0]["suggestion"] == "Update the assertion"
-
-    def test_missing_locus_defaults_to_empty_string(self):
-        """Test the adapter directly — validation would reject reject+empty locus."""
-        from guardkit.orchestrator.coach_output_parser import _adapt_v4_to_internal
-
-        v4_obj = {
-            "verdict": "approve",
-            "findings": [{"category": "minor"}],
-        }
-        result = _adapt_v4_to_internal(v4_obj, "TASK-CMIR-001", 1)
-
-        assert result["issues"][0]["description"] == ""
-
+        issue = result["issues"][0]
+        assert issue["description"] == "test.py:42"
+        assert issue["suggestion"] == ""
+        assert issue["requirement"] == ""
+        assert issue["severity"] == "major"
 
 class TestV4Validation:
     """v4-specific validation: approve⇒empty findings, reject⇒non-empty locus."""

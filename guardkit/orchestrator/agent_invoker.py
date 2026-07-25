@@ -1385,6 +1385,14 @@ class AgentInvocationResult:
     session_id: Optional[str] = None           # TASK-RFX-B20B: SDK session ID for resumption
 
 
+
+# TASK-CMIR-002 (coordinator fix-and-re-verify): the NORMATIVE v4 Decision Format
+# block — byte-parity with the training corpus instruction (adf build_v4_sft.py
+# V4_DECISION_FORMAT) and docs/coach-contract-mirror-scope-and-buildplan.md §4 Fix B.
+# Any edit here breaks train==serve parity; change the corpus + retrain instead.
+_V4_DECISION_FORMAT_BLOCK = '## Decision Format\n\nRespond with the verdict as a SINGLE RAW JSON object — no ```json fence, no\ncode fence of any kind, no prose before or after it. Your entire response is\nthe JSON object and nothing else; the orchestrator parses your response text\ndirectly as JSON. Do **NOT** use Bash to write a file.\n\nThe exact contract:\n\n{"verdict": "approve" | "reject", "findings": [{"locus": "<the specific in-bundle signal>"}]}\n\n- "verdict": "approve" when the deterministic evidence supports every\n  acceptance criterion; "reject" when any signal in the bundle defeats or\n  fails to support approval.\n- "approve" REQUIRES "findings": [] (empty list).\n- "reject" REQUIRES at least one finding. Each finding\'s "locus" must name the\n  exact bundle field, value, file path, or symbol that carries the defeating\n  signal, quoting the bundle\'s own text (e.g. "bdd.scenarios_attempted=0 while\n  bdd.feature_files lists \\"features/x.feature\\""). A generic locus\n  ("not safe", "tests insufficient") is a contract violation.\n- No other keys: no class, no task_id, no rationale — the two keys above are\n  the entire contract.'
+
+
 class AgentInvoker:
     """Handles Claude Agents SDK invocation for Player and Coach agents.
 
@@ -3170,7 +3178,7 @@ that criterion is NOT satisfied for approval purposes.
         if acceptance_criteria:
             criteria_lines = ["## Acceptance Criteria to Verify", ""]
             if is_v4:
-                criteria_lines.append("Verify EACH criterion; include findings for each rejected criterion:")
+                criteria_lines.append("Verify EACH criterion against the evidence:")
             else:
                 criteria_lines.append("Verify EACH criterion and create a criteria_verification entry:")
             criteria_lines.append("")
@@ -3228,11 +3236,9 @@ Quality Gates:
             # builder honest if it is ever invoked with synthesis=True and no
             # bundle directly (so the prompt never claims evidence it lacks).
             if evidence_bundle is not None:
-                _v4_feedback_not_approval_bundle = (
-                    " that is REJECT, not APPROVE"
-                    if is_v4
-                    else ""
-                )
+                # train==serve parity: the corpus banner ends at
+                # "...honesty verification." — no extra clause under v4.
+                _v4_feedback_not_approval_bundle = ""
                 synthesis_banner = f"""\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
 Glob). Do not attempt to run tests or read files; you cannot. The orchestrator
@@ -3246,7 +3252,7 @@ acceptance criteria, the Player's report, and the honesty verification{
 """
             else:
                 _v4_feedback_not_approval = (
-                    "that is REJECT, not APPROVE"
+                    "that is a REJECT, not approval"
                     if is_v4
                     else "that is FEEDBACK, not approval"
                 )
@@ -3260,17 +3266,17 @@ the information here, {_v4_feedback_not_approval}.
 
 """
             _v4_approve_or_feedback = (
-                "APPROVE or REJECT"
+                "Either APPROVE or REJECT with specific findings"
                 if is_v4
                 else "Either APPROVE or provide specific FEEDBACK"
             )
             _v4_feedback_not_approval_responsibilities = (
-                "that is REJECT, not APPROVE"
+                "that is a REJECT, not approval"
                 if is_v4
                 else "that is FEEDBACK, not approval"
             )
             _v4_findings_instruction = (
-                "include findings[] for each rejected criterion"
+                "verify each criterion against the evidence"
                 if is_v4
                 else "create a criteria_verification entry for each criterion"
             )
@@ -3299,12 +3305,12 @@ the information here, {_v4_feedback_not_approval}.
         else:
             synthesis_banner = ""
             _v4_approve_or_feedback = (
-                "APPROVE or REJECT"
+                "Either APPROVE or REJECT with specific findings"
                 if is_v4
                 else "Either APPROVE or provide specific FEEDBACK"
             )
             _v4_findings_instruction = (
-                "include findings[] for each rejected criterion"
+                "verify each criterion against the evidence"
                 if is_v4
                 else "create a criteria_verification entry for each criterion"
             )
@@ -3329,52 +3335,11 @@ the information here, {_v4_feedback_not_approval}.
         # Under ``contract=coachsplit`` the legacy fenced format is
         # preserved byte-identically.
         if is_v4:
-            decision_format_block = f"""
-## Decision Format
-
-Respond with a SINGLE RAW JSON object — no code fences, no prose after it.
-The orchestrator parses your decision directly from this JSON object.
-
-The JSON object MUST appear at the end of your response, after all prose
-reasoning, in this exact form:
-
-```json
-{{
-  "verdict": "approve" | "reject",
-  "findings": []
-}}
-```
-
-For APPROVAL (no issues found):
-```json
-{{
-  "verdict": "approve",
-  "findings": []
-}}
-```
-
-For REJECT (issues found):
-```json
-{{
-  "verdict": "reject",
-  "findings": [
-    {{
-      "locus": "file_path:line_number or module:function",
-      "severity": "major" | "minor",
-      "description": "Specific issue with file paths and line numbers",
-      "requirement": "Which requirement is affected",
-      "suggestion": "How to fix it"
-    }}
-  ]
-}}
-```
-
-**IMPORTANT**: Each finding in ``findings[]`` corresponds to one acceptance
-criterion that was NOT satisfied. Include one finding per rejected criterion.
-
-**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
-Do not write any prose after the closing ``` fence.
-"""
+            decision_format_block = (
+                "\n"
+                + _V4_DECISION_FORMAT_BLOCK
+                + "\n"
+            )
         else:
             decision_format_block = f"""
 ## Decision Format
@@ -4056,12 +4021,12 @@ Turn: {turn}
         # TASK-CMIR-002: v4 vocabulary substitutions.
         # The six legacy phrases are replaced per the spec's substitution table.
         if is_v4:
-            surface_feedback = "flag as feedback"
-            surface_feedback_decision = "issue a 'reject' decision"
-            verbatim_rationale = "verbatim in the findings"
-            feedback_not_approval = "that is REJECT, not APPROVE"
-            approve_or_feedback = "APPROVE or REJECT"
-            criteria_verification = "include findings[]"
+            surface_feedback = "Surface as a reject finding"
+            surface_feedback_decision = 'Surface a "reject" verdict'
+            verbatim_rationale = "verbatim in the finding locus"
+            feedback_not_approval = "that is a REJECT, not approval"
+            approve_or_feedback = "Either APPROVE or REJECT with specific findings"
+            criteria_verification = "verify each criterion against the evidence"
         else:
             surface_feedback = "Surface as feedback"
             surface_feedback_decision = 'Surface a "feedback" decision'
