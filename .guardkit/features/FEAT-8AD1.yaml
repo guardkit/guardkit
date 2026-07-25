@@ -1,0 +1,55 @@
+id: FEAT-8AD1
+name: Factory self-fix — durable receipts, command oracles, bounded judge input
+description: 'Three receipted verification-layer defects from FEAT-8737 fixed by the
+  factory itself: durable shadow receipts, behavioural_oracle.command for any stack,
+  loud synthesis-prompt budget'
+created: '2026-07-25T14:39:23.729801'
+status: planned
+complexity: 5
+estimated_tasks: 3
+tasks:
+- id: TASK-SELFFIX-001
+  name: Durable shadow receipts
+  file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-001-durable-shadow-receipts.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-SELFFIX-002
+  name: behavioural_oracle.command for any stack
+  file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-002-behavioural-oracle-command.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-SELFFIX-003
+  name: Loud synthesis-prompt budget
+  file_path: tasks/backlog/factory-self-fix/TASK-SELFFIX-003-synthesis-prompt-budget.md
+  complexity: 5
+  dependencies:
+  - TASK-SELFFIX-001
+  - TASK-SELFFIX-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-SELFFIX-001
+    - TASK-SELFFIX-002
+  - - TASK-SELFFIX-003
+  estimated_duration_minutes: 200
+  recommended_parallel: 2
+
+# Feature smoke gate (R3): the three lane suites — all paths exist on disk today.
+smoke_gates:
+  after_wave: 2
+  command: |
+    set -e
+    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_behavioural_oracle_guard.py tests/orchestrator/test_behavioural_oracle_producer.py -x -q
+  expected_exit: 0
+  timeout: 300
