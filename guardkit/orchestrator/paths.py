@@ -84,6 +84,9 @@ class TaskArtifactPaths:
     AUTOBUILD_DIR: str = ".guardkit/autobuild/{task_id}"
     PLAYER_REPORT: str = ".guardkit/autobuild/{task_id}/player_turn_{turn}.json"
     COACH_DECISION: str = ".guardkit/autobuild/{task_id}/coach_turn_{turn}.json"
+    # QAV shadow receipt — the log-only second-opinion record written beside the
+    # coach verdict it shadows (guardkit/qa/qav_shadow.py). Default-OFF lane.
+    QAV_SHADOW: str = ".guardkit/autobuild/{task_id}/qav_shadow_turn_{turn}.json"
     TASK_WORK_RESULTS: str = ".guardkit/autobuild/{task_id}/task_work_results.json"
     DESIGN_RESULTS: str = ".guardkit/autobuild/{task_id}/design_results.json"
     COACH_FEEDBACK: str = ".guardkit/autobuild/{task_id}/coach_feedback_{turn}.json"
@@ -290,6 +293,32 @@ class TaskArtifactPaths:
         PosixPath('/repo/.guardkit/autobuild/TASK-001/coach_turn_1.json')
         """
         return worktree / cls.COACH_DECISION.format(task_id=task_id, turn=turn)
+
+    @classmethod
+    def qav_shadow_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for the QAV shadow receipt (beside the coach decision).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the qav_shadow_turn_{turn}.json receipt file
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.qav_shadow_path("TASK-001", 1, Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild/TASK-001/qav_shadow_turn_1.json')
+        """
+        return worktree / cls.QAV_SHADOW.format(task_id=task_id, turn=turn)
 
     @classmethod
     def task_work_results_path(cls, task_id: str, worktree: Path) -> Path:

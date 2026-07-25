@@ -883,6 +883,7 @@ class WorktreeCheckpointManager:
         ("coach", re.compile(r"^coach_turn_(\d+)\.json$")),
         ("player", re.compile(r"^player_turn_(\d+)\.json$")),
         ("turn_state", re.compile(r"^turn_state_turn_(\d+)\.json$")),
+        ("qav_shadow", re.compile(r"^qav_shadow_turn_(\d+)\.json$")),
     )
 
     def _archive_post_target_audit_files(self, target_turn: int) -> int:
