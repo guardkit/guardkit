@@ -1,0 +1,102 @@
+id: FEAT-CV4M
+name: "Coach contract-mirror \u2014 v4 raw verdict wire contract behind a default-off\
+  \ switch"
+description: 'Serve-side mirror of the coach-ft-v4 training contract: v4-first parser
+  with wire-to-internal adapter, v4 Decision Format prompt + vocabulary, contract
+  switch (env>config>default coachsplit) + coach-verdict-v4.gbnf. Legacy behaviour
+  byte-identical at default. Binding spec: docs/coach-contract-mirror-scope-and-buildplan.md'
+created: '2026-07-25T22:45:00.000000'
+status: completed
+complexity: 5
+estimated_tasks: 3
+tasks:
+- id: TASK-CMIR-001
+  name: v4-first parser + wire-to-internal adapter
+  file_path: tasks/backlog/coach-contract-mirror/TASK-CMIR-001-v4-parser-adapter.md
+  complexity: 5
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 60
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-25T22:32:46.817502'
+  completed_at: '2026-07-25T23:39:31.860409'
+- id: TASK-CMIR-002
+  name: v4 Decision Format prompt + vocabulary mirror
+  file_path: tasks/backlog/coach-contract-mirror/TASK-CMIR-002-v4-prompt-and-guards.md
+  complexity: 5
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 60
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-25T22:32:46.821284'
+  completed_at: '2026-07-25T23:39:31.863817'
+- id: TASK-CMIR-003
+  name: Contract switch plumbing + v4 grammar
+  file_path: tasks/backlog/coach-contract-mirror/TASK-CMIR-003-contract-switch-and-grammar.md
+  complexity: 4
+  dependencies:
+  - TASK-CMIR-001
+  - TASK-CMIR-002
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-25T23:39:38.393092'
+  completed_at: '2026-07-25T23:56:57.469531'
+orchestration:
+  parallel_groups:
+  - - TASK-CMIR-001
+    - TASK-CMIR-002
+  - - TASK-CMIR-003
+  estimated_duration_minutes: 170
+  recommended_parallel: 2
+smoke_gates:
+  after_wave: 2
+  command: 'set -e
+
+    python -m pytest tests/orchestrator/test_coach_synthesis_split.py tests/orchestrator/test_synthesis_prompt_budget.py
+    -x -q
+
+    '
+  expected_exit: 0
+  timeout: 300
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-25T22:32:41.181217'
+  completed_at: '2026-07-25T23:57:00.316082'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CV4M
+  total_turns: 4
+  tasks_completed: 3
+  tasks_failed: 0
+  current_wave: 2
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-07-25T23:57:00.314313'
+  archived_at: null
+  archived_to: null
