@@ -2326,13 +2326,17 @@ class AgentInvoker:
                 # Load the GBNF verdict grammar; degrade to prompt-only (still
                 # toolless) if the packaged grammar can't be read so a
                 # packaging glitch never hard-fails the Coach.
+                # Contract-aware: resolves GUARDKIT_COACH_CONTRACT > config >
+                # default and selects the matching grammar file (TASK-CMIR-003).
                 grammar: Optional[str] = None
                 try:
                     from guardkit.orchestrator.coach_grammar import (
                         load_coach_verdict_grammar,
                     )
 
-                    grammar = load_coach_verdict_grammar()
+                    grammar = load_coach_verdict_grammar(
+                        contract=None,  # resolve at call site
+                    )
                 except Exception as exc:  # noqa: BLE001 — degrade, never hard-fail
                     logger.warning(
                         "TASK-ARCH-COACHSPLIT: failed to load Coach verdict "

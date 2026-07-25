@@ -1,0 +1,27 @@
+# coach-verdict-v4.gbnf — enforce the AutoBuild Coach v4 verdict-emission contract
+# (TASK-CMIR-003) at the llama.cpp inference layer.
+#
+# The v4 wire shape is a SINGLE raw JSON object with exactly two keys in order:
+#   {"verdict": "approve"|"reject", "findings": [{"locus": string}...]}
+#
+# This grammar FORBIDS:
+#   * any key other than "verdict" and "findings"
+#   * a different key order
+#   * fenced output (no ```json prefix/suffix)
+#   * prose before or after the object
+#
+# The model must emit ONLY the JSON object, optionally preceded by whitespace.
+# Forced end after the closing brace (root ends at "}") — no trailing whitespace.
+
+root             ::= ws json-object
+ws               ::= [ \t\n\r]*
+json-object      ::= "{" ws verdict-key ws ":" ws verdict-val ws "," ws findings-key ws ":" ws findings-val ws "}"
+verdict-key      ::= "\"verdict\""
+verdict-val      ::= "\"approve\"" | "\"reject\""
+findings-key     ::= "\"findings\""
+findings-val     ::= "[]" | "[" finding-item (ws "," ws finding-item)* ws "]"
+finding-item     ::= "{" ws locus-key ws ":" ws locus-val ws "}"
+locus-key        ::= "\"locus\""
+locus-val        ::= "\"" char* "\""
+char             ::= [^"\\] | "\\" (["\\/bfnrt] | "u" hex hex hex hex)
+hex              ::= [0-9a-fA-F]
