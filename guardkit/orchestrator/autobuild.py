@@ -4007,6 +4007,40 @@ class AutoBuildOrchestrator:
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
 
+        # QAV shadow (§7, log-only second opinion). Fire-and-forget a
+        # training-envelope judgment beside the FINAL post-override coach verdict.
+        # This is the single choke point that sees the final decision on every
+        # path (approve / feedback / synthetic-feedback / error), strictly after
+        # the guard chain's last re-persist inside _invoke_coach_safely. The lane
+        # is default-OFF, absent-not-fail, and NEVER blocks/changes/delays the
+        # turn (the DCL capture Fallback law): schedule_qav_shadow reads the flag
+        # first and returns after that one config read when OFF — no thread, no
+        # /running probe, no seat call, no file. The bundle is read inside the
+        # scheduled run from coach_evidence_turn_{turn}.json (missing =>
+        # absent(no_bundle)). This try/except is belt-and-suspenders so NO shadow
+        # path can ever touch the verdict/flow.
+        try:
+            from guardkit.qa.qav_shadow import schedule_qav_shadow
+
+            _qav_coach_decision = (
+                coach_result.report.get("decision", "feedback")
+                if coach_result.success and isinstance(coach_result.report, dict)
+                else "error"
+            )
+            schedule_qav_shadow(
+                worktree.path,
+                task_id=task_id,
+                turn=turn,
+                coach_decision=_qav_coach_decision,
+            )
+        except Exception as _qav_exc:  # noqa: BLE001 — shadow must never touch the turn
+            logger.warning(
+                "QAV shadow schedule raised %s for %s turn %s; ignored (verdict untouched).",
+                _qav_exc.__class__.__name__,
+                task_id,
+                turn,
+            )
+
         # Parse Coach decision
         if not coach_result.success:
             self._progress_display.complete_turn(
