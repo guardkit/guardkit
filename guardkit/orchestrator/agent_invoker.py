@@ -3114,6 +3114,11 @@ Follow the report format specified in your agent definition.
 {"⚠️ CRITICAL DISCREPANCIES DETECTED - Factor this into your decision!" if honesty_verification.discrepancies else "✓ Player claims verified."}
 """
 
+        # TASK-CMIR-002: contract resolution — must happen before any
+        # contract-aware rendering (guards, criteria, decision format).
+        contract = _resolve_coach_contract()
+        is_v4 = contract == "v4"
+
         # Build evidence bundle section + absence-of-failure guards (Part C).
         evidence_section = ""
         guards_section = ""
@@ -3155,11 +3160,6 @@ that criterion is NOT satisfied for approval purposes.
 
 {_bounded_findings}
 """
-
-        # TASK-CMIR-002: contract resolution — must happen before any
-        # contract-aware rendering (guards, criteria, decision format).
-        contract = _resolve_coach_contract()
-        is_v4 = contract == "v4"
 
         # Build acceptance criteria section for verification
         criteria_section = ""
@@ -3224,13 +3224,20 @@ Quality Gates:
             # builder honest if it is ever invoked with synthesis=True and no
             # bundle directly (so the prompt never claims evidence it lacks).
             if evidence_bundle is not None:
-                synthesis_banner = """\
+                _v4_feedback_not_approval_bundle = (
+                    " that is REJECT, not APPROVE"
+                    if is_v4
+                    else ""
+                )
+                synthesis_banner = f"""\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
 Glob). Do not attempt to run tests or read files; you cannot. The orchestrator
 has ALREADY run the tests, coverage, honesty checks, plan audit, BDD oracle,
 and architectural review independently — their results are in the Deterministic
 Evidence Bundle above. Base your verdict ENTIRELY on that evidence, the
-acceptance criteria, the Player's report, and the honesty verification.
+acceptance criteria, the Player's report, and the honesty verification{
+    _v4_feedback_not_approval_bundle
+}.
 
 """
             else:
@@ -3253,6 +3260,16 @@ the information here, {_v4_feedback_not_approval}.
                 if is_v4
                 else "Either APPROVE or provide specific FEEDBACK"
             )
+            _v4_feedback_not_approval_responsibilities = (
+                "that is REJECT, not APPROVE"
+                if is_v4
+                else "that is FEEDBACK, not approval"
+            )
+            _v4_findings_instruction = (
+                "include findings[] for each rejected criterion"
+                if is_v4
+                else "create a criteria_verification entry for each criterion"
+            )
             responsibilities = (
                 "## Your Responsibilities\n\n"
                 "1. Synthesise a verdict from the Deterministic Evidence "
@@ -3263,10 +3280,11 @@ the information here, {_v4_feedback_not_approval}.
                 "them, not the Player)\n"
                 "3. Verify EACH acceptance criterion against the evidence "
                 "systematically\n"
-                "4. Honour the absence-of-failure guards: an ABSENT or "
-                "zero-cardinality oracle is NOT a pass — when the evidence "
-                "for a criterion is missing, that is FEEDBACK, not approval\n"
-                "5. "
+                f"4. Honour the absence-of-failure guards: an ABSENT or "
+                f"zero-cardinality oracle is NOT a pass — when the evidence "
+                f"for a criterion is missing, {_v4_feedback_not_approval_responsibilities}\n"
+                f"5. {_v4_findings_instruction}\n"
+                "6. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if honesty_verification
@@ -3281,12 +3299,18 @@ the information here, {_v4_feedback_not_approval}.
                 if is_v4
                 else "Either APPROVE or provide specific FEEDBACK"
             )
+            _v4_findings_instruction = (
+                "include findings[] for each rejected criterion"
+                if is_v4
+                else "create a criteria_verification entry for each criterion"
+            )
             responsibilities = (
                 "## Your Responsibilities\n\n"
                 "1. Independently verify the Player's claims\n"
                 "2. Run the tests yourself (don't trust Player's report)\n"
                 "3. Verify EACH acceptance criterion systematically\n"
-                "4. "
+                f"4. {_v4_findings_instruction}\n"
+                "5. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if honesty_verification

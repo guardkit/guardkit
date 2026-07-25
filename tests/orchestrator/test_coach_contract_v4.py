@@ -159,6 +159,7 @@ class TestV4VocabularySubstitutions:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
+            acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=SimpleNamespace(
                 honesty=SimpleNamespace(
                     verified=True,
@@ -176,6 +177,7 @@ class TestV4VocabularySubstitutions:
         assert "that is REJECT, not APPROVE" in prompt
         assert "APPROVE or REJECT" in prompt
         assert "include findings[]" in prompt
+        assert "## Acceptance Criteria to Verify" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +211,7 @@ class TestCoachsplitBackwardCompatibility:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
+            acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
             evidence_bundle=SimpleNamespace(
                 honesty=SimpleNamespace(
                     verified=True,
@@ -226,6 +229,7 @@ class TestCoachsplitBackwardCompatibility:
         assert "that is FEEDBACK, not approval" in prompt
         assert "Either APPROVE or provide specific FEEDBACK" in prompt
         assert "create a criteria_verification entry" in prompt
+        assert "## Acceptance Criteria to Verify" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +250,30 @@ class TestSynthesisBudgetV4Path:
             turn=1,
             requirements="test reqs",
             player_report=large_report,
+            acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
+            evidence_bundle=SimpleNamespace(
+                honesty=SimpleNamespace(
+                    verified=True,
+                    discrepancies=[],
+                    honesty_score=1.0,
+                    resolved_paths=[],
+                ),
+                gathering_status="complete",
+            ),
             synthesis=True,
         )
         # The prompt should still contain verdict-bearing markers
-        for marker in AgentInvoker._VERDICT_BEARING_MARKERS:
+        # (behavioural_oracle and stub_scan only appear when present in evidence)
+        always_present = [
+            "## Original Requirements",
+            "## Acceptance Criteria to Verify",
+            "## Honesty Verification",
+            "<honesty_verification>",
+            "<evidence_bundle>",
+            "## Deterministic Evidence Bundle",
+            "<absence_of_failure_guards>",
+        ]
+        for marker in always_present:
             assert marker in prompt, f"Verdict-bearing marker missing: {marker!r}"
 
     def test_verdict_bearing_markers_protected_in_v4_prompt(
@@ -262,6 +286,16 @@ class TestSynthesisBudgetV4Path:
             turn=1,
             requirements="test reqs",
             player_report={"files_modified": []},
+            acceptance_criteria=[{"id": "AC-001", "text": "Test criterion"}],
+            evidence_bundle=SimpleNamespace(
+                honesty=SimpleNamespace(
+                    verified=True,
+                    discrepancies=[],
+                    honesty_score=1.0,
+                    resolved_paths=[],
+                ),
+                gathering_status="complete",
+            ),
             synthesis=True,
         )
         # Core verdict-bearing sections must survive
