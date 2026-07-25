@@ -3383,6 +3383,22 @@ orchestrator takes only the **last** fenced block.
     # prompt itself. Task-work coach bundles reached 109,634 tokens and overflowed
     # the crash-tested 98,304 window (FEAT-8737 TASK-SMOKE-002 turn 1). This
     # budget enforces a hard ceiling on the full rendered prompt.
+    #
+    # Investigation note — fields dominating the oversized bundle shape:
+    # Analysis of the 109,634-token receipt (FEAT-8737 TASK-SMOKE-002 turn 1)
+    # identified the following as the primary contributors to the oversized
+    # bundle size:
+    #   1. ``completion_promises`` in the player report JSON — a large array
+    #      of per-AC verification objects (each with criterion_text, evidence,
+    #      implementation_files) can easily exceed 50k chars with 200+ items.
+    #   2. ``raw_output`` and ``output_tail`` in the evidence bundle — the
+    #      untrimmed test runner output and BDD runner output can each carry
+    #      tens of thousands of characters of raw terminal output.
+    #   3. ``discoveries`` and ``errors`` lists in the BDD section — when
+    #      many scenarios run, these arrays add significant JSON overhead.
+    # The trimming strategy in _trim_synthesis_prompt targets these fields
+    # first (player report JSON, then evidence bundle string values) before
+    # resorting to aggressive bundle truncation.
     _COACH_SYNTHESIS_MAX_CHARS = int(
         os.environ.get("GUARDKIT_COACH_SYNTHESIS_MAX_CHARS", "300000")
     )
