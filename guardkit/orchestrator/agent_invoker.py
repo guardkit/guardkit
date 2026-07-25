@@ -67,6 +67,27 @@ from guardkit.orchestrator.stale_test_attribution import (
     stale_test_notes,
 )
 
+# TASK-CMIR-002: contract-resolution seam for coach synthesis prompt.
+# ``GUARDKIT_COACH_CONTRACT`` selects which Decision Format the Coach
+# synthesis prompt renders: ``"v4"`` (normative v4 block, task-trained
+# contract) or ``"coachsplit"`` (byte-identical to today's legacy format,
+# the default).
+_COACH_CONTRACT_ENV = "GUARDKIT_COACH_CONTRACT"
+_COACH_CONTRACT_DEFAULT = "coachsplit"
+
+
+def _resolve_coach_contract() -> str:
+    """Return the active coach-contract identifier.
+
+    Reads ``GUARDKIT_COACH_CONTRACT`` from the environment; falls back to
+    ``"coachsplit"`` when unset or empty.
+
+    Returns:
+        One of ``"v4"`` or ``"coachsplit"``.
+    """
+    return os.environ.get(_COACH_CONTRACT_ENV, _COACH_CONTRACT_DEFAULT) or _COACH_CONTRACT_DEFAULT
+
+
 # TASK-HMIG-006 Phase 3b: HarnessAdapter substrate seam.
 # Pure-Python, SDK-free imports — the concrete ClaudeSDKHarness lazily
 # imports claude_agent_sdk inside its own invoke() (matches existing
@@ -3100,7 +3121,7 @@ Follow the report format specified in your agent definition.
             evidence_section = self._render_evidence_bundle_section(
                 evidence_bundle
             )
-            guards_section = self._render_absence_of_failure_guards()
+            guards_section = self._render_absence_of_failure_guards(contract)
 
         # Coach context section (memory / external context).
         coach_context_section = ""
@@ -3135,19 +3156,27 @@ that criterion is NOT satisfied for approval purposes.
 {_bounded_findings}
 """
 
+        # TASK-CMIR-002: contract resolution — must happen before any
+        # contract-aware rendering (guards, criteria, decision format).
+        contract = _resolve_coach_contract()
+        is_v4 = contract == "v4"
+
         # Build acceptance criteria section for verification
         criteria_section = ""
         if acceptance_criteria:
             criteria_lines = ["## Acceptance Criteria to Verify", ""]
-            criteria_lines.append("Verify EACH criterion and create a criteria_verification entry:")
+            if is_v4:
+                criteria_lines.append("Verify EACH criterion; include findings for each rejected criterion:")
+            else:
+                criteria_lines.append("Verify EACH criterion and create a criteria_verification entry:")
             criteria_lines.append("")
             for criterion in acceptance_criteria:
                 criteria_lines.append(f"- **{criterion['id']}**: {criterion['text']}")
             criteria_section = "\n".join(criteria_lines) + "\n"
 
-        # Build criteria verification example
+        # Build criteria verification example (legacy only — v4 uses findings[])
         verification_example = ""
-        if acceptance_criteria:
+        if acceptance_criteria and not is_v4:
             example_verifications = []
             for criterion in acceptance_criteria[:2]:  # Show first 2 as examples
                 example_verifications.append(f'''    {{
@@ -3205,15 +3234,25 @@ acceptance criteria, the Player's report, and the honesty verification.
 
 """
             else:
+                _v4_feedback_not_approval = (
+                    "that is REJECT, not APPROVE"
+                    if is_v4
+                    else "that is FEEDBACK, not approval"
+                )
                 synthesis_banner = """\
 **TOOLLESS SYNTHESIS** — You have NO tools available (no Read, Bash, Grep, or
 Glob). Do not attempt to run tests or read files; you cannot. No deterministic
 evidence bundle was provided, so you have ONLY the acceptance criteria, the
 Player's report, and the honesty verification to reason from. Absent or
 unverifiable evidence is NOT a pass — when you cannot confirm a criterion from
-the information here, that is FEEDBACK, not approval.
+the information here, {_v4_feedback_not_approval}.
 
 """
+            _v4_approve_or_feedback = (
+                "APPROVE or REJECT"
+                if is_v4
+                else "Either APPROVE or provide specific FEEDBACK"
+            )
             responsibilities = (
                 "## Your Responsibilities\n\n"
                 "1. Synthesise a verdict from the Deterministic Evidence "
@@ -3232,11 +3271,16 @@ the information here, that is FEEDBACK, not approval.
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if honesty_verification
                     and honesty_verification.discrepancies
-                    else "Either APPROVE or provide specific FEEDBACK"
+                    else _v4_approve_or_feedback
                 )
             )
         else:
             synthesis_banner = ""
+            _v4_approve_or_feedback = (
+                "APPROVE or REJECT"
+                if is_v4
+                else "Either APPROVE or provide specific FEEDBACK"
+            )
             responsibilities = (
                 "## Your Responsibilities\n\n"
                 "1. Independently verify the Player's claims\n"
@@ -3247,25 +3291,64 @@ the information here, that is FEEDBACK, not approval.
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
                     if honesty_verification
                     and honesty_verification.discrepancies
-                    else "Either APPROVE or provide specific FEEDBACK"
+                    else _v4_approve_or_feedback
                 )
             )
 
-        prompt = f"""You are the Coach agent. Validate the Player's implementation.
+       # TASK-CMIR-002: contract-aware Decision Format block.
+        # Under ``contract=v4`` the normative v4 block text is rendered
+        # VERBATIM (raw JSON, no fence, ``verdict`` + ``findings`` shape).
+        # Under ``contract=coachsplit`` the legacy fenced format is
+        # preserved byte-identically.
+        if is_v4:
+            decision_format_block = f"""
+## Decision Format
 
-Task ID: {task_id}
-Turn: {turn}
+Respond with a SINGLE RAW JSON object — no code fences, no prose after it.
+The orchestrator parses your decision directly from this JSON object.
 
-{synthesis_banner}## Original Requirements
+The JSON object MUST appear at the end of your response, after all prose
+reasoning, in this exact form:
 
-{requirements}
-{criteria_section}
-## Player's Report
+```json
+{{
+  "verdict": "approve" | "reject",
+  "findings": []
+}}
+```
 
-{json.dumps(player_report, indent=2)}
-{evidence_section}{honesty_section}{guards_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
-{responsibilities}
+For APPROVAL (no issues found):
+```json
+{{
+  "verdict": "approve",
+  "findings": []
+}}
+```
 
+For REJECT (issues found):
+```json
+{{
+  "verdict": "reject",
+  "findings": [
+    {{
+      "locus": "file_path:line_number or module:function",
+      "severity": "major" | "minor",
+      "description": "Specific issue with file paths and line numbers",
+      "requirement": "Which requirement is affected",
+      "suggestion": "How to fix it"
+    }}
+  ]
+}}
+```
+
+**IMPORTANT**: Each finding in ``findings[]`` corresponds to one acceptance
+criterion that was NOT satisfied. Include one finding per rejected criterion.
+
+**CRITICAL**: The fenced ```json block MUST be the last thing in your response.
+Do not write any prose after the closing ``` fence.
+"""
+        else:
+            decision_format_block = f"""
 ## Decision Format
 
 End your response with a fenced JSON block. Do **NOT** use Bash to write a file —
@@ -3330,6 +3413,23 @@ For FEEDBACK, the JSON block must contain:
 Do not write any prose after the closing ``` fence. If you emit exploratory JSON
 blocks earlier in your response (e.g. while sketching alternatives), the
 orchestrator takes only the **last** fenced block.
+"""
+
+        prompt = f"""You are the Coach agent. Validate the Player's implementation.
+
+Task ID: {task_id}
+Turn: {turn}
+
+{synthesis_banner}## Original Requirements
+
+{requirements}
+{criteria_section}
+## Player's Report
+
+{json.dumps(player_report, indent=2)}
+{evidence_section}{honesty_section}{guards_section}{gather_findings_section}{coach_context_section}{visual_verification_section}
+{responsibilities}
+{decision_format_block}
 """
         # TASK-SELFFIX-003: enforce the overall synthesis-prompt budget.
         # Only applies to the synthesis path (toolless Coach verdict).
@@ -3896,8 +3996,8 @@ orchestrator takes only the **last** fenced block.
 </honesty_verification>
 """
 
-    def _render_absence_of_failure_guards(self) -> str:
-        """Render the six absence-of-failure guard sentences (AC-009 + #5 + #6).
+    def _render_absence_of_failure_guards(self, contract: str | None = None) -> str:
+        """Render the absence-of-failure guard sentences.
 
         The four guards from the TASK-HMIG-008R task spec (AC-009 points 1-4),
         the fifth guard added per Phase 2.5 review finding #2
@@ -3912,6 +4012,10 @@ orchestrator takes only the **last** fenced block.
         ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` to
         preserve the rule citation chain.
 
+        When ``contract="v4"`` the six vocabulary substitutions defined in
+        TASK-CMIR-002 §4 Fix B are applied so the guard text uses v4
+        terminology (``reject`` instead of ``feedback``, etc.).
+
         Guard #8 (TASK-AB-INVARIANTTEST01) adds the advisory
         transient-assertion / invariant-not-snapshot check; like guard #7 it
         is advisory-only and never turn-rejecting on its own. Its detection
@@ -3919,6 +4023,25 @@ orchestrator takes only the **last** fenced block.
         in the Player anti-patterns entry in
         ``installer/core/agents/autobuild-player.md``.
         """
+        is_v4 = contract == "v4"
+
+        # TASK-CMIR-002: v4 vocabulary substitutions.
+        # The six legacy phrases are replaced per the spec's substitution table.
+        if is_v4:
+            surface_feedback = "flag as feedback"
+            surface_feedback_decision = "issue a 'reject' decision"
+            verbatim_rationale = "verbatim in the findings"
+            feedback_not_approval = "that is REJECT, not APPROVE"
+            approve_or_feedback = "APPROVE or REJECT"
+            criteria_verification = "include findings[]"
+        else:
+            surface_feedback = "Surface as feedback"
+            surface_feedback_decision = 'Surface a "feedback" decision'
+            verbatim_rationale = "verbatim in the rationale"
+            feedback_not_approval = "that is FEEDBACK, not approval"
+            approve_or_feedback = "Either APPROVE or provide specific FEEDBACK"
+            criteria_verification = "create a criteria_verification entry"
+
         return f"""
 <absence_of_failure_guards>
 CRITICAL READING RULES — apply these BEFORE any approval decision:
@@ -3926,12 +4049,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 1. ZERO-CARDINALITY BDD GUARD.
    If evidence_bundle.bdd is not null AND evidence_bundle.bdd.scenarios_attempted == 0:
    treat as ABSENT SIGNAL — do NOT approve based on absence of failure.
-   Surface as feedback: "BDD oracle ran zero scenarios — no evidence of
+   {surface_feedback}: "BDD oracle ran zero scenarios — no evidence of
    passing behaviour." Rule: .claude/rules/absence-of-failure-is-not-success.md.
 
 2. ZERO-CARDINALITY TEST GUARD.
    If evidence_bundle.tests is not null AND evidence_bundle.tests.tests_run == 0:
-   treat as ABSENT SIGNAL — do NOT approve. Surface as feedback:
+   treat as ABSENT SIGNAL — do NOT approve. {surface_feedback}:
    "No tests ran — cannot verify correctness." Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
 
@@ -3941,7 +4064,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    claim_type != "claim_audit": you MUST reject the turn. These are
    sophisticated lies (test_result, test_count, promise_file_existence
    fabrications). Structural rejection is mandatory — do not evaluate
-   ACs further. Surface a "feedback" decision naming each discrepancy.
+   ACs further. {surface_feedback_decision} naming each discrepancy.
 
 4. LAYER-1 PATH DEMOTION GUARD.
    If honesty_verification.discrepancies contains exactly ONE entry with
@@ -3956,8 +4079,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 5. GATHERING-STATUS GUARD.
    If evidence_bundle.gathering_status != "complete": evidence collection
    aborted before all fields were populated. Treat any null/None field as
-   ABSENT SIGNAL — do NOT approve. Surface as feedback with the
-   gathering_status value verbatim in the rationale so operators can
+   ABSENT SIGNAL — do NOT approve. {surface_feedback} with the
+   gathering_status value {verbatim_rationale} so operators can
    diagnose which stage failed (e.g. "partial_honesty_abort",
    "partial_gate_abort", "partial_exception"). When status is
    "partial_exception", also surface evidence_bundle.gathering_error.
@@ -3968,10 +4091,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    trust-but-verify pytest run did NOT complete (it timed out or failed at
    the transport layer before producing a verdict). This is ABSENT SIGNAL,
    NOT a passing or failing test result — do NOT approve on the basis of the
-   Player's self-reported tests plus the other gates. Surface as feedback:
+   Player's self-reported tests plus the other gates. {surface_feedback}:
    "Independent test verification did not complete (signal absent) — cannot
    independently confirm the Player's reported tests." Quote
-   independent_tests.test_output_summary verbatim in the rationale so
+   independent_tests.test_output_summary {verbatim_rationale} so
    operators can see whether it timed out or errored. Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
 
@@ -3982,7 +4105,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    treat the named symbols as candidate dead code (UNWIRED_PATH), suspect
    acceptance evidence (MOCKED_SEAM), or unexecuted scenarios (SPEC_GAP).
    Require evidence of registration / real-seam execution before approving.
-   Surface as feedback unless the Player demonstrates the wiring path.
+   {surface_feedback} unless the Player demonstrates the wiring path.
    Conversely: a NON-"complete" status (unsupported_stack,
    parse_degraded, error, skipped_*) with findings:[] is ABSENT
    evidence — treat it as "probe could not verify", never as a clean
@@ -4014,7 +4137,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    detected symbols that may be stub implementations (pass bodies,
    NotImplemented, TODO markers). Treat these as advisory — a nonzero
    stub_scan findings count NEVER changes the Coach decision deterministically.
-   Surface as feedback only; never reject the turn on stub_scan findings alone.
+   {surface_feedback} only; never reject the turn on stub_scan findings alone.
    This guard is advisory-only and never overrides any other guard.
 
 10. HERMETIC-ENV ADVISORY GUARD (hermetic-env).
