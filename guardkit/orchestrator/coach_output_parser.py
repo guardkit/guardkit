@@ -245,12 +245,16 @@ def _adapt_v4_to_internal(
 
     issues: list[dict[str, Any]] = []
     for finding in v4_obj.get(_V4_FINDINGS_KEY, []):
-        category = finding.get("category", "")
+        # Spec §2 (coordinator fix-and-re-verify): every v4 finding is a
+        # rejection reason — severity is CONSTANT "major" so it lands in the
+        # fix-loop's must_fix bucket (critical|major boundary). The wire
+        # carries only "locus"; extra keys are tolerated but never trusted.
         issues.append({
-            "type": "coach_finding",
-            "severity": _V4_SEVERITY_MAP.get(category, "warning"),
+            "type": "finding",
+            "severity": "major",
             "description": finding.get(_V4_LOCUS_KEY, ""),
-            "suggestion": finding.get("recommendation", ""),
+            "suggestion": "",
+            "requirement": "",
         })
 
     return {

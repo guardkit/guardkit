@@ -174,12 +174,12 @@ class TestV4VocabularySubstitutions:
             ),
             synthesis=True,
         )
-        assert "flag as feedback" in prompt
-        assert "issue a 'reject' decision" in prompt
-        assert "verbatim in the findings" in prompt
-        assert "that is REJECT, not APPROVE" in prompt
-        assert "APPROVE or REJECT" in prompt
-        assert "include findings[]" in prompt
+        assert "Surface as a reject finding" in prompt
+        assert 'Surface a "reject" verdict' in prompt
+        assert "verbatim in the finding locus" in prompt
+        assert "that is a REJECT, not approval" in prompt
+        assert "Either APPROVE or REJECT with specific findings" in prompt
+        assert "verify each criterion against the evidence" in prompt
         assert "## Acceptance Criteria to Verify" in prompt
 
 
