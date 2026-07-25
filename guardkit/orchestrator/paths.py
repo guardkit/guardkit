@@ -38,12 +38,6 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-# TASK-SBHO-002: Orchestrator-private artifact directory.
-# Coach evidence and verdict are written here instead of the shared worktree
-# so the Player cannot casually read judge evidence.  This relocation removes
-# the casual read, not a determined process; full enforcement = the sandbox lane.
-TASK_PRIVATE_DIR: str = ".guardkit/autobuild-private/{task_id}"
-
 
 class TaskArtifactPaths:
     """Centralized path resolution for task artifacts.
@@ -90,6 +84,11 @@ class TaskArtifactPaths:
     AUTOBUILD_DIR: str = ".guardkit/autobuild/{task_id}"
     PLAYER_REPORT: str = ".guardkit/autobuild/{task_id}/player_turn_{turn}.json"
     COACH_DECISION: str = ".guardkit/autobuild/{task_id}/coach_turn_{turn}.json"
+    # TASK-SBHO-002: Orchestrator-private artifact directory.
+    # Coach evidence and verdict are written here instead of the shared worktree
+    # so the Player cannot casually read judge evidence.  This relocation removes
+    # the casual read, not a determined process; full enforcement = the sandbox lane.
+    TASK_PRIVATE_DIR: str = ".guardkit/autobuild-private/{task_id}"
     # QAV shadow receipt — the log-only second-opinion record written beside the
     # coach verdict it shadows (guardkit/qa/qav_shadow.py). Default-OFF lane.
     QAV_SHADOW: str = ".guardkit/autobuild/{task_id}/qav_shadow_turn_{turn}.json"

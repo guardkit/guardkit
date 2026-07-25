@@ -938,7 +938,7 @@ class WorktreeCheckpointManager:
         # do NOT descend into _rollback_archive/ so we cannot pick up
         # prior snapshots.
         # TASK-SBHO-002: also scan the private dir for coach_turn files.
-        private_dir = self._autobuild_dir.parent / "autobuild-private" / self._task_id
+        private_dir = self._autobuild_dir.parent / "autobuild-private" / self.task_id
         scan_dirs = [self._autobuild_dir]
         if private_dir.exists():
             scan_dirs.append(private_dir)

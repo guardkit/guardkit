@@ -78,8 +78,22 @@ from guardkit.qa.formats.review_findings import (
 
 logger = logging.getLogger(__name__)
 
+# TASK-SBHO-001: env-tunable ceiling for the ASSEMBLED review-seat user message.
+# Mirrors the _trim_synthesis_prompt pattern: loud truncation marker, WARNING log,
+# degrade-never-raise. Default 300k chars ≈ 85k tokens.
+REVIEW_SEAT_MAX_CHARS_ENV = "GUARDKIT_REVIEW_SEAT_MAX_CHARS"
+REVIEW_SEAT_MAX_CHARS: int = int(
+    os.environ.get(REVIEW_SEAT_MAX_CHARS_ENV, "300000")
+)
+
+# Protected section markers that must NEVER be trimmed.
+_REVIEW_INSTRUCTION_HEADER = "## Review subject"
+_REVIEW_FINDING_SCHEMA = "## Diff under review"
+
 __all__ = [
     "REVIEW_SEAT_ENV",
+    "REVIEW_SEAT_MAX_CHARS_ENV",
+    "REVIEW_SEAT_MAX_CHARS",
     "is_review_seat_enabled",
     "ALLOWED_SEATS",
     "DEFAULT_SEAT",
@@ -317,25 +331,174 @@ def _synth_hunk_header(hunk: Any) -> str:
 
 
 def build_seat_messages(
-    payload: ReviewPayload, *, repo_context: Optional[str] = None
+    payload: ReviewPayload,
+    *,
+    repo_context: Optional[str] = None,
+    max_chars: int | None = None,
 ) -> Tuple[str, str]:
     """Assemble the (system, user) messages for the reviewer seat.
 
     The user message carries the review subject, an optional repo-context
     section, and the rendered diff. The system message is the self-contained
     S-2 review contract (dimensions + F14 discipline + JSON shape).
+
+    When *max_chars* is set (default from ``REVIEW_SEAT_MAX_CHARS``), the
+    assembled user message is bounded: ``repo_context`` is trimmed first,
+    then the diff tail. The instruction header (review subject) and the
+    diff section itself are never trimmed — only the content within
+    ``repo_context`` and the tail of the diff are eligible.
+
+    Truncation is **loud**: a visible notice is inserted inside the prompt
+    naming what was cut and by how much, and a WARNING is logged.
     """
+    if max_chars is None:
+        max_chars = REVIEW_SEAT_MAX_CHARS
+
     diff_text = render_payload_for_seat(payload)
-    sections: List[str] = [
-        f"## Review subject\n\nkind: {payload.subject_kind} · ref: {payload.ref}",
-    ]
+    subject_section = (
+        f"## Review subject\n\nkind: {payload.subject_kind} · ref: {payload.ref}"
+    )
+    repo_section: str | None = None
     if repo_context and repo_context.strip():
-        sections.append("## Repository context (reference)\n\n" + repo_context.strip())
-    sections.append(
+        repo_section = "## Repository context (reference)\n\n" + repo_context.strip()
+
+    diff_section = (
         "## Diff under review (review ONLY these changes)\n\n"
         + (diff_text if diff_text.strip() else "(empty diff — nothing changed)")
     )
-    return _REVIEW_SYSTEM, "\n\n".join(sections)
+
+    user_message = _trim_review_seat_user(
+        subject_section,
+        repo_section,
+        diff_section,
+        max_chars=max_chars,
+    )
+    return _REVIEW_SYSTEM, user_message
+
+
+def _trim_review_seat_user(
+    subject_section: str,
+    repo_section: str | None,
+    diff_section: str,
+    *,
+    max_chars: int,
+) -> str:
+    """Trim the assembled user message to *max_chars*.
+
+    Priority: never trim the subject (instruction header) or the diff
+    section header. Trim ``repo_context`` first, then the diff tail.
+
+    Returns the assembled user message, possibly truncated with a loud
+    truncation marker.
+    """
+    # Build the full message to check if it's over budget.
+    parts: List[str] = [subject_section]
+    if repo_section:
+        parts.append(repo_section)
+    parts.append(diff_section)
+    full = "\n\n".join(parts)
+
+    if len(full) <= max_chars:
+        return full
+
+    # We need to trim. Strategy:
+    # 1. Trim repo_context first (lowest signal for the review).
+    # 2. If still over, trim the diff tail.
+    # Never trim the subject or the diff section header.
+    trimmed = full
+    total_elided = 0
+
+    # Step 1: Trim repo_context if present.
+    if repo_section:
+        repo_len = len(repo_section)
+        # Reserve space for subject + diff_section + separators.
+        # Truncation marker space is handled in Step 2 if needed.
+        reserved = len(subject_section) + len(diff_section) + 4  # 2x "\n\n"
+        available_for_repo = max(0, max_chars - reserved)
+        if available_for_repo < 100:
+            # Not enough room for even a minimal repo section — drop it.
+            elided = repo_len
+            total_elided += elided
+            trimmed = subject_section + "\n\n" + diff_section
+            logger.warning(
+                "review seat: repo_context truncated (%d chars elided) "
+                "to fit within %d-char budget",
+                elided,
+                max_chars,
+            )
+        else:
+            # Trim the repo_context content (keep the section header).
+            header_end = repo_section.find("\n\n")
+            if header_end == -1:
+                header_end = len(repo_section)
+            header = repo_section[:header_end]
+            content = repo_section[header_end:]
+            max_repo_content = max(0, available_for_repo - len(header))
+            if len(content) > max_repo_content:
+                elided = len(content) - max_repo_content
+                total_elided += elided
+                repo_section_trimmed = header + content[:max_repo_content]
+                trimmed = (
+                    subject_section
+                    + "\n\n"
+                    + repo_section_trimmed
+                    + "\n\n... [repository context truncated: "
+                    f"{elided} more chars elided to fit budget.] ..."
+                    + "\n\n"
+                    + diff_section
+                )
+                logger.warning(
+                    "review seat: repo_context truncated (%d chars elided) "
+                    "to fit within %d-char budget",
+                    elided,
+                    max_chars,
+                )
+            else:
+                trimmed = repo_section
+
+    # Step 2: If still over budget, trim the diff tail.
+    # Reserve ~100 chars for the truncation marker.
+    _DIFF_MARKER_RESERVATION = 100
+    if len(trimmed) > max_chars:
+        # Find the diff section and trim its content.
+        diff_header = "## Diff under review (review ONLY these changes)\n\n"
+        diff_start = trimmed.find(diff_header)
+        if diff_start != -1:
+            diff_content_start = diff_start + len(diff_header)
+            diff_content = trimmed[diff_content_start:]
+            max_diff_tail = max(
+                0, max_chars - diff_content_start - _DIFF_MARKER_RESERVATION
+            )
+            if len(diff_content) > max_diff_tail:
+                elided = len(diff_content) - max_diff_tail
+                total_elided += elided
+                trimmed = (
+                    trimmed[:diff_content_start]
+                    + diff_content[:max_diff_tail]
+                    + f"\n... [diff truncated: {elided} more chars elided "
+                    f"to fit within {max_chars}-char budget.] ..."
+                )
+                logger.warning(
+                    "review seat: diff tail truncated (%d chars elided) "
+                    "to fit within %d-char budget",
+                    elided,
+                    max_chars,
+                )
+        else:
+            # Fallback: hard trim at budget.
+            trimmed = (
+                trimmed[:max_chars]
+                + f"\n... [review-seat user message truncated at "
+                f"{max_chars} chars — {len(trimmed) - max_chars} more chars not shown.]"
+            )
+            logger.warning(
+                "review seat: user message hard-trimmed at %d chars "
+                "(%d chars elided)",
+                max_chars,
+                len(trimmed) - max_chars,
+            )
+
+    return trimmed
 
 
 # ===========================================================================
