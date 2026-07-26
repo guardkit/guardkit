@@ -274,32 +274,6 @@ class TaskArtifactPaths:
         return worktree / cls.PLAYER_REPORT.format(task_id=task_id, turn=turn)
 
     @classmethod
-    def coach_decision_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
-        """Get path for Coach decision.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier (e.g., "TASK-001")
-        turn : int
-            Turn number (1-indexed)
-        worktree : Path
-            Path to the worktree/repository root
-
-        Returns
-        -------
-        Path
-            Path to the Coach decision file
-
-        Example
-        -------
-        >>> path = TaskArtifactPaths.coach_decision_path("TASK-001", 1, Path("/repo"))
-        >>> path
-        PosixPath('/repo/.guardkit/autobuild/TASK-001/coach_turn_1.json')
-        """
-        return worktree / cls.COACH_DECISION.format(task_id=task_id, turn=turn)
-
-    @classmethod
     def qav_shadow_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
         """Get path for the QAV shadow receipt (beside the coach decision).
 
@@ -491,6 +465,11 @@ class TaskArtifactPaths:
         >>> path
         PosixPath('/repo/.guardkit/autobuild/TASK-001/player_turn_1.json')
         """
+        # TASK-SBHO-002 (coordinator fix-and-re-verify): the COACH report is an
+        # orchestrator-private artifact — resolve private-first with legacy
+        # fallback. The PLAYER report stays in the shared worktree by design.
+        if agent_type == "coach":
+            return cls.coach_decision_path(task_id, turn, worktree)
         return cls.autobuild_dir(task_id, worktree) / f"{agent_type}_turn_{turn}.json"
 
     # =========================================================================
@@ -658,7 +637,18 @@ class TaskArtifactPaths:
         >>> path
         PosixPath('/repo/.guardkit/autobuild-private/TASK-001')
         """
-        return worktree / cls.TASK_PRIVATE_DIR.format(task_id=task_id)
+        # TASK-SBHO-002 (coordinator fix-and-re-verify): the private dir must
+        # live OUTSIDE the shared worktree — a rename inside it removes
+        # nothing from the Player's reach. Feature/task worktrees live at
+        # <repo>/.guardkit/worktrees/<id>; for those, resolve to the MAIN
+        # checkout's .guardkit/autobuild-private. Otherwise (repo-root runs,
+        # hermetic tmp roots) resolve beside the given root.
+        wt = Path(worktree)
+        if wt.parent.name == "worktrees" and wt.parent.parent.name == ".guardkit":
+            root = wt.parent.parent.parent
+        else:
+            root = wt
+        return root / cls.TASK_PRIVATE_DIR.format(task_id=task_id)
 
     @classmethod
     def coach_evidence_path(cls, task_id: str, turn: int, worktree: Path) -> Path:

@@ -548,7 +548,7 @@ class TestAutobuildSweepGate:
         assert "undefined" in result.report["rationale"]
         # The synthetic verdict is persisted for Layer-4 consistency.
         decision_file = (
-            tmp_path / ".guardkit" / "autobuild" / TASK_ID / "coach_turn_1.json"
+            tmp_path / ".guardkit" / "autobuild-private" / TASK_ID / "coach_turn_1.json"
         )
         assert decision_file.exists()
 
