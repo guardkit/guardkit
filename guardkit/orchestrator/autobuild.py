@@ -7404,10 +7404,16 @@ class AutoBuildOrchestrator:
         """
         import time
 
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
         duration = time.time() - start_time
-        decision_dir = worktree.path / ".guardkit" / "autobuild" / task_id
-        decision_dir.mkdir(parents=True, exist_ok=True)
-        decision_path = decision_dir / f"coach_turn_{turn}.json"
+        # TASK-SBHO-002: synthetic feedback also goes to the private dir
+        # so the Player cannot read the judge's verdict even in the
+        # exception-handling path.
+        decision_path = TaskArtifactPaths.private_artifact_path(
+            task_id, f"coach_turn_{turn}.json", worktree.path
+        )
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
 
         synthetic = {
             "task_id": task_id,
