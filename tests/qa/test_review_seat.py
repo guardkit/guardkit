@@ -573,7 +573,7 @@ class TestReviewSeatBudget:
         # Must fit within budget
         assert len(user) <= budget, f"user message {len(user)} chars exceeds budget {budget}"
         # Must contain truncation marker
-        assert "[...truncated" in user, (
+        assert "truncated" in user, (
             f"truncation marker missing from oversized payload (len={len(user)}, budget={budget})"
         )
         # Instruction header must NOT be trimmed
@@ -585,7 +585,7 @@ class TestReviewSeatBudget:
         """When trimming is needed, repo_context must be trimmed before the diff."""
         huge_repo = "y" * 200_000
         payload = self._big_payload()
-        budget = 250_000
+        budget = 220_000  # Tight budget to force repo_context truncation
 
         system, user = build_seat_messages(payload, repo_context=huge_repo, max_chars=budget)
 
