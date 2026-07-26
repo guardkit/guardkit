@@ -84,6 +84,11 @@ class TaskArtifactPaths:
     AUTOBUILD_DIR: str = ".guardkit/autobuild/{task_id}"
     PLAYER_REPORT: str = ".guardkit/autobuild/{task_id}/player_turn_{turn}.json"
     COACH_DECISION: str = ".guardkit/autobuild/{task_id}/coach_turn_{turn}.json"
+    # TASK-SBHO-002: Orchestrator-private artifact directory.
+    # Coach evidence and verdict are written here instead of the shared worktree
+    # so the Player cannot casually read judge evidence.  This relocation removes
+    # the casual read, not a determined process; full enforcement = the sandbox lane.
+    TASK_PRIVATE_DIR: str = ".guardkit/autobuild-private/{task_id}"
     # QAV shadow receipt — the log-only second-opinion record written beside the
     # coach verdict it shadows (guardkit/qa/qav_shadow.py). Default-OFF lane.
     QAV_SHADOW: str = ".guardkit/autobuild/{task_id}/qav_shadow_turn_{turn}.json"
@@ -267,32 +272,6 @@ class TaskArtifactPaths:
         PosixPath('/repo/.guardkit/autobuild/TASK-001/player_turn_1.json')
         """
         return worktree / cls.PLAYER_REPORT.format(task_id=task_id, turn=turn)
-
-    @classmethod
-    def coach_decision_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
-        """Get path for Coach decision.
-
-        Parameters
-        ----------
-        task_id : str
-            Task identifier (e.g., "TASK-001")
-        turn : int
-            Turn number (1-indexed)
-        worktree : Path
-            Path to the worktree/repository root
-
-        Returns
-        -------
-        Path
-            Path to the Coach decision file
-
-        Example
-        -------
-        >>> path = TaskArtifactPaths.coach_decision_path("TASK-001", 1, Path("/repo"))
-        >>> path
-        PosixPath('/repo/.guardkit/autobuild/TASK-001/coach_turn_1.json')
-        """
-        return worktree / cls.COACH_DECISION.format(task_id=task_id, turn=turn)
 
     @classmethod
     def qav_shadow_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
@@ -486,6 +465,11 @@ class TaskArtifactPaths:
         >>> path
         PosixPath('/repo/.guardkit/autobuild/TASK-001/player_turn_1.json')
         """
+        # TASK-SBHO-002 (coordinator fix-and-re-verify): the COACH report is an
+        # orchestrator-private artifact — resolve private-first with legacy
+        # fallback. The PLAYER report stays in the shared worktree by design.
+        if agent_type == "coach":
+            return cls.coach_decision_path(task_id, turn, worktree)
         return cls.autobuild_dir(task_id, worktree) / f"{agent_type}_turn_{turn}.json"
 
     # =========================================================================
@@ -624,9 +608,205 @@ class TaskArtifactPaths:
         plan_dir.mkdir(parents=True, exist_ok=True)
         return plan_dir
 
+    # =========================================================================
+    # TASK-SBHO-002: Private directory accessors (orchestrator-only evidence)
+    # =========================================================================
+
+    @classmethod
+    def task_private_dir(cls, task_id: str, worktree: Path) -> Path:
+        """Get the orchestrator-private directory for task artifacts.
+
+        Coach evidence and verdict files live here — invisible to the Player
+        running in the shared worktree.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the .guardkit/autobuild-private/{task_id} directory
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.task_private_dir("TASK-001", Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild-private/TASK-001')
+        """
+        # TASK-SBHO-002 (coordinator fix-and-re-verify): the private dir must
+        # live OUTSIDE the shared worktree — a rename inside it removes
+        # nothing from the Player's reach. Feature/task worktrees live at
+        # <repo>/.guardkit/worktrees/<id>; for those, resolve to the MAIN
+        # checkout's .guardkit/autobuild-private. Otherwise (repo-root runs,
+        # hermetic tmp roots) resolve beside the given root.
+        wt = Path(worktree)
+        if wt.parent.name == "worktrees" and wt.parent.parent.name == ".guardkit":
+            root = wt.parent.parent.parent
+        else:
+            root = wt
+        return root / cls.TASK_PRIVATE_DIR.format(task_id=task_id)
+
+    @classmethod
+    def coach_evidence_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for coach evidence bundle, with legacy fallback.
+
+        Primary location: private directory (`.guardkit/autobuild-private/`).
+        Fallback: legacy worktree location (`.guardkit/autobuild/`) if the
+        private file does not exist (backward compatibility for older runs).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the coach_evidence_turn_{turn}.json file
+            (private dir if present, else legacy worktree path)
+        """
+        private_path = cls.task_private_dir(task_id, worktree) / f"coach_evidence_turn_{turn}.json"
+        if private_path.exists():
+            return private_path
+        legacy_path = cls.autobuild_dir(task_id, worktree) / f"coach_evidence_turn_{turn}.json"
+        if legacy_path.exists():
+            logger.debug("coach_evidence: falling back to legacy path %s", legacy_path)
+            return legacy_path
+        return private_path  # return primary path even if missing (caller handles)
+
+    @classmethod
+    def coach_decision_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for coach decision, with legacy fallback.
+
+        Primary location: private directory (`.guardkit/autobuild-private/`).
+        Fallback: legacy worktree location (`.guardkit/autobuild/`) if the
+        private file does not exist (backward compatibility for older runs).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the coach_turn_{turn}.json file
+            (private dir if present, else legacy worktree path)
+        """
+        private_path = cls.task_private_dir(task_id, worktree) / f"coach_turn_{turn}.json"
+        if private_path.exists():
+            return private_path
+        legacy_path = cls.autobuild_dir(task_id, worktree) / f"coach_turn_{turn}.json"
+        if legacy_path.exists():
+            logger.debug("coach_decision: falling back to legacy path %s", legacy_path)
+            return legacy_path
+        return private_path  # return primary path even if missing (caller handles)
+
+    @classmethod
+    def private_artifact_path(cls, task_id: str, artifact_name: str, worktree: Path) -> Path:
+        """Get path for an artifact in the orchestrator-private directory.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        artifact_name : str
+            File name (e.g., "coach_evidence_turn_1.json")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the artifact in the private directory
+        """
+        return cls.task_private_dir(task_id, worktree) / artifact_name
+
+    @classmethod
+    def legacy_artifact_path(cls, task_id: str, artifact_name: str, worktree: Path) -> Path:
+        """Get path for an artifact in the legacy worktree location.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        artifact_name : str
+            File name (e.g., "coach_turn_1.json")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the artifact in the legacy autobuild directory
+        """
+        return cls.autobuild_dir(task_id, worktree) / artifact_name
+
+
+# ============================================================================
+# Oracle-path stripping for Player-facing feedback
+# ============================================================================
+
+# Pattern that matches worktree-relative file paths (e.g. from behavioural
+# oracle reports).  We replace them with a placeholder so the Player sees
+# the scenario/AC id instead of a file path that leaks coach evidence.
+_ORACLE_PATH_RE: Optional["re.Pattern[str]"] = None
+
+
+def _oracle_path_re() -> "re.Pattern[str]":
+    """Lazy-compile the oracle-path regex."""
+    global _ORACLE_PATH_RE
+    if _ORACLE_PATH_RE is None:
+        import re as _re
+        # Match paths like  src/tests/test_oracle.py  or  tests/unit/oracle.py
+        # — anything that looks like a worktree-relative file path.
+        _ORACLE_PATH_RE = _re.compile(
+            r"(?:^|[\s(])"
+            r"((?:[a-zA-Z0-9_\-/]+)"
+            r"\.(?:py|js|ts|md|txt))"
+        )
+    return _ORACLE_PATH_RE
+
+
+def strip_oracle_paths(text: str) -> str:
+    """Remove worktree-relative oracle file paths from *text*.
+
+    Player-facing feedback (coach_feedback) must not contain paths to oracle
+    files because those paths are part of the coach evidence that was relocated
+    to the orchestrator-private directory.  This function replaces any
+    worktree-relative file path with ``<oracle-file>`` so the Player sees
+    the scenario/AC identifier instead.
+
+    Parameters
+    ----------
+    text : str
+        Raw text that may contain oracle file paths.
+
+    Returns
+    -------
+    str
+        Text with oracle paths replaced.
+    """
+    # Replace the entire match (prefix + path) with just the placeholder.
+    return _oracle_path_re().sub(" [<oracle-file>]", text)
+
+
+
 
 # ============================================================================
 # Public API
 # ============================================================================
 
-__all__ = ["TaskArtifactPaths"]
+__all__ = ["TaskArtifactPaths", "strip_oracle_paths"]

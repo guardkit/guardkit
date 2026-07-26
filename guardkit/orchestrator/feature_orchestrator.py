@@ -4246,6 +4246,10 @@ The detailed specifications are in the task markdown file.
         worktree-backed runs (every ``FEAT-*`` autobuild) it writes under
         ``self.repo_root/.guardkit/worktrees/<feature_id>/.guardkit/autobuild/<task_id>/``.
 
+        TASK-SBHO-002: Coach verdict (coach_turn_N.json) now also lives in the
+        orchestrator-private directory (``.guardkit/autobuild-private/<task_id>/``)
+        which is added to the candidate list so late-approval checks still find it.
+
         TASK-FIX-LATEAPPR: late-approval reconciliation and the
         APPROVED_LATE audit-path glob both need to see both shapes, so
         the candidate-dirs walk is centralised here. The list is
@@ -4268,6 +4272,13 @@ The detailed specifications are in the task markdown file.
                 logger.debug(
                     f"[{task_id}] worktrees iter skipped: {exc}"
                 )
+        # TASK-SBHO-002: also check private dirs (coach verdict location).
+        candidates.extend(
+            p / ".guardkit" / "autobuild-private" / task_id
+            for p in [self.repo_root]
+            + (list(worktrees_root.iterdir()) if worktrees_root.exists() else [])
+            if p.is_dir()
+        )
         return candidates
 
     def _latest_coach_turn_path(self, task_id: str) -> Optional[Path]:
