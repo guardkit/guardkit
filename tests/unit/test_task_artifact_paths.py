@@ -364,3 +364,90 @@ class TestEdgeCases:
         # Should not raise, just return None
         result = TaskArtifactPaths.find_implementation_plan(task_id, tmp_path)
         assert result is None
+
+
+class TestCoachEvidencePathLegacyFallback:
+    """Test coach_evidence_path with legacy fallback (TASK-SBHO-002)."""
+
+    def test_coach_evidence_path_returns_private_when_no_files_exist(self, tmp_path: Path):
+        """When no files exist, returns private dir path (primary)."""
+        result = TaskArtifactPaths.coach_evidence_path("TASK-001", 1, tmp_path)
+        expected = tmp_path / ".guardkit" / "autobuild-private" / "TASK-001" / "coach_evidence_turn_1.json"
+        assert result == expected
+
+    def test_coach_evidence_path_falls_back_to_legacy(self, tmp_path: Path):
+        """When only legacy file exists, falls back to legacy path."""
+        legacy_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        (legacy_dir / "coach_evidence_turn_1.json").touch()
+
+        result = TaskArtifactPaths.coach_evidence_path("TASK-001", 1, tmp_path)
+        assert result == legacy_dir / "coach_evidence_turn_1.json"
+
+    def test_coach_evidence_path_private_takes_precedence(self, tmp_path: Path):
+        """When both exist, private dir takes precedence."""
+        legacy_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        (legacy_dir / "coach_evidence_turn_1.json").touch()
+
+        private_dir = tmp_path / ".guardkit" / "autobuild-private" / "TASK-001"
+        private_dir.mkdir(parents=True, exist_ok=True)
+        (private_dir / "coach_evidence_turn_1.json").touch()
+
+        result = TaskArtifactPaths.coach_evidence_path("TASK-001", 1, tmp_path)
+        assert result == private_dir / "coach_evidence_turn_1.json"
+
+    def test_coach_evidence_path_multiple_turns(self, tmp_path: Path):
+        """Test different turn numbers resolve correctly."""
+        result_1 = TaskArtifactPaths.coach_evidence_path("TASK-001", 1, tmp_path)
+        result_2 = TaskArtifactPaths.coach_evidence_path("TASK-001", 2, tmp_path)
+        result_3 = TaskArtifactPaths.coach_evidence_path("TASK-001", 10, tmp_path)
+
+        assert "coach_evidence_turn_1.json" in str(result_1)
+        assert "coach_evidence_turn_2.json" in str(result_2)
+        assert "coach_evidence_turn_10.json" in str(result_3)
+
+
+class TestPrivateArtifactPath:
+    """Test private_artifact_path and legacy_artifact_path (TASK-SBHO-002)."""
+
+    def test_private_artifact_path_returns_private_dir(self, tmp_path: Path):
+        """Test private_artifact_path returns path in private dir."""
+        task_id = "TASK-001"
+        artifact = "custom_artifact.json"
+
+        result = TaskArtifactPaths.private_artifact_path(task_id, artifact, tmp_path)
+        expected = tmp_path / ".guardkit" / "autobuild-private" / "TASK-001" / "custom_artifact.json"
+        assert result == expected
+
+    def test_legacy_artifact_path_returns_worktree_dir(self, tmp_path: Path):
+        """Test legacy_artifact_path returns path in worktree dir."""
+        task_id = "TASK-001"
+        artifact = "legacy_artifact.json"
+
+        result = TaskArtifactPaths.legacy_artifact_path(task_id, artifact, tmp_path)
+        expected = tmp_path / ".guardkit" / "autobuild" / "TASK-001" / "legacy_artifact.json"
+        assert result == expected
+
+    def test_private_and_legacy_paths_differ(self, tmp_path: Path):
+        """Test private and legacy paths point to different directories."""
+        task_id = "TASK-001"
+        artifact = "coach_turn_1.json"
+
+        private = TaskArtifactPaths.private_artifact_path(task_id, artifact, tmp_path)
+        legacy = TaskArtifactPaths.legacy_artifact_path(task_id, artifact, tmp_path)
+
+        assert private.parent != legacy.parent
+        assert "autobuild-private" in str(private)
+        assert "autobuild" in str(legacy)
+        assert "autobuild-private" not in str(legacy)
+
+
+class TestCoachFeedbackPathUnchanged:
+    """Test coach_feedback_path remains in worktree (TASK-SBHO-002)."""
+
+    def test_coach_feedback_path_stays_in_worktree(self, tmp_path: Path):
+        """Coach feedback path should remain in worktree, not private dir."""
+        result = TaskArtifactPaths.coach_feedback_path("TASK-001", 1, tmp_path)
+        assert result == tmp_path / ".guardkit" / "autobuild" / "TASK-001" / "coach_feedback_1.json"
+        assert "autobuild-private" not in str(result)
