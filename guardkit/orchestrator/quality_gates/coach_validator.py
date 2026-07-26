@@ -9824,7 +9824,11 @@ class CoachValidator:
         """
         Save Coach decision to JSON file.
 
-        Saves to: `.guardkit/autobuild/{task_id}/coach_turn_{turn}.json`
+        TASK-SBHO-002: writes to the orchestrator-private directory
+        (``.guardkit/autobuild-private/{task_id}/coach_turn_{turn}.json``)
+        so the Player cannot casually read judge evidence.  This relocation
+        removes the casual read, not a determined process; full enforcement
+        = the sandbox lane.
 
         Parameters
         ----------
@@ -9836,10 +9840,12 @@ class CoachValidator:
         Path
             Path to saved decision file
         """
-        decision_dir = self.worktree_path / ".guardkit" / "autobuild" / result.task_id
-        decision_dir.mkdir(parents=True, exist_ok=True)
-
-        decision_path = decision_dir / f"coach_turn_{result.turn}.json"
+        decision_path = TaskArtifactPaths.private_artifact_path(
+            result.task_id,
+            f"coach_turn_{result.turn}.json",
+            Path(self.worktree_path),
+        )
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(decision_path, "w") as f:
             json.dump(result.to_dict(), f, indent=2)
