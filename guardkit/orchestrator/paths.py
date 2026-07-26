@@ -766,7 +766,57 @@ class TaskArtifactPaths:
 
 
 # ============================================================================
+# Oracle-path stripping for Player-facing feedback
+# ============================================================================
+
+# Pattern that matches worktree-relative file paths (e.g. from behavioural
+# oracle reports).  We replace them with a placeholder so the Player sees
+# the scenario/AC id instead of a file path that leaks coach evidence.
+_ORACLE_PATH_RE: Optional["re.Pattern[str]"] = None
+
+
+def _oracle_path_re() -> "re.Pattern[str]":
+    """Lazy-compile the oracle-path regex."""
+    global _ORACLE_PATH_RE
+    if _ORACLE_PATH_RE is None:
+        import re as _re
+        # Match paths like  src/tests/test_oracle.py  or  tests/unit/oracle.py
+        # — anything that looks like a worktree-relative file path.
+        _ORACLE_PATH_RE = _re.compile(
+            r"(?:^|[\s(])"
+            r"((?:[a-zA-Z0-9_\-/]+)"
+            r"\.(?:py|js|ts|md|txt))"
+        )
+    return _ORACLE_PATH_RE
+
+
+def strip_oracle_paths(text: str) -> str:
+    """Remove worktree-relative oracle file paths from *text*.
+
+    Player-facing feedback (coach_feedback) must not contain paths to oracle
+    files because those paths are part of the coach evidence that was relocated
+    to the orchestrator-private directory.  This function replaces any
+    worktree-relative file path with ``<oracle-file>`` so the Player sees
+    the scenario/AC identifier instead.
+
+    Parameters
+    ----------
+    text : str
+        Raw text that may contain oracle file paths.
+
+    Returns
+    -------
+    str
+        Text with oracle paths replaced.
+    """
+    # Replace the entire match (prefix + path) with just the placeholder.
+    return _oracle_path_re().sub(" [<oracle-file>]", text)
+
+
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
-__all__ = ["TaskArtifactPaths"]
+__all__ = ["TaskArtifactPaths", "strip_oracle_paths"]

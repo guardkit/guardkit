@@ -2402,7 +2402,9 @@ class AgentInvoker:
             from guardkit.orchestrator.paths import TaskArtifactPaths
 
             # TASK-SBHO-002: coach verdict goes to the orchestrator-private
-            # directory so the Player cannot read judge evidence.
+            # directory so the Player cannot read judge evidence.  This
+            # relocation removes the casual read, not a determined process;
+            # full enforcement = the sandbox lane.
             coach_output_path = TaskArtifactPaths.private_artifact_path(
                 task_id, f"coach_turn_{turn}.json", self.worktree_path
             )
@@ -7365,12 +7367,62 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # Parse feedback into structured format
         structured_feedback = self._parse_coach_feedback(feedback, turn)
 
+        # TASK-SBHO-002: strip worktree-relative oracle paths from all text
+        # fields so the Player-facing coach_feedback file does not leak paths
+        # to oracle files that live in the orchestrator-private directory.
+        structured_feedback = self._strip_oracle_paths_from_feedback(
+            structured_feedback,
+        )
+
         feedback_path = autobuild_dir / f"coach_feedback_for_turn_{turn}.json"
         with open(feedback_path, "w") as f:
             json.dump(structured_feedback, f, indent=2)
 
         logger.debug(f"Wrote Coach feedback to {feedback_path}")
         return feedback_path
+
+    def _strip_oracle_paths_from_feedback(
+        self, feedback: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Remove worktree-relative oracle paths from feedback text fields.
+
+        TASK-SBHO-002: Player-facing coach_feedback must not contain paths
+        to oracle files.  This mutates the structured feedback dict in place,
+        replacing any worktree-relative file path with ``<oracle-file>``.
+
+        Args:
+            feedback: Structured feedback dict with text fields to sanitize.
+
+        Returns:
+            The same dict, mutated in place.
+        """
+        from guardkit.orchestrator.paths import strip_oracle_paths
+
+        # Sanitize top-level summary
+        summary = feedback.get("feedback_summary")
+        if isinstance(summary, str):
+            feedback["feedback_summary"] = strip_oracle_paths(summary)
+
+        # Sanitize issue descriptions and suggestions
+        for key in ("must_fix", "should_fix"):
+            issues = feedback.get(key)
+            if not isinstance(issues, list):
+                continue
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    continue
+                for field in ("description", "suggestion", "details"):
+                    val = issue.get(field)
+                    if isinstance(val, str):
+                        issue[field] = strip_oracle_paths(val)
+                # Also scrub nested details dict
+                details = issue.get("details")
+                if isinstance(details, dict):
+                    for dkey, dval in details.items():
+                        if isinstance(dval, str):
+                            details[dkey] = strip_oracle_paths(dval)
+
+        return feedback
 
     def _parse_coach_feedback(
         self,
