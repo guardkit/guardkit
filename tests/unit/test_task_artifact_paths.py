@@ -182,7 +182,7 @@ class TestAutoBuildArtifactPaths:
     def test_agent_report_path_coach(self, tmp_path: Path):
         """Test agent_report_path for coach."""
         result = TaskArtifactPaths.agent_report_path("TASK-001", "coach", 2, tmp_path)
-        assert result == tmp_path / ".guardkit" / "autobuild" / "TASK-001" / "coach_turn_2.json"
+        assert result == tmp_path / ".guardkit" / "autobuild-private" / "TASK-001" / "coach_turn_2.json"
 
 
 class TestTaskStatePaths:
@@ -264,31 +264,24 @@ class TestPathConsistency:
         assert player_path == agent_path
 
     def test_coach_decision_path_matches_agent_report_path(self, tmp_path: Path):
-        """Test coach_decision_path vs agent_report_path('coach').
-
-        TASK-SBHO-002: coach_decision_path now prefers the private directory,
-        while agent_report_path still returns the worktree path. They only
-        match when the file exists in the legacy worktree location (fallback).
-        """
+        """TASK-SBHO-002 (unified): agent_report_path("coach") routes through
+        coach_decision_path — one resolution for every coach-verdict consumer
+        (private-first, legacy fallback). They must ALWAYS agree."""
         task_id = "TASK-001"
         turn = 2
 
         coach_path = TaskArtifactPaths.coach_decision_path(task_id, turn, tmp_path)
         agent_path = TaskArtifactPaths.agent_report_path(task_id, "coach", turn, tmp_path)
+        assert coach_path == agent_path
+        assert "autobuild-private" in str(coach_path)
 
-        # Without any files on disk, coach_decision_path returns private dir,
-        # agent_report_path returns worktree path — they differ.
-        assert coach_path == tmp_path / ".guardkit" / "autobuild-private" / task_id / f"coach_turn_{turn}.json"
-        assert agent_path == tmp_path / ".guardkit" / "autobuild" / task_id / f"coach_turn_{turn}.json"
-        assert coach_path != agent_path
+        # With a legacy-located file present (old runs), both fall back together.
+        legacy = tmp_path / ".guardkit" / "autobuild" / task_id / f"coach_turn_{turn}.json"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text("{}")
+        assert TaskArtifactPaths.coach_decision_path(task_id, turn, tmp_path) == legacy
+        assert TaskArtifactPaths.agent_report_path(task_id, "coach", turn, tmp_path) == legacy
 
-        # When the legacy file exists, coach_decision_path falls back to it,
-        # matching agent_report_path.
-        legacy_dir = tmp_path / ".guardkit" / "autobuild" / task_id
-        legacy_dir.mkdir(parents=True, exist_ok=True)
-        (legacy_dir / f"coach_turn_{turn}.json").touch()
-        coach_path_fallback = TaskArtifactPaths.coach_decision_path(task_id, turn, tmp_path)
-        assert coach_path_fallback == agent_path
 
     def test_task_work_results_in_autobuild_dir(self, tmp_path: Path):
         """Test task_work_results_path is within autobuild_dir."""

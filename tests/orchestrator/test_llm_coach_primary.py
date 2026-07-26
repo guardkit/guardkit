@@ -484,7 +484,7 @@ class TestPrimaryFlowExceptionHandling:
             _invoke_coach(orchestrator, mock_worktree)
 
         decision_path = (
-            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
         )
         assert decision_path.exists(), (
             "Synthetic feedback must write coach_turn_N.json to disk so the "
@@ -567,7 +567,7 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
 
         # coach_turn_1.json was written.
         decision_path = (
-            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
         )
         assert decision_path.exists(), (
             "Synthetic feedback must write coach_turn_N.json so downstream "
@@ -669,7 +669,7 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         assert result.success is False
         # No coach_turn_N.json should have been written by the soft-fail path.
         decision_path = (
-            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
         )
         assert not decision_path.exists(), (
             "Soft-fail path must NOT fire for SDKTimeoutError. If "
@@ -719,7 +719,7 @@ class TestPrimaryFlowVerdictEmissionSoftFail:
         assert result.success is False
         # No on-disk synthetic feedback.
         decision_path = (
-            tmp_path / ".guardkit" / "autobuild" / "TASK-LCP-001" / "coach_turn_1.json"
+            tmp_path / ".guardkit" / "autobuild-private" / "TASK-LCP-001" / "coach_turn_1.json"
         )
         assert not decision_path.exists()
 
@@ -829,7 +829,7 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         evidence_path = (
             tmp_path
             / ".guardkit"
-            / "autobuild"
+            / "autobuild-private"
             / "TASK-LCP-001"
             / "coach_evidence_turn_1.json"
         )
@@ -878,7 +878,7 @@ class TestPrimaryFlowEvidenceBundlePersistence:
         evidence_path = (
             tmp_path
             / ".guardkit"
-            / "autobuild"
+            / "autobuild-private"
             / "TASK-LCP-001"
             / "coach_evidence_turn_1.json"
         )

@@ -935,7 +935,8 @@ class TestHelperMethods:
         """Get correct path for Coach decision."""
         path = agent_invoker._get_report_path("TASK-001", 1, "coach")
 
-        expected = worktree_path / ".guardkit" / "autobuild" / "TASK-001" / "coach_turn_1.json"
+        # TASK-SBHO-002: the coach decision is orchestrator-private.
+        expected = worktree_path / ".guardkit" / "autobuild-private" / "TASK-001" / "coach_turn_1.json"
         assert path == expected
 
     def test_load_agent_report_success(
