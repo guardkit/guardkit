@@ -4,7 +4,7 @@ dependencies: []
 feature_id: FEAT-SBHO
 id: TASK-SBHO-002
 implementation_mode: task-work
-status: design_approved
+status: completed
 task_type: feature
 title: Hold-out relocation — coach dossier out of the shared worktree
 wave: 1
