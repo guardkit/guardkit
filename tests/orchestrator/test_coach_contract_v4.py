@@ -58,11 +58,9 @@ class TestContractResolution:
         self, monkeypatch: pytest.MonkeyPatch, val: str
     ) -> None:
         monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", val)
-        # Empty string falls back to default
-        if val == "":
-            assert _resolve_coach_contract() == "coachsplit"
-        else:
-            assert _resolve_coach_contract() == val
+        # Empty falls back to default; non-enum values (incl. case/space
+        # variants) NORMALIZE then validate — never pass through raw.
+        assert _resolve_coach_contract() == "coachsplit"
 
     def test_v4_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "v4")
