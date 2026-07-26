@@ -1,12 +1,12 @@
 id: FEAT-SBHO
-name: "Specialist-prompt budget + hold-out relocation (the handoff §3.1 pair)"
-description: 'Two small verification-integrity lanes combined: (A) the FEAT-8AD1
-  follow-up — budget the code-reviewer/advisory prompt seams with the loud-trim
-  pattern; (B) the ruled Dive-3 hold-out relocation — coach evidence dossier and full
-  verdict move to an orchestrator-private dir outside the shared worktree. Binding
-  spec: docs/specialist-budget-and-holdout-scope-and-buildplan.md'
+name: "Specialist-prompt budget + hold-out relocation (the handoff \xA73.1 pair)"
+description: "Two small verification-integrity lanes combined: (A) the FEAT-8AD1 follow-up\
+  \ \u2014 budget the code-reviewer/advisory prompt seams with the loud-trim pattern;\
+  \ (B) the ruled Dive-3 hold-out relocation \u2014 coach evidence dossier and full\
+  \ verdict move to an orchestrator-private dir outside the shared worktree. Binding\
+  \ spec: docs/specialist-budget-and-holdout-scope-and-buildplan.md"
 created: '2026-07-25T23:05:00.000000'
-status: planned
+status: failed
 complexity: 5
 estimated_tasks: 2
 tasks:
@@ -15,19 +15,38 @@ tasks:
   file_path: tasks/backlog/specialist-budget-holdout/TASK-SBHO-001-specialist-prompt-budget.md
   complexity: 4
   dependencies: []
-  status: pending
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 50
   requires_infrastructure: []
+  result:
+    total_turns: 0
+    final_decision: timeout
+    error: Task TASK-SBHO-001 timed out after 4500s (75 min)
+    deferred_reason: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: '2026-07-26T02:04:41.973783'
+  completed_at: '2026-07-26T03:56:56.582019'
 - id: TASK-SBHO-002
-  name: Hold-out relocation — coach dossier out of the shared worktree
+  name: "Hold-out relocation \u2014 coach dossier out of the shared worktree"
   file_path: tasks/backlog/specialist-budget-holdout/TASK-SBHO-002-holdout-relocation.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: failed
   implementation_mode: task-work
   estimated_minutes: 75
   requires_infrastructure: []
+  result:
+    total_turns: 4
+    final_decision: timeout_budget_exhausted
+    error: 'Time budget exhausted after 4 turn(s): remaining=15.5s < min=600s per
+      turn'
+    deferred_reason: null
+  turns_completed: 4
+  current_turn: 0
+  started_at: '2026-07-26T02:04:41.976872'
+  completed_at: '2026-07-26T03:56:56.585407'
 orchestration:
   parallel_groups:
   - - TASK-SBHO-001
@@ -38,7 +57,8 @@ smoke_gates:
   after_wave: 1
   command: 'set -e
 
-    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_synthesis_prompt_budget.py -x -q
+    python -m pytest tests/qa/test_qav_shadow.py tests/orchestrator/test_synthesis_prompt_budget.py
+    -x -q
 
     '
   expected_exit: 0
@@ -46,3 +66,15 @@ smoke_gates:
   exit5_is_hard_fail: false
 preflight_strict: false
 evidence_repos: []
+execution:
+  started_at: '2026-07-26T00:13:05.412953'
+  completed_at: '2026-07-26T03:56:56.591842'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SBHO
+  total_turns: 4
+  tasks_completed: 0
+  tasks_failed: 2
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-07-26T03:56:56.585418'
+  archived_at: null
+  archived_to: null
