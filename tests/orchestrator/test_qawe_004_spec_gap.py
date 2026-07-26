@@ -396,7 +396,7 @@ class TestAC013HardGuardRedToGreen:
         _run_coach(invoker, task_id="TASK-QAWE-004", turn=4, bundle=bundle)
 
         # Read the persisted coach_turn_4.json
-        coach_file = tmp_path / ".guardkit" / "autobuild" / "TASK-QAWE-004" / "coach_turn_4.json"
+        coach_file = tmp_path / ".guardkit" / "autobuild-private" / "TASK-QAWE-004" / "coach_turn_4.json"
         assert coach_file.exists()
         persisted = json.loads(coach_file.read_text())
         assert persisted["decision"] == "feedback"

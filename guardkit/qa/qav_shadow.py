@@ -807,9 +807,10 @@ def _run_inner(
         )
 
     # 1. The bundle already exists in the exact QAV 25-field shape.
-    bundle_path = (
-        repo / ".guardkit" / "autobuild" / task_id / f"coach_evidence_turn_{turn}.json"
-    )
+    # TASK-SBHO-002: read from private dir with legacy fallback.
+    from guardkit.orchestrator.paths import TaskArtifactPaths
+
+    bundle_path = TaskArtifactPaths.coach_evidence_path(task_id, turn, repo)
     bundle = _read_bundle(bundle_path)
     if bundle is None:
         return _emit_absent("no_bundle")

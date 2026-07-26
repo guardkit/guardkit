@@ -6764,19 +6764,24 @@ class AutoBuildOrchestrator:
             )
 
         # Coach v3 Step 1 (coach-finetune training-data enabler): persist the
-        # INPUT evidence bundle alongside coach_turn_N.json. coach_turn_N.json
-        # records only the Coach's OUTPUT (decision/issues/criteria/rationale);
-        # the CoachEvidenceBundle that DROVE the verdict was never saved, which
-        # forced lossy reconstruction at harvest time and made the harvest train
-        # the Coach on player_report ONLY (the train!=serve mismatch). Saving it
-        # here yields production-faithful (prompt-with-bundle -> verdict) pairs
-        # for every future run. Written right after gather_evidence so a turn
-        # blocked by a downstream gate still records its bundle. Best-effort:
-        # a write failure must never block the turn.
+        # INPUT evidence bundle in the orchestrator-private directory.
+        # coach_turn_N.json records only the Coach's OUTPUT (decision/issues/
+        # criteria/rationale); the CoachEvidenceBundle that DROVE the verdict was
+        # never saved, which forced lossy reconstruction at harvest time and made
+        # the harvest train the Coach on player_report ONLY (the train!=serve
+        # mismatch). Saving it here yields production-faithful (prompt-with-bundle
+        # -> verdict) pairs for every future run. Written right after
+        # gather_evidence so a turn blocked by a downstream gate still records its
+        # bundle. Best-effort: a write failure must never block the turn.
+        # TASK-SBHO-002: relocation removes the casual read, not a determined
+        # process; full enforcement = the sandbox lane.
         try:
-            _evidence_dir = worktree.path / ".guardkit" / "autobuild" / task_id
-            _evidence_dir.mkdir(parents=True, exist_ok=True)
-            _evidence_path = _evidence_dir / f"coach_evidence_turn_{turn}.json"
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+
+            _evidence_path = TaskArtifactPaths.private_artifact_path(
+                task_id, f"coach_evidence_turn_{turn}.json", worktree.path
+            )
+            _evidence_path.parent.mkdir(parents=True, exist_ok=True)
             with open(_evidence_path, "w") as _evidence_f:
                 json.dump(evidence_bundle.to_dict(), _evidence_f, indent=2, default=str)
             logger.debug("Persisted coach evidence bundle to %s", _evidence_path)
@@ -7399,10 +7404,16 @@ class AutoBuildOrchestrator:
         """
         import time
 
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
         duration = time.time() - start_time
-        decision_dir = worktree.path / ".guardkit" / "autobuild" / task_id
-        decision_dir.mkdir(parents=True, exist_ok=True)
-        decision_path = decision_dir / f"coach_turn_{turn}.json"
+        # TASK-SBHO-002: synthetic feedback also goes to the private dir
+        # so the Player cannot read the judge's verdict even in the
+        # exception-handling path.
+        decision_path = TaskArtifactPaths.private_artifact_path(
+            task_id, f"coach_turn_{turn}.json", worktree.path
+        )
+        decision_path.parent.mkdir(parents=True, exist_ok=True)
 
         synthetic = {
             "task_id": task_id,

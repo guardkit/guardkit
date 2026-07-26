@@ -26,6 +26,7 @@ import time
 from guardkit.orchestrator import specialist_invocations
 from guardkit.orchestrator.specialist_invocations import (
     SpecialistInvocationResult,
+    _build_code_reviewer_prompt,
     _no_activity_watchdog_exceeded,
     invoke_code_reviewer,
     invoke_test_orchestrator,
@@ -1756,3 +1757,111 @@ async def test_deterministic_phase4_real_subprocess_execution(tmp_path, monkeypa
     assert block["status"] == "passed"
     assert block["tests_run"] == 2
     assert block["quality_gates_passed"] is True
+
+
+# =============================================================================
+# TASK-SBHO-001: Specialist prompt budget
+# =============================================================================
+
+
+class TestSpecialistPromptBudget:
+    """TASK-SBHO-001 AC-002: GUARDKIT_SPECIALIST_PROMPT_MAX_CHARS backstops
+    the final prompt for the specialist builders.
+    """
+
+    def _big_task_context(self) -> str:
+        """Generate a task context large enough to exceed a tight budget."""
+        return "x" * 200_000
+
+    def test_oversized_prompt_fits_budget_with_truncation_marker(self):
+        """An oversized prompt must fit the budget and contain the truncation marker."""
+        huge_context = self._big_task_context()
+        phase_4_summary = {
+            "tests_run": 10,
+            "tests_failed": 0,
+            "coverage_pct": 85.0,
+            "quality_gates_passed": True,
+            "output_summary": "All tests passed.",
+        }
+        budget = 300_000
+
+        prompt = _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            huge_context,
+            phase_4_summary,
+            max_chars=budget,
+        )
+
+        assert len(prompt) <= budget, f"prompt {len(prompt)} chars exceeds budget {budget}"
+        assert "[...truncated" in prompt, "truncation marker missing"
+        assert "Phase 4 summary" in prompt, "Phase 4 summary must be preserved"
+
+    def test_under_budget_no_truncation(self):
+        """When the prompt is under budget, no truncation marker."""
+        small_context = "small context"
+        phase_4_summary = {
+            "tests_run": 10,
+            "tests_failed": 0,
+            "coverage_pct": 85.0,
+            "quality_gates_passed": True,
+            "output_summary": "All tests passed.",
+        }
+        budget = 500_000
+
+        prompt = _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            small_context,
+            phase_4_summary,
+            max_chars=budget,
+        )
+
+        assert len(prompt) <= budget
+        assert "[...truncated" not in prompt
+
+    def test_seed_cap_unchanged_when_under_budget(self):
+        """The existing ~2000-char seed cap behaviour is unchanged when under budget."""
+        # A context that keeps the prompt over 2000 but well under 300k
+        medium_context = "a" * 5000
+        phase_4_summary = {
+            "tests_run": 10,
+            "tests_failed": 0,
+            "coverage_pct": 85.0,
+            "quality_gates_passed": True,
+            "output_summary": "All tests passed.",
+        }
+        budget = 300_000
+
+        prompt = _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            medium_context,
+            phase_4_summary,
+            max_chars=budget,
+        )
+
+        # The prompt should be under 2000 chars due to the seed cap
+        assert len(prompt) < 2000, (
+            "seed cap should still apply at ~2000 chars when under overall budget"
+        )
+
+    def test_backstop_applied_after_seed_cap(self):
+        """The env-tunable backstop is applied AFTER the 2000-char seed cap."""
+        huge_context = "b" * 200_000
+        phase_4_summary = {
+            "tests_run": 10,
+            "tests_failed": 0,
+            "coverage_pct": 85.0,
+            "quality_gates_passed": True,
+            "output_summary": "All tests passed.",
+        }
+        # Set budget to something between 2000 and the full prompt size
+        budget = 5000
+
+        prompt = _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            huge_context,
+            phase_4_summary,
+            max_chars=budget,
+        )
+
+        # Should fit within the backstop budget
+        assert len(prompt) <= budget, f"prompt {len(prompt)} chars exceeds backstop {budget}"
