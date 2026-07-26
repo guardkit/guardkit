@@ -150,14 +150,12 @@ _V4_SEVERITY_MAP = {
 def _resolve_contract() -> str:
     """Resolve which coach contract to use for parsing.
 
-    Reads the ``GUARDKIT_COACH_CONTRACT`` environment variable.
-    Returns ``"v4"`` when set to ``"v4"``, otherwise defaults to
-    ``"coachsplit"`` (the legacy path).
-
-    The contract-resolution helper is intentionally small; it may be
-    replaced by a full contract-mirror in TASK-CMIR-003.
+    Delegates to the shared resolver in ``coach_contract.py``
+    (env > .guardkit/config.yaml ``autobuild.coach.contract`` > default) —
+    one source of truth, no duplicated env reads (TASK-CMIR-003 AC-1).
     """
-    return os.environ.get("GUARDKIT_COACH_CONTRACT", "coachsplit")
+    from guardkit.orchestrator.coach_contract import resolve_coach_contract
+    return resolve_coach_contract()
 
 
 def _parse_v4_raw(text: str) -> dict | None:

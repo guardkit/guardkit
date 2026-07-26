@@ -79,13 +79,14 @@ _COACH_CONTRACT_DEFAULT = "coachsplit"
 def _resolve_coach_contract() -> str:
     """Return the active coach-contract identifier.
 
-    Reads ``GUARDKIT_COACH_CONTRACT`` from the environment; falls back to
-    ``"coachsplit"`` when unset or empty.
+    Delegates to the shared resolver (env > .guardkit/config.yaml
+    ``autobuild.coach.contract`` > default) — one source of truth.
 
     Returns:
         One of ``"v4"`` or ``"coachsplit"``.
     """
-    return os.environ.get(_COACH_CONTRACT_ENV, _COACH_CONTRACT_DEFAULT) or _COACH_CONTRACT_DEFAULT
+    from guardkit.orchestrator.coach_contract import resolve_coach_contract
+    return resolve_coach_contract()
 
 
 # TASK-HMIG-006 Phase 3b: HarnessAdapter substrate seam.

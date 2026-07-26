@@ -1585,7 +1585,12 @@ class AutoBuildOrchestrator:
         # invocations to this model while Player and specialists stay on
         # self._model_name. None preserves the pre-COACHBUDG01 behaviour
         # (Coach uses the same model as Player) for backwards compatibility.
-        self._coach_model_name: Optional[str] = coach_model
+        # Durable per-repo flip (2026-07-26): when --coach-model is omitted,
+        # fall back to .guardkit/config.yaml autobuild.coach.model so a repo
+        # config can carry the coach seat pairing without launch flags.
+        self._coach_model_name: Optional[str] = (
+            coach_model or self._load_coach_config().get("model") or None
+        )
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
