@@ -329,6 +329,21 @@ class CoachEvidenceBundle:
     coverage: Optional[Dict[str, Any]] = None       # L3 coverage analysis (Wave-3)
     behavioural_oracle: Optional[Dict[str, Any]] = None  # L4 behavioural oracle (Wave-4)
 
+    # FEAT-SCG (SCG-002): mechanical spec-conformance leg. The result of the
+    # declarative per-task ``conformance:`` RULES (byte_parity / token_coverage /
+    # assert_command) run against the pre-turn-1 snapshot (SCG-001). A dict
+    # ``{"status": "absent"|"passed"|"failed", "failures": [{rule_id, kind,
+    # detail}]}`` — the same shape/absence discipline as ``behavioural_oracle``
+    # (an absent block, absent snapshot, or executor crash yields ``absent``,
+    # never a fabricated pass/fail). ``None`` when no ``conformance`` snapshot was
+    # captured (the byte-equivalent no-op for the vast majority of tasks).
+    # Produced beside ``gather_evidence`` in ``_invoke_coach_primary`` and read by
+    # ``AgentInvoker._apply_spec_conformance_guard``, which flips ``approve`` ->
+    # ``feedback`` with one ``must_fix`` issue per failed rule. The opt-in
+    # ``ac_paths`` presence check is applied in that guard (it needs the Coach
+    # turn's structured acceptance criteria), not in this leg.
+    spec_conformance: Optional[Dict[str, Any]] = None
+
     independent_tests: Optional["IndependentTestResult"] = None
     # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
     # independent test run. Populated by gather_evidence ONLY when independent

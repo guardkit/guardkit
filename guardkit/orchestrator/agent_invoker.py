@@ -2527,6 +2527,25 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # FEAT-SCG (SCG-002): mechanical spec-conformance hard-gate.
+            # Deterministic backstop modelled on _apply_behavioural_oracle_guard.
+            # When the spec_conformance leg reports a failed declarative rule
+            # (byte_parity / token_coverage / assert_command against the frozen
+            # pre-turn-1 snapshot) — or the opt-in ac_paths presence check over
+            # the threaded structured ACs finds an AC-cited path missing —
+            # override approve->feedback with one must_fix per failure. Only
+            # approve is ever flipped; feedback verdicts and absent/passed legs
+            # are no-ops (absence-of-failure safety). Runs AFTER the behavioural
+            # oracle guard and BEFORE narrative reconciliation.
+            self._apply_spec_conformance_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+                acceptance_criteria=acceptance_criteria,
+            )
+
             # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
             # the deterministic records. Embeds honesty discrepancies verbatim
             # and strips fabricated "does not exist on disk" claims (the
@@ -7259,6 +7278,184 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # must-persist-to-disk).
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAV-004"
+        )
+
+    def _spec_conformance_ac_paths_failure(
+        self,
+        task_id: str,
+        acceptance_criteria: Optional[List[Dict[str, str]]],
+    ) -> Optional[Dict[str, Any]]:
+        """FEAT-SCG (SCG-002): the opt-in AC-cited-path presence check.
+
+        Applied at Coach-turn time (not in the leg) because it needs THIS
+        turn's structured acceptance criteria. Fires only when the snapshotted
+        ``conformance`` block sets ``ac_paths: true``; otherwise a no-op. The
+        extraction is stack-agnostic (SCG-001's ``_extract_ac_paths`` — any file
+        extension, fully-qualified paths only), so a non-Python repo is never
+        mis-flagged.
+
+        Returns a ``{rule_id, kind, detail}`` failure dict when an AC-cited path
+        is missing from the worktree, else ``None``. Never raises — any error
+        (no worktree, unreadable snapshot) degrades to ``None`` so the check can
+        only ADD a real, actionable failure, never fabricate or crash one.
+        """
+        if not acceptance_criteria:
+            return None
+        worktree = getattr(self, "worktree_path", None)
+        if worktree is None:
+            return None
+        try:
+            from guardkit.orchestrator.quality_gates.spec_conformance import (
+                evaluate_ac_paths,
+                load_snapshot,
+                snapshot_paths,
+            )
+
+            snapshot_dir = snapshot_paths(task_id, Path(worktree))["dir"]
+            loaded = load_snapshot(snapshot_dir)
+            if loaded is None:
+                return None  # no conformance snapshot ⇒ nothing to check
+            block, _authority = loaded
+            if not block.ac_paths:
+                return None  # ac_paths opt-in not set for this task
+            return evaluate_ac_paths(acceptance_criteria, Path(worktree))
+        except Exception:  # noqa: BLE001 — the check must never block a turn
+            return None
+
+    def _apply_spec_conformance_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+        acceptance_criteria: Optional[List[Dict[str, str]]] = None,
+    ) -> None:
+        """Fail closed when a mechanical spec-conformance rule fails.
+
+        FEAT-SCG (SCG-002). Deterministic backstop modelled byte-for-byte on
+        :meth:`_apply_behavioural_oracle_guard`. Reads the ``spec_conformance``
+        leg — the declarative ``byte_parity`` / ``token_coverage`` /
+        ``assert_command`` rules, evaluated beside ``gather_evidence`` against
+        the frozen pre-turn-1 snapshot (SCG-001) — and, when it reports
+        ``status == "failed"``, overrides an ``approve`` verdict to ``feedback``
+        with one ``severity=must_fix, category=spec_conformance_failure`` issue
+        PER failed rule, carrying the rule id and its actionable ``detail``
+        verbatim so a local Player can repair it next turn (the fix-and-re-verify
+        law, executing locally).
+
+        The opt-in ``ac_paths`` presence check runs HERE (not in the leg): it
+        needs THIS Coach turn's structured acceptance criteria (the threaded
+        ``acceptance_criteria`` param) and fires only when the snapshotted
+        ``conformance`` block sets ``ac_paths: true``.
+
+        Narrow and identity-bounded (mirrors
+        ``.claude/rules/absence-of-failure-is-not-success.md``):
+
+        * **Only an ``approve`` is ever flipped.** A ``feedback`` verdict is left
+          untouched — the guard neither annotates nor re-persists it.
+        * No-op when ``evidence_bundle is None``, when the leg is absent/passed
+          AND the ac_paths check finds nothing, or when there are simply no
+          failures. An ``absent`` leg never fabricates a block.
+        * The leg's rule failures count only when ``status == "failed"``.
+
+        Mutates ``decision`` in place and re-persists ``coach_turn_N.json`` via
+        :meth:`_persist_coach_decision` (deterministic-verdict-override-must-
+        persist-to-disk).
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle carrying the ``spec_conformance`` leg, or
+                ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the ac_paths snapshot lookup + log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+            acceptance_criteria: This turn's structured ACs (``[{"id","text"}]``)
+                for the opt-in ac_paths check. ``None`` disables ac_paths only.
+        """
+        # Only an approve is ever flipped; a feedback verdict is never touched.
+        decision_value = decision.get("decision")
+        if decision_value != "approve":
+            return
+        if evidence_bundle is None:
+            return
+
+        failures: List[Dict[str, Any]] = []
+
+        # (a) declarative RULE leg (byte_parity / token_coverage /
+        #     assert_command). Rule failures count only on a failed leg — an
+        #     absent leg never manufactures a block (absence-of-failure).
+        leg = getattr(evidence_bundle, "spec_conformance", None)
+        if leg is not None and leg.get("status") == "failed":
+            failures.extend(leg.get("failures") or [])
+
+        # (b) opt-in ac_paths presence check (structured ACs threaded in; fires
+        #     only when the snapshotted conformance block sets ac_paths: true).
+        ac_failure = self._spec_conformance_ac_paths_failure(
+            task_id, acceptance_criteria
+        )
+        if ac_failure is not None:
+            failures.append(ac_failure)
+
+        if not failures:
+            return
+
+        # One must_fix issue per failed rule; rule id + detail carried verbatim
+        # so the Player can act on each without re-deriving anything.
+        override_issues: List[Dict[str, Any]] = []
+        for failure in failures:
+            rule_id = failure.get("rule_id", "<unknown>")
+            kind = failure.get("kind", "spec_conformance")
+            detail = failure.get("detail", "")
+            override_issues.append(
+                {
+                    "severity": "must_fix",
+                    "category": "spec_conformance_failure",
+                    "description": (
+                        f"Spec-conformance rule {rule_id} ({kind}) FAILED. "
+                        f"{detail}"
+                    ),
+                    "details": {
+                        "rule_id": rule_id,
+                        "kind": kind,
+                        "detail": detail,
+                        "overridden_decision": decision_value,
+                    },
+                }
+            )
+
+        rule_ids = ", ".join(
+            str(f.get("rule_id", "<unknown>")) for f in failures
+        )
+        rationale = (
+            f"Mechanical spec-conformance check FAILED — {len(failures)} "
+            f"rule(s) did not conform to the frozen task specification: "
+            f"{rule_ids}. Each is a deterministic byte / path / command check, "
+            f"not a judgment call. This overrides the Coach's approve verdict to "
+            f"feedback; fix every listed rule and the same check passes next "
+            f"turn."
+        )
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        decision["issues"] = [*override_issues, *decision.get("issues", [])]
+
+        logger.warning(
+            "FEAT-SCG: overriding Coach verdict %r->'feedback' for %s turn %s "
+            "— %d spec-conformance rule(s) failed (%s)",
+            decision_value,
+            task_id,
+            turn,
+            len(failures),
+            rule_ids,
+        )
+
+        # Re-persist so the on-disk coach_turn_N.json carries the override, not
+        # the stale approve (deterministic-verdict-override-must-persist-to-disk).
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="FEAT-SCG"
         )
 
     def _reconcile_coach_narrative_with_records(

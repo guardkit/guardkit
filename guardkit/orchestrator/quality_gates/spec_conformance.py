@@ -541,6 +541,23 @@ def _evaluate_ac_paths(
     }
 
 
+def evaluate_ac_paths(
+    acceptance_criteria: Optional[List[Dict[str, str]]],
+    subject_root: Path,
+) -> Optional[Dict[str, Any]]:
+    """Public seam over :func:`_evaluate_ac_paths` (SCG-002).
+
+    The opt-in ``ac_paths`` presence check is applied at Coach-turn time by
+    ``AgentInvoker._apply_spec_conformance_guard`` (it needs the turn's
+    structured acceptance criteria), separately from the declarative rule leg.
+    This wrapper exposes the SCG-001 extractor to that guard without reaching
+    into a private symbol. Returns a ``{rule_id, kind, detail}`` failure dict
+    when an AC-cited, fully-qualified path is missing from *subject_root*, else
+    ``None`` (no ACs, no path-shaped tokens, or every cited path present).
+    """
+    return _evaluate_ac_paths(acceptance_criteria, subject_root)
+
+
 def evaluate(
     block: Optional[ConformanceBlock],
     authority_bytes: Dict[str, bytes],
