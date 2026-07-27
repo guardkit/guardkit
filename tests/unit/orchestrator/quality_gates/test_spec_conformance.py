@@ -222,6 +222,37 @@ class TestByteParity:
         assert result["status"] == "failed"
         assert "not found" in result["failures"][0]["detail"]
 
+    def test_crlf_subject_identical_to_crlf_authority_passes(
+        self, tmp_path: Path
+    ) -> None:
+        """Identical CRLF bytes on both sides must PASS.
+
+        Regression pin: ``Path.read_text`` universal-newlines translation on
+        the subject side (\\r\\n -> \\n) made identical CRLF files false-FAIL
+        against their own untranslated authority bytes.
+        """
+        crlf = b"line one\r\nline two\r\n"
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "foo.py").write_bytes(crlf)
+        block = self._block()
+        result = evaluate(block, {"R-1": crlf}, tmp_path)
+        assert result["status"] == "passed"
+
+    def test_crlf_subject_fails_against_lf_authority(
+        self, tmp_path: Path
+    ) -> None:
+        """A CRLF-divergent subject must FAIL an LF authority.
+
+        Regression pin: newline translation masked this real byte divergence
+        (the subject normalized to LF before comparison and falsely passed).
+        """
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "foo.py").write_bytes(b"line one\r\nline two\r\n")
+        block = self._block()
+        result = evaluate(block, {"R-1": b"line one\nline two\n"}, tmp_path)
+        assert result["status"] == "failed"
+        assert result["failures"][0]["kind"] == "byte_parity"
+
     def test_region_extraction_match(self, tmp_path: Path) -> None:
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "foo.py").write_text(
