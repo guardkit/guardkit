@@ -234,6 +234,22 @@ def _read_text(path: Path) -> Optional[str]:
         return None
 
 
+def _read_text_exact(path: Path) -> Optional[str]:
+    """Read *path* preserving exact newline bytes, or ``None`` when unreadable.
+
+    ``Path.read_text`` opens in universal-newlines mode, silently translating
+    ``\\r\\n``/``\\r`` to ``\\n`` — which would make byte_parity compare
+    normalized text against the authority's UNtranslated decoded bytes
+    (identical CRLF files would false-fail; a CRLF-divergent subject would
+    falsely pass an LF authority). byte_parity therefore decodes raw bytes the
+    same way the authority side does.
+    """
+    try:
+        return path.read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+
 def _resolve_paths(subject_root: Path, patterns: List[str]) -> List[Path]:
     """Resolve declared glob/plain patterns to existing files under *subject_root*.
 
@@ -291,7 +307,7 @@ def _evaluate_byte_parity(
     authority_text = authority_bytes.decode("utf-8", errors="replace")
 
     subject_path = subject_root / rule.subject
-    subject_text = _read_text(subject_path)
+    subject_text = _read_text_exact(subject_path)
     if subject_text is None:
         return {
             "rule_id": rule.id,
