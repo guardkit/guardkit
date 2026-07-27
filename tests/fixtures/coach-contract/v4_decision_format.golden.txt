@@ -1,0 +1,37 @@
+# PROVENANCE — vendored authority bytes; DO NOT hand-edit.
+#
+# Source: agentic-dataset-factory/domains/coach-agent/build_v4_sft.py::V4_DECISION_FORMAT
+# Captured (read-only copy): 2026-07-27 · FEAT-SCG-003 provenance pin (the CV4M hole).
+#
+# The agentic-dataset-factory repo is the authority. This is a VENDORED copy:
+# never imported across repos, and adf is never edited at source (the FEAT-SCG
+# fence). Regenerate only by re-reading the named constant, byte-for-byte.
+#
+# Everything strictly AFTER the PAYLOAD delimiter line below is the verbatim adf
+# V4_DECISION_FORMAT string, byte-for-byte (INCLUDING its trailing newline).
+# guardkit's rendered block agent_invoker._V4_DECISION_FORMAT_BLOCK is pinned to
+# this payload, so the coach prompt and its fixture can no longer be edited
+# together and stay green (the CV4M fence-re-teach drift, fix 041098ad).
+=====8<===== PAYLOAD (verbatim adf V4_DECISION_FORMAT bytes) — do not add or remove bytes below =====8<=====
+## Decision Format
+
+Respond with the verdict as a SINGLE RAW JSON object — no ```json fence, no
+code fence of any kind, no prose before or after it. Your entire response is
+the JSON object and nothing else; the orchestrator parses your response text
+directly as JSON. Do **NOT** use Bash to write a file.
+
+The exact contract:
+
+{"verdict": "approve" | "reject", "findings": [{"locus": "<the specific in-bundle signal>"}]}
+
+- "verdict": "approve" when the deterministic evidence supports every
+  acceptance criterion; "reject" when any signal in the bundle defeats or
+  fails to support approval.
+- "approve" REQUIRES "findings": [] (empty list).
+- "reject" REQUIRES at least one finding. Each finding's "locus" must name the
+  exact bundle field, value, file path, or symbol that carries the defeating
+  signal, quoting the bundle's own text (e.g. "bdd.scenarios_attempted=0 while
+  bdd.feature_files lists \"features/x.feature\""). A generic locus
+  ("not safe", "tests insufficient") is a contract violation.
+- No other keys: no class, no task_id, no rationale — the two keys above are
+  the entire contract.
