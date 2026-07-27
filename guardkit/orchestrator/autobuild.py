@@ -1876,6 +1876,19 @@ class AutoBuildOrchestrator:
             else:
                 worktree = self._setup_phase(task_id, base_branch)
                 start_turn = 1
+
+                # FEAT-SCG (SCG-001) snapshot seam. Pinned HERE — immediately
+                # after the worktree exists and before any Player activity
+                # (pre-loop design, pre-turn-1). Captures the task's
+                # `conformance` block + every byte_parity authority's BYTES into
+                # the task-private dir, which resolves OUTSIDE the shared
+                # worktree (post-SBHO). Constraint: pre-turn-1 and
+                # Player-unreachable, so the executor compares against a
+                # snapshot the Player cannot edit. No-op (byte-equivalent) for
+                # tasks without a `conformance` block; never raises. Resume
+                # runs skip this — the original fresh start already captured it.
+                self._snapshot_spec_conformance(task_id, worktree)
+
                 # Save initial state
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
@@ -2100,6 +2113,37 @@ class AutoBuildOrchestrator:
                 exc,
             )
             return None
+
+    def _snapshot_spec_conformance(self, task_id: str, worktree: "Worktree") -> None:
+        """FEAT-SCG (SCG-001): snapshot the task's conformance block pre-turn-1.
+
+        Captures the parsed ``conformance:`` frontmatter block and the BYTES of
+        every ``byte_parity`` rule's authority file into the task-private dir
+        (outside the shared worktree). Later Coach-turn evaluation (SCG-002)
+        compares against THIS snapshot, so a Player editing both a subject and
+        its live authority inside the worktree can no longer stay green.
+
+        A no-op (writes nothing) for tasks without a ``conformance`` block, so
+        existing builds stay byte-equivalent. Never raises — the snapshot
+        helper degrades to a logged warning on any error.
+        """
+        try:
+            from guardkit.orchestrator.quality_gates.spec_conformance import (
+                snapshot_task_conformance,
+            )
+
+            snapshot_task_conformance(
+                task_id=task_id,
+                worktree_path=worktree.path,
+                repo_root=self.repo_root,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "FEAT-SCG: spec-conformance snapshot failed for %s (%s) — "
+                "guard will be absent for this task",
+                task_id,
+                exc,
+            )
 
     def _setup_phase(
         self,
