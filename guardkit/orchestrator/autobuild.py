@@ -2145,6 +2145,68 @@ class AutoBuildOrchestrator:
                 exc,
             )
 
+    def _produce_spec_conformance_leg(
+        self, task_id: str, turn: int, worktree: "Worktree"
+    ) -> Optional[Dict[str, Any]]:
+        """FEAT-SCG (SCG-002): evaluate the task's conformance RULES for this turn.
+
+        Produced beside ``gather_evidence`` and attached to the
+        ``CoachEvidenceBundle`` as its ``spec_conformance`` leg. Reads the
+        pre-turn-1 snapshot (SCG-001, captured OUTSIDE the shared worktree so a
+        Player cannot edit both a subject and its authority to stay green) and
+        evaluates the declarative ``byte_parity`` / ``token_coverage`` /
+        ``assert_command`` rules against the live worktree.
+
+        The opt-in ``ac_paths`` presence check is deferred to
+        ``AgentInvoker._apply_spec_conformance_guard`` — it needs the Coach
+        turn's STRUCTURED acceptance criteria (the ``invoke_coach`` param), which
+        are not assembled here — so ``acceptance_criteria`` is intentionally not
+        threaded into this call.
+
+        Absence-of-failure discipline: returns ``None`` (the leg stays absent on
+        the bundle) when no conformance snapshot was captured for this task — the
+        byte-equivalent no-op for the vast majority of tasks, with NO executor
+        activity — and never raises (any error degrades to ``None`` + a logged
+        warning; the leg must never block a turn).
+        """
+        try:
+            from guardkit.orchestrator.quality_gates.spec_conformance import (
+                evaluate_from_snapshot,
+                snapshot_paths,
+            )
+
+            snapshot_dir = snapshot_paths(task_id, worktree.path)["dir"]
+            if not snapshot_dir.exists():
+                # No snapshot ⇒ no conformance block ⇒ leg stays absent (None).
+                # The executor is never invoked — the byte-equivalence guarantee
+                # for every task that declares no ``conformance:`` block.
+                return None
+
+            result = evaluate_from_snapshot(
+                snapshot_dir,
+                worktree.path,
+                acceptance_criteria=None,  # ac_paths runs in the guard, not here
+                task_id=task_id,
+            )
+            logger.info(
+                "FEAT-SCG: spec-conformance leg for %s turn %s -> %s "
+                "(%d failure(s))",
+                task_id,
+                turn,
+                result.get("status"),
+                len(result.get("failures", [])),
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001 — the leg must never block a turn
+            logger.warning(
+                "FEAT-SCG: spec-conformance leg failed for %s turn %s (%s) — "
+                "leg absent for this turn",
+                task_id,
+                turn,
+                exc,
+            )
+            return None
+
     def _setup_phase(
         self,
         task_id: str,
@@ -6811,6 +6873,19 @@ class AutoBuildOrchestrator:
                 rationale=f"Evidence gathering failed: {exc}",
                 start_time=start_time,
             )
+
+        # FEAT-SCG (SCG-002): attach the spec-conformance RULE leg beside the
+        # gather_evidence bundle. Reads the pre-turn-1 snapshot (SCG-001) and
+        # evaluates the declarative conformance rules against the live worktree;
+        # ``None`` (leg absent) for tasks without a ``conformance:`` block, so
+        # existing builds stay byte-equivalent. The opt-in ``ac_paths`` presence
+        # check is applied later in
+        # ``AgentInvoker._apply_spec_conformance_guard`` (it needs the structured
+        # acceptance criteria). The leg is written before the bundle is persisted
+        # below so ``coach_evidence_turn_N.json`` records it too.
+        evidence_bundle.spec_conformance = self._produce_spec_conformance_leg(
+            task_id, turn, worktree
+        )
 
         # Coach v3 Step 1 (coach-finetune training-data enabler): persist the
         # INPUT evidence bundle in the orchestrator-private directory.
