@@ -190,3 +190,45 @@ class TestCheckpointBackwardCompat:
         )
         restored = Checkpoint.from_dict(cp.to_dict())
         assert restored.evidence_commits == {"guardkitfactory": "sha999"}
+
+
+class TestCheckpointJunkExclusion:
+    """Register 2a5 (2026-07-30): checkpoints must not bake machine-local junk."""
+
+    def test_checkpoint_excludes_pip_cache_and_bootstrap_state(
+        self, tmp_path
+    ) -> None:
+        import subprocess
+
+        from guardkit.orchestrator.worktree_checkpoints import (
+            WorktreeCheckpointManager,
+        )
+
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        subprocess.run(["git", "-C", str(wt), "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "-C", str(wt), "commit", "-q", "--allow-empty", "-m", "seed"],
+            check=True,
+        )
+        # A real source change + the two junk classes.
+        (wt / "src").mkdir()
+        (wt / "src" / "real.py").write_text("x = 1\n")
+        (wt / ".cache" / "pip" / "http-v2").mkdir(parents=True)
+        (wt / ".cache" / "pip" / "http-v2" / "blob").write_text("junk")
+        (wt / ".guardkit").mkdir()
+        (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
+
+        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-1")
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        assert cp is not None
+
+        shown = subprocess.run(
+            ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert "src/real.py" in shown
+        assert ".cache/" not in shown
+        assert "bootstrap_state.json" not in shown

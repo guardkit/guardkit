@@ -90,7 +90,16 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
 
     # git add -A
     add_call = mock_git_executor.execute.call_args_list[0]
-    assert add_call[0][0] == ["git", "add", "-A"]
+    assert add_call[0][0] == [
+        "git",
+        "add",
+        "-A",
+        "--",
+        ".",
+        ":(exclude).cache",
+        ":(exclude)**/.cache/**",
+        ":(exclude).guardkit/bootstrap_state.json",
+    ]  # register 2a5: machine-local junk excluded from checkpoints
 
     # git commit
     commit_call = mock_git_executor.execute.call_args_list[1]
@@ -947,7 +956,16 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
     assert mock_git_executor.execute.call_count == 3
 
     add_call = mock_git_executor.execute.call_args_list[0]
-    assert add_call[0][0] == ["git", "add", "-A"]
+    assert add_call[0][0] == [
+        "git",
+        "add",
+        "-A",
+        "--",
+        ".",
+        ":(exclude).cache",
+        ":(exclude)**/.cache/**",
+        ":(exclude).guardkit/bootstrap_state.json",
+    ]  # register 2a5: machine-local junk excluded from checkpoints
 
     commit_call = mock_git_executor.execute.call_args_list[1]
     assert "git" == commit_call[0][0][0]

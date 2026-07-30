@@ -467,9 +467,24 @@ class WorktreeCheckpointManager:
         Returns:
             Checkpoint record with commit hash
         """
-        # Stage all changes (including untracked files)
+        # Stage all changes (including untracked files) EXCEPT machine-local
+        # junk (register 2a5, 2026-07-30): checkpoint commits were baking pip
+        # http caches and .guardkit/bootstrap_state.json into TARGET repos —
+        # 25 junk files on the FEAT-UDBE branch, and a committed
+        # bootstrap_state whose dead venv_python poisons later reads. The
+        # exclusions are pathspec magic, so builds never depend on the target
+        # repo's own .gitignore hygiene.
         self.git_executor.execute(
-            ["git", "add", "-A"],
+            [
+                "git",
+                "add",
+                "-A",
+                "--",
+                ".",
+                ":(exclude).cache",
+                ":(exclude)**/.cache/**",
+                ":(exclude).guardkit/bootstrap_state.json",
+            ],
             cwd=self.worktree_path,
         )
 
@@ -583,7 +598,19 @@ class WorktreeCheckpointManager:
                 # Bounded so a hung git cannot hold the cross-process lock
                 # indefinitely and stall every task sharing this repo.
                 self.git_executor.execute(
-                    ["git", "add", "-A"],
+                    # Same machine-local exclusions as the worktree checkpoint
+                    # (register 2a5) — evidence-repo commits must not bake pip
+                    # caches / bootstrap state either.
+                    [
+                        "git",
+                        "add",
+                        "-A",
+                        "--",
+                        ".",
+                        ":(exclude).cache",
+                        ":(exclude)**/.cache/**",
+                        ":(exclude).guardkit/bootstrap_state.json",
+                    ],
                     cwd=repo.root,
                     check=False,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
