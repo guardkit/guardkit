@@ -232,3 +232,50 @@ class TestCheckpointJunkExclusion:
         assert "src/real.py" in shown
         assert ".cache/" not in shown
         assert "bootstrap_state.json" not in shown
+
+    def test_checkpoint_survives_repo_gitignoring_the_same_junk(
+        self, tmp_path
+    ) -> None:
+        """Belt + braces must not collide (FEAT-153C, 2026-07-31).
+
+        When the target repo's own .gitignore ALSO lists the junk classes
+        (api_test `82707ca`), a bare `:(exclude).cache` pathspec makes
+        git 2.43 refuse the add outright (exit 1, "paths are ignored") the
+        moment an ignored `.cache` exists on disk — the checkpoint dies
+        before turn 1's commit. The glob-magic form must checkpoint clean.
+        """
+        import subprocess
+
+        from guardkit.orchestrator.worktree_checkpoints import (
+            WorktreeCheckpointManager,
+        )
+
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        subprocess.run(["git", "-C", str(wt), "init", "-q"], check=True)
+        (wt / ".gitignore").write_text(".cache/\n.guardkit/bootstrap_state.json\n")
+        subprocess.run(["git", "-C", str(wt), "add", ".gitignore"], check=True)
+        subprocess.run(
+            ["git", "-C", str(wt), "commit", "-q", "-m", "seed w/ belt"],
+            check=True,
+        )
+        (wt / "src").mkdir()
+        (wt / "src" / "real.py").write_text("x = 1\n")
+        (wt / ".cache" / "pip").mkdir(parents=True)
+        (wt / ".cache" / "pip" / "blob").write_text("junk")
+        (wt / ".guardkit").mkdir()
+        (wt / ".guardkit" / "bootstrap_state.json").write_text("{}")
+
+        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JUNK-2")
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        assert cp is not None, "checkpoint must survive the repo's own gitignore belt"
+
+        shown = subprocess.run(
+            ["git", "-C", str(wt), "show", "--name-only", "--format=", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert "src/real.py" in shown
+        assert ".cache/" not in shown
+        assert "bootstrap_state.json" not in shown
