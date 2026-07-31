@@ -235,6 +235,17 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     re.compile(r"^\.local/"),
     re.compile(r"(?:.*/)?site-packages/"),
     re.compile(r"^\.venv[^/]*/"),
+    # The JavaScript/TypeScript equivalent of site-packages (TS-lane D.1c,
+    # design §B.6 companion fix). Without this row, an `npm ci`/`npm install`
+    # in a target repo that does NOT gitignore node_modules floods
+    # files_modified / files_created with thousands of ghost paths the Player
+    # never authored — the exact `claim_audit_unmodified` flood FEAT-9DDE
+    # run-6 hit with site-packages, in a new alphabet.
+    #   (?:.*/)?node_modules/   any node_modules tree: the repo root's, and a
+    #                           monorepo's packages/<pkg>/node_modules/. Same
+    #                           `re.match` (start-anchored) contract as
+    #                           site-packages above, hence the `(?:.*/)?`.
+    re.compile(r"(?:.*/)?node_modules/"),
     # Residual harness/orchestrator-managed namespaces (TASK-FIX-EVBINST02).
     # FEAT-9DDE run-8 coach_turn_2.json still raised should_fix
     # ``claim_audit_unmodified`` records on two more namespaces the Player
@@ -1006,12 +1017,38 @@ class TaskWorkStreamParser:
         """
         return pattern.search(text)
 
+    # TS-lane D.1c: the TypeScript/JavaScript test-file naming conventions.
+    # A vitest/jest suite is ``<subject>.test.ts`` or ``<subject>.spec.ts``
+    # (``.tsx`` for component suites) — none of which the Python-only
+    # ``test_*.py`` / ``*_test.py`` rules below could ever match, so a
+    # TypeScript build's ``tests written`` count was structurally zero no
+    # matter how many suites the Player actually wrote. Attribution, not
+    # verdict: this feeds the Player report's tests-written signal.
+    _TS_TEST_FILE_SUFFIXES: Tuple[str, ...] = (
+        ".test.ts",
+        ".spec.ts",
+        ".test.tsx",
+        ".spec.tsx",
+        # Coordinator cure (D.1c coach): the two sibling recognisers
+        # (state_tracker, coach_validator) already accept plain-JS suites —
+        # this one must not attribute them zero.
+        ".test.js",
+        ".spec.js",
+    )
+
     def _is_test_file(self, file_path: str) -> bool:
         """Check if a file path is a test file.
 
-        Detects Python test files using common naming conventions:
+        Detects test files using each supported stack's common naming
+        conventions:
+
+        Python (unchanged):
         - test_*.py (pytest default)
         - *_test.py (alternative convention)
+
+        TypeScript / JavaScript (TS-lane D.1c):
+        - *.test.ts / *.spec.ts (vitest, jest)
+        - *.test.tsx / *.spec.tsx (component suites)
 
         Args:
             file_path: Path to the file
@@ -1024,7 +1061,14 @@ class TaskWorkStreamParser:
         # Extract the filename from the path
         name = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
         name = name.rsplit("\\", 1)[-1] if "\\" in name else name
-        return name.startswith("test_") and name.endswith(".py") or name.endswith("_test.py")
+        if name.startswith("test_") and name.endswith(".py") or name.endswith("_test.py"):
+            return True
+        # A bare ``.test.ts`` dotfile is not a suite — require a subject name,
+        # mirroring the Python rules (a bare ``test_`` is False there too).
+        return any(
+            name.endswith(suffix) and len(name) > len(suffix)
+            for suffix in self._TS_TEST_FILE_SUFFIXES
+        )
 
     @staticmethod
     def _is_valid_file_path(path: str) -> bool:
@@ -7215,7 +7259,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         # ran-and-failed (including timeout) → hard RED override
         timed_out = oracle.get("timed_out", False)
-        oracle_path = oracle.get("oracle_path") or "<unknown>"
+        # TS-lane D.1a: a DECLARED oracle has no ``oracle_path`` — it is a
+        # shell command, and the result dict carries ``command`` instead.
+        # Falling straight to "<unknown>" made every declared-oracle failure
+        # anonymous in the override rationale below. Name the command.
+        oracle_path = (
+            oracle.get("oracle_path") or oracle.get("command") or "<unknown>"
+        )
         output_tail = (oracle.get("output_tail") or "").strip()
         exit_code = oracle.get("exit_code")
         duration = oracle.get("duration", 0)

@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -45,7 +46,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +172,21 @@ class DetectedManifest:
     is_lock_file: bool
     install_command: List[str]
     python_extras: tuple[str, ...] = ()
+    # ---- TS-lane D.1b: the declared-install fields ----------------------
+    # True when ``install_command`` came from the repo's ``toolchain.install``
+    # declaration rather than from manifest inference.
+    declared: bool = False
+    # Working directory for the install command. ``None`` keeps the historic
+    # behaviour (the manifest's own parent, so ``-r requirements.txt``
+    # resolves). A DECLARED command sets this to the repo root, because
+    # ``path`` then points at ``.guardkit/config.yaml`` (which exists purely so
+    # the content hash invalidates when the declaration changes) and running in
+    # ``.guardkit/`` would be wrong.
+    install_cwd: Optional[Path] = None
+    # Declared ``toolchain.install_timeout``. ``None`` keeps the hardcoded
+    # 300s — too tight for ``npm ci`` on a real app, which is why a repo can
+    # now say so.
+    install_timeout: Optional[int] = None
 
     # ---- Completeness detection ----------------------------------------
 
@@ -1021,6 +1040,14 @@ def _resolve_python_pyproject_install_command(
 # ============================================================================
 
 
+def _dir_has_marker(directory: Path, glob_pattern: str) -> bool:
+    """Depth-0 marker probe. Never raises (detection is best-effort)."""
+    try:
+        return any(directory.glob(glob_pattern))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class ProjectEnvironmentDetector:
     """
     Scans a worktree for dependency manifests and produces install commands.
@@ -1074,6 +1101,7 @@ class ProjectEnvironmentDetector:
         root: Path,
         exclude_patterns: Optional[List[str]] = None,
         python_extras: Sequence[str] = (),
+        toolchain: Optional["ToolchainDeclaration"] = None,
     ) -> None:
         """
         Initialize the detector.
@@ -1094,11 +1122,27 @@ class ProjectEnvironmentDetector:
             ignores this and emits a warning (extras are baked at lock
             time). See :func:`_resolve_python_pyproject_install_command`
             and TASK-GK-BS-001 for the rationale.
+        toolchain : Optional[ToolchainDeclaration], optional
+            The repo's declared toolchain block (TS-lane D.1b). ``None``
+            (default) auto-loads it from ``<root>/.guardkit/config.yaml``. When
+            it carries an ``install`` command, that command BEATS manifest
+            inference at the root directory — see :meth:`_scan_directory`.
         """
         self._root = root
         self._exclude_patterns: List[str] = (
             exclude_patterns if exclude_patterns is not None else ["tests/fixtures"]
         )
+        # TS-lane D.1b: a declared install command is the repo telling us how
+        # it installs. Auto-loaded so no call site has to be threaded; absent
+        # for every repo that has not opted in, which is why detection is
+        # byte-for-byte unchanged for them.
+        if toolchain is None:
+            from guardkit.orchestrator.toolchain_declaration import (
+                load_toolchain_declaration,
+            )
+
+            toolchain = load_toolchain_declaration(root)
+        self._toolchain: Optional["ToolchainDeclaration"] = toolchain
         # Frozen as a tuple so ``self._python_extras`` is hashable / can't
         # be mutated by callers after construction.
         self._python_extras: tuple[str, ...] = tuple(python_extras)
@@ -1155,6 +1199,92 @@ class ProjectEnvironmentDetector:
             logger.warning("Could not list subdirectories of %s: %s", self._root, exc)
         return dirs
 
+    # ---- TS-lane D.1b: the declared install command --------------------
+
+    # Marker → stack label, used ONLY to label a declared install command so
+    # downstream stack-keyed behaviour (e.g. bootstrap's eager Python venv) is
+    # unchanged for a repo that declares its command. The install COMMAND is
+    # never inferred here.
+    _STACK_LABEL_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("python", ("pyproject.toml", "poetry.lock", "requirements*.txt", "uv.lock")),
+        ("node", ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml")),
+        ("dotnet", ("*.csproj", "*.sln")),
+        ("go", ("go.mod",)),
+        ("rust", ("Cargo.toml",)),
+        ("flutter", ("pubspec.yaml",)),
+    )
+
+    def _declared_stack_label(self, directory: Path) -> str:
+        """Label a declared install command with the directory's stack.
+
+        Returns the single matching stack when exactly one matches, else
+        ``"declared"`` (nothing matched, or the directory is polyglot and a
+        guess would be worse than an honest generic label).
+        """
+        matched = [
+            stack
+            for stack, globs in self._STACK_LABEL_MARKERS
+            if any(_dir_has_marker(directory, g) for g in globs)
+        ]
+        return matched[0] if len(matched) == 1 else "declared"
+
+    def _declared_manifest(self, directory: Path) -> Optional[DetectedManifest]:
+        """Build the manifest for a declared ``toolchain.install`` command.
+
+        ``path`` points at ``.guardkit/config.yaml`` so the bootstrap content
+        hash invalidates when the DECLARATION changes (the same property the
+        inferred manifests get from their own file contents); ``install_cwd``
+        is the repo root, because that is where the command must run.
+
+        Returns ``None`` when the declared string cannot be parsed into an
+        argv — loudly logged, then degraded so inference still runs, never a
+        crashed bootstrap.
+        """
+        assert self._toolchain is not None and self._toolchain.install
+        raw = self._toolchain.install
+        try:
+            argv = shlex.split(raw)
+        except ValueError as exc:
+            argv = []
+            logger.error(
+                "Declared `toolchain.install` in %s is not a parseable command "
+                "(%s): %r — falling back to manifest inference.",
+                directory,
+                exc,
+                raw,
+            )
+        if not argv:
+            if raw.strip():
+                logger.error(
+                    "Declared `toolchain.install` in %s parsed to an empty "
+                    "command: %r — falling back to manifest inference.",
+                    directory,
+                    raw,
+                )
+            return None
+
+        from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
+
+        stack = self._declared_stack_label(directory)
+        logger.info(
+            "Install command for %s comes from the repo's DECLARED toolchain "
+            "(`toolchain.install`), not manifest inference: %s (stack label: "
+            "%s, timeout: %ss)",
+            directory,
+            raw,
+            stack,
+            self._toolchain.install_timeout,
+        )
+        return DetectedManifest(
+            path=(directory / CONFIG_RELATIVE_PATH).resolve(),
+            stack=stack,
+            is_lock_file=False,
+            install_command=argv,
+            declared=True,
+            install_cwd=directory,
+            install_timeout=self._toolchain.install_timeout,
+        )
+
     def _scan_directory(self, directory: Path) -> List[DetectedManifest]:
         """
         Scan a single directory and return detected manifests.
@@ -1176,6 +1306,32 @@ class ProjectEnvironmentDetector:
         results: List[DetectedManifest] = []
         # Track (directory, stack) pairs where a lock file was already found
         locked_stacks: set[str] = set()
+
+        # ---- TS-lane D.1b: A DECLARED INSTALL COMMAND BEATS INFERENCE ----
+        # Inference is a reading of the repo's manifests; a declaration is the
+        # repo telling us. Where they disagree, the repo wins.
+        #
+        # This retires the api_test HOLLOW-PYPROJECT wart as a side effect,
+        # without touching the manifest ladder's logic: ``dependencies = []``
+        # locks the python stack below, so the ``requirements*.txt`` branch
+        # never fires, and ``uv.lock`` then selects ``uv sync --frozen``
+        # against a lock carrying only the ``dev`` extra — a worktree venv with
+        # pytest and no fastapi. One declared line replaces the whole
+        # deduction.
+        #
+        # Scope: the ROOT directory only, so depth-1 subpackage inference in a
+        # monorepo is untouched. The stack LABEL is still taken from inference
+        # when it is unambiguous (so e.g. bootstrap's eager Python venv still
+        # fires for a Python repo that declares its install command) — only
+        # the COMMAND is the declaration's.
+        if (
+            directory == self._root
+            and self._toolchain is not None
+            and self._toolchain.install
+        ):
+            declared = self._declared_manifest(directory)
+            if declared is not None:
+                return [declared]
 
         # Detection candidates in priority order: (filename_or_glob, stack,
         # is_lock, install_command_factory)
@@ -2253,11 +2409,18 @@ class EnvironmentBootstrapper:
         # inherit env unchanged.
         env = self._python_install_env(manifest)
 
-        cwd = str(manifest.path.parent)
+        # TS-lane D.1b: a DECLARED command runs at the repo root (its ``path``
+        # is .guardkit/config.yaml, which exists only for content hashing) and
+        # honours the declared ``install_timeout``. Both fall back to today's
+        # values — the manifest's own parent, and the hardcoded 300s — for
+        # every inferred manifest, so nothing changes without a declaration.
+        cwd = str(manifest.install_cwd or manifest.path.parent)
+        timeout = manifest.install_timeout or 300
         logger.info(
-            "Running install for %s (%s): %s",
+            "Running install for %s (%s)%s: %s",
             manifest.stack,
             manifest.path.name,
+            " [DECLARED]" if manifest.declared else "",
             " ".join(cmd),
         )
         try:
@@ -2266,7 +2429,7 @@ class EnvironmentBootstrapper:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=timeout,
                 env=env,
             )
             if proc.returncode == 0:
@@ -2303,7 +2466,7 @@ class EnvironmentBootstrapper:
                     cwd=cwd,
                     capture_output=True,
                     text=True,
-                    timeout=300,
+                    timeout=timeout,
                     env=retry_env,
                 )
                 if retry_proc.returncode == 0:
@@ -2375,7 +2538,7 @@ class EnvironmentBootstrapper:
                     cwd=cwd,
                     capture_output=True,
                     text=True,
-                    timeout=300,
+                    timeout=timeout,
                     env=retry_env,
                 )
                 if retry_proc.returncode == 0:

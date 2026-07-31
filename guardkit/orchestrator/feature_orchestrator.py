@@ -4097,6 +4097,10 @@ The detailed specifications are in the task markdown file.
                 task_file_path=task_data.get("file_path"),
                 requires_infrastructure=task.requires_infrastructure,
                 time_budget_seconds=time_budget_seconds,
+                # TS-lane D.1a: the feature-level declared behavioural oracle.
+                # A task's own frontmatter declaration overrides this inside
+                # orchestrate() (design §B.1 — the per-task escape hatch wins).
+                behavioural_oracle=feature.behavioural_oracle,
             )
 
             # TASK-FIX-OBS2: Log completion

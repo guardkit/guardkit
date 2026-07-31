@@ -404,6 +404,47 @@ class SmokeGates(BaseModel):
         raise ValueError("after_wave must be int, list of ints, or 'all'")
 
 
+class BehaviouralOracle(BaseModel):
+    """Declared behavioural-oracle command (TS-lane D.1a).
+
+    The schema home for the ``behavioural_oracle`` declaration. Until this
+    model existed the declaration had no schema of any kind — no Pydantic
+    model, no frontmatter validator, no ``Feature`` field — and the only
+    thing that ever read it was ``CoachValidator._extract_command``, from a
+    task dict no production caller ever populated.
+
+    Modelled deliberately on :class:`SmokeGates` (and, one level up, on
+    ``AssertCommandRule`` in ``spec_conformance``): a declared shell command,
+    ``extra="forbid"`` so a typo is LOUD rather than silently ignored, and a
+    bounded timeout so a runaway oracle cannot hold a build open.
+
+    Unlike ``SmokeGates`` this is NOT a between-waves gate. It is the
+    per-task independent-evidence leg: ``CoachValidator`` runs it during
+    ``gather_evidence`` and a ran-and-failed result overrides an approve to
+    feedback (``AgentInvoker._apply_behavioural_oracle_guard``).
+
+    Attributes
+    ----------
+    command : str
+        Shell command executed in the worktree root (e.g. ``"npm test"``).
+    expected_exit : int
+        Exit code that signals success. Default ``0`` — LAW (design §B.4):
+        the exit code is the verdict; parsing stdout is advisory only.
+    timeout : int
+        Seconds before the subprocess is killed. Bounded [1, 3600]. When
+        unset the executor keeps its historical behaviour and reads
+        ``GUARDKIT_ORACLE_TIMEOUT`` (default 300s).
+    """
+
+    # ``extra="forbid"`` matches SmokeGates: an unknown key is a typo, and a
+    # silently-ignored typo in a verdict-bearing declaration is a false green.
+    model_config = ConfigDict(extra="forbid")
+
+    command: str = Field(min_length=1)
+    expected_exit: int = 0
+    timeout: Optional[int] = Field(default=None, ge=1, le=3600)
+
+
 class Feature(BaseModel):
     """
     Represents a complete feature definition from YAML.
@@ -447,6 +488,13 @@ class Feature(BaseModel):
     orchestration: FeatureOrchestration = Field(default_factory=FeatureOrchestration)
     execution: FeatureExecution = Field(default_factory=FeatureExecution)
     smoke_gates: Optional[SmokeGates] = None
+    # TS-lane D.1a: feature-level declared behavioural oracle. Threaded to
+    # every task in the feature via AutoBuildOrchestrator.orchestrate(
+    # behavioural_oracle=...); a task's own frontmatter declaration WINS over
+    # it (design §B.1 precedence: task frontmatter is the escape hatch that
+    # sits above every repo/feature-level declaration). None -> the leg stays
+    # absent exactly as before this field existed.
+    behavioural_oracle: Optional[BehaviouralOracle] = None
     bootstrap_extras: List[str] = Field(default_factory=list)
     preflight_strict: bool = False
     # TASK-AB-XREPOEV01: declared sibling repositories whose writes count as
@@ -812,6 +860,26 @@ class FeatureLoader:
                     smoke_gates, repo_root
                 )
 
+        # Parse optional behavioural_oracle (TS-lane D.1a). Same shape and
+        # same discipline as smoke_gates directly above: key absent -> None
+        # (byte-identical to the pre-D.1a behaviour); malformed key ->
+        # SchemaValidationError before /feature-build starts, never a
+        # silently-dropped verdict-bearing declaration.
+        oracle_data = data.get("behavioural_oracle")
+        behavioural_oracle: Optional[BehaviouralOracle] = None
+        if oracle_data is not None:
+            # String shortcut parity with CoachValidator._extract_command:
+            # ``behavioural_oracle: "npm test"`` is the same declaration as
+            # ``behavioural_oracle: {command: "npm test"}``.
+            if isinstance(oracle_data, str):
+                oracle_data = {"command": oracle_data}
+            try:
+                behavioural_oracle = BehaviouralOracle.model_validate(oracle_data)
+            except ValidationError as e:
+                raise SchemaValidationError(
+                    f"Invalid behavioural_oracle configuration:\n{e}"
+                ) from e
+
         # Parse execution (may not exist) - keep as dataclass
         exec_data = data.get("execution", {})
         execution = FeatureExecution(
@@ -851,6 +919,11 @@ class FeatureLoader:
                 "orchestration": orchestration,
                 "execution": execution,
                 "smoke_gates": smoke_gates,
+                # TS-lane D.1a: thread the validated declaration through.
+                # Feature.model_config is extra="ignore", so an untranslated
+                # key here would be silently dropped exactly the way
+                # evidence_repos once was (TASK-FIX-XREPO-CAUD).
+                "behavioural_oracle": behavioural_oracle,
                 "bootstrap_extras": data.get("bootstrap_extras", []),
                 # TASK-FIX-XREPO-CAUD: thread declared sibling repos through.
                 # Without this the field is silently dropped here and
@@ -1497,6 +1570,12 @@ class FeatureLoader:
         # emitting ``smoke_gates: null`` into feature files.
         if data.get("smoke_gates") is None:
             data.pop("smoke_gates", None)
+
+        # Same law for behavioural_oracle (coordinator cure, D.1a coach):
+        # never persist ``behavioural_oracle: null`` into every rewritten
+        # feature file — a missing key and a null key load identically.
+        if data.get("behavioural_oracle") is None:
+            data.pop("behavioural_oracle", None)
 
         # Drop ``bootstrap_extras`` when empty. Auto-detection lives at
         # bootstrap time (see :func:`derive_bootstrap_extras`) so we

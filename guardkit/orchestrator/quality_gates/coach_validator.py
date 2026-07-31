@@ -58,7 +58,9 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     StackTestProfile,
     classify_absent_for_stack,
     detect_stack_profile,
+    overlay_declared_profile,
 )
+from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
     IndependentTestClassification,
@@ -1717,7 +1719,7 @@ class CoachValidator:
         self,
         worktree_path: str,
         test_command: Optional[str] = None,
-        test_timeout: int = 300,
+        test_timeout: Optional[int] = None,  # TS-lane D.1b: declaration-aware
         task_id: Optional[str] = None,
         coach_test_execution: Optional[str] = None,
         matching_strategy: str = "auto",
@@ -1732,6 +1734,7 @@ class CoachValidator:
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
+        toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
     ):
         """
         Initialize CoachValidator.
@@ -1742,8 +1745,11 @@ class CoachValidator:
             Path to the git worktree where validation should execute
         test_command : Optional[str]
             Command to run tests. If None, auto-detects based on project.
-        test_timeout : int
-            Timeout for test execution in seconds (default: 300s)
+        test_timeout : Optional[int]
+            Timeout for test execution in seconds. ``None`` (default) resolves
+            via the repo's snapshotted ``toolchain.test_timeout`` declaration
+            (TS-lane D.1b), else 300s — the historic hardcoded value, so a
+            repo with no declaration is unchanged. An explicit int always wins.
         task_id : Optional[str]
             Task identifier for task-specific test filtering in shared worktrees.
             When provided, test detection will first look for task-specific test
@@ -1821,11 +1827,46 @@ class CoachValidator:
             the standard subprocess run, ``"coach-isolated"`` for the
             parallel-wave snapshot run) so a leaked tmp dir names the caller.
             The label is combined with ``task_id`` in the directory prefix.
+        toolchain : Optional[ToolchainDeclaration]
+            The repo's declared toolchain block (TS-lane D.1b). ``None``
+            (default) loads the PRE-TURN-1 SNAPSHOT for ``task_id`` — never
+            the live ``<worktree>/.guardkit/config.yaml``, which sits inside
+            the tree the Player edits (design §B.4). No snapshot ⇒ no
+            declaration ⇒ the detection ladder runs exactly as it did before.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
-        self.test_timeout = test_timeout
         self.task_id = task_id
+        # TS-lane D.1b: THE DECLARATION. Resolved from the pre-turn-1 snapshot
+        # so a Player turn cannot rewrite its own test command mid-build. An
+        # explicitly-passed declaration (tests, callers that already hold one)
+        # wins; otherwise the snapshot; otherwise absent.
+        self._toolchain: Optional["ToolchainDeclaration"] = toolchain
+        if self._toolchain is None and task_id:
+            from guardkit.orchestrator.toolchain_declaration import (
+                load_toolchain_snapshot,
+            )
+
+            self._toolchain = load_toolchain_snapshot(task_id, self.worktree_path)
+        if self._toolchain is not None:
+            logger.info(
+                "CoachValidator honouring the repo's declared toolchain "
+                "(test=%r, test_timeout=%ss)",
+                self._toolchain.test,
+                self._toolchain.test_timeout,
+            )
+        # Explicit caller value > declared test_timeout > the historic 300s.
+        if test_timeout is not None:
+            self.test_timeout = test_timeout
+        elif self._toolchain is not None:
+            self.test_timeout = self._toolchain.test_timeout
+        else:
+            self.test_timeout = 300
+        # TS-lane D.1b: set by ``_detect_test_command`` when the ENTIRE ladder
+        # came up empty. Replaces the deleted unconditional pytest default —
+        # ``run_independent_tests`` turns it into a LOUD ABSENT signal
+        # (UNKNOWN), never a silent guess and never a pass.
+        self._detection_absence: Optional[str] = None
         # TASK-AB-COACHSUBPROC01: None -> resolve env > default (subprocess);
         # resolve_coach_test_execution logs the active mode + provenance once
         # per init. An explicit value is authoritative (validated with safe
@@ -3963,13 +4004,53 @@ class CoachValidator:
         )
         return self._run_shell_command(command, task)
 
+    @staticmethod
+    def _oracle_declaration(
+        task: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Normalise the ``behavioural_oracle`` declaration to a plain dict.
+
+        Three accepted shapes, all equivalent:
+
+        * ``behavioural_oracle: "npm test"``            (string shortcut)
+        * ``behavioural_oracle: {command: "npm test"}`` (raw mapping)
+        * a :class:`~guardkit.orchestrator.feature_loader.BehaviouralOracle`
+          model instance (TS-lane D.1a — the schema-validated shape that the
+          feature path threads down)
+
+        Returns ``None`` when nothing is declared, which is the absence path
+        and must stay byte-identical to the pre-D.1a behaviour.
+        """
+        if not task:
+            return None
+        bo = task.get("behavioural_oracle")
+        if bo is None:
+            return None
+        if isinstance(bo, str):
+            return {"command": bo} if bo else None
+        if isinstance(bo, dict):
+            return bo
+        # Pydantic model (BehaviouralOracle) or any object exposing
+        # ``.command``. Duck-typed on purpose: coach_validator must not
+        # import feature_loader (feature_loader already imports downwards).
+        command = getattr(bo, "command", None)
+        if not isinstance(command, str) or not command:
+            return None
+        declaration: Dict[str, Any] = {"command": command}
+        for key in ("expected_exit", "timeout"):
+            value = getattr(bo, key, None)
+            if value is not None:
+                declaration[key] = value
+        return declaration
+
     def _extract_command(
         self, task: Optional[Dict[str, Any]],
     ) -> Optional[str]:
         """Extract the behavioural_oracle.command from task YAML.
 
-        Supports both ``behavioural_oracle: {command: ...}`` and
-        ``behavioural_oracle: "..."`` (string shortcut).
+        Supports ``behavioural_oracle: {command: ...}``,
+        ``behavioural_oracle: "..."`` (string shortcut) and a
+        ``BehaviouralOracle`` model instance (TS-lane D.1a).
 
         Args:
             task: The task YAML dict.
@@ -3977,14 +4058,11 @@ class CoachValidator:
         Returns:
             The command string, or ``None`` if not declared.
         """
-        if not task:
+        declaration = self._oracle_declaration(task)
+        if declaration is None:
             return None
-        bo = task.get("behavioural_oracle")
-        if isinstance(bo, dict):
-            return bo.get("command")
-        if isinstance(bo, str) and bo:
-            return bo
-        return None
+        command = declaration.get("command")
+        return command if isinstance(command, str) and command else None
 
     def _produce_python_oracle(
         self,
@@ -4048,9 +4126,23 @@ class CoachValidator:
         Returns:
             A dict with the oracle result shape, or ``None`` on failure.
         """
-        timeout_seconds = float(
-            os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
-        )
+        # TS-lane D.1a: a schema-validated declaration may pin its own
+        # bounded timeout and its own success exit code. Absent both, the
+        # historical behaviour is unchanged: GUARDKIT_ORACLE_TIMEOUT (300s)
+        # and "passes iff exit 0".
+        declaration = self._oracle_declaration(task) or {}
+        declared_timeout = declaration.get("timeout")
+        if isinstance(declared_timeout, (int, float)) and declared_timeout > 0:
+            timeout_seconds = float(declared_timeout)
+        else:
+            timeout_seconds = float(
+                os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
+            )
+        declared_exit = declaration.get("expected_exit")
+        if isinstance(declared_exit, int) and not isinstance(declared_exit, bool):
+            expected_exit = declared_exit
+        else:
+            expected_exit = 0
         provenance = f"yaml_command:{command}"
 
         start_time = time.time()
@@ -4099,20 +4191,23 @@ class CoachValidator:
             return None
 
         duration = time.time() - start_time
-        passed = proc.returncode == 0
+        # LAW (design §B.4): the exit code IS the verdict. Stdout parsing is
+        # advisory only and may never decide green.
+        passed = proc.returncode == expected_exit
         output_tail = _combined_output_tail(proc.stdout, proc.stderr)
 
         if passed:
             logger.info(
                 "gather_evidence: behavioural-oracle command passed "
-                "(command: %s, exit_code=0, duration=%.1fs).",
-                command, duration,
+                "(command: %s, exit_code=%d, duration=%.1fs).",
+                command, proc.returncode, duration,
             )
         else:
             logger.warning(
                 "gather_evidence: behavioural-oracle command FAILED "
-                "(command: %s, exit_code=%d, duration=%.1fs).",
-                command, proc.returncode, duration,
+                "(command: %s, exit_code=%d, expected_exit=%d, "
+                "duration=%.1fs).",
+                command, proc.returncode, expected_exit, duration,
             )
 
         return {
@@ -5770,6 +5865,17 @@ class CoachValidator:
         # If test_cmd is None, it means task-specific filtering was requested
         # but no matching tests were found. Skip verification in this case.
         if test_cmd is None:
+            # TS-lane D.1b: the deleted pytest default's replacement. When the
+            # WHOLE ladder came up empty (no declaration, no marker), this is
+            # an instrument fault — surfaced as ABSENT (UNKNOWN), which can
+            # never read as a pass. The narrower "this task wrote no tests in a
+            # shared worktree" case below is unchanged.
+            if self._detection_absence:
+                return IndependentTestResult.absent(
+                    test_command="<no test command declared or detected>",
+                    test_output_summary=self._detection_absence,
+                    duration_seconds=0.0,
+                )
             logger.info(f"No task-specific tests found for {self.task_id}, skipping independent verification")
             return IndependentTestResult.skipped(
                 test_output_summary=f"No task-specific tests found for {self.task_id}, skipping independent verification",
@@ -5920,6 +6026,9 @@ class CoachValidator:
                             env=self._pytest_env(),
                         )
                 else:
+                    # TS-lane D.1b (design §B.5): the declared / non-pytest
+                    # command runs with the WORKTREE as cwd and an EXPLICIT
+                    # environment. See ``_declared_command_env``.
                     result = subprocess.run(
                         test_cmd,
                         shell=True,
@@ -5927,6 +6036,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
+                        env=self._declared_command_env(),
                     )
 
                 duration = time.time() - start_time
@@ -7618,6 +7728,8 @@ class CoachValidator:
         # TASK-AB-NPDET01: clear any stack profile from a prior call on a reused
         # validator; only the non-Python registry branch below sets it.
         self._active_stack_profile = None
+        # TS-lane D.1b: same discipline for the loud-absence marker.
+        self._detection_absence = None
         # Try task-specific filtering first (for shared worktrees)
         if task_id:
             # Primary: extract test files from task_work_results (already in memory)
@@ -7764,6 +7876,28 @@ class CoachValidator:
             # historic non-Python path, which can hang on a tool-call-shy model),
             # try a deterministic non-Python whole-suite command (dotnet/npm/go).
             #
+            # TS-lane D.1b: THE DECLARATION WINS — over the marker guess below,
+            # and in PARALLEL WAVES TOO. The ``not self.is_parallel`` guard
+            # below exists because marker detection is a GUESS about a repo we
+            # were never told about; a declaration is not a guess. When the
+            # repo has told us the answer, a parallel wave must not fall
+            # through to the LLM ``test-orchestrator`` specialist — which is
+            # also why this branch is M0-POSITIVE: it removes the one frontier
+            # hop on the non-Python verdict path (design §G).
+            declared = self._declared_test_command()
+            if declared is not None:
+                self._active_stack_profile = self._declared_stack_profile(declared)
+                logger.info(
+                    "Test command for %s from the repo's DECLARED toolchain "
+                    "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): "
+                    "%s%s",
+                    task_id,
+                    declared,
+                    " [parallel wave: declaration honoured, no specialist "
+                    "hand-off]" if self.is_parallel else "",
+                )
+                return declared
+
             # GUARD: a whole-suite command runs SIBLING tasks' tests too, so in a
             # parallel wave it would attribute their failures to this task
             # (false-red). Only take over when this is a SINGLE-task wave
@@ -7792,6 +7926,17 @@ class CoachValidator:
 
             return None
 
+        # TS-lane D.1b: the DECLARATION outranks every marker guess below it.
+        declared = self._declared_test_command()
+        if declared is not None:
+            self._active_stack_profile = self._declared_stack_profile(declared)
+            logger.info(
+                "Test command from the repo's DECLARED toolchain "
+                "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): %s",
+                declared,
+            )
+            return declared
+
         # Fallback to original detection logic
         # Check for Python projects
         if (self.worktree_path / "pytest.ini").exists():
@@ -7810,9 +7955,108 @@ class CoachValidator:
         if csproj_files:
             return "dotnet test"
 
-        # Default to pytest
-        logger.warning("Could not detect project type, defaulting to pytest")
-        return "pytest tests/ -v --tb=short"
+        # TS-lane D.1b: THE PYTEST DEFAULT IS DELETED.
+        #
+        # This was the last unconditional stack assumption on the verdict path
+        # ("Could not detect project type, defaulting to pytest" →
+        # ``pytest tests/ -v --tb=short``). In a repo with no pytest it ran a
+        # command that could not possibly produce a verdict, and the shrug went
+        # into the log at WARNING while the build carried on.
+        #
+        # It is replaced by a LOUD ABSENCE, not by a quieter guess: an
+        # instrument fault naming the missing declaration and every rung of the
+        # ladder that came up empty. ``run_independent_tests`` turns this into
+        # ``signal_absent`` (UNKNOWN) — never a pass, never a Player test
+        # failure (``absence-of-failure-is-not-success.md``).
+        self._detection_absence = self._describe_detection_absence()
+        logger.error(self._detection_absence)
+        return None
+
+    # ------------------------------------------------------------------
+    # TS-lane D.1b — the declaration's three helpers
+    # ------------------------------------------------------------------
+
+    def _declared_test_command(self) -> Optional[str]:
+        """Return the repo's declared ``toolchain.test`` command, or ``None``.
+
+        Reads ONLY the pre-turn-1 snapshot resolved in ``__init__`` (design
+        §B.4) — never the live ``<worktree>/.guardkit/config.yaml``, which the
+        Player can edit.
+        """
+        if self._toolchain is None:
+            return None
+        return self._toolchain.test or None
+
+    def _declared_stack_profile(self, command: str) -> Optional[StackTestProfile]:
+        """Overlay the declaration onto the matching stack row, if any.
+
+        Returns ``None`` for the common Python case (no marker row matched and
+        the declaration overrides no classifier field), which is precisely what
+        keeps a repo declaring ``pytest …`` byte-identical to today: no stack
+        profile ⇒ the existing pytest absence classifier still applies.
+        """
+        if self._toolchain is None:
+            return None
+        return overlay_declared_profile(
+            detect_stack_profile(self.worktree_path),
+            command=command,
+            absent_substrings=self._toolchain.absent_substrings,
+            ran_marker_regex=self._toolchain.ran_marker_regex,
+            requires_ran_marker=self._toolchain.requires_ran_marker,
+        )
+
+    def _declared_command_env(self) -> Dict[str, str]:
+        """Environment for a declared / non-pytest test command (design §B.5).
+
+        A verbatim copy of the daemon's own environment — which is what the
+        implicit inherit already produced, so this is byte-equivalent for every
+        existing caller. It is made EXPLICIT because the resolution rule is a
+        real design decision that was previously invisible:
+
+        * commands run with the worktree as ``cwd``;
+        * they inherit the daemon's ``PATH``, and nothing else resolves them.
+
+        The daemon's PATH is pinned in a systemd unit that never sees nvm, so
+        ``node`` resolves only because the D.0 estate fence puts
+        ``~/.local/bin/{node,npm,npx}`` symlinks (pointing at a pinned version)
+        on that already-present PATH. **NEVER bake an ``nvm`` source into this
+        executor**: systemd user units do not source login-shell rc files, and
+        an executor that reaches for one is unreproducible and invisible. The
+        runtime is a property of the estate, not of the builder.
+        """
+        return os.environ.copy()
+
+    def _describe_detection_absence(self) -> str:
+        """Build the actionable message for the deleted pytest default.
+
+        Names the missing declaration FIRST (it is the fix), then every rung
+        of the detection ladder that came up empty, so the reader never has to
+        reconstruct what was tried.
+        """
+        declared_state = (
+            "no `toolchain:` block found in <repo>/.guardkit/config.yaml"
+            if self._toolchain is None
+            else "a `toolchain:` block exists but declares no `test:` command"
+        )
+        return (
+            "INSTRUMENT FAULT: no test command could be resolved for "
+            f"{self.task_id or 'this run'} in {self.worktree_path}. "
+            "The independent-test oracle is ABSENT (UNKNOWN) — this is NOT a "
+            "test failure and NOT a pass.\n"
+            f"  1. DECLARATION: {declared_state}.\n"
+            "  2. Python markers: no pytest.ini, no pyproject.toml, no "
+            "requirements.txt at the worktree root.\n"
+            "  3. Node marker: no package.json at the worktree root.\n"
+            "  4. .NET marker: no *.csproj at the worktree root.\n"
+            "FIX: declare the command the repo actually uses, e.g.\n"
+            "  # <repo>/.guardkit/config.yaml\n"
+            "  toolchain:\n"
+            '    test: "npm test"\n'
+            "(Until TS-lane D.1b this fell through to "
+            '`pytest tests/ -v --tb=short` with a logged shrug, which ran a '
+            "command the repo may not even have. A guessed oracle is worse "
+            "than a named absence.)"
+        )
 
     def _load_collect_ignore_glob(self) -> List[str]:
         """Load ``collect_ignore_glob`` patterns from the root ``conftest.py``.

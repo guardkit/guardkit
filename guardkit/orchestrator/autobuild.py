@@ -1763,6 +1763,7 @@ class AutoBuildOrchestrator:
         task_file_path: Optional[Path] = None,
         requires_infrastructure: Optional[List[str]] = None,
         time_budget_seconds: Optional[float] = None,
+        behavioural_oracle: Optional[Any] = None,
     ) -> OrchestrationResult:
         """
         Execute complete adversarial orchestration workflow.
@@ -1794,6 +1795,16 @@ class AutoBuildOrchestrator:
             When provided by the caller (e.g., FeatureOrchestrator), takes
             precedence over any value in the task file frontmatter. When None,
             falls back to frontmatter value (single-task mode).
+        behavioural_oracle : Optional[Any], optional
+            Declared behavioural-oracle command supplied by the caller (the
+            FeatureOrchestrator threads ``feature.behavioural_oracle`` here).
+            Accepts a ``BehaviouralOracle`` model, a ``{"command": ...}``
+            mapping, or a bare command string. Precedence is the INVERSE of
+            ``requires_infrastructure``: the task's own frontmatter
+            declaration WINS, because per design §B.1 the per-task
+            declaration is the escape hatch that sits above every
+            feature/repo-level one. When both are absent the leg stays
+            absent, exactly as before TS-lane D.1a (TS-lane D.1a).
 
         Returns
         -------
@@ -1831,6 +1842,7 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
+        _bo_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -1844,6 +1856,15 @@ class AutoBuildOrchestrator:
             consumer_context = frontmatter.get("consumer_context")
             if isinstance(consumer_context, list):
                 logger.debug(f"Loaded consumer_context from task file: {consumer_context}")
+            # TS-lane D.1a: lift the declared behavioural oracle beside
+            # task_type / requires_infrastructure. Until this line existed the
+            # executor (CoachValidator._run_shell_command) was built, unit
+            # tested and completely unreachable — no production caller ever
+            # put ``behavioural_oracle`` into the task dict.
+            # Lift RAW here; validation happens OUTSIDE this try — the broad
+            # metadata except below must never swallow a verdict-bearing
+            # declaration's schema error (coordinator cure, D.1a coach).
+            _bo_raw = frontmatter.get("behavioural_oracle")
             # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
             # frontmatter. Only resolve from frontmatter when a feature did NOT
             # already supply them (feature config wins; avoids double-counting).
@@ -1863,11 +1884,34 @@ class AutoBuildOrchestrator:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
+            _bo_raw = None
+
+        if _bo_raw:
+            # Coordinator cure (D.1a coach): the frontmatter path is the
+            # HIGHEST-precedence declaration and must pass the same schema as
+            # the feature-YAML path. A typo'd key or an out-of-bound timeout in
+            # a verdict-bearing declaration is a FALSE GREEN, so a validation
+            # failure here fails the task load LOUDLY — deliberately outside
+            # the metadata try/except above.
+            from guardkit.orchestrator.feature_loader import BehaviouralOracle
+
+            _bo_val = {"command": _bo_raw} if isinstance(_bo_raw, str) else _bo_raw
+            behavioural_oracle = BehaviouralOracle.model_validate(
+                _bo_val
+            ).model_dump(exclude_none=True)
+            logger.info(
+                "Loaded behavioural_oracle from task frontmatter for %s: %r",
+                task_id, behavioural_oracle,
+            )
 
         # Precedence: explicit parameter > frontmatter > None
         if _ri_from_caller is not None:
             requires_infrastructure = _ri_from_caller
             logger.debug(f"Using requires_infrastructure from caller: {_ri_from_caller}")
+        # behavioural_oracle precedence is deliberately the OTHER WAY ROUND
+        # (design §B.1): the frontmatter lift above has already overwritten
+        # the caller's feature-level value, because the per-task declaration
+        # is the escape hatch that outranks every broader declaration.
 
         try:
             # Phase 1: Setup (or resume existing worktree)
@@ -1888,6 +1932,16 @@ class AutoBuildOrchestrator:
                 # tasks without a `conformance` block; never raises. Resume
                 # runs skip this — the original fresh start already captured it.
                 self._snapshot_spec_conformance(task_id, worktree)
+
+                # TS-lane D.1b (design §B.4) — THE SAME PIN, and it is NOT
+                # optional. ``.guardkit/config.yaml`` lives inside the target
+                # repo, which means it lives inside the worktree the builder is
+                # editing: without a snapshot a Player turn could rewrite
+                # ``toolchain.test`` to ``true`` and green itself. Captured here,
+                # pre-turn-1, from the canonical repo tree, into the
+                # Player-unreachable private dir — and the pinned copy is what
+                # executes for the whole build.
+                self._snapshot_toolchain_declaration(task_id, worktree)
 
                 # Save initial state
                 if task_file_path:
@@ -2006,6 +2060,7 @@ class AutoBuildOrchestrator:
                 requires_infrastructure=requires_infrastructure,
                 consumer_context=consumer_context,
                 time_budget_seconds=time_budget_seconds,
+                behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             )
 
             # Phase 4: Finalize
@@ -2141,6 +2196,39 @@ class AutoBuildOrchestrator:
             logger.warning(
                 "FEAT-SCG: spec-conformance snapshot failed for %s (%s) — "
                 "guard will be absent for this task",
+                task_id,
+                exc,
+            )
+
+    def _snapshot_toolchain_declaration(
+        self, task_id: str, worktree: "Worktree"
+    ) -> None:
+        """TS-lane D.1b: pin the repo's toolchain declaration pre-turn-1.
+
+        Reads ``toolchain:`` from the CANONICAL ``<repo_root>/.guardkit/
+        config.yaml`` and writes it into the task-private dir (outside the
+        shared worktree). ``CoachValidator`` reads only that snapshot, so the
+        model can never edit its own test command mid-build (design §B.4 —
+        "if the snapshot is cut from scope, the declaration must be cut with
+        it").
+
+        A no-op (writes nothing) for every repo without a ``toolchain:``
+        block, so existing builds stay byte-equivalent. Never raises.
+        """
+        try:
+            from guardkit.orchestrator.toolchain_declaration import (
+                snapshot_task_toolchain,
+            )
+
+            snapshot_task_toolchain(
+                task_id=task_id,
+                worktree_path=worktree.path,
+                repo_root=self.repo_root,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "TS-lane D.1b: toolchain snapshot failed for %s (%s) — the "
+                "declaration will be absent for this task",
                 task_id,
                 exc,
             )
@@ -2831,6 +2919,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
+        behavioural_oracle: Optional[Any] = None,
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -2864,6 +2953,8 @@ class AutoBuildOrchestrator:
             Infrastructure services required (e.g., ["postgresql", "redis"])
         consumer_context : Optional[list], optional
             Consumer context metadata from task frontmatter for format validation
+        behavioural_oracle : Optional[Any], optional
+            Resolved behavioural-oracle declaration (TS-lane D.1a)
 
         Returns
         -------
@@ -2993,6 +3084,7 @@ class AutoBuildOrchestrator:
                     requires_infrastructure=requires_infrastructure,
                     consumer_context=consumer_context,
                     remaining_budget=remaining_budget,
+                    behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
                 )
 
                 turn_history.append(turn_record)
@@ -3442,6 +3534,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure: Optional[List[str]] = None,
         consumer_context: Optional[list] = None,
         remaining_budget: Optional[float] = None,
+        behavioural_oracle: Optional[Any] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -3478,6 +3571,8 @@ class AutoBuildOrchestrator:
             Infrastructure services required (e.g., ["postgresql", "redis"])
         consumer_context : Optional[list], optional
             Consumer context metadata from task frontmatter for format validation
+        behavioural_oracle : Optional[Any], optional
+            Resolved behavioural-oracle declaration (TS-lane D.1a)
 
         Returns
         -------
@@ -4114,6 +4209,7 @@ class AutoBuildOrchestrator:
             remaining_budget=coach_remaining_budget,
             wave_size=self.wave_size,
             peer_changed_files=peer_changed_files_snapshot,
+            behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -6398,6 +6494,7 @@ class AutoBuildOrchestrator:
         remaining_budget: Optional[float] = None,
         wave_size: int = 1,
         peer_changed_files: Optional[Dict[str, Any]] = None,
+        behavioural_oracle: Optional[Any] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -6440,6 +6537,9 @@ class AutoBuildOrchestrator:
         wave_size : int, optional
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed to CoachValidator to enable test isolation (TASK-ABFIX-005).
+        behavioural_oracle : Optional[Any], optional
+            Resolved behavioural-oracle declaration. Placed into the task dict
+            handed to CoachValidator on BOTH Coach paths (TS-lane D.1a).
 
         Returns
         -------
@@ -6567,6 +6667,7 @@ class AutoBuildOrchestrator:
                 peer_changed_files=peer_changed_files,
                 context_prompt=context_prompt,
                 start_time=start_time,
+                behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             )
 
         return self._invoke_coach_primary(
@@ -6585,6 +6686,7 @@ class AutoBuildOrchestrator:
             peer_changed_files=peer_changed_files,
             context_prompt=context_prompt,
             start_time=start_time,
+            behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
         )
 
     def _invoke_coach_legacy(
@@ -6605,6 +6707,9 @@ class AutoBuildOrchestrator:
         peer_changed_files: Optional[Dict[str, Any]],
         context_prompt: str,
         start_time: float,
+        # TS-lane D.1a. Defaulted so a direct caller (and every existing
+        # test that calls this path by hand) keeps its current signature.
+        behavioural_oracle: Optional[Any] = None,
     ) -> AgentInvocationResult:
         """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
 
@@ -6694,6 +6799,18 @@ class AutoBuildOrchestrator:
                     "_docker_available": validator._is_docker_available(),
                     "consumer_context": consumer_context or [],
                     "description": requirements or "",
+                    # TS-lane D.1a: solder the dead wire. This key is the ONLY
+                    # thing CoachValidator._extract_command ever looked for,
+                    # and no production caller had ever set it — the executor
+                    # (_run_shell_command) was built, unit tested and
+                    # unreachable. Spread conditionally so a task with no
+                    # declaration still hands over the identical six-key dict
+                    # it did before this line existed.
+                    **(
+                        {"behavioural_oracle": behavioural_oracle}
+                        if behavioural_oracle
+                        else {}
+                    ),
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,
@@ -6793,6 +6910,9 @@ class AutoBuildOrchestrator:
         peer_changed_files: Optional[Dict[str, Any]],
         context_prompt: str,
         start_time: float,
+        # TS-lane D.1a. Defaulted so a direct caller (and every existing
+        # test that calls this path by hand) keeps its current signature.
+        behavioural_oracle: Optional[Any] = None,
     ) -> AgentInvocationResult:
         """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
 
@@ -6856,6 +6976,18 @@ class AutoBuildOrchestrator:
                     "_docker_available": validator._is_docker_available(),
                     "consumer_context": consumer_context or [],
                     "description": requirements or "",
+                    # TS-lane D.1a: solder the dead wire. This key is the ONLY
+                    # thing CoachValidator._extract_command ever looked for,
+                    # and no production caller had ever set it — the executor
+                    # (_run_shell_command) was built, unit tested and
+                    # unreachable. Spread conditionally so a task with no
+                    # declaration still hands over the identical six-key dict
+                    # it did before this line existed.
+                    **(
+                        {"behavioural_oracle": behavioural_oracle}
+                        if behavioural_oracle
+                        else {}
+                    ),
                 },
                 skip_arch_review=skip_arch_review,
                 context=context_prompt if context_prompt else None,

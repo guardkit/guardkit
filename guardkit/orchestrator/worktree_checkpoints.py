@@ -69,6 +69,59 @@ _EVIDENCE_GIT_TIMEOUT_S: int = 120
 
 
 # ============================================================================
+# THE JUNK LAW (register 2a5 -> TS-lane D.1c)
+# ============================================================================
+#
+# LAW: build junk is excluded from checkpoints BY PATHSPEC, never by the
+# target repo's own ``.gitignore`` hygiene. Register 2a5 (2026-07-30) wrote
+# that intent into the add sites' comment and enumerated only the Python
+# classes; ``706589f7`` (2026-07-31) then fixed the pathspec MAGIC, not the
+# coverage. TS-lane D.1c completes the enumeration for the JavaScript /
+# TypeScript classes, and collapses what were two copy-pasted literals into
+# ONE constant so the worktree site and the sibling-evidence site can never
+# drift apart again (706589f7 had to fix both, separately).
+#
+# EVERY entry MUST be fully-wildcarded glob magic — ``:(exclude,glob)**/…``.
+# This is the 706589f7 lesson and it cuts both ways:
+#
+#   * the wildcard-FREE form (``:(exclude).cache``) makes git 2.43 REFUSE the
+#     whole ``add`` (exit 1, "The following paths are ignored…") the moment
+#     the junk it names is ALSO in the repo's own .gitignore and exists on
+#     disk — the checkpoint dies after a turn-1 coach approve (FEAT-153C);
+#   * the un-magicked ``**`` form (no ``,glob``) excludes NOTHING at all in a
+#     repo that does not gitignore the junk — a silent no-op.
+#
+# Only the fully-wildcarded glob form survives both repo shapes, and the
+# regression tests prove each class in both shapes.
+#
+# ``dist/`` is DELIBERATELY ABSENT (design §B.6, explicitly): it is a real
+# deliverable in some repos, and dropping shipped build output by pathspec
+# would be silent. This enumeration is also known to rot (``.parcel-cache``,
+# ``.svelte-kit``, whatever comes next) — accepted, because the alternative
+# is an allowlist of what MAY be committed, which risks dropping real work.
+CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
+    # --- register 2a5: machine-local Python/bootstrap junk ---
+    ":(exclude,glob)**/.cache/**",
+    ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+    # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
+    ":(exclude,glob)**/node_modules/**",
+    ":(exclude,glob)**/.next/**",
+    ":(exclude,glob)**/.turbo/**",
+    ":(exclude,glob)**/coverage/**",
+    ":(exclude,glob)**/*.tsbuildinfo",
+)
+
+# The full ``git add`` argv prefix shared by both add sites.
+_CHECKPOINT_ADD_ARGV: Tuple[str, ...] = (
+    "git",
+    "add",
+    "-A",
+    "--",
+    ".",
+) + CHECKPOINT_EXCLUDE_PATHSPECS
+
+
+# ============================================================================
 # Protocols & ABC
 # ============================================================================
 
@@ -467,23 +520,17 @@ class WorktreeCheckpointManager:
         Returns:
             Checkpoint record with commit hash
         """
-        # Stage all changes (including untracked files) EXCEPT machine-local
-        # junk (register 2a5, 2026-07-30): checkpoint commits were baking pip
-        # http caches and .guardkit/bootstrap_state.json into TARGET repos —
-        # 25 junk files on the FEAT-UDBE branch, and a committed
-        # bootstrap_state whose dead venv_python poisons later reads. The
-        # exclusions are pathspec magic, so builds never depend on the target
-        # repo's own .gitignore hygiene.
+        # Stage all changes (including untracked files) EXCEPT build junk
+        # (register 2a5, 2026-07-30; extended to the JS/TS classes by TS-lane
+        # D.1c): checkpoint commits were baking pip http caches and
+        # .guardkit/bootstrap_state.json into TARGET repos — 25 junk files on
+        # the FEAT-UDBE branch, and a committed bootstrap_state whose dead
+        # venv_python poisons later reads. The exclusions are pathspec magic,
+        # so builds never depend on the target repo's own .gitignore hygiene.
+        # See CHECKPOINT_EXCLUDE_PATHSPECS for the law and the glob-magic
+        # rule; the SAME constant is used by the sibling-evidence add site.
         self.git_executor.execute(
-            [
-                "git",
-                "add",
-                "-A",
-                "--",
-                ".",
-                ":(exclude,glob)**/.cache/**",
-                ":(exclude,glob)**/.guardkit/bootstrap_state.json",
-            ],
+            list(_CHECKPOINT_ADD_ARGV),
             cwd=self.worktree_path,
         )
 
@@ -597,18 +644,12 @@ class WorktreeCheckpointManager:
                 # Bounded so a hung git cannot hold the cross-process lock
                 # indefinitely and stall every task sharing this repo.
                 self.git_executor.execute(
-                    # Same machine-local exclusions as the worktree checkpoint
-                    # (register 2a5) — evidence-repo commits must not bake pip
-                    # caches / bootstrap state either.
-                    [
-                        "git",
-                        "add",
-                        "-A",
-                        "--",
-                        ".",
-                        ":(exclude,glob)**/.cache/**",
-                        ":(exclude,glob)**/.guardkit/bootstrap_state.json",
-                    ],
+                    # THE SAME constant as the worktree checkpoint above
+                    # (register 2a5 + TS-lane D.1c) — a sibling-evidence
+                    # commit must not bake pip caches, bootstrap state or
+                    # node_modules either. Shared, not copy-pasted: 706589f7
+                    # had to fix two divergent literals.
+                    list(_CHECKPOINT_ADD_ARGV),
                     cwd=repo.root,
                     check=False,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,

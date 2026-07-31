@@ -46,9 +46,19 @@ from guardkit.orchestrator.quality_gates import (
 
 @pytest.fixture
 def tmp_worktree(tmp_path):
-    """Create a temporary worktree directory."""
+    """Create a temporary worktree directory for a PYTHON project.
+
+    TS-lane D.1b: the ``pyproject.toml`` marker is now written explicitly.
+    Until the unconditional ``"Could not detect project type, defaulting to
+    pytest"`` fallback was deleted, an EMPTY directory silently produced
+    ``pytest tests/ -v --tb=short`` — so 14 tests in this file that are about
+    timeouts, summaries and gate profiles were riding a stack guess they never
+    asked for and never asserted. The marker states the assumption those tests
+    always had, and keeps their resolved command byte-identical to before.
+    """
     worktree = tmp_path / "worktrees" / "TASK-001"
     worktree.mkdir(parents=True)
+    (worktree / "pyproject.toml").touch()
     return worktree
 
 
@@ -842,7 +852,11 @@ class TestIndependentTestVerification:
 
     def test_run_tests_auto_detects_node(self, tmp_worktree):
         """Test auto-detection of npm test for Node projects."""
-        # Create Node project indicator
+        # Create Node project indicator. The fixture's Python marker is
+        # removed first — a directory carrying pyproject.toml is not a Node
+        # project, and the ladder checks Python first (TS-lane D.1b: the
+        # fixture now states the Python assumption the other tests rely on).
+        (tmp_worktree / "pyproject.toml").unlink()
         (tmp_worktree / "package.json").touch()
 
         with patch("subprocess.run") as mock_run:
@@ -855,7 +869,9 @@ class TestIndependentTestVerification:
 
     def test_run_tests_auto_detects_dotnet(self, tmp_worktree):
         """Test auto-detection of dotnet test for .NET projects."""
-        # Create .NET project indicator
+        # Create .NET project indicator (see the Node test above for why the
+        # fixture's Python marker is removed first).
+        (tmp_worktree / "pyproject.toml").unlink()
         (tmp_worktree / "Example.csproj").touch()
 
         with patch("subprocess.run") as mock_run:
