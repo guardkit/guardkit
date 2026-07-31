@@ -96,10 +96,13 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         "-A",
         "--",
         ".",
-        ":(exclude).cache",
-        ":(exclude)**/.cache/**",
-        ":(exclude).guardkit/bootstrap_state.json",
-    ]  # register 2a5: machine-local junk excluded from checkpoints
+        ":(exclude,glob)**/.cache/**",
+        ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+    ]  # register 2a5: junk excluded via glob magic — the bare `.cache` pathspec
+    # form makes git 2.43 REFUSE the add (exit 1, "paths are ignored") in any
+    # repo whose own .gitignore also lists the junk (the api_test belt+braces
+    # collision, FEAT-153C 2026-07-31), and the un-magicked `**` form excludes
+    # nothing at all in repos without the gitignore.
 
     # git commit
     commit_call = mock_git_executor.execute.call_args_list[1]
@@ -962,10 +965,13 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         "-A",
         "--",
         ".",
-        ":(exclude).cache",
-        ":(exclude)**/.cache/**",
-        ":(exclude).guardkit/bootstrap_state.json",
-    ]  # register 2a5: machine-local junk excluded from checkpoints
+        ":(exclude,glob)**/.cache/**",
+        ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+    ]  # register 2a5: junk excluded via glob magic — the bare `.cache` pathspec
+    # form makes git 2.43 REFUSE the add (exit 1, "paths are ignored") in any
+    # repo whose own .gitignore also lists the junk (the api_test belt+braces
+    # collision, FEAT-153C 2026-07-31), and the un-magicked `**` form excludes
+    # nothing at all in repos without the gitignore.
 
     commit_call = mock_git_executor.execute.call_args_list[1]
     assert "git" == commit_call[0][0][0]
