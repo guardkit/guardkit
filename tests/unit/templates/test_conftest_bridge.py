@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import guardkit.templates.conftest_bridge as bridge
 from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 
@@ -113,6 +115,106 @@ class TestGuards:
         (hidden / "x.feature").write_text(_FEATURE_BODY, encoding="utf-8")
 
         assert install_features_conftest_bridge(tmp_path) is False
+
+
+class TestLanguageCheck:
+    """TS-lane D.1c: a TypeScript worktree must not receive a Python bridge.
+
+    The bridge is a pytest-bdd collection hook. In a repo with no Python at
+    all it is not merely useless — it is a Python file on disk that the
+    project never asked for and the Player never wrote. ``ts-api-test``
+    reaches this path for real: it carries
+    ``features/get-time-endpoint/get-time-endpoint.feature`` (verified
+    2026-07-31), so without the check its very first worktree gets one.
+
+    The check is NEGATIVE by design — it refuses only when the target is
+    POSITIVELY non-Python (a node manifest present AND no Python manifest).
+    Backwards compatibility is the prime invariant, so every control below
+    asserts the historic behaviour is byte-for-byte unchanged.
+    """
+
+    def test_typescript_worktree_gets_no_bridge(self, tmp_path: Path):
+        _make_features(tmp_path, rel="get-time-endpoint/get-time-endpoint.feature")
+        (tmp_path / "package.json").write_text(
+            '{"name":"ts-api-test","scripts":{"test":"vitest run"}}',
+            encoding="utf-8",
+        )
+        (tmp_path / "tsconfig.json").write_text("{}", encoding="utf-8")
+
+        assert install_features_conftest_bridge(tmp_path) is False
+        assert not (tmp_path / "features" / "conftest.py").exists()
+
+    def test_tsconfig_alone_is_enough_to_refuse(self, tmp_path: Path):
+        _make_features(tmp_path)
+        (tmp_path / "tsconfig.json").write_text("{}", encoding="utf-8")
+
+        assert install_features_conftest_bridge(tmp_path) is False
+        assert not (tmp_path / "features" / "conftest.py").exists()
+
+    def test_refusal_is_loud_not_silent(self, tmp_path: Path, caplog):
+        """A skip the operator cannot see is indistinguishable from a bug."""
+        import logging
+
+        _make_features(tmp_path)
+        (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+
+        with caplog.at_level(logging.INFO, logger="guardkit.templates.conftest_bridge"):
+            assert install_features_conftest_bridge(tmp_path) is False
+
+        assert any(
+            "non-Python project" in record.message for record in caplog.records
+        ), "the language-check refusal must name itself in the log"
+
+    # ---- backwards-compatibility controls --------------------------------
+
+    def test_python_worktree_still_gets_the_bridge(self, tmp_path: Path):
+        """The Python path is unchanged (the control that matters most)."""
+        _make_features(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+
+        assert install_features_conftest_bridge(tmp_path) is True
+        assert (tmp_path / "features" / "conftest.py").is_file()
+
+    def test_bare_worktree_with_no_manifests_still_gets_the_bridge(
+        self, tmp_path: Path
+    ):
+        """No node manifest -> nothing changes. Every repo in the estate
+        before tonight is this shape (or the Python one above)."""
+        _make_features(tmp_path)
+
+        assert install_features_conftest_bridge(tmp_path) is True
+        assert (tmp_path / "features" / "conftest.py").is_file()
+
+    @pytest.mark.parametrize(
+        "marker,body",
+        [
+            ("pyproject.toml", "[project]\nname='x'\n"),
+            ("setup.py", "from setuptools import setup\n"),
+            ("setup.cfg", "[metadata]\nname = x\n"),
+            ("requirements.txt", "pytest\n"),
+            ("requirements-dev.txt", "pytest\n"),
+            ("Pipfile", "[packages]\n"),
+            ("tox.ini", "[tox]\n"),
+            ("pytest.ini", "[pytest]\n"),
+            ("conftest.py", "# root conftest\n"),
+        ],
+    )
+    def test_polyglot_repo_keeps_the_bridge(
+        self, tmp_path: Path, marker: str, body: str
+    ):
+        """A repo with BOTH stacks is a Python repo for this purpose.
+
+        Refusing here would be a regression for any existing repo that
+        happens to carry a package.json (docs tooling, a JS front end
+        beside a Python API) — so the check demands the ABSENCE of every
+        Python marker, not merely the presence of a node one.
+        """
+        _make_features(tmp_path)
+        (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+        (tmp_path / marker).write_text(body, encoding="utf-8")
+
+        assert install_features_conftest_bridge(tmp_path) is True
+        assert (tmp_path / "features" / "conftest.py").is_file()
 
 
 class TestNonRaising:

@@ -29,6 +29,7 @@ Verification semantics (absence-of-failure-safe):
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -202,6 +203,12 @@ def run_completion_verification(
         timeout,
     )
     try:
+        # TS-lane D.1b (design §B.5): the second declared-command shell site.
+        # ``env=`` is now EXPLICIT (a verbatim copy of the daemon's own
+        # environment — byte-equivalent to the previous implicit inherit) so
+        # the resolution rule is visible where the command runs: worktree/repo
+        # cwd + the daemon PATH, on which node resolves ONLY via the D.0
+        # symlink fence. Never source nvm here.
         proc = subprocess.run(
             command,
             shell=True,
@@ -209,6 +216,7 @@ def run_completion_verification(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=os.environ.copy(),
         )
     except subprocess.TimeoutExpired as exc:
         # Ran-and-hung is a genuine defect (runtime-parity L3 precedent):

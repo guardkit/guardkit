@@ -705,3 +705,86 @@ class TestResidualHarnessNamespaceFilter:
             "large_tool_results/fc_deadbeef/result.json",
             ".claude/task-plans/TASK-FIX-EVBINST02-implementation-plan.md",
         }
+
+
+# ---------------------------------------------------------------------------
+# TS-lane D.1c — node_modules is the JS/TS site-packages
+# ---------------------------------------------------------------------------
+# Design §B.6 companion fix. ``_ORCHESTRATOR_MANAGED_PATH_PATTERNS`` carried
+# ``site-packages/``, ``.venv/`` and ``.local/`` and NO ``node_modules/``.
+# Without the row, an ``npm ci`` in a target repo that does not gitignore
+# node_modules floods files_modified / files_created with thousands of ghost
+# paths the Player never authored, and the Coach's claim audit at
+# ``_verify_claims_were_staged`` short-circuits on them — the exact
+# ``claim_audit_unmodified`` flood FEAT-9DDE run-6 hit with site-packages.
+# ---------------------------------------------------------------------------
+
+
+class TestNodeModulesFilter:
+    """``node_modules/`` is orchestrator-managed, at any depth."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # repo-root install
+            "node_modules/fastify/index.js",
+            "node_modules/.bin/vitest",
+            "node_modules/@types/node/index.d.ts",
+            # monorepo / nested installs
+            "packages/api/node_modules/dep/d.js",
+            "apps/web/node_modules/.package-lock.json",
+            # ./ prefix and backslashes (Windows) are normalised
+            "./node_modules/fastify/index.js",
+            "node_modules\\fastify\\index.js",
+        ],
+    )
+    def test_node_modules_paths_match(self, path: str):
+        assert _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be classified as orchestrator-managed "
+            "(node_modules is the JS/TS site-packages)."
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Over-reach guard: segment-scoped, never a substring match.
+            "src/node_modules_helper.ts",
+            "docs/node_modules.md",
+            "tests/test_node_modules_filter.py",
+            # Real TypeScript Player work must pass through untouched.
+            "src/health/routes.ts",
+            "tests/health/health.test.ts",
+            "package.json",
+            "tsconfig.json",
+        ],
+    )
+    def test_node_modules_over_reach_guard(self, path: str):
+        assert not _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be treated as Player work, not "
+            f"orchestrator-managed."
+        )
+
+    def test_strip_removes_node_modules_keeps_typescript_work(self):
+        """The flood is stripped; the TypeScript deliverable survives."""
+        report = {
+            "files_modified": [
+                "node_modules/fastify/index.js",
+                "node_modules/@types/node/index.d.ts",
+                "packages/api/node_modules/dep/d.js",
+                "src/health/routes.ts",
+            ],
+            "files_created": ["node_modules/.bin/vitest", "src/time/routes.ts"],
+            "tests_written": ["tests/health/health.test.ts"],
+            "completion_promises": [],
+        }
+        stripped = _strip_orchestrator_managed_paths(report, "TASK-TS-D1C")
+
+        assert report["files_modified"] == ["src/health/routes.ts"]
+        assert report["files_created"] == ["src/time/routes.ts"]
+        assert report["tests_written"] == ["tests/health/health.test.ts"]
+        assert stripped == {
+            "node_modules/fastify/index.js",
+            "node_modules/@types/node/index.d.ts",
+            "packages/api/node_modules/dep/d.js",
+            "node_modules/.bin/vitest",
+        }

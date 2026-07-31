@@ -153,6 +153,17 @@ def parse_positional_paths(command: str) -> List[str]:
             i += 1
         return positionals
 
+    # LOUD, not clever (re-lodged from the forge D2 lane, 2026-07-31): a
+    # non-pytest smoke command gets NO path validation from this guard, and
+    # with a second toolchain that is now a routine case (``npm test``,
+    # ``npx vitest run``), not an anomaly. Say so at WARNING so the receipt
+    # trail shows the guard was consciously inert — never silently so.
+    logger.warning(
+        "smoke-gate path validation: command is not a pytest invocation — "
+        "positional paths are NOT validated for it (declared-toolchain "
+        "commands carry their own exit-code verdict): %r",
+        command.strip().splitlines()[0] if command.strip() else command,
+    )
     return []
 
 

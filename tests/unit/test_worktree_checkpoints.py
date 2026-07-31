@@ -98,11 +98,18 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ".",
         ":(exclude,glob)**/.cache/**",
         ":(exclude,glob)**/.guardkit/bootstrap_state.json",
-    ]  # register 2a5: junk excluded via glob magic — the bare `.cache` pathspec
-    # form makes git 2.43 REFUSE the add (exit 1, "paths are ignored") in any
-    # repo whose own .gitignore also lists the junk (the api_test belt+braces
-    # collision, FEAT-153C 2026-07-31), and the un-magicked `**` form excludes
-    # nothing at all in repos without the gitignore.
+        ":(exclude,glob)**/node_modules/**",
+        ":(exclude,glob)**/.next/**",
+        ":(exclude,glob)**/.turbo/**",
+        ":(exclude,glob)**/coverage/**",
+        ":(exclude,glob)**/*.tsbuildinfo",
+    ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
+    # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
+    # ignored") in any repo whose own .gitignore also lists the junk (the
+    # api_test belt+braces collision, FEAT-153C 2026-07-31), and the un-magicked
+    # `**` form excludes nothing at all in repos without the gitignore. NOTE the
+    # literal is pinned here on purpose: importing the constant would prove
+    # nothing about its CONTENT.
 
     # git commit
     commit_call = mock_git_executor.execute.call_args_list[1]
@@ -967,11 +974,16 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ".",
         ":(exclude,glob)**/.cache/**",
         ":(exclude,glob)**/.guardkit/bootstrap_state.json",
-    ]  # register 2a5: junk excluded via glob magic — the bare `.cache` pathspec
-    # form makes git 2.43 REFUSE the add (exit 1, "paths are ignored") in any
-    # repo whose own .gitignore also lists the junk (the api_test belt+braces
-    # collision, FEAT-153C 2026-07-31), and the un-magicked `**` form excludes
-    # nothing at all in repos without the gitignore.
+        ":(exclude,glob)**/node_modules/**",
+        ":(exclude,glob)**/.next/**",
+        ":(exclude,glob)**/.turbo/**",
+        ":(exclude,glob)**/coverage/**",
+        ":(exclude,glob)**/*.tsbuildinfo",
+    ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
+    # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
+    # ignored") in any repo whose own .gitignore also lists the junk (the
+    # api_test belt+braces collision, FEAT-153C 2026-07-31), and the un-magicked
+    # `**` form excludes nothing at all in repos without the gitignore.
 
     commit_call = mock_git_executor.execute.call_args_list[1]
     assert "git" == commit_call[0][0][0]

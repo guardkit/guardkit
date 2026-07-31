@@ -36,9 +36,9 @@ safety-critical classifier tests run on the main CI suite
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -174,6 +174,91 @@ STACK_TEST_PROFILES: tuple[StackTestProfile, ...] = (
         ran_marker_regex=r"(?mi)^ok\s",
     ),
 )
+
+
+# The base a declaration overlays onto when NO stack row matched the worktree.
+# Deliberately minimal: only the two universal "the command never ran" return
+# codes (127 command-not-found, 126 permission-denied), no phrase matching, no
+# ran-marker precondition. Everything else must be declared explicitly, because
+# a guessed absence phrase is exactly the false-red this module's own comments
+# warn about.
+_DECLARED_BASE_PROFILE = StackTestProfile(
+    stack="declared",
+    marker_globs=(),
+    whole_suite_command="",
+    absent_substrings=(),
+    absent_returncodes=frozenset({126, 127}),
+)
+
+
+def overlay_declared_profile(
+    base: Optional[StackTestProfile],
+    *,
+    command: str,
+    absent_substrings: Optional[Sequence[str]] = None,
+    ran_marker_regex: Optional[str] = None,
+    requires_ran_marker: Optional[bool] = None,
+) -> Optional[StackTestProfile]:
+    """Overlay a repo's toolchain declaration onto a stack row (TS-lane D.1b).
+
+    ``STACK_TEST_PROFILES`` rows are DATA, per
+    ``.claude/rules/stack-plugin-architecture.md`` — so a repo overriding one
+    is also data, not a plugin. The declaration supplies the command; any
+    absence-classifier field it declares replaces the row's, and any it omits
+    is INHERITED from the row (``ran_marker_regex: null`` in the YAML means
+    "inherit the node row's marker", exactly as the design's shape comment
+    says).
+
+    Returns ``None`` — meaning "this run has no stack profile, classify it
+    however it was classified before" — when there is no matching row AND the
+    declaration overrides no classifier field. That case is the whole reason
+    this function can be safely applied to a Python repo declaring
+    ``pytest …``: it acquires no stack profile, so
+    ``run_independent_tests`` keeps its pytest absence classifier and the run
+    is byte-identical to today's.
+
+    Parameters
+    ----------
+    base : Optional[StackTestProfile]
+        The row ``detect_stack_profile`` matched, or ``None``.
+    command : str
+        The declared test command (becomes ``whole_suite_command``).
+    absent_substrings, ran_marker_regex, requires_ran_marker
+        Declared overlay values. ``None`` means "not declared" → inherit.
+
+    Returns
+    -------
+    Optional[StackTestProfile]
+        The overlaid profile, or ``None`` (see above).
+    """
+    has_overlay = (
+        absent_substrings is not None
+        or ran_marker_regex is not None
+        or requires_ran_marker is not None
+    )
+    if base is None and not has_overlay:
+        return None
+
+    row = base if base is not None else _DECLARED_BASE_PROFILE
+    return replace(
+        row,
+        whole_suite_command=command,
+        absent_substrings=(
+            tuple(absent_substrings)
+            if absent_substrings is not None
+            else row.absent_substrings
+        ),
+        ran_marker_regex=(
+            ran_marker_regex
+            if ran_marker_regex is not None
+            else row.ran_marker_regex
+        ),
+        success_requires_ran_marker=(
+            bool(requires_ran_marker)
+            if requires_ran_marker is not None
+            else row.success_requires_ran_marker
+        ),
+    )
 
 
 def _has_marker(worktree: Path, glob_pattern: str) -> bool:

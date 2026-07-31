@@ -40,6 +40,62 @@ _EXCLUDED_DIR_NAMES: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# TS-lane D.1c — the language check
+# ---------------------------------------------------------------------------
+#
+# The bridge is a PYTEST-BDD collection hook. Written into a TypeScript repo
+# it is not merely useless, it is a lie on disk: a Python file the Player
+# never wrote, in a repo with no Python at all, that the factory then has to
+# explain. ``ts-api-test`` reaches this code path for real — it carries
+# ``features/get-time-endpoint/get-time-endpoint.feature`` (verified
+# 2026-07-31), so without this check its very first worktree would receive a
+# stray ``features/conftest.py``.
+#
+# The check is deliberately NEGATIVE, not positive. It refuses only when the
+# target is POSITIVELY non-Python: a node manifest present AND no Python
+# manifest at all. Backwards compatibility is the prime invariant — a repo
+# with no ``package.json`` (i.e. every repo in the estate before tonight),
+# and a polyglot repo carrying both, behave byte-for-byte as they did. Only
+# the pure JS/TS repo is newly excluded, which is the whole of the cure.
+_NODE_MANIFESTS: tuple[str, ...] = (
+    "package.json",
+    "tsconfig.json",
+)
+
+_PYTHON_MANIFESTS: tuple[str, ...] = (
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "Pipfile",
+    "tox.ini",
+    "pytest.ini",
+    "conftest.py",
+)
+
+
+def _is_non_python_worktree(target_dir: Path) -> bool:
+    """Return True when ``target_dir`` is positively a non-Python project.
+
+    "Positively" carries the weight: an absent Python manifest alone is not
+    enough (the pre-existing tests install the bridge into a bare directory
+    holding nothing but ``features/``, and that must keep working). A node
+    manifest must be present AND every Python marker absent.
+    """
+    try:
+        has_node = any((target_dir / m).is_file() for m in _NODE_MANIFESTS)
+        if not has_node:
+            return False
+        if any((target_dir / m).is_file() for m in _PYTHON_MANIFESTS):
+            return False
+        # requirements*.txt is a glob, not a fixed name.
+        if any(target_dir.glob("requirements*.txt")):
+            return False
+        return True
+    except OSError:  # pragma: no cover - defensive; never fail a bootstrap
+        return False
+
+
 def _features_dir_has_feature_files(features_dir: Path) -> bool:
     """Return True when ``features_dir`` holds at least one ``.feature`` file.
 
@@ -67,6 +123,9 @@ def install_features_conftest_bridge(target_dir: Path) -> bool:
 
     * ``<target_dir>/features`` exists and contains at least one ``.feature``
       file (the project actually uses task-scoped BDD), AND
+    * the target is not a POSITIVELY non-Python project — a node manifest
+      with no Python manifest anywhere (TS-lane D.1c; a pytest-bdd bridge in
+      a TypeScript repo is a Python file the Player never wrote), AND
     * ``<target_dir>/features/conftest.py`` does NOT already exist (never
       clobber a project's own bridge), AND
     * the canonical template is resolvable on disk.
@@ -80,6 +139,19 @@ def install_features_conftest_bridge(target_dir: Path) -> bool:
         target_dir = Path(target_dir)
         features_dir = target_dir / "features"
         if not _features_dir_has_feature_files(features_dir):
+            return False
+
+        if _is_non_python_worktree(target_dir):
+            # LOUD ABSENCE, not a silent skip: the operator must be able to
+            # tell "the tool decided not to" from "the tool is broken".
+            logger.info(
+                "Skipping the features/conftest.py pytest-bdd bridge at %s: "
+                "this is a non-Python project (a node manifest is present and "
+                "no Python manifest is). The bridge is pytest-only, so writing "
+                "it here would leave a Python file the project never asked "
+                "for. TS-lane D.1c.",
+                target_dir,
+            )
             return False
 
         dest = features_dir / "conftest.py"

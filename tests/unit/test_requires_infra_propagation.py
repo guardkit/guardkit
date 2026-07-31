@@ -425,6 +425,11 @@ class TestFeatureOrchestratorPropagation:
             feature.id = "FEAT-B032"
             feature.orchestration = Mock()
             feature.orchestration.max_turns = 3
+            # TS-lane D.1a: Mock(spec=<pydantic model>) does not expose model
+            # fields (they live in model_fields, not dir(cls)), so every
+            # Feature field _execute_task reads must be stubbed explicitly —
+            # the same reason `id` and `orchestration` are stubbed above.
+            feature.behavioural_oracle = None
 
             worktree = Mock(spec=Worktree)
 
@@ -481,6 +486,11 @@ class TestFeatureOrchestratorPropagation:
             feature.id = "FEAT-B032"
             feature.orchestration = Mock()
             feature.orchestration.max_turns = 3
+            # TS-lane D.1a: Mock(spec=<pydantic model>) does not expose model
+            # fields (they live in model_fields, not dir(cls)), so every
+            # Feature field _execute_task reads must be stubbed explicitly —
+            # the same reason `id` and `orchestration` are stubbed above.
+            feature.behavioural_oracle = None
 
             worktree = Mock(spec=Worktree)
 

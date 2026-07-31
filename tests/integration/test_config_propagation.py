@@ -930,3 +930,39 @@ class TestTaskTimeoutOverridePropagation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short", "-m", "integration"])
+
+
+class TestBehaviouralOraclePassDown:
+    """Coordinator-cure pin (D.1a coach's mutation survivor): the ONE line
+    connecting the schema half to the build — `behavioural_oracle=
+    feature.behavioural_oracle` at the orchestrate() call — is asserted, so
+    `→ None` can never again leave the whole suite green."""
+
+    def test_feature_behavioural_oracle_reaches_orchestrate(
+        self, temp_repo_with_feature, sample_feature, mock_worktree, mock_worktree_manager
+    ):
+        from guardkit.orchestrator.feature_loader import BehaviouralOracle
+
+        sample_feature.behavioural_oracle = BehaviouralOracle(command="npm test")
+        orchestrator = FeatureOrchestrator(
+            repo_root=temp_repo_with_feature,
+            worktree_manager=mock_worktree_manager,
+        )
+        task = sample_feature.tasks[0]
+
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator"
+        ) as mock_orch_class:
+            mock_orch = MagicMock()
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.total_turns = 1
+            mock_result.final_decision = "approved"
+            mock_result.error = None
+            mock_orch.orchestrate.return_value = mock_result
+            mock_orch_class.return_value = mock_orch
+
+            orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+            kwargs = mock_orch.orchestrate.call_args.kwargs
+            assert kwargs["behavioural_oracle"] is sample_feature.behavioural_oracle

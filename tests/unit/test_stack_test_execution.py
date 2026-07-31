@@ -20,6 +20,7 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     StackTestProfile,
     classify_absent_for_stack,
     detect_stack_profile,
+    overlay_declared_profile,
 )
 
 
@@ -281,3 +282,73 @@ class TestIncidentalAbsentSubstringInPassingRun:
     def test_dotnet_pass_with_incidental_not_found(self):
         out = "Passed!  - Failed: 0, Passed: 5  // 404: not found case\n"
         assert classify_absent_for_stack(_profile("dotnet"), 0, out) is False
+
+
+# ============================================================================
+# TS-lane D.1b — a repo's toolchain declaration OVERLAYS a row
+# ============================================================================
+
+
+class TestOverlayDeclaredProfile:
+    """``STACK_TEST_PROFILES`` rows are DATA, so overriding one is data too.
+
+    Declared fields replace the row's; omitted fields are INHERITED (the
+    design's ``ran_marker_regex: null`` means "inherit the node row's
+    marker", not "switch the guard off").
+    """
+
+    def test_command_replaces_the_rows_whole_suite_command(self):
+        overlaid = overlay_declared_profile(_profile("node"), command="npx vitest run")
+        assert overlaid.whole_suite_command == "npx vitest run"
+        assert overlaid.stack == "node"
+
+    def test_omitted_classifier_fields_are_inherited(self):
+        node = _profile("node")
+        overlaid = overlay_declared_profile(node, command="npx vitest run")
+        assert overlaid.absent_substrings == node.absent_substrings
+        assert overlaid.ran_marker_regex == node.ran_marker_regex
+        assert overlaid.success_requires_ran_marker is True
+
+    def test_declared_classifier_fields_replace_the_rows(self):
+        overlaid = overlay_declared_profile(
+            _profile("node"),
+            command="npx vitest run",
+            absent_substrings=["no test files found"],
+            ran_marker_regex=r"(?mi)^DONE$",
+            requires_ran_marker=False,
+        )
+        assert overlaid.absent_substrings == ("no test files found",)
+        assert overlaid.ran_marker_regex == r"(?mi)^DONE$"
+        assert overlaid.success_requires_ran_marker is False
+
+    def test_no_row_and_no_overlay_yields_no_profile(self):
+        """THE BYTE-IDENTITY GUARANTEE for a Python repo declaring pytest: it
+        acquires no stack profile, so the existing pytest absence classifier
+        still applies."""
+        assert overlay_declared_profile(None, command="pytest tests/ -v --tb=short") is None
+
+    def test_no_row_but_declared_overlay_yields_a_generic_profile(self):
+        overlaid = overlay_declared_profile(
+            None, command="make check", absent_substrings=["nothing to be done"]
+        )
+        assert overlaid is not None
+        assert overlaid.stack == "declared"
+        assert overlaid.whole_suite_command == "make check"
+        # only the two universal never-ran return codes; nothing guessed
+        assert overlaid.absent_returncodes == frozenset({126, 127})
+        assert overlaid.success_requires_ran_marker is False
+
+    def test_overlay_does_not_mutate_the_source_row(self):
+        before = _profile("node")
+        overlay_declared_profile(before, command="npx vitest run", requires_ran_marker=False)
+        assert _profile("node") == before
+        assert _profile("node").whole_suite_command == "npm test"
+
+    def test_the_overlaid_profile_still_classifies(self):
+        overlaid = overlay_declared_profile(
+            _profile("node"), command="npx vitest run"
+        )
+        # exit 0 with no ran-marker is ABSENT, never a pass (inherited guard)
+        assert classify_absent_for_stack(overlaid, 0, "No test files found") is True
+        assert classify_absent_for_stack(overlaid, 0, "5 passed") is False
+        assert classify_absent_for_stack(overlaid, 127, "") is True

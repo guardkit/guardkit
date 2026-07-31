@@ -4885,6 +4885,72 @@ File modified at: /src/c.py"""
         assert parser._is_test_file("C:\\project\\tests\\test_feature.py") is True
         assert parser._is_test_file("src\\tests\\auth_test.py") is True
 
+    # =========================================================================
+    # TS-lane D.1c — TypeScript test-file attribution
+    # =========================================================================
+    #
+    # Before this, a TypeScript build's "tests written" count was
+    # STRUCTURALLY zero: `_is_test_file` matched `test_*.py` / `*_test.py`
+    # only, and no vitest/jest suite is ever named either of those. The
+    # D.1c exit receipt is "a build whose tests-written count is non-zero",
+    # and this is the unit-altitude half of it.
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # vitest / jest, the four extensions the design names
+            "health.test.ts",
+            "health.spec.ts",
+            "Button.test.tsx",
+            "Button.spec.tsx",
+            # with real paths, POSIX and Windows
+            "tests/health/health.test.ts",
+            "src/__tests__/routes.spec.ts",
+            "/abs/path/to/time.test.ts",
+            "src\\components\\Button.test.tsx",
+        ],
+    )
+    def test_is_test_file_recognises_typescript_suites(self, parser, path):
+        """.test.ts / .spec.ts / .test.tsx / .spec.tsx all count."""
+        assert parser._is_test_file(path) is True, (
+            f"{path!r} is a TypeScript test suite and must be attributed"
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Python conventions MUST still work, unchanged (the control)
+            "test_feature.py",
+            "tests/test_auth.py",
+            "feature_test.py",
+        ],
+    )
+    def test_python_test_files_still_recognised(self, parser, path):
+        """The Python rules are untouched — backwards compatibility."""
+        assert parser._is_test_file(path) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Production TypeScript is not a test file
+            "src/routes.ts",
+            "src/app.tsx",
+            "vitest.config.ts",
+            "tsconfig.json",
+            # Near-misses that must NOT match
+            "latest.ts",  # ends "test.ts" but not ".test.ts"
+            "greatest.tsx",
+            "manifest.spec.tsx.map",
+            # A bare dotfile is not a suite (mirrors "test_" being False)
+            ".test.ts",
+            ".spec.tsx",
+        ],
+    )
+    def test_is_test_file_rejects_typescript_non_tests(self, parser, path):
+        assert parser._is_test_file(path) is False, (
+            f"{path!r} must not be counted as a test file"
+        )
+
     def test_track_tool_call_tracks_test_files(self, parser):
         """_track_tool_call adds test files to test_files_created set."""
         parser._track_tool_call("Write", {"file_path": "/tests/test_feature.py"})

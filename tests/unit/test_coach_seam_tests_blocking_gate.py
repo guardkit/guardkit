@@ -41,6 +41,12 @@ def tmp_worktree(tmp_path: Path) -> Path:
     """Create a temporary worktree directory."""
     worktree = tmp_path / "worktrees" / "TASK-001"
     worktree.mkdir(parents=True)
+    # TS-lane D.1b: the Python marker is explicit now. Until the
+    # unconditional "defaulting to pytest" fallback was deleted, an EMPTY
+    # directory silently resolved to ``pytest tests/ -v --tb=short`` — so
+    # these tests were riding a stack guess they never asked for. The marker
+    # states the assumption, and keeps the resolved command unchanged.
+    (worktree / "pyproject.toml").touch()
     return worktree
 
 
