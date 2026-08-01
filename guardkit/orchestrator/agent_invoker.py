@@ -55,6 +55,7 @@ from guardkit.orchestrator.coach_verification import (
     InterpreterResolutionError,
     format_verification_context,
 )
+from guardkit.orchestrator.coach_narrative_reconciler import is_must_fix_class
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.schemas import (
@@ -3209,13 +3210,28 @@ Follow the report format specified in your agent definition.
                 honesty_verification
             )
         elif honesty_verification:
-            # Legacy path: emit prose section.
+            # Legacy path: emit prose section. LANE-WF: the banner is keyed to
+            # the TURN-REJECTING (critical) records, not to "any record" — an
+            # advisory claim_audit record must never be announced to the Coach
+            # as a critical discrepancy (the FEAT-STV1-20260801195639 shape).
+            if self._turn_rejecting_discrepancies(honesty_verification):
+                honesty_banner = (
+                    "⚠️ CRITICAL DISCREPANCIES DETECTED - Factor this into "
+                    "your decision!"
+                )
+            elif honesty_verification.discrepancies:
+                honesty_banner = (
+                    "⚠ ADVISORY honesty record(s) only (no critical "
+                    "discrepancy) — warnings that MUST NOT change your verdict."
+                )
+            else:
+                honesty_banner = "✓ Player claims verified."
             honesty_section = f"""
 ## Honesty Verification (Pre-Validated)
 
 {format_verification_context(honesty_verification)}
 
-{"⚠️ CRITICAL DISCREPANCIES DETECTED - Factor this into your decision!" if honesty_verification.discrepancies else "✓ Player claims verified."}
+{honesty_banner}
 """
 
         # TASK-CMIR-002: contract resolution — must happen before any
@@ -3389,8 +3405,7 @@ the information here, {_v4_feedback_not_approval}.
                 "6. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
-                    if honesty_verification
-                    and honesty_verification.discrepancies
+                    if self._turn_rejecting_discrepancies(honesty_verification)
                     else _v4_approve_or_feedback
                 )
             )
@@ -3415,8 +3430,7 @@ the information here, {_v4_feedback_not_approval}.
                 "5. "
                 + (
                     "CONSIDER HONESTY DISCREPANCIES in your decision"
-                    if honesty_verification
-                    and honesty_verification.discrepancies
+                    if self._turn_rejecting_discrepancies(honesty_verification)
                     else _v4_approve_or_feedback
                 )
             )
@@ -4013,6 +4027,40 @@ Turn: {turn}
 </evidence_bundle>
 {skip_advisory}"""
 
+    @staticmethod
+    def _turn_rejecting_discrepancies(
+        honesty_verification: Optional[HonestyVerification],
+    ) -> List[Any]:
+        """The honesty records that may bear on the verdict (LANE-WF).
+
+        Only ``critical``-severity discrepancies are turn-rejecting — the same
+        filter ``CoachValidator._honesty_issues_from`` applies when it decides
+        which records become ``must_fix`` issues and short-circuit gathering
+        with ``partial_honesty_abort``.
+
+        The advisory family (``claim_audit_unmodified`` /
+        ``claim_audit_gitignored`` / ``claim_audit_cross_repo``) is
+        deliberately EXCLUDED (NOTE: a Layer-2-demoted record keeps
+        ``Discrepancy.severity == "critical"`` and is NOT excluded — it
+        renders demoted but stays turn-rejecting; WF coach finding): those records are
+        still rendered into the ``<honesty_verification>`` section verbatim, so
+        the Coach sees them — but they must not switch the prompt into its
+        "CONSIDER HONESTY DISCREPANCIES" / "CRITICAL DISCREPANCIES DETECTED"
+        framing. On build ``FEAT-STV1-20260801195639`` two advisory
+        ``claim_audit_unmodified`` records whose own prose reads "this is a
+        warning, not a turn-rejecting fabrication" were announced to the Coach
+        under exactly that framing on every turn.
+
+        Returns ``[]`` when ``honesty_verification`` is None/empty.
+        """
+        if honesty_verification is None:
+            return []
+        return [
+            d
+            for d in getattr(honesty_verification, "discrepancies", None) or []
+            if is_must_fix_class(d)
+        ]
+
     def _render_bundle_honesty_section(
         self,
         honesty_verification: HonestyVerification,
@@ -4237,6 +4285,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    localhost/127.0.0.1 remain the documented, legitimate pattern.
    Advisory only — NEVER reject the turn on this finding alone; it
    combines with other guards for the final decision.
+
+11. ADVISORY HONESTY-RECORD GUARD (a warning never burns a build).
+   If honesty_verification.discrepancies contains entries with
+   severity != "critical" (the claim_audit_unmodified /
+   claim_audit_gitignored / claim_audit_cross_repo family): these are
+   ADVISORY records. (A Layer-2-demoted record renders at should_fix but
+   its Discrepancy.severity REMAINS "critical", so it stays must_fix-class
+   here — the coordinator's cure of the WF coach's framing finding.) They are recorded
+   verbatim on the verdict payload in BOTH directions — an approve carries
+   them too — and they NEVER change the decision. Do NOT reject a turn
+   whose only honesty records are advisory, and never treat
+   honesty_verification.verified == false as a rejection trigger on its own
+   (that flag means "zero discrepancies", not "zero critical ones").
+   Only severity == "critical" records are turn-rejecting — guard 3 owns
+   them. Rule: .claude/rules/path-string-mismatch-is-not-dishonesty.md.
 </absence_of_failure_guards>
 """
 
@@ -7556,6 +7619,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         ``coach_turn_N.json`` on change so the operator artifact and the Layer-4
         late-approval reader see the corrected narrative.
 
+        LANE-WF: the reconciler ALSO records advisory (non-``critical``)
+        honesty records onto an ``approve`` verdict — logged here at WARNING
+        with task/turn context. It never writes ``decision['decision']``: a
+        warning never burns a build, and the turn-rejecting override for
+        ``critical`` records stays with
+        :meth:`_reconcile_incomplete_evidence_gathering` (fired by
+        ``gathering_status == "partial_honesty_abort"``).
+
         No-op when ``evidence_bundle`` is ``None`` (legacy/tool-using callers),
         its ``honesty`` leg is ``None``, or no reconciliation was needed.
         """
@@ -7583,7 +7654,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 turn,
                 result.corrected_paths,
             )
-        if result.embedded_issue_count:
+        if result.advisory_records_recorded:
+            # LANE-WF: the approve path. A warning never burns a build, but it
+            # is never silently dropped either — WARNING so the operator sees
+            # the record with task/turn context on a turn that PASSED.
+            logger.warning(
+                "LANE-WF: recorded %d ADVISORY honesty record(s) on the "
+                "APPROVE verdict for %s turn %s — verdict unchanged (only "
+                "critical-severity records are turn-rejecting)",
+                result.advisory_records_recorded,
+                task_id,
+                turn,
+            )
+        elif result.embedded_issue_count:
             logger.info(
                 "TASK-FIX-COACHNARR01: embedded %d deterministic honesty "
                 "record(s) verbatim into Coach feedback for %s turn %s",
