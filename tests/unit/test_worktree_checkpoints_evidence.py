@@ -80,13 +80,26 @@ class TestEvidenceRepoCheckpoint:
         assert "guardkitfactory" in cp.evidence_commits
         assert cp.evidence_commits["guardkitfactory"] == _head(sibling)
         assert _head(sibling) != sibling_head_before
-        # The deliverable is versioned (tracked, clean tree).
+        # The deliverable is versioned (tracked, clean tree). The one
+        # permitted residue is ``.guardkit-git.lock``: the sibling-commit
+        # path creates that lock in the repo root (``:674``) and the JX
+        # lane's junk-exclude keeps it OUT of the commit — before that, the
+        # checkpoint versioned the harness's own lock file, which is the
+        # defect, not this line.
         status = subprocess.run(
             ["git", "-C", str(sibling), "status", "--porcelain"],
             capture_output=True,
             text=True,
         )
-        assert status.stdout.strip() == ""
+        residue = [
+            line
+            for line in status.stdout.splitlines()
+            if line.strip() and not line.endswith(".guardkit-git.lock")
+        ]
+        assert residue == [], f"unexpected uncommitted sibling state: {residue}"
+        assert "?? .guardkit-git.lock" in status.stdout, (
+            "the harness lock must be left untracked, never checkpointed"
+        )
 
     def test_rollback_resets_sibling_repo(self, worktree_and_sibling):
         worktree, sibling = worktree_and_sibling
@@ -483,6 +496,10 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/.turbo/**",
             ":(exclude,glob)**/coverage/**",
             ":(exclude,glob)**/*.tsbuildinfo",
+            ":(exclude,glob)**/.tmp/**",
+            ":(exclude,glob)**/.npm/**",
+            ":(exclude,glob)**/.claude/task-plans/**",
+            ":(exclude,glob)**/.guardkit-git.lock",
         )
         for spec in wc.CHECKPOINT_EXCLUDE_PATHSPECS:
             assert spec.startswith(":(exclude,glob)"), (
@@ -503,4 +520,184 @@ class TestCheckpointExcludesTypeScriptJunk:
 
         assert not any(
             "dist" in spec for spec in wc.CHECKPOINT_EXCLUDE_PATHSPECS
+        )
+
+
+# =========================================================================
+# JX lane — npm's caches are minted INSIDE the worktree
+# =========================================================================
+#
+# Evidence: the two real TypeScript builds (FEAT-TST1 on ts-api-test,
+# 2026-07-31 → 08-01). Checkpoint ``ce4f43b`` carried
+#   1365 paths under ``.tmp/``   (node's compile cache)
+#      8 paths under ``.npm/``   (npm ``_logs/`` + update-notifier stamp)
+#      1 ``.claude/task-plans/`` plan stub (orchestrator-minted)
+#      1 ``.guardkit-git.lock``  (the harness's cross-process lock)
+# beside roughly ten paths of real Player work. ts-api-test's .gitignore
+# lists node_modules/dist/coverage/*.tsbuildinfo and knows nothing about
+# any of the four — which is precisely the target-repo-hygiene dependency
+# the junk law exists to remove.
+#
+# Each class is proven in BOTH repo shapes, per the 706589f7 pattern:
+#   * WITHOUT a .gitignore — proves the pathspec is doing the work (the
+#     un-magicked ``**`` form would be a silent no-op here); and
+#   * WITH the repo gitignoring the same junk — proves the add is not
+#     REFUSED outright (exit 1, "paths are ignored"), which is how the
+#     wildcard-free form killed a checkpoint after a turn-1 coach approve.
+
+
+# What a repo that HAS learned about npm's in-worktree caches would ignore.
+_NPM_CACHE_GITIGNORE = (
+    "node_modules/\n.tmp/\n.npm/\n.claude/task-plans/\n.guardkit-git.lock\n"
+)
+
+
+def _write_npm_cache_junk_and_work(wt: Path) -> None:
+    """The exact junk classes checkpoint ``ce4f43b`` swept up, plus work."""
+    # Real Player work — must survive.
+    (wt / "src").mkdir(parents=True, exist_ok=True)
+    (wt / "src" / "time.ts").write_text("export const t = 1;\n", encoding="utf-8")
+
+    # node's compile cache: root, and nested (npm run from a workspace dir).
+    (wt / ".tmp" / "node-compile-cache" / "v22.18.0-arm64").mkdir(parents=True)
+    (wt / ".tmp" / "node-compile-cache" / "v22.18.0-arm64" / "015aa58f").write_text(
+        "junk"
+    )
+    (wt / "packages" / "api" / ".tmp").mkdir(parents=True)
+    (wt / "packages" / "api" / ".tmp" / "blob").write_text("junk")
+
+    # npm's own cache dir.
+    (wt / ".npm" / "_logs").mkdir(parents=True)
+    (wt / ".npm" / "_logs" / "2026-08-01T06_42_36_334Z-debug-0.log").write_text("j")
+    (wt / ".npm" / "_update-notifier-last-checked").write_text("j")
+
+    # The orchestrator's plan stub.
+    (wt / ".claude" / "task-plans").mkdir(parents=True)
+    (wt / ".claude" / "task-plans" / "TASK-TST1-001-implementation-plan.md").write_text(
+        "# plan\n"
+    )
+
+    # The harness's cross-process git lock.
+    (wt / ".guardkit-git.lock").write_text("")
+
+    # Player-authorable ``.claude/`` content that MUST survive: the exclude
+    # is anchored to ``task-plans/`` precisely so these are not swept up.
+    (wt / ".claude" / "rules").mkdir(parents=True)
+    (wt / ".claude" / "rules" / "autobuild.md").write_text("# rule\n")
+
+    # A ``.tmp``-SUFFIXED file is not a ``.tmp`` directory — must survive.
+    (wt / "src" / "fixture.tmp").write_text("data\n")
+
+
+def _assert_npm_cache_junk_absent(shown: str) -> None:
+    assert "src/time.ts" in shown, "real Player work must be checkpointed"
+    assert ".tmp/" not in shown, "node's compile cache must not be checkpointed"
+    assert ".npm/" not in shown, "npm's cache must not be checkpointed"
+    assert "task-plans" not in shown, "the plan stub is orchestrator-minted"
+    assert ".guardkit-git.lock" not in shown, "the harness lock is not work"
+    # Over-exclusion guards — the anchoring must not eat real work.
+    assert ".claude/rules/autobuild.md" in shown, (
+        "``.claude/`` at large is Player-authorable: the exclude is anchored "
+        "to ``task-plans/`` and must not swallow the rest of ``.claude/``"
+    )
+    assert "src/fixture.tmp" in shown, (
+        "``**/.tmp/**`` excludes a .tmp DIRECTORY, never a .tmp-suffixed file"
+    )
+
+
+class TestCheckpointExcludesNpmCacheJunk:
+    """JX lane: npm's in-worktree caches, proven in BOTH repo shapes."""
+
+    def test_worktree_checkpoint_excludes_npm_cache_junk_without_gitignore(
+        self, tmp_path
+    ) -> None:
+        """The shape ts-api-test actually had: nothing gitignored.
+
+        ts-api-test's .gitignore covers node_modules/dist/coverage/
+        *.tsbuildinfo and NOT one of these four classes, which is why
+        checkpoint ``ce4f43b`` committed 1374 junk paths. The pathspec —
+        not the target repo's hygiene — has to do the work.
+        """
+        wt = tmp_path / "wt"
+        _init_bare_worktree(wt, gitignore=None)
+        _write_npm_cache_junk_and_work(wt)
+
+        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-1")
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        assert cp is not None
+
+        _assert_npm_cache_junk_absent(_committed_paths(wt))
+
+    def test_worktree_checkpoint_survives_repo_gitignoring_npm_cache_junk(
+        self, tmp_path
+    ) -> None:
+        """The 706589f7 refusal half, for the four new classes.
+
+        Once a target repo learns to gitignore these (the obvious local
+        cure), a wildcard-free exclude pathspec naming them would make
+        git 2.43 refuse the whole add — checkpoint dead after a turn-1
+        coach approve. The fully-wildcarded form must survive.
+        """
+        wt = tmp_path / "wt"
+        _init_bare_worktree(wt, gitignore=_NPM_CACHE_GITIGNORE)
+        _write_npm_cache_junk_and_work(wt)
+
+        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-2")
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        assert cp is not None, (
+            "checkpoint must survive the repo's own gitignore belt (706589f7)"
+        )
+
+        _assert_npm_cache_junk_absent(_committed_paths(wt))
+
+    def test_evidence_repo_checkpoint_excludes_npm_cache_junk(
+        self, tmp_path
+    ) -> None:
+        """The SECOND add site carries the same law (one shared constant)."""
+        worktree = tmp_path / "worktree"
+        _init_repo(worktree)
+        sibling = tmp_path / "npm-sibling"
+        _init_bare_worktree(sibling, gitignore=None)
+        _write_npm_cache_junk_and_work(sibling)
+
+        repo = EvidenceRepo(name="npm-sibling", root=sibling)
+        mgr = WorktreeCheckpointManager(
+            worktree_path=worktree, task_id="TASK-JX-3", evidence_repos=[repo]
+        )
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+
+        assert "npm-sibling" in cp.evidence_commits
+        _assert_npm_cache_junk_absent(_committed_paths(sibling))
+
+    def test_tracked_claude_work_still_checkpoints_when_modified(
+        self, tmp_path
+    ) -> None:
+        """The over-exclusion hazard, pinned where it would bite hardest.
+
+        guardkit's own repo TRACKS 1606 files under ``.claude/`` and is
+        itself an autobuild target. A blanket ``**/.claude/**`` exclude
+        would silently drop a Player's edit to a tracked ``.claude/rules/``
+        file from every checkpoint — pathspec excludes suppress staging of
+        MODIFICATIONS to tracked files too, not just new junk. This is the
+        same test ``dist/`` passes by being absent from the list.
+        """
+        wt = tmp_path / "wt"
+        _init_bare_worktree(wt, gitignore=None)
+        (wt / ".claude" / "rules").mkdir(parents=True)
+        (wt / ".claude" / "rules" / "autobuild.md").write_text("# v1\n")
+        subprocess.run(["git", "-C", str(wt), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(wt), "commit", "-q", "-m", "tracked .claude"],
+            check=True,
+        )
+
+        # The Player edits the tracked rule as its deliverable.
+        (wt / ".claude" / "rules" / "autobuild.md").write_text("# v2 (player)\n")
+
+        mgr = WorktreeCheckpointManager(worktree_path=wt, task_id="TASK-JX-4")
+        cp = mgr.create_checkpoint(turn=1, tests_passed=True, test_count=0)
+        assert cp is not None
+
+        assert ".claude/rules/autobuild.md" in _committed_paths(wt), (
+            "a tracked .claude/ deliverable must still be checkpointed"
         )
