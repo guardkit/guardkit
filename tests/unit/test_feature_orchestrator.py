@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 import json
 import os
+import re
 import tempfile
 import time
 import yaml
@@ -43,6 +44,7 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
 )
+from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import Worktree
 
 
@@ -4145,3 +4147,307 @@ async def test_timeout_with_late_feedback_decision_records_timeout(
     r = results[0]
     assert r.success is False
     assert r.final_decision == "timeout"
+
+
+# ============================================================================
+# Per-task budget DECLARATION/ENFORCEMENT parity (TASK-FIX-TTO01)
+#
+# The live find (2026-08-01, FEAT-WDG1): a task carrying
+#   autobuild:
+#     task_timeout: 120
+# ran under the pipeline and the build monitor derived its wedge window from
+# 3000s ("window 3120s from per-task-budget-log") — the operator read that as
+# "the override never surfaced". Two seams, pinned separately below:
+#
+#   (a) ENFORCEMENT — the override DOES load and DOES reach
+#       asyncio.wait_for, but MIN_TURN_BUDGET_SECONDS × max_turns (600 × 5 =
+#       3000s at defaults) silently RAISES any override beneath it, and at
+#       defaults that floor equals the feature default. The number is real;
+#       it is just not the operator's.
+#   (b) DECLARATION — the once-per-run banner printed self.task_timeout (the
+#       feature DEFAULT), never the resolved per-task value, so an override
+#       ABOVE the floor produced a run whose declared budget and enforced
+#       budget disagreed.
+# ============================================================================
+
+
+#: Mirrors ``build_monitor._TASK_TIMEOUT_BANNER_RE`` (forge). The banner is a
+#: consumed grammar; these tests fail if guardkit drifts away from it.
+_MONITOR_BANNER_RE = re.compile(
+    r"task\s+timeout:\s*(\d+(?:\.\d+)?)\s*(min(?:ute)?s?|s(?:ec(?:onds?)?)?)\b",
+    re.IGNORECASE,
+)
+
+#: Mirrors ``build_monitor._OVERRIDE_BUDGET_RE`` (forge).
+_MONITOR_OVERRIDE_RE = re.compile(
+    r"Per-task\s+task_timeout\s+override\s+active:.*?"
+    r"(?:→|->)\s*(?P<effective>\d+(?:\.\d+)?)s\s*"
+    r"\(feature\s+default\s+was\s+(?P<default>\d+(?:\.\d+)?)s",
+    re.IGNORECASE,
+)
+
+
+def _write_task_with_override(repo_root: Path, task, task_timeout=None):
+    """Write a REAL task markdown file, optionally carrying the override."""
+    task_file = repo_root / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    autobuild_block = (
+        f"autobuild:\n  task_timeout: {task_timeout}\n"
+        if task_timeout is not None
+        else ""
+    )
+    task_file.write_text(
+        "---\n"
+        f"id: {task.id}\n"
+        f"title: {task.name}\n"
+        "status: pending\n"
+        "task_type: feature\n"
+        f"{autobuild_block}"
+        "---\n\n"
+        "# Task\n\n## Requirements\nx\n\n## Acceptance Criteria\n- y\n"
+    )
+    return task_file
+
+
+class TestPerTaskBudgetDeclarationParity:
+    """Declared budget == enforced budget, from a real task file on disk."""
+
+    def _orch(self, temp_repo, mock_worktree_manager, task_timeout=3000,
+              max_turns=5, timeout_multiplier=1.0):
+        return FeatureOrchestrator(
+            repo_root=temp_repo,
+            worktree_manager=mock_worktree_manager,
+            task_timeout=task_timeout,
+            max_turns=max_turns,
+            timeout_multiplier=timeout_multiplier,
+        )
+
+    # --- (a) the live find, reproduced from a real on-disk task file ------
+
+    def test_live_find_override_120_loads_but_floor_swallows_it(
+        self, temp_repo, mock_worktree_manager, parallel_feature, caplog,
+    ):
+        """REPRODUCTION of the FEAT-WDG1 find.
+
+        The override IS found on disk and IS resolved — the min-turn floor
+        (600 × 5 = 3000s) then raises it to exactly the feature default, which
+        is why the run looked like it ignored the frontmatter entirely.
+        """
+        task = parallel_feature.tasks[0]
+        _write_task_with_override(temp_repo, task, task_timeout=120)
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+
+        task_data = TaskLoader.load_task(task.id, repo_root=temp_repo)
+        # The frontmatter key shape really does survive the load path.
+        assert task_data["frontmatter"]["autobuild"]["task_timeout"] == 120
+
+        with caplog.at_level(logging.INFO):
+            resolved = orch._resolve_task_timeout(task_data, task.id)
+
+        assert resolved == 3000  # 120 × 1.0 = 120 → floored to 600 × 5
+        # ...and the run now SAYS the operator's budget is not in force.
+        floor_warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "NOT honoured verbatim" in r.message
+        ]
+        assert len(floor_warnings) == 1, (
+            "a floor-swallowed override must warn, not whisper at INFO"
+        )
+        msg = floor_warnings[0].message
+        assert "max_turns=5" in msg and "3000s" in msg
+        assert "GUARDKIT_MIN_TURN_BUDGET" in msg
+
+    def test_floor_swallow_warning_still_parses_with_monitor_grammar(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """The added honesty clause must not break the consumed grammar."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        with caplog.at_level(logging.INFO):
+            resolved = orch._resolve_task_timeout(
+                {"frontmatter": {"autobuild": {"task_timeout": 120}}},
+                "TASK-WDG1-001",
+            )
+        line = next(
+            r.message for r in caplog.records
+            if "task_timeout override active" in r.message
+        )
+        match = _MONITOR_OVERRIDE_RE.search(line)
+        assert match is not None, "build monitor can no longer parse this line"
+        assert float(match.group("effective")) == resolved
+        assert float(match.group("default")) == orch.task_timeout
+
+    def test_override_above_floor_keeps_info_and_is_honoured(
+        self, temp_repo, mock_worktree_manager, caplog,
+    ):
+        """Above the floor nothing changes: honoured verbatim, logged INFO."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        with caplog.at_level(logging.INFO):
+            resolved = orch._resolve_task_timeout(
+                {"frontmatter": {"autobuild": {"task_timeout": 7200}}},
+                "TASK-P-001",
+            )
+        assert resolved == 7200
+        assert not any(
+            "NOT honoured verbatim" in r.message for r in caplog.records
+        )
+        assert any(
+            r.levelname == "INFO" and "override active" in r.message
+            for r in caplog.records
+        )
+
+    # --- (b) the declared budget now carries the resolved value ----------
+
+    def test_resolve_wave_task_timeouts_reads_real_task_files(
+        self, temp_repo, mock_worktree_manager, parallel_feature,
+    ):
+        """The pre-wave map is resolved from the tasks actually on disk."""
+        _write_task_with_override(
+            temp_repo, parallel_feature.tasks[0], task_timeout=7200
+        )
+        _write_task_with_override(temp_repo, parallel_feature.tasks[1])
+        _write_task_with_override(temp_repo, parallel_feature.tasks[2])
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+
+        resolved = orch._resolve_wave_task_timeouts(parallel_feature)
+
+        assert resolved["TASK-P-001"] == 7200
+        assert resolved["TASK-P-002"] == 3000
+        assert resolved["TASK-P-003"] == 3000
+
+    def test_banner_declares_effective_budget_not_feature_default(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """THE FIX: the banner number is the largest EFFECTIVE budget."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        text = orch._format_task_timeout_banner(
+            {"TASK-P-001": 7200, "TASK-P-002": 3000}
+        )
+        match = _MONITOR_BANNER_RE.search(text)
+        assert match is not None, "banner drifted out of the monitor's grammar"
+        assert float(match.group(1)) == 120  # 7200s = 120 min, not 50
+        assert "feature default: 50 min" in text
+        assert "TASK-P-001=7200s" in text and "TASK-P-002=3000s" in text
+
+    def test_banner_unchanged_when_no_task_exceeds_the_default(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """No override in play → the banner still declares the default."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        text = orch._format_task_timeout_banner({"TASK-P-001": 3000})
+        assert _MONITOR_BANNER_RE.search(text).group(1) == "50"
+        assert "feature default" not in text
+
+    def test_banner_falls_back_to_default_when_nothing_resolved(
+        self, temp_repo, mock_worktree_manager,
+    ):
+        """An unreadable task set must never produce a budget-less banner."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        assert orch._format_task_timeout_banner({}) == "task timeout: 50 min"
+        assert orch._format_task_timeout_banner(None) == "task timeout: 50 min"
+
+    # --- both halves, pinned against each other --------------------------
+
+    @pytest.mark.asyncio
+    async def test_declared_and_enforced_budgets_are_the_same_number(
+        self, temp_repo, mock_worktree_manager, mock_worktree, parallel_feature,
+    ):
+        """The number the run DECLARES is the number wait_for ENFORCES.
+
+        On main the banner said 50 min (the feature default) while
+        asyncio.wait_for got 7200s — a 2.4× disagreement that made a wedge
+        watcher fire inside guardkit's own timeout.
+        """
+        task = parallel_feature.tasks[0]
+        _write_task_with_override(temp_repo, task, task_timeout=7200)
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+
+        # DECLARED (banner, once per run)
+        declared_map = orch._resolve_wave_task_timeouts(parallel_feature)
+        banner = orch._format_task_timeout_banner(declared_map)
+        declared_seconds = float(_MONITOR_BANNER_RE.search(banner).group(1)) * 60
+
+        # ENFORCED (asyncio.wait_for, at wave dispatch)
+        captured = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy_wait_for(awaitable, timeout):
+            captured.append(timeout)
+            return await real_wait_for(awaitable, timeout)
+
+        def fast(task, feature, worktree, **kwargs):
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orch, "_execute_task", side_effect=fast):
+            with patch(
+                "guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                side_effect=spy_wait_for,
+            ):
+                await orch._execute_wave_parallel(
+                    1, [task.id], parallel_feature, mock_worktree
+                )
+
+        assert captured, "expected at least one wait_for call"
+        assert captured[0] == 7200
+        assert declared_seconds == captured[0], (
+            f"declared {declared_seconds}s but enforced {captured[0]}s"
+        )
+
+    @pytest.mark.asyncio
+    async def test_live_find_shape_declares_the_floored_budget(
+        self, temp_repo, mock_worktree_manager, mock_worktree, parallel_feature,
+    ):
+        """The FEAT-WDG1 shape end-to-end: 120s override, 3000s everywhere.
+
+        3120s was therefore the CORRECT monitor window — derived from the
+        floored effective budget, not from a dropped override.
+        """
+        task = parallel_feature.tasks[0]
+        _write_task_with_override(temp_repo, task, task_timeout=120)
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+
+        declared_map = orch._resolve_wave_task_timeouts(parallel_feature)
+        banner = orch._format_task_timeout_banner(declared_map)
+        assert float(_MONITOR_BANNER_RE.search(banner).group(1)) * 60 == 3000
+
+        captured = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy_wait_for(awaitable, timeout):
+            captured.append(timeout)
+            return await real_wait_for(awaitable, timeout)
+
+        def fast(task, feature, worktree, **kwargs):
+            return TaskExecutionResult(
+                task_id=task.id, success=True, total_turns=1,
+                final_decision="approved",
+            )
+
+        with patch.object(orch, "_execute_task", side_effect=fast):
+            with patch(
+                "guardkit.orchestrator.feature_orchestrator.asyncio.wait_for",
+                side_effect=spy_wait_for,
+            ):
+                await orch._execute_wave_parallel(
+                    1, [task.id], parallel_feature, mock_worktree
+                )
+        assert captured[0] == 3000
+
+    def test_wave0_warnings_reuse_the_precomputed_map(
+        self, temp_repo, mock_worktree_manager, parallel_feature,
+    ):
+        """Passing the map means the budget is resolved (and logged) once."""
+        orch = self._orch(temp_repo, mock_worktree_manager, task_timeout=3000)
+        parallel_feature.tasks[0].estimated_minutes = 113
+        with patch.object(
+            orch, "_resolve_task_timeout", return_value=3000
+        ) as resolver:
+            orch._emit_wave0_timeout_warnings(
+                parallel_feature,
+                effective_timeouts={
+                    "TASK-P-001": 3000, "TASK-P-002": 3000, "TASK-P-003": 3000,
+                },
+            )
+        resolver.assert_not_called()

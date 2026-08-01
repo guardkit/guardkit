@@ -2273,16 +2273,25 @@ The detailed specifications are in the task markdown file.
         # task's failure. Report-only — never blocks.
         self._run_baseline_probe(feature, worktree)
 
+        # Resolve every queued task's EFFECTIVE per-task budget once, before
+        # wave 1 (TASK-FIX-TTO01). Both the wave-0 warnings and the
+        # once-per-run banner below read this same map, so the number the
+        # banner declares is the number `asyncio.wait_for` will enforce.
+        effective_task_timeouts = self._resolve_wave_task_timeouts(feature)
+
         # Wave-0 estimate-vs-timeout warnings (red-baseline retro, L12 item 3):
         # surface any task whose own estimate exceeds its effective per-task
         # budget BEFORE the run burns hours hitting a timeout that masks the
         # real failure.
-        self._emit_wave0_timeout_warnings(feature)
+        self._emit_wave0_timeout_warnings(
+            feature, effective_timeouts=effective_task_timeouts
+        )
 
         console.print()
         console.print(
             f"[bold]Starting Wave Execution[/bold] "
-            f"[dim](task timeout: {self.task_timeout // 60} min)[/dim]"
+            f"[dim]({self._format_task_timeout_banner(effective_task_timeouts)})"
+            f"[/dim]"
         )
 
         for wave_number, task_ids in enumerate(
@@ -3822,7 +3831,78 @@ The detailed specifications are in the task markdown file.
                 "(command: %s).", result.command
             )
 
-    def _emit_wave0_timeout_warnings(self, feature: Feature) -> None:
+    def _resolve_wave_task_timeouts(self, feature: Feature) -> Dict[str, int]:
+        """Resolve the EFFECTIVE per-task timeout for every queued task.
+
+        TASK-FIX-TTO01. One pass over ``orchestration.parallel_groups`` before
+        wave 1, so the run can DECLARE the budgets it will actually enforce
+        instead of only the feature-level default. Tasks whose markdown cannot
+        be loaded are simply absent from the map (the dispatch path applies its
+        own fallback and logs there); this method never raises.
+
+        Returns
+        -------
+        Dict[str, int]
+            ``task_id -> effective per-task timeout in seconds``, in
+            wave/dispatch order.
+        """
+        resolved: Dict[str, int] = {}
+        for task_ids in feature.orchestration.parallel_groups:
+            for task_id in task_ids:
+                if task_id in resolved:
+                    continue
+                task = FeatureLoader.find_task(feature, task_id)
+                if task is None:
+                    continue
+                try:
+                    task_data = TaskLoader.load_task(
+                        task_id, repo_root=self.repo_root
+                    )
+                except Exception:
+                    task_data = {}
+                resolved[task_id] = self._resolve_task_timeout(
+                    task_data,
+                    task_id,
+                    estimated_minutes=getattr(task, "estimated_minutes", None),
+                )
+        return resolved
+
+    def _format_task_timeout_banner(
+        self, effective_timeouts: Optional[Dict[str, int]] = None
+    ) -> str:
+        """Build the once-per-run task-budget banner text (TASK-FIX-TTO01).
+
+        The banner is the run's single declaration of its own per-task budget
+        and is consumed downstream (the build monitor derives its wedge window
+        from it). Before this fix it printed ``self.task_timeout`` — the
+        feature-level DEFAULT — so a task carrying
+        ``frontmatter.autobuild.task_timeout`` (or one raised to its
+        estimate-derived floor) ran on a budget the banner never mentioned.
+
+        The declared number is now the LARGEST effective per-task budget, and
+        the feature default plus the per-task breakdown are named alongside it.
+        Over-declaring only delays a wedge call; under-declaring puts a watcher
+        INSIDE guardkit's own timeout, so the max is the honest direction.
+        """
+        effective = effective_timeouts or {}
+        declared = max(
+            [self.task_timeout, *effective.values()]
+        ) if effective else self.task_timeout
+        text = f"task timeout: {declared // 60} min"
+        if declared != self.task_timeout:
+            text += f"; feature default: {self.task_timeout // 60} min"
+        if effective:
+            pairs = ", ".join(
+                f"{task_id}={seconds}s" for task_id, seconds in effective.items()
+            )
+            text += f"; effective per-task: {pairs}"
+        return text
+
+    def _emit_wave0_timeout_warnings(
+        self,
+        feature: Feature,
+        effective_timeouts: Optional[Dict[str, int]] = None,
+    ) -> None:
         """Wave-0 warning when a task's estimate exceeds its effective timeout.
 
         Red-baseline retro (L12 item 3). Runs once before wave 1. For each
@@ -3833,8 +3913,14 @@ The detailed specifications are in the task markdown file.
         failure. The default path applies the estimate-derived floor and so
         never trips this; the warning catches the operator-under-budgeted case
         (FEAT-VOICE-003 run 1: a 113-min task budgeted at the flat 50-min floor).
+
+        ``effective_timeouts`` is the map from
+        :meth:`_resolve_wave_task_timeouts`; when supplied it is reused so the
+        run resolves (and logs) each task's budget ONCE. When omitted the
+        budgets are resolved here, preserving the original behaviour.
         """
         multiplier = self.timeout_multiplier
+        precomputed = effective_timeouts or {}
         for task_ids in feature.orchestration.parallel_groups:
             for task_id in task_ids:
                 task = FeatureLoader.find_task(feature, task_id)
@@ -3843,15 +3929,17 @@ The detailed specifications are in the task markdown file.
                 est = getattr(task, "estimated_minutes", None)
                 if not est or est <= 0:
                     continue
-                try:
-                    task_data = TaskLoader.load_task(
-                        task_id, repo_root=self.repo_root
+                effective = precomputed.get(task_id)
+                if effective is None:
+                    try:
+                        task_data = TaskLoader.load_task(
+                            task_id, repo_root=self.repo_root
+                        )
+                    except Exception:
+                        task_data = {}
+                    effective = self._resolve_task_timeout(
+                        task_data, task_id, estimated_minutes=est
                     )
-                except Exception:
-                    task_data = {}
-                effective = self._resolve_task_timeout(
-                    task_data, task_id, estimated_minutes=est
-                )
                 estimate_seconds = int(est * 60 * multiplier)
                 if estimate_seconds > effective:
                     msg = (
@@ -3877,7 +3965,10 @@ The detailed specifications are in the task markdown file.
 
         Resolution order:
             1. ``frontmatter.autobuild.task_timeout`` (explicit per-task
-               override — honoured verbatim; the operator's deliberate budget)
+               override — the operator's deliberate budget; honoured verbatim
+               ONLY down to the min-turn floor below, which silently raises any
+               override under ``MIN_TURN_BUDGET_SECONDS × max_turns``
+               — 3000s at defaults — and logs a WARNING when it does)
             2. ``max(self.task_timeout, estimate-derived floor)`` — the
                feature-level default, RAISED to the task's own
                ``estimated_minutes``-derived floor when that is larger
@@ -3954,12 +4045,31 @@ The detailed specifications are in the task markdown file.
         floor = MIN_TURN_BUDGET_SECONDS * self.max_turns
         resolved = max(multiplied, floor)
 
-        logger.info(
+        # The grammar up to "(feature default was ...s)" is CONSUMED DOWNSTREAM
+        # (the build monitor's per-task budget parser) — do not reorder it.
+        message = (
             f"[{task_id}] Per-task task_timeout override active: "
             f"frontmatter={override_int}s × multiplier={self.timeout_multiplier} "
             f"= {multiplied}s, floored at {floor}s → {resolved}s "
             f"(feature default was {self.task_timeout}s)"
         )
+        if multiplied < floor:
+            # TASK-FIX-TTO01: the min-turn floor SWALLOWED the operator's
+            # budget. At defaults the floor is 600s × 5 turns = 3000s, which is
+            # also the usual feature default — so the resolved number is
+            # indistinguishable from "the override never applied". Say so, at
+            # WARNING, and name the escape hatch.
+            logger.warning(
+                message
+                + f" — NOT honoured verbatim: the min-turn floor "
+                f"(GUARDKIT_MIN_TURN_BUDGET={MIN_TURN_BUDGET_SECONDS}s × "
+                f"max_turns={self.max_turns} = {floor}s) RAISED it, so the "
+                f"requested {override_int}s budget is not in force. Lower "
+                f"GUARDKIT_MIN_TURN_BUDGET or --max-turns to express a "
+                f"per-task budget below {floor}s."
+            )
+        else:
+            logger.info(message)
         return resolved
 
     def _execute_task(
