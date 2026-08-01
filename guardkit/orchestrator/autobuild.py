@@ -1843,6 +1843,7 @@ class AutoBuildOrchestrator:
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
         _bo_raw: Any = None
+        _component_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -1865,6 +1866,13 @@ class AutoBuildOrchestrator:
             # metadata except below must never swallow a verdict-bearing
             # declaration's schema error (coordinator cure, D.1a coach).
             _bo_raw = frontmatter.get("behavioural_oracle")
+            # PER-COMPONENT SEAM: the task's `component:` selector, lifted
+            # beside behavioural_oracle for the same reason and validated the
+            # same way — RAW here, LOUDLY outside this try. Selection is
+            # explicit and never inferred from the changed-file set: a
+            # mixed-touch task must be split, not silently assigned to one
+            # component (design §B.2).
+            _component_raw = frontmatter.get("component")
             # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
             # frontmatter. Only resolve from frontmatter when a feature did NOT
             # already supply them (feature config wins; avoids double-counting).
@@ -1885,6 +1893,15 @@ class AutoBuildOrchestrator:
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
             _bo_raw = None
+            _component_raw = None
+
+        # PER-COMPONENT SEAM: validate the selector LOUDLY, outside the
+        # metadata swallow above (the D.1a cure's precedent in this same
+        # method). A task that names a component the repo does not declare is
+        # a task-load FAILURE, never a quiet fall-back to the root block —
+        # falling back would judge one product's work with another product's
+        # suite, which is the exact false verdict the seam removes.
+        component: Optional[str] = self._resolve_task_component(task_id, _component_raw)
 
         if _bo_raw:
             # Coordinator cure (D.1a coach): the frontmatter path is the
@@ -2061,6 +2078,7 @@ class AutoBuildOrchestrator:
                 consumer_context=consumer_context,
                 time_budget_seconds=time_budget_seconds,
                 behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                component=component,  # per-component seam
             )
 
             # Phase 4: Finalize
@@ -2232,6 +2250,69 @@ class AutoBuildOrchestrator:
                 task_id,
                 exc,
             )
+
+    def _resolve_task_component(
+        self, task_id: str, raw: Any
+    ) -> Optional[str]:
+        """PER-COMPONENT SEAM: validate a task's ``component:`` selector.
+
+        ``None``/absent is the overwhelmingly common case and means THE ROOT
+        COMPONENT — today's semantics, unchanged, on every repo in the estate.
+
+        A NAMED component is checked against the repo's declaration NOW, at
+        task load, and a name the declaration does not define raises. That is
+        deliberate and it is the whole point: the alternative to a loud
+        failure is running the root component's suite as the verdict on
+        another component's work, which is a false green wearing a green tick.
+        Validated here rather than inside the metadata try/except above for
+        exactly the reason the D.1a behavioural-oracle lift is (a
+        verdict-bearing declaration's schema error must never be swallowed).
+
+        Raises
+        ------
+        ValueError
+            If the selector is not a non-empty string, or names a component
+            the repo's ``toolchain.components`` does not declare.
+        """
+        if raw is None:
+            return None
+        if not isinstance(raw, str) or not raw.strip():
+            raise ValueError(
+                f"Invalid `component:` in {task_id}'s frontmatter: expected a "
+                f"non-empty component name, got {raw!r}."
+            )
+        name = raw.strip()
+
+        from guardkit.orchestrator.toolchain_declaration import (
+            load_toolchain_declaration,
+        )
+
+        declaration = load_toolchain_declaration(self.repo_root)
+        if declaration is None or declaration.component(name) is None:
+            declared = (
+                ", ".join(declaration.component_names)
+                if declaration is not None and declaration.component_names
+                else "<none>"
+            )
+            raise ValueError(
+                f"Task {task_id} selects `component: {name}`, but "
+                f"<repo>/.guardkit/config.yaml declares no such component "
+                f"under `toolchain.components:` (declared: {declared}).\n"
+                "This is a LOUD task-load failure on purpose: the root "
+                "`test:` command is NOT used as a fallback, because judging "
+                "one component's work with another component's suite is the "
+                "false verdict the per-component seam exists to remove.\n"
+                "FIX: declare the component (with its REQUIRED repo-relative "
+                "`cwd:`), or correct the task's `component:` key."
+            )
+        logger.info(
+            "Task %s selects component %r (cwd=%r, test=%r)",
+            task_id,
+            name,
+            declaration.component(name).cwd,
+            declaration.component(name).test,
+        )
+        return name
 
     def _produce_spec_conformance_leg(
         self, task_id: str, turn: int, worktree: "Worktree"
@@ -2920,6 +3001,7 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         time_budget_seconds: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
+        component: Optional[str] = None,  # per-component seam
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -3085,6 +3167,7 @@ class AutoBuildOrchestrator:
                     consumer_context=consumer_context,
                     remaining_budget=remaining_budget,
                     behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                    component=component,  # per-component seam
                 )
 
                 turn_history.append(turn_record)
@@ -3535,6 +3618,7 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None,
         remaining_budget: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
+        component: Optional[str] = None,  # per-component seam
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -4210,6 +4294,7 @@ class AutoBuildOrchestrator:
             wave_size=self.wave_size,
             peer_changed_files=peer_changed_files_snapshot,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+            component=component,  # per-component seam
         )
         # Snapshot context status after coach invocation (TASK-FIX-GCW5)
         coach_context_status = self._last_coach_context_status
@@ -6495,6 +6580,7 @@ class AutoBuildOrchestrator:
         wave_size: int = 1,
         peer_changed_files: Optional[Dict[str, Any]] = None,
         behavioural_oracle: Optional[Any] = None,
+        component: Optional[str] = None,  # per-component seam
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -6668,6 +6754,7 @@ class AutoBuildOrchestrator:
                 context_prompt=context_prompt,
                 start_time=start_time,
                 behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                component=component,  # per-component seam
             )
 
         return self._invoke_coach_primary(
@@ -6687,6 +6774,7 @@ class AutoBuildOrchestrator:
             context_prompt=context_prompt,
             start_time=start_time,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+            component=component,  # per-component seam
         )
 
     def _invoke_coach_legacy(
@@ -6710,6 +6798,7 @@ class AutoBuildOrchestrator:
         # TS-lane D.1a. Defaulted so a direct caller (and every existing
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
+        component: Optional[str] = None,  # per-component seam
     ) -> AgentInvocationResult:
         """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
 
@@ -6748,6 +6837,7 @@ class AutoBuildOrchestrator:
                 smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
                 smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
                 in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
+                component=component,  # per-component seam
             )
 
             # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
@@ -6913,6 +7003,7 @@ class AutoBuildOrchestrator:
         # TS-lane D.1a. Defaulted so a direct caller (and every existing
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
+        component: Optional[str] = None,  # per-component seam
     ) -> AgentInvocationResult:
         """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
 
@@ -6961,6 +7052,7 @@ class AutoBuildOrchestrator:
             smoke_command=self._smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
             in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
+            component=component,  # per-component seam
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
