@@ -78,6 +78,51 @@ unreproducible and invisible. The environment is a property of the estate
 ``runtime:`` records the version pin the estate fence is expected to satisfy.
 D.1b stores it; the pre-install assertion that both pins agree is NOT wired
 here (see the lane report's honest gaps).
+
+PER-COMPONENT SCOPING (the monorepo seam, design §B.2(iii))
+-----------------------------------------------------------
+One flat block per repo cannot describe a repo that is TWO products in one
+tree (a Python backend at the root, a Flutter app under ``app/``). There is no
+single ``test:`` string that is correct for such a repo: declare the backend's
+and every ``app/`` task silently gets the Python suite as its verdict on Dart
+work — the exact false signal this module was built to delete.
+
+So the ONE declaration gains per-path sections:
+
+.. code-block:: yaml
+
+    toolchain:
+      test: "uv run --no-sync python -m pytest -q"   # THE ROOT COMPONENT
+      components:
+        app:
+          cwd:  "app"                                 # REQUIRED
+          test: "flutter test"
+          install: "flutter pub get"
+          test_timeout: 900
+
+* The TOP-level block keeps meaning **the root component** — unchanged.
+* ``components:`` maps a component NAME to a FULL nested declaration (the same
+  fields) plus a **required** ``cwd:`` — the repo-relative directory the
+  commands run in. ``cwd`` is the field that makes it real: ``flutter test``
+  needs the package root, and ``cd app && …`` baked into a command string is
+  invisible to the snapshot reader and to anyone auditing the receipt.
+* Selection is EXPLICIT and per task (``component: app`` in the task's
+  frontmatter). **No path inference** — a mixed-touch task must be split, not
+  silently assigned to one component (design §B.2).
+* ``extra="forbid"`` holds at BOTH levels, so a typo'd component field is as
+  loud as a typo'd root field.
+
+**The snapshot law is unchanged, and that is why this shape was chosen.** The
+pin is one whole-model ``model_dump`` read back by one ``model_validate``, so a
+nested field round-trips byte-for-byte with ZERO snapshot changes. The Player
+still cannot edit a component's test command mid-build.
+
+**Scoped OUT of this lane, loudly:** a component's ``install:`` is accepted by
+the schema but is NOT consumed. The declared install stays ROOT-ONLY
+(``environment_bootstrap._scan_directory``) so depth-1 subpackage inference in
+every other monorepo in the estate is preserved by construction (design §G);
+:func:`load_toolchain_declaration` logs a WARNING naming any component install
+that will not be run.
 """
 
 from __future__ import annotations
@@ -85,7 +130,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -126,8 +171,12 @@ class ToolchainRuntime(BaseModel):
     go: Optional[str] = None
 
 
-class ToolchainDeclaration(BaseModel):
-    """The repo's declared toolchain commands.
+class _ToolchainCommands(BaseModel):
+    """The command fields shared by the root block and every component.
+
+    Split out so ``components:`` is provably "the SAME fields" rather than a
+    hand-copied near-twin that drifts. ``ToolchainDeclaration`` is this plus
+    ``components``; ``ComponentToolchain`` is this plus a required ``cwd``.
 
     ``extra="forbid"`` is the point of the schema, not a detail: a repo that
     writes ``tests:`` instead of ``test:`` must be told, loudly, at load time
@@ -202,6 +251,102 @@ class ToolchainDeclaration(BaseModel):
         )
 
 
+class ComponentToolchain(_ToolchainCommands):
+    """ONE component of a multi-product repo — the same fields, plus ``cwd``.
+
+    ``cwd`` is REQUIRED and repo-relative. A component without a directory is
+    not a component (it would be the root block wearing a name), so its
+    absence is a loud declaration error rather than an implicit ``"."``.
+
+    The containment rule is enforced HERE, at declaration time, not at
+    execution time: an absolute path, a ``~``, or any ``..`` segment is a
+    ValidationError. Design §G: *"a cwd that escapes the worktree must be a
+    declaration error, not a path that resolves."*
+    """
+
+    cwd: str = Field(min_length=1)
+
+    @field_validator("cwd")
+    @classmethod
+    def _cwd_must_be_contained(cls, value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            raise ValueError("cwd must not be blank")
+        if raw.startswith("~"):
+            raise ValueError(
+                f"cwd must be repo-relative, not a home-relative path: {value!r}"
+            )
+        candidate = PurePosixPath(raw.replace("\\", "/"))
+        if candidate.is_absolute() or raw.startswith("/"):
+            raise ValueError(
+                f"cwd must be repo-relative, not absolute: {value!r}"
+            )
+        if any(part == ".." for part in candidate.parts):
+            raise ValueError(
+                f"cwd must not escape the worktree (no `..` segments): {value!r}"
+            )
+        # Normalise "./app/" -> "app" so the receipt and the snapshot agree.
+        parts = [p for p in candidate.parts if p not in (".", "")]
+        return "/".join(parts) if parts else "."
+
+
+class ToolchainDeclaration(_ToolchainCommands):
+    """The repo's declared toolchain: THE ROOT COMPONENT, plus its components.
+
+    The top-level command fields are the root component's — byte-for-byte the
+    meaning they had before ``components:`` existed. ``components`` is
+    ``Optional`` and defaults to ``None``, so every repo with a flat
+    declaration is unchanged (design §G).
+    """
+
+    # ---- per-path sections (the monorepo seam, design §B.2(iii)) ---------
+    components: Optional[Dict[str, ComponentToolchain]] = None
+
+    @field_validator("components")
+    @classmethod
+    def _component_names_must_be_usable(
+        cls, value: Optional[Dict[str, "ComponentToolchain"]]
+    ) -> Optional[Dict[str, "ComponentToolchain"]]:
+        """A component name is written in a task file by hand — a blank or
+        whitespace-bearing key is a typo that would never be selectable."""
+        if value is None:
+            return value
+        for name in value:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("component names must be non-empty strings")
+            if name != name.strip() or any(c.isspace() for c in name):
+                raise ValueError(
+                    f"component name {name!r} must not contain whitespace — it "
+                    "is written verbatim as a task's `component:` selector"
+                )
+        return value
+
+    @property
+    def is_empty(self) -> bool:
+        """True for a ``toolchain: {}`` block that declares nothing at all.
+
+        A block that declares ONLY ``components:`` is NOT empty — dropping it
+        would silently un-declare every component task in the repo.
+        """
+        return super().is_empty and not self.components
+
+    @property
+    def component_names(self) -> List[str]:
+        """Declared component names, sorted — for loud error messages."""
+        return sorted(self.components) if self.components else []
+
+    def component(self, name: str) -> Optional[ComponentToolchain]:
+        """Return the named component's declaration, or ``None`` if undeclared.
+
+        Callers MUST treat ``None`` for a task that named a component as an
+        error, never as "fall back to the root block" — falling back is the
+        silent-wrong-verdict this whole seam exists to remove.
+        """
+        if not self.components:
+            return None
+        return self.components.get(name)
+
+
 def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
     """Validate a raw ``toolchain`` mapping into a :class:`ToolchainDeclaration`.
 
@@ -228,8 +373,10 @@ def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
             f"{exc}\n\n"
             "Allowed keys: test, install, typecheck, lint, build, "
             "test_timeout, install_timeout, absent_substrings, "
-            "ran_marker_regex, requires_ran_marker, runtime. "
-            "Unknown keys are rejected — check for typos."
+            "ran_marker_regex, requires_ran_marker, runtime, components. "
+            "Unknown keys are rejected — check for typos.\n"
+            "Inside `components: <name>:` the SAME keys are allowed plus a "
+            "REQUIRED repo-relative `cwd:`."
         ) from exc
 
 
@@ -276,7 +423,41 @@ def load_toolchain_declaration(repo_root: Path) -> Optional[ToolchainDeclaration
             config_path,
         )
         return None
+    _warn_about_unconsumed_component_installs(declaration, config_path)
     return declaration
+
+
+def _warn_about_unconsumed_component_installs(
+    declaration: ToolchainDeclaration, config_path: Path
+) -> None:
+    """SCOPED OUT, LOUDLY: a component's ``install:`` is NOT run.
+
+    The declared install is resolved by ``ProjectEnvironmentDetector``, which
+    is repo-keyed and per-task-blind (it never sees which component a task
+    selected), and it is deliberately ROOT-ONLY so depth-1 subpackage
+    inference in every other monorepo in the estate stays untouched (design
+    §G, ``environment_bootstrap.py`` ``_scan_directory``). Threading a
+    per-task component through the bootstrap chain is a different change; the
+    verdict-bearing half — command RESOLUTION and its ``cwd`` — is what this
+    seam delivers. A repo that declares a component install must not be left
+    guessing why nothing installed, so say it out loud, once, at load.
+    """
+    if not declaration.components:
+        return
+    named = sorted(
+        name for name, comp in declaration.components.items() if comp.install
+    )
+    if not named:
+        return
+    logger.warning(
+        "`toolchain.components.%s.install` in %s is DECLARED BUT NOT RUN — "
+        "per-component install is scoped OUT of the per-component toolchain "
+        "seam. The declared install stays ROOT-ONLY (`toolchain.install`); a "
+        "component's dependencies are installed by depth-1 manifest inference "
+        "or not at all. The component's `test:` and `cwd:` ARE honoured.",
+        ", ".join(named),
+        config_path,
+    )
 
 
 # =========================================================================
@@ -375,11 +556,38 @@ def load_toolchain_snapshot(
         return None
 
 
+def resolve_component_cwd(base: Path, cwd: str) -> Path:
+    """Resolve a component's ``cwd`` under ``base``, refusing any escape.
+
+    The schema already rejects ``..`` / absolute / ``~`` at declaration time;
+    this is the belt-and-braces check at the point of use, because a SYMLINK
+    inside the worktree can still point outside it and no schema can see that.
+
+    Raises
+    ------
+    ValueError
+        If the resolved directory is not contained by ``base``.
+    """
+    base_path = Path(base)
+    candidate = base_path / cwd
+    try:
+        candidate.resolve().relative_to(base_path.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            f"component cwd {cwd!r} resolves outside the worktree "
+            f"({candidate} is not under {base_path}) — refusing to run a "
+            "declared command there."
+        ) from exc
+    return candidate
+
+
 __all__ = [
     "CONFIG_RELATIVE_PATH",
     "TOOLCHAIN_KEY",
+    "ComponentToolchain",
     "ToolchainDeclaration",
     "ToolchainRuntime",
+    "resolve_component_cwd",
     "parse_toolchain_block",
     "load_toolchain_declaration",
     "toolchain_snapshot_paths",

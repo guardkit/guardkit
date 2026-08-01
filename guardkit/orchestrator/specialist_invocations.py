@@ -1157,6 +1157,17 @@ def _run_deterministic_phase_4(
             # leaked tmp dir is attributable to the deterministic Phase-4
             # runner rather than the Coach's own independent run.
             basetemp_context="phase4",
+            # PER-COMPONENT SEAM — SCOPED OUT HERE, DELIBERATELY AND LOUDLY.
+            # This Player-side Phase-4 runner is reached through
+            # ``run_test_orchestrator`` -> ``AgentInvoker``, a chain that never
+            # carries the task's frontmatter, so no ``component=`` can be
+            # threaded without widening it. A component task therefore gets the
+            # ROOT component's oracle in its Phase-4 block. That block is the
+            # PLAYER's narrative, not the verdict: the Coach's own
+            # ``run_independent_tests`` is component-aware (it is constructed in
+            # ``autobuild._invoke_coach_primary`` WITH the selector) and is what
+            # decides the turn. Threading the selector down this chain is a
+            # named follow-on, not a silent gap.
         )
         task_work_results = _load_task_work_results(Path(worktree_path), task_id)
         result = validator.run_independent_tests(

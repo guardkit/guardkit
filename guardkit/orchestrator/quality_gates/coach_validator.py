@@ -60,7 +60,11 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     detect_stack_profile,
     overlay_declared_profile,
 )
-from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
+from guardkit.orchestrator.toolchain_declaration import (
+    ComponentToolchain,
+    ToolchainDeclaration,
+    resolve_component_cwd,
+)
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
     IndependentTestClassification,
@@ -1735,6 +1739,7 @@ class CoachValidator:
         basetemp_context: Optional[str] = None,  # TASK-AB-BASETEMP01
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
+        component: Optional[str] = None,  # per-component seam
     ):
         """
         Initialize CoachValidator.
@@ -1833,6 +1838,15 @@ class CoachValidator:
             the live ``<worktree>/.guardkit/config.yaml``, which sits inside
             the tree the Player edits (design §B.4). No snapshot ⇒ no
             declaration ⇒ the detection ladder runs exactly as it did before.
+        component : Optional[str]
+            The task's ``component:`` selector (per-component seam). ``None``
+            (the default, and every task in every repo today) means THE ROOT
+            BLOCK — today's semantics, byte-unchanged. A name resolves that
+            component's ``test:`` and runs it with the component's ``cwd:``.
+            A name the pinned declaration does not define NEVER falls back to
+            the root block: it becomes a loud INSTRUMENT FAULT (ABSENT /
+            UNKNOWN), because running the backend suite as the verdict on an
+            ``app/`` task is exactly the false signal this seam removes.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -1851,13 +1865,43 @@ class CoachValidator:
         if self._toolchain is not None:
             logger.info(
                 "CoachValidator honouring the repo's declared toolchain "
-                "(test=%r, test_timeout=%ss)",
+                "(test=%r, test_timeout=%ss, components=%s)",
                 self._toolchain.test,
                 self._toolchain.test_timeout,
+                self._toolchain.component_names or "none",
             )
-        # Explicit caller value > declared test_timeout > the historic 300s.
+        # ---- the per-component seam --------------------------------------
+        # The task's selector, resolved ONCE against the pinned declaration.
+        # ``_component_absence`` is set (and the resolution left None) when the
+        # task named a component the declaration does not define — the ladder
+        # must NOT then quietly run the root command.
+        self._component: Optional[str] = component
+        self._component_toolchain: Optional["ComponentToolchain"] = None
+        self._component_absence: Optional[str] = None
+        if component:
+            self._component_toolchain = (
+                self._toolchain.component(component)
+                if self._toolchain is not None
+                else None
+            )
+            if self._component_toolchain is None:
+                self._component_absence = self._describe_component_absence(component)
+                logger.error(self._component_absence)
+            else:
+                logger.info(
+                    "CoachValidator resolved task component %r: test=%r cwd=%r "
+                    "test_timeout=%ss",
+                    component,
+                    self._component_toolchain.test,
+                    self._component_toolchain.cwd,
+                    self._component_toolchain.test_timeout,
+                )
+        # Explicit caller value > the RESOLVED component's declared timeout >
+        # the root block's > the historic 300s.
         if test_timeout is not None:
             self.test_timeout = test_timeout
+        elif self._component_toolchain is not None:
+            self.test_timeout = self._component_toolchain.test_timeout
         elif self._toolchain is not None:
             self.test_timeout = self._toolchain.test_timeout
         else:
@@ -5716,17 +5760,23 @@ class CoachValidator:
                         )
                         result = subprocess.run(
                             cmd,
-                            cwd=str(tmpdir_path),
+                            cwd=str(self._component_run_cwd(tmpdir_path)),
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
                             env=self._pytest_env(),
                         )
                 else:
+                    # Per-component seam: the isolated copy is a copy of the
+                    # WHOLE worktree, so the component's directory exists
+                    # inside it at the same relative path. Without this the
+                    # parallel-wave oracle would run the component's command
+                    # at the copy's root — the same wrong-directory failure the
+                    # standard path was fixed for.
                     result = subprocess.run(
                         test_cmd,
                         shell=True,
-                        cwd=str(tmpdir_path),
+                        cwd=str(self._component_run_cwd(tmpdir_path)),
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
@@ -5918,12 +5968,29 @@ class CoachValidator:
             # subprocess path runs the same pinned interpreter in seconds with
             # no model in the loop. _is_custom_api_base() does not catch this
             # because LangGraph configures its endpoint outside ANTHROPIC_BASE_URL.
+            # Per-component seam: the SDK path hands the command to a one-turn
+            # LLM with ``cwd=self.worktree_path`` baked into the harness call,
+            # and threading a component directory through the harness is a
+            # wider interface change than this lane earns. A component task
+            # therefore RUNS ON THE SUBPROCESS PATH — deterministic, and the
+            # only path where the component cwd is honoured. Said out loud
+            # below rather than silently producing a root-directory run.
+            component_pinned_subprocess = self._component_toolchain is not None
             use_sdk = (
                 self._coach_test_execution == "sdk"
                 and not requires_infra
+                and not component_pinned_subprocess
                 and not self._is_custom_api_base()
                 and not self._is_langgraph_harness()
             )
+            if component_pinned_subprocess and self._coach_test_execution == "sdk":
+                logger.warning(
+                    "Component %r selected: forcing the SUBPROCESS test path. "
+                    "The SDK path runs with the worktree root as cwd and would "
+                    "run %r in the wrong directory.",
+                    self._component,
+                    test_cmd,
+                )
 
             # SDK-first dispatch (GAP-FIX #9): use asyncio bridge to call async SDK method
             if use_sdk:
@@ -6019,7 +6086,7 @@ class CoachValidator:
                         )
                         result = subprocess.run(
                             cmd,
-                            cwd=str(self.worktree_path),
+                            cwd=str(self._component_run_cwd(self.worktree_path)),
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
@@ -6029,10 +6096,18 @@ class CoachValidator:
                     # TS-lane D.1b (design §B.5): the declared / non-pytest
                     # command runs with the WORKTREE as cwd and an EXPLICIT
                     # environment. See ``_declared_command_env``.
+                    #
+                    # Per-component seam: when the task selected a component,
+                    # the cwd is the component's declared directory instead —
+                    # ``flutter test`` needs the package root, and ``cd app &&
+                    # …`` inside the command string is invisible to the
+                    # snapshot reader and to anyone auditing the receipt.
+                    # ``_component_run_cwd`` returns the worktree UNCHANGED
+                    # when no component is active.
                     result = subprocess.run(
                         test_cmd,
                         shell=True,
-                        cwd=str(self.worktree_path),
+                        cwd=str(self._component_run_cwd(self.worktree_path)),
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
@@ -7730,6 +7805,38 @@ class CoachValidator:
         self._active_stack_profile = None
         # TS-lane D.1b: same discipline for the loud-absence marker.
         self._detection_absence = None
+
+        # ---- the per-component seam: the FIRST rung, and the only one -----
+        # A task that names a component has told us which product it is
+        # working on. Its component's declared command is THE oracle — the
+        # Python task-specific rungs below must not pre-empt it (they would
+        # judge Dart work with whatever ``.py`` files happened to be touched),
+        # and the marker ladder must not follow it (that is the guess this
+        # declaration replaces). A task WITHOUT a component never enters here,
+        # so every existing repo's ladder is byte-unchanged.
+        if self._component:
+            if self._component_absence is not None:
+                self._detection_absence = self._component_absence
+                logger.error(self._detection_absence)
+                return None
+            declared = self._declared_test_command()
+            if declared is None:
+                self._detection_absence = self._describe_detection_absence()
+                logger.error(self._detection_absence)
+                return None
+            self._active_stack_profile = self._declared_stack_profile(declared)
+            logger.info(
+                "Test command for %s from the DECLARED component %r "
+                "(.guardkit/config.yaml `toolchain.components.%s.test`, pinned "
+                "pre-turn-1): %s [cwd=%s]",
+                task_id or self.task_id,
+                self._component,
+                self._component,
+                declared,
+                self._component_toolchain.cwd,
+            )
+            return declared
+
         # Try task-specific filtering first (for shared worktrees)
         if task_id:
             # Primary: extract test files from task_work_results (already in memory)
@@ -7977,15 +8084,103 @@ class CoachValidator:
     # ------------------------------------------------------------------
 
     def _declared_test_command(self) -> Optional[str]:
-        """Return the repo's declared ``toolchain.test`` command, or ``None``.
+        """Return the declared ``test`` command for THIS TASK, or ``None``.
 
         Reads ONLY the pre-turn-1 snapshot resolved in ``__init__`` (design
         §B.4) — never the live ``<worktree>/.guardkit/config.yaml``, which the
         Player can edit.
+
+        THE TASK'S COMPONENT IS RESOLVED FIRST. A task that named a component
+        gets that component's ``test:`` and nothing else; a task that named
+        none gets the root block, exactly as before the components field
+        existed.
         """
+        if self._component_toolchain is not None:
+            return self._component_toolchain.test or None
+        if self._component:
+            # Named-but-undeclared: never the root command (see __init__).
+            return None
         if self._toolchain is None:
             return None
         return self._toolchain.test or None
+
+    # ---- the per-component seam ------------------------------------------
+
+    def _component_run_cwd(self, base: Path) -> Path:
+        """Resolve the directory a declared command runs in, under ``base``.
+
+        Returns ``base`` UNCHANGED whenever no component is active — which is
+        every task in every repo that has not opted in, so the execution paths
+        below are byte-equivalent for them. When a component IS active its
+        repo-relative ``cwd:`` is applied under ``base`` (the worktree, or the
+        parallel-wave isolated copy of it), with the containment re-check that
+        catches a symlink no schema can see.
+
+        A containment failure RAISES after a loud error rather than degrading
+        to ``base``: silently relocating a refused run to the worktree root
+        would execute the component's command against the wrong product. The
+        raise is caught by ``run_independent_tests`` / ``_run_isolated_tests``
+        and becomes an ABSENT (UNKNOWN) result — never a pass, never a Player
+        test failure.
+
+        Raises
+        ------
+        ValueError
+            If the component's ``cwd`` resolves outside ``base``.
+        """
+        if self._component_toolchain is None:
+            return base
+        try:
+            resolved = resolve_component_cwd(base, self._component_toolchain.cwd)
+        except ValueError as exc:
+            logger.error(
+                "Component %r declares a cwd that escapes the worktree (%s) — "
+                "REFUSING to relocate the run; the declared command will not "
+                "be executed against the intended directory.",
+                self._component,
+                exc,
+            )
+            raise
+        if not resolved.is_dir():
+            logger.error(
+                "Component %r declares cwd=%r, which does not exist under %s. "
+                "The declared command cannot run in the directory the repo "
+                "named — this is an instrument fault, not a test failure.",
+                self._component,
+                self._component_toolchain.cwd,
+                base,
+            )
+        return resolved
+
+    def _describe_component_absence(self, component: str) -> str:
+        """The loud message for a task naming an undeclared component."""
+        declared = (
+            ", ".join(self._toolchain.component_names)
+            if self._toolchain is not None and self._toolchain.component_names
+            else "<none>"
+        )
+        root_state = (
+            "no `toolchain:` block is pinned for this task"
+            if self._toolchain is None
+            else "the pinned `toolchain:` block declares no such component"
+        )
+        return (
+            f"INSTRUMENT FAULT: task {self.task_id or 'this run'} selects "
+            f"`component: {component}` but {root_state}. Declared components: "
+            f"{declared}.\n"
+            "The oracle is ABSENT (UNKNOWN) — this is NOT a test failure and "
+            "NOT a pass. The root `test:` command is DELIBERATELY NOT used as "
+            "a fallback: judging one component's work with another's suite is "
+            "the false verdict this seam exists to remove.\n"
+            "FIX: declare the component, or correct the task's `component:` "
+            "key.\n"
+            "  # <repo>/.guardkit/config.yaml\n"
+            "  toolchain:\n"
+            "    components:\n"
+            f"      {component}:\n"
+            '        cwd:  "app"\n'
+            '        test: "flutter test"'
+        )
 
     def _declared_stack_profile(self, command: str) -> Optional[StackTestProfile]:
         """Overlay the declaration onto the matching stack row, if any.
@@ -7997,12 +8192,24 @@ class CoachValidator:
         """
         if self._toolchain is None:
             return None
+        # Per-component seam: a component's markers live in the component's
+        # own directory, and a component's classifier overlay is the
+        # component's — never the root block's.
+        source: "ComponentToolchain | ToolchainDeclaration" = (
+            self._component_toolchain
+            if self._component_toolchain is not None
+            else self._toolchain
+        )
+        try:
+            marker_root = self._component_run_cwd(self.worktree_path)
+        except ValueError:
+            marker_root = self.worktree_path
         return overlay_declared_profile(
-            detect_stack_profile(self.worktree_path),
+            detect_stack_profile(marker_root),
             command=command,
-            absent_substrings=self._toolchain.absent_substrings,
-            ran_marker_regex=self._toolchain.ran_marker_regex,
-            requires_ran_marker=self._toolchain.requires_ran_marker,
+            absent_substrings=source.absent_substrings,
+            ran_marker_regex=source.ran_marker_regex,
+            requires_ran_marker=source.requires_ran_marker,
         )
 
     def _declared_command_env(self) -> Dict[str, str]:
@@ -8033,6 +8240,29 @@ class CoachValidator:
         of the detection ladder that came up empty, so the reader never has to
         reconstruct what was tried.
         """
+        # Per-component seam: a selected-but-testless component gets its own
+        # message and STOPS — the ladder below is about the root component and
+        # naming its empty rungs here would suggest a fallback that must never
+        # happen.
+        if self._component and self._component_toolchain is not None:
+            return (
+                "INSTRUMENT FAULT: no test command could be resolved for "
+                f"{self.task_id or 'this run'} in {self.worktree_path}. "
+                "The independent-test oracle is ABSENT (UNKNOWN) — this is NOT "
+                "a test failure and NOT a pass.\n"
+                f"  1. DECLARATION: the task selects `component: "
+                f"{self._component}` (cwd={self._component_toolchain.cwd!r}) "
+                "and that component declares no `test:` command.\n"
+                "  2. The root `test:` is NOT used as a fallback, by design — "
+                "one component's suite is not a verdict on another's work.\n"
+                "FIX: declare the component's own test command, e.g.\n"
+                "  # <repo>/.guardkit/config.yaml\n"
+                "  toolchain:\n"
+                "    components:\n"
+                f"      {self._component}:\n"
+                f'        cwd:  "{self._component_toolchain.cwd}"\n'
+                '        test: "flutter test"'
+            )
         declared_state = (
             "no `toolchain:` block found in <repo>/.guardkit/config.yaml"
             if self._toolchain is None
