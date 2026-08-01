@@ -66,6 +66,42 @@ wired into the deterministic path:
      the Player report or the Coach. Either layer alone closes the FFC3
      reproducer; together they're defence-in-depth for the class.
 
+2. **2026-08-01** — an ADVISORY record framed as turn-rejecting
+   (LANE-WF, "a warning never burns a build"). Build
+   `FEAT-STV1-20260801195639` (study-tutor `TASK-STV1-001`): the Player
+   fixed its turn-1 failures, then turns 2-5 each carried the SAME two
+   `claim_audit_unmodified` records — `severity: "should_fix"`, whose own
+   `actual_value` prose ends *"this is a warning, not a turn-rejecting
+   fabrication"* — as the **first** issue on every verdict. The build ended
+   `max_turns_exceeded`; the kept tree was green and was merged by hand.
+
+   No deterministic gate flipped the verdict on those records (verified:
+   `_honesty_issues_from` emits them at `should_fix`, `gather_evidence` puts
+   them in `advisory_issues`, and only `must_fix` reaches
+   `partial_honesty_abort`). The pressure was **framing**, in three places:
+
+   - `coach_narrative_reconciler.reconcile_narrative` embedded records on a
+     `feedback` verdict only, and **prepended** them — so an advisory record
+     read as the headline reason — while dropping them entirely from an
+     `approve` (an incomplete honesty trail).
+   - `AgentInvoker._build_coach_prompt` switched its responsibilities line to
+     *"CONSIDER HONESTY DISCREPANCIES in your decision"* (and the legacy prose
+     banner to *"⚠️ CRITICAL DISCREPANCIES DETECTED"*) whenever
+     `honesty.discrepancies` was non-empty — **regardless of severity**.
+   - `HonestyVerification.verified` is `len(discrepancies) == 0`, so an
+     advisory-only turn reports `verified: false` to the Coach.
+
+   **Fix (LANE-WF)**: `MUST_FIX_DISCREPANCY_SEVERITIES = {"critical"}` +
+   `is_must_fix_class` / `partition_by_class` in
+   `coach_narrative_reconciler.py`; advisory records are **appended** to an
+   `approve` payload verbatim and logged at WARNING (the verdict is never
+   written — the module cannot flip a turn); the prompt's honesty framing is
+   keyed to `AgentInvoker._turn_rejecting_discrepancies` (critical only); and
+   absence-of-failure guard **11 (ADVISORY HONESTY-RECORD GUARD)** tells the
+   Coach that advisory records never change a decision and that
+   `verified == false` is not, on its own, a rejection trigger. The
+   `critical` path is byte-unchanged.
+
 Both fixes share a mechanism: **a path string draws from a source the
 Player did not author (orchestrator-induced filesystem mutation observed
 through git's no-rename diff), and a downstream verifier treats that

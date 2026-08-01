@@ -41,6 +41,24 @@ a turn acting on a hallucinated cause. The verdict *direction* was right; the
    A claim that names a path absent from the records is corrected to a neutral,
    accurate phrasing and flagged — never shipped to the Player as-is.
 
+3. **A WARNING NEVER BURNS A BUILD (LANE-WF).** An advisory (non-``critical``)
+   honesty record is recorded on the verdict payload *in both directions* —
+   including on an ``approve`` — and NEVER changes the verdict. Only
+   ``critical``-severity records are turn-rejecting, and their override path is
+   owned elsewhere (``CoachValidator`` short-circuits gathering with
+   ``partial_honesty_abort``; ``AgentInvoker._reconcile_incomplete_evidence_gathering``
+   turns that into the approve→feedback flip). This module never writes
+   ``decision['decision']`` on any path.
+
+   The motivating receipt is build ``FEAT-STV1-20260801195639`` (2026-08-01):
+   five turns carried the same two ``claim_audit_unmodified`` advisory records
+   (``severity=should_fix``, whose own ``actual_value`` prose ends "this is a
+   warning, not a turn-rejecting fabrication") as the FIRST issue on every
+   feedback verdict, while the honesty channel simultaneously reported
+   ``verified: false`` to the Coach. Advisory records must read as advisory
+   everywhere they are surfaced, and must survive onto an approve rather than
+   being silently dropped.
+
 This is an instance of the meta-frame in
 ``.claude/rules/path-string-mismatch-is-not-dishonesty.md`` and
 ``.claude/rules/absence-of-failure-is-not-success.md``: a low-fidelity oracle
@@ -73,6 +91,14 @@ FILE_EXISTENCE_CLAIM_TYPES = frozenset(
 # so a re-run (or the enrichment re-write at agent_invoker
 # `_create_player_report_from_task_work`) does not double-embed them.
 DETERMINISTIC_SOURCE = "deterministic_honesty_gate"
+
+# LANE-WF. Discrepancy severities that are TURN-REJECTING ("must_fix class").
+# Everything else on the ``Discrepancy.severity`` scale ("should_fix",
+# "warning", "info") is ADVISORY: recorded, logged, never verdict-bearing.
+# Single source of truth for :func:`_severity_to_issue_severity` and
+# :func:`partition_by_class`; mirrors the ``severity == "critical"`` filter in
+# ``CoachValidator._honesty_issues_from``.
+MUST_FIX_DISCREPANCY_SEVERITIES = frozenset({"critical"})
 
 # A path-like token: starts with a word char, contains a dot extension. Matches
 # ``src/foo.py``, ``tests/unit/x_test.py``, ``a.md`` — not bare words. Used both
@@ -135,11 +161,17 @@ class ReconcileResult:
         corrected_paths: Paths whose unsupported non-existence claim was
             stripped/corrected (AC-002 / AC-003). Empty when no fabrication
             was found.
+        advisory_records_recorded: Number of ADVISORY (non-``critical``)
+            honesty records written onto an ``approve`` verdict (LANE-WF).
+            Non-zero only on the approve path; the feedback path reports its
+            embeds through ``embedded_issue_count`` exactly as before. Lets
+            the caller log the warning with task/turn context.
     """
 
     changed: bool = False
     embedded_issue_count: int = 0
     corrected_paths: List[str] = field(default_factory=list)
+    advisory_records_recorded: int = 0
 
 
 def _normalize_path(path: str) -> str:
@@ -190,11 +222,46 @@ def _severity_to_issue_severity(severity: str) -> str:
     here — this embedding is an audit-faithful copy of the record, not a second
     gate.
     """
-    return "must_fix" if severity == "critical" else "should_fix"
+    return (
+        "must_fix"
+        if severity in MUST_FIX_DISCREPANCY_SEVERITIES
+        else "should_fix"
+    )
+
+
+def is_must_fix_class(discrepancy: Any) -> bool:
+    """True when ``discrepancy`` is turn-rejecting (LANE-WF).
+
+    A record is must_fix-class iff its ``severity`` is in
+    :data:`MUST_FIX_DISCREPANCY_SEVERITIES`. A record with no ``severity``
+    attribute is treated as ADVISORY — an unknown shape must never acquire
+    verdict-bearing power by accident (fail-open on the reject direction is
+    owned by the critical-severity emit sites in ``coach_verification``).
+    """
+    return (
+        getattr(discrepancy, "severity", "warning")
+        in MUST_FIX_DISCREPANCY_SEVERITIES
+    )
+
+
+def partition_by_class(
+    honesty: "HonestyVerification",
+) -> Tuple[List[Any], List[Any]]:
+    """Split ``honesty.discrepancies`` into ``(must_fix_class, advisory)``.
+
+    ``must_fix_class`` records are turn-rejecting; ``advisory`` records are
+    warnings that must be recorded and logged but MUST NOT change a verdict
+    (LANE-WF: a warning never burns a build).
+    """
+    discrepancies = list(getattr(honesty, "discrepancies", None) or [])
+    must_fix = [d for d in discrepancies if is_must_fix_class(d)]
+    advisory = [d for d in discrepancies if not is_must_fix_class(d)]
+    return must_fix, advisory
 
 
 def render_deterministic_issues(
     honesty: "HonestyVerification",
+    discrepancies: List[Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """Render honesty discrepancies as feedback issues carrying the record
     fields verbatim (AC-001).
@@ -203,9 +270,18 @@ def render_deterministic_issues(
     ``severity`` in ``details`` unchanged, with a template-formatted
     ``description``. Issues are stamped ``details['source'] = DETERMINISTIC_SOURCE``
     for idempotency.
+
+    Args:
+        honesty: the verification whose records are rendered.
+        discrepancies: optional explicit subset to render (LANE-WF — the
+            approve path renders only the ADVISORY partition). ``None``
+            renders ``honesty.discrepancies`` in full, byte-unchanged.
     """
+    records = (
+        honesty.discrepancies if discrepancies is None else discrepancies
+    )
     issues: List[Dict[str, Any]] = []
-    for d in honesty.discrepancies:
+    for d in records:
         claim_type = getattr(d, "claim_type", "unknown")
         player_claim = getattr(d, "player_claim", "")
         actual_value = getattr(d, "actual_value", "")
@@ -309,10 +385,21 @@ def reconcile_narrative(
       if already embedded).
     * **AC-002 / AC-003** — correct any unsupported non-existence claim in
       ``decision['rationale']`` and in every synthesized issue ``description``.
+    * **LANE-WF** — when ``decision['decision'] == 'approve'`` and every
+      record is ADVISORY (no ``critical``-severity record), APPEND the advisory
+      records to ``decision['issues']`` so the honesty trail survives onto the
+      approve instead of being silently dropped, and log at WARNING. The
+      verdict is NOT touched.
 
     The narrative correction runs regardless of decision direction (it only ever
     removes a falsehood). Returns a :class:`ReconcileResult` describing what
     changed so the caller can decide whether to re-persist and what to log.
+
+    **Invariant (LANE-WF):** this function NEVER writes
+    ``decision['decision']`` on any path. A warning never burns a build; the
+    turn-rejecting override for ``critical`` records is owned by
+    ``CoachValidator.gather_evidence`` (``partial_honesty_abort``) and
+    ``AgentInvoker._reconcile_incomplete_evidence_gathering``.
     """
     result = ReconcileResult()
 
@@ -369,5 +456,52 @@ def reconcile_narrative(
             decision["issues"] = [*embedded, *existing]
             result.embedded_issue_count = len(embedded)
             result.changed = result.changed or bool(embedded)
+
+    # LANE-WF: a warning never burns a build — and it is never silently
+    # dropped either. On an ``approve`` whose records are ALL advisory
+    # (non-``critical``), record them verbatim on the approve's payload so the
+    # honesty trail is complete in both verdict directions, and log at WARNING.
+    #
+    # APPENDED, not prepended: on the feedback path the deterministic record is
+    # prepended because it is (part of) the reason for the rejection; on an
+    # approve it is a warning riding along, and putting it first would make an
+    # advisory record read as the headline finding — the exact mis-framing seen
+    # on build FEAT-STV1-20260801195639.
+    #
+    # A ``critical`` record present ⇒ this branch stays out of the way
+    # BYTE-UNCHANGED from main (no embed, no verdict touch): that turn is owned
+    # by the ``partial_honesty_abort`` → ``_reconcile_incomplete_evidence_gathering``
+    # override, which flips the verdict for real.
+    elif decision.get("decision") == "approve":
+        must_fix_class, advisory = partition_by_class(honesty)
+        if advisory and not must_fix_class:
+            existing = decision.get("issues") or []
+            already_embedded = any(
+                isinstance(i, dict)
+                and isinstance(i.get("details"), dict)
+                and i["details"].get("source") == DETERMINISTIC_SOURCE
+                for i in existing
+            )
+            if not already_embedded:
+                recorded = render_deterministic_issues(
+                    honesty, discrepancies=advisory
+                )
+                decision["issues"] = [*existing, *recorded]
+                result.embedded_issue_count = len(recorded)
+                result.advisory_records_recorded = len(recorded)
+                result.changed = result.changed or bool(recorded)
+                logger.warning(
+                    "LANE-WF: %d advisory honesty record(s) recorded on an "
+                    "APPROVE verdict without changing it (claim_type(s): %s). "
+                    "A warning never burns a build; only critical-severity "
+                    "records are turn-rejecting.",
+                    len(recorded),
+                    sorted(
+                        {
+                            str(getattr(d, "claim_type", "unknown"))
+                            for d in advisory
+                        }
+                    ),
+                )
 
     return result

@@ -7968,20 +7968,51 @@ class AutoBuildOrchestrator:
         str
             Operator-visible summary string, e.g. ``"Feedback: Plan audit …"``.
         """
+        # LANE-WF: the v4 contract emits every Coach finding at the CONSTANT
+        # severity "major" (coach_output_parser._adapt_v4_to_internal) — a
+        # rejection reason. It was absent from this map, so it scored the
+        # unknown-severity default (99) and lost to any advisory riding along,
+        # which is how build FEAT-STV1-20260801195639 showed
+        # "Feedback: Deterministic honesty record (claim_audit_unmodified,
+        # severity=should_fix) ..." as the operator-visible reason for five
+        # turns whose actual blocker was a failing spec_conformance rule.
         severity_order: Dict[str, int] = {
             "must_fix": 0,
-            "should_fix": 1,
-            "warning": 2,
+            "critical": 0,
+            "major": 1,
+            "should_fix": 2,
+            "minor": 3,
+            "warning": 4,
         }
+
+        def _rank(issue: Dict[str, Any]) -> Tuple[int, int]:
+            """(advisory-last, severity) — a warning never headlines a turn.
+
+            A deterministic honesty record that is NOT ``must_fix`` is, by
+            construction, never the reason the turn was rejected
+            (``coach_narrative_reconciler``: only ``critical`` records are
+            turn-rejecting). It must never outrank a real finding in the
+            operator log, whatever severity vocabulary that finding uses.
+            """
+            from guardkit.orchestrator.coach_narrative_reconciler import (
+                DETERMINISTIC_SOURCE,
+            )
+
+            severity = issue.get("severity", "warning")
+            details = issue.get("details")
+            is_advisory_record = (
+                isinstance(details, dict)
+                and details.get("source") == DETERMINISTIC_SOURCE
+                and severity != "must_fix"
+            )
+            return (
+                1 if is_advisory_record else 0,
+                severity_order.get(severity, 99),
+            )
 
         issues = coach_report.get("issues") or []
         if issues:
-            primary = min(
-                issues,
-                key=lambda issue: severity_order.get(
-                    issue.get("severity", "warning"), 99
-                ),
-            )
+            primary = min(issues, key=_rank)
             description = primary.get("description", "") or ""
             if description:
                 if len(description) > 80:
