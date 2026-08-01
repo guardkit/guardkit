@@ -262,6 +262,25 @@ _ORCHESTRATOR_MANAGED_PATH_PATTERNS: Tuple[re.Pattern, ...] = (
     #                          author are not over-broadened (AC-2).
     re.compile(r"^large_tool_results/"),
     re.compile(r"^\.claude/task-plans/"),
+    # npm's own caches, minted INSIDE the worktree (JX lane). The mirror of
+    # the same three classes added to
+    # ``worktree_checkpoints.CHECKPOINT_EXCLUDE_PATHSPECS``: the checkpoint
+    # keeps them out of the COMMIT, this row keeps them out of the Player's
+    # CLAIM LISTS, and both are needed — the post-turn ``git diff`` aperture
+    # sees on-disk churn regardless of what was committed. FEAT-TST1's real
+    # checkpoint carried 1365 ``.tmp/`` + 8 ``.npm/`` paths beside ~10 of
+    # real work; unfiltered, that is the FEAT-9DDE run-6 claim-audit flood.
+    #   (?:.*/)?\.tmp/   node's compile cache (`.tmp/node-compile-cache/...`),
+    #                    at the worktree root and at any nested depth — same
+    #                    `(?:.*/)?` contract as node_modules above. Matches a
+    #                    `.tmp` DIRECTORY segment only, so a Player's
+    #                    `fixtures/data.tmp` file passes through.
+    #   (?:.*/)?\.npm/   npm's `_logs/` + `_update-notifier-last-checked`.
+    #   \.guardkit-git\.lock  the harness's cross-process git lock, root or
+    #                    nested; never Player work product.
+    re.compile(r"(?:.*/)?\.tmp/"),
+    re.compile(r"(?:.*/)?\.npm/"),
+    re.compile(r"(?:.*/)?\.guardkit-git\.lock$"),
 )
 
 

@@ -788,3 +788,127 @@ class TestNodeModulesFilter:
             "packages/api/node_modules/dep/d.js",
             "node_modules/.bin/vitest",
         }
+
+
+# ---------------------------------------------------------------------------
+# JX lane — npm's caches are minted INSIDE the worktree
+# ---------------------------------------------------------------------------
+# The claim-list mirror of the checkpoint junk-exclude additions in
+# ``worktree_checkpoints.CHECKPOINT_EXCLUDE_PATHSPECS``. Both are needed: the
+# checkpoint keeps this junk out of the COMMIT, these patterns keep it out of
+# the Player's CLAIM LISTS, and the post-turn ``git diff`` aperture sees
+# on-disk churn regardless of what was committed.
+#
+# Evidence: FEAT-TST1 on ts-api-test (2026-07-31 → 08-01). Checkpoint
+# ``ce4f43b`` carried 1365 ``.tmp/`` paths (node's compile cache), 8 ``.npm/``
+# paths and the harness's ``.guardkit-git.lock`` beside ~10 of real work. npm
+# mints them inside the worktree because the run recipe points its HOME/cache
+# there; unfiltered they are the FEAT-9DDE run-6 ``claim_audit_unmodified``
+# flood in yet another alphabet.
+# ---------------------------------------------------------------------------
+
+
+class TestNpmCacheJunkFilter:
+    """``.tmp/``, ``.npm/`` and the harness git lock are orchestrator-managed."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # node's compile cache, the exact ce4f43b shape
+            ".tmp/node-compile-cache/v22.18.0-arm64-9e3ad1fa-1000/015aa58f",
+            ".tmp/blob",
+            # nested (npm run from a workspace directory)
+            "packages/api/.tmp/blob",
+            # npm's own cache dir
+            ".npm/_logs/2026-08-01T06_42_36_334Z-debug-0.log",
+            ".npm/_update-notifier-last-checked",
+            "packages/api/.npm/_logs/x.log",
+            # the harness's cross-process git lock
+            ".guardkit-git.lock",
+            "sibling-repo/.guardkit-git.lock",
+            # ./ prefix and backslashes (Windows) are normalised
+            "./.tmp/node-compile-cache/x",
+            ".npm\\_logs\\x.log",
+            "./.guardkit-git.lock",
+        ],
+    )
+    def test_npm_cache_paths_match(self, path: str):
+        assert _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be classified as orchestrator-managed "
+            "(npm mints its caches inside the worktree)."
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Over-reach guard: a ``.tmp``/``.npm`` DIRECTORY segment only —
+            # a suffixed file, or a similarly-named sibling, passes through.
+            "src/fixtures/data.tmp",
+            "tests/golden/expected.tmp",
+            "docs/npm.md",
+            "src/tmp/helper.ts",  # no leading dot
+            ".tmpfiles/keep.txt",  # sibling directory, not `.tmp/`
+            ".npmrc",  # npm CONFIG is Player-authorable
+            "docs/guardkit-git.lock.md",
+            # Real Player work must pass through untouched.
+            "src/time/routes.ts",
+            "tests/time/time.test.ts",
+            "package.json",
+        ],
+    )
+    def test_npm_cache_over_reach_guard(self, path: str):
+        assert not _is_orchestrator_managed_path(path), (
+            f"Expected {path!r} to be treated as Player work, not "
+            f"orchestrator-managed."
+        )
+
+    def test_claude_dir_at_large_still_passes_through(self):
+        """The ``.claude/`` anchoring is deliberate and stays narrow.
+
+        The checkpoint exclude added ``**/.claude/task-plans/**`` and NOT
+        ``**/.claude/**`` precisely so this ratified AC-2 guard keeps
+        holding: ``.claude/`` at large is Player-authorable content (this
+        repo tracks 1606 files under it), and both lists must agree.
+        """
+        assert _is_orchestrator_managed_path(
+            ".claude/task-plans/TASK-TST1-001-implementation-plan.md"
+        )
+        for player_path in (
+            ".claude/rules/autobuild.md",
+            ".claude/agents/typescript-specialist.md",
+            ".claude/settings.json",
+        ):
+            assert not _is_orchestrator_managed_path(player_path), (
+                f"{player_path!r} is Player work — the JX lane must not "
+                "broaden the .claude/ filter"
+            )
+
+    def test_strip_removes_npm_cache_junk_keeps_typescript_work(self):
+        """The ce4f43b flood is stripped; the deliverable survives."""
+        report = {
+            "files_modified": [
+                ".tmp/node-compile-cache/v22.18.0-arm64/015aa58f",
+                ".npm/_logs/2026-08-01T06_42_36_334Z-debug-0.log",
+                ".guardkit-git.lock",
+                "src/time/routes.ts",
+            ],
+            "files_created": [
+                ".npm/_update-notifier-last-checked",
+                ".claude/task-plans/TASK-TST1-001-implementation-plan.md",
+                "src/time/service.ts",
+            ],
+            "tests_written": ["tests/time/time.test.ts"],
+            "completion_promises": [],
+        }
+        stripped = _strip_orchestrator_managed_paths(report, "TASK-TST1-001")
+
+        assert report["files_modified"] == ["src/time/routes.ts"]
+        assert report["files_created"] == ["src/time/service.ts"]
+        assert report["tests_written"] == ["tests/time/time.test.ts"]
+        assert stripped == {
+            ".tmp/node-compile-cache/v22.18.0-arm64/015aa58f",
+            ".npm/_logs/2026-08-01T06_42_36_334Z-debug-0.log",
+            ".guardkit-git.lock",
+            ".npm/_update-notifier-last-checked",
+            ".claude/task-plans/TASK-TST1-001-implementation-plan.md",
+        }

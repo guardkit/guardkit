@@ -99,6 +99,16 @@ _EVIDENCE_GIT_TIMEOUT_S: int = 120
 # would be silent. This enumeration is also known to rot (``.parcel-cache``,
 # ``.svelte-kit``, whatever comes next) — accepted, because the alternative
 # is an allowlist of what MAY be committed, which risks dropping real work.
+#
+# THE TRADE, stated honestly (JX lane). These excludes are GLOBAL: every
+# entry is ``**/…``, so a repo that legitimately TRACKS one of these
+# directories loses checkpointing for it — silently, until someone reads
+# this comment. That is the node_modules precedent, taken deliberately:
+# checkpoint excludes exist for MACHINE-MINTED junk, and the junk classes
+# below are minted by npm at whatever depth npm feels like. A target repo
+# with, say, ``src/fixtures/.tmp/`` fixtures will not see them checkpointed.
+# The scope test each entry must pass is the ``dist/`` test: could this
+# plausibly be a Player's DELIVERABLE? If yes, it does not go on this list.
 CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # --- register 2a5: machine-local Python/bootstrap junk ---
     ":(exclude,glob)**/.cache/**",
@@ -109,6 +119,42 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     ":(exclude,glob)**/.turbo/**",
     ":(exclude,glob)**/coverage/**",
     ":(exclude,glob)**/*.tsbuildinfo",
+    # --- JX lane: npm's caches, minted INSIDE the worktree ---
+    # Evidence = the two real TypeScript builds of 2026-07-31/08-01
+    # (FEAT-TST1 on ts-api-test). Checkpoint ``ce4f43b`` carried 1365 paths
+    # under ``.tmp/`` (node's compile cache), 8 under ``.npm/`` (npm's
+    # ``_logs/`` + ``_update-notifier-last-checked``), the orchestrator's
+    # own plan stub, and the harness's git lock — 1374 junk paths beside
+    # ~10 of real Player work. npm mints these INSIDE the worktree because
+    # the run recipe points its HOME/cache there; the target repo's
+    # .gitignore (node_modules/dist/coverage/*.tsbuildinfo) knows nothing
+    # about them, which is exactly the dependency the junk law removes.
+    ":(exclude,glob)**/.tmp/**",
+    ":(exclude,glob)**/.npm/**",
+    # ``.claude/task-plans/`` ONLY — deliberately NOT ``**/.claude/**``.
+    # The plan stub is orchestrator-minted (it is the one ``.claude/`` path
+    # the real build actually checkpointed), but ``.claude/`` at large is
+    # tracked Player-authorable content across this estate — guardkit's own
+    # repo tracks 1606 files under it, and Players author ``.claude/rules/``
+    # entries as task deliverables. A blanket exclude would silently drop
+    # those edits from every checkpoint of a guardkit self-build: the exact
+    # failure mode that keeps ``dist/`` off this list. This anchoring also
+    # keeps the constant in step with ``agent_invoker``'s ratified AC-2
+    # over-reach guard (``^\.claude/task-plans/``) — with one deliberate
+    # depth asymmetry: this pathspec matches at ANY depth, the invoker
+    # regex is root-anchored. HONEST RESIDUAL (JX coach, driven on real
+    # git): a repo that TRACKS files under ``.claude/task-plans/`` (this
+    # one tracks 275) loses checkpointing for edits to them — a
+    # ``rollback_to``'s reset reverts such an edit to baseline. Consistent
+    # with task-plans being orchestrator-owned; named here so nobody
+    # rediscovers it as a surprise.
+    ":(exclude,glob)**/.claude/task-plans/**",
+    # The harness's own cross-process git lock (gitignored as ``/`` -rooted
+    # in guardkit, ungitignored anywhere else — hence pathspec, not hygiene).
+    # Carried in the fully-wildcarded form like ``bootstrap_state.json``:
+    # a wildcard-free ``:(exclude).guardkit-git.lock`` is the 706589f7
+    # refusal bug waiting to happen in the repo that DOES ignore it.
+    ":(exclude,glob)**/.guardkit-git.lock",
 )
 
 # The full ``git add`` argv prefix shared by both add sites.
