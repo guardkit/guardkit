@@ -124,6 +124,15 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     ":(exclude,glob)**/__pycache__/**",
     ":(exclude,glob)**/*.pyc",
     ":(exclude,glob)**/.local/**",
+    # --- FL lane (the FIRST FLUTTER BUILD's killer, 2026-08-02): the Dart
+    # class. ``flutter pub get`` under a worktree-pointed HOME lands the whole
+    # pub cache (76M, vendored third-party source) in the tree, and the
+    # checkpoint SECRET-SCAN then refuses the commit — flutter_appauth's OAuth
+    # sample code pattern-matches "a real secret". Excluding the junk from
+    # staging also removes it from the scan's view: the scan judges the staged
+    # set, and vendored packages are not the Player's deliverable.
+    ":(exclude,glob)**/.pub-cache/**",
+    ":(exclude,glob)**/.dart_tool/**",
     # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
     ":(exclude,glob)**/node_modules/**",
     ":(exclude,glob)**/.next/**",
