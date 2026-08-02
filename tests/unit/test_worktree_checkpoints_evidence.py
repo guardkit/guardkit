@@ -501,6 +501,13 @@ class TestCheckpointExcludesTypeScriptJunk:
             # OAuth samples trip the secret scan) and .dart_tool.
             ":(exclude,glob)**/.pub-cache/**",
             ":(exclude,glob)**/.dart_tool/**",
+            # The HOME-pointed Dart family + the twice-seen harness spool.
+            ":(exclude,glob)**/.dartServer/**",
+            ":(exclude,glob)**/.dart-tool/**",
+            ":(exclude,glob)**/.config/flutter/**",
+            ":(exclude,glob)**/.flutter",
+            ":(exclude,glob)**/.flutter/**",
+            ":(exclude,glob)**/large_tool_results/**",
             ":(exclude,glob)**/node_modules/**",
             ":(exclude,glob)**/.next/**",
             ":(exclude,glob)**/.turbo/**",

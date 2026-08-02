@@ -108,6 +108,14 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         # whose OAuth samples trip the secret scan) and .dart_tool.
         ":(exclude,glob)**/.pub-cache/**",
         ":(exclude,glob)**/.dart_tool/**",
+        # The HOME-pointed Dart family (FEAT-FLV1's checkpoints) + the
+        # twice-seen harness spool.
+        ":(exclude,glob)**/.dartServer/**",
+        ":(exclude,glob)**/.dart-tool/**",
+        ":(exclude,glob)**/.config/flutter/**",
+        ":(exclude,glob)**/.flutter",
+        ":(exclude,glob)**/.flutter/**",
+        ":(exclude,glob)**/large_tool_results/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -998,6 +1006,14 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         # whose OAuth samples trip the secret scan) and .dart_tool.
         ":(exclude,glob)**/.pub-cache/**",
         ":(exclude,glob)**/.dart_tool/**",
+        # The HOME-pointed Dart family (FEAT-FLV1's checkpoints) + the
+        # twice-seen harness spool.
+        ":(exclude,glob)**/.dartServer/**",
+        ":(exclude,glob)**/.dart-tool/**",
+        ":(exclude,glob)**/.config/flutter/**",
+        ":(exclude,glob)**/.flutter",
+        ":(exclude,glob)**/.flutter/**",
+        ":(exclude,glob)**/large_tool_results/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
