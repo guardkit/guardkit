@@ -104,6 +104,10 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/__pycache__/**",
         ":(exclude,glob)**/*.pyc",
         ":(exclude,glob)**/.local/**",
+        # FL lane: the Dart classes — the pub cache (76M of vendored source
+        # whose OAuth samples trip the secret scan) and .dart_tool.
+        ":(exclude,glob)**/.pub-cache/**",
+        ":(exclude,glob)**/.dart_tool/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -990,6 +994,10 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/__pycache__/**",
         ":(exclude,glob)**/*.pyc",
         ":(exclude,glob)**/.local/**",
+        # FL lane: the Dart classes — the pub cache (76M of vendored source
+        # whose OAuth samples trip the secret scan) and .dart_tool.
+        ":(exclude,glob)**/.pub-cache/**",
+        ":(exclude,glob)**/.dart_tool/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",

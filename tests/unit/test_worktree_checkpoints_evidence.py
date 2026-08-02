@@ -497,6 +497,10 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/__pycache__/**",
             ":(exclude,glob)**/*.pyc",
             ":(exclude,glob)**/.local/**",
+            # FL lane: the Dart classes — the pub cache (vendored source whose
+            # OAuth samples trip the secret scan) and .dart_tool.
+            ":(exclude,glob)**/.pub-cache/**",
+            ":(exclude,glob)**/.dart_tool/**",
             ":(exclude,glob)**/node_modules/**",
             ":(exclude,glob)**/.next/**",
             ":(exclude,glob)**/.turbo/**",
