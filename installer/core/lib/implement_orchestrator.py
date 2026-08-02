@@ -32,6 +32,7 @@ Usage:
     #   └── ...
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -284,10 +285,17 @@ class ImplementOrchestrator:
             filename = f"{task_id}-{slug}.md"
             filepath = os.path.join(self.subfolder_path, filename)
 
-            # Generate content
+            # Generate content. The title is the ONE free-prose field in this
+            # frontmatter block, and the model writes colons into it ("Resolve
+            # the mismatch: either …") — unquoted, that is a YAML mapping error
+            # and the WORK LEG then cannot load the very fix task this file
+            # exists to carry (the 2026-08-02 stage-2 crossing's first find; a
+            # Phase-0 REFUSED on every colon-bearing title). json.dumps yields
+            # a double-quoted YAML-valid scalar with every escape handled.
+            yaml_title = json.dumps(title)
             content = f"""---
 id: {task_id}
-title: {title}
+title: {yaml_title}
 status: backlog
 created: {self.review_task.get('created', '2025-12-04T00:00:00Z')}
 updated: {self.review_task.get('created', '2025-12-04T00:00:00Z')}
