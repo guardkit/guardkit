@@ -98,6 +98,12 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ".",
         ":(exclude,glob)**/.cache/**",
         ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+        # LI stage-2: the Python junk classes (223 junk files on one real
+        # work-leg drive, 2026-08-02) — bytecode caches at any depth, plus
+        # ``.local/`` where a pip --user install lands under a worktree HOME.
+        ":(exclude,glob)**/__pycache__/**",
+        ":(exclude,glob)**/*.pyc",
+        ":(exclude,glob)**/.local/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -978,6 +984,12 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ".",
         ":(exclude,glob)**/.cache/**",
         ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+        # LI stage-2: the Python junk classes (223 junk files on one real
+        # work-leg drive, 2026-08-02) — bytecode caches at any depth, plus
+        # ``.local/`` where a pip --user install lands under a worktree HOME.
+        ":(exclude,glob)**/__pycache__/**",
+        ":(exclude,glob)**/*.pyc",
+        ":(exclude,glob)**/.local/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",

@@ -23,7 +23,7 @@ Usage:
     # Returns:
     # [
     #     {
-    #         "id": "TASK-FW-001",
+    #         "id": "TASK-FWO-001",   # prefix padded to >= 3 (see MIN_TASK_PREFIX_LEN)
     #         "title": "Create /feature-plan command",
     #         "description": "...",
     #         "files": ["installer/core/commands/feature-plan.md"],
@@ -38,6 +38,43 @@ Usage:
 from pathlib import Path
 from typing import List, Dict, Optional
 import re
+
+
+# ---------------------------------------------------------------------------
+# The fix-task id prefix contract (leg-invocation stage-2 design §5)
+# ---------------------------------------------------------------------------
+#
+# A fix task minted here is dispatched by the pipeline as a work leg, and the
+# pipeline recognises it by its FILE STEM against
+#
+#     ^TASK-[A-Z0-9]{3,12}(?:-[A-Za-z0-9]+)*$
+#
+# (its home: forge/src/forge/cli/_serve_deps_stage_log.py:398 — the same shape
+# guards the queue at forge/src/forge/cli/queue.py:403). The head class excludes
+# ``-``, so a TWO-letter derived prefix — ``TASK-FW-001-…`` from the slug
+# "feature-workflow" — fails the ``{3,12}`` head and the fix task is dropped
+# SILENTLY: it never reaches tier 2 and nothing says so. That class bit the
+# 2026-08-02 crossing. So the derived prefix is padded to at least three
+# characters here, at the mint, rather than being repaired downstream.
+#
+# The regex is NOT imported from forge (separate repo, no dependency); it is
+# restated in the test that proves the stem matches, with the same home named.
+
+#: Minimum prefix length that satisfies the pipeline's ``{3,12}`` stem head.
+MIN_TASK_PREFIX_LEN = 3
+
+#: Maximum kept — well inside the pipeline's 12, unchanged from the original.
+MAX_TASK_PREFIX_LEN = 4
+
+#: The stem head's own upper bound — the ``{3,12}`` in the pipeline's regex.
+#: A report-supplied head LONGER than this is the same silent-drop class as a
+#: two-letter one and is truncated to it, keeping as much of the report's
+#: naming as the rule admits.
+MAX_TASK_HEAD_LEN = 12
+
+#: Used when a slug yields no usable ``[A-Z0-9]`` characters at all (e.g. a
+#: non-latin or punctuation-only slug). Named rather than silently empty.
+FALLBACK_TASK_PREFIX = "TSK"
 
 
 class SubtaskExtractor:
@@ -175,9 +212,12 @@ class SubtaskExtractor:
             complexity = parts[3] if len(parts) > 3 else "5"
             effort = parts[4] if len(parts) > 4 else ""
 
-            # Ensure ID has proper prefix
-            if not task_id.startswith('TASK-'):
-                task_id = f"TASK-{task_id}"
+            # Ensure ID has proper prefix, and that the prefix HEAD is long
+            # enough for the pipeline to recognise the stem (see
+            # _pad_report_task_id and the module header): a verbatim
+            # ``| FW-001 |`` row minted TASK-FW-001-…, which the dispatcher
+            # drops silently.
+            task_id = self._pad_report_task_id(task_id, feature_slug)
 
             # Extract implementation mode from method
             implementation_mode = None
@@ -302,29 +342,110 @@ class SubtaskExtractor:
         """
         Extract task prefix from feature slug.
 
+        The prefix is the word initials, padded to at least
+        ``MIN_TASK_PREFIX_LEN`` characters so the resulting file stem passes
+        the pipeline's ``^TASK-[A-Z0-9]{3,12}…`` head (see the module header:
+        a two-letter prefix is dropped silently by the dispatcher). The pad
+        CONTINUES the last contributing word, so it still reads as an
+        abbreviation of the feature rather than as filler.
+
         Examples:
-        - "feature-workflow" -> "FW"
-        - "dark-mode" -> "DM"
-        - "progressive-disclosure" -> "PD"
+        - "feature-workflow" -> "FWO"   (initials "FW" + "workflow"[1])
+        - "dark-mode" -> "DMO"
+        - "progressive-disclosure" -> "PDI"
+        - "workflow" -> "WOR"           (single word: its first three letters)
+        - "auth-api-gateway-layer" -> "AAGL"  (already >= 3, unchanged)
 
         Args:
             feature_slug: The feature slug (e.g., "feature-workflow")
 
         Returns:
-            Task prefix (e.g., "FW")
+            Task prefix (e.g., "FWO"), guaranteed ``[A-Z0-9]`` and of length
+            ``MIN_TASK_PREFIX_LEN``..``MAX_TASK_PREFIX_LEN``.
         """
-        # Split by dash and take first letter of each word
-        parts = feature_slug.split('-')
-        prefix = ''.join([p[0].upper() for p in parts if p])
+        parts = self._slug_words(feature_slug)
+        prefix = ''.join(word[0] for word in parts)
 
         # If prefix is too long (>4 chars), try to abbreviate
-        if len(prefix) > 4:
+        if len(prefix) > MAX_TASK_PREFIX_LEN:
             # Take first 2-4 letters intelligently
             # For "feature-workflow", we want "FW" (feature + workflow)
             # For "progressive-disclosure", we want "PD" (progressive + disclosure)
-            prefix = prefix[:4]
+            prefix = prefix[:MAX_TASK_PREFIX_LEN]
+
+        return self._pad_task_prefix(prefix, parts)
+
+    @staticmethod
+    def _slug_words(feature_slug: str) -> List[str]:
+        """The slug's words, reduced to the characters the stem head accepts."""
+        parts = [
+            ''.join(ch for ch in word.upper() if ch.isascii() and ch.isalnum())
+            for word in (feature_slug or '').split('-')
+        ]
+        return [word for word in parts if word]
+
+    @staticmethod
+    def _pad_task_prefix(prefix: str, parts: List[str]) -> str:
+        """Pad a fix-task prefix to :data:`MIN_TASK_PREFIX_LEN` — the ONE pad.
+
+        Stated once and used at BOTH mints (the derived-prefix path and the
+        report-table path), because a second statement of the rule is a future
+        lie: the table path had no pad at all, so a report row ``| FW-001 |``
+        minted ``TASK-FW-001-…``, whose two-character head fails the pipeline's
+        ``^TASK-[A-Z0-9]{3,12}…`` and is dropped WITHOUT SAYING SO.
+
+        The pad CONTINUES the last contributing word, so the result still reads
+        as an abbreviation of the feature rather than as filler, and falls back
+        to :data:`FALLBACK_TASK_PREFIX` when the words give nothing to continue.
+        """
+        if len(prefix) < MIN_TASK_PREFIX_LEN and parts:
+            for word in reversed(parts):
+                for ch in word[1:]:
+                    prefix += ch
+                    if len(prefix) >= MIN_TASK_PREFIX_LEN:
+                        break
+                if len(prefix) >= MIN_TASK_PREFIX_LEN:
+                    break
+
+        # Last resort: a slug with no usable characters, or one whose words are
+        # all single characters ("a-b"). Pad with the named fallback rather
+        # than emit a stem the pipeline will drop without saying so.
+        if len(prefix) < MIN_TASK_PREFIX_LEN:
+            prefix = (prefix + FALLBACK_TASK_PREFIX)[:MIN_TASK_PREFIX_LEN]
 
         return prefix
+
+    def _pad_report_task_id(self, task_id: str, feature_slug: str) -> str:
+        """Apply the >= 3 pad to an id the REPORT supplied verbatim.
+
+        ``parse_subtasks_from_table`` takes the ``ID`` column as written and
+        only prepends ``TASK-``. The producer's own reports write two-letter
+        heads (``FW-001``), so those fix tasks never reached tier 2 during the
+        2026-08-02 crossing — the dispatcher's stem regex rejected them and
+        nothing said so. Pad the HEAD segment through the same
+        :meth:`_pad_task_prefix`, using the feature slug's words as the pad
+        material so ``FW-001`` + ``feature-workflow`` -> ``TASK-FWO-001``.
+
+        A head that already satisfies the rule is returned UNCHANGED — the
+        report's own naming is authoritative wherever it is legal.
+        """
+        body = task_id[len('TASK-'):] if task_id.startswith('TASK-') else task_id
+        head, separator, rest = body.partition('-')
+
+        normalized = ''.join(
+            ch for ch in head.upper() if ch.isascii() and ch.isalnum()
+        )
+        if (
+            normalized == head
+            and MIN_TASK_PREFIX_LEN <= len(normalized) <= MAX_TASK_HEAD_LEN
+        ):
+            return f"TASK-{body}"
+
+        if len(normalized) > MAX_TASK_HEAD_LEN:
+            return f"TASK-{normalized[:MAX_TASK_HEAD_LEN]}{separator}{rest}"
+
+        padded = self._pad_task_prefix(normalized, self._slug_words(feature_slug))
+        return f"TASK-{padded}{separator}{rest}"
 
     def _infer_files_from_text(self, text: str) -> List[str]:
         """

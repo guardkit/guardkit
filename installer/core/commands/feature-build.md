@@ -349,7 +349,8 @@ tasks:
 
 **Behavior**:
 - Invokes Player via direct SDK call (`_invoke_player_direct`)
-- Uses `TASK_WORK_SDK_MAX_TURNS` (50) for SDK max turns
+- Uses the invoker's `_effective_sdk_max_turns` — `TASK_WORK_SDK_MAX_TURNS`
+  (default 100), auto-reduced for local backends (`agent_invoker.py:1611-1625`)
 - Faster startup, less overhead
 - No planning phases, jumps straight to implementation
 
@@ -378,17 +379,36 @@ tasks:
 ```
 
 **Behavior**:
-- Invokes Player via `/task-work TASK-XXX --implement-only`
-- Uses `TASK_WORK_SDK_MAX_TURNS` (50) for SDK max turns
-- Full task-work phases: planning, implementation, testing, review
-- More thorough but slower
+- Invokes Player via `_invoke_task_work_implement()` — an **inline SDK prompt**,
+  not a nested command run. Despite the mode's (historical) name, it does **not**
+  shell `guardkit task-work --implement-only` and does **not** read
+  `task-work.md`: `_build_autobuild_implementation_prompt()` loads the
+  backend-selected `autobuild_execution_protocol[_medium|_slim].md` and injects
+  the task requirements, Coach feedback, memory context and turn context inline
+  (`agent_invoker.py:568-578`, `:8708`, `:9056`).
+- Runs the Phase 3–5 implementation protocol (implementation, testing, review)
+  inside that single SDK session — the interactive planning phases (1–2.8) are
+  not part of it.
+- Uses `TASK_WORK_SDK_MAX_TURNS` (default 100; `GUARDKIT_SDK_MAX_TURNS` wins if
+  set, otherwise the budget is complexity-scaled) for SDK max turns.
+- More thorough but slower.
 
 **Log patterns**:
 ```
 INFO: Invoking Player via task-work delegation for TASK-002 (turn 1)
-INFO: [TASK-002] Max turns: 50
+INFO: [TASK-002] Max turns: 150
 INFO: [TASK-002] SDK timeout: 900s
 ```
+
+> **Correction (leg-invocation stage 2, 2026-08-02):** this section previously
+> described the mode as invoking `/task-work TASK-XXX --implement-only`. That
+> has not been true since TASK-ACO-002 — AutoBuild hardwires the flag on at all
+> three `AgentInvoker` sites (`autobuild.py:2439/:2472/:8856`) and the enabled
+> path builds the inline prompt above. The stale story is corrected here so the
+> next reader does not design against a command invocation that never happens.
+> (This says nothing about the `--design-only` / `--implement-only` flags
+> themselves, which remain live for the attended `/task-work` workflow — their
+> normative definitions are the `## Available Flags` table in `task-work.md`.)
 
 **Use when**:
 - Complex feature implementation

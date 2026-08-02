@@ -113,6 +113,17 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # --- register 2a5: machine-local Python/bootstrap junk ---
     ":(exclude,glob)**/.cache/**",
     ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+    # --- LI stage-2 (GA2 coach's real drive): the PYTHON junk classes ---
+    # The JS/TS classes below were learned from the TypeScript builds; the
+    # Python ones were never stated, and a single real work-leg drive of
+    # 2026-08-02 committed 223 junk files — bytecode caches beside the Player's
+    # edits, plus ``.local/`` where a pip ``--user`` install lands when the run
+    # recipe points HOME at the worktree (the same mechanism that mints
+    # ``.npm/`` below). All three pass the ``dist/`` test: no Player has ever
+    # been asked to deliver a ``__pycache__`` directory or a ``.pyc``.
+    ":(exclude,glob)**/__pycache__/**",
+    ":(exclude,glob)**/*.pyc",
+    ":(exclude,glob)**/.local/**",
     # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
     ":(exclude,glob)**/node_modules/**",
     ":(exclude,glob)**/.next/**",

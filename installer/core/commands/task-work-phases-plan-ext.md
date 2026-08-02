@@ -1749,9 +1749,8 @@ Phase 2.8 straight into Phase 3) and the **design-first split** — `--design-on
 stops at the Phase 2.8 checkpoint and saves the approved plan to
 `docs/state/{task_id}/implementation_plan.md` with the task in DESIGN_APPROVED;
 `--implement-only` resumes from that saved plan at Phase 3. Both flags are
-normative in the core `## Available Flags` table and are exercised live above
-(the `--implement-only` clarification-skip branch) and by
-`feature-build.md`'s `implementation_mode: task-work` path.
+normative in the core `## Available Flags` table (the SSOT) and are exercised
+live above (the `--implement-only` clarification-skip branch).
 
 > **Reconciliation (task-complete demotion scope §4, Phase 0, 2026-07-10):** an
 > earlier draft here claimed these flags "were removed … only the standard
@@ -1761,8 +1760,18 @@ normative in the core `## Available Flags` table and are exercised live above
 > `--design-only` / `--implement-only` flags themselves survive via the
 > DESIGN_APPROVED state + the committed plan file below — not those deleted
 > modules. The stale sentence contradicted this file's own `--implement-only`
-> handling, the core flag table (SSOT), CLAUDE.md's Design-First Workflow, and
-> feature-build.md:377; it is corrected here.
+> handling, the core flag table (SSOT), and CLAUDE.md's Design-First Workflow;
+> it is corrected here.
+>
+> **Cross-reference amended (leg-invocation stage 2, 2026-08-02):** the
+> paragraph above and this note used to cite `feature-build.md`'s
+> `implementation_mode: task-work` path as corroborating evidence. That
+> citation is withdrawn — not because the flags changed, but because
+> feature-build.md's description of that path was itself stale: AutoBuild's
+> "task-work delegation" builds an INLINE SDK prompt and never shells
+> `--implement-only` (`agent_invoker.py:568-578`). The flags stand on the core
+> flag table and this file's own handling; AutoBuild is simply not a user of
+> them.
 
 To run design and implementation on different days, use `--design-only` then
 `--implement-only`, or commit the plan file

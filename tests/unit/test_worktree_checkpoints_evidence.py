@@ -491,6 +491,12 @@ class TestCheckpointExcludesTypeScriptJunk:
         assert wc.CHECKPOINT_EXCLUDE_PATHSPECS == (
             ":(exclude,glob)**/.cache/**",
             ":(exclude,glob)**/.guardkit/bootstrap_state.json",
+            # LI stage-2: the Python junk classes — bytecode caches at any
+            # depth and ``.local/`` (a pip --user install under a worktree
+            # HOME). 223 junk files landed on one real work-leg drive.
+            ":(exclude,glob)**/__pycache__/**",
+            ":(exclude,glob)**/*.pyc",
+            ":(exclude,glob)**/.local/**",
             ":(exclude,glob)**/node_modules/**",
             ":(exclude,glob)**/.next/**",
             ":(exclude,glob)**/.turbo/**",

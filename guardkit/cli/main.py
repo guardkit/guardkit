@@ -27,6 +27,7 @@ from guardkit.cli.system_plan import system_plan
 from guardkit.cli.system_context import context_switch
 from guardkit.cli.task import task
 from guardkit.cli.task_review import task_review
+from guardkit.cli.task_work import task_work
 from guardkit.cli.template import template
 
 # Load .env files automatically
@@ -138,6 +139,11 @@ cli.add_command(task)
 # Add the headless review leg (hyphenated house pattern, as system-plan).
 # This is the subcommand the pipeline's conductor spawns as `task-review`.
 cli.add_command(task_review)
+
+# Add the headless work leg — the fix journey's second stage. The pipeline's
+# conductor spawns this as `task-work`; a thin adapter over the existing
+# autobuild machinery (delegation, never a second distillation).
+cli.add_command(task_work)
 
 # Add Template command group (deterministic render+parse gate, DIM1-F4/PB-8)
 cli.add_command(template)

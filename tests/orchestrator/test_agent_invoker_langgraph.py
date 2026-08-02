@@ -60,6 +60,7 @@ from guardkit.orchestrator.harness.adapter import (
 )
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ----------------------------------------------------------------------
@@ -85,6 +86,7 @@ def _make_invoker(
     worktree = tmp_path / "worktree"
     worktree.mkdir(exist_ok=True)
 
+    kwargs.setdefault("model_name", M0_FLEET_SEAT)
     return AgentInvoker(
         worktree_path=worktree,
         max_turns_per_agent=30,
@@ -231,6 +233,21 @@ def mock_sdk():
 # ----------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
+
+
 class TestLazyImportOnSdkPath:
     """AC-003: the SDK path imports nothing from guardkitfactory.
 
@@ -320,7 +337,11 @@ class TestLazyImportOnSdkPath:
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
             max_turns=30,
-            model=None,
+            # M0 effective-seat fence (leg-invocation stage-2 §3): ``None`` is
+            # itself a refusal now — it falls to the bundled SDK CLI's frontier
+            # default. This test is about which harness class comes back, so it
+            # names the routine local seat.
+            model=M0_FLEET_SEAT,
             resume_session_id=None,
             sdk_debug_dir=None,
             cleanup_handler_installer=lambda: None,

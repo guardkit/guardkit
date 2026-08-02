@@ -85,6 +85,53 @@ def pytest_collection_modifyitems(config, items):
             )
 
 
+# ---------------------------------------------------------------------------
+# The M0 effective-seat fence (leg-invocation stage-2 design §3)
+# ---------------------------------------------------------------------------
+# ``select_harness`` now refuses to build a harness on a seat it cannot show is
+# local: a missing ``model`` (which falls to DeepAgents'
+# ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK CLI default), a
+# frontier provider prefix, or a bare alias with no ``OPENAI_BASE_URL``.
+#
+# Tests whose SUBJECT is SDK/harness plumbing rather than seat choice used to
+# construct harnesses with no model at all. They now declare the estate's
+# routine condition — a named local seat behind a local llama-swap endpoint —
+# via these two constants and the fixture below. Deliberately NOT
+# ``GUARDKIT_ALLOW_FRONTIER=1``: switching the fence off wholesale in the suite
+# would hide the next regression. The fence's own behaviour is driven in
+# ``tests/unit/test_m0_effective_seat_fence.py``.
+
+#: A local-fleet seat alias (the workhorse's llama-swap name shape).
+M0_FLEET_SEAT = "qwen36-workhorse"
+
+#: A non-vendor OpenAI-compatible endpoint — the load-bearing half of the rule.
+#: Deliberately loopback port 9 (discard): it satisfies the fence exactly as a
+#: real llama-swap URL does, and any test that accidentally tries to REACH it
+#: gets an instant connection refusal instead of a DNS/connect stall. No test in
+#: this suite is supposed to talk to a model at all.
+M0_FLEET_BASE_URL = "http://127.0.0.1:9/v1"
+
+
+@pytest.fixture
+def m0_routine_fleet_route(monkeypatch):
+    """Declare the routine local-fleet route for the duration of one test.
+
+    Returns the seat alias so a caller can thread it into ``model_name=`` where
+    a construction would otherwise pass ``None`` (which the fence refuses on its
+    own terms, base URL or not — ``None`` reaches an Anthropic default that
+    never consults ``OPENAI_BASE_URL``).
+    """
+    monkeypatch.setenv("OPENAI_BASE_URL", M0_FLEET_BASE_URL)
+    # llama-swap / vLLM ignore the key but ``ChatOpenAI`` refuses to construct
+    # without one — unlike ``ChatAnthropic``, which happily constructs with no
+    # credential at all. That asymmetry is why the pre-fence suite could build a
+    # frontier client and never notice. A placeholder keeps the local route
+    # constructible; nothing in these tests reaches the network.
+    monkeypatch.setenv("OPENAI_API_KEY", "local-fleet-placeholder")
+    monkeypatch.delenv("GUARDKIT_ALLOW_FRONTIER", raising=False)
+    return M0_FLEET_SEAT
+
+
 def normalize_path(path):
     """
     Normalize path for cross-platform comparison.

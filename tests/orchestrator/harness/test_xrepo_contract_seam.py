@@ -119,6 +119,17 @@ _HARNESS_EVENT_TYPES = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route: str) -> None:
+    """Declare the routine local-fleet route (leg-invocation stage-2 §3).
+
+    The seam's production-shaped drive passes a bare ``--model`` alias; the M0
+    effective-seat fence at the top of ``select_harness`` only reads that as a
+    local seat when ``OPENAI_BASE_URL`` names a non-vendor host. Stating the
+    route keeps this test about the cross-repo kwarg contract, which is its job.
+    """
+
+
 def _real_selector_kwargs(model: Any) -> dict[str, Any]:
     """Return the EXACT kwarg bag the orchestrator forwards to ``select_harness``.
 

@@ -31,6 +31,7 @@ from guardkit.orchestrator.agent_invoker import (
     TASK_WORK_SDK_MAX_TURNS,
 )
 from guardkit.orchestrator.quality_gates.task_work_interface import TaskWorkInterface
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ============================================================================
@@ -51,7 +52,7 @@ def worktree_path(tmp_path):
 @pytest.fixture
 def agent_invoker(worktree_path):
     """Create AgentInvoker with default SDK timeout for dynamic calculation tests."""
-    return AgentInvoker(worktree_path=worktree_path)
+    return AgentInvoker(worktree_path=worktree_path, model_name=M0_FLEET_SEAT)
 
 
 def create_task_file(
@@ -128,6 +129,21 @@ def create_mock_sdk_module():
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
+
+
 class TestInvokeWithRoleConfig:
     """Tests for ClaudeAgentOptions created in _invoke_with_role().
 
@@ -151,7 +167,9 @@ class TestInvokeWithRoleConfig:
         mock_sdk, captured = create_mock_sdk_module()
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test player prompt",
@@ -171,7 +189,9 @@ class TestInvokeWithRoleConfig:
         mock_sdk, captured = create_mock_sdk_module()
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test coach prompt",
@@ -192,7 +212,9 @@ class TestInvokeWithRoleConfig:
         player_tools = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test prompt",
@@ -213,7 +235,9 @@ class TestInvokeWithRoleConfig:
         coach_tools = ["Read", "Bash", "Grep", "Glob"]
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test prompt",
@@ -237,7 +261,9 @@ class TestInvokeWithRoleConfig:
         mock_sdk, captured = create_mock_sdk_module()
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test prompt",
@@ -257,7 +283,9 @@ class TestInvokeWithRoleConfig:
         mock_sdk, captured = create_mock_sdk_module()
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test prompt",
@@ -277,7 +305,9 @@ class TestInvokeWithRoleConfig:
         mock_sdk, captured = create_mock_sdk_module()
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            invoker = AgentInvoker(worktree_path=worktree_path)
+            invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
             try:
                 await invoker._invoke_with_role(
                     prompt="Test prompt",
@@ -329,7 +359,9 @@ class TestTaskWorkImplementConfig:
                 }
                 mock_parser_cls.return_value = mock_parser
 
-                invoker = AgentInvoker(worktree_path=worktree_path)
+                invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
                 try:
                     await invoker._invoke_task_work_implement("TASK-001")
                 except Exception:
@@ -351,7 +383,9 @@ class TestTaskWorkImplementConfig:
                 mock_parser.to_result.return_value = {}
                 mock_parser_cls.return_value = mock_parser
 
-                invoker = AgentInvoker(worktree_path=worktree_path)
+                invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
                 try:
                     await invoker._invoke_task_work_implement("TASK-001")
                 except Exception:
@@ -376,7 +410,9 @@ class TestTaskWorkImplementConfig:
                 mock_parser.to_result.return_value = {}
                 mock_parser_cls.return_value = mock_parser
 
-                invoker = AgentInvoker(worktree_path=worktree_path)
+                invoker = AgentInvoker(
+                worktree_path=worktree_path, model_name=M0_FLEET_SEAT
+            )
                 try:
                     await invoker._invoke_task_work_implement("TASK-001")
                 except Exception:

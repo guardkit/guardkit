@@ -53,6 +53,7 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
 )
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ----------------------------------------------------------------------
@@ -102,6 +103,10 @@ def _make_validator(tmp_path: Path, test_command: str = "pytest tests/dummy.py")
         coach_test_execution="sdk",
         matching_strategy="text",
         wave_size=1,
+        # M0 effective-seat fence (leg-invocation stage-2 §3): the Coach's SDK
+        # test-execution path builds a harness, so it must name a seat. Without
+        # one it falls to a frontier default and select_harness refuses.
+        coach_model_name=M0_FLEET_SEAT,
     )
 
 
@@ -120,6 +125,21 @@ def _user_tool_result_msg(
 # ----------------------------------------------------------------------
 # AC (b): MessageParseError mid-stream is non-terminal
 # ----------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
 
 
 class TestAC_B_MessageParseErrorNonTerminal:

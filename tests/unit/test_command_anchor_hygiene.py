@@ -27,6 +27,10 @@ _HEADING_ANCHORS = [
     ("Gating rule", "feature-spec.md"),   # Phase 5 "Confidence levels" gating rule
     ("Step 3.5", "task-work.md"),          # agent-invocation validation checkpoint
     ("Step 6.5", "task-work.md"),          # the "ONLY checkpoint" gate
+    # LI stage-2 GA2: the work leg's phases-not-run dispositions anchor on
+    # these two headings (guardkit/orchestrator/work_runner.py PHASES_NOT_RUN).
+    ("Step 6.5: Validate Agent Invocations", "task-work.md"),
+    ("Phase 6: Finalize (Completion — DF-018)", "task-work.md"),
 ]
 
 # Templates whose line-number anchors PB-12 removed. A ``<name>.md:NNN`` anchor

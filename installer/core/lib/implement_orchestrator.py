@@ -42,7 +42,11 @@ from collections import defaultdict
 from lib.review_parser import extract_subtasks_from_review
 from lib.implementation_mode_analyzer import assign_implementation_modes, get_mode_summary
 from lib.parallel_analyzer import detect_parallel_groups, generate_workspace_names
-from lib.guide_generator import generate_guide_content, write_guide_to_file
+from lib.guide_generator import (
+    coerce_effort_days,
+    generate_guide_content,
+    write_guide_to_file,
+)
 from lib.readme_generator import generate_feature_readme
 
 # Import task type detection
@@ -332,6 +336,14 @@ Auto-generated from {self.review_task['id']} recommendations.
     def generate_implementation_guide(self) -> None:
         """
         Generate IMPLEMENTATION-GUIDE.md using FW-006 functionality.
+
+        ``effort_estimate`` is a human string here ("1d", "4h"); the guide's
+        ``SubtaskData.estimated_effort_days`` is a float that gets SUMMED per
+        wave. Handing the string across that boundary raised ``TypeError`` at
+        step 9/10 on every leg of the 2026-08-02 crossing — after the fix-task
+        files were already written — so no guide and no README were ever
+        produced. ``coerce_effort_days`` is the one honest conversion
+        (leg-invocation stage-2 design §5).
         """
         output_path = os.path.join(self.subfolder_path, "IMPLEMENTATION-GUIDE.md")
 
@@ -343,7 +355,10 @@ Auto-generated from {self.review_task['id']} recommendations.
                 "title": subtask["title"],
                 "implementation_method": subtask.get("implementation_mode", "task-work"),
                 "complexity": subtask.get("complexity", 5),
-                "estimated_effort_days": subtask.get("effort_estimate", "1d"),
+                "estimated_effort_days": coerce_effort_days(
+                    subtask.get("effort_estimate", "1d"),
+                    subtask_id=str(subtask.get("id", "")),
+                ),
                 "parallel_group": subtask.get("parallel_group"),
                 "conductor_workspace": subtask.get("conductor_workspace", ""),
                 "dependencies": subtask.get("dependencies", []),
