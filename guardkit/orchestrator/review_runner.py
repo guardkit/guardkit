@@ -52,6 +52,10 @@ from guardkit.orchestrator.m0_fence import (
     last_verdict as last_m0_verdict,
     receipt_line_when_chokepoint_did_not_run,
 )
+from guardkit.orchestrator.pass_bar_mint import (
+    PASS_BAR_PROVENANCE_NOTE,
+    mint_pass_bars,
+)
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.specialist_invocations import run_specialist
 from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError, TaskParseError
@@ -224,6 +228,10 @@ class ReviewLegOutcome:
     fleet_memory_cli: Dict[str, Any] = field(default_factory=dict)
     context_payloads: List[ContextPayload] = field(default_factory=list)
     producer: Dict[str, Any] = field(default_factory=dict)
+    #: The machine-derived F1 pass bars minted beside this leg's fix tasks
+    #: (Rich's ruling, 2026-08-02). Empty dict = the producer never ran; an
+    #: ``enforcement: "off"`` block = it ran and minted nothing on purpose.
+    pass_bars: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def emits_markers(self) -> bool:
@@ -830,6 +838,16 @@ def produce_fix_tasks(
     * the producer calls ``sys.exit(1)`` when the report yields no parseable
       recommendations, which would take the whole leg down with the wrong exit
       code — so ``SystemExit`` is caught and reported.
+
+    **Pass bars (Rich's ruling, 2026-08-02).** When the target repo has
+    ``qa.enforce_tier1`` armed, each written fix task also gets a machine-derived
+    F1 pass bar at ``qa/pass-bar-<fix-task-stem>.yaml``
+    (:mod:`guardkit.orchestrator.pass_bar_mint`). Minting HERE — inside the
+    producer path, before the leg has even printed its artefact lines — is what
+    makes the bar-before-implementation law mechanical: the work leg's
+    ``check_pass_bar_precondition`` cannot run before the bar exists, because the
+    fix task it dispatches against did not exist before the bar either. When
+    enforcement is not armed, nothing is minted at all.
     """
     before = _snapshot_backlog(repo_root)
     info: Dict[str, Any] = {"called": True}
@@ -864,6 +882,9 @@ def produce_fix_tasks(
 
     written = _diff_backlog(before, repo_root)
     info["files_touched"] = [str(p) for p in written]
+    info["pass_bars"] = mint_pass_bars(
+        written, repo_root=repo_root, parent_review_id=task_id
+    ).as_receipt_block()
     return written, info
 
 
@@ -1031,6 +1052,12 @@ def build_receipt(
         "fleet_memory_cli": outcome.fleet_memory_cli,
         "context": [p.as_receipt_entry() for p in outcome.context_payloads],
         "producer": outcome.producer,
+        # Rich's ruling (2026-08-02): the bars this leg minted, each carrying the
+        # machine-derived provenance the file's own header states. A block with
+        # ``enforcement: "off"`` is the honest record that the repo did not arm
+        # qa.enforce_tier1 — never a silence that reads like "no bars needed".
+        "pass_bars": outcome.pass_bars
+        or {"enforcement": "not-evaluated", "provenance": PASS_BAR_PROVENANCE_NOTE, "bars": []},
         "error": outcome.error,
     }
 
@@ -1224,6 +1251,11 @@ def run_review_leg(
     # admissible-stem file in the backlog can never be printed as this leg's
     # work. `produced` is already the before/after diff (the producer
     # snapshots the backlog around its own writes).
+    # Rich's ruling (2026-08-02): the producer minted the fix tasks' pass bars in
+    # the same breath as the fix tasks. Lifted onto the outcome so every exit
+    # path's receipt carries the same block.
+    pass_bars = producer_info.get("pass_bars", {})
+
     all_backlog = sorted(_snapshot_backlog(repo_root).keys())
     fix_task_paths, rejected = admit_fix_task_paths(
         all_backlog, written_this_run=produced, report_path=report_path
@@ -1247,6 +1279,7 @@ def run_review_leg(
             fleet_memory_cli=memory,
             context_payloads=payloads,
             producer=producer_info,
+            pass_bars=pass_bars,
         )
 
     if not findings and not clean_line_present:
@@ -1265,6 +1298,7 @@ def run_review_leg(
             fleet_memory_cli=memory,
             context_payloads=payloads,
             producer=producer_info,
+            pass_bars=pass_bars,
         )
 
     return _outcome(
@@ -1279,6 +1313,7 @@ def run_review_leg(
         fleet_memory_cli=memory,
         context_payloads=payloads,
         producer=producer_info,
+        pass_bars=pass_bars,
     )
 
 
