@@ -640,3 +640,50 @@ class TestProducerEndToEnd:
         guide = (target / "IMPLEMENTATION-GUIDE.md").read_text(encoding="utf-8")
         assert "TASK-FWO-001" in guide
         assert "days" in guide or "hours" in guide
+
+    def test_a_colon_bearing_title_survives_the_frontmatter_round_trip(
+        self, tmp_path
+    ):
+        """The stage-2 crossing's FIRST find (2026-08-02, leg 2 of the replay).
+
+        The model writes colons into recommendation prose — ``Resolve the
+        mismatch: either …`` — and the producer wrote that title UNQUOTED into
+        the fix task's YAML frontmatter. The file then fails ``frontmatter.load``
+        (``mapping values are not allowed in this context``), which is the
+        exact parse the WORK LEG runs at Phase 0 — so every colon-bearing fix
+        task was REFUSED by the leg built to consume it. The title is now a
+        JSON-quoted scalar; this drives the round trip through the same
+        library the loader uses.
+        """
+        import os
+
+        import frontmatter
+
+        report_text = (
+            "# Review Report — TASK-REV-A1B2C3\n\n"
+            "## Summary\n\nOne defect.\n\n"
+            "## Recommendations\n\n"
+            "1. Resolve the service name mismatch in the task spec: either "
+            "change `settings.app_name` default from `\"api\"` to "
+            "`\"api_test\"` in `src/core/config.py:14`, or update the "
+            "acceptance criteria.\n"
+        )
+        report = tmp_path / ".claude" / "reviews" / "TASK-REV-A1B2C3-review-report.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(report_text, encoding="utf-8")
+        cwd = Path.cwd()
+        os.chdir(tmp_path)
+        try:
+            written, info = review_runner.produce_fix_tasks(
+                task_id="TASK-REV-A1B2C3",
+                task={"frontmatter": {"title": "Review feature workflow"}},
+                report_path=report,
+                repo_root=tmp_path,
+            )
+        finally:
+            os.chdir(cwd)
+
+        assert written, info.get("error")
+        post = frontmatter.load(str(written[0]))
+        assert "service name mismatch" in post.metadata["title"]
+        assert ":" in post.metadata["title"]
