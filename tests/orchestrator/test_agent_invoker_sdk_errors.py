@@ -29,6 +29,7 @@ from claude_agent_sdk._errors import MessageParseError
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.exceptions import AgentInvocationError
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ----------------------------------------------------------------------
@@ -81,6 +82,7 @@ def _make_invoker(tmp_path: Path) -> AgentInvoker:
         worktree_path=worktree,
         max_turns_per_agent=5,
         sdk_timeout_seconds=60,
+        model_name=M0_FLEET_SEAT,
     )
 
 
@@ -106,6 +108,21 @@ def _result_msg(session_id: str = "sess-1") -> ResultMessage:
 # ----------------------------------------------------------------------
 # AgentInvocationError payload contract
 # ----------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
 
 
 class TestAgentInvocationErrorErrorClass:

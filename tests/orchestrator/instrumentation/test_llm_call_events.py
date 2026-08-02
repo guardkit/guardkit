@@ -20,6 +20,7 @@ import pytest
 
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ============================================================================
@@ -80,6 +81,7 @@ def _make_invoker(
     worktree = tmp_path / "worktree"
     worktree.mkdir(exist_ok=True)
 
+    kwargs.setdefault("model_name", M0_FLEET_SEAT)
     return AgentInvoker(
         worktree_path=worktree,
         max_turns_per_agent=30,
@@ -137,6 +139,21 @@ def mock_sdk():
 # ============================================================================
 # Test: Successful emission (AC-001)
 # ============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
 
 
 class TestSuccessfulEmission:
@@ -401,6 +418,7 @@ class TestNullEmitterDefault:
             worktree_path=worktree,
             max_turns_per_agent=30,
             sdk_timeout_seconds=60,
+            model_name=M0_FLEET_SEAT,
         )
         assert isinstance(invoker._emitter, NullEmitter)
 
@@ -417,6 +435,7 @@ class TestNullEmitterDefault:
             worktree_path=worktree,
             max_turns_per_agent=30,
             sdk_timeout_seconds=60,
+            model_name=M0_FLEET_SEAT,
         )
         result_msg = _make_result_msg(mock_sdk)
 

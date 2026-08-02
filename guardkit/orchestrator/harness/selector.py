@@ -36,6 +36,7 @@ from typing import Any, Callable
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
+from guardkit.orchestrator.m0_fence import enforce_effective_seat
 
 logger = logging.getLogger(__name__)
 
@@ -312,9 +313,21 @@ def select_harness(
     Raises
     ------
     AgentInvocationError
-        If the env var names ``"langgraph"`` but guardkitfactory cannot
-        be imported, OR if the langgraph branch is selected without a
-        ``cwd=`` kwarg, OR if the env var names an unsupported value.
+        If the **M0 effective-seat fence** refuses the seat this call would
+        run on (stage-2 design §3 — see the block above the branches), OR if
+        the env var names ``"langgraph"`` but guardkitfactory cannot be
+        imported, OR if the langgraph branch is selected without a ``cwd=``
+        kwarg, OR if the env var names an unsupported value.
+
+    Notes
+    -----
+    Every real harness construction passes the M0 fence
+    (:func:`guardkit.orchestrator.m0_fence.enforce_effective_seat`): a missing
+    ``model`` is itself refused, naming the concrete default the branch would
+    have fallen to; a frontier provider prefix is refused; and a bare alias or
+    ``openai:`` prefix requires ``OPENAI_BASE_URL`` to name a non-vendor host.
+    ``GUARDKIT_ALLOW_FRONTIER=1`` proceeds deliberately, with a loud stderr
+    echo.
     """
     # TASK-HMIG-011 (cutover ceremony, parent review §7.4): the default is now
     # DEFAULT_HARNESS ("langgraph" since 2026-06-16). The SDK path stays an
@@ -352,6 +365,40 @@ def select_harness(
     # / ``recursion_limit``) so the SDK harness — which already streams events
     # incrementally and needs no callback — never sees it.
     on_model_activity = harness_kwargs.pop("on_model_activity", None)
+
+    # ------------------------------------------------------------------
+    # THE M0 EFFECTIVE-SEAT FENCE (leg-invocation stage-2 design §3)
+    # ------------------------------------------------------------------
+    # Placed here deliberately: after every kwarg pop (so the bag the fence
+    # reads is the bag a harness constructor would see) and BEFORE either
+    # construction branch (so one fence covers all four production callers —
+    # agent_invoker._invoke_with_role x2, coach_validator, and
+    # quality_gates/task_work_interface). This is the one chokepoint every real
+    # model call in the builder passes through.
+    #
+    # Why it exists: the CLI-level fence judges a SUPPLIED --model alias, and
+    # the pipeline never supplies one (zero `--model` hits in forge/src). So on
+    # the live, unattended path the seat rode ``model=None`` into DeepAgents,
+    # which builds ``ChatAnthropic(model_name="claude-sonnet-4-6")``
+    # (``deepagents/graph.py:145-153``) — a frontier seat on the routine
+    # critical path, i.e. an M0 breach that only a missing ANTHROPIC_API_KEY
+    # ever stopped. The SDK branch has the same hole one door down
+    # (``sdk_harness.py:279-280`` omits the key, so the bundled CLI picks).
+    #
+    # BRANCH INVENTORY (the design's "a branch that constructs no real model
+    # call is exempt" clause). ``select_harness`` has exactly three branches:
+    #   * ``"sdk"``       -> ClaudeSDKHarness   — a REAL model call. FENCED.
+    #   * ``"langgraph"`` -> LangGraphHarness   — a REAL model call. FENCED.
+    #   * anything else   -> AgentInvocationError, raised below, before any
+    #                        construction. Nothing to fence.
+    # There is NO test/fake/no-op harness branch in this selector, so the
+    # exemption clause has no members today. ``m0_fence.default_seat_for()``
+    # returning ``None`` is the seam a future exempt branch would use.
+    #
+    # The verdict is recorded (``m0_fence.last_verdict()``) so the legs'
+    # receipts REPORT it instead of re-deriving one; GUARDKIT_ALLOW_FRONTIER=1
+    # proceeds, but only with the loud stderr echo.
+    enforce_effective_seat(harness_kwargs.get("model"), harness=name)
 
     if name == "sdk":
         # Lazy import keeps the package importable when claude_agent_sdk

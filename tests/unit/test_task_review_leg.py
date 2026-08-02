@@ -107,6 +107,8 @@ def _no_network(monkeypatch):
     monkeypatch.setenv("GUARDKIT_REVIEW_MEMORY_CLI", "0")
     monkeypatch.delenv(FRONTIER_ESCAPE_ENV, raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    # The operator's real local-seat allowlist must never leak into a fence test.
+    monkeypatch.delenv("GUARDKIT_LOCAL_SEAT_HOSTS", raising=False)
 
 
 @pytest.fixture
@@ -333,9 +335,37 @@ class TestM0Fence:
         assert resolve_m0_violation("openai:gpt-5") is not None
 
     def test_openai_prefix_against_a_fleet_seat_is_allowed(self, monkeypatch):
-        """The fleet's own route IS openai:<alias> against a local base URL."""
-        monkeypatch.setenv("OPENAI_BASE_URL", "http://gb10.local:8000/v1")
+        """The fleet's own route IS openai:<alias> against a local base URL.
+
+        The base URL here is a REAL fleet shape (the workhorse's single-label
+        LAN hostname). It used to read ``http://gb10.local:8000/v1``, which the
+        LOCAL-SEAT ALLOWLIST ruled on 2026-08-02 no longer admits structurally:
+        ``gb10.local`` is a DOTTED name, and the allowlist admits dotted names
+        only through ``GUARDKIT_LOCAL_SEAT_HOSTS`` — see the sibling test below.
+        """
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://promaxgb10-41b1:8000/v1")
         assert resolve_m0_violation("openai:qwen36-workhorse") is None
+
+    def test_a_dotted_internal_name_needs_the_operator_allowlist(self, monkeypatch):
+        from guardkit.orchestrator.m0_fence import LOCAL_SEAT_HOSTS_ENV
+
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://gb10.local:8000/v1")
+        assert resolve_m0_violation("openai:qwen36-workhorse") is not None
+
+        monkeypatch.setenv(LOCAL_SEAT_HOSTS_ENV, "gb10.local")
+        assert resolve_m0_violation("openai:qwen36-workhorse") is None
+
+    def test_a_non_openai_vendor_route_is_a_violation_too(self, monkeypatch):
+        """The one-vendor denylist this replaced let every one of these pass."""
+        for base_url in (
+            "https://openrouter.ai/api/v1",
+            "https://api.deepseek.com/v1",
+            "https://api.groq.com/openai/v1",
+            "https://api.together.xyz/v1",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        ):
+            monkeypatch.setenv("OPENAI_BASE_URL", base_url)
+            assert resolve_m0_violation("openai:gpt-5") is not None, base_url
 
     def test_cli_refuses_a_frontier_model_with_exit_2(self, runner, repo, monkeypatch):
         install_fake_specialist(
@@ -407,8 +437,10 @@ class TestMarkerEmission:
         # And the pipeline's own fix-task extractor recovers a typed id.
         assert forge_extract_fix_tasks(artefacts) == ("TASK-HPR-001-add-null-guard",)
 
+        # The block is SAMPLE_FINDING plus the additive stage-2 anchor — every
+        # original key survives byte-identically, and only `anchor` is new.
         findings = forge_extract_findings(result.stdout)
-        assert findings == [SAMPLE_FINDING]
+        assert findings == [dict(SAMPLE_FINDING, anchor="src/parser.py|high")]
 
     def test_coach_score_line_is_emitted_only_when_supplied(
         self, runner, repo, monkeypatch
@@ -1047,23 +1079,30 @@ class TestRealProducer:
         assert "Step 1/10" not in captured.out
         assert "Step 1/10" in info["narration_tail"]
 
-    def test_producer_failure_after_writing_is_recorded_not_swallowed(
-        self, tmp_path
-    ):
-        """KNOWN PRE-EXISTING DEFECT, pinned so it cannot rot silently.
+    def test_producer_now_completes_its_guide_and_readme_steps(self, tmp_path):
+        """The CURED effort-coercion defect (stage-2 design §5), driven for real.
 
-        ``guide_generator._calculate_wave_duration`` (installer/core/lib/
-        guide_generator.py:164) sums ``estimated_effort_days`` across a wave,
-        but the subtasks the review parser produces carry that field as a
-        *string* — so the producer raises ``TypeError`` at step 9/10, **after**
-        the fix-task files are already on disk at step 8. The leg must keep the
-        real files and record the failure, never discard the work or claim a
-        clean producer run.
+        Until GA3, ``guide_generator._calculate_wave_duration`` summed
+        ``estimated_effort_days`` across a wave while the producer handed that
+        field over as the *string* ``"1d"`` — so the producer raised
+        ``TypeError`` at step 9/10, **after** the fix-task files were already on
+        disk at step 8. 42/42 legs of the 2026-08-02 crossing produced fix tasks
+        and never a guide. With the coercion in place the producer runs clean to
+        step 10/10 and both sidecars exist on disk.
         """
         (written, info), _ = self._run(tmp_path, "Review header parser subsystem")
         assert len(written) == 2
-        assert info["ok"] is False
-        assert "TypeError" in info["error"]
+        assert info["ok"] is True, info.get("error")
+        assert info.get("error") in (None, "")
+
+        target = written[0].parent
+        guide = target / "IMPLEMENTATION-GUIDE.md"
+        readme = target / "README.md"
+        assert guide.is_file(), f"no guide beside {written[0]}"
+        assert readme.is_file(), f"no README beside {written[0]}"
+        # The wave duration is the thing that used to raise: it must now read
+        # as real days, summed from the coerced "1d" estimates.
+        assert "days" in guide.read_text(encoding="utf-8")
 
     def test_producer_sidecars_are_not_candidate_artefacts(self, monkeypatch, tmp_path):
         """README / IMPLEMENTATION-GUIDE land beside the fix tasks but are not one."""
@@ -1096,25 +1135,36 @@ class TestRealProducer:
         assert len(admitted) == 1
         assert rejected == []
 
-    def test_two_word_slug_produces_a_stem_the_pipeline_would_drop(self, tmp_path):
-        """The producer/consumer stem mismatch, pinned as a live hazard.
+    def test_two_word_slug_now_produces_a_stem_the_pipeline_accepts(self, tmp_path):
+        """The CURED producer/consumer stem mismatch (stage-2 design §5).
 
-        The producer's prefix is the slug's word initials, so a two-word
-        feature slug yields ``TASK-FW-001-…`` — whose stem fails forge's
-        ``TASK-[A-Z0-9]{3,12}`` head and is dropped **silently** by
-        ``default_fix_tasks_extractor``. The leg's admission filter turns that
-        silence into a named rejection, and the consistency check then exits 2.
+        The producer's prefix is the slug's word initials, so a TWO-word
+        feature slug used to yield ``TASK-FW-001-…`` — whose stem fails forge's
+        ``TASK-[A-Z0-9]{3,12}`` head (``-`` is not in the class) and was dropped
+        **silently** by ``default_fix_tasks_extractor``: that fix task never
+        reached tier 2 and nothing said so. GA3 pads the derived prefix to >= 3
+        at the mint, so the same title now yields ``TASK-FWO-001-…``.
+
+        The regex here is a COPY, never an import — see the file header; its
+        home is ``forge/src/forge/cli/_serve_deps_stage_log.py:398``.
         """
         (written, _info), report = self._run(tmp_path, "Review feature workflow")
         assert written, "producer wrote nothing"
-        assert all(not FORGE_FIX_TASK_ID_RE.match(p.stem) for p in written)
+        # The slug is "feature-workflow": two words, a two-letter initial pair.
+        assert all(p.stem.startswith("TASK-FWO-") for p in written), [
+            p.stem for p in written
+        ]
+        assert all(FORGE_FIX_TASK_ID_RE.match(p.stem) for p in written), [
+            p.stem for p in written
+        ]
         admitted, rejected = review_runner.admit_fix_task_paths(
             written, written_this_run=written, report_path=report
         )
-        assert admitted == []
-        assert all("would drop it silently" in r["reason"] for r in rejected)
-        verdict, reason = review_runner.evaluate_consistency(
+        assert len(admitted) == len(written)
+        assert rejected == []
+        # And the pipeline's own extractor recovers every one of them.
+        assert len(forge_extract_fix_tasks(admitted)) == len(written)
+        verdict, _reason = review_runner.evaluate_consistency(
             findings=[SAMPLE_FINDING], fix_task_paths=admitted
         )
-        assert verdict == "FAILED"
-        assert "clean-looking success" in reason
+        assert verdict == "PASSED"

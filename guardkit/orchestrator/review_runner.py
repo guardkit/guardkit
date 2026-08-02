@@ -12,10 +12,14 @@ Design pins (``docs/leg-invocation-design-pass-2026-08-02.md``):
   :func:`guardkit.orchestrator.specialist_invocations.run_specialist`, which
   delegates to the hardened chokepoint ``AgentInvoker._invoke_with_role`` and
   inherits its cancel monitor, heartbeat, instrumentation, no-activity watchdog,
-  child-process reaping and never-raises contract. That chokepoint is also the
-  only ``select_harness`` call site that passes ``cwd=`` (``agent_invoker.py``
-  ~4525-4559); the design-phase call site in ``task_work_interface.py`` omits it
-  and dies under the default langgraph harness. Never copy that one.
+  child-process reaping and never-raises contract. Every ``select_harness`` call
+  site must pass ``cwd=`` — the langgraph branch needs it to build the
+  path-confined LocalShellBackend and raises without it. **Corrected
+  2026-08-02:** this note used to say the design-phase call site in
+  ``task_work_interface.py`` omitted ``cwd=``; the §e.7 one-keyword fix in this
+  same lane added it (``task_work_interface.py:481-499``), so all FOUR
+  production call sites now pass it (the two ``agent_invoker`` sites, the
+  design-phase site, and ``coach_validator``'s test-execution site).
 * **The leg prints the markers, not the model** (§e.3). Model-authored paths on
   stdout are an injection route into the pipeline's *planning* — the printed
   paths become the ``--task-id`` of the next dispatches. So the leg prints only
@@ -43,6 +47,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from guardkit.orchestrator.m0_fence import (
+    FRONTIER_PROVIDER_PREFIXES,
+    last_verdict as last_m0_verdict,
+    receipt_line_when_chokepoint_did_not_run,
+)
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.specialist_invocations import run_specialist
 from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError, TaskParseError
@@ -77,32 +86,11 @@ REVIEW_ALLOWED_TOOLS: Tuple[str, ...] = ("Read", "Grep", "Glob", "Write")
 #: silence.
 FIX_TASK_STEM_RE = re.compile(r"^TASK-[A-Z0-9]{3,12}(?:-[A-Za-z0-9]+)*$")
 
-#: Provider prefixes that mean "a frontier vendor's API" for the M0 fence.
-#: ``openai`` is handled separately: the fleet's own route *is*
-#: ``init_chat_model("openai:<alias>")`` against a local ``OPENAI_BASE_URL``, so
-#: the prefix alone proves nothing — see
-#: :func:`guardkit.cli.task_review.resolve_m0_violation`.
-FRONTIER_PROVIDER_PREFIXES: Tuple[str, ...] = (
-    "anthropic",
-    "azure_openai",
-    "azure-openai",
-    "bedrock",
-    "bedrock_converse",
-    "cohere",
-    "deepseek",
-    "fireworks",
-    "google",
-    "google_genai",
-    "google_vertexai",
-    "gemini",
-    "groq",
-    "mistralai",
-    "openrouter",
-    "perplexity",
-    "together",
-    "vertexai",
-    "xai",
-)
+# ``FRONTIER_PROVIDER_PREFIXES`` used to be defined here. It MOVED (stage-2
+# design §3.1) to :mod:`guardkit.orchestrator.m0_fence`, which is now the single
+# statement of the M0 rule — the chokepoint fence in ``harness/selector.py`` and
+# this leg must never state it twice. It is imported at the top of this module
+# and stays in ``__all__``, so every existing importer is unchanged.
 
 #: §c.1's dispositions, verbatim, as data. Written into the receipt so a reader
 #: can see what did not happen; also rendered into the protocol injection.
@@ -487,6 +475,100 @@ def read_findings_file(path: Path) -> Tuple[List[Dict[str, Any]], Optional[float
 
 
 # ---------------------------------------------------------------------------
+# The finding anchor (stage-2 design §5) — the dedup key
+# ---------------------------------------------------------------------------
+#
+# The pipeline's no-progress stop needs a STABLE identity for a finding across
+# review cycles. The fix-task id is not it: it is prose+position-derived, so the
+# same defect was minted under 88 distinct ids in the runaway. The measured
+# stable key is the finding's LOCATION: 162 findings collapsed to 31
+# (file, line) pairs and 8 files, and the line drifted (14 / null / 0 / 36) for
+# a single defect while the file survived. So the anchor is
+# ``<repo-relative file>|<severity>`` — and ``line`` stays a separate data
+# field on the finding, never part of its identity.
+#
+# The coarseness is NAMED and accepted (design §5): file+severity collapses
+# distinct same-file defects. At ``max_review_cycles: 2`` the cost is at most
+# one early stop on a legitimately-progressing same-file journey, and the stop
+# names its anchors so the reader sees why.
+
+#: What the anchor says when a finding names no file at all. A constant, not a
+#: bare "", so the anchor is always a readable two-part string.
+ANCHOR_NO_FILE = "(no file)"
+
+#: What the anchor says when a finding names no severity. The protocol requires
+#: one (``task_review_protocol.md`` §2.5) but the leg never assumes compliance.
+ANCHOR_NO_SEVERITY = "unspecified"
+
+#: A trailing ``:88`` / ``:88:4`` on a file value. The model is asked for
+#: ``file`` and ``line`` separately but often writes ``src/parser.py:88``; the
+#: line must not smuggle itself into the identity through the file half.
+_TRAILING_LINE_RE = re.compile(r":\d+(?::\d+)?$")
+
+
+def normalize_anchor_file(raw: Any, repo_root: Optional[Path] = None) -> str:
+    """Normalize a finding's ``file`` value into the anchor's first half.
+
+    Repo-relative, POSIX separators, no ``./`` prefix, no trailing ``:line``.
+    An absolute path inside ``repo_root`` is relativized; one outside it is
+    kept verbatim (naming a foreign path honestly beats inventing a relative
+    one). Anything unusable becomes :data:`ANCHOR_NO_FILE`.
+    """
+    if not isinstance(raw, str):
+        return ANCHOR_NO_FILE
+    text = raw.strip().replace("\\", "/")
+    if not text:
+        return ANCHOR_NO_FILE
+    text = _TRAILING_LINE_RE.sub("", text)
+    while text.startswith("./"):
+        text = text[2:]
+    if not text:
+        return ANCHOR_NO_FILE
+    if repo_root is not None and text.startswith("/"):
+        try:
+            text = Path(text).resolve().relative_to(Path(repo_root).resolve()).as_posix()
+        except (ValueError, OSError):
+            pass
+    return text or ANCHOR_NO_FILE
+
+
+def normalize_anchor_severity(raw: Any) -> str:
+    """Normalize a finding's ``severity`` into the anchor's second half."""
+    if not isinstance(raw, str):
+        return ANCHOR_NO_SEVERITY
+    text = raw.strip().lower()
+    return text or ANCHOR_NO_SEVERITY
+
+
+def finding_anchor(finding: Dict[str, Any], repo_root: Optional[Path] = None) -> str:
+    """``<normalized repo-relative file>|<severity>`` for one finding."""
+    return (
+        f"{normalize_anchor_file(finding.get('file'), repo_root)}"
+        f"|{normalize_anchor_severity(finding.get('severity'))}"
+    )
+
+
+def anchored_findings(
+    findings: Sequence[Dict[str, Any]], repo_root: Optional[Path] = None
+) -> List[Dict[str, Any]]:
+    """Return copies of ``findings`` each carrying an ``anchor`` field.
+
+    Purely ADDITIVE: no existing key is changed, dropped or re-ordered, so the
+    block stays exactly what forge already parses tolerantly. A finding that
+    already carries a non-empty ``anchor`` (a hand-written fixture, a replay)
+    keeps it — the rule is stated once, here, and never applied twice.
+    """
+    out: List[Dict[str, Any]] = []
+    for finding in findings:
+        item = dict(finding)
+        existing = item.get("anchor")
+        if not (isinstance(existing, str) and existing.strip()):
+            item["anchor"] = finding_anchor(item, repo_root)
+        out.append(item)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # §e.3 — artefact discipline
 # ---------------------------------------------------------------------------
 
@@ -604,11 +686,20 @@ def evaluate_consistency(
 # ---------------------------------------------------------------------------
 
 
+#: The ``## Artefacts`` placeholder the REVIEW leg prints when it found nothing.
+#: It must not start with ``-``: forge's artefact-line regex is
+#: ``^\s*-\s+(\S.*?)\s*$``, so a dashed placeholder would be scraped as a path.
+EMPTY_ARTEFACTS_NOTE_REVIEW = (
+    "_(no fix tasks — the review is positively clean; see the report)_"
+)
+
+
 def render_marker_block(
     *,
     fix_task_paths: Sequence[str],
     findings: Sequence[Dict[str, Any]],
     coach_score: Optional[float] = None,
+    empty_artefacts_note: Optional[str] = None,
 ) -> str:
     """Render the exact four-marker shape ``forge``'s parser scrapes.
 
@@ -622,6 +713,12 @@ def render_marker_block(
 
     ``## Coach Breakdown`` is not emitted: the review leg has no coach and
     inventing a criterion table would be a fabricated gate.
+
+    ``empty_artefacts_note`` lets the WORK leg supply its own honest wording for
+    the empty section (it consumes fix tasks; it never mints them, so "the
+    review is positively clean" would be the wrong sentence). It is a parameter
+    rather than a second renderer on purpose: the marker SHAPE is stated exactly
+    once, here, and both legs are held to it.
     """
     lines: List[str] = []
     if coach_score is not None:
@@ -631,9 +728,7 @@ def render_marker_block(
     if fix_task_paths:
         lines.extend(f"- {path}" for path in fix_task_paths)
     else:
-        lines.append(
-            "_(no fix tasks — the review is positively clean; see the report)_"
-        )
+        lines.append(empty_artefacts_note or EMPTY_ARTEFACTS_NOTE_REVIEW)
     lines.append("")
     lines.append("## Detection Findings")
     lines.append("```json")
@@ -877,6 +972,29 @@ def receipt_path_for(repo_root: Path, task_id: str) -> Path:
     return repo_root / ".guardkit" / "autobuild" / task_id / "task_review_results.json"
 
 
+def _m0_fence_receipt_line(outcome: "ReviewLegOutcome") -> str:
+    """The receipt's ``m0_fence`` value — the CHOKEPOINT's verdict when it ran.
+
+    Stage-2 design §3.3. Three cases, and the middle one is the whole point:
+
+    * the chokepoint fence ran → report its verdict verbatim
+      (:meth:`~guardkit.orchestrator.m0_fence.M0Verdict.as_receipt_line`);
+    * it did not run and a ``--model`` was supplied → PARTIALLY-EVALUATED. The
+      CLI-level fence saw that alias, but it judges a provider PREFIX, so a bare
+      alias (the fleet's own shape) was never route-judged at all;
+    * it did not run and no ``--model`` was supplied → NOT-EVALUATED, verbatim
+      as before. Nothing judged the seat, and the receipt must not pretend.
+
+    The last two sentences live in
+    :func:`~guardkit.orchestrator.m0_fence.receipt_line_when_chokepoint_did_not_run`
+    — one home, shared with the work leg.
+    """
+    verdict = last_m0_verdict()
+    if verdict is not None:
+        return verdict.as_receipt_line()
+    return receipt_line_when_chokepoint_did_not_run(outcome.model)
+
+
 def build_receipt(
     outcome: ReviewLegOutcome, *, build_id: Optional[str], correlation_id: Optional[str]
 ) -> Dict[str, Any]:
@@ -889,17 +1007,16 @@ def build_receipt(
         "status": outcome.status,
         "exit_code": outcome.exit_code,
         "model": outcome.model,
-        # Coordinator cure (LI coach finding 1): the M0 fence judges only a
-        # SUPPLIED --model, and the pipeline's dispatch never supplies one —
-        # the receipt must say so, or a reader mistakes model:null for
-        # "fenced". The effective-seat fence is the ledgered follow-up.
-        "m0_fence": (
-            "evaluated (--model supplied)"
-            if outcome.model
-            else "NOT-EVALUATED (no --model supplied; effective seat = "
-            "harness default — fence the resolved seat before the first "
-            "UNATTENDED crossing)"
-        ),
+        # Receipt truth (stage-2 design §3.3). The effective-seat fence at
+        # ``select_harness`` is the chokepoint every real model call passes
+        # through, so when it ran, its verdict IS the answer and the receipt
+        # REPORTS it — it never re-derives one. The honest NOT-EVALUATED wording
+        # survives only where the fence genuinely did not run (no harness was
+        # constructed at all: a Phase-0 refusal, a faked seam, a leg that died
+        # before the model call). Reading model:null as "fenced" was the LI
+        # coach's finding 1; reading a silence as a pass would be the same
+        # mistake one level down.
+        "m0_fence": _m0_fence_receipt_line(outcome),
         "seat": outcome.seat,
         "duration_seconds": round(outcome.duration_seconds, 3),
         "findings_count": len(outcome.findings),
@@ -1085,6 +1202,12 @@ def run_review_leg(
             producer={"called": False, "reason": "no usable findings file"},
         )
 
+    # The anchor is attached HERE — at the one point where the findings that
+    # become ``## Detection Findings`` are assembled — so the marker block, the
+    # receipt and the consistency check all see the same anchored findings and
+    # cannot disagree (design §5, leg side).
+    findings = anchored_findings(findings, repo_root)
+
     report_text = report_path.read_text(encoding="utf-8", errors="replace")
     clean_line_present = _clean_line_present(report_text)
 
@@ -1162,17 +1285,24 @@ def run_review_leg(
 __all__ = [
     "CLEAN_REVIEW_LINE",
     "DEFAULT_SDK_TIMEOUT_SECONDS",
+    "EMPTY_ARTEFACTS_NOTE_REVIEW",
     "FIX_TASK_STEM_RE",
     "FRONTIER_PROVIDER_PREFIXES",
     "PHASES_NOT_RUN",
     "REVIEW_ALLOWED_TOOLS",
+    "ANCHOR_NO_FILE",
+    "ANCHOR_NO_SEVERITY",
     "REVIEW_SPECIALIST_NAME",
     "ContextPayload",
     "ReviewLegOutcome",
     "admit_fix_task_paths",
+    "anchored_findings",
     "attempt_fleet_memory_cli",
     "build_receipt",
     "evaluate_consistency",
+    "finding_anchor",
+    "normalize_anchor_file",
+    "normalize_anchor_severity",
     "load_context_payloads",
     "produce_fix_tasks",
     "read_findings_file",

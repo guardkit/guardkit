@@ -33,6 +33,7 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
 )
+from tests.conftest import M0_FLEET_SEAT
 
 
 # ============================================================================
@@ -112,6 +113,21 @@ def _make_user_msg_with_tool_block(
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
+
+
 class TestSdkUtils:
     """Tests for guardkit/orchestrator/sdk_utils.py."""
 
@@ -157,7 +173,7 @@ class TestCoachValidatorInit:
     def test_init_default_subprocess_execution(self, tmp_path, monkeypatch):
         """Default coach_test_execution is 'subprocess' (TASK-AB-COACHSUBPROC01)."""
         monkeypatch.delenv("GUARDKIT_COACH_TEST_EXECUTION", raising=False)
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         assert validator._coach_test_execution == "subprocess"
 
@@ -228,7 +244,7 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             result = await validator._run_tests_via_sdk("pytest tests/")
@@ -253,7 +269,7 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             result = await validator._run_tests_via_sdk("pytest tests/")
@@ -278,7 +294,7 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             result = await validator._run_tests_via_sdk("pytest tests/")
@@ -302,7 +318,7 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             result = await validator._run_tests_via_sdk("pytest tests/")
@@ -321,7 +337,7 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             result = await validator._run_tests_via_sdk("pytest tests/")
@@ -339,7 +355,9 @@ class TestRunTestsViaSdk:
 
         mock_sdk.query = fake_query
 
-        validator = CoachValidator(str(tmp_path), test_timeout=300)
+        validator = CoachValidator(
+            str(tmp_path), test_timeout=300, coach_model_name=M0_FLEET_SEAT
+        )
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
             # Patch asyncio.timeout context manager to raise TimeoutError on exit
@@ -358,7 +376,7 @@ class TestRunTestsViaSdk:
 
     async def test_sdk_import_error(self, tmp_path):
         """ImportError from claude_agent_sdk import raises (caller catches)."""
-        validator = CoachValidator(str(tmp_path))
+        validator = CoachValidator(str(tmp_path), coach_model_name=M0_FLEET_SEAT)
 
         # Simulate claude_agent_sdk not installed
         with patch.dict("sys.modules", {"claude_agent_sdk": None}):

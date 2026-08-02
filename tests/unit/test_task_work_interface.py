@@ -191,6 +191,21 @@ def mock_contentblock_sdk_module(mock_contentblock_sdk_query):
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
+
+    The M0 effective-seat fence at the top of ``select_harness`` refuses any
+    harness whose seat cannot be shown to be local — including a seat that was
+    never named, which is what these tests used to build (``model=None`` falls
+    to DeepAgents' ``ChatAnthropic("claude-sonnet-4-6")`` or the bundled SDK
+    CLI default). Their subject is SDK/harness plumbing, not seat choice, so
+    they state the estate's routine condition — a named local seat behind a
+    local endpoint, see ``tests/conftest.py`` — rather than switch the fence
+    off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+    """
+
+
 class TestTaskWorkInterfaceInit:
     """Test TaskWorkInterface initialization."""
 
@@ -1257,6 +1272,23 @@ class TestSDKOptionsForInlineProtocol:
         # TASK-HMIG-011 cutover (2026-06-16): default harness is now "langgraph";
         # these SDK-path tests opt into the SDK harness explicitly.
         monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        # LEG-INVOCATION STAGE-2 §3, named out loud: ``execute_design_phase``'s
+        # ``select_harness`` call site (task_work_interface.py:481) passes NO
+        # model at all — the interface has no seat parameter to thread one from
+        # — so the M0 effective-seat fence refuses it, correctly: an unnamed
+        # seat on the design pre-loop is a frontier call. This class's subject
+        # is the ClaudeAgentOptions shape, so it acknowledges the fence with the
+        # documented escape (which prints a loud stderr line every time) rather
+        # than pretend the seat is local. The real cure — threading a seat into
+        # TaskWorkInterface — is a design-phase change, not a test change, and
+        # the pre-loop is off by default on the leg (enable_pre_loop=False).
+        # CORRECTED 2026-08-02: this comment used to add that the call site was
+        # "already broken ... (no cwd=)" on the default langgraph harness. That
+        # was true when it was written and is NOT true now — the §e.7 one-keyword
+        # fix in this same lane added ``cwd=self.worktree_path`` to the
+        # ``select_harness`` call (task_work_interface.py:481-499). The unnamed
+        # seat is the only reason this class needs the escape.
+        monkeypatch.setenv("GUARDKIT_ALLOW_FRONTIER", "1")
 
     @pytest.mark.asyncio
     async def test_sdk_uses_project_only_setting_sources(self, interface, tmp_worktree):

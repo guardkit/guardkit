@@ -32,13 +32,17 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urlparse
 
 import click
 
+from guardkit.orchestrator.m0_fence import (  # noqa: F401  (re-exported)
+    FRONTIER_ESCAPE_ENV,
+    FRONTIER_PROVIDER_PREFIXES,
+    _split_provider_prefix,
+    resolve_m0_violation,
+)
 from guardkit.orchestrator.review_runner import (
     DEFAULT_SDK_TIMEOUT_SECONDS,
-    FRONTIER_PROVIDER_PREFIXES,
     render_marker_block,
     run_review_leg,
     write_receipt,
@@ -46,87 +50,18 @@ from guardkit.orchestrator.review_runner import (
 
 logger = logging.getLogger(__name__)
 
-#: Set to ``1`` to run the leg on a frontier seat deliberately. Anything else
-#: (including unset) leaves the fence armed.
-FRONTIER_ESCAPE_ENV = "GUARDKIT_ALLOW_FRONTIER"
+# ``FRONTIER_ESCAPE_ENV``, ``_split_provider_prefix`` and ``resolve_m0_violation``
+# used to be defined in this module. They MOVED (stage-2 design §3.1) to
+# :mod:`guardkit.orchestrator.m0_fence` so the M0 rule is stated exactly once —
+# the chokepoint fence at ``harness/selector.py`` builds on the same predicate
+# rather than restating it. They are re-exported here (and kept in ``__all__``)
+# so ``tests/unit/test_task_review_leg.py`` and any other importer are unchanged.
 
 _NATS_NOTICE = (
     "guardkit task-review: --nats accepted for dispatch compatibility — "
     "streaming NOT BUILT (no NATS wiring exists on this path). Nothing was "
     "emitted to the bus."
 )
-
-
-def _split_provider_prefix(model: str) -> Tuple[Optional[str], str]:
-    """Split ``provider:alias`` / ``provider/alias`` into its two halves."""
-    for separator in (":", "/"):
-        if separator in model:
-            provider, _, alias = model.partition(separator)
-            provider = provider.strip().lower()
-            if provider:
-                return provider, alias.strip()
-    return None, model.strip()
-
-
-def resolve_m0_violation(model: Optional[str]) -> Optional[str]:
-    """The **M0 fence**: refuse a frontier seat unless explicitly allowed.
-
-    M0 — *zero frontier on the routine critical path* — is the estate's
-    outranking measurable, and the design's whole M0 exposure moves into this
-    leg (the pipeline side stays provably model-free). So the fence is a
-    mechanism, not a promise: a resolved model alias carrying a frontier
-    provider prefix makes the leg **exit 2 naming the model**, unless
-    ``GUARDKIT_ALLOW_FRONTIER=1`` is set explicitly.
-
-    Returns the violation message, or ``None`` when the model is allowed.
-
-    Two rules:
-
-    1. a provider prefix in :data:`FRONTIER_PROVIDER_PREFIXES` is a violation
-       outright;
-    2. ``openai:`` is judged by its route, not its name — the fleet's own
-       harness path *is* ``init_chat_model("openai:<alias>")`` against a local
-       ``OPENAI_BASE_URL``, so ``openai:`` is a violation only when
-       ``OPENAI_BASE_URL`` is unset (defaults to the vendor) or points at
-       ``openai.com``.
-
-    **Named hole, honestly:** a *bare* alias with no provider prefix (e.g.
-    ``claude-sonnet-4-5-20250929``, which is also a common vLLM
-    ``SERVED_MODEL_NAME`` on this fleet) is not judged by this fence — where it
-    routes is decided by ``OPENAI_BASE_URL`` in the run recipe, which is
-    config-as-code and outside the leg. The fence catches the explicit case; it
-    does not claim to catch every case.
-    """
-    if not model:
-        return None
-
-    provider, alias = _split_provider_prefix(model)
-    if provider is None:
-        return None
-
-    if provider == "openai":
-        base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
-        if not base_url:
-            return (
-                f"M0 fence: model {model!r} resolves to the OpenAI vendor API "
-                "(OPENAI_BASE_URL is unset, so the 'openai:' prefix is not a "
-                "local-fleet route)."
-            )
-        host = (urlparse(base_url).hostname or "").lower()
-        if host == "openai.com" or host.endswith(".openai.com"):
-            return (
-                f"M0 fence: model {model!r} routes to the OpenAI vendor API "
-                f"(OPENAI_BASE_URL host {host!r})."
-            )
-        return None
-
-    if provider in FRONTIER_PROVIDER_PREFIXES:
-        return (
-            f"M0 fence: model {model!r} carries the frontier provider prefix "
-            f"{provider!r} (alias {alias!r}). The review leg is on the routine "
-            "critical path and M0 means zero frontier there."
-        )
-    return None
 
 
 @click.command("task-review")

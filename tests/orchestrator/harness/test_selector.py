@@ -46,6 +46,24 @@ from guardkit.orchestrator.harness.selector import (
 _TEST_ENV_VAR = "GUARDKIT_HARNESS_TEST_ONLY"
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route: str) -> None:
+    """Declare the routine local-fleet route so the M0 fence lets construction run.
+
+    Leg-invocation stage-2 §3 put an effective-seat fence at the top of
+    :func:`select_harness`: a bare model alias (which is what
+    :func:`_sdk_kwargs` carries, and what the CLI's ``--model`` produces) is
+    auto-prefixed to ``openai:`` by the langgraph translator, so it is only a
+    local seat when ``OPENAI_BASE_URL`` names a non-vendor host.
+
+    These tests are about **dispatch and kwarg translation**, not about M0, so
+    they state the estate's routine condition (``tests/conftest.py``) rather
+    than reach for ``GUARDKIT_ALLOW_FRONTIER``, which would switch the fence off
+    wholesale and hide a future regression. The fence's own behaviour is driven
+    in ``tests/unit/test_m0_effective_seat_fence.py``.
+    """
+
+
 def _has_guardkitfactory() -> bool:
     """True iff guardkitfactory is importable.
 

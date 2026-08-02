@@ -571,8 +571,9 @@ async def async_heartbeat(
 # NOT shell `guardkit task-work --implement-only` and does NOT read
 # installer/core/commands/task-work.md — _invoke_task_work_implement() builds an
 # INLINE SDK prompt from the backend-selected autobuild_execution_protocol[_medium|_slim].md
-# (see _build_autobuild_implementation_prompt / agent_invoker.py:7866-7876). AutoBuild
-# hardwires this True at all three AgentInvoker sites (autobuild.py:2086/:2118/:8146);
+# (see _build_autobuild_implementation_prompt in this module — pinned by NAME,
+# not line: the 2026-08-02 re-pinning moved its own target). AutoBuild
+# hardwires this True at all three AgentInvoker sites (autobuild.py:2439/:2472/:8856);
 # this env default only affects direct constructor use. The compact _build_player_prompt
 # path serves implementation_mode: direct (_invoke_player_direct), not this flag.
 USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "false").lower() == "true"

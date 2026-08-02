@@ -485,6 +485,19 @@ class TaskWorkInterface:
                 max_turns=25,  # Inline protocol is simpler than full task-work
                 # TASK-POF-003: project-only context (~78KB) vs user+project (~840KB).
                 setting_sources=["project"],
+                # Leg-invocation stage-2 design §e.7 / §2 ("banked in the same
+                # stage"). This call site omitted ``cwd=`` and therefore died
+                # under the DEFAULT harness: ``select_harness`` pops ``cwd`` and
+                # the langgraph branch REQUIRES it to build the path-confined
+                # LocalShellBackend, raising AgentInvocationError -> the caller
+                # above turns that into DesignPhaseError. The other three
+                # production call sites already pass it (``_invoke_with_role``
+                # and ``_invoke_task_work_implement`` in ``agent_invoker.py``,
+                # and ``coach_validator.py``'s test-execution site — by NAME,
+                # since line pins here have drifted twice) and this same method passes
+                # ``self.worktree_path`` to ``.invoke()`` twelve lines below, so
+                # there was never any doubt about which path belongs here.
+                cwd=self.worktree_path,
             )
         except AgentInvocationError as e:
             logger.error(f"Harness selection failed: {e}")

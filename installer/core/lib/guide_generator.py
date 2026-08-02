@@ -14,9 +14,13 @@ Example:
     >>> write_guide_to_file(content, "docs/IMPLEMENTATION-GUIDE.md")
 """
 
+import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Method display names (extensible without code changes - OCP)
 METHOD_DISPLAY_NAMES = {
@@ -31,6 +35,83 @@ RATIONALE_TEMPLATES = {
     "direct": "Straightforward changes with clear acceptance criteria and low integration risk.",
     "manual": "Human execution of automated script with review of output.",
 }
+
+
+# ---------------------------------------------------------------------------
+# Effort coercion (leg-invocation stage-2 design §5)
+# ---------------------------------------------------------------------------
+#
+# ``SubtaskData.estimated_effort_days`` is a FLOAT and ``_calculate_wave_duration``
+# sums it. The fix-task producer, however, carries effort as a human string
+# ("1d", "4h") — implement_orchestrator.py's guide step passes
+# ``subtask.get("effort_estimate", "1d")`` straight through — so the sum raised
+# ``TypeError: unsupported operand type(s) for +: 'int' and 'str'`` AFTER the
+# fix-task files were already on disk. Measured cost: 42/42 legs of the
+# 2026-08-02 crossing produced fix tasks but NO guide and NO README.
+#
+# The cure is an honest coercion at the one seam where a raw dict becomes
+# SubtaskData: parse the unit, never guess silently.
+
+#: Working hours in one effort day — the unit "4h" is converted against.
+#: Matches ``_calculate_wave_duration``'s own ``total_days * 8`` hours display.
+HOURS_PER_EFFORT_DAY = 8.0
+
+#: What an unparseable effort becomes. Same as the dataclass default: the guide
+#: is a planning aid, so a bad estimate must degrade to the default estimate
+#: with a warning, never take the whole guide down with it.
+DEFAULT_EFFORT_DAYS = 1.0
+
+# NO SIGN CLASS, deliberately. ``[+-]?`` accepted "-2d", and a negative effort
+# does not fail — it SUBTRACTS from the wave total, so one mistyped row quietly
+# shortens the plan instead of being caught. An effort estimate is a duration;
+# a signed one is not a smaller estimate, it is an unparseable one, and it takes
+# the named default-with-a-warning path like every other thing this regex
+# refuses. (The numeric branch of coerce_effort_days applies the same rule.)
+_EFFORT_RE = re.compile(
+    r"^\s*(\d+(?:\.\d+)?)\s*(d|day|days|h|hr|hrs|hour|hours|w|wk|week|weeks)?\s*$",
+    re.IGNORECASE,
+)
+
+_EFFORT_UNIT_DAYS = {
+    "d": 1.0, "day": 1.0, "days": 1.0,
+    "h": 1.0 / HOURS_PER_EFFORT_DAY,
+    "hr": 1.0 / HOURS_PER_EFFORT_DAY,
+    "hrs": 1.0 / HOURS_PER_EFFORT_DAY,
+    "hour": 1.0 / HOURS_PER_EFFORT_DAY,
+    "hours": 1.0 / HOURS_PER_EFFORT_DAY,
+    "w": 5.0, "wk": 5.0, "week": 5.0, "weeks": 5.0,
+}
+
+
+def coerce_effort_days(raw: Any, *, subtask_id: str = "") -> float:
+    """Coerce an effort estimate to days as a float.
+
+    ``1d`` -> 1.0, ``4h`` -> 0.5, ``2.5`` -> 2.5, ``1w`` -> 5.0. A bare number
+    is already days. Anything unparseable (including ``None``, and including a
+    NEGATIVE value in either form — see :data:`_EFFORT_RE`) becomes
+    :data:`DEFAULT_EFFORT_DAYS` and says so in a WARNING — the estimate is
+    guessed exactly once, out loud, instead of crashing the guide or silently
+    subtracting from the wave total.
+    """
+    if isinstance(raw, bool):  # bool is an int; an effort of True is nonsense
+        pass
+    elif isinstance(raw, (int, float)):
+        if raw >= 0:
+            return float(raw)
+    elif isinstance(raw, str):
+        match = _EFFORT_RE.match(raw)
+        if match:
+            value = float(match.group(1))
+            unit = (match.group(2) or "d").lower()
+            return value * _EFFORT_UNIT_DAYS[unit]
+
+    logger.warning(
+        "unparseable effort estimate %r%s — using %.1f day(s)",
+        raw,
+        f" on {subtask_id}" if subtask_id else "",
+        DEFAULT_EFFORT_DAYS,
+    )
+    return DEFAULT_EFFORT_DAYS
 
 
 @dataclass
@@ -65,13 +146,19 @@ def _normalize_subtask(task: dict) -> SubtaskData:
         'task-work'
         >>> normalized.complexity
         5
+        >>> _normalize_subtask({"id": "A", "title": "T",
+        ...                     "estimated_effort_days": "1d"}).estimated_effort_days
+        1.0
     """
     return SubtaskData(
         id=task["id"],
         title=task["title"],
         implementation_method=task.get("implementation_method", "task-work"),
         complexity=task.get("complexity", 5),
-        estimated_effort_days=task.get("estimated_effort_days", 1.0),
+        estimated_effort_days=coerce_effort_days(
+            task.get("estimated_effort_days", DEFAULT_EFFORT_DAYS),
+            subtask_id=str(task.get("id", "")),
+        ),
         parallel_group=task.get("parallel_group", 1),
         conductor_workspace=task.get("conductor_workspace", ""),
         dependencies=task.get("dependencies", []),
