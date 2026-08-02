@@ -133,6 +133,21 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # set, and vendored packages are not the Player's deliverable.
     ":(exclude,glob)**/.pub-cache/**",
     ":(exclude,glob)**/.dart_tool/**",
+    # The rest of the HOME-pointed Dart family, learned from the FIRST GREEN
+    # Flutter build (FEAT-FLV1, 2026-08-02): its checkpoints carried 3,450
+    # files of ``.dartServer/`` analysis cache, the ``.dart-tool/`` telemetry
+    # dir (HYPHEN — a different directory from the underscore ``.dart_tool``
+    # package cache above), ``.config/flutter/`` and the ``.flutter`` state
+    # file — none of them the Player's deliverable; all swept out at the
+    # selective merge. ``large_tool_results/`` is the harness's oversized
+    # tool-output spool, ledgered on FEAT-STV1 (08-01) and seen AGAIN on
+    # FEAT-FLV1 — two builds is a class, not a coincidence.
+    ":(exclude,glob)**/.dartServer/**",
+    ":(exclude,glob)**/.dart-tool/**",
+    ":(exclude,glob)**/.config/flutter/**",
+    ":(exclude,glob)**/.flutter",
+    ":(exclude,glob)**/.flutter/**",
+    ":(exclude,glob)**/large_tool_results/**",
     # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
     ":(exclude,glob)**/node_modules/**",
     ":(exclude,glob)**/.next/**",
