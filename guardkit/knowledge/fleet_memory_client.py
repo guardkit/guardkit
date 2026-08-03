@@ -525,8 +525,13 @@ class FleetMemoryClientFactory:
         self._thread_local.init_attempted = True
 
         if not self._config.enabled:
-            logger.info(
-                "Fleet-memory disabled in configuration, thread client not created"
+            # LOUD by design (2026-08-03 reconnection): the info-level version
+            # of this line hid a month of memory-dark factory builds. A run
+            # without memory is acceptable; a run that hides it is not.
+            logger.warning(
+                "memory: OFF — FLEET_MEMORY_ENABLED is unset/false; this run "
+                "reads no prior decisions and writes no outcomes. Set "
+                "FLEET_MEMORY_ENABLED=true and FLEET_MEMORY_PG_DSN to enable."
             )
             return None
 
@@ -537,8 +542,9 @@ class FleetMemoryClientFactory:
         client._pending_init = True
         self._thread_local.client = client
         logger.info(
-            "Fleet-memory factory: thread client created (pending init — will "
-            "initialize lazily on the consumer's event loop)"
+            "memory: ON (project=%s) — thread client created (pending init — "
+            "will initialize lazily on the consumer's event loop)",
+            self._config.project,
         )
         return client
 
@@ -669,6 +675,17 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         FleetMemoryConfig loaded from environment
     """
     # Default postgres DSN (live)
+    enabled = os.getenv("FLEET_MEMORY_ENABLED", "false").lower() == "true"
+    if enabled and not os.getenv("FLEET_MEMORY_PG_DSN"):
+        # The code default below is a trap on this estate: localhost:5433 is a
+        # TEST Postgres with no "memory" database, so an enabled-but-DSN-less
+        # run times out and degrades to empty context looking exactly like
+        # memory working with nothing to say (2026-08-03 audit, live-fired).
+        logger.warning(
+            "memory: FLEET_MEMORY_ENABLED is true but FLEET_MEMORY_PG_DSN is "
+            "unset — falling back to the localhost:5433 code default, which is "
+            "almost certainly NOT the fleet store. Set FLEET_MEMORY_PG_DSN."
+        )
     default_postgres_dsn = os.getenv(
         "FLEET_MEMORY_PG_DSN",
         "postgresql://postgres:test@localhost:5433/memory",
