@@ -429,28 +429,63 @@ class TestApproachingLimitCalculation:
         return AgentInvoker(worktree_path=tmp_path, use_task_work_delegation=False)
 
     @pytest.mark.parametrize(
-        "turn,max_turns,expected_approaching",
+        "turn,max_turns,expected_approaching,expected_final",
         [
-            (1, 5, False),   # Turn 1 of 5 - not approaching
-            (2, 5, False),   # Turn 2 of 5 - not approaching
-            (3, 5, False),   # Turn 3 of 5 - not approaching
-            (4, 5, True),    # Turn 4 of 5 - approaching (max_turns - 1)
-            (5, 5, True),    # Turn 5 of 5 - approaching (last turn)
-            (3, 3, True),    # Turn 3 of 3 - approaching (max_turns - 1 = 2)
-            (1, 2, True),    # Turn 1 of 2 - approaching (max_turns - 1 = 1)
+            (1, 5, False, False),  # Turn 1 of 5 - not approaching
+            (2, 5, False, False),  # Turn 2 of 5 - not approaching
+            (3, 5, False, False),  # Turn 3 of 5 - not approaching
+            (4, 5, True, False),   # Turn 4 of 5 - approaching (penultimate)
+            (5, 5, True, True),    # Turn 5 of 5 - the final turn
+            (2, 3, True, False),   # Turn 2 of 3 - approaching (penultimate)
+            (3, 3, True, True),    # Turn 3 of 3 - the final turn
+            # The degenerate cases the old ``turn >= max_turns - 1`` lied about:
+            # with max_turns=2 (the work leg's default) turn ONE is clean.
+            (1, 2, False, False),  # Turn 1 of 2 - NOT approaching, no pressure
+            (2, 2, True, True),    # Turn 2 of 2 - the final turn
+            (1, 1, True, True),    # Turn 1 of 1 - the only turn IS the final one
         ],
     )
     def test_approaching_limit_calculation(
-        self, invoker, tmp_path, turn, max_turns, expected_approaching
+        self, invoker, tmp_path, turn, max_turns, expected_approaching, expected_final
     ):
-        """Verify approaching_limit is calculated correctly for various turn/max combinations."""
-        # Calculate approaching_limit using the same logic as invoke_player
-        approaching_limit = turn >= max_turns - 1
+        """Verify turn_pressure — the ONE rule invoke_player calls — for turn/max combos."""
+        from guardkit.orchestrator.agent_invoker import turn_pressure
+
+        approaching_limit, final_turn = turn_pressure(turn, max_turns)
 
         assert approaching_limit == expected_approaching, (
             f"turn={turn}, max_turns={max_turns}: "
             f"expected approaching_limit={expected_approaching}, got {approaching_limit}"
         )
+        assert final_turn == expected_final, (
+            f"turn={turn}, max_turns={max_turns}: "
+            f"expected final_turn={expected_final}, got {final_turn}"
+        )
+
+    def test_invoke_player_writes_clean_turn_context_on_turn_one_of_two(
+        self, invoker, tmp_path, monkeypatch
+    ):
+        """The work leg's default (max_turns=2) leaves turn 1's context UNpressured.
+
+        Regression pin for the turn-pressure lie: work_runner.DEFAULT_MAX_TURNS
+        is 2, so the old ``turn >= max_turns - 1`` marked every first work-leg
+        turn as approaching_limit and told the Player to file a blocked_report
+        before it had written a line.
+        """
+        from guardkit.orchestrator.agent_invoker import turn_pressure
+
+        approaching_limit, _final = turn_pressure(turn=1, max_turns=2)
+        invoker._write_turn_context(
+            task_id="TASK-TP-001",
+            turn=1,
+            max_turns=2,
+            approaching_limit=approaching_limit,
+        )
+
+        context = invoker.load_turn_context("TASK-TP-001")
+        assert context is not None
+        assert context["approaching_limit"] is False
+        assert context["escape_hatch_active"] is False
 
 
 # ===========================================================================
