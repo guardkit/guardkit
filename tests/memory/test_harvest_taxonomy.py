@@ -11,13 +11,18 @@ Validates:
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
+from pathlib import Path
 
 from guardkit.memory.harvest_taxonomy import (
     HARVEST_MAP,
     HarvestEntry,
     derive_episode_id,
     episode_type_for,
+    manifest_json,
     natural_key_for,
     validate_episode_types,
 )
@@ -27,8 +32,14 @@ class TestHarvestMap:
     """Test HARVEST_MAP structure and configuration."""
 
     def test_harvest_map_has_required_types(self):
-        """HARVEST_MAP includes all required episode types."""
-        required_types = {"adr", "review_report", "feature_outcome", "document"}
+        """HARVEST_MAP includes all required episode types (exact key set)."""
+        required_types = {
+            "adr",
+            "review_report",
+            "feature_outcome",
+            "document",
+            "build_outcome",
+        }
         actual_types = set(HARVEST_MAP.keys())
         assert required_types == actual_types
 
@@ -66,6 +77,50 @@ class TestHarvestMap:
         assert set(entry.directories) == {"docs/design", "docs/guides", "docs/reference"}
         assert entry.content_format == "markdown"
 
+    def test_build_outcome_entry_configuration(self):
+        """Build outcome entry is reindex-owned and covers tasks/completed."""
+        entry = HARVEST_MAP["build_outcome"]
+        assert entry.episode_type == "build_outcome"
+        assert entry.directories == ["tasks/completed"]
+        assert entry.owner == "reindex"
+        assert entry.content_format == "markdown"
+
+    def test_existing_entries_are_harvest_owned(self):
+        """The four original entries keep the default owner 'harvest'."""
+        for key in ("adr", "review_report", "feature_outcome", "document"):
+            assert HARVEST_MAP[key].owner == "harvest"
+
+    def test_owner_partition(self):
+        """Owner values partition the map with no directory overlap.
+
+        - every entry's owner is in {"harvest", "reindex"}
+        - no directory is covered twice across entries
+        - no reindex root is nested inside a harvest directory (a nested root
+          would make the same file publishable by both pipelines)
+        """
+        harvest_dirs: list[str] = []
+        reindex_dirs: list[str] = []
+        all_dirs: list[str] = []
+
+        for entry in HARVEST_MAP.values():
+            assert entry.owner in {"harvest", "reindex"}
+            all_dirs.extend(entry.directories)
+            if entry.owner == "harvest":
+                harvest_dirs.extend(entry.directories)
+            else:
+                reindex_dirs.extend(entry.directories)
+
+        # No directory covered twice across entries
+        assert len(all_dirs) == len(set(all_dirs))
+
+        # No reindex root nested inside a harvest directory
+        for reindex_dir in reindex_dirs:
+            for harvest_dir in harvest_dirs:
+                assert not reindex_dir.startswith(harvest_dir + "/"), (
+                    f"reindex root {reindex_dir} is nested inside "
+                    f"harvest dir {harvest_dir}"
+                )
+
     def test_transient_directories_excluded(self):
         """Transient directories are not in HARVEST_MAP."""
         transient_dirs = {"archive", "checkpoints", "state", "history"}
@@ -83,6 +138,77 @@ class TestHarvestMap:
         """All current entries use markdown content format."""
         for entry in HARVEST_MAP.values():
             assert entry.content_format == "markdown"
+
+
+class TestManifestJson:
+    """Test the corpus manifest serialization consumed by fleet-memory."""
+
+    # Golden manifest: fleet-memory's reindex pipeline loads exactly this shape
+    # (FLEET_MEMORY_CORPUS_MANIFEST). Any change here is a cross-repo contract change.
+    GOLDEN_MANIFEST = {
+        "schema_version": 1,
+        "project": "guardkit",
+        "entries": [
+            {
+                "kind": "adr",
+                "episode_type": "adr",
+                "directories": ["docs/adr", "docs/adrs", "docs/decisions"],
+                "owner": "harvest",
+                "content_format": "markdown",
+            },
+            {
+                "kind": "review_report",
+                "episode_type": "review_report",
+                "directories": ["docs/code-review"],
+                "owner": "harvest",
+                "content_format": "markdown",
+            },
+            {
+                "kind": "feature_outcome",
+                "episode_type": "feature_outcome",
+                "directories": ["docs/completion-reports", "docs/retro"],
+                "owner": "harvest",
+                "content_format": "markdown",
+            },
+            {
+                "kind": "document",
+                "episode_type": "document",
+                "directories": ["docs/design", "docs/guides", "docs/reference"],
+                "owner": "harvest",
+                "content_format": "markdown",
+            },
+            {
+                "kind": "build_outcome",
+                "episode_type": "build_outcome",
+                "directories": ["tasks/completed"],
+                "owner": "reindex",
+                "content_format": "markdown",
+            },
+        ],
+    }
+
+    def test_manifest_json_golden(self):
+        """manifest_json() produces exactly the golden manifest."""
+        assert json.loads(manifest_json()) == self.GOLDEN_MANIFEST
+
+    def test_manifest_json_kind_equals_episode_type(self):
+        """Every manifest entry keeps the key==episode_type invariant."""
+        manifest = json.loads(manifest_json())
+        for entry in manifest["entries"]:
+            assert entry["kind"] == entry["episode_type"]
+
+    def test_main_json_flag_prints_manifest(self):
+        """python -m guardkit.memory.harvest_taxonomy --json prints the manifest."""
+        repo_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [sys.executable, "-m", "guardkit.memory.harvest_taxonomy", "--json"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        assert json.loads(result.stdout) == self.GOLDEN_MANIFEST
 
 
 class TestDeriveEpisodeId:
