@@ -193,6 +193,78 @@ class TestImplementationPromptBuilder:
         assert "Approaching limit: True" in prompt
         assert "WARNING" in prompt or "blocked_report" in prompt
 
+    def test_two_turn_shape_turn_one_carries_no_warning(self, invoker):
+        """max_turns=2 (the work leg's default): turn 1 is CLEAN.
+
+        The turn-pressure lie: ``turn >= max_turns - 1`` made 1 >= 1 true, so
+        every first work-leg prompt told the Player it was out of time.
+        """
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001",
+            turn=1,
+            max_turns=2,
+            requirements="Test requirements",
+        )
+
+        assert "Approaching limit: False" in prompt
+        assert "Final turn: False" in prompt
+        assert "WARNING" not in prompt
+        assert "blocked_report" not in prompt
+
+    def test_two_turn_shape_turn_two_carries_the_final_warning(self, invoker):
+        """max_turns=2: the warning fires on turn 2 — the final turn."""
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001",
+            turn=2,
+            max_turns=2,
+            requirements="Test requirements",
+        )
+
+        assert "Approaching limit: True" in prompt
+        assert "Final turn: True" in prompt
+        assert "WARNING: This is your FINAL turn." in prompt
+        assert "blocked_report" in prompt
+
+    def test_four_turn_shape_turn_three_approaches(self, invoker):
+        """max_turns=4: one-before-last semantics survive — turn 3 approaches."""
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001",
+            turn=3,
+            max_turns=4,
+            requirements="Test requirements",
+        )
+
+        assert "Approaching limit: True" in prompt
+        assert "Final turn: False" in prompt
+        assert "WARNING: Approaching turn limit." in prompt
+        assert "FINAL turn" not in prompt
+
+    def test_four_turn_shape_turn_four_is_final(self, invoker):
+        """max_turns=4: turn 4 gets the final warning, not the approaching one."""
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001",
+            turn=4,
+            max_turns=4,
+            requirements="Test requirements",
+        )
+
+        assert "Final turn: True" in prompt
+        assert "WARNING: This is your FINAL turn." in prompt
+        assert "WARNING: Approaching turn limit." not in prompt
+
+    def test_four_turn_shape_early_turns_are_clean(self, invoker):
+        """max_turns=4: turns 1 and 2 carry no pressure at all."""
+        for turn in (1, 2):
+            prompt = invoker._build_autobuild_implementation_prompt(
+                task_id="TASK-001",
+                turn=turn,
+                max_turns=4,
+                requirements="Test requirements",
+            )
+
+            assert "Approaching limit: False" in prompt, f"turn {turn} of 4"
+            assert "WARNING" not in prompt, f"turn {turn} of 4"
+
     def test_prompt_respects_documentation_level(self, invoker):
         """Verify prompt includes documentation level in context."""
         for level in ["minimal", "standard", "comprehensive"]:
@@ -300,8 +372,9 @@ class TestImplementationPromptEdgeCases:
             requirements="Test"
         )
 
-        # Turn 1 with max 1 means turn >= max_turns - 1 (1 >= 0)
+        # The only turn IS the final turn — the warning is honest here.
         assert "Approaching limit: True" in prompt
+        assert "Final turn: True" in prompt
 
     def test_multiline_requirements_preserved(self, invoker):
         """Verify multiline requirements are preserved in prompt."""

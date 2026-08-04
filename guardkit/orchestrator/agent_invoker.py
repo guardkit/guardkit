@@ -595,6 +595,39 @@ MAX_SDK_STREAM_RETRIES = 1
 SDK_STREAM_RETRY_BACKOFF = 30  # seconds
 
 
+def turn_pressure(turn: int, max_turns: int) -> Tuple[bool, bool]:
+    """The ONE rule for "is the Player running out of turns?".
+
+    Returns ``(approaching_limit, final_turn)``.
+
+    ``final_turn`` is simply ``turn >= max_turns`` — the last turn the Player
+    will ever get. ``approaching_limit`` is the escape-hatch trigger: the point
+    from which the Player should start considering a ``blocked_report``.
+
+    The threshold is *not* a plain ``turn >= max_turns - 1``. That form is a lie
+    in the degenerate case: ``work_runner.DEFAULT_MAX_TURNS`` is **2**, so
+    ``1 >= 1`` made every *first* work-leg prompt say "Approaching turn limit …
+    include a blocked_report" — the Player was told it was out of time on turn
+    one of two, before it had written a line. A warning that fires on the first
+    turn is not a warning, it is pressure to give up.
+
+    So:
+
+    * ``max_turns <= 2`` — warn on the FINAL turn only. With one or two turns
+      there is no "one before last" worth naming; the first turn is clean.
+    * ``max_turns >= 3`` — keep one-before-last semantics: approaching on the
+      penultimate turn, final warning on the last.
+
+    Stated once and used by every reader (``invoke_player``'s turn-context write
+    and the implementation-prompt builder) so the prompt the Player reads and the
+    ``turn_context.json`` it may consult can never disagree.
+    """
+    final_turn = turn >= max_turns
+    if max_turns <= 2:
+        return final_turn, final_turn
+    return turn >= max_turns - 1, final_turn
+
+
 def detect_timeout_multiplier() -> float:
     """Detect appropriate timeout multiplier from backend URL.
 
@@ -2056,8 +2089,10 @@ class AgentInvoker:
         # Use instance development_mode if mode not provided
         effective_mode = mode if mode is not None else self.development_mode
 
-        # Calculate if we're approaching the turn limit (escape hatch trigger)
-        approaching_limit = turn >= max_turns - 1  # True when 2 or fewer turns remain
+        # Calculate if we're approaching the turn limit (escape hatch trigger).
+        # ``turn_pressure`` is the ONE rule — see its docstring for why a plain
+        # ``turn >= max_turns - 1`` lies when max_turns is 2 (the work leg's default).
+        approaching_limit, _final_turn = turn_pressure(turn, max_turns)
 
         try:
             # Write turn context for Player to read (includes approaching_limit)
@@ -7899,7 +7934,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             task_id: Task identifier (e.g., "TASK-001")
             turn: Current turn number (1-based)
             max_turns: Maximum turns allowed
-            approaching_limit: True if turn >= max_turns - 1
+            approaching_limit: The escape-hatch trigger, as computed by
+                :func:`turn_pressure` (penultimate turn onwards when
+                max_turns >= 3; the FINAL turn only when max_turns <= 2)
 
         Returns:
             Path to the written context file
@@ -8738,7 +8775,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         Returns:
             Assembled prompt string with protocol and all context sections
         """
-        approaching_limit = turn >= max_turns - 1
+        # The ONE rule (see ``turn_pressure``): with max_turns=2 — the work
+        # leg's default — the warning fires on turn 2 only. Turn one of two is
+        # clean; telling the Player it is out of time before it has written a
+        # line is pressure to give up, not a warning.
+        approaching_limit, final_turn = turn_pressure(turn, max_turns)
 
         # --- Section 1: Header ---
         header = (
@@ -8760,8 +8801,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             f"- Max turns: {max_turns}\n"
             f"- Turns remaining: {max_turns - turn}\n"
             f"- Approaching limit: {approaching_limit}\n"
+            f"- Final turn: {final_turn}\n"
         )
-        if approaching_limit:
+        if final_turn:
+            turn_section += (
+                "\nWARNING: This is your FINAL turn. If you cannot complete the task,\n"
+                "include a 'blocked_report' field in your player report.\n"
+            )
+        elif approaching_limit:
             turn_section += (
                 "\nWARNING: Approaching turn limit. If you cannot complete the task,\n"
                 "include a 'blocked_report' field in your player report.\n"
