@@ -11,6 +11,7 @@ to ensure idempotent publishing when shared keys exist.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -23,11 +24,17 @@ class HarvestEntry(NamedTuple):
         episode_type: NATS subject segment for this document class (e.g., "adr", "review_report")
         directories: List of repo-relative directory paths to harvest
         content_format: Content format identifier ("markdown" for all current entries)
+        owner: Which pipeline publishes this entry's directories. "harvest" entries are
+            walked by guardkit's own harvest_walker (whole-file markdown episodes);
+            "reindex" entries are claimed by fleet-memory's reindex pipeline (front-matter
+            gated typed payloads) and MUST NOT be walked here — chunking 2,286 task files
+            as prose would drown retrieval in noise.
     """
 
     episode_type: str
     directories: list[str]
     content_format: str
+    owner: str = "harvest"
 
 
 # Harvest taxonomy: curated allow-list of directory → episode_type mappings.
@@ -58,6 +65,16 @@ HARVEST_MAP: dict[str, HarvestEntry] = {
     "document": HarvestEntry(
         episode_type="document",
         directories=["docs/design", "docs/guides", "docs/reference"],
+        content_format="markdown",
+    ),
+    # Owned by fleet-memory's reindex pipeline, NOT the harvest walker. tasks/completed
+    # holds 2,286 markdown files (1,675 with front-matter, 1,561 with a terminal status);
+    # the reindex pipeline parses each into a typed build_outcome payload, so the harvest
+    # walker must never chunk them as prose. The key==episode_type invariant is law.
+    "build_outcome": HarvestEntry(
+        episode_type="build_outcome",
+        directories=["tasks/completed"],
+        owner="reindex",
         content_format="markdown",
     ),
 }
@@ -152,6 +169,39 @@ def episode_type_for(repo_relative_path: str) -> str | None:
     return longest_match[0] if longest_match else None
 
 
+def manifest_json() -> str:
+    """Serialize HARVEST_MAP as the corpus manifest consumed by fleet-memory.
+
+    One rule mints the claim and the thing claimed: this manifest is derived from
+    the same HARVEST_MAP the walker filters on, so the ownership split (harvest vs
+    reindex) can never drift between the two repos. fleet-memory's reindex pipeline
+    loads this JSON (FLEET_MEMORY_CORPUS_MANIFEST) and walks ONLY owner=="reindex"
+    directories.
+
+    Returns:
+        JSON document with schema_version, project, and one entry per HARVEST_MAP
+        key: {kind, episode_type, directories, owner, content_format}
+
+    Example:
+        $ python -m guardkit.memory.harvest_taxonomy --json > corpus-manifest.json
+    """
+    manifest = {
+        "schema_version": 1,
+        "project": "guardkit",
+        "entries": [
+            {
+                "kind": key,
+                "episode_type": entry.episode_type,
+                "directories": list(entry.directories),
+                "owner": entry.owner,
+                "content_format": entry.content_format,
+            }
+            for key, entry in HARVEST_MAP.items()
+        ],
+    }
+    return json.dumps(manifest, indent=2)
+
+
 def validate_episode_types() -> None:
     """Validate that all episode_type values are valid NATS subject segments.
 
@@ -174,3 +224,22 @@ def validate_episode_types() -> None:
 
 # Validate episode types on module import
 validate_episode_types()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="GuardKit harvest taxonomy inspection",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the corpus manifest JSON consumed by fleet-memory's reindex pipeline",
+    )
+    args = parser.parse_args()
+
+    if args.json:
+        print(manifest_json())
+    else:
+        parser.print_help()
