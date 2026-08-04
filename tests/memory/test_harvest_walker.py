@@ -249,6 +249,34 @@ class TestHarvestWalker:
 
         assert all(e.content_format == "markdown" for e in result.episodes)
 
+    def test_reindex_owned_dirs_never_walked(self, tmp_path: Path) -> None:
+        """Zero files are yielded from tasks/completed (owner=='reindex').
+
+        tasks/completed belongs to fleet-memory's reindex pipeline. If the walker
+        ever descended it, the next harvest would chunk all 2,286 task files as
+        prose noise.
+        """
+        (tmp_path / "tasks/completed/2026-07").mkdir(parents=True)
+        (tmp_path / "docs/adr").mkdir(parents=True)
+
+        (tmp_path / "tasks/completed/TASK-001-a-task.md").write_text(
+            "---\nid: TASK-001\nstatus: completed\n---\n\n# A task"
+        )
+        (tmp_path / "tasks/completed/2026-07/TASK-002-another.md").write_text(
+            "---\nid: TASK-002\nstatus: completed\n---\n\n# Another task"
+        )
+        (tmp_path / "docs/adr/001-decision.md").write_text("# ADR 001")
+
+        result = walk_harvest_dirs(tmp_path)
+
+        # Only the ADR is harvested; nothing from tasks/completed
+        assert len(result.episodes) == 1
+        assert result.episodes[0].episode_type == "adr"
+        assert all(
+            not e.source_ref.startswith("tasks/") for e in result.episodes
+        )
+        assert "build_outcome" not in result.counts_per_type
+
     def test_empty_repo_returns_empty_result(self, tmp_path: Path) -> None:
         """Walking an empty repo returns empty episodes list."""
         result = walk_harvest_dirs(tmp_path)

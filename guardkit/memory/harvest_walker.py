@@ -181,9 +181,15 @@ def walk_harvest_dirs(repo_root: Path | str) -> HarvestResult:
     skipped_empty = 0
     type_counts: Counter[str] = Counter()
 
-    # Collect all directories to scan from HARVEST_MAP
+    # Collect all directories to scan from HARVEST_MAP.
+    # ONLY owner=="harvest" entries are walked here: owner=="reindex" directories
+    # (tasks/completed, 2,286 files) belong to fleet-memory's reindex pipeline,
+    # which parses them into typed payloads. Walking them here would chunk every
+    # task file as prose noise.
     dirs_to_scan: set[Path] = set()
     for entry in HARVEST_MAP.values():
+        if entry.owner != "harvest":
+            continue
         for directory in entry.directories:
             dir_path = repo_root / directory
             if dir_path.exists() and dir_path.is_dir():
