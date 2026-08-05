@@ -11,6 +11,7 @@
 - Two nodes do not fuse into one 256 GB GPU. Tensor parallelism splits each layer's matrices across the boxes; activations cross the QSFP link every forward pass. What you gain is the ability to load a model whose weights + KV exceed one node. (corti)
 - The ConnectX-7 on GB10 is wired as two PCIe Gen5 x4 links, not one x8; full 200 Gb needs both x4 paths aggregated. Each physical port shows two Linux interface names (four total for two ports) — use the `enp1...` names. (corti; NVIDIA Sync docs)
 - A ~120B model that fits on one node: ~35–50 tok/s single-stream on one box, ~55–75 stacked, gains mostly under concurrency. (corti)
+- **Leaderboard caveat:** Spark Arena is concurrency-first (tests at c=5/c=10) — its near-2× two-node gpt-oss-120b rows are aggregate throughput, not batch-1 decode (a dendro-logic recipe beat it +46%/+54% at exactly c=5/c=10 just by adding those CUDA-graph capture sizes). Batch-1 all-reduces are KB-scale, so the fitting-model single-stream gain is capped ~1.3–1.5× by per-layer sync *latency* + the unsharded remainder — not by the link's ~25 GB/s, which binds at prefill/concurrency. (added 2026-08-05)
 - DeepSeek-V4-Flash (official FP8, ~149 GB, TP=2): ~40 tok/s decode warm single-stream; ~6 min cold start; long-context cold prefill weak (~53s TTFT @32K, ~250s @128K); decode collapses under concurrency + depth. (forum recipe thread)
 
 **The two field patterns are separate.**
@@ -32,17 +33,17 @@
 
 Rendered SVGs live in `diagrams/` (clean-line renderings of the architecture; an editable `.excalidraw` source sits beside each one).
 
-**Two-Spark fleet serving architecture** — the layered topology: clients hit one LiteLLM front door, which fans out to the llama-swap pool (plus always-on nomic) on Node A and a vLLM TP=2 proposer spanning both nodes; Postgres + pgvector lives on the NAS.
+**Two-Spark fleet serving architecture** — the layered topology: clients hit one LiteLLM front door, which fans out to the llama-swap pool (plus always-on nomic) on Node A and a vLLM TP=2 DeepSeek spanning both nodes; Postgres + pgvector lives on the NAS.
 
 ![Two-Spark fleet serving architecture](diagrams/two-spark-fleet-serving-architecture.svg)
 
-**Request routing — two paths, one front door** — Path A swaps a fleet model in on a single node; Path B brings up the cross-node TP proposer. Same proxy instance, different backend.
+**Request routing — two paths, one front door** — Path A swaps a fleet model in on a single node; Path B brings up the cross-node two-box DeepSeek. Same proxy instance, different backend.
 
 ![Request routing - two paths, one front door](diagrams/two-spark-request-routing.svg)
 
 **fleet-memory write path** — zero-LLM structured ingest: structured payloads go straight to the deterministic writer (no model in the loop), and only markdown/text touches nomic for embedding before landing in Postgres.
 
-![fleet-memory write path - zero-LLM structured ingest](diagrams/fleet-memory-write-path.svg)
+*(The fleet-memory write-path diagram is a fleet-memory subsystem asset — kept with fleet-memory in the [guardkit repo](https://github.com/guardkit/guardkit/blob/main/docs/research/dgx-spark/diagrams/fleet-memory-write-path.svg), not duplicated in this public Spark repo.)*
 
 ## NVIDIA official
 
@@ -57,6 +58,7 @@ Rendered SVGs live in `diagrams/` (clean-line renderings of the architecture; an
 ## Two-node TP recipes & benchmarks (forum)
 
 - **DeepSeek-V4-Flash official FP8 across 2x Spark, TP=2, MTP, 200K ctx — recipe + numbers (canonical thread)** — https://forums.developer.nvidia.com/t/deepseek-v4-flash-official-fp8-running-across-2x-dgx-spark-tp-2-mtp-200k-ctx-recipe-numbers/370309
+- **DSpark speculative decoding (DeepSeek; MIT; released 2026-06-27) — the evolution of the `deepseek_mtp` above.** Reuses V4's MTP heads and adds a semi-autoregressive draft head (fixes "suffix decay") + confidence-scheduled verification. Framework/algos (DSpark · DFlash · Eagle3 + training): https://github.com/deepseek-ai/DeepSpec · checkpoints `deepseek-ai/DeepSeek-V4-Flash-DSpark` / `-V4-Pro-DSpark` (V4 base + draft module, not new base models). **GB10 status (researched 2026-06-29): no runnable aarch64 path yet** — vLLM support is open issue [#46910](https://github.com/vllm-project/vllm/issues/46910) (assigned, *no* PR/branch), the pinned `jasl/vllm` carries MTP not DSpark, and DeepSpec training assumes x86 multi-GPU. The "57–85% faster" headline is measured vs **MTP-1**; we already run **MTP-2**, so the realistic *incremental* gain is ~10–25% `[inferred]`, and cross-node it may be all-gather-bound over the CX-7 (see [`qwen3.6-27b-gb10-community-research.md`](./qwen3.6-27b-gb10-community-research.md): TP=2+MTP can go *worse*). Shipped draft heads are Qwen3-4B/8B/14B + Gemma-4-12B-it — **not** our Qwen3.6-35B-A3B / Gemma-4-26B-A4B (custom heads = x86-only training). **Verdict: watch #46910 + `jasl/vllm` rebases; when a branch lands, A/B DSpark vs MTP-2 on ONE box at small ctx over code/reasoning prompts (its high-acceptance regime = the distillation factory), and confirm byte-identical output. Don't deploy / don't train custom heads yet.**
 - Deepseek v4 Flash on 2 Nodes — https://forums.developer.nvidia.com/t/deepseek-v4-flash-on-2-nodes/368916
 - DeepSeek V4 Flash 1M ctx on 2x Spark — custom Sparkrun recipe — https://forums.developer.nvidia.com/t/deepseek-v4-flash-1-048-576-context-on-2x-dgx-spark-custom-sparkrun-recipe/373206
 - MiMo-V2.5-NVFP4 on 2x Spark cluster — https://forums.developer.nvidia.com/t/mimo-v2-5-nvfp4-on-2x-spark-cluster-recipe-findings-fixes-benchmarks/370459
@@ -101,8 +103,28 @@ Rendered SVGs live in `diagrams/` (clean-line renderings of the architecture; an
 ## Serving-layer tooling
 
 - LiteLLM docs — https://docs.litellm.ai/ · docker quick start — https://docs.litellm.ai/docs/proxy/docker_quick_start · routing / load-balancing / fallbacks — https://docs.litellm.ai/docs/routing-load-balancing · config.yaml spec — https://docs.litellm.ai/docs/proxy/configs
-- Sparkrun — https://sparkrun.dev · CLI overview — https://sparkrun.dev/cli/overview/ · proxy gateway — https://sparkrun.dev/tutorials/proxy-gateway/ · multi-node TP — https://sparkrun.dev/tutorials/multi-node/ · repo — https://github.com/spark-arena/sparkrun
+- Sparkrun — https://sparkrun.dev · CLI overview — https://sparkrun.dev/cli/overview/ · proxy gateway — https://sparkrun.dev/tutorials/proxy-gateway/ · multi-node TP — https://sparkrun.dev/tutorials/multi-node/ · repo — https://github.com/spark-arena/sparkrun · web UI — https://github.com/mcampa/sparkrun-ui (see "Considered and deferred: sparkrun" below)
 - spark-arena.com — community GB10 benchmarks / leaderboard — https://spark-arena.com · https://spark-arena.com/leaderboard
+
+## Considered and deferred: sparkrun (2026-07-01)
+
+Evaluated as a candidate to absorb parts of the hand-rolled two-Spark bring-up (`RUNBOOK-two-spark-bring-up.md`) and/or the LiteLLM front-door overlay. **Verdict: not adopted** — the division of labour turned out narrower than it first looked.
+
+**Genuinely replaces (mechanical boilerplate):**
+- SSH mesh setup; CX-7 IP/netplan config (`sparkrun setup cx7` — static IPs, MTU 9000, jumbo frames — **IP addressing only, not firmware**)
+- NCCL env-var computation + multi-node launch syntax (`--tp N` → head/worker container launch, automatic node-count trimming)
+- Model + container distribution to remote hosts over the CX-7 link
+
+**Does NOT replace (the load-bearing gates — still ours regardless):**
+- **CX-7 firmware currency** (28.45.4028+, the all_gather-halving fix). `setup cx7` never touches firmware — that's a separate `mlxconfig`/`mlnx-fw-updater`/DOCA-OFED path. Our Phase 2 gate + the NIC-brick guard (`apt-mark hold mlnx-fw-updater`) stay necessary either way.
+- **The two-signal transport gate** (busbw ≥ 20GB/s AND `NET/IB` not `NET/Socket`). Sparkrun's own docs treat a slow multi-node launch as reactive troubleshooting ("make sure CX-7 is configured") rather than a pre-launch assertion — exactly the "blog says watch out" pattern the gate exists to replace. A healthy busbw number can still mask a silent TCP fallback; this needs verifying no matter what launched the job.
+- **The power-off mitigation** (`nvidia-smi -lgc 200,2150` before any TP launch). Not documented on sparkrun's native `vllm-distributed` runtime; may be inherited only via the `eugr`-delegating runtime.
+- **vLLM commit/torch pinning** for the actual DeepSeek-V4-Flash launch (`jasl/vllm @ dda4668b` + torch 2.9.1, the cudagraph mode avoiding vLLM #40969). Writing a sparkrun recipe with these exact pins is the same pinning work as the runbook — just serialised as YAML instead of bash + gates.
+- **DF-001 no-cloud-fallback enforcement.** Sparkrun's `proxy` command is a LiteLLM-powered auto-discovery gateway (convenience-oriented); no documented equivalent to our `fallbacks: []` + no-cloud-target assertion.
+
+**Dependency-cost note:** sparkrun bundles LiteLLM, a fast-release CLI (uv-installed, 40+ releases), and git-based community recipe registries by default — more third-party surface, in exchange for automating the lower-risk half of the bring-up while the higher-risk half (the gates above) still has to be hand-written on top. Same supply-chain caution already applied to LiteLLM itself applies here; net complexity doesn't obviously drop if the gates still have to run regardless of what did the launching.
+
+**Where it's a genuinely good idea, not yet built:** sparkrun's `runtime` layer is a Python-entry-point plugin system — `vllm-distributed`, `vllm`/Ray, `sglang`, `llama-cpp`, `trt-llm`/MPI, and an `eugr`-delegating runtime all coexist as plugins today. A **`llama-swap` runtime** — rendering a recipe into a `matrix.sets` entry in a shared `config.yaml` and triggering `-watch-config`, instead of launching a standalone container — is architecturally native to that system, not a fork. It would combine sparkrun's recipe registry / VRAM pre-flight / CX-7 distribution with llama-swap's actual differentiator: memory-aware coexistence across a fixed always-on fleet. Scope note: only helps the single-node fleet host (Node A) — doesn't touch the cross-node two-box DeepSeek story, which stays sparkrun's (or our Phase 8's) territory either way. **Not scheduled** — logged here as a backlog idea, and a plausible future video hook in its own right ("the gap in the DGX Spark tooling ecosystem").
 
 ## Related local docs
 

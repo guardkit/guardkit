@@ -1,15 +1,15 @@
 # Two-Spark Bring-Up — Video Capture Runbook
 
-**Spine:** *A second node buys capacity, not speed — share the boxes by time, not at once.* (DECISION-DF-004)
+**Spine:** *A second node buys capacity, not speed worth stacking for — share the boxes by time, not at once.* (DECISION-DF-004)
 
 **How to use this:** a capture *spine*, not a script. Record the real bring-up with OBS and narrate as you go. Don't re-shoot for polish, don't write lines, don't hide failures — the gotchas are the content. Don't let the camera slow the build; if a phase doesn't land, pick it up in a second session.
 Audience: AI engineers. Target: ~12–18 min build-log + architecture explainer.
 
 ## The one idea (three beats — open on beat 1, close on beat 3)
 
-1. **The intuition** — "Two boxes, twice the tokens, right?" Everyone assumes stacking = speed.
-2. **The reality** — the 200G ConnectX-7 link (~25 GB/s, wired as 2× PCIe Gen5 x4, not one x8) is the ceiling. Cross-node tensor-parallelism only helps a model too big for one 128 GB node; anything that fits is *faster* single-node.
-3. **The consequence** — so you don't stack for speed. You stack for **capacity** (run the model that won't fit 128 GB) and **parallel throughput**, then **time-share** the boxes: swap the fleet on one node, reserve TP for the one oversized proposer.
+1. **The intuition** — "Two boxes, twice the tokens, right?" Everyone assumes stacking = speed — and the leaderboards *look* like they agree, until you read what they measure.
+2. **The reality** — a model that fits one box gains only ~1.3–1.5× single-stream from TP=2 (corti: ~35–50 → ~55–75 tok/s for a fitting ~120B) — at 2× the hardware, with **both** boxes claimed: a per-box regression. The near-2× two-node rows you've seen (e.g. Spark Arena's gpt-oss-120b) are **concurrency throughput** — the leaderboard tests at c=5/c=10 — i.e. parallelism, not speed. And the batch-1 killer isn't the 200G link's bandwidth (those all-reduces are kilobytes): it's per-layer sync **latency** plus the unsharded remainder; the ~25 GB/s ceiling (wired as 2× PCIe Gen5 x4, not one x8) binds at *prefill* and concurrency.
+3. **The consequence** — so you still don't stack for speed — you stack for what one box **cannot do**: **capacity** (run the model that won't fit 128 GB) and **parallel throughput**, then **time-share** the boxes: swap the fleet on one node, reserve TP for the one oversized proposer.
 
 ## Pre-read (open in tabs before recording)
 
