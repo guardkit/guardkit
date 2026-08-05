@@ -13,7 +13,7 @@
 
 **A second GB10, linked to the first over a 200G ConnectX-7 cable, is organised as one logical inference fabric behind a single OpenAI-compatible front door (LiteLLM on :4000). Node A carries the always-resident swap pool (llama-swap) plus the nomic embedder; the swappable specialist fleet runs there exactly as today. A model too large for one node — the meta-harness Proposer seat (the **Strategist** in the public `RUNBOOK-two-spark-bring-up.md`), DeepSeek-V4-Flash class, ~149GB — runs with tensor parallelism across both nodes (vLLM `--tp 2`), and only while it is deliberately launched. The two cannot fully co-reside; memory is budgeted per session, not per pipeline. DF-001's no-cloud-fallback guard is carried onto the LiteLLM layer.**
 
-The correction this decision encodes for everyone who buys a second Spark expecting it to go faster: **stacking two Sparks buys capacity and parallelism, not single-stream speed.** A model that already fits on one node is faster on one node; the second node earns its place by running models that do not fit, and by running different models in parallel.
+The correction this decision encodes for everyone who buys a second Spark expecting it to go faster: **stacking two Sparks buys capacity and parallelism, not single-stream speed worth stacking for.** A model that already fits on one node gains only ~1.3–1.5× single-stream from TP=2 — for twice the hardware and both boxes claimed, a per-box regression (the near-2× two-node leaderboard rows are concurrency throughput, not batch-1 decode); the second node earns its place by running models that do not fit, and by running different models in parallel.
 
 ## 1. Context
 
@@ -37,7 +37,7 @@ The intersection — a swappable pool *and* a TP model coexisting across two nod
 
 ### 1.3 The performance reality that sets expectations
 
-Community two-node numbers (DeepSeek-V4-Flash, TP=2, official FP8, ~158GB / 284B-A13B): ~44 tok/s decode warm single-stream **with MTP speculative decode (`deepseek_mtp`); ~5 tok/s without it**, ~6 min cold start, long-context cold prefill the weak spot (~53s TTFT at 32K, ~250s at 128K), decode collapsing under concurrency + depth. A ~120B model that *fits* on one node does ~35–50 tok/s single-stream there and only ~55–75 stacked, with gains showing up under concurrency rather than in a single request. The 200G link (~25 GB/s aggregate — and on GB10 it is wired as two PCIe Gen5 x4 paths, not one x8) is the bottleneck; the nodes do not fuse into one 256GB GPU. Hence the rule: **TP for capacity, single-node for speed.**
+Community two-node numbers (DeepSeek-V4-Flash, TP=2, official FP8, ~158GB / 284B-A13B): ~44 tok/s decode warm single-stream **with MTP speculative decode (`deepseek_mtp`); ~5 tok/s without it**, ~6 min cold start, long-context cold prefill the weak spot (~53s TTFT at 32K, ~250s at 128K), decode collapsing under concurrency + depth. A ~120B model that *fits* on one node does ~35–50 tok/s single-stream there and only ~55–75 stacked (~1.3–1.5×, not 2×), with the near-2× numbers showing up only under concurrency (Spark Arena's leaderboard tests at c=5/c=10 — those rows are aggregate throughput, not batch-1 decode). What caps the batch-1 gain is not the 200G link's bandwidth — batch-1 all-reduces are kilobytes — but per-layer sync latency plus the unsharded remainder; the link's ~25 GB/s aggregate ceiling (on GB10 it is wired as two PCIe Gen5 x4 paths, not one x8) binds at prefill and high concurrency. The nodes do not fuse into one 256GB GPU. Hence the rule: **TP for capacity, single-node for speed.**
 
 ## 2. Decision
 
@@ -140,7 +140,7 @@ LiteLLM's headline convenience is automatic failover — exactly the mechanism t
 
 ## 5. Principle made explicit
 
-> **A second node buys capacity and parallelism, not single-stream speed. Organise the fabric so the swappable fleet and the large model share the boxes by time, not simultaneously: keep the fleet resident and swappable on one node, bring the cross-node model up only when its size demands it, and budget memory per session. Reach for tensor parallelism to run what does not fit — never to make what already fits go faster.**
+> **A second node buys capacity and parallelism, not single-stream speed worth stacking for. Organise the fabric so the swappable fleet and the large model share the boxes by time, not simultaneously: keep the fleet resident and swappable on one node, bring the cross-node model up only when its size demands it, and budget memory per session. Reach for tensor parallelism to run what does not fit — never to make what already fits go faster.**
 
 ## 6. References
 
@@ -155,4 +155,4 @@ Full annotated link set: `docs/research/dgx-spark/two-spark-serving-research-and
 
 *Decision proposed: 2026-06-18*
 *Scope: physical + serving topology of the two-node GB10 inference fabric.*
-*"A second node buys capacity, not speed — share the boxes by time, not at once."*
+*"A second node buys capacity, not speed worth stacking for — share the boxes by time, not at once."*
