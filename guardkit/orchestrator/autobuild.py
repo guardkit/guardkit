@@ -160,7 +160,12 @@ from guardkit.knowledge.turn_state_operations import (
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
 # FEAT-MEM-09 WS-2c: fleet-memory per-thread factory (graphiti factory retired).
-from guardkit.knowledge.fleet_memory_client import get_memory_factory
+from guardkit.knowledge.fleet_memory_client import get_memory_client, get_memory_factory
+
+# Flywheel write seam: every autobuild terminal (approved AND failed) records a
+# build outcome so a future gate can read it back as a prior.
+from guardkit.knowledge.outcome_manager import capture_task_outcome
+from guardkit.knowledge.entities.outcome import OutcomeType
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -368,6 +373,14 @@ diagnostic re-scans (``_build_verifier_infrastructure_stall_diagnostic``,
 this value: a caller-side threshold change with a diverged diagnostic default
 makes the sub-type fire while its diagnostic silently returns ``None`` — the
 operator then sees the generic, quality-implying stall message."""
+
+OUTCOME_CAPTURE_TIMEOUT_SECONDS = 20.0
+"""Hard ceiling on the flywheel's build-outcome write at an autobuild terminal.
+
+The write publishes over the network. The terminal is not allowed to wait on
+it: if the writer has not answered within this window the build reports its
+own result anyway and the missed write is logged in plain words. One attempt,
+no retries — a retry loop at a terminal is a hang with better manners."""
 
 
 @dataclass(frozen=True)
@@ -1567,6 +1580,10 @@ class AutoBuildOrchestrator:
         # TASK-OBS-9F43 AC-2: Mint run_id once per orchestration
         # All events (lifecycle + llm.call + tool.exec) share this run_id for joinability
         self._run_id = f"run-{datetime.now().strftime('%Y%m%d%H%M%S')}-{id(self)}"
+        # Set when orchestrate() begins; read by the build-outcome write at
+        # every terminal so the record carries when the build started and how
+        # long it took.
+        self._orchestrate_started_at: Optional[datetime] = None
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
         # from BootstrapResult.venv_python in the feature orchestrator so
@@ -1832,6 +1849,10 @@ class AutoBuildOrchestrator:
         """
         logger.info(f"Starting orchestration for {task_id} (resume={self.resume})")
 
+        # Wall-clock start, kept for the build-outcome record written at every
+        # terminal (started_at / duration_minutes).
+        self._orchestrate_started_at = datetime.now()
+
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
 
@@ -1839,6 +1860,7 @@ class AutoBuildOrchestrator:
 
         # Load task data to extract task_type, requires_infrastructure, and consumer_context for CoachValidator
         task_type: Optional[str] = None
+        task_title: Optional[str] = None
         consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
@@ -1850,6 +1872,11 @@ class AutoBuildOrchestrator:
             task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
+            # Human-readable name for the build-outcome record (falls back to
+            # the task id when the task file is absent or has no title).
+            _title = frontmatter.get("title")
+            if isinstance(_title, str) and _title.strip():
+                task_title = _title.strip()
             ri = frontmatter.get("requires_infrastructure")
             if isinstance(ri, list):
                 requires_infrastructure = ri
@@ -1979,6 +2006,18 @@ class AutoBuildOrchestrator:
                         precondition.detail,
                     )
                     self._emit_task_failed(task_id, "qa_precondition_blocked")
+                    self._capture_build_outcome(
+                        task_id,
+                        success=False,
+                        final_decision="qa_precondition_blocked",
+                        turn_history=[],
+                        task_title=task_title,
+                        requirements=requirements,
+                        error=(
+                            "QA tier-1 pass-bar precondition failed: "
+                            + precondition.detail
+                        ),
+                    )
                     self._finalize_phase(
                         worktree=worktree,
                         final_decision="qa_precondition_blocked",
@@ -2011,6 +2050,15 @@ class AutoBuildOrchestrator:
                         logger.warning(f"Pre-loop checkpoint rejected for {task_id}")
                         # Emit task.failed for pre-loop rejection (TASK-INST-004)
                         self._emit_task_failed(task_id, "pre_loop_blocked")
+                        self._capture_build_outcome(
+                            task_id,
+                            success=False,
+                            final_decision="pre_loop_blocked",
+                            turn_history=[],
+                            task_title=task_title,
+                            requirements=requirements,
+                            error="Human checkpoint rejected implementation plan",
+                        )
                         # Finalize with rejection
                         self._finalize_phase(
                             worktree=worktree,
@@ -2045,6 +2093,15 @@ class AutoBuildOrchestrator:
                     logger.error(f"Pre-loop quality gate blocked: {e}")
                     # Emit task.failed for quality gate block (TASK-INST-004)
                     self._emit_task_failed(task_id, "pre_loop_blocked")
+                    self._capture_build_outcome(
+                        task_id,
+                        success=False,
+                        final_decision="pre_loop_blocked",
+                        turn_history=[],
+                        task_title=task_title,
+                        requirements=requirements,
+                        error=str(e),
+                    )
                     # Finalize with error
                     self._finalize_phase(
                         worktree=worktree,
@@ -2127,6 +2184,18 @@ class AutoBuildOrchestrator:
             else:
                 self._emit_task_failed(task_id, final_decision)
 
+            # Memory flywheel: record the outcome — approved or not — so a
+            # future gate can read this build back as a prior.
+            self._capture_build_outcome(
+                task_id,
+                success=success,
+                final_decision=final_decision,
+                turn_history=turn_history,
+                task_title=task_title,
+                requirements=requirements,
+                error=result.error,
+            )
+
             logger.info(
                 f"Orchestration complete: {task_id}, decision={final_decision}, "
                 f"turns={len(turn_history)}"
@@ -2138,6 +2207,17 @@ class AutoBuildOrchestrator:
             logger.error(f"Rate limit exceeded for {task_id}: {e}")
             # Emit task.failed with rate_limit category (TASK-INST-004)
             self._emit_task_failed(task_id, "rate_limited")
+            # Uses the orchestrator's own turn history: the local name is not
+            # guaranteed to be bound when the rate limit fires before Phase 3.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="rate_limited",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}.",
+            )
             return OrchestrationResult(
                 task_id=task_id,
                 success=False,
@@ -6372,6 +6452,159 @@ class AutoBuildOrchestrator:
             asyncio.run(self._emitter.emit(event))
         except Exception as exc:
             logger.warning("Failed to emit task.failed event: %s", exc)
+
+    # ========================================================================
+    # Memory flywheel: build-outcome capture at every terminal
+    # ========================================================================
+
+    def _capture_build_outcome(
+        self,
+        task_id: str,
+        *,
+        success: bool,
+        final_decision: str,
+        turn_history: Optional[List["TurnRecord"]] = None,
+        task_title: Optional[str] = None,
+        requirements: str = "",
+        error: Optional[str] = None,
+    ) -> Optional[str]:
+        """Write this build's outcome to memory. Never changes the build.
+
+        Fires at EVERY autobuild terminal — the approved one and every failed
+        one. A build that failed is exactly the prior a future gate wants
+        ("this was tried and it stopped here"), so failure is recorded with the
+        same care as success.
+
+        Degrade rule (the loud-degrade pattern, commit 4c99357d). Memory OFF,
+        the writer unreachable, or the write slower than
+        ``OUTCOME_CAPTURE_TIMEOUT_SECONDS`` all produce ONE plain log line and
+        nothing else: no exception reaches the caller, nothing is retried, and
+        the build's own verdict is untouched. A memory store that is down must
+        never turn a green build red or hold a terminal open.
+
+        Fields are only the ones actually in hand at this seam. Turn count
+        becomes ``review_cycles`` (each turn is one coach review). Test counts
+        are deliberately NOT sent as ``tests_written``: the turn record carries
+        tests *run*, which is a different number, and a wrong number in memory
+        is worse than an absent one. The one-sentence outcome is sent twice, as
+        ``summary`` and as the single ``lessons_learned`` line, because the
+        writer's build_outcome payload drops ``summary`` and keeps ``lessons``.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier this build was for.
+        success : bool
+            True only for the approved terminal.
+        final_decision : str
+            The terminal label (e.g. "approved", "pre_loop_blocked").
+        turn_history : Optional[List[TurnRecord]]
+            Turns completed before the terminal (empty for early terminals).
+        task_title : Optional[str]
+            Human-readable task title; falls back to the task id.
+        requirements : str
+            The task requirements this build worked from.
+        error : Optional[str]
+            Why the build stopped, when it stopped without approval.
+
+        Returns
+        -------
+        Optional[str]
+            The outcome id when a write was attempted, else None.
+        """
+        turns = list(turn_history or [])
+        turn_count = len(turns)
+        try:
+            client = get_memory_client()
+            if client is None or not getattr(client, "enabled", False):
+                logger.warning(
+                    "memory: build outcome NOT captured for %s (ended '%s') — "
+                    "memory is OFF or the client is unavailable, so this build "
+                    "teaches future builds nothing. Set FLEET_MEMORY_ENABLED=true "
+                    "and FLEET_MEMORY_PG_DSN to enable.",
+                    task_id,
+                    final_decision,
+                )
+                return None
+
+            completed_at = datetime.now()
+            started_at = self._orchestrate_started_at
+            duration_minutes: Optional[int] = None
+            if started_at is not None:
+                duration_minutes = max(
+                    0, int((completed_at - started_at).total_seconds() // 60)
+                )
+
+            title = (task_title or "").strip() or task_id
+            repo_name = self.repo_root.name
+
+            if success:
+                summary = (
+                    f"AutoBuild finished {task_id} in {repo_name}: the coach "
+                    f"approved the work after {turn_count} turn(s)."
+                )
+                problems: Optional[List[str]] = None
+            else:
+                summary = (
+                    f"AutoBuild stopped {task_id} in {repo_name} without "
+                    f"approval after {turn_count} turn(s); it ended at "
+                    f"'{final_decision}'."
+                )
+                if error:
+                    summary += f" Reported reason: {error}"
+                problems = [error] if error else [f"Build ended at '{final_decision}'."]
+            summary = summary[:2000]
+
+            async def _write() -> str:
+                return await asyncio.wait_for(
+                    capture_task_outcome(
+                        outcome_type=(
+                            OutcomeType.TASK_COMPLETED
+                            if success
+                            else OutcomeType.TASK_FAILED
+                        ),
+                        task_id=task_id,
+                        task_title=title,
+                        task_requirements=(requirements or "")[:4000],
+                        success=success,
+                        summary=summary,
+                        approach_used="guardkit autobuild player/coach loop",
+                        problems_encountered=problems,
+                        # The writer's build_outcome payload keeps only
+                        # status / duration / task_id / lessons / approach —
+                        # ``summary`` is dropped on the way into the store
+                        # (fleet_memory_payloads._build_outcome). So the one
+                        # plain sentence a future gate needs to read back rides
+                        # here as well, where it survives.
+                        lessons_learned=[summary],
+                        review_cycles=turn_count,
+                        started_at=started_at,
+                        completed_at=completed_at,
+                        duration_minutes=duration_minutes,
+                        feature_id=self._extract_feature_id(task_id),
+                    ),
+                    timeout=OUTCOME_CAPTURE_TIMEOUT_SECONDS,
+                )
+
+            outcome_id = asyncio.run(_write())
+            logger.info(
+                "memory: build outcome %s captured for %s (ended '%s')",
+                outcome_id,
+                task_id,
+                final_decision,
+            )
+            return outcome_id
+        except Exception as exc:
+            # One line, no raise. Includes the timeout case.
+            logger.warning(
+                "memory: build outcome NOT captured for %s (ended '%s') — the "
+                "memory writer did not complete (%s). The build result is "
+                "unaffected.",
+                task_id,
+                final_decision,
+                exc,
+            )
+            return None
 
     def _invoke_player_safely(
         self,
