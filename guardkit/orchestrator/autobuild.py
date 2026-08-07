@@ -164,7 +164,10 @@ from guardkit.knowledge.fleet_memory_client import get_memory_client, get_memory
 
 # Flywheel write seam: every autobuild terminal (approved AND failed) records a
 # build outcome so a future gate can read it back as a prior.
-from guardkit.knowledge.outcome_manager import capture_task_outcome
+from guardkit.knowledge.outcome_manager import (
+    capture_task_outcome_verified,
+    OutcomeCapture,
+)
 from guardkit.knowledge.entities.outcome import OutcomeType
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
@@ -2218,12 +2221,16 @@ class AutoBuildOrchestrator:
                 requirements=requirements,
                 error=f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}.",
             )
+            # Same reason as the capture above: ``turn_history`` is a local of
+            # the try block and is not bound when the rate limit fires before
+            # Phase 3. The orchestrator's own copy is always bound.
+            _rate_limited_turns = list(self._turn_history)
             return OrchestrationResult(
                 task_id=task_id,
                 success=False,
-                total_turns=len(turn_history),
+                total_turns=len(_rate_limited_turns),
                 final_decision="rate_limited",
-                turn_history=turn_history,
+                turn_history=_rate_limited_turns,
                 worktree=worktree,
                 error=(
                     f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}. "
@@ -2231,11 +2238,34 @@ class AutoBuildOrchestrator:
                     f"Resume with: guardkit autobuild task {task_id} --resume"
                 ),
             )
-        except SetupPhaseError:
-            # Setup errors should propagate (can't proceed without worktree)
+        except SetupPhaseError as e:
+            # Setup errors should propagate (can't proceed without worktree).
+            # The outcome is written first: a build that could not even get a
+            # worktree is exactly the prior a future gate wants to see.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="setup_failed",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=f"Setup failed before any turn ran: {e}",
+            )
             raise
         except Exception as e:
             logger.error(f"Orchestration failed for {task_id}: {e}", exc_info=True)
+            # A build that died mid-flight is the case a future gate most wants
+            # to read back, so it is recorded before the crash propagates. The
+            # capture never raises, so it cannot mask the original error.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="crashed",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=f"Orchestration crashed: {type(e).__name__}: {e}",
+            )
             raise OrchestrationError(f"Orchestration failed: {e}") from e
 
     def _check_qa_pass_bar_precondition(self, task_id: str):
@@ -6476,11 +6506,18 @@ class AutoBuildOrchestrator:
         same care as success.
 
         Degrade rule (the loud-degrade pattern, commit 4c99357d). Memory OFF,
-        the writer unreachable, or the write slower than
-        ``OUTCOME_CAPTURE_TIMEOUT_SECONDS`` all produce ONE plain log line and
-        nothing else: no exception reaches the caller, nothing is retried, and
-        the build's own verdict is untouched. A memory store that is down must
-        never turn a green build red or hold a terminal open.
+        the writer unreachable, a write that publishes nothing, or a write
+        slower than ``OUTCOME_CAPTURE_TIMEOUT_SECONDS`` all produce ONE plain
+        log line and nothing else: no exception reaches the caller, nothing is
+        retried, and the build's own verdict is untouched. A memory store that
+        is down must never turn a green build red or hold a terminal open.
+
+        "Captured" is claimed only when the store hands back a key for the
+        episode. Everything under this seam is fail-open — the memory client
+        catches every error and returns ``None``, and the outcome id is minted
+        before any publish is attempted — so an absent exception is not
+        evidence of a write. Reading the returned key is what keeps this log
+        line from asserting a capture that never happened.
 
         Fields are only the ones actually in hand at this seam. Turn count
         becomes ``review_cycles`` (each turn is one coach review). Test counts
@@ -6510,7 +6547,8 @@ class AutoBuildOrchestrator:
         Returns
         -------
         Optional[str]
-            The outcome id when a write was attempted, else None.
+            The outcome id when the episode actually reached the store, else
+            None.
         """
         turns = list(turn_history or [])
         turn_count = len(turns)
@@ -6555,9 +6593,9 @@ class AutoBuildOrchestrator:
                 problems = [error] if error else [f"Build ended at '{final_decision}'."]
             summary = summary[:2000]
 
-            async def _write() -> str:
+            async def _write() -> OutcomeCapture:
                 return await asyncio.wait_for(
-                    capture_task_outcome(
+                    capture_task_outcome_verified(
                         outcome_type=(
                             OutcomeType.TASK_COMPLETED
                             if success
@@ -6586,23 +6624,51 @@ class AutoBuildOrchestrator:
                     timeout=OUTCOME_CAPTURE_TIMEOUT_SECONDS,
                 )
 
-            outcome_id = asyncio.run(_write())
+            capture = asyncio.run(_write())
+
+            # The write path below this seam is fail-open all the way down:
+            # ``FleetMemoryClient.add_episode`` catches everything and returns
+            # None, and the outcome id is minted before any publish is tried.
+            # So "no exception" is NOT evidence of a write — the broker being
+            # unreachable, which is the likeliest real failure, comes back
+            # here as a quiet success. Say "captured" only when the store
+            # handed back a key for the episode.
+            if not capture.stored:
+                logger.warning(
+                    "memory: build outcome NOT captured for %s (ended '%s') — "
+                    "%s. Nothing was stored, so this build teaches future "
+                    "builds nothing. The build result is unaffected.",
+                    task_id,
+                    final_decision,
+                    capture.detail or "the memory writer stored nothing",
+                )
+                return None
+
             logger.info(
-                "memory: build outcome %s captured for %s (ended '%s')",
-                outcome_id,
+                "memory: build outcome %s captured for %s (ended '%s') — "
+                "stored as %s",
+                capture.outcome_id,
                 task_id,
                 final_decision,
+                capture.episode_key,
             )
-            return outcome_id
+            return capture.outcome_id
         except Exception as exc:
-            # One line, no raise. Includes the timeout case.
+            # One line, no raise. Includes the timeout case — whose str() is
+            # empty, so the exception TYPE is named or the line reads
+            # "did not complete ()" and an operator cannot tell a timeout from
+            # anything else.
+            detail = str(exc).strip()
+            reason = (
+                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            )
             logger.warning(
                 "memory: build outcome NOT captured for %s (ended '%s') — the "
                 "memory writer did not complete (%s). The build result is "
                 "unaffected.",
                 task_id,
                 final_decision,
-                exc,
+                reason,
             )
             return None
 
