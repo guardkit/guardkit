@@ -7,6 +7,7 @@ per-episode and maintaining idempotency through deterministic episode IDs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections import Counter
@@ -21,6 +22,22 @@ if TYPE_CHECKING:
     from nats_core.events import MemoryEpisodeV1
 
 logger = logging.getLogger(__name__)
+
+PUBLISH_TEARDOWN_TIMEOUT_SECONDS = 5.0
+"""How long a publish run may spend hanging up before it walks away.
+
+Closing the connection is not free. ``NATSClient.disconnect`` calls
+``nc.drain()`` (``nats_core/client.py``), and nats-py's drain waits on the
+server with its own default of THIRTY seconds. So a broker that accepts the
+connection and then stalls used to hold the caller for half a minute AFTER the
+caller's own deadline had already passed — the autobuild terminal's 20-second
+capture ceiling turned into a ~50-second hold on the build's last line.
+
+Five seconds is a generous hang-up for a healthy local broker and a short one
+for a sick one. Overrunning it costs nothing that matters: the episode bytes
+are already written to the socket by then, and the process is exiting the
+publish either way. The overrun is logged in plain words rather than waited on.
+"""
 
 
 @dataclass
@@ -86,6 +103,33 @@ def build_nats_client(password: str) -> NATSClient:
     return NATSClient(config, source_id="guardkit-harvest")
 
 
+async def _disconnect_bounded(client: NATSClient) -> None:
+    """Hang up, with a deadline, and say so if the deadline was reached.
+
+    A drain that never answers must not become the caller's problem: by the time
+    this runs the episodes are already on the wire, so waiting longer buys
+    nothing and holds a build's last line open. The overrun (and any error from
+    the close itself) is logged once and swallowed — a teardown must not be the
+    thing that raises out of a ``finally``, where it would mask the real error.
+    """
+    try:
+        await asyncio.wait_for(
+            client.disconnect(), timeout=PUBLISH_TEARDOWN_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "NATS did not finish closing within %.1fs; walking away. The "
+            "episodes were already written to the socket, so this affects "
+            "nothing but the wait.",
+            PUBLISH_TEARDOWN_TIMEOUT_SECONDS,
+        )
+    except asyncio.CancelledError:
+        # The caller's own deadline fired. Do not swallow the cancellation.
+        raise
+    except Exception as exc:
+        logger.warning("Closing the NATS connection failed: %s", exc)
+
+
 async def publish_episodes(
     episodes: list[MemoryEpisodeV1],
     client: NATSClient | None = None,
@@ -96,6 +140,15 @@ async def publish_episodes(
     (>900KB) are caught per-episode, logged with actionable guidance, and skipped
     without aborting the run. Idempotency is server-side via deterministic
     episode_id → Nats-Msg-Id JetStream deduplication.
+
+    Hanging up is bounded by ``PUBLISH_TEARDOWN_TIMEOUT_SECONDS``: a stalled
+    broker cannot hold the caller for nats-py's 30-second drain default after
+    the caller's own deadline has passed.
+
+    Note on that deduplication: the id is whatever the caller put in
+    ``episode.episode_id``. The harvest wants it per-CONTENT so re-runs collapse.
+    A build-outcome capture wants it per-WRITE so a rebuild is not swallowed, and
+    scopes it before calling here (``fleet_memory_payloads.with_broker_dedup_scope``).
 
     Args:
         episodes: List of MemoryEpisodeV1 episodes to publish.
@@ -148,8 +201,9 @@ async def publish_episodes(
                     raise
 
     finally:
-        # Always disconnect, even if errors occurred
-        await client.disconnect()
+        # Always disconnect, even if errors occurred — but never wait on it
+        # longer than PUBLISH_TEARDOWN_TIMEOUT_SECONDS.
+        await _disconnect_bounded(client)
 
     return PublishSummary(
         published=published,

@@ -378,12 +378,20 @@ makes the sub-type fire while its diagnostic silently returns ``None`` — the
 operator then sees the generic, quality-implying stall message."""
 
 OUTCOME_CAPTURE_TIMEOUT_SECONDS = 20.0
-"""Hard ceiling on the flywheel's build-outcome write at an autobuild terminal.
+"""Ceiling on the flywheel's build-outcome write at an autobuild terminal.
 
 The write publishes over the network. The terminal is not allowed to wait on
 it: if the writer has not answered within this window the build reports its
 own result anyway and the missed write is logged in plain words. One attempt,
-no retries — a retry loop at a terminal is a hang with better manners."""
+no retries — a retry loop at a terminal is a hang with better manners.
+
+THE REAL WORST CASE, in plain words: this number plus the publish path's
+hang-up bound (``harvest_publisher.PUBLISH_TEARDOWN_TIMEOUT_SECONDS``, 5s), so
+about 25 seconds today. Cutting the write off does not end it instantly — the
+publish still has to close its connection, and closing talks to the broker too.
+That close is separately bounded for exactly this reason; without the bound it
+inherits nats-py's 30-second drain default and a stalled broker holds the
+build's final line for nearly a minute after this ceiling has expired."""
 
 
 @dataclass(frozen=True)
@@ -1587,6 +1595,11 @@ class AutoBuildOrchestrator:
         # every terminal so the record carries when the build started and how
         # long it took.
         self._orchestrate_started_at: Optional[datetime] = None
+        # The last terminal this build already wrote an outcome for. Read by
+        # ONE caller — the crashed path — so a crash that happens AFTER a
+        # terminal was recorded says which terminal it supersedes instead of
+        # leaving two outcomes that look like two unrelated builds.
+        self._last_captured_terminal: Optional[str] = None
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
         # from BootstrapResult.venv_python in the feature orchestrator so
@@ -1855,6 +1868,10 @@ class AutoBuildOrchestrator:
         # Wall-clock start, kept for the build-outcome record written at every
         # terminal (started_at / duration_minutes).
         self._orchestrate_started_at = datetime.now()
+        # A fresh run supersedes nothing: an orchestrator instance can be
+        # driven more than once, and the previous run's terminal must not be
+        # named by this run's crash.
+        self._last_captured_terminal = None
 
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
@@ -2264,9 +2281,36 @@ class AutoBuildOrchestrator:
                 turn_history=list(self._turn_history),
                 task_title=task_title,
                 requirements=requirements,
-                error=f"Orchestration crashed: {type(e).__name__}: {e}",
+                error=self._crash_outcome_reason(e),
             )
             raise OrchestrationError(f"Orchestration failed: {e}") from e
+
+    def _crash_outcome_reason(self, exc: BaseException) -> str:
+        """Why this build crashed — and which terminal, if any, it supersedes.
+
+        A build can reach a terminal, write that outcome, and THEN die on the
+        way out (the pass-bar refusal whose ``_finalize_phase`` throws is the
+        real case). Memory then holds two records for one build. Read cold they
+        look like two unrelated builds; the second is the truthful one and the
+        first is the terminal it overtook, and nothing on the record said so.
+
+        This names it, so the crash record carries its own predecessor:
+        ``"... crashed after the 'qa_precondition_blocked' terminal had already
+        been recorded ..."``. The line rides ``error``, which the capture seam
+        puts into both the summary and the single lessons line — the field the
+        writer's payload actually keeps.
+
+        A plain crash (nothing recorded before it) reads exactly as it always
+        did: nothing is invented to name.
+        """
+        reason = f"Orchestration crashed: {type(exc).__name__}: {exc}"
+        superseded = self._last_captured_terminal
+        if superseded:
+            reason += (
+                f" This build crashed after the '{superseded}' terminal had "
+                f"already been recorded, so this record supersedes that one."
+            )
+        return reason
 
     def _check_qa_pass_bar_precondition(self, task_id: str):
         """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
@@ -6564,6 +6608,15 @@ class AutoBuildOrchestrator:
             broker, else None. Never proof that the store has it.
         """
         try:
+            # Remember which terminal this build has now recorded, so a later
+            # crash can say what it supersedes. Set on ATTEMPT, not on publish:
+            # the question the crashed record answers is "was an earlier
+            # terminal already reached?", which is true whether or not the
+            # broker was up. "crashed" itself is never recorded here — a crash
+            # cannot supersede itself.
+            if final_decision != "crashed":
+                self._last_captured_terminal = final_decision
+
             # Inside the guard on purpose (coach residue, 2026-08-07): the
             # stated promise is "no exception reaches the caller", and these
             # two lines were one refactor away from breaking it.
