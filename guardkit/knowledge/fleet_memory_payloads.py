@@ -106,8 +106,11 @@ def _build_outcome(data: dict, name: str) -> tuple[dict, str, Optional[str], Opt
     body = {
         "status": "success" if data.get("success") else "failure",
         "duration_seconds": duration_seconds,
-        # TASK-MEM08-003 enrichment fields. Dropped by the current relay's
-        # BuildOutcomePayload (extra="ignore"); persisted once 003 + image rebuild land.
+        # TASK-MEM08-003 enrichment fields — DECLARED by fleet-memory's
+        # BuildOutcomePayload (src/fleet_memory/payloads/models.py declares
+        # status/duration_seconds/task_id/lessons/approach). They persist
+        # whenever the DEPLOYED relay image carries that model; a stale
+        # deployed image reduces the episode to status + duration.
         "task_id": task_id,
         "lessons": _join_lines(data.get("lessons_learned")),
         "approach": data.get("approach_used"),
