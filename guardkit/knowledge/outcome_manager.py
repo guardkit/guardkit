@@ -9,7 +9,7 @@ will succeed even when the memory backend is unavailable.
 Public API:
     capture_task_outcome: Capture a task outcome as an episode
     capture_task_outcome_verified: The same write, but the caller is told
-        whether the episode actually reached the store
+        whether the episode was actually published to the broker
     OutcomeCapture: What one capture attempt achieved
     OutcomeManager: Class-based interface for outcome management
 
@@ -48,18 +48,37 @@ class OutcomeCapture(NamedTuple):
     ``outcome_id`` is always generated, even when nothing is written — it is
     the local name for this outcome, not proof of a write.
 
-    ``episode_key`` is the store's own key for the episode, and it is the ONLY
-    honest evidence that the outcome reached memory. It is ``None`` whenever
-    the write did not land: memory off, the client missing, the group unmapped,
-    the writer unreachable, the publish refused. The memory client is fail-open
-    by design (a store that is down must never break a build), so a caller that
-    wants to say "captured" out loud has to read this field — the absence of an
-    exception proves nothing.
+    ``episode_key`` says the episode was HANDED TO THE BROKER, and that is the
+    strongest thing this seam can honestly claim. It is ``None`` whenever the
+    publish did not happen: memory off, the client missing, the group unmapped,
+    the broker unreachable, the episode unbuildable, the publish refused. The
+    memory client is fail-open by design (a store that is down must never break
+    a build), so a caller that wants to say anything out loud has to read this
+    field — the absence of an exception proves nothing.
+
+    WHAT ``episode_key`` IS NOT — read this before writing a log line about it.
+    It is NOT a receipt from the store. It is the episode's deterministic
+    NATURAL KEY (``"{payload_type}:{project}:{identifier}"``), computed LOCALLY
+    from the payload before anything is sent
+    (``fleet_memory_payloads.build_memory_episode`` sets ``episode_id`` to it,
+    and ``FleetMemoryClient.add_episode`` echoes that same string back). The
+    publish beneath it is core NATS — ``NATSClient.publish_episode`` calls
+    ``nc.publish(...)`` with no JetStream ack and no round trip to the store —
+    so a successful publish means the bytes left this process, nothing more.
+
+    Which means these three failures ALL still produce a non-``None``
+    ``episode_key``: a dark relay, a stream that is unmapped or full, and a
+    relay-side validation refusal. Store-side landing is a DIFFERENT question
+    with a different answer: fleet-memory's own liveness fence (see
+    ``docs/ways-of-working/memory-reconnection-shipped-2026-08-03.md``), which
+    exists precisely because a working relay and a dead one look identical from
+    the publisher's side. Do not make this field answer it.
 
     Attributes:
         outcome_id: Local outcome id, format ``OUT-XXXXXXXX``. Always present.
-        episode_key: Store key when the episode landed, else ``None``.
-        detail: Plain-language reason when nothing landed, else ``None``.
+        episode_key: The locally-minted natural key, echoed back when the
+            episode was published to the broker; else ``None``.
+        detail: Plain-language reason when nothing was published, else ``None``.
     """
 
     outcome_id: str
@@ -67,8 +86,12 @@ class OutcomeCapture(NamedTuple):
     detail: Optional[str] = None
 
     @property
-    def stored(self) -> bool:
-        """True only when the episode actually reached the store."""
+    def published(self) -> bool:
+        """True only when the episode was published to the broker.
+
+        NOT "the store has it" — see the class docstring. This deliberately
+        does not carry the word "stored": the seam cannot see the store.
+        """
         return self.episode_key is not None
 
 
@@ -103,14 +126,16 @@ async def capture_task_outcome(
 ) -> str:
     """Capture a task outcome as an episode in the memory backend.
 
-    Creates a TaskOutcome instance and stores it in the memory backend as an
+    Creates a TaskOutcome instance and publishes it to the memory backend as an
     episode. Gracefully degrades if the memory backend is unavailable - still
     returns the generated outcome ID.
 
     NOTE: the returned id says only that an outcome was NAMED, never that it
-    was STORED — this function returns the same id whether the write landed or
-    the store was unreachable. A caller that needs to know whether memory
-    actually took the outcome must use ``capture_task_outcome_verified``.
+    was PUBLISHED — this function returns the same id whether the publish
+    happened or the broker was unreachable. A caller that needs to know whether
+    the episode was handed to the broker must use
+    ``capture_task_outcome_verified``. Neither function can tell you the STORE
+    has it; nothing on this path reads the store back.
 
     Args:
         outcome_type: Type of outcome from OutcomeType enum
@@ -188,29 +213,37 @@ async def capture_task_outcome_verified(
     feature_id: Optional[str] = None,
     related_adr_ids: Optional[List[str]] = None,
 ) -> OutcomeCapture:
-    """Capture a task outcome and report whether it actually reached the store.
+    """Capture a task outcome and report whether it reached the broker.
 
     Same write as ``capture_task_outcome``, same graceful degradation — no
     exception ever escapes to the caller. The difference is honesty about the
-    result: the returned ``OutcomeCapture`` carries the store's episode key
-    when the episode landed and ``None`` when it did not, so a caller can log
-    "captured" only when something really was.
+    result: the returned ``OutcomeCapture`` carries the episode's key when the
+    episode was published and ``None`` when it was not, so a caller can log a
+    publish only when one really happened.
 
     This exists because the write path below it is fail-open all the way down.
     ``FleetMemoryClient.add_episode`` swallows every error and returns ``None``,
-    so "no exception" is not evidence of a write, and a caller that treats it
-    as evidence prints a green line about an episode nobody stored.
+    so "no exception" is not evidence of a publish, and a caller that treats it
+    as evidence prints a green line about an episode nobody sent.
+
+    THE LIMIT OF THIS VERIFICATION, stated plainly: it reaches the broker and
+    stops. ``episode_key`` is the deterministic natural key minted locally
+    before the send, not a receipt from the store, and the publish under it is
+    core NATS with no ack. So "published" is TRUE and "the store has it" is
+    UNKNOWN — a dark relay or a refused ingest both look like success here.
+    Store-side landing is fleet-memory's liveness fence's question, not this
+    function's. See ``OutcomeCapture`` for the full statement.
 
     Args:
         Same as ``capture_task_outcome``.
 
     Returns:
-        OutcomeCapture: ``outcome_id`` always; ``episode_key`` only when stored.
+        OutcomeCapture: ``outcome_id`` always; ``episode_key`` only on publish.
 
     Example:
         capture = await capture_task_outcome_verified(...)
-        if capture.stored:
-            print(f"memory has it: {capture.episode_key}")
+        if capture.published:
+            print(f"sent to memory as: {capture.episode_key}")
     """
     # Generate unique ID
     outcome_id = _generate_outcome_id()
@@ -244,7 +277,7 @@ async def capture_task_outcome_verified(
     # Create episode name
     episode_name = f"{outcome_id}: {task_id} - {task_title}"
 
-    # Attempt to store via memory client (graceful degradation)
+    # Attempt to publish via memory client (graceful degradation)
     # Routes through factory: graphiti | fleet_memory | dual (TASK-MEM08-004)
     client = get_memory_client()
 
@@ -265,7 +298,7 @@ async def capture_task_outcome_verified(
             entity_type="task_outcome"
         )
     except Exception as e:
-        logger.warning(f"[Memory] Failed to store outcome {outcome_id}: {e}")
+        logger.warning(f"[Memory] Failed to publish outcome {outcome_id}: {e}")
         return OutcomeCapture(
             outcome_id, None, f"the writer raised {type(e).__name__}: {e}"
         )
@@ -273,15 +306,21 @@ async def capture_task_outcome_verified(
     if episode_key is None:
         # The client is fail-open: it has already logged the real reason.
         logger.warning(
-            f"[Memory] Outcome {outcome_id} for {task_id} was NOT stored — the "
-            f"memory writer accepted the call but published nothing (see the "
+            f"[Memory] Outcome {outcome_id} for {task_id} was NOT published — "
+            f"the memory writer accepted the call but sent nothing (see the "
             f"fleet-memory warning above for why)."
         )
         return OutcomeCapture(
             outcome_id, None, "the memory writer published nothing"
         )
 
-    logger.info(f"[Memory] Captured task outcome {outcome_id} for {task_id}")
+    # ``episode_key`` here is the natural key the payload builder minted
+    # locally, echoed back after a core-NATS publish with no ack. It proves the
+    # send, not the landing. See ``OutcomeCapture``.
+    logger.info(
+        f"[Memory] Published task outcome {outcome_id} for {task_id} "
+        f"to the broker as {episode_key}"
+    )
     return OutcomeCapture(outcome_id, str(episode_key))
 
 

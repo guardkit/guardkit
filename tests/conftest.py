@@ -118,6 +118,18 @@ def pytest_collection_modifyitems(config, items):
 # The one test file whose SUBJECT is the capture seam opts out with
 # ``@pytest.mark.allow_memory_capture`` and fakes the writer itself. Opting out
 # is deliberately explicit and greppable — nothing here switches off quietly.
+#
+# WHAT THE BRACES DO NOT COVER, said plainly so nobody has to discover it. The
+# method patch guards exactly one door: ``_capture_build_outcome``. A test that
+# calls ``outcome_manager.capture_task_outcome`` (or the verified variant)
+# straight — the door the ``guardkit memory capture-outcome`` CLI goes through
+# — walks past the braces entirely and is left holding only the leaky belt.
+# The braces are NOT extended over those functions on purpose: the suites whose
+# subject IS the writer have to be able to call it. What keeps the gap shut is
+# that every such test fakes ``get_memory_client``, and
+# ``tests/orchestrator/test_memory_write_fence.py`` asserts that rather than
+# trusting it, so a future test that forgets fails there instead of quietly
+# writing to production.
 
 
 def _no_memory_write(self, task_id, **_kwargs):

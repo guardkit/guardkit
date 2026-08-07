@@ -40,9 +40,38 @@ def orchestrator(tmp_path: Path):
 class TestLiveMemoryWritesAreFenced:
     """No unmarked test can reach the real writer."""
 
-    def test_capture_is_a_no_op_for_an_ordinary_test(self, orchestrator):
-        # No patching of the memory client at all — exactly the position every
-        # ordinary test is in. The call must do nothing and say nothing.
+    def test_capture_never_reaches_the_writer_even_with_memory_declared_on(
+        self, orchestrator, monkeypatch
+    ):
+        """The fence holds when the environment says memory is ON.
+
+        Asserting only ``result is None`` proves NOTHING: the real method
+        returns None when memory is off, which is the state the belt half of
+        the fence puts every test in anyway. Such a test passes with the braces
+        (the method patch) removed entirely — mutation-checked — so it cannot
+        tell a working fence from a missing one.
+
+        This is the shape that can. Declare memory ON, so the belt is defeated
+        and the real method WOULD go looking for a client, then watch the door
+        the real method has to walk through. If the braces are gone, that door
+        opens and this fails.
+        """
+        called: list = []
+
+        def _tripwire(*_args, **_kwargs):
+            called.append(True)
+            raise AssertionError(
+                "the fence is gone: a fixture build reached the memory client"
+            )
+
+        monkeypatch.setenv("FLEET_MEMORY_ENABLED", "true")
+        monkeypatch.setattr(
+            "guardkit.orchestrator.autobuild.get_memory_client", _tripwire
+        )
+        monkeypatch.setattr(
+            "guardkit.knowledge.outcome_manager.get_memory_client", _tripwire
+        )
+
         result = orchestrator._capture_build_outcome(
             "TASK-FENCE-001",
             success=True,
@@ -52,6 +81,7 @@ class TestLiveMemoryWritesAreFenced:
             requirements="none",
         )
 
+        assert called == [], "the capture seam asked for a memory client"
         assert result is None
 
     def test_the_real_capture_is_not_the_one_installed(self, orchestrator):
@@ -86,6 +116,42 @@ class TestLiveMemoryWritesAreFenced:
                 error="boom",
             )
             is None
+        )
+
+
+class TestTheFencesCoverageIsHonestlyBounded:
+    """Where the braces stop, and what holds the gap shut today.
+
+    The method patch — the half that actually holds, because it sits above the
+    lazily-built process-wide client — protects exactly one door:
+    ``AutoBuildOrchestrator._capture_build_outcome``. It does NOT protect a
+    test that calls ``outcome_manager.capture_task_outcome`` (or the verified
+    variant) directly, which is the door the ``guardkit memory capture-outcome``
+    CLI path goes through. Such a test is covered only by the belt — the
+    ``FLEET_MEMORY_ENABLED`` delenv — and ``tests/conftest.py`` documents in its
+    own words why the belt leaks: an earlier test that built the client while
+    memory was ON keeps an enabled client no matter what later tests do to the
+    environment.
+
+    No test exploits that today: every file that calls those functions also
+    patches ``get_memory_client``, so the real client is never reached. That is
+    a fact about the current suite, not a guarantee, so it is asserted rather
+    than assumed. The braces are deliberately not extended over those functions
+    — the suites whose SUBJECT is the writer have to be able to call them.
+    """
+
+    def test_every_direct_caller_of_the_writer_fakes_the_client(self):
+        tests_dir = Path(__file__).resolve().parent.parent
+        unfaked = sorted(
+            p.relative_to(tests_dir).as_posix()
+            for p in tests_dir.rglob("test_*.py")
+            if "capture_task_outcome" in (text := p.read_text(encoding="utf-8"))
+            and "get_memory_client" not in text
+        )
+        assert unfaked == [], (
+            "these tests call the outcome writer without faking "
+            "get_memory_client, so only the leaky belt stands between them "
+            "and the live store: " + ", ".join(unfaked)
         )
 
 

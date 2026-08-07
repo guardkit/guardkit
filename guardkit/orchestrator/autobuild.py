@@ -6498,7 +6498,7 @@ class AutoBuildOrchestrator:
         requirements: str = "",
         error: Optional[str] = None,
     ) -> Optional[str]:
-        """Write this build's outcome to memory. Never changes the build.
+        """Publish this build's outcome to memory. Never changes the build.
 
         Fires at EVERY autobuild terminal — the approved one and every failed
         one. A build that failed is exactly the prior a future gate wants
@@ -6512,12 +6512,25 @@ class AutoBuildOrchestrator:
         retried, and the build's own verdict is untouched. A memory store that
         is down must never turn a green build red or hold a terminal open.
 
-        "Captured" is claimed only when the store hands back a key for the
-        episode. Everything under this seam is fail-open — the memory client
-        catches every error and returns ``None``, and the outcome id is minted
-        before any publish is attempted — so an absent exception is not
-        evidence of a write. Reading the returned key is what keeps this log
-        line from asserting a capture that never happened.
+        WHAT THIS SEAM CAN AND CANNOT SEE. A publish is claimed only when the
+        write path hands back a key for the episode. Everything under this seam
+        is fail-open — the memory client catches every error and returns
+        ``None``, and the outcome id is minted before any publish is attempted
+        — so an absent exception is not evidence of anything. Reading the
+        returned key is what keeps this log line from asserting a send that
+        never happened, and it is why a DOWN broker (the likeliest real
+        failure) now correctly reports NOT published.
+
+        But the key is NOT a receipt from the store. It is the deterministic
+        natural key minted locally before the send, and the publish under it is
+        core NATS with no ack (``NATSClient.publish_episode`` → ``nc.publish``).
+        So this seam's green line means "the bytes left this process" and
+        nothing more: a dark relay, an unmapped or full stream, and a
+        relay-side validation refusal all still publish cleanly from here.
+        Whether the episode LANDED in the store is fleet-memory's liveness
+        fence's question — see
+        ``docs/ways-of-working/memory-reconnection-shipped-2026-08-03.md``.
+        Do not word this log line as if it answered that.
 
         Fields are only the ones actually in hand at this seam. Turn count
         becomes ``review_cycles`` (each turn is one coach review). Test counts
@@ -6547,8 +6560,8 @@ class AutoBuildOrchestrator:
         Returns
         -------
         Optional[str]
-            The outcome id when the episode actually reached the store, else
-            None.
+            The outcome id when the episode was actually published to the
+            broker, else None. Never proof that the store has it.
         """
         turns = list(turn_history or [])
         turn_count = len(turns)
@@ -6556,7 +6569,7 @@ class AutoBuildOrchestrator:
             client = get_memory_client()
             if client is None or not getattr(client, "enabled", False):
                 logger.warning(
-                    "memory: build outcome NOT captured for %s (ended '%s') — "
+                    "memory: build outcome NOT published for %s (ended '%s') — "
                     "memory is OFF or the client is unavailable, so this build "
                     "teaches future builds nothing. Set FLEET_MEMORY_ENABLED=true "
                     "and FLEET_MEMORY_PG_DSN to enable.",
@@ -6629,24 +6642,27 @@ class AutoBuildOrchestrator:
             # The write path below this seam is fail-open all the way down:
             # ``FleetMemoryClient.add_episode`` catches everything and returns
             # None, and the outcome id is minted before any publish is tried.
-            # So "no exception" is NOT evidence of a write — the broker being
-            # unreachable, which is the likeliest real failure, comes back
-            # here as a quiet success. Say "captured" only when the store
-            # handed back a key for the episode.
-            if not capture.stored:
+            # So "no exception" is NOT evidence of a send — the broker being
+            # unreachable, which is the likeliest real failure, would otherwise
+            # come back here as a quiet success. Claim a publish only when the
+            # write path handed back a key.
+            if not capture.published:
                 logger.warning(
-                    "memory: build outcome NOT captured for %s (ended '%s') — "
-                    "%s. Nothing was stored, so this build teaches future "
+                    "memory: build outcome NOT published for %s (ended '%s') — "
+                    "%s. Nothing was sent, so this build teaches future "
                     "builds nothing. The build result is unaffected.",
                     task_id,
                     final_decision,
-                    capture.detail or "the memory writer stored nothing",
+                    capture.detail or "the memory writer published nothing",
                 )
                 return None
 
+            # Deliberately "published to the broker", not "stored": the key
+            # below is minted locally and the publish carries no ack, so the
+            # store's copy is not proven here. See the docstring.
             logger.info(
-                "memory: build outcome %s captured for %s (ended '%s') — "
-                "stored as %s",
+                "memory: build outcome %s published to the broker for %s "
+                "(ended '%s') as %s — store-side landing is not proven here",
                 capture.outcome_id,
                 task_id,
                 final_decision,
@@ -6663,7 +6679,7 @@ class AutoBuildOrchestrator:
                 f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
             )
             logger.warning(
-                "memory: build outcome NOT captured for %s (ended '%s') — the "
+                "memory: build outcome NOT published for %s (ended '%s') — the "
                 "memory writer did not complete (%s). The build result is "
                 "unaffected.",
                 task_id,
