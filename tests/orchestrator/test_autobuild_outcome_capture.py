@@ -41,10 +41,10 @@ AUTOBUILD_LOGGER = "guardkit.orchestrator.autobuild"
 pytestmark = pytest.mark.allow_memory_capture
 
 
-def _stored(
+def _published(
     outcome_id: str, episode_key: str = "build_outcome:guardkit:TASK"
 ) -> OutcomeCapture:
-    """A capture result that says the episode really landed."""
+    """A capture result that says the episode really reached the broker."""
     return OutcomeCapture(outcome_id, episode_key)
 
 
@@ -97,7 +97,7 @@ class TestCaptureOnSuccessTerminal:
     """The approved terminal records a completed outcome."""
 
     def test_success_terminal_writes_task_completed(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-ABCD1234"))
+        writer = AsyncMock(return_value=_published("OUT-ABCD1234"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -129,7 +129,7 @@ class TestCaptureOnSuccessTerminal:
         assert kwargs["lessons_learned"] == [kwargs["summary"]]
 
     def test_title_falls_back_to_task_id(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-1"))
+        writer = AsyncMock(return_value=_published("OUT-1"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -147,7 +147,7 @@ class TestCaptureOnSuccessTerminal:
 
         started = datetime.now() - timedelta(minutes=7)
         orchestrator._orchestrate_started_at = started
-        writer = AsyncMock(return_value=_stored("OUT-2"))
+        writer = AsyncMock(return_value=_published("OUT-2"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -167,7 +167,7 @@ class TestCaptureOnFailureTerminal:
     """A build that stopped without approval is recorded just as carefully."""
 
     def test_failure_terminal_writes_task_failed(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-FAIL0001"))
+        writer = AsyncMock(return_value=_published("OUT-FAIL0001"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -195,7 +195,7 @@ class TestCaptureOnFailureTerminal:
         assert kwargs["lessons_learned"] == [kwargs["summary"]]
 
     def test_failure_without_error_still_names_the_terminal(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-3"))
+        writer = AsyncMock(return_value=_published("OUT-3"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -221,7 +221,7 @@ class TestLoudDegrade:
     def test_memory_off_logs_one_warning_and_skips_the_write(
         self, orchestrator, caplog
     ):
-        writer = AsyncMock(return_value=_stored("OUT-NEVER"))
+        writer = AsyncMock(return_value=_published("OUT-NEVER"))
 
         with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER), \
              patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=None), \
@@ -241,14 +241,14 @@ class TestLoudDegrade:
             if r.name == AUTOBUILD_LOGGER and r.levelno >= logging.WARNING
         ]
         assert len(lines) == 1, lines
-        assert "build outcome NOT captured" in lines[0]
+        assert "build outcome NOT published" in lines[0]
         assert "TASK-CAP-020" in lines[0]
         assert "FLEET_MEMORY_ENABLED" in lines[0]
 
     def test_disabled_client_logs_one_warning_and_skips_the_write(
         self, orchestrator, caplog
     ):
-        writer = AsyncMock(return_value=_stored("OUT-NEVER"))
+        writer = AsyncMock(return_value=_published("OUT-NEVER"))
 
         with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER), \
              patch(
@@ -292,7 +292,7 @@ class TestLoudDegrade:
             if r.name == AUTOBUILD_LOGGER and r.levelno >= logging.WARNING
         ]
         assert len(lines) == 1, lines
-        assert "build outcome NOT captured" in lines[0]
+        assert "build outcome NOT published" in lines[0]
         assert "writer unreachable" in lines[0]
         assert "build result is unaffected" in lines[0]
 
@@ -321,7 +321,7 @@ class TestLoudDegrade:
 
         async def _never_answers(**_kwargs) -> OutcomeCapture:
             await asyncio.sleep(30)
-            return _stored("OUT-TOO-LATE")
+            return _published("OUT-TOO-LATE")
 
         with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER), \
              patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
@@ -340,7 +340,7 @@ class TestLoudDegrade:
             if r.name == AUTOBUILD_LOGGER and r.levelno >= logging.WARNING
         ]
         assert len(lines) == 1, lines
-        assert "build outcome NOT captured" in lines[0]
+        assert "build outcome NOT published" in lines[0]
         # str(TimeoutError()) is EMPTY, so without the type name the line reads
         # "did not complete ()" and an operator cannot tell a timeout from any
         # other failure. Name the failure.
@@ -353,15 +353,20 @@ class TestLoudDegrade:
 # ============================================================================
 
 
-class TestCaptureIsOnlyClaimedWhenTheEpisodeLands:
+class TestCaptureIsOnlyClaimedWhenTheEpisodeIsPublished:
     """Everything under this seam is fail-open, so silence is not success.
 
     ``FleetMemoryClient.add_episode`` catches every error and returns ``None``,
     and the outcome id is minted before any publish is attempted. A caller that
     reads only "did it raise?" prints a green line about an episode that was
-    never stored — a false green in exactly the lane whose job is to make
-    memory truthful. These tests drive the real writer function with only the
-    store call faked.
+    never sent — a false green in exactly the lane whose job is to make memory
+    truthful. These tests drive the real writer function with only the publish
+    call faked.
+
+    THE CLAIM'S CEILING, pinned by the last test in this class: the key handed
+    back is minted locally and the publish carries no ack, so this seam may say
+    "published to the broker" and must never say "stored". Whether the episode
+    landed in the store is fleet-memory's liveness fence's question.
     """
 
     def _client_that_publishes(self, episode_key):
@@ -370,7 +375,7 @@ class TestCaptureIsOnlyClaimedWhenTheEpisodeLands:
         client.add_episode = AsyncMock(return_value=episode_key)
         return client
 
-    def test_write_that_publishes_nothing_is_not_claimed_as_captured(
+    def test_write_that_publishes_nothing_is_not_claimed_as_published(
         self, orchestrator, caplog
     ):
         # The broker being unreachable, or the writer credential absent,
@@ -388,7 +393,7 @@ class TestCaptureIsOnlyClaimedWhenTheEpisodeLands:
                 success=True,
                 final_decision="approved",
                 turn_history=[MagicMock()],
-                task_title="A build nobody stored",
+                task_title="A build nobody published",
                 requirements="Do the thing",
             )
 
@@ -404,16 +409,16 @@ class TestCaptureIsOnlyClaimedWhenTheEpisodeLands:
             if r.levelno >= logging.WARNING
         ]
         assert len(warnings) == 1, warnings
-        assert "build outcome NOT captured" in warnings[0]
+        assert "build outcome NOT published" in warnings[0]
         assert "TASK-CAP-030" in warnings[0]
         # And critically: NOT one word claiming a capture happened.
         assert not [
             r.getMessage()
             for r in autobuild_lines
-            if r.levelno == logging.INFO and "captured for" in r.getMessage()
+            if r.levelno == logging.INFO and "published to the broker for" in r.getMessage()
         ]
 
-    def test_write_that_lands_is_claimed_with_the_store_key(
+    def test_write_that_publishes_is_claimed_with_the_episode_key(
         self, orchestrator, caplog
     ):
         client = self._client_that_publishes("build_outcome:guardkit:TASK_CAP_031")
@@ -438,12 +443,55 @@ class TestCaptureIsOnlyClaimedWhenTheEpisodeLands:
             for r in caplog.records
             if r.name == AUTOBUILD_LOGGER and r.levelno == logging.INFO
         ]
-        assert any("captured for TASK-CAP-031" in line for line in infos), infos
+        assert any(
+            "published to the broker for TASK-CAP-031" in line for line in infos
+        ), infos
         assert any(
             "build_outcome:guardkit:TASK_CAP_031" in line for line in infos
         ), infos
 
-    def test_a_write_that_did_not_land_still_leaves_the_build_alone(
+    def test_the_green_line_claims_a_publish_and_never_a_store(
+        self, orchestrator, caplog
+    ):
+        """The seam's ceiling, in the one place an operator actually reads.
+
+        The fake below is a writer that hands back a key having sent the
+        episode nowhere that could keep it — the shape of a dark relay, an
+        unmapped or full stream, and a relay-side ingest refusal alike. This
+        seam cannot distinguish any of them from a real landing, so the line it
+        prints must not imply one. It may say "published to the broker"; the
+        word "stored" would be the false green this lane exists to kill,
+        restated one layer down.
+        """
+        client = self._client_that_publishes("build_outcome:guardkit:TASK_CAP_032")
+
+        with caplog.at_level(logging.DEBUG), \
+             patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=client), \
+             patch(
+                 "guardkit.knowledge.outcome_manager.get_memory_client",
+                 return_value=client,
+             ):
+            result = orchestrator._capture_build_outcome(
+                "TASK-CAP-032",
+                success=True,
+                final_decision="approved",
+                turn_history=[MagicMock()],
+            )
+
+        assert result is not None
+        messages = [
+            r.getMessage()
+            for r in caplog.records
+            if r.name == AUTOBUILD_LOGGER
+        ]
+        assert any("published to the broker" in m for m in messages), messages
+        # The words that would over-claim, in any casing.
+        for forbidden in ("stored", "landed", "memory has it"):
+            assert not any(
+                forbidden in m.lower() for m in messages
+            ), (forbidden, messages)
+
+    def test_a_write_that_was_not_published_still_leaves_the_build_alone(
         self, orchestrator
     ):
         client = self._client_that_publishes(None)
@@ -494,7 +542,7 @@ class TestOrchestrateFiresCapture:
     def test_approved_terminal_fires_capture(self, orchestrator):
         turn = MagicMock()
         turn.decision = "approved"
-        writer = AsyncMock(return_value=_stored("OUT-LIVE0001"))
+        writer = AsyncMock(return_value=_published("OUT-LIVE0001"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -509,7 +557,7 @@ class TestOrchestrateFiresCapture:
         assert kwargs["task_requirements"] == "build the thing"
 
     def test_failed_terminal_fires_capture(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-LIVE0002"))
+        writer = AsyncMock(return_value=_published("OUT-LIVE0002"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -538,14 +586,14 @@ class TestOrchestrateFiresCapture:
         assert result.final_decision == "approved"
         assert result.error is None
         assert any(
-            "build outcome NOT captured" in r.getMessage()
+            "build outcome NOT published" in r.getMessage()
             for r in caplog.records
         )
 
     def test_memory_off_at_the_terminal_does_not_change_the_result(
         self, orchestrator, caplog
     ):
-        writer = AsyncMock(return_value=_stored("OUT-NEVER"))
+        writer = AsyncMock(return_value=_published("OUT-NEVER"))
 
         with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER), \
              patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=None), \
@@ -556,7 +604,7 @@ class TestOrchestrateFiresCapture:
         assert result.final_decision == "max_turns_exceeded"
         writer.assert_not_awaited()
         assert any(
-            "build outcome NOT captured" in r.getMessage()
+            "build outcome NOT published" in r.getMessage()
             for r in caplog.records
         )
 
@@ -625,7 +673,7 @@ class TestEveryEarlyTerminalFiresCapture:
     """Each early exit records its outcome without any operator action."""
 
     def test_qa_precondition_blocked_fires_capture(self, orchestrator):
-        writer = AsyncMock(return_value=_stored("OUT-QA"))
+        writer = AsyncMock(return_value=_published("OUT-QA"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -645,7 +693,7 @@ class TestEveryEarlyTerminalFiresCapture:
 
     def test_pre_loop_checkpoint_rejection_fires_capture(self, orchestrator):
         orchestrator.enable_pre_loop = True
-        writer = AsyncMock(return_value=_stored("OUT-PL1"))
+        writer = AsyncMock(return_value=_published("OUT-PL1"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
@@ -664,7 +712,7 @@ class TestEveryEarlyTerminalFiresCapture:
         from guardkit.orchestrator import autobuild as autobuild_module
 
         orchestrator.enable_pre_loop = True
-        writer = AsyncMock(return_value=_stored("OUT-PL2"))
+        writer = AsyncMock(return_value=_published("OUT-PL2"))
         blocked = autobuild_module.QualityGateBlocked("architecture review said no")
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
@@ -680,7 +728,7 @@ class TestEveryEarlyTerminalFiresCapture:
     def test_rate_limited_fires_capture(self, orchestrator):
         from guardkit.orchestrator import autobuild as autobuild_module
 
-        writer = AsyncMock(return_value=_stored("OUT-RL"))
+        writer = AsyncMock(return_value=_published("OUT-RL"))
         limited = autobuild_module.RateLimitExceededError(
             "rate limit hit", reset_time="10:00"
         )
@@ -707,7 +755,7 @@ class TestEveryEarlyTerminalFiresCapture:
     def test_setup_failure_fires_capture_then_still_raises(self, orchestrator):
         from guardkit.orchestrator import autobuild as autobuild_module
 
-        writer = AsyncMock(return_value=_stored("OUT-SETUP"))
+        writer = AsyncMock(return_value=_published("OUT-SETUP"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer), \
@@ -730,7 +778,7 @@ class TestEveryEarlyTerminalFiresCapture:
     def test_crash_fires_capture_then_still_raises(self, orchestrator):
         from guardkit.orchestrator import autobuild as autobuild_module
 
-        writer = AsyncMock(return_value=_stored("OUT-CRASH"))
+        writer = AsyncMock(return_value=_published("OUT-CRASH"))
 
         with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
              patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer), \

@@ -9,6 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from guardkit.cli.memory import memory
+from guardkit.knowledge.outcome_manager import OutcomeCapture
 
 
 @pytest.fixture
@@ -115,11 +116,11 @@ class TestMemoryCaptureOutcome:
     """Tests for guardkit memory capture-outcome command."""
 
     @patch("guardkit.cli.memory.get_memory_client")
-    @patch("guardkit.cli.memory.capture_task_outcome")
+    @patch("guardkit.cli.memory.capture_task_outcome_verified")
     def test_capture_outcome_from_task_file(
         self, mock_capture, mock_get_client, runner, mock_memory_client, tmp_path
     ):
-        """Test capture-outcome from task file."""
+        """A publish that happened is reported as a publish, with its key."""
         # Create a mock task file
         task_file = tmp_path / "TASK-XXX.md"
         task_file.write_text("""---
@@ -136,15 +137,78 @@ Test implementation notes
 """)
 
         mock_get_client.return_value = mock_memory_client
-        mock_capture.return_value = "OUT-12345"
+        mock_capture.return_value = OutcomeCapture(
+            "OUT-12345", "build_outcome:guardkit:TASK_XXX"
+        )
 
         result = runner.invoke(
             memory, ["capture-outcome", "--from-task-file", str(task_file)]
         )
 
         assert result.exit_code == 0
-        assert "captured" in result.output.lower()
+        assert "published" in result.output.lower()
+        assert "OUT-12345" in result.output
         mock_capture.assert_called_once()
+
+    @patch("guardkit.cli.memory.get_memory_client")
+    @patch("guardkit.cli.memory.capture_task_outcome_verified")
+    def test_capture_outcome_that_published_nothing_is_not_reported_green(
+        self, mock_capture, mock_get_client, runner, mock_memory_client, tmp_path
+    ):
+        """The green tick must not survive a write that sent nothing.
+
+        This is the false green the autobuild seam already kills, restated on
+        the CLI path: the plain ``capture_task_outcome`` hands back its id even
+        when the broker was dark, so printing a tick beside it claims a publish
+        that never happened.
+        """
+        task_file = tmp_path / "TASK-XXX.md"
+        task_file.write_text(
+            "---\nid: TASK-XXX\ntitle: Test Task\n---\n\n## Description\nD\n"
+        )
+
+        mock_get_client.return_value = mock_memory_client
+        mock_capture.return_value = OutcomeCapture(
+            "OUT-12345", None, "the memory writer published nothing"
+        )
+
+        result = runner.invoke(
+            memory, ["capture-outcome", "--from-task-file", str(task_file)]
+        )
+
+        assert result.exit_code == 0
+        out = result.output.lower()
+        assert "not published" in out
+        assert "published nothing" in out
+        # The tick is the thing that must not appear.
+        assert "✅" not in result.output
+
+    @patch("guardkit.cli.memory.get_memory_client")
+    @patch("guardkit.cli.memory.capture_task_outcome_verified")
+    def test_capture_outcome_never_claims_the_store_has_it(
+        self, mock_capture, mock_get_client, runner, mock_memory_client, tmp_path
+    ):
+        """A publish is claimed; a store-side landing is not.
+
+        The key handed back is minted locally and the publish carries no ack,
+        so the success line may say "published" but must never say "stored".
+        """
+        task_file = tmp_path / "TASK-XXX.md"
+        task_file.write_text(
+            "---\nid: TASK-XXX\ntitle: Test Task\n---\n\n## Description\nD\n"
+        )
+
+        mock_get_client.return_value = mock_memory_client
+        mock_capture.return_value = OutcomeCapture(
+            "OUT-12345", "build_outcome:guardkit:TASK_XXX"
+        )
+
+        result = runner.invoke(
+            memory, ["capture-outcome", "--from-task-file", str(task_file)]
+        )
+
+        assert result.exit_code == 0
+        assert "stored" not in result.output.lower()
 
     @patch("guardkit.cli.memory.get_memory_client")
     def test_capture_outcome_unreachable_store(self, mock_get_client, runner, tmp_path):

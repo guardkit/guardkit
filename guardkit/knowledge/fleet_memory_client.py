@@ -402,6 +402,16 @@ class FleetMemoryClient:
             The natural key (``"{payload_type}:{project}:{identifier}"``) on a successful
             publish, else ``None``.
 
+            THIS IS NOT A STORE RECEIPT. The key is computed LOCALLY by
+            ``build_memory_episode`` (which sets ``episode.episode_id`` to it)
+            before anything is sent, and the send itself is core NATS with no
+            JetStream ack — ``NATSClient.publish_episode`` calls
+            ``nc.publish(...)`` and returns. So a non-``None`` return means the
+            bytes left this process, and a dark relay, an unmapped or full
+            stream, and a relay-side validation refusal all return it too.
+            Callers must say "published", never "stored"; store-side landing is
+            fleet-memory's liveness fence's question.
+
         Example:
             >>> key = await client.add_episode(
             ...     name="OUT-1A2B: TASK-1234 - Implement OAuth2",
