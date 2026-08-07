@@ -6563,9 +6563,12 @@ class AutoBuildOrchestrator:
             The outcome id when the episode was actually published to the
             broker, else None. Never proof that the store has it.
         """
-        turns = list(turn_history or [])
-        turn_count = len(turns)
         try:
+            # Inside the guard on purpose (coach residue, 2026-08-07): the
+            # stated promise is "no exception reaches the caller", and these
+            # two lines were one refactor away from breaking it.
+            turns = list(turn_history or [])
+            turn_count = len(turns)
             client = get_memory_client()
             if client is None or not getattr(client, "enabled", False):
                 logger.warning(
