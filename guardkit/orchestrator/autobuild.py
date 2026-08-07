@@ -4266,6 +4266,15 @@ class AutoBuildOrchestrator:
                             # whole-suite guard defers to the LLM specialist in a
                             # parallel wave; it needs the real wave size here.
                             wave_size=self.wave_size,
+                            # Per-component seam: the task's component selector
+                            # (already resolved and validated in ``run()``, and
+                            # in scope here as this turn's parameter) so the
+                            # Player's Phase-4 block runs THIS component's
+                            # declared command in THIS component's directory —
+                            # the same oracle the Coach uses below. ``None``
+                            # for every single-toolchain repo, which keeps the
+                            # root path unchanged.
+                            component=component,
                         )
                     )
 

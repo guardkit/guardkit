@@ -1087,6 +1087,7 @@ def _run_deterministic_phase_4(
     sdk_timeout: int,
     turn: Optional[int],
     wave_size: int = 1,
+    component: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """Execute Phase-4 tests deterministically and return a phase_4 block.
 
@@ -1157,17 +1158,27 @@ def _run_deterministic_phase_4(
             # leaked tmp dir is attributable to the deterministic Phase-4
             # runner rather than the Coach's own independent run.
             basetemp_context="phase4",
-            # PER-COMPONENT SEAM — SCOPED OUT HERE, DELIBERATELY AND LOUDLY.
-            # This Player-side Phase-4 runner is reached through
-            # ``run_test_orchestrator`` -> ``AgentInvoker``, a chain that never
-            # carries the task's frontmatter, so no ``component=`` can be
-            # threaded without widening it. A component task therefore gets the
-            # ROOT component's oracle in its Phase-4 block. That block is the
-            # PLAYER's narrative, not the verdict: the Coach's own
-            # ``run_independent_tests`` is component-aware (it is constructed in
-            # ``autobuild._invoke_coach_primary`` WITH the selector) and is what
-            # decides the turn. Threading the selector down this chain is a
-            # named follow-on, not a silent gap.
+            # PER-COMPONENT SEAM — HONOURED HERE (phase-4 threading lane).
+            # The task's component selector now rides the chain
+            # ``autobuild._execute_turn`` -> ``invoke_test_orchestrator`` ->
+            # here, so a component task's Phase-4 block runs THAT component's
+            # declared command in THAT component's declared directory — the
+            # same oracle the Coach's own ``run_independent_tests`` uses, so
+            # the Player's narrative and the Coach's verdict can no longer
+            # disagree about which product was tested.
+            #
+            # ``component=None`` (every single-toolchain repo, and every task
+            # that names no component) leaves ``CoachValidator._component``
+            # falsy: the declared-component rung in ``_detect_test_command`` is
+            # not entered and ``_component_run_cwd`` returns the worktree
+            # unchanged — the pre-existing root path, byte for byte.
+            #
+            # A component the repo does not declare is NEVER silently degraded
+            # to the root oracle: the Coach records a detection ABSENCE, which
+            # ``run_independent_tests`` returns as ``signal_absent`` and the
+            # absent branch below maps to ``status="failed"``. Absence of
+            # failure is not success.
+            component=component,
         )
         task_work_results = _load_task_work_results(Path(worktree_path), task_id)
         result = validator.run_independent_tests(
@@ -1287,6 +1298,7 @@ async def invoke_test_orchestrator(
     *,
     turn: Optional[int] = None,
     wave_size: int = 1,
+    component: Optional[str] = None,
 ) -> SpecialistInvocationResult:
     """Run the Phase 4 test-orchestrator specialist under orchestrator control.
 
@@ -1312,6 +1324,14 @@ async def invoke_test_orchestrator(
         cancellation_event: Optional :class:`threading.Event` that
             signals cancellation to the SDK monitor.
         turn: Optional autobuild turn number forwarded for instrumentation.
+        wave_size: Number of tasks in the current parallel wave; forwarded to
+            the deterministic runner's non-Python whole-suite guard.
+        component: Optional per-component selector from the task's
+            frontmatter. When set, the deterministic Phase-4 runner resolves
+            THAT component's declared test command and directory, so an app
+            task is judged by its own toolchain rather than the repo root's.
+            ``None`` (the default, and every single-toolchain repo) preserves
+            the root path exactly.
 
     Returns:
         The :class:`SpecialistInvocationResult` produced by
@@ -1330,7 +1350,26 @@ async def invoke_test_orchestrator(
     # the legacy ``test-orchestrator`` specialist is reached only when this is
     # explicitly reverted (``GUARDKIT_PHASE4_TEST_EXECUTION=sdk``) or when no
     # pytest test command is detectable (non-Python stack safety valve).
-    if _resolve_phase_4_execution_mode() == "subprocess":
+    #
+    # PER-COMPONENT PIN (mirrors ``CoachValidator.run_independent_tests``'s
+    # ``component_pinned_subprocess`` law): the LLM ``test-orchestrator``
+    # specialist runs with the WORKTREE ROOT as its cwd and is handed no
+    # component directory, so under an ``sdk`` revert a component task would
+    # silently run the wrong product's tests from the wrong directory. A named
+    # component therefore FORCES the deterministic path — the only path where
+    # the component's declared cwd is honoured — and says so out loud.
+    _mode = _resolve_phase_4_execution_mode()
+    if component and _mode == "sdk":
+        logger.warning(
+            "[%s] Component %r selected: forcing the deterministic SUBPROCESS "
+            "Phase-4 path despite GUARDKIT_PHASE4_TEST_EXECUTION=sdk. The SDK "
+            "specialist runs with the worktree root as cwd and would test the "
+            "wrong component.",
+            task_id,
+            component,
+        )
+        _mode = "subprocess"
+    if _mode == "subprocess":
         det_block = _run_deterministic_phase_4(
             worktree_path=Path(worktree_path),
             task_id=task_id,
@@ -1338,6 +1377,7 @@ async def invoke_test_orchestrator(
             sdk_timeout=sdk_timeout,
             turn=turn,
             wave_size=wave_size,
+            component=component,
         )
         if det_block is not None:
             _write_specialist_results(specialist_results_path, det_block)
@@ -1357,6 +1397,21 @@ async def invoke_test_orchestrator(
                 duration_seconds=float(det_block.get("duration_seconds", 0.0)),
                 result_file=specialist_results_path,
                 error=det_block.get("error"),
+            )
+        if component:
+            # For a component task the runner cannot reach here by "no test
+            # command detected" — a named component always resolves to either
+            # a declared command or a LOUD absence (status="failed"). Reaching
+            # here means the runner itself was unavailable or raised, and the
+            # LLM specialist that follows runs with the worktree ROOT as cwd.
+            # Say so: the resulting Phase-4 block is the root oracle, not this
+            # component's.
+            logger.warning(
+                "[%s] deterministic Phase-4 unavailable for component %r; the "
+                "test-orchestrator specialist that follows runs from the "
+                "worktree ROOT, so its block is NOT this component's oracle.",
+                task_id,
+                component,
             )
         logger.info(
             "[%s] deterministic Phase-4 found no detectable test command; "
