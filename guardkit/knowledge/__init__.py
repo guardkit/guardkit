@@ -173,6 +173,8 @@ from guardkit.knowledge.facts.role_constraint import (
 
 from guardkit.knowledge.outcome_manager import (
     capture_task_outcome,
+    capture_task_outcome_verified,
+    OutcomeCapture,
     OutcomeManager,
 )
 
@@ -280,6 +282,8 @@ __all__ = [
     "OutcomeType",
     "TaskOutcome",
     "capture_task_outcome",
+    "capture_task_outcome_verified",
+    "OutcomeCapture",
     "find_similar_task_outcomes",
     "OutcomeManager",
     "OutcomeQueries",
