@@ -2307,7 +2307,7 @@ class AutoBuildOrchestrator:
         superseded = self._last_captured_terminal
         if superseded:
             reason += (
-                f" This build crashed after the '{superseded}' terminal had "
+                f" — this build crashed after the '{superseded}' terminal had "
                 f"already been recorded, so this record supersedes that one."
             )
         return reason
