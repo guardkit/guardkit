@@ -106,8 +106,11 @@ def _build_outcome(data: dict, name: str) -> tuple[dict, str, Optional[str], Opt
     body = {
         "status": "success" if data.get("success") else "failure",
         "duration_seconds": duration_seconds,
-        # TASK-MEM08-003 enrichment fields. Dropped by the current relay's
-        # BuildOutcomePayload (extra="ignore"); persisted once 003 + image rebuild land.
+        # TASK-MEM08-003 enrichment fields — DECLARED by fleet-memory's
+        # BuildOutcomePayload (src/fleet_memory/payloads/models.py declares
+        # status/duration_seconds/task_id/lessons/approach). They persist
+        # whenever the DEPLOYED relay image carries that model; a stale
+        # deployed image reduces the episode to status + duration.
         "task_id": task_id,
         "lessons": _join_lines(data.get("lessons_learned")),
         "approach": data.get("approach_used"),
@@ -254,3 +257,57 @@ def _build_prose_episode(
         name=name,
         source=source,
     )
+
+
+def with_broker_dedup_scope(episode: Any, token: str) -> Any:
+    """Return a copy of ``episode`` whose broker message id is unique to ONE write.
+
+    WHY THIS EXISTS. ``episode_id`` does two unrelated jobs. On the typed JSON
+    path it is *only* the value nats-core stamps into the ``Nats-Msg-Id`` header
+    (``nats_core/client.py`` — ``publish_episode`` → ``nc.publish(subject, data,
+    headers={"Nats-Msg-Id": episode.episode_id})``), which is JetStream's
+    duplicate window key. The STORE's identity comes from somewhere else
+    entirely: the relay's typed path (``fleet_memory/relay/service.py`` →
+    ``_ingest_json``) builds the record key from the payload BODY's
+    ``project``/``identifier``, and never reads ``episode_id`` at all.
+
+    Because the natural key is per-TASK, two real builds of the same task inside
+    JetStream's duplicate window carried the same ``Nats-Msg-Id``. The second
+    publish was accepted at the socket and dropped by the server, while guardkit
+    logged a green "published" line: a rebuild's outcome silently never existed.
+
+    So the msg id is scoped per WRITE (``"{natural_key}.{token}"``) while the
+    payload — and therefore the store's upsert key — stays per TASK. Latest
+    write wins in the store, as before; what changes is that the later write now
+    actually arrives. The caller computes ``token`` ONCE per capture, so a retry
+    *inside* one capture still carries the same id and still dedupes.
+
+    NOT applied to the prose/chunk path: there ``episode_id`` IS the identity
+    (``ChunkWriter`` keys chunks by ``uuid5(episode_id, index)``), so scoping it
+    would duplicate chunks instead of de-duplicating publishes. Prose episodes
+    come back unchanged.
+
+    Args:
+        episode: A ``MemoryEpisodeV1`` (or ``None``).
+        token: Per-write uniquifier, computed once by the caller.
+
+    Returns:
+        A scoped copy for typed JSON episodes; the original episode otherwise.
+        Never raises — a failure to copy degrades to the unscoped episode.
+    """
+    if episode is None or not token:
+        return episode
+    if getattr(episode, "content_format", None) != "json":
+        return episode
+    try:
+        return episode.model_copy(
+            update={"episode_id": f"{episode.episode_id}.{token}"}
+        )
+    except Exception as exc:  # pragma: no cover - defensive; model_copy is total
+        logger.warning(
+            "Could not scope the broker message id for %r (%s); publishing "
+            "unscoped, which a rebuild inside the duplicate window may drop",
+            getattr(episode, "episode_id", "?"),
+            exc,
+        )
+        return episode

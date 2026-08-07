@@ -633,6 +633,127 @@ class TestFleetMemoryClientAddEpisode:
         assert result is None
 
 
+class TestTheReturnedKeyIsNotAStoreReceipt:
+    """What ``add_episode``'s key proves, and what it does not.
+
+    The seam above this one reports "published" and deliberately never reports
+    "stored". These tests pin WHY, so a future reader cannot upgrade the claim
+    by accident: the key is minted locally before the send, and the send itself
+    carries no acknowledgement from anything downstream.
+
+    No broker, no store, no network — the publish boundary is a fake.
+    """
+
+    @staticmethod
+    def _summary(published: int = 1, skipped: int = 0):
+        from guardkit.memory.harvest_publisher import PublishSummary
+
+        return PublishSummary(
+            published=published, skipped_oversized=skipped, counts_per_type={}
+        )
+
+    async def test_a_void_broker_with_no_store_still_yields_the_key(
+        self, fleet_client
+    ):
+        """Throw the episode away entirely; the key still comes back.
+
+        This fake is a broker that accepts the publish and drops it on the
+        floor — no stream, no relay, no store, nothing that could ever hold the
+        episode. It is the shape of a dark relay, an unmapped or full stream,
+        and a relay-side validation refusal all at once. ``add_episode`` cannot
+        tell any of them from a real landing, which is exactly why its callers
+        may only claim a publish.
+        """
+        fleet_client._nats_available = True
+        void: list = []
+
+        async def _throw_into_the_void(episodes, *_args, **_kwargs):
+            void.extend(episodes)  # the only trace; nothing downstream exists
+            return self._summary(published=len(episodes))
+
+        with patch(
+            "guardkit.memory.harvest_publisher.publish_episodes",
+            new=_throw_into_the_void,
+        ):
+            result = await fleet_client.add_episode(
+                name="OUT-VOID: TASK-VOID-1 - nothing downstream",
+                episode_body='{"task_id": "TASK-VOID-1", "success": true}',
+                group_id="task_outcomes",
+            )
+
+        assert result == "build_outcome:guardkit:TASK_VOID_1"
+        # And it is the id the payload builder minted locally, echoed back —
+        # not something any store chose.
+        assert void[0].episode_id == result
+
+    async def test_the_key_is_minted_before_the_send(self, fleet_client):
+        """The key exists on the episode handed TO the publisher.
+
+        Read the key off the episode at the moment it is passed in — before the
+        fake publisher has done anything at all — and it already equals what
+        ``add_episode`` returns. Nothing downstream contributed to it.
+        """
+        fleet_client._nats_available = True
+        key_at_send_time: list = []
+
+        async def _capture_key_then_publish(episodes, *_args, **_kwargs):
+            key_at_send_time.append(episodes[0].episode_id)
+            return self._summary(published=1)
+
+        with patch(
+            "guardkit.memory.harvest_publisher.publish_episodes",
+            new=_capture_key_then_publish,
+        ):
+            result = await fleet_client.add_episode(
+                name="OUT-PRE: TASK-PRE-1 - key exists before the send",
+                episode_body='{"task_id": "TASK-PRE-1", "success": true}',
+                group_id="task_outcomes",
+            )
+
+        assert key_at_send_time == [result]
+
+    async def test_nothing_on_this_path_reads_the_store_back(self, fleet_client):
+        """A successful publish makes exactly one downstream call: the publish.
+
+        If a read-back were ever added, this seam COULD honestly say "stored".
+        Until then it cannot, and this test fails the moment that changes so
+        the wording is revisited deliberately rather than drifting.
+        """
+        fleet_client._nats_available = True
+        calls = AsyncMock(return_value=self._summary(published=1))
+
+        with patch("guardkit.memory.harvest_publisher.publish_episodes", new=calls):
+            await fleet_client.add_episode(
+                name="OUT-RB: TASK-RB-1 - no read back",
+                episode_body='{"task_id": "TASK-RB-1", "success": true}',
+                group_id="task_outcomes",
+            )
+
+        assert calls.await_count == 1
+
+    async def test_the_success_log_says_published_not_stored(
+        self, fleet_client, caplog
+    ):
+        """The word on the green path is "Published". "Stored" is a lie here."""
+        fleet_client._nats_available = True
+
+        with caplog.at_level(
+            logging.INFO, logger="guardkit.knowledge.fleet_memory_client"
+        ), patch(
+            "guardkit.memory.harvest_publisher.publish_episodes",
+            new=AsyncMock(return_value=self._summary(published=1)),
+        ):
+            await fleet_client.add_episode(
+                name="OUT-LOG: TASK-LOG-1 - wording",
+                episode_body='{"task_id": "TASK-LOG-1", "success": true}',
+                group_id="task_outcomes",
+            )
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("Published" in m for m in messages), messages
+        assert not any("stored" in m.lower() for m in messages), messages
+
+
 class TestFactoryRouting:
     """Test factory functions route backends correctly."""
 

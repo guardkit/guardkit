@@ -58,6 +58,15 @@ def _load_quarantine():
 _QUARANTINE_EXACT, _QUARANTINE_MODULES = _load_quarantine()
 
 
+def pytest_configure(config):
+    """Register this suite's own markers."""
+    config.addinivalue_line(
+        "markers",
+        "allow_memory_capture: this test drives the build-outcome capture seam "
+        "itself and opts out of the autouse guard. It MUST fake the writer.",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
     """Skip quarantined nodes unless GUARDKIT_NO_QUARANTINE is set."""
     if os.environ.get("GUARDKIT_NO_QUARANTINE"):
@@ -83,6 +92,67 @@ def pytest_collection_modifyitems(config, items):
                 f"[quarantine] skipped {skipped} pre-existing red test(s) "
                 f"(GUARDKIT_NO_QUARANTINE=1 to run them)"
             )
+
+
+# ---------------------------------------------------------------------------
+# The live-memory fence: no test may write to the real memory store
+# ---------------------------------------------------------------------------
+# ``AutoBuildOrchestrator.orchestrate`` writes a build outcome at every
+# terminal. Eighteen test files drive ``orchestrate(...)`` with fixture task
+# ids, and on the factory seat — memory ON, the broker reachable, the writer
+# credential exported, which is this estate's NORMAL state — every one of those
+# runs would publish a fabricated build outcome into the same store the gates
+# read back as priors. A test suite must never be able to teach production
+# anything.
+#
+# Two fences, because either alone has a hole:
+#   1. FLEET_MEMORY_ENABLED is removed from the environment. This is the belt,
+#      not the braces: the memory client is a process-wide singleton built
+#      lazily from the environment on FIRST use, so an earlier test that built
+#      it enabled keeps an enabled client no matter what later tests do to the
+#      environment.
+#   2. ``_capture_build_outcome`` is replaced with a no-op that returns None,
+#      exactly as the real method does when memory is off. This is the fence
+#      that actually holds, because it sits above the singleton.
+#
+# The one test file whose SUBJECT is the capture seam opts out with
+# ``@pytest.mark.allow_memory_capture`` and fakes the writer itself. Opting out
+# is deliberately explicit and greppable — nothing here switches off quietly.
+#
+# WHAT THE BRACES DO NOT COVER, said plainly so nobody has to discover it. The
+# method patch guards exactly one door: ``_capture_build_outcome``. A test that
+# calls ``outcome_manager.capture_task_outcome`` (or the verified variant)
+# straight — the door the ``guardkit memory capture-outcome`` CLI goes through
+# — walks past the braces entirely and is left holding only the leaky belt.
+# The braces are NOT extended over those functions on purpose: the suites whose
+# subject IS the writer have to be able to call it. What keeps the gap shut is
+# that every such test fakes ``get_memory_client``, and
+# ``tests/orchestrator/test_memory_write_fence.py`` asserts that rather than
+# trusting it, so a future test that forgets fails there instead of quietly
+# writing to production.
+
+
+def _no_memory_write(self, task_id, **_kwargs):
+    """Stand-in for the real capture: writes nothing, returns nothing."""
+    return None
+
+
+@pytest.fixture(autouse=True)
+def guard_live_memory_writes(monkeypatch, request):
+    """Stop every test from writing a build outcome to the real memory store."""
+    monkeypatch.delenv("FLEET_MEMORY_ENABLED", raising=False)
+
+    if request.node.get_closest_marker("allow_memory_capture"):
+        return
+
+    from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+    monkeypatch.setattr(
+        AutoBuildOrchestrator,
+        "_capture_build_outcome",
+        _no_memory_write,
+        raising=True,
+    )
 
 
 # ---------------------------------------------------------------------------

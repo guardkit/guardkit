@@ -53,7 +53,7 @@ else:
     _MEMORY_IMPORT_ERROR = None
 
 from guardkit.knowledge.fleet_memory_client import get_memory_client
-from guardkit.knowledge.outcome_manager import capture_task_outcome
+from guardkit.knowledge.outcome_manager import capture_task_outcome_verified
 from guardkit.knowledge.entities.outcome import OutcomeType
 
 console = Console()
@@ -678,7 +678,10 @@ def capture_outcome(
 ):
     """Capture a task completion outcome to memory.
 
-    Writes a build_outcome payload via the fleet-memory adapter.
+    Publishes a build_outcome payload via the fleet-memory adapter, and says
+    plainly whether the publish happened. "Published" means the episode was
+    handed to the broker — the store's copy is a separate check (fleet-memory's
+    liveness fence), because nothing on this path reads the store back.
 
     Examples:
         guardkit memory capture-outcome --from-task-file tasks/completed/TASK-XXX.md
@@ -751,7 +754,7 @@ async def _cmd_capture_outcome(
     client = get_memory_client()
 
     if client is None:
-        console.print("[yellow]Memory client unavailable - outcome NOT captured[/yellow]")
+        console.print("[yellow]Memory client unavailable - outcome NOT published[/yellow]")
         return
 
     try:
@@ -762,11 +765,18 @@ async def _cmd_capture_outcome(
 
     try:
         if not initialized or not client.enabled:
-            console.print("[yellow]Memory store unavailable - outcome NOT captured[/yellow]")
+            console.print("[yellow]Memory store unavailable - outcome NOT published[/yellow]")
             return
 
-        # Capture the outcome
-        outcome_id = await capture_task_outcome(
+        # Capture the outcome.
+        #
+        # The verified variant, not the plain one: the plain one returns its
+        # generated id whether the episode was published or the broker was
+        # dark, so printing a tick beside it is a green line about nothing.
+        # The word is "published", not "stored" — the key below is minted
+        # locally and the publish carries no ack, so the store's copy is not
+        # proven here (fleet-memory's liveness fence is what answers that).
+        capture = await capture_task_outcome_verified(
             outcome_type=OutcomeType.TASK_COMPLETED if success else OutcomeType.TASK_FAILED,
             task_id=task_id,
             task_title=task_title,
@@ -776,7 +786,22 @@ async def _cmd_capture_outcome(
             completed_at=datetime.now(),
         )
 
-        console.print(f"[green]✅ Outcome captured: {outcome_id}[/green]")
+        if not capture.published:
+            console.print(
+                f"[yellow]Outcome NOT published: {capture.outcome_id} — "
+                f"{capture.detail or 'the memory writer published nothing'}. "
+                f"Nothing was sent to memory.[/yellow]"
+            )
+            return
+
+        console.print(
+            f"[green]Outcome {capture.outcome_id} published to memory as "
+            f"{capture.episode_key}[/green]"
+        )
+        console.print(
+            "[dim]Published to the broker. Whether it landed in the store is "
+            "a separate check (fleet-memory's liveness fence).[/dim]"
+        )
 
     finally:
         await client.close()

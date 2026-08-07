@@ -160,7 +160,15 @@ from guardkit.knowledge.turn_state_operations import (
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
 # FEAT-MEM-09 WS-2c: fleet-memory per-thread factory (graphiti factory retired).
-from guardkit.knowledge.fleet_memory_client import get_memory_factory
+from guardkit.knowledge.fleet_memory_client import get_memory_client, get_memory_factory
+
+# Flywheel write seam: every autobuild terminal (approved AND failed) records a
+# build outcome so a future gate can read it back as a prior.
+from guardkit.knowledge.outcome_manager import (
+    capture_task_outcome_verified,
+    OutcomeCapture,
+)
+from guardkit.knowledge.entities.outcome import OutcomeType
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -368,6 +376,22 @@ diagnostic re-scans (``_build_verifier_infrastructure_stall_diagnostic``,
 this value: a caller-side threshold change with a diverged diagnostic default
 makes the sub-type fire while its diagnostic silently returns ``None`` — the
 operator then sees the generic, quality-implying stall message."""
+
+OUTCOME_CAPTURE_TIMEOUT_SECONDS = 20.0
+"""Ceiling on the flywheel's build-outcome write at an autobuild terminal.
+
+The write publishes over the network. The terminal is not allowed to wait on
+it: if the writer has not answered within this window the build reports its
+own result anyway and the missed write is logged in plain words. One attempt,
+no retries — a retry loop at a terminal is a hang with better manners.
+
+THE REAL WORST CASE, in plain words: this number plus the publish path's
+hang-up bound (``harvest_publisher.PUBLISH_TEARDOWN_TIMEOUT_SECONDS``, 5s), so
+about 25 seconds today. Cutting the write off does not end it instantly — the
+publish still has to close its connection, and closing talks to the broker too.
+That close is separately bounded for exactly this reason; without the bound it
+inherits nats-py's 30-second drain default and a stalled broker holds the
+build's final line for nearly a minute after this ceiling has expired."""
 
 
 @dataclass(frozen=True)
@@ -1567,6 +1591,15 @@ class AutoBuildOrchestrator:
         # TASK-OBS-9F43 AC-2: Mint run_id once per orchestration
         # All events (lifecycle + llm.call + tool.exec) share this run_id for joinability
         self._run_id = f"run-{datetime.now().strftime('%Y%m%d%H%M%S')}-{id(self)}"
+        # Set when orchestrate() begins; read by the build-outcome write at
+        # every terminal so the record carries when the build started and how
+        # long it took.
+        self._orchestrate_started_at: Optional[datetime] = None
+        # The last terminal this build already wrote an outcome for. Read by
+        # ONE caller — the crashed path — so a crash that happens AFTER a
+        # terminal was recorded says which terminal it supersedes instead of
+        # leaving two outcomes that look like two unrelated builds.
+        self._last_captured_terminal: Optional[str] = None
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # TASK-FIX-7A05: Python interpreter Coach uses for pytest. Sourced
         # from BootstrapResult.venv_python in the feature orchestrator so
@@ -1832,6 +1865,14 @@ class AutoBuildOrchestrator:
         """
         logger.info(f"Starting orchestration for {task_id} (resume={self.resume})")
 
+        # Wall-clock start, kept for the build-outcome record written at every
+        # terminal (started_at / duration_minutes).
+        self._orchestrate_started_at = datetime.now()
+        # A fresh run supersedes nothing: an orchestrator instance can be
+        # driven more than once, and the previous run's terminal must not be
+        # named by this run's crash.
+        self._last_captured_terminal = None
+
         # Emit task.started lifecycle event (TASK-INST-004)
         self._emit_task_started(task_id)
 
@@ -1839,6 +1880,7 @@ class AutoBuildOrchestrator:
 
         # Load task data to extract task_type, requires_infrastructure, and consumer_context for CoachValidator
         task_type: Optional[str] = None
+        task_title: Optional[str] = None
         consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
@@ -1850,6 +1892,11 @@ class AutoBuildOrchestrator:
             task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
+            # Human-readable name for the build-outcome record (falls back to
+            # the task id when the task file is absent or has no title).
+            _title = frontmatter.get("title")
+            if isinstance(_title, str) and _title.strip():
+                task_title = _title.strip()
             ri = frontmatter.get("requires_infrastructure")
             if isinstance(ri, list):
                 requires_infrastructure = ri
@@ -1979,6 +2026,18 @@ class AutoBuildOrchestrator:
                         precondition.detail,
                     )
                     self._emit_task_failed(task_id, "qa_precondition_blocked")
+                    self._capture_build_outcome(
+                        task_id,
+                        success=False,
+                        final_decision="qa_precondition_blocked",
+                        turn_history=[],
+                        task_title=task_title,
+                        requirements=requirements,
+                        error=(
+                            "QA tier-1 pass-bar precondition failed: "
+                            + precondition.detail
+                        ),
+                    )
                     self._finalize_phase(
                         worktree=worktree,
                         final_decision="qa_precondition_blocked",
@@ -2011,6 +2070,15 @@ class AutoBuildOrchestrator:
                         logger.warning(f"Pre-loop checkpoint rejected for {task_id}")
                         # Emit task.failed for pre-loop rejection (TASK-INST-004)
                         self._emit_task_failed(task_id, "pre_loop_blocked")
+                        self._capture_build_outcome(
+                            task_id,
+                            success=False,
+                            final_decision="pre_loop_blocked",
+                            turn_history=[],
+                            task_title=task_title,
+                            requirements=requirements,
+                            error="Human checkpoint rejected implementation plan",
+                        )
                         # Finalize with rejection
                         self._finalize_phase(
                             worktree=worktree,
@@ -2045,6 +2113,15 @@ class AutoBuildOrchestrator:
                     logger.error(f"Pre-loop quality gate blocked: {e}")
                     # Emit task.failed for quality gate block (TASK-INST-004)
                     self._emit_task_failed(task_id, "pre_loop_blocked")
+                    self._capture_build_outcome(
+                        task_id,
+                        success=False,
+                        final_decision="pre_loop_blocked",
+                        turn_history=[],
+                        task_title=task_title,
+                        requirements=requirements,
+                        error=str(e),
+                    )
                     # Finalize with error
                     self._finalize_phase(
                         worktree=worktree,
@@ -2127,6 +2204,18 @@ class AutoBuildOrchestrator:
             else:
                 self._emit_task_failed(task_id, final_decision)
 
+            # Memory flywheel: record the outcome — approved or not — so a
+            # future gate can read this build back as a prior.
+            self._capture_build_outcome(
+                task_id,
+                success=success,
+                final_decision=final_decision,
+                turn_history=turn_history,
+                task_title=task_title,
+                requirements=requirements,
+                error=result.error,
+            )
+
             logger.info(
                 f"Orchestration complete: {task_id}, decision={final_decision}, "
                 f"turns={len(turn_history)}"
@@ -2138,12 +2227,27 @@ class AutoBuildOrchestrator:
             logger.error(f"Rate limit exceeded for {task_id}: {e}")
             # Emit task.failed with rate_limit category (TASK-INST-004)
             self._emit_task_failed(task_id, "rate_limited")
+            # Uses the orchestrator's own turn history: the local name is not
+            # guaranteed to be bound when the rate limit fires before Phase 3.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="rate_limited",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}.",
+            )
+            # Same reason as the capture above: ``turn_history`` is a local of
+            # the try block and is not bound when the rate limit fires before
+            # Phase 3. The orchestrator's own copy is always bound.
+            _rate_limited_turns = list(self._turn_history)
             return OrchestrationResult(
                 task_id=task_id,
                 success=False,
-                total_turns=len(turn_history),
+                total_turns=len(_rate_limited_turns),
                 final_decision="rate_limited",
-                turn_history=turn_history,
+                turn_history=_rate_limited_turns,
                 worktree=worktree,
                 error=(
                     f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}. "
@@ -2151,12 +2255,62 @@ class AutoBuildOrchestrator:
                     f"Resume with: guardkit autobuild task {task_id} --resume"
                 ),
             )
-        except SetupPhaseError:
-            # Setup errors should propagate (can't proceed without worktree)
+        except SetupPhaseError as e:
+            # Setup errors should propagate (can't proceed without worktree).
+            # The outcome is written first: a build that could not even get a
+            # worktree is exactly the prior a future gate wants to see.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="setup_failed",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=f"Setup failed before any turn ran: {e}",
+            )
             raise
         except Exception as e:
             logger.error(f"Orchestration failed for {task_id}: {e}", exc_info=True)
+            # A build that died mid-flight is the case a future gate most wants
+            # to read back, so it is recorded before the crash propagates. The
+            # capture never raises, so it cannot mask the original error.
+            self._capture_build_outcome(
+                task_id,
+                success=False,
+                final_decision="crashed",
+                turn_history=list(self._turn_history),
+                task_title=task_title,
+                requirements=requirements,
+                error=self._crash_outcome_reason(e),
+            )
             raise OrchestrationError(f"Orchestration failed: {e}") from e
+
+    def _crash_outcome_reason(self, exc: BaseException) -> str:
+        """Why this build crashed — and which terminal, if any, it supersedes.
+
+        A build can reach a terminal, write that outcome, and THEN die on the
+        way out (the pass-bar refusal whose ``_finalize_phase`` throws is the
+        real case). Memory then holds two records for one build. Read cold they
+        look like two unrelated builds; the second is the truthful one and the
+        first is the terminal it overtook, and nothing on the record said so.
+
+        This names it, so the crash record carries its own predecessor:
+        ``"... crashed after the 'qa_precondition_blocked' terminal had already
+        been recorded ..."``. The line rides ``error``, which the capture seam
+        puts into both the summary and the single lessons line — the field the
+        writer's payload actually keeps.
+
+        A plain crash (nothing recorded before it) reads exactly as it always
+        did: nothing is invented to name.
+        """
+        reason = f"Orchestration crashed: {type(exc).__name__}: {exc}"
+        superseded = self._last_captured_terminal
+        if superseded:
+            reason += (
+                f" — this build crashed after the '{superseded}' terminal had "
+                f"already been recorded, so this record supersedes that one."
+            )
+        return reason
 
     def _check_qa_pass_bar_precondition(self, task_id: str):
         """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
@@ -6372,6 +6526,223 @@ class AutoBuildOrchestrator:
             asyncio.run(self._emitter.emit(event))
         except Exception as exc:
             logger.warning("Failed to emit task.failed event: %s", exc)
+
+    # ========================================================================
+    # Memory flywheel: build-outcome capture at every terminal
+    # ========================================================================
+
+    def _capture_build_outcome(
+        self,
+        task_id: str,
+        *,
+        success: bool,
+        final_decision: str,
+        turn_history: Optional[List["TurnRecord"]] = None,
+        task_title: Optional[str] = None,
+        requirements: str = "",
+        error: Optional[str] = None,
+    ) -> Optional[str]:
+        """Publish this build's outcome to memory. Never changes the build.
+
+        Fires at EVERY autobuild terminal — the approved one and every failed
+        one. A build that failed is exactly the prior a future gate wants
+        ("this was tried and it stopped here"), so failure is recorded with the
+        same care as success.
+
+        Degrade rule (the loud-degrade pattern, commit 4c99357d). Memory OFF,
+        the writer unreachable, a write that publishes nothing, or a write
+        slower than ``OUTCOME_CAPTURE_TIMEOUT_SECONDS`` all produce ONE plain
+        log line and nothing else: no exception reaches the caller, nothing is
+        retried, and the build's own verdict is untouched. A memory store that
+        is down must never turn a green build red or hold a terminal open.
+
+        WHAT THIS SEAM CAN AND CANNOT SEE. A publish is claimed only when the
+        write path hands back a key for the episode. Everything under this seam
+        is fail-open — the memory client catches every error and returns
+        ``None``, and the outcome id is minted before any publish is attempted
+        — so an absent exception is not evidence of anything. Reading the
+        returned key is what keeps this log line from asserting a send that
+        never happened, and it is why a DOWN broker (the likeliest real
+        failure) now correctly reports NOT published.
+
+        But the key is NOT a receipt from the store. It is the deterministic
+        natural key minted locally before the send, and the publish under it is
+        core NATS with no ack (``NATSClient.publish_episode`` → ``nc.publish``).
+        So this seam's green line means "the bytes left this process" and
+        nothing more: a dark relay, an unmapped or full stream, and a
+        relay-side validation refusal all still publish cleanly from here.
+        Whether the episode LANDED in the store is fleet-memory's liveness
+        fence's question — see
+        ``docs/ways-of-working/memory-reconnection-shipped-2026-08-03.md``.
+        Do not word this log line as if it answered that.
+
+        Fields are only the ones actually in hand at this seam. Turn count
+        becomes ``review_cycles`` (each turn is one coach review). Test counts
+        are deliberately NOT sent as ``tests_written``: the turn record carries
+        tests *run*, which is a different number, and a wrong number in memory
+        is worse than an absent one. The one-sentence outcome is sent twice, as
+        ``summary`` and as the single ``lessons_learned`` line, because the
+        writer's build_outcome payload drops ``summary`` and keeps ``lessons``.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier this build was for.
+        success : bool
+            True only for the approved terminal.
+        final_decision : str
+            The terminal label (e.g. "approved", "pre_loop_blocked").
+        turn_history : Optional[List[TurnRecord]]
+            Turns completed before the terminal (empty for early terminals).
+        task_title : Optional[str]
+            Human-readable task title; falls back to the task id.
+        requirements : str
+            The task requirements this build worked from.
+        error : Optional[str]
+            Why the build stopped, when it stopped without approval.
+
+        Returns
+        -------
+        Optional[str]
+            The outcome id when the episode was actually published to the
+            broker, else None. Never proof that the store has it.
+        """
+        try:
+            # Remember which terminal this build has now recorded, so a later
+            # crash can say what it supersedes. Set on ATTEMPT, not on publish:
+            # the question the crashed record answers is "was an earlier
+            # terminal already reached?", which is true whether or not the
+            # broker was up. "crashed" itself is never recorded here — a crash
+            # cannot supersede itself.
+            if final_decision != "crashed":
+                self._last_captured_terminal = final_decision
+
+            # Inside the guard on purpose (coach residue, 2026-08-07): the
+            # stated promise is "no exception reaches the caller", and these
+            # two lines were one refactor away from breaking it.
+            turns = list(turn_history or [])
+            turn_count = len(turns)
+            client = get_memory_client()
+            if client is None or not getattr(client, "enabled", False):
+                logger.warning(
+                    "memory: build outcome NOT published for %s (ended '%s') — "
+                    "memory is OFF or the client is unavailable, so this build "
+                    "teaches future builds nothing. Set FLEET_MEMORY_ENABLED=true "
+                    "and FLEET_MEMORY_PG_DSN to enable.",
+                    task_id,
+                    final_decision,
+                )
+                return None
+
+            completed_at = datetime.now()
+            started_at = self._orchestrate_started_at
+            duration_minutes: Optional[int] = None
+            if started_at is not None:
+                duration_minutes = max(
+                    0, int((completed_at - started_at).total_seconds() // 60)
+                )
+
+            title = (task_title or "").strip() or task_id
+            repo_name = self.repo_root.name
+
+            if success:
+                summary = (
+                    f"AutoBuild finished {task_id} in {repo_name}: the coach "
+                    f"approved the work after {turn_count} turn(s)."
+                )
+                problems: Optional[List[str]] = None
+            else:
+                summary = (
+                    f"AutoBuild stopped {task_id} in {repo_name} without "
+                    f"approval after {turn_count} turn(s); it ended at "
+                    f"'{final_decision}'."
+                )
+                if error:
+                    summary += f" Reported reason: {error}"
+                problems = [error] if error else [f"Build ended at '{final_decision}'."]
+            summary = summary[:2000]
+
+            async def _write() -> OutcomeCapture:
+                return await asyncio.wait_for(
+                    capture_task_outcome_verified(
+                        outcome_type=(
+                            OutcomeType.TASK_COMPLETED
+                            if success
+                            else OutcomeType.TASK_FAILED
+                        ),
+                        task_id=task_id,
+                        task_title=title,
+                        task_requirements=(requirements or "")[:4000],
+                        success=success,
+                        summary=summary,
+                        approach_used="guardkit autobuild player/coach loop",
+                        problems_encountered=problems,
+                        # The writer's build_outcome payload keeps only
+                        # status / duration / task_id / lessons / approach —
+                        # ``summary`` is dropped on the way into the store
+                        # (fleet_memory_payloads._build_outcome). So the one
+                        # plain sentence a future gate needs to read back rides
+                        # here as well, where it survives.
+                        lessons_learned=[summary],
+                        review_cycles=turn_count,
+                        started_at=started_at,
+                        completed_at=completed_at,
+                        duration_minutes=duration_minutes,
+                        feature_id=self._extract_feature_id(task_id),
+                    ),
+                    timeout=OUTCOME_CAPTURE_TIMEOUT_SECONDS,
+                )
+
+            capture = asyncio.run(_write())
+
+            # The write path below this seam is fail-open all the way down:
+            # ``FleetMemoryClient.add_episode`` catches everything and returns
+            # None, and the outcome id is minted before any publish is tried.
+            # So "no exception" is NOT evidence of a send — the broker being
+            # unreachable, which is the likeliest real failure, would otherwise
+            # come back here as a quiet success. Claim a publish only when the
+            # write path handed back a key.
+            if not capture.published:
+                logger.warning(
+                    "memory: build outcome NOT published for %s (ended '%s') — "
+                    "%s. Nothing was sent, so this build teaches future "
+                    "builds nothing. The build result is unaffected.",
+                    task_id,
+                    final_decision,
+                    capture.detail or "the memory writer published nothing",
+                )
+                return None
+
+            # Deliberately "published to the broker", not "stored": the key
+            # below is minted locally and the publish carries no ack, so the
+            # store's copy is not proven here. See the docstring.
+            logger.info(
+                "memory: build outcome %s published to the broker for %s "
+                "(ended '%s') as %s — store-side landing is not proven here",
+                capture.outcome_id,
+                task_id,
+                final_decision,
+                capture.episode_key,
+            )
+            return capture.outcome_id
+        except Exception as exc:
+            # One line, no raise. Includes the timeout case — whose str() is
+            # empty, so the exception TYPE is named or the line reads
+            # "did not complete ()" and an operator cannot tell a timeout from
+            # anything else.
+            detail = str(exc).strip()
+            reason = (
+                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            )
+            logger.warning(
+                "memory: build outcome NOT published for %s (ended '%s') — the "
+                "memory writer did not complete (%s). The build result is "
+                "unaffected.",
+                task_id,
+                final_decision,
+                reason,
+            )
+            return None
 
     def _invoke_player_safely(
         self,
