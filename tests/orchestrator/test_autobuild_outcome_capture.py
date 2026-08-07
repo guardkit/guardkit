@@ -15,6 +15,8 @@ Covers:
 - writer slower than the ceiling: one plain log line naming the failure type
 - every one of the seven orchestrate() terminals fires the write
 - orchestrate() reaches its normal result even when the writer blows up
+- a crash that follows a recorded terminal names the terminal it supersedes
+- a stalled broker cannot hold the terminal open past the stated worst case
 
 The memory writer is faked in every test — no broker, no store, no network.
 This module opts out of the autouse live-memory fence in tests/conftest.py
@@ -810,3 +812,241 @@ class TestEveryEarlyTerminalFiresCapture:
             )
 
         assert "the player died" in str(excinfo.value)
+
+
+# ============================================================================
+# A crash that follows a terminal says which terminal it supersedes
+# ============================================================================
+#
+# The real shape: an early terminal (the QA pass-bar refusal) records its
+# outcome, and the finalize that follows it throws. Memory then holds TWO
+# records for ONE build. Read cold months later they look like two unrelated
+# builds — and the first one, the tidy "blocked by the pass bar" record, is the
+# one a gate is most likely to believe. The crash record has to carry its own
+# predecessor's name or the pair is a small lie told twice.
+
+
+class TestACrashNamesTheTerminalItSupersedes:
+    """The second record explains itself in terms of the first."""
+
+    def _captures(self, writer):
+        """Every capture's kwargs, in the order they fired."""
+        return [c.kwargs for c in writer.await_args_list]
+
+    def test_crash_after_an_early_terminal_names_that_terminal(self, orchestrator):
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        writer = AsyncMock(return_value=_published("OUT-SUP"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer), \
+             pytest.raises(autobuild_module.OrchestrationError):
+            _drive_orchestrate(
+                orchestrator,
+                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+                _finalize_phase={"side_effect": RuntimeError("finalize blew up")},
+            )
+
+        captures = self._captures(writer)
+        assert len(captures) == 2, captures
+        first, second = captures
+
+        assert "qa_precondition_blocked" in first["summary"]
+        # The crash record: still a crash, and now it says what it overtook.
+        assert "crashed" in second["summary"]
+        assert "finalize blew up" in second["summary"]
+        assert "qa_precondition_blocked" in second["summary"]
+        assert "supersedes" in second["summary"]
+
+    def test_the_naming_rides_the_field_the_store_actually_keeps(
+        self, orchestrator
+    ):
+        """``summary`` is dropped by the writer's payload; ``lessons`` is kept."""
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        writer = AsyncMock(return_value=_published("OUT-SUP2"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer), \
+             pytest.raises(autobuild_module.OrchestrationError):
+            _drive_orchestrate(
+                orchestrator,
+                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+                _finalize_phase={"side_effect": RuntimeError("finalize blew up")},
+            )
+
+        crash = self._captures(writer)[1]
+        assert crash["lessons_learned"] == [crash["summary"]]
+        assert "qa_precondition_blocked" in crash["lessons_learned"][0]
+        assert any(
+            "qa_precondition_blocked" in problem
+            for problem in crash["problems_encountered"]
+        )
+
+    def test_a_plain_crash_is_unchanged_and_invents_no_predecessor(
+        self, orchestrator
+    ):
+        """Nothing was recorded before it, so there is nothing to name."""
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        writer = AsyncMock(return_value=_published("OUT-PLAIN"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer), \
+             pytest.raises(autobuild_module.OrchestrationError):
+            _drive_orchestrate(
+                orchestrator,
+                _loop_phase={"side_effect": RuntimeError("the player died")},
+            )
+
+        captures = self._captures(writer)
+        assert len(captures) == 1, captures
+        summary = captures[0]["summary"]
+        assert "crashed" in summary
+        assert "the player died" in summary
+        assert "supersedes" not in summary
+        assert "already been recorded" not in summary
+
+    def test_a_later_run_does_not_inherit_the_previous_run_s_terminal(
+        self, orchestrator
+    ):
+        """One orchestrator can be driven twice; run two supersedes nothing."""
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        writer = AsyncMock(return_value=_published("OUT-RUN"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            # Run one reaches a real terminal and records it.
+            _drive_orchestrate(
+                orchestrator,
+                _check_qa_pass_bar_precondition={"return_value": _blocked_pass_bar()},
+            )
+
+            # Run two crashes with nothing of its own recorded first.
+            with pytest.raises(autobuild_module.OrchestrationError):
+                _drive_orchestrate(
+                    orchestrator,
+                    _loop_phase={"side_effect": RuntimeError("the player died")},
+                )
+
+        crash = self._captures(writer)[-1]
+        assert "crashed" in crash["summary"]
+        assert "qa_precondition_blocked" not in crash["summary"]
+
+
+# ============================================================================
+# The terminal's worst case is the ceiling, not the ceiling plus a drain
+# ============================================================================
+
+
+class _StalledBroker:
+    """A broker that accepts the connection and then answers nothing.
+
+    Publishing hangs; hanging up hangs too — which is the case that mattered,
+    because the close runs in the publisher's ``finally``, AFTER the capture
+    ceiling has already fired, and nats-py's drain waits 30 seconds by default.
+    No socket is opened: every method here is a sleep.
+    """
+
+    async def connect(self) -> None:
+        return None
+
+    async def publish_episode(self, episode) -> None:
+        await asyncio.sleep(30)
+
+    async def disconnect(self) -> None:
+        await asyncio.sleep(30)
+
+
+def _client_publishing_into_a_stall():
+    """A memory client whose write goes through the REAL publish path."""
+    from types import SimpleNamespace
+
+    client = MagicMock()
+    client.enabled = True
+
+    async def _add_episode(**_kwargs):
+        from guardkit.memory.harvest_publisher import publish_episodes
+
+        episode = SimpleNamespace(
+            episode_id="build_outcome:guardkit:TASK_CAP_040",
+            episode_type="build_outcome",
+            content_format="json",
+            body="{}",
+        )
+        await publish_episodes([episode], _StalledBroker())
+        return episode.episode_id
+
+    client.add_episode = _add_episode
+    return client
+
+
+class TestTheTerminalIsNotHeldOpenByAStalledBroker:
+    """The build's last line waits for the ceiling, plus a short goodbye."""
+
+    def test_a_stalled_broker_returns_the_terminal_near_the_ceiling(
+        self, orchestrator, monkeypatch, caplog
+    ):
+        import time
+
+        from guardkit.memory import harvest_publisher
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        ceiling, teardown = 0.1, 0.2
+        monkeypatch.setattr(
+            autobuild_module, "OUTCOME_CAPTURE_TIMEOUT_SECONDS", ceiling
+        )
+        monkeypatch.setattr(
+            harvest_publisher, "PUBLISH_TEARDOWN_TIMEOUT_SECONDS", teardown
+        )
+        client = _client_publishing_into_a_stall()
+
+        with caplog.at_level(logging.WARNING), \
+             patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=client), \
+             patch(
+                 "guardkit.knowledge.outcome_manager.get_memory_client",
+                 return_value=client,
+             ):
+            started = time.monotonic()
+            result = orchestrator._capture_build_outcome(
+                "TASK-CAP-040",
+                success=True,
+                final_decision="approved",
+                turn_history=[],
+            )
+            elapsed = time.monotonic() - started
+
+        # The bound the docstring promises: the ceiling plus the hang-up
+        # budget, with room for scheduling. Without the teardown bound this
+        # takes the broker's full 30-second stall.
+        assert elapsed < ceiling + teardown + 2.0, elapsed
+        assert result is None
+        assert any(
+            "build outcome NOT published" in r.getMessage()
+            for r in caplog.records
+            if r.name == AUTOBUILD_LOGGER
+        )
+
+    def test_the_ceiling_docstring_states_the_real_worst_case(self):
+        """The number an operator reads must be the number they get.
+
+        The ceiling alone was never the whole wait, and a docstring that only
+        named the ceiling was the reason nobody looked for the other 30
+        seconds. This fails the day either constant moves without the words.
+        """
+        from guardkit.memory.harvest_publisher import (
+            PUBLISH_TEARDOWN_TIMEOUT_SECONDS,
+        )
+        from guardkit.orchestrator import autobuild as autobuild_module
+
+        source = Path(autobuild_module.__file__).read_text(encoding="utf-8")
+        _, _, after = source.partition("OUTCOME_CAPTURE_TIMEOUT_SECONDS = ")
+        ceiling_docstring = after.split('"""')[1]
+
+        assert "PUBLISH_TEARDOWN_TIMEOUT_SECONDS" in ceiling_docstring
+        worst_case = int(
+            autobuild_module.OUTCOME_CAPTURE_TIMEOUT_SECONDS
+            + PUBLISH_TEARDOWN_TIMEOUT_SECONDS
+        )
+        assert str(worst_case) in ceiling_docstring, ceiling_docstring

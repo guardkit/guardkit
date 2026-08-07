@@ -226,6 +226,13 @@ async def capture_task_outcome_verified(
     so "no exception" is not evidence of a publish, and a caller that treats it
     as evidence prints a green line about an episode nobody sent.
 
+    ONE WRITE, ONE MESSAGE ID. Each call mints its own ``outcome_id`` and hands
+    it down as the broker's duplicate-window token, so a rebuild of a task that
+    was already captured is a NEW message to the broker rather than a duplicate
+    it silently drops. What the store keys on is unchanged (the per-task natural
+    key, latest write wins) — see
+    ``fleet_memory_payloads.with_broker_dedup_scope``.
+
     THE LIMIT OF THIS VERIFICATION, stated plainly: it reaches the broker and
     stops. ``episode_key`` is the deterministic natural key minted locally
     before the send, not a receipt from the store, and the publish under it is
@@ -295,7 +302,14 @@ async def capture_task_outcome_verified(
             episode_body=json.dumps(episode_body),
             group_id=TASK_OUTCOMES_GROUP_ID,
             source="auto_captured",
-            entity_type="task_outcome"
+            entity_type="task_outcome",
+            # ONE token per capture, and it is this capture's own id. Two
+            # builds of the same task get two broker message ids, so the second
+            # is no longer dropped inside JetStream's duplicate window; a retry
+            # WITHIN this capture reuses this same token and still dedupes. The
+            # payload is untouched, so the store still upserts on the per-task
+            # natural key. See fleet_memory_payloads.with_broker_dedup_scope.
+            dedup_token=outcome_id,
         )
     except Exception as e:
         logger.warning(f"[Memory] Failed to publish outcome {outcome_id}: {e}")
