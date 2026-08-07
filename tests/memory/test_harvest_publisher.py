@@ -6,6 +6,9 @@ using a fake NATSClient to avoid requiring a live NATS broker.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,6 +21,7 @@ pytest.importorskip("nats_core.events")
 from nats_core.events import MemoryEpisodeV1
 from pydantic import SecretStr
 
+from guardkit.memory import harvest_publisher
 from guardkit.memory.harvest_publisher import (
     build_nats_client,
     publish_episodes,
@@ -199,6 +203,91 @@ class TestPublishEpisodes:
 
         # Disconnect should still be called
         fake_client.disconnect.assert_awaited_once()
+
+
+class TestHangingUpIsBounded:
+    """A stalled broker must not hold the caller open while we say goodbye.
+
+    ``NATSClient.disconnect`` calls ``nc.drain()``, and nats-py's drain waits on
+    the server with its own thirty-second default. A caller that already has a
+    deadline of its own — the autobuild terminal's build-outcome capture has one
+    — inherited that thirty seconds ON TOP of its deadline, because the close
+    runs in the publisher's ``finally`` after the deadline has already fired.
+
+    Nothing here reaches a broker: the connection is a fake that never answers.
+    """
+
+    def _stalled_client(self) -> MagicMock:
+        """A client that connects and publishes fine, then never hangs up."""
+        client = MagicMock()
+        client.connect = AsyncMock()
+        client.publish_episode = AsyncMock()
+
+        async def _never_finishes() -> None:
+            await asyncio.sleep(30)
+
+        client.disconnect = AsyncMock(side_effect=_never_finishes)
+        return client
+
+    async def test_a_stalled_close_does_not_hold_the_caller(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(
+            harvest_publisher, "PUBLISH_TEARDOWN_TIMEOUT_SECONDS", 0.05
+        )
+        client = self._stalled_client()
+
+        with caplog.at_level(logging.WARNING, logger=harvest_publisher.__name__):
+            started = time.monotonic()
+            summary = await publish_episodes([], client)
+            elapsed = time.monotonic() - started
+
+        # Bounded by the teardown budget, not by nats-py's 30-second drain.
+        assert elapsed < 1.0, elapsed
+        # And the run still reports its own result rather than raising.
+        assert summary.published == 0
+        assert any(
+            "did not finish closing" in r.getMessage() for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
+
+    async def test_a_close_that_fails_is_logged_not_raised(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The teardown must never be what escapes a ``finally``."""
+        client = MagicMock()
+        client.connect = AsyncMock()
+        client.publish_episode = AsyncMock()
+        client.disconnect = AsyncMock(side_effect=OSError("socket already gone"))
+
+        with caplog.at_level(logging.WARNING, logger=harvest_publisher.__name__):
+            summary = await publish_episodes([], client)
+
+        assert summary.published == 0
+        assert any(
+            "socket already gone" in r.getMessage() for r in caplog.records
+        )
+
+    async def test_a_failing_close_never_masks_the_real_error(self) -> None:
+        """The publish error is what the caller must see, not the goodbye."""
+        client = MagicMock()
+        client.connect = AsyncMock()
+        client.publish_episode = AsyncMock(side_effect=RuntimeError("publish blew up"))
+        client.disconnect = AsyncMock(side_effect=OSError("socket already gone"))
+
+        episodes = [
+            MemoryEpisodeV1(
+                episode_id="ep-mask",
+                project_id="guardkit",
+                episode_type="test",
+                content_format="text",
+                body="Content",
+            )
+        ]
+
+        with pytest.raises(RuntimeError, match="publish blew up"):
+            await publish_episodes(episodes, client)
 
 
 class TestIdempotency:

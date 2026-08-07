@@ -374,6 +374,7 @@ class FleetMemoryClient:
         scope: Optional[str] = None,
         metadata: Optional[Any] = None,
         timeout_override: Optional[float] = None,
+        dedup_token: Optional[str] = None,
     ) -> Optional[str]:
         """Publish an episode to fleet-memory via NATS (typed payload, fail-open).
 
@@ -397,10 +398,31 @@ class FleetMemoryClient:
             scope: Accepted for interface parity (unused).
             metadata: Accepted for interface parity (unused).
             timeout_override: Accepted for interface parity (unused).
+            dedup_token: Per-WRITE uniquifier for the broker's duplicate window.
+                When given, the published copy carries
+                ``Nats-Msg-Id = "{natural_key}.{dedup_token}"`` so a second write
+                for the same task is not silently swallowed by JetStream's
+                duplicate window (the natural key alone is per-task, so it was).
+                The payload — and therefore the store's upsert key — is
+                untouched, so latest-write-wins in the store is unchanged; see
+                ``fleet_memory_payloads.with_broker_dedup_scope``. Callers must
+                compute it ONCE per write so a retry inside that write still
+                dedupes. Omit it for writes that SHOULD collapse by natural key
+                (the harvest re-runs).
 
         Returns:
             The natural key (``"{payload_type}:{project}:{identifier}"``) on a successful
-            publish, else ``None``.
+            publish, else ``None`` — the unscoped key, not the scoped message id.
+
+            THIS IS NOT A STORE RECEIPT. The key is computed LOCALLY by
+            ``build_memory_episode`` (which sets ``episode.episode_id`` to it)
+            before anything is sent, and the send itself is core NATS with no
+            JetStream ack — ``NATSClient.publish_episode`` calls
+            ``nc.publish(...)`` and returns. So a non-``None`` return means the
+            bytes left this process, and a dark relay, an unmapped or full
+            stream, and a relay-side validation refusal all return it too.
+            Callers must say "published", never "stored"; store-side landing is
+            fleet-memory's liveness fence's question.
 
         Example:
             >>> key = await client.add_episode(
@@ -443,21 +465,31 @@ class FleetMemoryClient:
                 return None
 
             # Publish as the guardkit NATS user (reuses the harvest connect + guard path).
+            from guardkit.knowledge.fleet_memory_payloads import (
+                with_broker_dedup_scope,
+            )
             from guardkit.memory.harvest_publisher import publish_episodes
 
-            summary = await publish_episodes([episode])
+            # The natural key is what the caller gets back and what the store
+            # upserts on. The PUBLISHED copy may carry a per-write message id so
+            # a rebuild inside the broker's duplicate window is not dropped —
+            # the two ids are deliberately different things.
+            natural_key = episode.episode_id
+            published_episode = with_broker_dedup_scope(episode, dedup_token or "")
+
+            summary = await publish_episodes([published_episode])
             if summary.published >= 1:
                 logger.info(
                     "[Memory] Published %s episode %s to fleet-memory",
                     mapping.payload_type,
-                    episode.episode_id,
+                    natural_key,
                 )
-                return episode.episode_id
+                return natural_key
 
             logger.warning(
                 "[Memory] Episode %s not published "
                 "(published=%d, skipped_oversized=%d)",
-                episode.episode_id,
+                natural_key,
                 summary.published,
                 summary.skipped_oversized,
             )
