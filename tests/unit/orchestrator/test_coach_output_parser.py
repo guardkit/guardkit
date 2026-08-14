@@ -982,11 +982,24 @@ class TestV4LegacyFallback:
 class TestContractCoachsplit:
     """contract=coachsplit (default): byte-identical to today."""
 
-    def test_default_contract_is_coachsplit(self):
+    def test_default_contract_is_coachsplit(self, monkeypatch, tmp_path):
+        """The CODE default is coachsplit when nothing configures otherwise.
+
+        Two things had to be isolated for this to be honest:
+
+        1. The old body did a bare `os.environ.pop` with no restore, silently
+           unpinning the contract for every test that ran after it in the same
+           session — an order-polluter, not just a failing test. monkeypatch
+           restores it.
+        2. `_resolve_contract()` falls through the env var to the CURRENT
+           DIRECTORY's `.guardkit/config.yaml`, and guardkit's own config pins
+           `contract: v4`. Run from the repo root the test asserted the code
+           default but measured the repo's config. chdir to an empty tmp_path
+           so "nothing configures otherwise" is actually true.
+        """
         from guardkit.orchestrator.coach_output_parser import _resolve_contract
-        # Must run without GUARDKIT_COACH_CONTRACT set
-        import os
-        os.environ.pop("GUARDKIT_COACH_CONTRACT", None)
+        monkeypatch.delenv("GUARDKIT_COACH_CONTRACT", raising=False)
+        monkeypatch.chdir(tmp_path)
         assert _resolve_contract() == "coachsplit"
 
     def test_explicit_coachsplit_uses_legacy_path(self, tmp_path):
