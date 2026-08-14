@@ -254,10 +254,14 @@ class TestPreLoopCreatesPlansForPlayer:
             options={"no_questions": True},
         )
 
-        # Verify design phase was called
+        # Verify design phase was called.
+        # The pre-loop gates now normalise `skip_arch_review` into the options
+        # dict before delegating (default False = run the Phase 2.5B
+        # architectural review). The pinned call args predate that and were
+        # asserting a dict that the production path no longer sends.
         mock_interface.execute_design_phase.assert_called_once_with(
             "TASK-PRELOOP-001",
-            {"no_questions": True},
+            {"no_questions": True, "skip_arch_review": False},
         )
 
         # Verify result contains implementation plan
