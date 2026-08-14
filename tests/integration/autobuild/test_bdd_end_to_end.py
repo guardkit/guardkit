@@ -13,6 +13,15 @@ pytest-bdd subprocess. Verifies that:
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): the BDD oracle -> bdd_results -> Coach gate chain (TASK-BDD-E8954) is removed; "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 import json
 import sys
 from pathlib import Path

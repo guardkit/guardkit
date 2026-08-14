@@ -14,6 +14,15 @@ evidence path, covering:
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): the Coach's guardkitfactory BDD bridge (map_bdd_run_result/_run_factory_bdd) is removed; "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 import json
 from dataclasses import dataclass, field
 from pathlib import Path

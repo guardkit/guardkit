@@ -123,6 +123,7 @@ def _run_script(
     )
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): the bdd_oracle_nudge callsite in generate_feature_yaml.py is removed (the nudge armed the retired oracle); R2 deletes bdd_oracle_nudge.py at graduation")
 class TestBddOracleNudgeWiring:
     """Option B (TASK-FIX-RWOP1.2) acceptance for Step 10.6."""
 

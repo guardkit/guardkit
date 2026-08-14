@@ -241,55 +241,15 @@ def validate_feature_environment(
     Returns
     -------
     PreFlightValidationResult
-        Errors covering tasks whose tagged scenarios cannot run, or an
-        empty result when the env is healthy / nothing to check.
+        Always empty since the R1 de-wire (see note below).
+
+    R1 DE-WIRE (Rich 08-14): the pytest-bdd probe body is removed — it
+    existed solely to pre-catch failures of the retired BDD oracle, and its
+    error DEMANDED consumers install pytest-bdd for a chain that no longer
+    runs. The signature is kept so call sites are untouched; the function is
+    now a structural no-op. R2 deletes it with bdd_runner.py at graduation.
     """
-    from guardkit.orchestrator.quality_gates.bdd_runner import (
-        find_feature_files_with_tag,
-        has_pytest_bdd,
-        task_tag,
-    )
-
-    result = PreFlightValidationResult()
-    features_dir = repo_root / "features"
-    if not features_dir.is_dir():
-        return result
-
-    pytest_bdd_ok: Optional[bool] = None  # lazy probe; only check if needed
-    affected_tasks: List[str] = []
-
-    for task in feature.tasks:
-        tagged = find_feature_files_with_tag(features_dir, task_tag(task.id))
-        if not tagged:
-            continue
-        if pytest_bdd_ok is None:
-            pytest_bdd_ok = has_pytest_bdd(python_executable=worktree_python)
-        if not pytest_bdd_ok:
-            affected_tasks.append(task.id)
-
-    if affected_tasks:
-        displayed = ", ".join(affected_tasks[:5])
-        if len(affected_tasks) > 5:
-            displayed = f"{displayed}, ..."
-        result.errors.append(
-            ValidationIssue(
-                task_id=displayed,
-                field="environment",
-                severity="error",
-                message=(
-                    f"{len(affected_tasks)} task(s) have tagged feature files "
-                    "but pytest-bdd is not importable in the worktree env. "
-                    "AutoBuild would surface this as a Coach-blocking failure "
-                    "(R1)."
-                ),
-                suggestion=(
-                    f"Add 'pytest-bdd>=8.1,<9' to {repo_root}/pyproject.toml "
-                    "dependencies and reinstall the worktree env."
-                ),
-            )
-        )
-
-    return result
+    return PreFlightValidationResult()
 
 
 def format_preflight_report(result: PreFlightValidationResult) -> str:

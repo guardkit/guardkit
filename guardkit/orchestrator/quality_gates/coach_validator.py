@@ -219,45 +219,17 @@ def resolve_coach_test_execution(config_value: Optional[str] = None) -> str:
 
 
 # ============================================================================
-# BDD Factory Bridge — wire guardkitfactory.bdd into the Coach evidence path
+# Stack template mapping (consumed by the wiring analysis below).
+#
+# R1 DE-WIRE (Rich 08-14): the BDD Factory Bridge that lived here
+# (TASK-BDDW-001 / TASK-FIX-BDDFW01: guardkitfactory.bdd discovery,
+# StackProfile detection, map_bdd_run_result, _run_factory_bdd) is
+# removed — the Coach no longer executes BDD scenarios. guardkitfactory's
+# bdd/ subsystem stays on disk unreferenced until R2 deletes it.
+# _STACK_PROFILE_MAP survives because _run_wiring_analysis (TASK-QAWE-002,
+# kept) resolves its stack-language hint through it.
 # ============================================================================
-#
-# TASK-BDDW-001: Replace the legacy pytest-hardcoded bdd_runner.py path in the
-# Coach evidence path with guardkitfactory's plugin-discovery subsystem.
-#
-# The bridge uses a lazy import (try/except ImportError) so that
-# ``pip install guardkit-py`` without the ``[autobuild]`` extra still works.
-# When guardkitfactory is unavailable, the Coach falls back to the Player's
-# self-reported ``bdd_results`` (legacy behaviour).
-#
-# Mapping: BDDRunResult (factory) → bundle.bdd dict (legacy shape)
-#
-#   BDDRunResult.scenarios_attempted          → bundle.bdd["scenarios_attempted"]
-#   BDDRunResult.scenarios_passed             → bundle.bdd["scenarios_passed"]
-#   BDDRunResult.scenarios_failed             → bundle.bdd["scenarios_failed"]
-#   BDDRunResult.scenarios_skipped            → bundle.bdd["scenarios_pending"]
-#   BDDRunResult.scenarios_errored            → bundle.bdd["scenarios_errored"]
-#   BDDRunResult.duration_seconds             → bundle.bdd["duration_seconds"]
-#   BDDRunResult.raw_report_path              → bundle.bdd["raw_report_path"] (str|None)
-#   BDDRunResult.discoveries[*]["feature_file"] → bundle.bdd["feature_files"]
-#   BDDRunResult.errors[*]                    → bundle.bdd["failures"][*]["error"]
-#   (bundle.bdd["pending"] is always [] — the real contract carries no
-#    per-scenario pending list; the pending COUNT derives from scenarios_skipped.)
-#
-# TASK-FIX-BDDFW01: the bridge originally targeted an ABANDONED BDDRunResult
-# contract (``.failures``/``.pending``/``.scenarios_pending``/``.feature_files``)
-# and a one-arg ``discover``/``plugin.run`` shape. Every call on the live path
-# raised AttributeError/TypeError, was swallowed by the broad ``except`` below,
-# and degraded to the Player-reported fallback — so the bridge was SILENTLY
-# DEAD. The mapping above now reflects the REAL guardkitfactory contract
-# (``guardkitfactory/src/guardkitfactory/bdd/plugin.py``).
-#
-# Key contract: ``scenarios_attempted`` is non-Optional on BDDRunResult and
-# must be preserved verbatim for the absence-of-failure gate. A value of 0
-# means "no scenarios ran" (ABSENT SIGNAL), NOT "zero failures = pass".
 
-# StackProfile values consumed by guardkitfactory.bdd.discover().
-# Mapped from the worktree's project.template string.
 _STACK_PROFILE_MAP: Dict[str, str] = {
     "python": "python",
     "fastapi-python": "python",
@@ -271,327 +243,6 @@ _STACK_PROFILE_MAP: Dict[str, str] = {
     "typescript": "javascript",
 }
 """Mapping from ``project.template`` to a stack profile-key."""
-
-
-# Translate a profile-key (the value side of ``_STACK_PROFILE_MAP``, also
-# produced by the filesystem-marker fallback below) into the real
-# guardkitfactory ``StackProfile`` field-set. Only ``PytestBDDPlugin.discover``
-# matches on ``test_framework`` (it requires ``"pytest"``);
-# ``ReqnrollPlugin``/``CucumberJSPlugin`` match on ``language`` alone, so the
-# dotnet/javascript ``test_framework`` strings are advisory.
-_PROFILE_KEY_TO_STACK: Dict[str, Tuple[str, str, str]] = {
-    # profile_key: (language, test_framework, package_manager)
-    "python": ("python", "pytest", "pip"),
-    "dotnet": ("csharp", "dotnet-test", "nuget"),
-    "javascript": ("typescript", "vitest", "npm"),
-}
-
-
-def _detect_profile_key(workspace_root: Path) -> Optional[str]:
-    """Return a stack profile-key for the worktree, or ``None`` when unknown.
-
-    Resolution order:
-      1. ``.claude/settings.json`` → ``project.template`` (mapped via
-         ``_STACK_PROFILE_MAP``) — authoritative when present.
-      2. Filesystem markers (worktrees created without a ``settings.json``):
-         ``pyproject.toml``/``requirements.txt`` → python,
-         ``*.csproj``/``*.sln`` → dotnet, ``package.json`` → javascript.
-    """
-    template = detect_stack_template(workspace_root)
-    if template is not None:
-        key = _STACK_PROFILE_MAP.get(template)
-        if key is not None:
-            return key
-
-    if (workspace_root / "pyproject.toml").exists() or (
-        workspace_root / "requirements.txt"
-    ).exists():
-        return "python"
-    if any(workspace_root.glob("*.csproj")) or any(workspace_root.glob("*.sln")):
-        return "dotnet"
-    if (workspace_root / "package.json").exists():
-        return "javascript"
-    return None
-
-
-def _detect_stack_profile(
-    workspace_root: Optional[Path],
-) -> Optional["StackProfile"]:
-    """Detect a guardkitfactory ``StackProfile`` for the worktree.
-
-    Returns a real ``StackProfile`` dataclass — the type that
-    ``guardkitfactory.bdd.discover`` requires — or ``None`` when the worktree
-    is missing, the stack is unknown, or guardkitfactory is unavailable.
-
-    TASK-FIX-BDDFW01: previously annotated ``-> Optional[str]`` and returned a
-    bare profile string, which ``discover`` cannot consume — the live factory
-    path raised ``TypeError`` and was silently swallowed.
-
-    Parameters
-    ----------
-    workspace_root : Optional[Path]
-        Root of the worktree.
-
-    Returns
-    -------
-    Optional[StackProfile]
-        A populated ``StackProfile`` (``language``/``test_framework``/
-        ``package_manager``/``project_root``/``extras``) or ``None``.
-    """
-    if workspace_root is None:
-        return None
-    root = Path(workspace_root)
-    if not root.exists():
-        return None
-    # StackProfile is the lazily-imported factory dataclass; None when the
-    # factory is unavailable. The live path only calls this when the factory
-    # IS available, but guard defensively.
-    if StackProfile is None:
-        return None
-    key = _detect_profile_key(root)
-    if key is None:
-        return None
-    language, test_framework, package_manager = _PROFILE_KEY_TO_STACK[key]
-    return StackProfile(
-        language=language,
-        test_framework=test_framework,
-        package_manager=package_manager,
-        project_root=root,
-        extras={},
-    )
-
-
-def map_bdd_run_result(
-    run_result: "BDDRunResult",
-) -> Dict[str, Any]:
-    """Map a guardkitfactory ``BDDRunResult`` into the legacy ``bundle.bdd`` dict.
-
-    Reads ONLY real ``BDDRunResult`` fields (see
-    ``guardkitfactory/src/guardkitfactory/bdd/plugin.py``):
-    ``scenarios_attempted``/``passed``/``failed``/``skipped``/``errored``,
-    ``duration_seconds``, ``raw_report_path``, ``discoveries``, ``errors``.
-
-    Preserves ``scenarios_attempted`` verbatim — never coerces a missing key
-    to 0. This is critical for the absence-of-failure gate: when
-    ``scenarios_attempted == 0``, the Coach must treat it as ABSENT SIGNAL,
-    not as a silent pass
-    (``.claude/rules/absence-of-failure-is-not-success.md``).
-
-    Parameters
-    ----------
-    run_result : BDDRunResult
-        Result from the factory BDD plugin.
-
-    Returns
-    -------
-    Dict[str, Any]
-        A ``bundle.bdd``-shaped dict with keys: ``scenarios_attempted``,
-        ``scenarios_passed``, ``scenarios_failed``, ``scenarios_pending``
-        (from ``scenarios_skipped``), ``scenarios_errored``,
-        ``duration_seconds``, ``raw_report_path`` (str|None), ``feature_files``
-        (from ``discoveries``), ``failures`` (from ``errors``), and ``pending``
-        (always ``[]`` — the real contract carries no per-scenario pending list).
-    """
-    # feature_files: derive from discoveries[*]["feature_file"].
-    feature_files: List[str] = []
-    for disc in run_result.discoveries:
-        if isinstance(disc, dict):
-            feature_file = disc.get("feature_file")
-            if feature_file:
-                feature_files.append(str(feature_file))
-
-    # failures: one dict per error string. Carry the error text under both
-    # "error" (factory-native) and "reason" (so the legacy
-    # ``_check_bdd_results`` consumer surfaces it in Player feedback).
-    failure_dicts: List[Dict[str, Any]] = [
-        {"error": err, "reason": err} for err in run_result.errors
-    ]
-
-    raw_report_path = (
-        str(run_result.raw_report_path)
-        if run_result.raw_report_path is not None
-        else None
-    )
-
-    return {
-        "scenarios_attempted": run_result.scenarios_attempted,
-        "scenarios_passed": run_result.scenarios_passed,
-        "scenarios_failed": run_result.scenarios_failed,
-        "scenarios_pending": run_result.scenarios_skipped,
-        "scenarios_errored": run_result.scenarios_errored,
-        "duration_seconds": run_result.duration_seconds,
-        "raw_report_path": raw_report_path,
-        "feature_files": feature_files,
-        "failures": failure_dicts,
-        "pending": [],
-    }
-
-
-# Backward-compatible alias: TASK-BDDW-001 shipped this function privately as
-# ``_map_bdd_run_result_to_bundle``; ``map_bdd_run_result`` is the public name
-# the wiring test (TASK-FIX-BDDFW01) imports. Both refer to ONE corrected
-# implementation so producer and consumer cannot drift.
-_map_bdd_run_result_to_bundle = map_bdd_run_result
-
-
-# Lazy import of guardkitfactory BDD plugin subsystem.
-# The import is guarded so that ``pip install guardkit-py`` without
-# ``[autobuild]`` still works — Coach falls back to Player-reported
-# bdd_results when the factory is unavailable.
-try:
-    from guardkitfactory.bdd import (
-        BDDRunResult,
-        discover,
-    )
-    from guardkitfactory.bdd.plugin import StackProfile
-
-    _FACTORY_AVAILABLE = True
-except ImportError:
-    BDDRunResult = None  # type: ignore[misc,assignment]
-    discover = None  # type: ignore[misc,assignment]
-    StackProfile = None  # type: ignore[misc,assignment]
-    _FACTORY_AVAILABLE = False
-
-# Module-level cache for the factory import status.
-# Re-checked at runtime for each Coach invocation so that a late-installed
-# guardkitfactory (e.g. via a post-gather pip install) is picked up.
-_factory_available_cache: Optional[bool] = None
-
-
-def _is_factory_available() -> bool:
-    """Return True when the guardkitfactory BDD plugin subsystem is importable.
-
-    Uses a module-level cache that is invalidated on each call to
-    ``gather_evidence`` (see the ``_reset_factory_cache`` helper).
-    """
-    global _factory_available_cache
-    if _factory_available_cache is not None:
-        return _factory_available_cache
-    _factory_available_cache = _FACTORY_AVAILABLE
-    return _FACTORY_AVAILABLE
-
-
-def _reset_factory_cache() -> None:
-    """Invalidate the factory availability cache.
-
-    Called at the start of each ``gather_evidence`` invocation so that
-    a late-installed guardkitfactory is picked up on subsequent runs.
-    """
-    global _factory_available_cache
-    _factory_available_cache = None
-
-
-def _run_factory_bdd(
-    worktree_path: Path,
-    stack_profile: Optional["StackProfile"],
-    task_id: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """Discover and run the BDD plugin for the given stack profile.
-
-    Drives the real guardkitfactory plugin lifecycle:
-    ``discover(stack, worktree)`` → ``preflight(task_id, worktree)`` →
-    ``run(scenarios, task_id, worktree)`` → :func:`map_bdd_run_result`.
-
-    TASK-FIX-BDDFW01: the original implementation targeted an ABANDONED
-    contract — it called ``discover(stack_profile)`` (one positional ``str``)
-    and ``plugin.run(worktree_path)``. Both raised ``TypeError`` against the
-    real guardkitfactory signatures and were silently swallowed, leaving the
-    bridge dead on the live path. This version uses the real two-arg
-    ``discover(stack: StackProfile, worktree: Path)`` and the real
-    ``run(scenarios, task_id, worktree)`` signature.
-
-    Parameters
-    ----------
-    worktree_path : Path
-        Root of the worktree containing the BDD scenarios.
-    stack_profile : Optional[StackProfile]
-        Detected stack profile from :func:`_detect_stack_profile`.
-    task_id : Optional[str]
-        Active task identity. Required to honour the per-task glue contract
-        (``GUARDKIT_BDD_TASK_ID`` / ``-m task_<id>``); without it the per-task
-        oracle cannot run and the bridge returns ABSENT SIGNAL.
-
-    Returns
-    -------
-    Optional[Dict[str, Any]]
-        A ``bundle.bdd``-shaped dict, or ``None`` when the factory is
-        unavailable, the stack profile is unknown, preflight fails, or
-        discovery/execution fails. ``None`` is ABSENT SIGNAL — never a silent
-        pass (``.claude/rules/absence-of-failure-is-not-success.md``).
-    """
-    if not _is_factory_available():
-        logger.debug(
-            "BDD factory bridge: guardkitfactory not available; "
-            "falling back to Player-reported bdd_results.",
-        )
-        return None
-
-    if stack_profile is None:
-        logger.debug(
-            "BDD factory bridge: no stack profile detected; "
-            "falling back to Player-reported bdd_results.",
-        )
-        return None
-
-    # Guard against discover/StackProfile being None (factory not importable).
-    if discover is None or StackProfile is None:
-        return None
-
-    if not task_id:
-        logger.debug(
-            "BDD factory bridge: no task_id in scope; the per-task BDD oracle "
-            "cannot run. Returning ABSENT SIGNAL.",
-        )
-        return None
-
-    try:
-        plugin = discover(stack_profile, worktree_path)
-        if plugin is None:
-            logger.debug(
-                "BDD factory bridge: no plugin discovered for stack %s; "
-                "falling back to Player-reported bdd_results.",
-                stack_profile,
-            )
-            return None
-
-        # Lifecycle: preflight before run. A failed preflight means the
-        # per-task glue convention is not satisfied (no bound scenarios), so a
-        # blind ``-m task_<id>`` run would deselect everything — surface ABSENT
-        # SIGNAL rather than subprocessing a guaranteed-zero run.
-        preflight = getattr(plugin, "preflight", None)
-        if callable(preflight) and not preflight(task_id, worktree_path):
-            logger.debug(
-                "BDD factory bridge: preflight failed for task %s on stack %s; "
-                "ABSENT SIGNAL (per-task glue not configured).",
-                task_id,
-                stack_profile,
-            )
-            return None
-
-        # scenarios=[] — pytest-bdd re-discovers from features/ internally
-        # (Contract C4). Pre-discovering Scenario objects for every stack is
-        # the remit of TASK-HMIG-BDDWIRE, not this contract fix.
-        result = plugin.run([], task_id, worktree_path)
-
-        if result is None:
-            logger.debug(
-                "BDD factory bridge: plugin returned None for stack %s; "
-                "falling back to Player-reported bdd_results.",
-                stack_profile,
-            )
-            return None
-
-        # Map BDDRunResult → bundle.bdd shape.
-        return map_bdd_run_result(result)
-
-    except Exception as exc:  # noqa: BLE001 — BDD failures must not break evidence gathering
-        logger.warning(
-            "BDD factory bridge raised %s for stack %s; "
-            "falling back to Player-reported bdd_results.",
-            exc.__class__.__name__,
-            stack_profile,
-        )
-        return None
 
 
 # ============================================================================
@@ -3008,36 +2659,13 @@ class CoachValidator:
             task_work_results
         )
 
-        # 5.7. BDD oracle gate (TASK-BDD-E8954): when present in task_work_results,
-        # scenarios_failed > 0 blocks approval. scenarios_pending is informational
-        # and surfaces in feedback without blocking — see bdd_runner module docstring
-        # for the three-state model and rationale for not collapsing pending into
-        # failed.
-        bdd_blocking, bdd_non_blocking = self._check_bdd_results(task_work_results)
-        if bdd_blocking:
-            logger.info(
-                f"Coach rejected {task_id} turn {turn}: bdd_results.scenarios_failed > 0"
-            )
-            return self._feedback_result(
-                task_id=task_id,
-                turn=turn,
-                quality_gates=gates_status,
-                independent_tests=test_result,
-                requirements=requirements,
-                issues=advisory_issues + bdd_blocking + bdd_non_blocking,
-                rationale=(
-                    "BDD scenarios failed: "
-                    f"{task_work_results.get('bdd_results', {}).get('scenarios_failed', 0)} "
-                    "scenario(s) reported assertion failure during pytest-bdd execution."
-                ),
-                context_used=context,
-                honesty_verification=honesty_verification,
-            )
+        # 5.7. R1 DE-WIRE (Rich 08-14): the BDD oracle gate (TASK-BDD-E8954,
+        # bdd_results.scenarios_failed > 0 → reject) is removed — nothing
+        # produces bdd_results any more.
 
-        # 5.7a. DCL oracle gate (Phase D, design §1): the dcl spec-track sibling
-        # of the BDD gate. Gated on the same track read — it runs ONLY when the
-        # repo is on the dcl track; on the default gherkin track this is dead
-        # code and the BDD gate above is untouched. compile_error /
+        # 5.7a. DCL oracle gate (Phase D, design §1): the dcl spec-track
+        # sibling gate. It runs ONLY when the repo is on the dcl track; on the
+        # default gherkin track this is dead code. compile_error /
         # derivation_error → blocking dcl_failure (never silent-green).
         from guardkit.qa.spec_track import get_spec_track
 
@@ -3066,43 +2694,16 @@ class CoachValidator:
                     honesty_verification=honesty_verification,
                 )
 
-        # 5.7b. BDD authoring-sweep gate (TASK-AB-BDDAUTHOR01): when the turn
-        # authored owned pytest-bdd glue, the sweep ran unfiltered over it;
-        # scenarios_undefined > 0 (or a sweep runner error) blocks approval.
-        # Ordinary sweep failures are advisory (see _check_bdd_authoring_sweep
-        # — pass/fail ownership stays with each scenario's tag-scoped oracle).
-        # NOTE: this legacy-path wiring is defence-in-depth; the load-bearing
-        # both-paths enforcement is autobuild._bdd_authoring_sweep_gate.
-        sweep_blocking, sweep_non_blocking = self._check_bdd_authoring_sweep(
-            task_work_results
-        )
-        if sweep_blocking:
-            logger.info(
-                f"Coach rejected {task_id} turn {turn}: BDD authoring sweep "
-                "found undefined steps or a sweep runner error"
-            )
-            return self._feedback_result(
-                task_id=task_id,
-                turn=turn,
-                quality_gates=gates_status,
-                independent_tests=test_result,
-                requirements=requirements,
-                issues=advisory_issues + bdd_non_blocking + sweep_blocking + sweep_non_blocking,
-                rationale=(
-                    "BDD authoring sweep: the glue authored this turn leaves "
-                    "steps undefined (or the sweep could not run at all). "
-                    "The authoring task's job is making scenarios executable."
-                ),
-                context_used=context,
-                honesty_verification=honesty_verification,
-            )
+        # 5.7b. R1 DE-WIRE (Rich 08-14): the BDD authoring-sweep gate
+        # (TASK-AB-BDDAUTHOR01) is removed — nothing produces
+        # bdd_authoring_sweep any more.
 
         # 5.8. Seam tests blocking gate (TASK-FIX-A7B4).
         # Distinct from the soft `_check_seam_test_recommendation` above:
         # this gate fires only when the task description itself contains a
         # non-empty `## Seam Tests` section AND the Player wrote zero tests
         # carrying @pytest.mark.{seam,contract,boundary}. Detected before
-        # approval, after the BDD blocker, so the rest of this turn's gates
+        # approval, after the deterministic blockers, so the rest of this turn's gates
         # have already filtered out lower-quality failure modes.
         seam_blocking = self._check_seam_tests_implemented(task, task_work_results)
         if seam_blocking:
@@ -3137,8 +2738,6 @@ class CoachValidator:
             + seam_test_issues
             + consumer_context_issues
             + assumption_issues
-            + bdd_non_blocking
-            + sweep_non_blocking
         )
 
         # 6. All checks passed - approve
@@ -3486,52 +3085,15 @@ class CoachValidator:
                     arch_review_dict[sub] = code_review_raw[sub]
 
         # ------------------------------------------------------------------
-        # BDD evidence. TASK-BDDW-001: wire factory BDD plugin discovery
-        # into the Coach evidence path.
-        #
-        # Priority:
-        #   1. Factory discovery (guardkitfactory.bdd.discover) — if available
-        #      and stack profile is known, run the BDD plugin and map the
-        #      result into bundle.bdd shape.
-        #   2. Player-reported bdd_results — legacy fallback when the factory
-        #      is unavailable, the stack is unknown, or discovery fails.
+        # R1 DE-WIRE (Rich 08-14): the BDD evidence block (TASK-BDDW-001
+        # factory plugin discovery + Player-reported bdd_results fallback)
+        # is removed — the Coach no longer executes or consumes BDD runs.
+        # bundle.bdd is permanently the absent signal until R2 deletes the
+        # field at graduation.
         # ------------------------------------------------------------------
-        _reset_factory_cache()
         _reset_wiring_factory_cache()
 
-        bdd_raw = task_work_results.get("bdd_results")
         bdd_dict: Optional[Dict[str, Any]] = None
-
-        if bdd_raw is not None and isinstance(bdd_raw, dict):
-            # Player already produced BDD results — use them as-is.
-            bdd_dict = bdd_raw
-        elif _is_factory_available():
-            # Factory is available but Player didn't produce results.
-            # Attempt independent discovery via the factory plugin.
-            stack_profile = _detect_stack_profile(self.worktree_path)
-            factory_result = _run_factory_bdd(
-                self.worktree_path, stack_profile, task_id
-            )
-            if factory_result is not None:
-                bdd_dict = factory_result
-                logger.info(
-                    "gather_evidence: BDD evidence from factory plugin "
-                    "(stack=%s, scenarios_attempted=%s).",
-                    stack_profile,
-                    factory_result.get("scenarios_attempted"),
-                )
-            else:
-                logger.debug(
-                    "gather_evidence: factory BDD discovery returned None; "
-                    "bdd field left as absent signal.",
-                )
-        else:
-            # Factory unavailable — bdd_dict stays None (absent signal).
-            logger.debug(
-                "gather_evidence: guardkitfactory not available; "
-                "Player-reported bdd_results were empty; "
-                "bdd field left as absent signal.",
-            )
 
         # Quality-gate-failure short-circuit. Legacy validate() also
         # short-circuits here via _feedback_from_gates.
@@ -3547,7 +3109,7 @@ class CoachValidator:
                 coverage_details=coverage_details,
                 plan_audit=plan_audit_dict,
                 bdd=bdd_dict,
-                bdd_authoring_sweep=task_work_results.get("bdd_authoring_sweep"),
+                bdd_authoring_sweep=None,  # R1 de-wire: key no longer produced
                 arch_review=arch_review_dict,
                 tests=tests_dict,
                 severity_recommendations=severity_recommendations,
@@ -3830,7 +3392,7 @@ class CoachValidator:
             coverage_details=coverage_details,
             plan_audit=plan_audit_dict,
             bdd=bdd_dict,
-            bdd_authoring_sweep=task_work_results.get("bdd_authoring_sweep"),
+            bdd_authoring_sweep=None,  # R1 de-wire: key no longer produced
             arch_review=arch_review_dict,
             tests=tests_dict,
             independent_tests=test_result,
@@ -8475,14 +8037,12 @@ class CoachValidator:
         deterministic, retry-immune signal. See TASK-FIX-CC-BDD and the
         FEAT-39E1 post-mortem.
 
-        Fix: BDD verification is delegated to ``run_bdd_for_task`` (already
-        task-tag scoped via ``-m @task:<TASK-ID>``). The Player-side
-        ``_run_bdd_oracle`` runs it once per turn and writes ``bdd_results``
-        into ``task_work_results``; the Coach's separate ``bdd_results``
-        gate (``_check_bdd_results``) enforces ``scenarios_failed == 0``.
-        Removing BDD glue files from the independent_tests pytest cmd does
-        not weaken verification — it just stops double-running the same
-        scenarios without the tag scope.
+        R1 DE-WIRE (Rich 08-14): the tag-scoped BDD oracle that used to own
+        glue execution is removed — nothing executes glue at all now. This
+        filter STAYS so the independent-tests command never collects
+        pytest-bdd glue (unscoped collection would newly EXECUTE scenarios,
+        exactly what R1 removes). The glue heuristic is inlined below so
+        bdd_runner.py is left unreferenced until R2 deletes both together.
 
         Parameters
         ----------
@@ -8494,25 +8054,51 @@ class CoachValidator:
         List[str]
             ``test_files`` with pytest-bdd glue removed (preserves order).
         """
-        from .bdd_runner import is_bdd_glue_file
-
         plain: List[str] = []
         excluded: List[str] = []
         for tf in test_files:
             full = self.worktree_path / tf
-            if is_bdd_glue_file(full):
+            if self._is_bdd_glue_file(full):
                 excluded.append(tf)
             else:
                 plain.append(tf)
         if excluded:
             logger.info(
                 "TASK-FIX-CC-BDD: Excluded %d pytest-bdd glue file(s) from "
-                "independent_tests pytest cmd; task-tag scoping is enforced "
-                "via run_bdd_for_task / bdd_results gate. Excluded: %s",
+                "independent_tests pytest cmd; BDD execution is retired "
+                "(R1 de-wire). Excluded: %s",
                 len(excluded),
                 excluded,
             )
         return plain
+
+    @staticmethod
+    def _is_bdd_glue_file(file_path: Any) -> bool:
+        """Return True when the file appears to be pytest-bdd glue.
+
+        R1 DE-WIRE (Rich 08-14): inlined from ``bdd_runner.is_bdd_glue_file``
+        so the retired ``bdd_runner.py`` module is unreferenced from
+        production code (R2 deletes it). Detection is a cheap text scan for
+        pytest-bdd v8 import signatures: ``from pytest_bdd import``,
+        ``import pytest_bdd``, or ``pytest_bdd.scenarios(``. Returns
+        ``False`` for missing files, non-``.py`` files, and files that
+        cannot be read.
+        """
+        try:
+            p = Path(file_path)
+        except (TypeError, ValueError):
+            return False
+        if not p.is_file() or p.suffix != ".py":
+            return False
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        return (
+            "pytest_bdd.scenarios(" in text
+            or "from pytest_bdd import" in text
+            or "import pytest_bdd" in text
+        )
 
     def _is_host_substrate_gap(
         self, returncode: Optional[int], combined_output: str
@@ -9019,120 +8605,8 @@ class CoachValidator:
 
         return []
 
-    def _check_bdd_results(
-        self,
-        task_work_results: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Inspect ``task_work_results['bdd_results']`` for the BDD oracle gate.
-
-        Implements the three-state model from TASK-BDD-E8954:
-
-        * ``scenarios_failed > 0``  → blocking ``must_fix`` issue (Coach rejects).
-        * ``scenarios_pending > 0`` → non-blocking informational issue (Coach
-          surfaces it as actionable work but does NOT reject on pending alone).
-        * Absent ``bdd_results`` key → no gate active, returns ``([], [])``.
-
-        Parameters
-        ----------
-        task_work_results : Dict[str, Any]
-            Parsed contents of ``task_work_results.json``.
-
-        Returns
-        -------
-        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
-            ``(blocking_issues, non_blocking_issues)`` — both lists may be empty.
-        """
-        bdd_results = task_work_results.get("bdd_results")
-        if not bdd_results:
-            return [], []
-
-        scenarios_failed = int(bdd_results.get("scenarios_failed", 0) or 0)
-        scenarios_pending = int(bdd_results.get("scenarios_pending", 0) or 0)
-        scenarios_passed = int(bdd_results.get("scenarios_passed", 0) or 0)
-        failures = bdd_results.get("failures", []) or []
-        pending = bdd_results.get("pending", []) or []
-        feature_files = bdd_results.get("feature_files", []) or []
-
-        blocking: List[Dict[str, Any]] = []
-        non_blocking: List[Dict[str, Any]] = []
-
-        if scenarios_failed > 0:
-            failure_summaries: List[str] = []
-            reason_bullets: List[str] = []
-            for f in failures[:5]:
-                scenario = f.get("scenario_name", "<unknown>")
-                step = f.get("failing_step", "")
-                reason = (f.get("reason") or "").strip()
-                summary = f"{scenario}"
-                if step:
-                    summary += f" — step: {step}"
-                if reason:
-                    summary += f" — {reason[:160]}"
-                failure_summaries.append(summary)
-
-                # TASK-AB-003: surface the per-failure reason as a bullet in
-                # the description so the Player feedback (which renders only
-                # `description`) carries the actual exception class+message
-                # and traceback frame, not just the generic "Implementation
-                # does not satisfy the Gherkin specification" prose.
-                if reason:
-                    bullet_reason = reason
-                    if len(bullet_reason) > 400:
-                        bullet_reason = bullet_reason[:397] + "..."
-                    bullet = f"- {scenario}: {bullet_reason}"
-                else:
-                    bullet = f"- {scenario}"
-                reason_bullets.append(bullet)
-
-            description_parts: List[str] = [
-                f"BDD oracle: {scenarios_failed} scenario(s) failed "
-                f"during pytest-bdd execution."
-            ]
-            if reason_bullets:
-                description_parts.append("Per-failure details:")
-                description_parts.extend(reason_bullets)
-            else:
-                description_parts.append(
-                    "Implementation does not satisfy the Gherkin specification."
-                )
-            description = "\n".join(description_parts)
-
-            blocking.append({
-                "severity": "must_fix",
-                "category": "bdd_failure",
-                "description": description,
-                "scenarios_failed": scenarios_failed,
-                "scenarios_passed": scenarios_passed,
-                "scenarios_pending": scenarios_pending,
-                "feature_files": feature_files,
-                "failure_examples": failure_summaries,
-            })
-
-        if scenarios_pending > 0:
-            pending_summaries: List[str] = []
-            for p in pending[:5]:
-                scenario = p.get("scenario_name", "<unknown>")
-                step = p.get("pending_step", "")
-                summary = f"{scenario}"
-                if step:
-                    summary += f" — implement: {step}"
-                pending_summaries.append(summary)
-
-            non_blocking.append({
-                "severity": "should_fix",
-                "category": "bdd_pending",
-                "description": (
-                    f"BDD oracle: {scenarios_pending} scenario(s) reference "
-                    f"step definitions that are not yet implemented. "
-                    f"These do NOT block approval but should be implemented "
-                    f"to make the scenarios runnable."
-                ),
-                "scenarios_pending": scenarios_pending,
-                "feature_files": feature_files,
-                "pending_examples": pending_summaries,
-            })
-
-        return blocking, non_blocking
+    # R1 DE-WIRE (Rich 08-14): _check_bdd_results (TASK-BDD-E8954) removed
+    # with its gate — nothing produces bdd_results any more.
 
     def _check_dcl_results(
         self,
@@ -9228,146 +8702,9 @@ class CoachValidator:
 
         return blocking, non_blocking
 
-    def _check_bdd_authoring_sweep(
-        self,
-        task_work_results: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Evaluate the BDD authoring-sweep result (TASK-AB-BDDAUTHOR01).
-
-        Returns ``(blocking, non_blocking)``:
-
-        - ``bdd_authoring_sweep`` key absent → ``([], [])`` (gate inert —
-          the turn authored no owned glue; absence is never a verdict);
-        - ``scenarios_undefined > 0`` → BLOCKING ``bdd_undefined_steps``
-          (the authoring task's job is making scenarios executable);
-        - a sweep runner-error sentinel (``pytest_runner_error`` /
-          ``pytest_bdd_not_importable``) → BLOCKING ``bdd_sweep_error``
-          (glue authored but unrunnable — a vacuous pass here is the
-          absence-of-failure hazard);
-        - ordinary sweep failures → ADVISORY ``bdd_sweep_failure``
-          (pass/fail ownership stays with each scenario's tag-scoped
-          oracle — the FEAT-39E1 class stays closed);
-        - sweep ran but bound zero scenarios (all counters zero) →
-          ADVISORY ``bdd_sweep_zero_collected``.
-
-        Feedback for undefined steps names BOTH remediations: implement the
-        step definition, or narrow the glue binding to owned scenarios
-        (per-scenario ``@scenario`` rather than ``scenarios()`` — see
-        ``bdd-per-task-glue.md``) so a peer task's scenario is not bound by
-        this task's glue.
-        """
-        from guardkit.orchestrator.quality_gates.bdd_runner import (
-            SWEEP_RUNNER_ERROR_SENTINELS as _SWEEP_RUNNER_ERROR_SENTINELS,
-        )
-
-        blocking: List[Dict[str, Any]] = []
-        non_blocking: List[Dict[str, Any]] = []
-
-        sweep = task_work_results.get("bdd_authoring_sweep")
-        if not sweep or not isinstance(sweep, dict):
-            return blocking, non_blocking
-
-        undefined_count = sweep.get("scenarios_undefined", 0) or 0
-        failed = sweep.get("scenarios_failed", 0) or 0
-        passed = sweep.get("scenarios_passed", 0) or 0
-        failures = sweep.get("failures", []) or []
-        undefined = sweep.get("undefined", []) or []
-        glue_files = sweep.get("feature_files", []) or []
-
-        sentinel_failures = [
-            f for f in failures
-            if isinstance(f, dict)
-            and f.get("scenario_name") in _SWEEP_RUNNER_ERROR_SENTINELS
-        ]
-        ordinary_failures = [
-            f for f in failures if f not in sentinel_failures
-        ]
-
-        if sentinel_failures:
-            reasons = [
-                (f.get("reason") or "")[:300] for f in sentinel_failures
-            ]
-            blocking.append({
-                "severity": "must_fix",
-                "category": "bdd_sweep_error",
-                "description": (
-                    "BDD authoring sweep could not run the glue authored "
-                    "this turn (runner error). The glue exists but is "
-                    "unrunnable — fix the environment/collection error; a "
-                    "vacuous pass here would hide undefined steps entirely."
-                ),
-                "glue_files": glue_files,
-                "errors": reasons,
-            })
-
-        if undefined_count > 0:
-            undefined_summaries: List[str] = []
-            for u in undefined[:10]:
-                scenario = u.get("scenario_name", "<unknown>")
-                step = u.get("pending_step", "")
-                summary = scenario
-                if step:
-                    summary += f" — undefined step: {step}"
-                undefined_summaries.append(summary)
-            blocking.append({
-                "severity": "must_fix",
-                "category": "bdd_undefined_steps",
-                "description": (
-                    f"BDD authoring sweep: {undefined_count} scenario(s) "
-                    "bound by the glue you authored reference step "
-                    "definitions that do not resolve. Either implement each "
-                    "undefined step, or — if a scenario belongs to another "
-                    "task — narrow your glue binding to the scenarios you "
-                    "own (bind per-scenario with @scenario(...), not "
-                    "scenarios(...); see .claude/rules/bdd-per-task-glue.md)."
-                ),
-                "scenarios_undefined": undefined_count,
-                "glue_files": glue_files,
-                "undefined_examples": undefined_summaries,
-            })
-
-        if ordinary_failures:
-            failure_summaries = [
-                f"{f.get('scenario_name', '<unknown>')} — "
-                f"{(f.get('reason') or '')[:200]}"
-                for f in ordinary_failures[:5]
-            ]
-            non_blocking.append({
-                "severity": "should_fix",
-                "category": "bdd_sweep_failure",
-                "description": (
-                    f"BDD authoring sweep: {len(ordinary_failures)} bound "
-                    "scenario(s) failed their assertions when run "
-                    "unfiltered. Advisory within the sweep — each "
-                    "scenario's pass/fail verdict is owned by its "
-                    "tag-scoped oracle — but review whether your step "
-                    "definitions are correct."
-                ),
-                "failure_examples": failure_summaries,
-                "glue_files": glue_files,
-            })
-
-        if (
-            not blocking
-            and not non_blocking
-            and undefined_count == 0
-            and failed == 0
-            and passed == 0
-        ):
-            non_blocking.append({
-                "severity": "should_fix",
-                "category": "bdd_sweep_zero_collected",
-                "description": (
-                    "BDD authoring sweep: the glue authored this turn "
-                    "carries binding constructs but pytest collected ZERO "
-                    "scenarios from it. Verify the @scenario/scenarios() "
-                    "bindings reference real feature files and scenario "
-                    "names."
-                ),
-                "glue_files": glue_files,
-            })
-
-        return blocking, non_blocking
+    # R1 DE-WIRE (Rich 08-14): _check_bdd_authoring_sweep
+    # (TASK-AB-BDDAUTHOR01) removed with its gate and autobuild's
+    # _bdd_authoring_sweep_gate — nothing produces bdd_authoring_sweep.
 
     def _validate_consumer_context(
         self,

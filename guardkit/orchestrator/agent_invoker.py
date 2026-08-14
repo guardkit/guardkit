@@ -9996,87 +9996,22 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         design_file = TaskArtifactPaths.design_results_path(task_id, self.worktree_path)
         return self._read_json_artifact(design_file)
 
-    def _resolve_worktree_python_executable(self) -> Optional[str]:
-        """Resolve the worktree's venv interpreter for BDD oracle subprocesses.
-
-        Resolution order: ``<worktree>/.venv/bin/python3`` →
-        ``<worktree>/.venv/bin/python`` → ``None``.
-
-        Without this, ``run_bdd_for_task`` falls back to whichever ``pytest`` is
-        first on ``PATH`` — typically a user-level interpreter that cannot
-        import the worktree's editable-installed package, causing the BDD
-        oracle to fail with ``ModuleNotFoundError`` even though the worktree's
-        own venv is correctly populated. See TASK-AB-001 / FEAT-FG-001.
-        """
-        venv_bin = Path(self.worktree_path) / ".venv" / "bin"
-        for candidate in (venv_bin / "python3", venv_bin / "python"):
-            if candidate.is_file():
-                return str(candidate)
-
-        logger.warning(
-            "BDD oracle running against system pytest; worktree-local imports "
-            "may fail (no .venv/bin/python[3] under %s).",
-            self.worktree_path,
-        )
-        return None
-
-    def _run_bdd_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Run task-level BDD oracle (TASK-BDD-E8954).
-
-        Activation is by artefact presence: if no ``features/*.feature`` file
-        in the worktree carries a ``@task:<TASK-ID>`` tag (or pytest-bdd is
-        not importable), this returns ``None`` and behaviour is identical to
-        before BDD wiring existed. Errors during execution are swallowed and
-        logged — BDD failures must never break task-work result writing.
-
-        Demotion (TASK-BDDW-001 / TASK-FIX-BDDFW01): this legacy
-        ``bdd_runner.py`` path is the documented **fallback** oracle. The
-        primary oracle is the guardkitfactory plugin-discovery bridge in
-        ``coach_validator._run_factory_bdd`` (the multi-stack
-        ``BDDPlugin``/``BDDRunResult`` subsystem). The Coach prefers
-        Player-reported ``bdd_results`` (produced via this path) when present,
-        and only falls back to independent factory discovery when they are
-        absent — so this remains a demoted, pytest-bdd-only fallback.
-        """
-        try:
-            from guardkit.orchestrator.quality_gates.bdd_runner import (
-                run_bdd_for_task,
-            )
-
-            python_executable = self._resolve_worktree_python_executable()
-            logger.info(
-                "BDD oracle invoking run_bdd_for_task for %s with python_executable=%s",
-                task_id,
-                python_executable,
-            )
-            result = run_bdd_for_task(
-                task_id,
-                self.worktree_path,
-                python_executable=python_executable,
-            )
-        except Exception as exc:  # noqa: BLE001 — protect task-work writer
-            logger.warning(
-                "BDD oracle raised %s for %s; treating as skipped.",
-                exc.__class__.__name__,
-                task_id,
-            )
-            return None
-
-        if result is None:
-            return None
-        return result.to_dict()
+    # R1 DE-WIRE (Rich 08-14): _resolve_worktree_python_executable and
+    # _run_bdd_oracle (TASK-BDD-E8954) removed — the orchestrator no longer
+    # executes BDD scenarios. bdd_runner.py remains on disk, unreferenced,
+    # until R2 deletes it at graduation. Gherkin AUTHORING (feature-spec,
+    # gherkin_official validation) is untouched.
 
     def _run_dcl_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Run the hermetic task-level DCL oracle (Phase D, design §1 / D1).
 
-        The ``dcl`` spec-track sibling of :meth:`_run_bdd_oracle`. Runs ONLY when
-        the repo is on the ``dcl`` track (``get_spec_track(worktree) == "dcl"``);
+        The ``dcl`` spec-track sibling of the (R1-removed) BDD oracle. Runs ONLY
+        when the repo is on the ``dcl`` track (``get_spec_track(worktree) == "dcl"``);
         on the default ``gherkin`` track this returns ``None`` immediately and the
-        code path is dead — the existing BDD chain is neither removed, reordered,
-        nor conditioned (design §0.1 Fallback law).
+        code path is dead (design §0.1 Fallback law).
 
-        Activation is otherwise by artefact presence, exactly like the BDD
-        oracle: if no ``features/**/*.dcl`` carries a ``@task:<TASK-ID>`` marker
+        Activation is otherwise by artefact presence: if no
+        ``features/**/*.dcl`` carries a ``@task:<TASK-ID>`` marker
         (absence discipline), :func:`run_dcl_for_task` returns ``None`` and the
         existing chain proceeds untouched. The oracle is hermetic — it runs the
         compile gate + derivation only, never assertions against a live URL
@@ -10084,7 +10019,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
         Errors during execution are swallowed and logged (including an instrument
         fault such as a missing node runtime) — DCL failures must never break
-        task-work result writing, mirroring ``_run_bdd_oracle``.
+        task-work result writing.
         """
         try:
             from guardkit.qa.spec_track import get_spec_track
@@ -10108,102 +10043,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             return None
         return result.to_dict()
 
-    def _run_bdd_authoring_sweep(
-        self, task_id: str, results: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Run the BDD authoring sweep (TASK-AB-BDDAUTHOR01) for this turn.
-
-        Activation is by artefact presence: the turn's authored files include
-        pytest-bdd glue OWNED by this task (per-task-named glue, or glue
-        created this turn). No glue → ``None`` and behaviour is identical to
-        before this leg existed.
-
-        Activation input: ``files_authored`` when NON-EMPTY, else
-        ``files_created ∪ files_modified``. This deliberately diverges from
-        ``CoachValidator._compute_authored_set``'s []-is-authoritative
-        reading: at this seam ``files_authored`` is unconditionally present
-        and ``[]`` only means the Write/Edit stream interception captured
-        nothing (a Player writing glue via Bash heredocs would otherwise
-        silently bypass the sweep — the evidence-boundary-narrower shape).
-        Both the existence check and ``is_bdd_glue_file`` bound the wider
-        fallback, and at this point the lists are parser-extracted Player
-        claims (the git-diff union happens later, on the report), so peer
-        contamination is not in play.
-        """
-        try:
-            from guardkit.orchestrator.quality_gates.bdd_runner import (
-                find_per_task_glue,
-                glue_owned_by_task,
-                is_bdd_glue_file,
-                run_bdd_authoring_sweep,
-            )
-
-            authored = list(results.get("files_authored") or [])
-            if not authored:
-                authored = sorted(
-                    set(results.get("files_created") or [])
-                    | set(results.get("files_modified") or [])
-                )
-            created = list(results.get("files_created") or [])
-
-            owned_glue = []
-            for candidate in authored:
-                path = Path(candidate)
-                if not path.is_absolute():
-                    path = self.worktree_path / path
-                if not is_bdd_glue_file(path):
-                    continue
-                if not glue_owned_by_task(candidate, task_id, created):
-                    logger.info(
-                        "BDD authoring sweep: %s is authored glue but not "
-                        "owned by %s (pre-existing shared/legacy module) — "
-                        "not swept.",
-                        candidate,
-                        task_id,
-                    )
-                    continue
-                owned_glue.append(path)
-
-            # Re-arm: per-task-named glue already ON DISK is swept every
-            # turn, not only the turn that authored it — otherwise a Player
-            # blocked on undefined steps could clear the deterministic gate
-            # next turn by simply not touching the glue (the LLM-leniency
-            # hole this sweep exists to close). Name-attribution keeps this
-            # parallel-wave-safe.
-            seen = {p.resolve() for p in owned_glue}
-            for path in find_per_task_glue(self.worktree_path, task_id):
-                if path.resolve() not in seen and is_bdd_glue_file(path):
-                    owned_glue.append(path)
-                    seen.add(path.resolve())
-
-            if not owned_glue:
-                return None
-
-            python_executable = self._resolve_worktree_python_executable()
-            logger.info(
-                "BDD authoring sweep for %s over %d owned glue module(s) "
-                "(python_executable=%s)",
-                task_id,
-                len(owned_glue),
-                python_executable,
-            )
-            result = run_bdd_authoring_sweep(
-                task_id,
-                self.worktree_path,
-                owned_glue,
-                python_executable=python_executable,
-            )
-        except Exception as exc:  # noqa: BLE001 — protect task-work writer
-            logger.warning(
-                "BDD authoring sweep raised %s for %s; treating as skipped.",
-                exc.__class__.__name__,
-                task_id,
-            )
-            return None
-
-        if result is None:
-            return None
-        return result.to_dict()
+    # R1 DE-WIRE (Rich 08-14): _run_bdd_authoring_sweep
+    # (TASK-AB-BDDAUTHOR01) removed with its invocation — no turn runs
+    # pytest-bdd glue sweeps any more.
 
     @staticmethod
     def _extract_invocations_from_result_data(
@@ -11442,21 +11284,14 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             if "complexity_score" in design_data:
                 results["complexity_score"] = design_data["complexity_score"]
 
-        # TASK-BDD-E8954: BDD oracle. Activation is by artefact presence — if a
-        # features/*.feature file exists with a @task:<TASK-ID> tag and
-        # pytest-bdd is installable, run the scenarios and persist a three-state
-        # bdd_results block. Silently skipped (returns None) otherwise so the
-        # default behaviour for tasks without BDD scaffolding is identical to
-        # before this wiring landed.
-        bdd_results = self._run_bdd_oracle(task_id)
-        if bdd_results is not None:
-            results["bdd_results"] = bdd_results
+        # R1 DE-WIRE (Rich 08-14): the BDD oracle invocation (TASK-BDD-E8954)
+        # is removed — task_work_results no longer carries a bdd_results key.
+        # bdd_runner.py stays on disk unreferenced until R2 deletes it.
 
         # Phase D (design §1): the DCL oracle — the optional dcl spec-track
         # sibling. Gated on get_spec_track(worktree) == "dcl" INSIDE the method;
         # on the default gherkin track it returns None and this key never
-        # appears, so task_work_results is byte-identical to today (the BDD call
-        # above is untouched, unconditioned, and runs first exactly as before).
+        # appears, so task_work_results is byte-identical to today.
         # Activation is otherwise by artefact presence (a @task-tagged .dcl);
         # absent artifact = absent key at every layer (absence discipline).
         dcl_results = self._run_dcl_oracle(task_id)
@@ -11487,12 +11322,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 task_id,
             )
 
-        # TASK-AB-BDDAUTHOR01: authoring sweep — the second BDD leg, activated
-        # by authored OWNED glue (artefact presence, no flag). Distinct key;
-        # absent sweep = absent key at every layer.
-        bdd_authoring_sweep = self._run_bdd_authoring_sweep(task_id, results)
-        if bdd_authoring_sweep is not None:
-            results["bdd_authoring_sweep"] = bdd_authoring_sweep
+        # R1 DE-WIRE (Rich 08-14): the BDD authoring-sweep invocation
+        # (TASK-AB-BDDAUTHOR01) is removed — task_work_results no longer
+        # carries a bdd_authoring_sweep key.
 
         # Filter invalid path entries before validation (TASK-FIX-PV01)
         # Ensures _validate_file_count_constraint sees only real file paths,
