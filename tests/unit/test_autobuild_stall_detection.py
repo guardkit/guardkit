@@ -9,6 +9,9 @@ Coverage Target: >=85%
 Test Count: 14 tests
 """
 
+import json
+import logging
+
 import pytest
 from pathlib import Path
 from typing import Optional
@@ -1154,3 +1157,255 @@ class TestStallHintSdkApiError:
 
         assert "Review task_type classification" in message
         assert "SDK API errors" not in message
+
+
+# ============================================================================
+# close-the-loop lane, 2026-08-14 — CURE 2 (effect) and CURE 3 (naming)
+# ============================================================================
+
+
+class TestHonestCountChangesTheStallBranch:
+    """A truthful non-zero count routes to the extended threshold.
+
+    ``_is_feedback_stalled`` and ``_count_criteria_passed`` are NOT edited by
+    this lane. Their behaviour changes only because the direct-mode gate now
+    feeds them the count it had already measured. The r3 arm-B receipts logged
+    ``identical feedback (sig=...) for 3 turns with 0 criteria passing`` while
+    the gate's own ``req_validation`` said 4 of 6 — the leg died at 3 turns on
+    the "true zero progress — unrecoverable" branch instead of taking the +2
+    extended runway.
+
+    Bound: this is still capped by ``max_turns``. Under the production
+    ``leg_max_turns: 3`` the work leg's observable behaviour is unchanged —
+    the cap binds first; the leg exits with the honest ``max_turns_exceeded``
+    label rather than a false ``unrecoverable_stall``.
+    """
+
+    _FEEDBACK = (
+        "Direct mode: 2/6 acceptance criteria have no matching completion "
+        "promise (unmet: ['AC-ANTISTUB-1', 'AC-ANTISTUB-2'])."
+    )
+
+    def _orch(self):
+        return AutoBuildOrchestrator(repo_root=Path.cwd(), max_turns=10)
+
+    def test_zero_count_still_stalls_at_three(self):
+        """Unchanged behaviour when the count really is zero."""
+        orch = self._orch()
+        assert orch._is_feedback_stalled(self._FEEDBACK, 0) is False
+        assert orch._is_feedback_stalled(self._FEEDBACK, 0) is False
+        assert orch._is_feedback_stalled(self._FEEDBACK, 0) is True
+
+    def test_count_of_four_survives_three_turns_and_stalls_at_five(self):
+        """The honest count buys the +2 extended runway, then still stops."""
+        orch = self._orch()
+        for _ in range(3):
+            assert orch._is_feedback_stalled(self._FEEDBACK, 4) is False
+        assert orch._is_feedback_stalled(self._FEEDBACK, 4) is False
+        # Fifth identical turn at the same non-zero count: stall, honestly.
+        assert orch._is_feedback_stalled(self._FEEDBACK, 4) is True
+
+    def test_extended_branch_names_the_count_it_held(self, caplog):
+        orch = self._orch()
+        with caplog.at_level(logging.WARNING):
+            for _ in range(5):
+                orch._is_feedback_stalled(self._FEEDBACK, 4)
+        assert "criteria-passed count held at 4" in caplog.text
+
+    def test_zero_branch_names_what_it_consulted(self, caplog):
+        """CURE 3: the warning states both quantities and why 0 can be a lie."""
+        orch = self._orch()
+        with caplog.at_level(logging.WARNING):
+            for _ in range(3):
+                orch._is_feedback_stalled(self._FEEDBACK, 0)
+        assert "feedback signature" in caplog.text
+        assert "criteria-passed count read 0" in caplog.text
+        assert "a report with no requirements block reads as 0" in caplog.text
+
+
+class TestDirectModeGateReportsWhatItMeasured:
+    """End-to-end through the real gate, on disk, mocks only (no broker)."""
+
+    _AC = [
+        "- [ ] Implementation complete",
+        "- [ ] AC-ANTISTUB-1: All primary deliverable functions contain "
+        "meaningful implementation logic (no stubs, pass-only bodies, or TODOs)",
+    ]
+
+    def _worktree(self, tmp_path: Path) -> Path:
+        import subprocess
+
+        subprocess.run(
+            ["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True
+        )
+        return tmp_path
+
+    def _write_results(self, worktree: Path, promises) -> None:
+        results = {
+            "task_id": "TASK-CTL-002",
+            "implementation_mode": "direct",
+            "completed": True,
+            "success": True,
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passing": True,
+                "quality_gates_relaxed": True,
+            },
+            "files_created": [],
+            "files_modified": [],
+            "tests_written": [],
+            "completion_promises": promises,
+            "requirements_addressed": [],
+        }
+        d = worktree / ".guardkit" / "autobuild" / "TASK-CTL-002"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "task_work_results.json").write_text(json.dumps(results))
+
+    def _run(self, worktree: Path):
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        orch = AutoBuildOrchestrator(
+            repo_root=worktree, max_turns=5, enable_pre_loop=False
+        )
+        validator = CoachValidator(str(worktree), task_id="TASK-CTL-002")
+        fake_worktree = Mock()
+        fake_worktree.path = worktree
+        return orch._direct_mode_evidence_gate(
+            validator,
+            "TASK-CTL-002",
+            2,
+            fake_worktree,
+            0.0,
+            acceptance_criteria=self._AC,
+            task_type="feature",
+        )
+
+    def test_blocking_verdict_carries_the_real_measurement(self, tmp_path):
+        """The r3 shape, minus the CURE-1 recovery: 1 of 2 verified."""
+        worktree = self._worktree(tmp_path)
+        self._write_results(
+            worktree,
+            [
+                {"criterion_id": "AC-001", "status": "complete"},
+                {
+                    "criterion_id": "AC-002",
+                    # No criterion_text, so no fallback can rescue this one —
+                    # it is genuinely unmatched, and the gate must block.
+                    "status": "complete",
+                },
+            ],
+        )
+
+        result = self._run(worktree)
+
+        assert result is not None
+        report = result.report
+        assert report["decision"] == "feedback"
+        # CURE 2: what the gate measured now reaches the report.
+        assert report["validation_results"]["requirements"] == {
+            "criteria_total": 2,
+            "criteria_met": 1,
+            "all_criteria_met": False,
+            "missing": [self._AC[1]],
+        }
+        assert (
+            len(report["acceptance_criteria_verification"]["criteria_results"])
+            == 2
+        )
+        # CURE 2: the blocker is named for what it is.
+        assert report["issues"][0]["category"] == "direct_mode_gate"
+        # CURE 2: the message says what the check actually did.
+        assert "no matching completion promise" in report["rationale"]
+        assert "no disk evidence" not in report["rationale"]
+
+    def test_gate_verdict_is_no_longer_counted_as_zero_progress(self, tmp_path):
+        worktree = self._worktree(tmp_path)
+        self._write_results(
+            worktree,
+            [
+                {"criterion_id": "AC-001", "status": "complete"},
+                {"criterion_id": "AC-002", "status": "complete"},
+            ],
+        )
+
+        result = self._run(worktree)
+        orch = AutoBuildOrchestrator(repo_root=worktree, max_turns=5)
+        turn_record = Mock()
+        turn_record.coach_result = result
+
+        assert orch._count_criteria_passed(turn_record) == 1
+
+    def test_cure1_recovery_lets_the_gate_pass(self, tmp_path):
+        """With the bare-checkbox promise text, the gate no longer blocks.
+
+        This is the r3 failure end to end: the same promises, but with the
+        Player's real half-stripped ``criterion_text``. Before CURE 1 the
+        gate blocked; now it returns None and the LLM Coach gets to judge.
+        """
+        worktree = self._worktree(tmp_path)
+        self._write_results(
+            worktree,
+            [
+                {"criterion_id": "AC-001", "status": "complete"},
+                {
+                    "criterion_id": "AC-005",
+                    "criterion_text": "[ ] " + self._AC[1][6:],
+                    "status": "complete",
+                    "evidence": "real implementation present",
+                },
+            ],
+        )
+
+        assert self._run(worktree) is None
+
+
+class TestTerminalStallMessageNamesTheBlocker:
+    """CURE 3: the terminal says what it measured and who blocked.
+
+    Pinned prior (2), the guardkit ADR
+    ``Player_invocation_stall_misnamed_at_final_summary_layer``, one layer
+    deeper: here the misnaming is not ``player_result.error`` (genuinely
+    ``None`` — every r3 Player succeeded) but the terminal describing the
+    Player when the Player was never the blocker.
+    """
+
+    def _turn_record(self, *, synthetic: bool):
+        report = {"decision": "feedback"}
+        if synthetic:
+            report["coach_primary_synthetic_feedback"] = True
+        turn_record = Mock()
+        turn_record.decision = "feedback"
+        turn_record.feedback = "identical blocking feedback"
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = report
+        return turn_record
+
+    def _emit_terminal(self, caplog, *, synthetic: bool) -> str:
+        """Drive the terminal log line via the real loop-phase code path."""
+        orch = AutoBuildOrchestrator(repo_root=Path.cwd(), max_turns=10)
+        turn_record = self._turn_record(synthetic=synthetic)
+        with caplog.at_level(logging.ERROR):
+            for _ in range(3):
+                if orch._is_feedback_stalled(
+                    turn_record.feedback, 0, turn_record=turn_record
+                ):
+                    logging.getLogger(
+                        "guardkit.orchestrator.autobuild"
+                    ).error(
+                        orch._feedback_stall_terminal_message(
+                            "TASK-CTL-003", turn_record, 0
+                        )
+                    )
+        return caplog.text
+
+    def test_synthetic_blocker_is_named(self, caplog):
+        text = self._emit_terminal(caplog, synthetic=True)
+        assert "criteria-passed count did not move" in text
+        assert "the LLM Coach was not invoked" in text
+
+    def test_real_coach_stall_does_not_claim_a_synthetic_blocker(self, caplog):
+        text = self._emit_terminal(caplog, synthetic=False)
+        assert "criteria-passed count did not move" in text
+        assert "the LLM Coach was not invoked" not in text

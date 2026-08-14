@@ -6937,6 +6937,19 @@ class CoachValidator:
                 # ``**`` here before extraction. This widens recovery
                 # without weakening ``_extract_ac_id``'s caller contract.
                 normalized_text = cleaned_text.replace("**", "")
+                # close-the-loop 2026-08-14 reproducer: Player commonly emits
+                # a *half-stripped checkbox* in ``criterion_text`` — it drops
+                # the leading ``- `` bullet but keeps the ``[ ] `` marker
+                # (``[ ] AC-ANTISTUB-1: ...``) on the way out of SDK Claude.
+                # ``_strip_criterion_prefix`` only knows the full ``- [ ] ``
+                # form, so the bare marker survives, ``_extract_ac_id`` (which
+                # anchors on ``^``) returns ``None``, and no fallback key is
+                # built. Same precedent as the FEAT-FD32 ``**`` collapse
+                # above: widen recovery at the promise-lookup site, leave
+                # ``_strip_criterion_prefix`` / ``_extract_ac_id`` untouched.
+                normalized_text = self._strip_bare_checkbox_marker(
+                    normalized_text
+                )
                 _, text_id = self._extract_ac_id(normalized_text)
             if text_id and text_id != cid and text_id not in promise_map:
                 promise_map[text_id] = p
@@ -7075,6 +7088,44 @@ class CoachValidator:
                     cleaned = cleaned[i+2:].strip()
 
         return cleaned
+
+    # close-the-loop 2026-08-14: a *bare* markdown checkbox marker, i.e. the
+    # ``[ ] `` / ``[x] `` / ``[X] `` that is left behind when the ``- ``
+    # bullet has already been stripped somewhere upstream. Requires trailing
+    # whitespace so only a real checkbox marker is consumed.
+    _BARE_CHECKBOX_PREFIX_RE = re.compile(r'^\[[ xX]\]\s+')
+
+    @staticmethod
+    def _strip_bare_checkbox_marker(text: str) -> str:
+        """
+        Drop a single leading *bare* markdown checkbox marker.
+
+        This is a promise-lookup-site recovery helper (close-the-loop
+        2026-08-14). It is deliberately NOT folded into
+        :meth:`_strip_criterion_prefix`, which runs on every acceptance
+        criterion in the product (canonical side included) and is kept
+        byte-identical so the routine build path stays provably unchanged.
+
+        Handles ``"[ ] AC-X: text"`` → ``"AC-X: text"``. A marker with no
+        following whitespace (``"[ ]AC-X: text"``) is NOT a checkbox and is
+        left alone.
+
+        Parameters
+        ----------
+        text : str
+            Promise ``criterion_text``, already run through
+            :meth:`_strip_criterion_prefix`.
+
+        Returns
+        -------
+        str
+            Text with at most one leading bare checkbox marker removed and
+            surrounding whitespace re-stripped, so
+            :meth:`_extract_ac_id` sees the ID at position 0.
+        """
+        return CoachValidator._BARE_CHECKBOX_PREFIX_RE.sub(
+            '', text.lstrip(), count=1
+        ).strip()
 
     @staticmethod
     def _extract_ac_id(cleaned: str) -> Tuple[str, Optional[str]]:
