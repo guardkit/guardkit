@@ -3564,10 +3564,9 @@ class AutoBuildOrchestrator:
                         turn_record=turn_record,
                     ):
                         logger.error(
-                            f"Feedback stall detected for {task_id}: "
-                            f"identical feedback with no criteria progress "
-                            f"({criteria_passed} criteria passing). "
-                            f"Exiting loop early."
+                            self._feedback_stall_terminal_message(
+                                task_id, turn_record, criteria_passed
+                            )
                         )
                         return turn_history, "unrecoverable_stall"
 
@@ -5621,9 +5620,17 @@ class AutoBuildOrchestrator:
         if all(c == counts[0] for c in counts):
             if counts[0] == 0:
                 # True zero progress -- unrecoverable
+                # close-the-loop 2026-08-14 (CURE 3): state what was
+                # consulted. "0 criteria passing" was reported verbatim on
+                # turns where 4 of 6 criteria had in fact verified — the
+                # count was structurally zero because the blocking report
+                # carried ``validation_results.requirements: null``.
                 logger.warning(
-                    f"Feedback stall: identical feedback (sig={feedback_sig}) "
-                    f"for {threshold} turns with 0 criteria passing"
+                    f"Feedback stall: the Coach feedback signature "
+                    f"(sig={feedback_sig}) repeated for {threshold} "
+                    f"consecutive turns and the criteria-passed count read 0 "
+                    f"on each. Both quantities come from the Coach report; a "
+                    f"report with no requirements block reads as 0."
                 )
                 return True
 
@@ -5637,9 +5644,11 @@ class AutoBuildOrchestrator:
                 if len(ext_sigs) == 1:
                     if all(c == ext_counts[0] for c in ext_counts):
                         logger.warning(
-                            f"Feedback stall: identical feedback (sig={feedback_sig}) "
-                            f"for {extended_threshold} turns with {counts[0]} criteria "
-                            f"passing (extended threshold for partial progress)"
+                            f"Feedback stall: the Coach feedback signature "
+                            f"(sig={feedback_sig}) repeated for "
+                            f"{extended_threshold} consecutive turns and the "
+                            f"criteria-passed count held at {counts[0]} on "
+                            f"each (extended threshold for partial progress)"
                         )
                         return True
                     # Plateau-tolerant branch (TASK-GK-COACH-001):
@@ -5752,6 +5761,47 @@ class AutoBuildOrchestrator:
             return True
 
         return False
+
+    def _feedback_stall_terminal_message(
+        self,
+        task_id: str,
+        turn_record: TurnRecord,
+        criteria_passed: int,
+    ) -> str:
+        """Build the feedback-stall terminal line (close-the-loop CURE 3).
+
+        Pure string construction — no thresholds, no control flow, no
+        decision. Extracted from ``_loop_phase`` only so the wording is
+        directly testable.
+
+        The old line read "identical feedback with no criteria progress
+        (0 criteria passing)", which described the Player. On the round-3
+        receipts the Player had made forward progress on turn 1 and then had
+        nothing left to do: the blocking verdict came from a deterministic
+        gate and the LLM Coach was never invoked. The line now states the two
+        quantities the detector actually consulted, and names a synthetic
+        blocker when that is what stopped the turn.
+        """
+        report = getattr(
+            getattr(turn_record, "coach_result", None), "report", None
+        )
+        synthetic_blocker = bool(
+            isinstance(report, dict)
+            and report.get("coach_primary_synthetic_feedback")
+        )
+        blocker_note = (
+            " The blocking verdict was synthetic (a deterministic gate); "
+            "the LLM Coach was not invoked on the trailing turn."
+            if synthetic_blocker
+            else ""
+        )
+        return (
+            f"Feedback stall detected for {task_id}: the Coach feedback "
+            f"signature was identical across the stall window and the "
+            f"criteria-passed count did not move (latest turn: "
+            f"{criteria_passed} passing; peak: {self._max_criteria_passed})."
+            f"{blocker_note} Exiting loop early."
+        )
 
     def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
         """
@@ -7863,6 +7913,9 @@ class AutoBuildOrchestrator:
 
         must_fix: List[Dict[str, Any]] = []
         advisories: List[Dict[str, Any]] = []
+        # close-the-loop 2026-08-14 (CURE 2): gate-scope handle on the AC
+        # measurement, so a blocking verdict can report what it measured.
+        gate_req_validation = None
 
         # --- AC1: AC-level disk verification ----------------------------------
         criteria = acceptance_criteria or []
@@ -7884,6 +7937,8 @@ class AutoBuildOrchestrator:
                 )
                 req_validation = None
 
+            gate_req_validation = req_validation
+
             if req_validation is not None and not req_validation.all_criteria_met:
                 unmet_ids = [
                     cr.criterion_id
@@ -7897,9 +7952,18 @@ class AutoBuildOrchestrator:
                         "severity": "must_fix",
                         "category": "direct_mode_ac_unverified",
                         "description": (
+                            # close-the-loop 2026-08-14 (CURE 2, message
+                            # honesty): this check reads the Player's
+                            # ``completion_promises``; it never touches disk.
+                            # The old wording ("no disk evidence") sent a
+                            # Player off writing extra tests to manufacture
+                            # disk evidence — and it was rejected
+                            # byte-identically, because the real miss was a
+                            # promise that had not been matched.
                             f"Direct mode: {unmet}/{total} acceptance criteria "
-                            f"have no disk evidence (unmet: {unmet_ids}). Direct "
-                            f"mode relaxes coverage/arch but NOT AC delivery."
+                            f"have no matching completion promise "
+                            f"(unmet: {unmet_ids}). Direct mode relaxes "
+                            f"coverage/arch but NOT AC delivery."
                         ),
                         "details": {"unmet_ids": unmet_ids, "total": total},
                     }
@@ -8026,6 +8090,12 @@ class AutoBuildOrchestrator:
             worktree=worktree,
             rationale=rationale,
             start_time=start_time,
+            # close-the-loop 2026-08-14 (CURE 2): this gate MEASURED the
+            # criteria — say so, and name the blocker as this gate rather
+            # than a Coach exception that never happened (the LLM Coach is
+            # not invoked on this path at all).
+            requirements=gate_req_validation,
+            category="direct_mode_gate",
         )
 
     def _bdd_authoring_sweep_gate(
@@ -8112,6 +8182,13 @@ class AutoBuildOrchestrator:
         # _evidence_repo_gate call site sets this True (pure-absent sibling
         # signal); every other caller leaves it False.
         evidence_repo_signal_absent: bool = False,
+        # close-the-loop 2026-08-14 (CURE 2): when the *caller* already
+        # measured the acceptance criteria, hand that measurement through so
+        # the synthetic report states what was actually measured instead of
+        # nulls. Only ``_direct_mode_evidence_gate`` passes these; every
+        # other call site keeps today's byte-identical report.
+        requirements: Optional["RequirementsValidation"] = None,
+        category: str = "coach_primary_exception",
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -8143,6 +8220,34 @@ class AutoBuildOrchestrator:
         )
         decision_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # close-the-loop 2026-08-14 (CURE 2). Default (``requirements=None``)
+        # keeps the historical nulls byte-for-byte. When a caller DID measure
+        # the criteria, report that measurement: leaving it null made
+        # ``_count_criteria_passed`` return 0 structurally, which made
+        # ``_is_feedback_stalled`` take its "true zero progress —
+        # unrecoverable" branch on turns that had in fact verified 4 of 6
+        # criteria. No decision logic is changed here; only the inputs those
+        # readers see become honest.
+        requirements_block: Optional[Dict[str, Any]] = None
+        criteria_results_block: List[Dict[str, Any]] = []
+        if requirements is not None:
+            requirements_block = {
+                "criteria_total": requirements.criteria_total,
+                "criteria_met": requirements.criteria_met,
+                "all_criteria_met": requirements.all_criteria_met,
+                "missing": list(requirements.missing),
+            }
+            criteria_results_block = [
+                {
+                    "criterion_id": cr.criterion_id,
+                    "criterion_text": cr.criterion_text,
+                    "result": cr.result,
+                    "status": cr.status,
+                    "evidence": cr.evidence,
+                }
+                for cr in requirements.criteria_results
+            ]
+
         synthetic = {
             "task_id": task_id,
             "turn": turn,
@@ -8150,14 +8255,16 @@ class AutoBuildOrchestrator:
             "validation_results": {
                 "quality_gates": None,
                 "independent_tests": None,
-                "requirements": None,
+                "requirements": requirements_block,
             },
             "criteria_verification": [],
-            "acceptance_criteria_verification": {"criteria_results": []},
+            "acceptance_criteria_verification": {
+                "criteria_results": criteria_results_block
+            },
             "issues": [
                 {
                     "severity": "must_fix",
-                    "category": "coach_primary_exception",
+                    "category": category,
                     "description": rationale,
                 }
             ],
