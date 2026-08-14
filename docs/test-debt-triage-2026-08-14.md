@@ -1,0 +1,229 @@
+# Test-debt triage — 2026-08-14
+
+**Subject.** 141 pre-existing failing tests across `tests/unit` + `tests/integration`
+on `main`. Not caused by any lane landed that day — the same failures reproduce on
+an untouched checkout. Every future lane was paying for them in
+differential-verification overhead: you cannot tell "my change broke something" from
+"this was already red" without re-measuring the whole baseline first.
+
+**What this lane did.** Fixed 71 of them and honestly skipped 2, touching **tests,
+fixtures and test-only plumbing only**. The other 68 are ledgered below with a
+diagnosis each. Four of those are the valuable output: they are tests that are
+probably *right*, pointing at production code that is probably wrong.
+
+**Scope fence.** No production file was changed. Any failure whose honest cure needs
+a production change was ledgered, never fixed — a production change deserves its own
+coach-gated lane. No test was deleted.
+
+---
+
+## Counts
+
+Measured in this lane's own venv (fresh worktree, `uv venv --python 3.12 && uv sync
+--all-extras`, Python 3.12.3), running `pytest tests/unit tests/integration`.
+Absolute counts drift between venvs, so these are differential against this venv's
+own baseline, taken before any edit:
+
+| | Failed | Passed | Skipped | xfail |
+|---|---|---|---|---|
+| **Before** | 141 | 10,183 | 318 | 1 |
+| **After** | **68** | **10,254** | **320** | 1 |
+| Change | **−73** | +71 | +2 | 0 |
+
+**Zero new failures.** The 68 that remain are a strict subset of the original 141
+— nothing that passed before this lane fails after it.
+
+The −73 is 71 tests made to pass plus 2 turned into honest, reasoned skips.
+
+---
+
+## Two findings that outrank the arithmetic
+
+### 1. The suite was reading the repo's own config and the machine's own PATH
+
+Six failures came from guardkit's own `.guardkit/config.yaml` — which pins
+`autobuild.coach.contract: v4` — leaking into tests that assert the *code* default
+(`coachsplit`). The resolver falls through the environment variable to the **current
+directory's** config, so those tests silently measured the repo's configuration
+instead of the behaviour they described. Their result depended on where the suite
+was run. That is worse than being red: run from anywhere else they would have gone
+green while testing nothing.
+
+One more failure came from a fixture shelling out to a bare `python`, which does not
+exist on this machine (only `python3`).
+
+Worse, `tests/unit/orchestrator/test_coach_output_parser.py::test_default_contract_is_coachsplit`
+did `os.environ.pop("GUARDKIT_COACH_CONTRACT", None)` with **no restore**. It was
+silently unpinning the coach contract for every test that ran after it in the same
+session — an active order-polluter, not merely a failing test. Now fixed via
+`monkeypatch`.
+
+### 2. Seven red tests are pointing at a live production bug
+
+`feature_orchestrator.py:5082` sets `feature.status = "awaiting_merge"`.
+`feature_loader.py:484` declares:
+
+```python
+status: Literal["planned", "in_progress", "completed", "failed", "paused"] = "planned"
+```
+
+`awaiting_merge` is not in that list, and it appears nowhere else in the codebase.
+Every feature archival therefore raises a validation error on save. Confirmed
+directly in this venv, outside the test suite:
+
+```
+ValidationError: 1 validation error for Feature
+status
+  Input should be 'planned', 'in_progress', 'completed', 'failed' or 'paused'
+  [type=literal_error, input_value='awaiting_merge', input_type=str]
+```
+
+The tests are right; the code is wrong. Ledgered and left red — the fix is a
+production enum change and belongs in its own gated lane. **Do not make these green.**
+
+---
+
+## The shape of the debt
+
+The single largest driver is not "stale mocks" in the abstract. It is that
+`AutoBuildOrchestrator` grew real machinery — worktree git commits, a Phase 4/5
+specialist path, an M0 seat fence, a stall detector, an oracle-declaration law —
+while a generation of integration fixtures kept modelling the 2025 orchestrator.
+The clearest evidence: **one conftest, three attributes and a `git init` recovered
+38 tests.**
+
+The second driver is a governance fence landing on tests that never declared a seat.
+The M0 fence and the langgraph harness cutover account for roughly 28 failures across
+L2/L3/L4/L5/L15. Those want **one ruling, not fifteen fixes** — and the ruling should
+not be `GUARDKIT_ALLOW_FRONTIER=1`, which would switch the fence off inside the suite
+and hide the next regression. The repo's own `tests/conftest.py` says exactly this,
+and already ships `m0_routine_fleet_route` as the sanctioned answer.
+
+---
+
+## What was fixed
+
+Every row was measured in this venv, before and after, at file scope.
+
+| # | Tests | File(s) | Class | What changed | Before → After |
+|---|---|---|---|---|---|
+| F1 | 38 | `tests/integration/quality_gates/conftest.py` | stale fixture | `mock_agent_invoker` gains an int-returning `_calculate_sdk_timeout`, a base `sdk_timeout_seconds`, and an AsyncMock `_invoke_with_role`; `task_scenario` makes the worktree a real git repo (`init -b main` + seed commit, local-only identity) | 49 → 11 failed in that directory |
+| F2 | 5 | `tests/unit/test_autobuild_timeout_budget.py` | stale fixture | `_make_orchestrator` (a `__new__` helper) gains `_run_id` plus the invoker's timeout defaults | 5 → 0 (46 passed) |
+| F3 | 4 | `tests/integration/test_timeout_budget.py`, `test_cancellation_timing.py` | stale fixture | shared `_stub_sdk_timeout` helper mirroring the real method's contract (an int, capped at the remaining budget), plus an awaitable `_invoke_with_role` | 4 → 0 (11 passed) |
+| F4 | 3 | `tests/unit/test_inter_wave_bootstrap.py` | stale fixture | fake tasks get `estimated_minutes = None` — the real "no estimate" value — since `_resolve_wave_task_timeouts` now compares it to a number | 3 → 0 |
+| F5 | 6 | `test_coach_grammar.py` (3), `test_agent_invoker.py` (2), `test_coach_output_parser.py` (1) | **env-dependent** | five tests pin `GUARDKIT_COACH_CONTRACT=coachsplit` via monkeypatch, naming the contract their assertions are about; the sixth chdirs to an empty `tmp_path` so "nothing configures otherwise" is actually true, and its unrestored `environ.pop` is replaced with `monkeypatch.delenv` | 6 → 0 (569 passed across the three files) |
+| F6 | 4 | `tests/unit/commands/test_{arch_refine,system_arch,design_refine,system_design}*.py` | stale test | `spec_content` strips a leading YAML frontmatter block. All 32 command specs now carry `format_version`; the tests assert on the spec's prose. **No command markdown changed** — that surface belongs to another lane tonight | 4 → 0 (440 passed) |
+| F7 | 1 | `tests/integration/orchestrator/test_red_baseline_replay.py` | **env-dependent** | the smoke command shells out for real; `sys.executable` replaces a bare `python`, which is absent on this machine | 1 → 0 |
+| F8 | 2 | `tests/integration/autobuild/test_bdd_end_to_end.py` | stale fixture | the fixture worktree writes a minimal `pytest.ini`. Under TS-lane D.1b an undeclared toolchain is an ABSENT oracle rather than a guessed `pytest tests/`, so a bare `tmp_path` failed independent verification and drowned the `bdd_results` signal under test | 2 → 0 |
+| F9 | 1 | `tests/integration/test_autobuild_context_opt.py` | superseded pin | `TASK_WORK_SDK_MAX_TURNS` 50 → 100. The receipt is in the production comment: TASK-FIX-ASPF-005 raised it because with `--fresh`, Player needs ~35–50 turns and 50 left no headroom | 1 → 0 (38 passed) |
+| F10 | 3 | `tests/integration/test_config_error_fast_exit.py` | stale fixture + **dead premise** | invoker defaults, and the "invalid" task type swapped: `enhancement` is now a **registered alias** for `feature` in `TASK_TYPE_ALIASES`, so the tests were feeding a valid type and asserting rejection | 5 → 2 (the 2 are ledgered as L8) |
+| F11 | 3 | `tests/integration/test_ablation_mode.py` | stale fixture | `git init -b main` (a bare `init` gave `master` here, and `WorktreeManager` branches off `main`), plus real values on the `MagicMock(spec=AgentInvoker)` | 3 → 0 (5 passed) |
+| F12 | 2 | `tests/integration/test_quality_gate_validation.py` | **env-dependent** | honest skip-guard. These shell out to a real `guardkit-py autobuild feature` run needing the CLI **and** a live model seat; the old guard only checked `shutil.which`, which is always true in a synced venv. Now marked `live` and gated on `GUARDKIT_LIVE_AUTOBUILD_TESTS=1`, with the skip reason naming both dependencies | 2 failed → 2 skipped |
+| F13 | 1 | `tests/integration/test_autobuild_preloop.py` | superseded pin | the pre-loop gates now normalise `skip_arch_review: False` into the `execute_design_phase` options dict; the pinned call args are updated | 2 → 1 (the 1 is ledgered as L15) |
+
+**Total: 71 cured + 2 honestly skipped.**
+
+### Commits in this lane
+
+One per group, each carrying its own story and its own measured before/after:
+
+```
+751af469  test(quality-gates): teach the shared conftest what the orchestrator now needs
+7d59eb15  test(timeout-budget): give the mock invoker the numbers and awaitables the loop needs
+e724612c  test(coach-contract): stop the suite reading guardkit's own config, and kill an order-polluter
+0b3fde93  test(command-specs): read the spec body, not the frontmatter header
+07a31e86  test(red-baseline): shell out to the interpreter running the suite, not a bare `python`
+6ef17e94  test(bdd-e2e): declare a toolchain in the fixture worktree
+9d6daf57  test(pins): update two tests pinning values production deliberately changed
+a33ecbd9  test(config-error): stop testing config rejection with a type that is now valid
+128ceebc  test(ablation): pin the fixture repo's branch to main and finish the invoker mock
+9d23787c  test(quality-gate-validation): guard the two tests that need a live autobuild run
+```
+
+---
+
+## The ledger — 68 failures not fixed here
+
+### The production-defect suspects — read these first
+
+These four are the valuable output of the exercise. In each case the test is
+probably **right** and the production code is probably **wrong**. The value they are
+currently delivering is the bug report. Resist the pull to make them green.
+
+| # | Tests | Diagnosis |
+|---|---|---|
+| **L1** | 7 — `tests/integration/test_feature_archival.py` | `feature_orchestrator.py:5082` writes `status = "awaiting_merge"`; the `Literal` at `feature_loader.py:484` omits it, so **every feature archival raises a validation error on save**. Confirmed outside the suite (see above). `awaiting_merge` appears nowhere else in the codebase. Cure = a production enum change; needs its own gated lane. |
+| **L8** | 2 — `tests/integration/test_config_error_fast_exit.py` (residue after F10) | With a genuinely-invalid task type, `CoachValidator.validate` **does** produce the configuration error — verified directly. But `_loop_phase` never fast-exits: it goes on to invoke the LLM Coach, which the tests had stubbed as "should not be reached". The fast-exit wiring may have regressed. Making these green would mean giving that fallback Coach a return value, which would **hide** the fact the fast-exit did not fire. |
+| **L10** | 2 — `tests/integration/test_drift_detection_workflow.py` | `SpecDriftDetector.analyze_drift` reports 100% implemented for a fixture that **deliberately omits a method**, and the formatted report no longer names the implementation file. A drift detector that cannot see a missing method is not detecting drift. |
+| **L11** | 1 — `tests/integration/lib/test_agent_generator_integration.py` | `_identify_capability_needs` returns zero needs where the test states the hard-coded `testing_framework` pattern always fires. |
+
+### Awaiting one ruling, not fifteen fixes
+
+Roughly 28 failures share a single cause: the M0 seat fence and the langgraph
+harness cutover landing on tests that never declared a seat.
+
+| # | Tests | Class | Diagnosis |
+|---|---|---|---|
+| L2 | 11 — `test_sdk_delegation.py` | stale (harness cutover) | Patches `sys.modules["claude_agent_sdk"]`. The default harness has been langgraph since TASK-HMIG-011 (2026-06-16). Under `GUARDKIT_HARNESS=sdk` the M0 fence refuses, because the bundled CLI default is an Anthropic seat. **Needs a ruling: port to langgraph, or fence-and-skip.** |
+| L3 | 2 — `test_autobuild_phase_4_5_orchestration.py` | stale (same family) | `StubSDKRecorder` never fires — "expected two SDK calls, got 0". |
+| L4 | 10 — `test_autobuild_delegation.py` | **dead claim (~5)** + L2 family (3) + multi-wall (2) | `asyncio.create_subprocess_exec` and `--mode=` appear **nowhere** in `agent_invoker.py`: the subprocess-CLI delegation mechanism is gone. Flag for whoever takes this: the file's currently-*passing* subprocess tests pass **vacuously**, which is worse than the red ones. |
+| L5 | 4 — `test_autobuild_e2e.py` | stale (multi-wall) | git-init branch, then invoker attributes, then the M0 fence in the **design** phase — which `model=` does not satisfy, because `task_work_interface.py:503` resolves its own seat. Possible secondary `TASK-FIX-MODELPLUMB` gap into the pre-loop harness. |
+| L15 | 1 — `test_autobuild_preloop.py` (residue after F13) | L2 family | `test_player_fails_without_plan` gets the M0-fence message instead of the plan-missing error. |
+
+The ruling should **not** be `GUARDKIT_ALLOW_FRONTIER=1` for the suite. That switches
+the fence off exactly where the next regression would be caught. `tests/conftest.py`
+already ships `m0_routine_fleet_route` as the sanctioned way to declare a routine
+local-fleet seat for the duration of one test.
+
+### Dead claims — deletion candidates, with receipts
+
+| # | Tests | Diagnosis |
+|---|---|---|
+| L6 | 7 — `test_template_create_orchestrator_integration.py` | `TestPhase75BatchEnhancement` (6 tests) plus one assertion in `test_orchestrator_has_all_phases` target `_phase7_5_enhance_agents`, **removed by TASK-SIMP-9ABE** for a 0% success rate — the source comment recording this is at `installer/core/commands/lib/template_create_orchestrator.py:1528`. The claim is dead: the feature is retired. Deletion is defensible **with that receipt written into the commit**, which is why it is ledgered rather than done here. Two side notes: an orphan `_display_enhancement_errors` (line 2515) now has zero callers, and these tests assert on code *strings*, a weak test form worth replacing rather than restoring. |
+
+### Behavioural disagreements and residue
+
+| # | Tests | Class | Diagnosis |
+|---|---|---|---|
+| L7 | 11 — `tests/integration/quality_gates/` residue after F1 | mixed | 7 assert `max_turns_exceeded` but get `unrecoverable_stall`: the stall detector (TASK-FIX-7A07, threshold 3) fires first because the fixtures feed identical Coach feedback every turn. Which outcome is correct is a design question, not a mock fix. 3 construct `QualityGateBlocked(score=…)` where the signature is `(reason, gate_name, details)`. 1 leaks a coroutine from a bare `AsyncMock()` `invoke_coach` into `_extract_feedback`. |
+| L9 | 7 — `test_smoke_gate_blocks_wave.py` (6), `test_smoke_gate_noop.py` (1) | stale mock **over** a real disagreement | `_common_patches` stubs `find_task` as `lambda f, tid: f` — "any non-None task is fine" — which broke when `_resolve_wave_task_timeouts` began reading `task.estimated_minutes`. Past that wall the tests still disagree with production: `_execute_wave` fires twice where 3 are expected, `run_smoke_gate` twice where 1 is expected. **Needs a ruling on the intended retry sequence** before the mock is worth repairing. |
+| L12 | 1 — `test_requires_infra_propagation.py` | stale test | The key **is** set in production (`autobuild.py:7327`, `:7506`), but `validate` is never reached: `_direct_mode_evidence_gate` / `_bdd_authoring_sweep_gate` short-circuit first. Needs a decision on whether to drive the test past the new gates. |
+| L13 | 1 — `test_skip_arch_review_implement_only.py` | stale test | The orchestrator is built with no `agent_invoker`, and the Coach path now requires one (`'NoneType' object has no attribute 'invoke_coach'` → synthetic feedback). Fixing it means **authoring new test intent** — a Coach mock that approves — which is writing a new test, not repairing an old one. |
+| L14 | 1 — `test_worktree_checkpoints_evidence.py` | **flaky / ordering** | Passes alone, fails inside a full `tests/unit` run — reproduced. `assert 'plain' not in {'plain': 'HEAD'}`: a non-git sibling receives an evidence commit whose hash is the literal fallback ref `"HEAD"`. The polluter is inside `tests/unit` and has not been isolated; the `os.chdir`/`GIT_DIR` and unrestored-`.start()` candidates were ruled out. |
+
+### Ledger totals
+
+| Group | Count |
+|---|---|
+| Production-defect suspects (L1, L8, L10, L11) | 12 |
+| M0 fence / langgraph cutover (L2, L3, L5, L15) + L4's share | 28 |
+| Dead claims (L6, part of L4) | ~12 |
+| Behavioural disagreements and residue (L7, L9, L12, L13) | 20 |
+| Flaky / ordering (L14) | 1 |
+| **Total** | **68** |
+
+(The L4 file splits across three causes, so the middle rows overlap by design; the
+per-file counts in the tables above are exact.)
+
+---
+
+## Cautions for whoever picks this up
+
+1. **Re-measure in your own venv.** Absolute counts drift between venvs and Python
+   versions. This lane's numbers are differential against a baseline taken in the same
+   tree with the same interpreter (3.12.3). Take your own before touching anything.
+
+2. **L1, L8, L10 and L11 are probably right.** They are bug reports wearing test
+   clothing. The temptation to turn a red suite green is exactly what would delete
+   them. Each needs a production lane, not a fixture edit.
+
+3. **`test_autobuild_delegation.py` has vacuously-passing tests.** Its subprocess
+   tests currently pass because the mechanism they patch no longer exists. Green there
+   means nothing. Anyone deleting the red tests in that file should look at the green
+   ones in the same pass.
+
+4. **The M0 fence group wants a decision first.** Fifteen separate fixture repairs
+   would be wasted work if the ruling is "port these to langgraph" or "fence and skip".
+
+5. **Do not reach for `GUARDKIT_ALLOW_FRONTIER=1`.** It would turn the fence off
+   inside the suite, which is where you most want it on.
