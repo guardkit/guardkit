@@ -45,13 +45,10 @@ try:
 except ImportError:
     AC_LINTER_AVAILABLE = False
 
-try:
-    from installer.core.commands.lib.bdd_oracle_nudge import (
-        check_bdd_oracle_activation,
-    )
-    BDD_ORACLE_NUDGE_AVAILABLE = True
-except ImportError:
-    BDD_ORACLE_NUDGE_AVAILABLE = False
+# R1 DE-WIRE (Rich 08-14): the bdd_oracle_nudge import/callsite (TASK-FIX-RWOP1.2 /
+# TASK-FP-NDG1) is removed — the nudge armed the retired BDD oracle by pushing
+# authors toward @task: tags. bdd_oracle_nudge.py stays on disk unreferenced
+# until R2 deletes it.
 
 try:
     from installer.core.commands.lib.smoke_gates_nudge import (
@@ -963,19 +960,9 @@ def main():
             for note in auto_serialise_notes:
                 print(f"   {note}")
 
-    # R2 BDD-oracle activation nudge — imperative callsite (TASK-FIX-RWOP1.2).
-    # Fires when `features/*.feature` exists with zero @task:<TASK-ID> tags, so
-    # authors who are one edit away from activating R2 see a banner. Same
-    # producer-runs-nudge shape as the AC linter above. See feature-plan.md
-    # Step 10.6 and TASK-FP-NDG1.
-    if BDD_ORACLE_NUDGE_AVAILABLE and not args.quiet:
-        bdd_oracle_notice = check_bdd_oracle_activation(
-            project_root=Path(args.base_path),
-            quiet=args.quiet,
-        )
-        if bdd_oracle_notice:
-            print()
-            print(bdd_oracle_notice)
+    # R1 DE-WIRE (Rich 08-14): the R2 BDD-oracle activation nudge callsite
+    # (TASK-FIX-RWOP1.2 / TASK-FP-NDG1, feature-plan.md Step 10.6) is removed —
+    # it pushed authors toward @task: tags that armed the retired oracle.
 
     # R3 feature-level smoke-gates activation nudge — imperative callsite
     # (TASK-FIX-RWOP1.2). Fires when the just-written feature YAML has >=2

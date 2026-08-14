@@ -7309,14 +7309,9 @@ class AutoBuildOrchestrator:
             if direct_gate_result is not None:
                 return direct_gate_result
 
-            # TASK-AB-BDDAUTHOR01: deterministic authoring-sweep gate.
-            # Shared with the primary path so the legacy revert cannot
-            # bypass it (both-Coach-paths ledger constraint).
-            sweep_gate_result = self._bdd_authoring_sweep_gate(
-                validator, task_id, turn, worktree, start_time
-            )
-            if sweep_gate_result is not None:
-                return sweep_gate_result
+            # R1 DE-WIRE (Rich 08-14): the deterministic authoring-sweep gate
+            # (TASK-AB-BDDAUTHOR01) is removed from both Coach paths —
+            # nothing produces bdd_authoring_sweep any more.
 
             validation_result = validator.validate(
                 task_id=task_id,
@@ -7611,15 +7606,9 @@ class AutoBuildOrchestrator:
         if direct_gate_result is not None:
             return direct_gate_result
 
-        # TASK-AB-BDDAUTHOR01: deterministic authoring-sweep gate. Runs
-        # AFTER the evidence-repo/direct-mode gates and BEFORE the LLM Coach
-        # so an undefined-step red signal cannot be approved over by Coach
-        # leniency (the BDDW-002 lesson; both-Coach-paths ledger constraint).
-        sweep_gate_result = self._bdd_authoring_sweep_gate(
-            validator, task_id, turn, worktree, start_time
-        )
-        if sweep_gate_result is not None:
-            return sweep_gate_result
+        # R1 DE-WIRE (Rich 08-14): the deterministic authoring-sweep gate
+        # (TASK-AB-BDDAUTHOR01) is removed from both Coach paths — nothing
+        # produces bdd_authoring_sweep any more.
 
         # Step 2: invoke LLM Coach via AgentInvoker, threading the bundle.
         # Part C (this PR) extends invoke_coach + _build_coach_prompt to
@@ -8107,77 +8096,9 @@ class AutoBuildOrchestrator:
             category="direct_mode_gate",
         )
 
-    def _bdd_authoring_sweep_gate(
-        self,
-        validator: "CoachValidator",
-        task_id: str,
-        turn: int,
-        worktree: Worktree,
-        start_time: float,
-    ) -> Optional[AgentInvocationResult]:
-        """Deterministic BDD authoring-sweep gate (TASK-AB-BDDAUTHOR01).
-
-        Mirrors ``_direct_mode_evidence_gate`` EXACTLY: shared by BOTH Coach
-        paths (primary LLM Coach and legacy ``GUARDKIT_COACH_LEGACY=1``) so
-        neither implementation can bypass it, running AFTER the evidence-repo
-        gate and BEFORE the LLM Coach so a red sweep signal cannot be
-        approved over by Coach leniency.
-
-        Blocks (synthetic feedback) ONLY on the sweep's deterministic
-        blocking set — ``scenarios_undefined > 0`` or a sweep runner-error
-        sentinel — as computed by
-        ``CoachValidator._check_bdd_authoring_sweep``. Advisory sweep
-        findings never block here (they ride the evidence bundle into the
-        LLM Coach prompt). A turn with no ``bdd_authoring_sweep`` key is a
-        structural no-op: absence is never a verdict.
-        """
-        try:
-            task_work_results = validator.read_quality_gate_results(task_id)
-        except Exception:  # noqa: BLE001 — gate must never crash the Coach flow
-            return None
-        if not isinstance(task_work_results, dict):
-            return None
-        if "bdd_authoring_sweep" not in task_work_results:
-            return None
-
-        try:
-            blocking, _non_blocking = validator._check_bdd_authoring_sweep(
-                task_work_results
-            )
-        except Exception as exc:  # noqa: BLE001 — fail-open, never invent a red
-            logger.warning(
-                "BDD authoring-sweep gate raised for %s turn %s: %s "
-                "(gate skipped — fail-open).",
-                task_id, turn, exc,
-            )
-            return None
-
-        if not blocking:
-            return None
-
-        lines = [
-            "BDD authoring sweep blocks this turn "
-            "(TASK-AB-BDDAUTHOR01 — the authoring task's job is making "
-            "scenarios executable):"
-        ]
-        for issue in blocking:
-            lines.append(f"- {issue.get('description', '')}")
-            for example in issue.get("undefined_examples", [])[:10]:
-                lines.append(f"    • {example}")
-            for err in issue.get("errors", [])[:3]:
-                lines.append(f"    • {err}")
-        rationale = "\n".join(lines)
-        logger.info(
-            "BDD authoring-sweep gate blocks %s turn %s:\n%s",
-            task_id, turn, rationale,
-        )
-        return self._emit_synthetic_coach_feedback(
-            task_id=task_id,
-            turn=turn,
-            worktree=worktree,
-            rationale=rationale,
-            start_time=start_time,
-        )
+    # R1 DE-WIRE (Rich 08-14): _bdd_authoring_sweep_gate
+    # (TASK-AB-BDDAUTHOR01) removed — the factory no longer executes
+    # pytest-bdd glue sweeps on any Coach path.
 
     def _emit_synthetic_coach_feedback(
         self,

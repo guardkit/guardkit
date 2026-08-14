@@ -10,6 +10,15 @@ exercises real code, while keeping the env probe deterministic.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): validate_feature_environment's pytest-bdd probe body is removed (structural no-op pending R2 deletion); "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 from pathlib import Path
 from typing import List, Optional
 
