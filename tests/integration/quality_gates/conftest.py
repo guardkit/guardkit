@@ -18,6 +18,8 @@ Architecture:
 
 import pytest
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
@@ -41,6 +43,37 @@ from guardkit.orchestrator.quality_gates import (
     QualityGateStatus,
 )
 from guardkit.worktrees import Worktree
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _git_init_seeded(path: Path) -> None:
+    """Make ``path`` a real git repo with a `main` branch and one commit.
+
+    The orchestrator writes evidence commits into the worktree it is handed.
+    A directory that is not a git repo — or an initialised repo with no HEAD —
+    makes those calls fail, which surfaces as an unrelated-looking scenario
+    failure. Local identity is set so the seed commit works on a machine with
+    no global git user.
+    """
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+    }
+    run = lambda *args: subprocess.run(  # noqa: E731
+        ["git", "-C", str(path), *args],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    run("init", "-b", "main")
+    run("config", "user.email", "test@guardkit.local")
+    run("config", "user.name", "GuardKit Test")
+    run("commit", "--allow-empty", "-m", "seed")
 
 
 # ============================================================================
@@ -119,9 +152,16 @@ complexity: {scenario['complexity']}
 """
     )
 
-    # Create worktree structure
+    # Create worktree structure.
+    #
+    # The orchestrator now commits evidence into the worktree, so the directory
+    # has to be a real git repo or every scenario dies on the first git call.
+    # A bare `git init` is not enough: the default branch name varies by git
+    # config and an empty repo has no HEAD, so we pin `-b main` and seed one
+    # commit.
     worktree_dir = tmp_path / ".guardkit" / "worktrees" / task_id
     worktree_dir.mkdir(parents=True)
+    _git_init_seeded(worktree_dir)
 
     return {
         "task_id": task_id,
@@ -160,10 +200,23 @@ def mock_worktree_manager(mock_worktree):
 
 @pytest.fixture
 def mock_agent_invoker():
-    """Create mock AgentInvoker with AsyncMock."""
+    """Create mock AgentInvoker with AsyncMock.
+
+    The orchestrator reads three things off the invoker that a bare ``Mock``
+    answers with another ``Mock``, which then blows up downstream:
+
+    - ``_calculate_sdk_timeout(...)`` is compared against / arithmetic'd with
+      numbers, so it must return a real ``int``.
+    - ``sdk_timeout_seconds`` is the base the orchestrator budgets against.
+    - ``_invoke_with_role(...)`` is awaited, so it must be an ``AsyncMock``;
+      a plain ``Mock`` returns a non-awaitable.
+    """
     invoker = Mock()
     invoker.invoke_player = AsyncMock()
     invoker.invoke_coach = AsyncMock()
+    invoker.sdk_timeout_seconds = 1200
+    invoker._calculate_sdk_timeout = Mock(return_value=1200)
+    invoker._invoke_with_role = AsyncMock()
     return invoker
 
 
