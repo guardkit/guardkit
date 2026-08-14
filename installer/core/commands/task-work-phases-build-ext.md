@@ -12,89 +12,21 @@ description: Reference slices for /task-work — extended documentation, not a c
 
 ## Step 4 Phases — Build (Phase 3-BDD … Phase 5.5)
 
-#### Phase 3-BDD: BDD Test Generation (BDD Mode Only)
+#### Phase 3-BDD: RETIRED (R1 de-instruct, 2026-08-14)
 
-**IF mode == 'bdd'**:
+> **BDD test generation is RETIRED per Rich's 2026-08-14 ruling**
+> (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`, Q10; mission
+> red-pen #2 discharge note). BDD **as specification is KEPT** — Gherkin scenarios
+> remain the approved spec artifact and drive planning. BDD **as execution is
+> out**: do NOT generate step definitions, glue code, `tests/step_defs/`,
+> pytest-bdd/Cucumber/SpecFlow bindings, or BDD test configuration for any stack.
+> Scenario verification is moving to frozen executable twins under the routing
+> law (`verifier:` stamp — Hurl twins for wire scenarios, riding registered
+> gates / `behavioural_oracle.command`). Until the de-wire lane (R1/R2) removes
+> the oracle code, the oracle simply never fires because no `@task:`-tagged
+> features are authored.
 
-**DISPLAY INVOCATION MESSAGE**:
-```
-═══════════════════════════════════════════════════════
-🤖 INVOKING AGENT: bdd-generator
-═══════════════════════════════════════════════════════
-Phase: 3-BDD (BDD Test Generation)
-Model: Sonnet (Gherkin parsing and test mapping require reasoning)
-Mode: BDD (Scenario-driven development)
-Specialization:
-  - Gherkin scenario parsing (Feature/Scenario/Given/When/Then)
-  - BDD framework-specific step definitions
-  - Test code generation from scenarios
-  - {bdd_framework} integration
-
-Starting agent execution...
-═══════════════════════════════════════════════════════
-```
-
-**INVOKE** Task tool:
-```
-subagent_type: "bdd-generator"
-description: "Generate BDD tests for TASK-XXX from Gherkin scenarios"
-prompt: "Generate BDD acceptance tests for TASK-{task_id}.
-
-LOADED SCENARIOS:
-{for scenario in task_context['gherkin_scenarios']:}
-Scenario ID: {scenario['id']}
-File: {scenario['file']}
-Content:
-{scenario['content']}
-
-{endfor}
-
-BDD FRAMEWORK: {task_context['bdd_framework']}
-PROJECT STACK: {detected_stack}
-
-REQUIREMENTS:
-1. Parse all Gherkin scenarios (Feature/Scenario/Given/When/Then)
-2. Generate step definitions for {task_context['bdd_framework']}
-   - Python: pytest-bdd step definitions in tests/step_defs/
-   - JavaScript/TypeScript: Cucumber.js step definitions
-   - .NET: SpecFlow step definitions with C# bindings
-   - Ruby: Cucumber step definitions
-3. Create test files that execute scenarios
-4. Map Given/When/Then steps to test implementation
-5. Generate FAILING tests initially (BDD RED phase)
-6. Set up BDD test configuration (if needed)
-
-OUTPUT:
-- Step definition files matching {task_context['bdd_framework']} conventions
-- Test runner configuration (pytest.ini, cucumber.js config, etc.)
-- Feature file integration (if copying to project)
-- Test data/fixtures as needed
-- Documentation showing scenario → step → code mapping
-
-The implementation in next phase (Phase 3) will make these tests pass."
-```
-
-**WAIT** for agent to complete before proceeding.
-
-**DISPLAY COMPLETION MESSAGE**:
-```
-═══════════════════════════════════════════════════════
-✅ AGENT COMPLETED: bdd-generator
-═══════════════════════════════════════════════════════
-Duration: {phase_3_bdd_duration_seconds}s
-Step definitions created: {step_def_count}
-Scenarios mapped: {len(task_context['gherkin_scenarios'])}
-Framework: {task_context['bdd_framework']}
-Status: BDD tests generated (RED phase) - ready for implementation
-
-Proceeding to Phase 3...
-═══════════════════════════════════════════════════════
-```
-
-Phase gate validation is deferred to Step 6.5 (see Phase 2 note).
-
-**ELSE** (standard or TDD mode):
-Skip Phase 3-BDD, proceed directly to Phase 3
+**ALL modes**: proceed directly to Phase 3.
 
 #### Phase 3: Implementation
 
@@ -123,15 +55,12 @@ prompt: "Implement TASK-XXX following {stack} best practices and planned archite
          Use patterns identified in planning phase.
          Create production-quality code with proper error handling.
          Follow {stack}-specific conventions and patterns.
-         {if mode == 'bdd':}
-         BDD MODE: Implement code to make BDD test step definitions PASS.
-         - Focus on making Given/When/Then scenarios pass
-         - Follow scenario requirements precisely
-         - Implement step definition logic
-         - The BDD tests were generated in Phase 3-BDD
-         {endif}
          Prepare codebase for comprehensive testing."
 ```
+
+*(The former BDD MODE implementation clause is retired with Phase 3-BDD —
+R1 de-instruct 2026-08-14; approved scenarios inform the implementation as
+specification, never as step-definition targets.)*
 
 **WAIT** for agent to complete before proceeding.
 

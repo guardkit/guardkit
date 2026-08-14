@@ -469,70 +469,22 @@ This summary can be passed to `/feature-plan` as a context file:
 
 ---
 
-## Task-scope tag convention (TASK-BDD-E8954)
+## Task-scope tag convention — RETIRED (R1 de-instruct, 2026-08-14)
 
-When a scenario should run as a Coach-blocking oracle for a specific task,
-tag it with `@task:<TASK-ID>`. The task-level BDD runner
-(`guardkit/orchestrator/quality_gates/bdd_runner.py`, called from
-``/task-work`` Phase 4) discovers `features/*.feature` files containing the
-tag, executes them via `pytest --gherkin-terminal-reporter`, and writes a
-three-state outcome (`scenarios_passed` / `scenarios_failed` /
-`scenarios_pending`) to `task_work_results.json` under `bdd_results`.
-
-```gherkin
-Feature: Login
-
-  @task:TASK-AUTH-001
-  Scenario: User logs in with valid credentials
-    Given a registered user
-    When the user logs in
-    Then the user is greeted by name
-```
-
-Rules:
-
-- **Activation is by artefact presence** — no frontmatter flag is required
-  or accepted. If `features/*.feature` carries the tag and `pytest-bdd` is
-  declared in the project's `pyproject.toml` (or otherwise installed in the
-  worktree env), the runner runs. The runner does an *import* probe, not an
-  install probe — `pytest_bdd` must be importable from the worktree's
-  Python env at runtime, which in practice means it has to be a project
-  dependency. See [BDD workflow guide § Runtime Prerequisites](../../../docs/guides/bdd-workflow-for-agentic-systems.md#runtime-prerequisites)
-  for the canonical example and the three-layer enforcement model
-  (`TASK-FIX-BDDM-1` in-loop blocker + `TASK-FIX-BDDM-2` pre-flight
-  validator + this docs layer).
-- **Pending ≠ failed.** A scenario whose step definitions are not yet
-  implemented reports as `pending` and surfaces in Coach feedback as
-  actionable work; it does NOT block approval.
-- **Untagged whole-feature `.feature` files are out of scope.** Those are
-  feature-level smoke (TASK-SMK-F703A territory) and are intentionally not
-  picked up by the task-level runner.
-
-### Automated tagging via `/feature-plan` (TASK-FP-LNKB-19AC)
-
-You rarely need to write `@task:` tags by hand. When `/feature-plan` runs
-against a feature that has a scaffolded `.feature` file (either
-`features/{slug}/{slug}.feature` or `features/{slug}.feature`), its
-**Step 11: Link BDD scenarios to tasks** invokes the `bdd-linker` subagent
-with a `MatchingRequest` describing the scenarios and the tasks just
-created, parses the subagent's `TaskMatch[]` response, and calls
-`bdd_linker.apply_mapping` to insert the `@task:<TASK-ID>` lines
-atomically. Interactive mode lets you accept/edit/skip each proposed
-mapping; `--no-questions` mode applies every above-threshold match
-unattended and reports below-threshold or unmatched scenarios in the
-step summary.
-
-Hand-tagging remains valid for:
-
-- Feature files not produced by `/feature-spec` / `/feature-plan` (ad-hoc
-  feature files in `features/` that should still activate R2).
-- Scenarios Step 11 flagged as below threshold that you've decided
-  belong to a task after all — just add the tag by hand; Step 11 is
-  idempotent and will leave it alone on the next run.
-
-See `installer/core/commands/feature-plan.md` § "Step 11" for the full
-workflow, and `installer/core/agents/bdd-linker.md` for the matching
-subagent's contract.
+> **Do NOT write `@task:<TASK-ID>` tags into `.feature` files, by hand or by
+> tooling.** The tag existed solely to arm the BDD-execution oracle
+> (`bdd_runner.py`), which Rich retired on 2026-08-14
+> (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`, Q10;
+> mission red-pen #2 discharge note). Four months of receipts showed the
+> executed-Gherkin path caught zero real defects while its plumbing failed
+> builds. What this command produces — the Gherkin scenarios themselves, the
+> propose–review discipline — **is KEPT and unchanged**: scenarios remain the
+> approved specification that drives planning. Their verification now happens
+> through frozen executable twins under the routing law (`verifier:` stamp;
+> Hurl twins for over-the-wire scenarios, run as registered gates against the
+> deployed candidate). `/feature-plan` Step 11 (automated tagging) is retired
+> with this convention; the historical mechanics live in that file's Step 11
+> block, preserved for the R1/R2 de-wire lanes' reference only.
 
 ---
 
