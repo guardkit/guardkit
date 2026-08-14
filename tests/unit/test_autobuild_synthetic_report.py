@@ -1161,3 +1161,210 @@ class TestCumulativeRequirementsAddressed:
             )
 
         assert len(orchestrator._cumulative_requirements_addressed) == 0
+
+
+# ============================================================================
+# close-the-loop lane, 2026-08-14 — CURE 2
+# The synthetic report tells the truth about what was measured.
+# ============================================================================
+
+
+class TestSyntheticReportRequirementsThreading:
+    """``_emit_synthetic_coach_feedback`` reports the caller's measurement.
+
+    Round-3 evidence: the direct-mode evidence gate blocked turns while
+    HOLDING a ``RequirementsValidation`` showing ``criteria_met=4`` of 6, yet
+    the synthetic report it emitted wrote ``validation_results.requirements:
+    null``. ``_count_criteria_passed`` therefore returned 0 structurally, and
+    ``_is_feedback_stalled`` took its "true zero progress — unrecoverable"
+    branch at 3 turns instead of the extended threshold. The count was a lie
+    about a measurement that had already been made.
+
+    The six non-direct-mode call sites keep today's report byte-for-byte:
+    both new parameters are keyword-only and default to the old values.
+    """
+
+    _RATIONALE = "gate blocked the turn"
+
+    def _emit(self, orchestrator, tmp_path, **kwargs):
+        worktree = Mock()
+        worktree.path = tmp_path
+        return orchestrator._emit_synthetic_coach_feedback(
+            task_id="TASK-CTL-001",
+            turn=2,
+            worktree=worktree,
+            rationale=self._RATIONALE,
+            start_time=0.0,
+            **kwargs,
+        )
+
+    @staticmethod
+    def _requirements(met=4, total=6):
+        """A RequirementsValidation shaped like the r3 gate's own handle."""
+        results = []
+        for i in range(1, total + 1):
+            verified = i <= met
+            results.append(
+                CriterionResult(
+                    criterion_id=f"AC-{i:03d}",
+                    criterion_text=f"criterion {i}",
+                    result="verified" if verified else "rejected",
+                    status="verified" if verified else "rejected",
+                    evidence="promise" if verified else "No completion promise",
+                )
+            )
+        return RequirementsValidation(
+            criteria_total=total,
+            criteria_met=met,
+            all_criteria_met=met == total,
+            missing=[f"criterion {i}" for i in range(met + 1, total + 1)],
+            criteria_results=results,
+        )
+
+    # ---- byte-preservation of the six non-direct-mode call sites ----------
+
+    def test_default_report_matches_the_pre_change_golden(
+        self, orchestrator, tmp_path
+    ):
+        """Full-dict equality against the report shape emitted before CURE 2.
+
+        This is the byte-preservation sentinel for the six emitter call
+        sites that do NOT pass the new parameters (``:7473``, ``:7681``,
+        ``:7713``, ``:7731``, ``:7793``, and the ``_bdd_authoring_sweep_gate``
+        site). Asserted on the WHOLE dict, not selected keys.
+        """
+        result = self._emit(orchestrator, tmp_path)
+
+        assert result.report == {
+            "task_id": "TASK-CTL-001",
+            "turn": 2,
+            "decision": "feedback",
+            "validation_results": {
+                "quality_gates": None,
+                "independent_tests": None,
+                "requirements": None,
+            },
+            "criteria_verification": [],
+            "acceptance_criteria_verification": {"criteria_results": []},
+            "issues": [
+                {
+                    "severity": "must_fix",
+                    "category": "coach_primary_exception",
+                    "description": self._RATIONALE,
+                }
+            ],
+            "rationale": self._RATIONALE,
+            "context_used": None,
+            "approved_without_independent_tests": False,
+            "is_configuration_error": False,
+            "environment_conditional_approval": False,
+            "honesty_verification": None,
+            "coach_primary_synthetic_feedback": True,
+            "evidence_repo_signal_absent": False,
+        }
+
+    def test_evidence_repo_signal_flag_still_threads(
+        self, orchestrator, tmp_path
+    ):
+        """The pre-existing keyword-only flag is unaffected by the new ones."""
+        result = self._emit(
+            orchestrator, tmp_path, evidence_repo_signal_absent=True
+        )
+        assert result.report["evidence_repo_signal_absent"] is True
+        assert result.report["validation_results"]["requirements"] is None
+
+    # ---- the honest report -------------------------------------------------
+
+    def test_threaded_requirements_reach_the_report(
+        self, orchestrator, tmp_path
+    ):
+        result = self._emit(
+            orchestrator, tmp_path, requirements=self._requirements()
+        )
+        req = result.report["validation_results"]["requirements"]
+
+        assert req == {
+            "criteria_total": 6,
+            "criteria_met": 4,
+            "all_criteria_met": False,
+            "missing": ["criterion 5", "criterion 6"],
+        }
+        results = result.report["acceptance_criteria_verification"][
+            "criteria_results"
+        ]
+        assert len(results) == 6
+        assert sum(1 for r in results if r["status"] == "verified") == 4
+
+    def test_decision_is_still_feedback_no_approval_path_created(
+        self, orchestrator, tmp_path
+    ):
+        """Honesty must not become leniency: nothing here can approve."""
+        result = self._emit(
+            orchestrator,
+            tmp_path,
+            requirements=self._requirements(met=6, total=6),
+            category="direct_mode_gate",
+        )
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"][0]["severity"] == "must_fix"
+
+    def test_category_override_names_the_real_blocker(
+        self, orchestrator, tmp_path
+    ):
+        """A gate rejection must not be labelled a Coach exception.
+
+        On the 9 failing r3 legs the LLM Coach was never invoked (~1s coach
+        latency, ``coach_primary_synthetic_feedback: true``), yet the issue
+        category read ``coach_primary_exception``.
+        """
+        result = self._emit(
+            orchestrator, tmp_path, category="direct_mode_gate"
+        )
+        assert result.report["issues"][0]["category"] == "direct_mode_gate"
+
+    # ---- the consumer that motivated the change ---------------------------
+
+    def test_count_criteria_passed_reads_four_not_zero(
+        self, orchestrator, tmp_path
+    ):
+        result = self._emit(
+            orchestrator, tmp_path, requirements=self._requirements()
+        )
+        turn_record = Mock()
+        turn_record.coach_result = result
+
+        assert orchestrator._count_criteria_passed(turn_record) == 4
+
+    def test_count_criteria_passed_still_zero_on_the_default_report(
+        self, orchestrator, tmp_path
+    ):
+        """The old shape keeps its old (structurally zero) reading."""
+        result = self._emit(orchestrator, tmp_path)
+        turn_record = Mock()
+        turn_record.coach_result = result
+
+        assert orchestrator._count_criteria_passed(turn_record) == 0
+
+    def test_count_falls_back_to_criteria_results_when_met_absent(
+        self, orchestrator
+    ):
+        """The legacy fallback path is exercised, not bypassed.
+
+        Proves ``_count_criteria_passed`` is untouched: with a requirements
+        block present but ``criteria_met`` missing, it must still count
+        ``acceptance_criteria_verification`` entries.
+        """
+        turn_record = Mock()
+        turn_record.coach_result = Mock()
+        turn_record.coach_result.report = {
+            "validation_results": {"requirements": {"criteria_total": 6}},
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {"criterion_id": "AC-001", "status": "verified"},
+                    {"criterion_id": "AC-002", "status": "verified"},
+                    {"criterion_id": "AC-003", "status": "rejected"},
+                ]
+            },
+        }
+
+        assert orchestrator._count_criteria_passed(turn_record) == 2
