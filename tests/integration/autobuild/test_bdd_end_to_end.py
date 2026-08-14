@@ -49,6 +49,13 @@ Feature: Login
 @pytest.fixture
 def worktree(tmp_path: Path) -> Path:
     (tmp_path / "features").mkdir()
+    # TS-lane D.1b: an UNDECLARED toolchain is now an ABSENT oracle, not a
+    # guessed `pytest tests/ -v --tb=short`. This fixture's bare tmp_path has
+    # no project marker at all, so the Coach could not resolve a test command
+    # and every run came back "independent test verification failed" —
+    # drowning the bdd_results signal these tests are actually about.
+    # A pytest.ini is the smallest honest declaration for a Python worktree.
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     return tmp_path
 
 
