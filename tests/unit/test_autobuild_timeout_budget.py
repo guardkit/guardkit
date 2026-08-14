@@ -128,11 +128,18 @@ def _make_orchestrator(
     orchestrator._wave_files_lock = None
     orchestrator._turn_history = []
     orchestrator._feature_id = None
+    # Set in __init__ (bypassed by __new__ here); the loop stamps it onto
+    # observability records.
+    orchestrator._run_id = "test-run"
     orchestrator._max_criteria_passed = 0
     orchestrator._agent_invoker = Mock()
     # TASK-OSI-006: skip orchestrator-side Phase 4/5 in unit tests by
     # forcing implementation_mode to "direct" on the Mock invoker.
     orchestrator._agent_invoker._get_implementation_mode.return_value = "direct"
+    # The loop budgets against a real number: a bare Mock's
+    # _calculate_sdk_timeout() returns another Mock and fails in arithmetic.
+    orchestrator._agent_invoker.sdk_timeout_seconds = 1200
+    orchestrator._agent_invoker._calculate_sdk_timeout = Mock(return_value=1200)
     orchestrator._worktree_manager = Mock()
     orchestrator._checkpoint_manager = None
     orchestrator._last_player_context_status = None
