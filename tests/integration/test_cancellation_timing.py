@@ -40,6 +40,35 @@ from guardkit.worktrees import Worktree
 
 
 # ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _stub_sdk_timeout(invoker) -> None:
+    """Give a Mock invoker a real ``_calculate_sdk_timeout``.
+
+    The orchestrator's specialist-timeout cap does arithmetic on this return
+    value (``min(scaled, cap)``), so a bare Mock raises TypeError before the
+    test's own assertions are ever reached. This mirrors the real method's
+    contract closely enough for budget tests: an int, capped at the remaining
+    budget when one is supplied.
+    """
+
+    def _calc(task_id, remaining_budget=None):
+        base = int(invoker.sdk_timeout_seconds)
+        if remaining_budget is None:
+            return base
+        return max(60, min(base, int(remaining_budget)))
+
+    invoker._calculate_sdk_timeout = Mock(side_effect=_calc)
+
+    # Phase 4/5 specialists are driven through `_invoke_with_role`, which is
+    # awaited via asyncio.ensure_future. A plain Mock returns a non-awaitable
+    # and the specialist watchdog raises TypeError.
+    invoker._invoke_with_role = AsyncMock()
+
+
+# ============================================================================
 # Fixtures
 # ============================================================================
 
@@ -165,6 +194,7 @@ class TestCancellationTimingIntegration:
         mock_invoker.invoke_coach = Mock()
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        _stub_sdk_timeout(mock_invoker)
 
         timeout_event = threading.Event()
         timeout_event.set()  # Pre-set: simulates feature-level timeout
@@ -199,6 +229,7 @@ class TestCancellationTimingIntegration:
         mock_invoker.invoke_coach = Mock()
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        _stub_sdk_timeout(mock_invoker)
 
         cancel_event = threading.Event()
         cancel_event.set()  # Pre-set: simulates stop_on_failure
@@ -231,6 +262,7 @@ class TestCancellationTimingIntegration:
         mock_invoker.invoke_coach = Mock()
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        _stub_sdk_timeout(mock_invoker)
 
         timeout_event = threading.Event()
         cancel_event = threading.Event()
@@ -284,6 +316,7 @@ class TestCancellationTimingIntegration:
         mock_invoker.invoke_coach = AsyncMock(side_effect=capturing_coach)
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        _stub_sdk_timeout(mock_invoker)
 
         orchestrator = _create_orchestrator(
             tmp_path, mock_invoker, mock_progress_display, mock_worktree_manager,
@@ -328,6 +361,7 @@ class TestCancellationTimingIntegration:
         mock_invoker.invoke_coach = AsyncMock()
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        _stub_sdk_timeout(mock_invoker)
 
         orchestrator = _create_orchestrator(
             tmp_path, mock_invoker, mock_progress_display, mock_worktree_manager,
