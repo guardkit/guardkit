@@ -46,6 +46,14 @@ from guardkit.worktrees import Worktree
 # ============================================================================
 
 
+# This file's premise is "the Coach fast-exits on a task_type the system does
+# not recognise". It used to spell that "enhancement" — but `enhancement` is now
+# a REGISTERED ALIAS for `feature` (guardkit/models/task_types.py TASK_TYPE_ALIASES),
+# so the tests were feeding a perfectly valid type and asserting it was rejected.
+# Use a string that is genuinely in neither TaskType nor the alias table.
+_INVALID_TASK_TYPE = "not-a-real-task-type"
+
+
 @pytest.fixture
 def mock_worktree(tmp_path):
     """Create a mock Worktree."""
@@ -105,7 +113,7 @@ def _make_player_result(
 def _make_config_error_coach_result(
     task_id: str = "TASK-CFG-001",
     turn: int = 1,
-    invalid_type: str = "enhancement",
+    invalid_type: str = _INVALID_TASK_TYPE,
 ) -> AgentInvocationResult:
     """Build a Coach result that signals a configuration error (invalid task_type)."""
     return AgentInvocationResult(
@@ -200,7 +208,7 @@ class TestConfigErrorFastExit:
 
         This prevents the 3-turn stall where Player retries futilely.
 
-        The CoachValidator catches invalid task_type ("enhancement") during
+        The CoachValidator catches an invalid task_type during
         _resolve_task_type and returns a configuration error result directly,
         without needing the SDK fallback path.
         """
@@ -209,6 +217,11 @@ class TestConfigErrorFastExit:
         mock_invoker.invoke_coach = AsyncMock()  # Fallback, should not be reached
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        # The loop budgets against a real number and awaits the specialist
+        # role invoker; a bare Mock raises TypeError long before the config
+        # fast-exit under test is reached.
+        mock_invoker._calculate_sdk_timeout = Mock(return_value=DEFAULT_SDK_TIMEOUT)
+        mock_invoker._invoke_with_role = AsyncMock()
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=tmp_path,
@@ -226,7 +239,7 @@ class TestConfigErrorFastExit:
             requirements="Implement feature",
             acceptance_criteria=["Feature works"],
             worktree=mock_worktree,
-            task_type="enhancement",  # Invalid type triggers CoachValidator config error
+            task_type=_INVALID_TASK_TYPE,  # triggers the CoachValidator config error
         )
 
         # Should exit after exactly 1 turn
@@ -250,6 +263,11 @@ class TestConfigErrorFastExit:
         mock_invoker.invoke_coach = AsyncMock(return_value=config_error_report)
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        # The loop budgets against a real number and awaits the specialist
+        # role invoker; a bare Mock raises TypeError long before the config
+        # fast-exit under test is reached.
+        mock_invoker._calculate_sdk_timeout = Mock(return_value=DEFAULT_SDK_TIMEOUT)
+        mock_invoker._invoke_with_role = AsyncMock()
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=tmp_path,
@@ -295,6 +313,11 @@ class TestConfigErrorFastExit:
         )
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        # The loop budgets against a real number and awaits the specialist
+        # role invoker; a bare Mock raises TypeError long before the config
+        # fast-exit under test is reached.
+        mock_invoker._calculate_sdk_timeout = Mock(return_value=DEFAULT_SDK_TIMEOUT)
+        mock_invoker._invoke_with_role = AsyncMock()
 
         orchestrator = AutoBuildOrchestrator(
             repo_root=tmp_path,
@@ -335,6 +358,11 @@ class TestConfigErrorFastExit:
         mock_invoker.invoke_coach = AsyncMock()  # Should not be reached (CoachValidator handles it)
         mock_invoker.sdk_timeout_seconds = DEFAULT_SDK_TIMEOUT
         mock_invoker._sdk_timeout_is_override = False
+        # The loop budgets against a real number and awaits the specialist
+        # role invoker; a bare Mock raises TypeError long before the config
+        # fast-exit under test is reached.
+        mock_invoker._calculate_sdk_timeout = Mock(return_value=DEFAULT_SDK_TIMEOUT)
+        mock_invoker._invoke_with_role = AsyncMock()
 
         mock_checkpoint_mgr = Mock()
         mock_checkpoint_mgr.create_checkpoint = Mock()
@@ -358,7 +386,7 @@ class TestConfigErrorFastExit:
             requirements="Implement feature",
             acceptance_criteria=["Feature works"],
             worktree=mock_worktree,
-            task_type="enhancement",  # Invalid type triggers CoachValidator config error
+            task_type=_INVALID_TASK_TYPE,  # triggers the CoachValidator config error
         )
 
         assert decision == "configuration_error"
@@ -395,7 +423,7 @@ class TestCoachValidatorTaskTypeIntegration:
             task_id="TASK-CFG-001",
             turn=1,
             task={
-                "task_type": "enhancement",  # Invalid type
+                "task_type": _INVALID_TASK_TYPE,  # Invalid type
                 "acceptance_criteria": ["Feature works"],
             },
         )
@@ -408,7 +436,7 @@ class TestCoachValidatorTaskTypeIntegration:
             if i.get("category") == "invalid_task_type"
         ]
         assert len(config_issues) == 1
-        assert "enhancement" in config_issues[0]["description"]
+        assert _INVALID_TASK_TYPE in config_issues[0]["description"]
 
 
 # ============================================================================
