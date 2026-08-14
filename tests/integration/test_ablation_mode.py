@@ -67,7 +67,9 @@ def mock_worktree_with_task(tmp_path):
 
     # Initialize as git repository
     import subprocess
-    subprocess.run(["git", "init"], cwd=worktree, check=True, capture_output=True)
+    # Pin the branch name: WorktreeManager creates worktrees off `main`, and
+    # a bare `git init` uses whatever init.defaultBranch says (master here).
+    subprocess.run(["git", "init", "-b", "main"], cwd=worktree, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=worktree, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=worktree, check=True, capture_output=True)
 
@@ -154,6 +156,15 @@ def mock_agent_invoker_success():
     mock_invoker.invoke_coach = AsyncMock(
         side_effect=AssertionError("Coach should not be invoked in ablation mode")
     )
+
+    # The orchestrator reads real numbers and awaits real coroutines off the
+    # invoker. MagicMock(spec=...) creates these attributes but answers with
+    # MagicMocks, which fail in arithmetic and are not awaitable.
+    mock_invoker.sdk_timeout_seconds = 1200
+    mock_invoker._sdk_timeout_is_override = False
+    mock_invoker._calculate_sdk_timeout = MagicMock(return_value=1200)
+    mock_invoker._invoke_with_role = AsyncMock()
+    mock_invoker._get_implementation_mode = MagicMock(return_value="direct")
 
     return mock_invoker
 
