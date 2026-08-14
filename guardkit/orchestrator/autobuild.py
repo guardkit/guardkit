@@ -119,6 +119,15 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     resolve_coach_test_execution,
 )
 
+# The close-the-loop synthetic report types its threaded requirements honestly
+# (coach residue, 2026-08-14: an unimported forward reference is inert at
+# runtime but breaks signature introspection — import under TYPE_CHECKING).
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:  # pragma: no cover — annotation-only import
+    from guardkit.orchestrator.quality_gates.coach_validator import (
+        RequirementsValidation,
+    )
+
 # WS3-S1 Q1 SPLIT: the interpreter-resolution hard-abort must propagate past
 # the Coach exception-fallback paths below (never degrade to the LLM Coach).
 from guardkit.orchestrator.coach_verification import InterpreterResolutionError
