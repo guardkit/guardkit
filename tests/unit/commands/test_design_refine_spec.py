@@ -29,11 +29,26 @@ SPEC_PATH = (
 )
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading `---` YAML frontmatter block.
+
+    All 32 command specs now carry `format_version` frontmatter. These tests
+    assert on the spec's PROSE — that it opens with a `# ` title, that it
+    names certain sections — so they read the body, not the metadata header.
+    The markdown itself is correct and unchanged.
+    """
+    if not text.startswith("---"):
+        return text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return text
+    return text[end + len("\n---"):].lstrip("\n")
+
 @pytest.fixture
 def spec_content() -> str:
     """Load the design-refine command specification content."""
     assert SPEC_PATH.exists(), f"Command spec not found at {SPEC_PATH}"
-    return SPEC_PATH.read_text()
+    return _strip_frontmatter(SPEC_PATH.read_text())
 
 
 # ============================================================================
