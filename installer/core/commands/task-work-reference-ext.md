@@ -137,26 +137,18 @@ The command supports multiple development modes via `--mode` flag:
 - REFACTOR: Implementation agent improves code quality
 - Best for complex business logic
 
-#### BDD Mode (Requires RequireKit)
+#### BDD Mode — RETIRED (R1 de-instruct, 2026-08-14)
 
-```bash
-/task-work TASK-XXX --mode=bdd
-```
+> **`--mode=bdd` is retired per Rich's 2026-08-14 ruling**
+> (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`, Q10).
+> Do not select it; use `--mode=tdd` or standard. Gherkin scenarios remain
+> the KEPT specification and load into planning context as before — but no
+> step definitions are generated and no BDD tests are executed. Scenario
+> verification moves to frozen executable twins under the routing law
+> (`verifier:` stamp). The historical workflow below is preserved for the
+> R1/R2 de-wire lanes' reference only.
 
-**Purpose**: Behavior-Driven Development workflow for formal agentic systems
-
-**Prerequisites**:
-- RequireKit installed (checks `~/.agentecflow/require-kit.marker.json` or legacy `require-kit.marker`)
-- Task has `bdd_scenarios: [BDD-001, BDD-002]` in frontmatter
-
-**Use for**:
-- ✅ Agentic orchestration systems (LangGraph, state machines)
-- ✅ Safety-critical workflows (quality gates, approval checkpoints)
-- ✅ Complex behavior requirements (multi-agent coordination)
-- ✅ Formal specifications (compliance, audit, traceability)
-- ❌ NOT for general CRUD features or simple implementations
-
-**Workflow**:
+**Workflow (HISTORICAL — do not execute)**:
 1. **Phase 1**: Validates RequireKit installation via marker file
 2. **Phase 1**: Loads Gherkin scenarios from task frontmatter
 3. **Phase 2**: Includes scenarios in planning context
