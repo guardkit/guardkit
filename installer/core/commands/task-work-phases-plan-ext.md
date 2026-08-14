@@ -224,7 +224,11 @@ else:
     task_context["feature"] = None
 ```
 
-**IF BDD MODE**: Load Gherkin scenarios from RequireKit:
+**IF BDD MODE — RETIRED (R1 de-instruct, 2026-08-14):** `--mode=bdd` is retired
+per Rich's ruling (options card Q10); treat a `bdd` mode request as an error and
+suggest `--mode=tdd` or standard. Scenarios still load as KEPT specification
+context; nothing below executes. Historical block preserved for the de-wire
+lanes' reference:
 ```python
 # Check if BDD mode is active
 if mode == "bdd":
