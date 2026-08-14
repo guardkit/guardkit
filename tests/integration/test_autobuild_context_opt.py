@@ -905,16 +905,21 @@ class TestWaveTimingConfiguration:
         assert MAX_SDK_TIMEOUT == 3600, \
             f"MAX_SDK_TIMEOUT is {MAX_SDK_TIMEOUT}, expected 3600"
 
-    def test_task_work_sdk_max_turns_is_50(self):
+    def test_task_work_sdk_max_turns_is_100(self):
         """
         Given TASK_WORK_SDK_MAX_TURNS constant
         When value is checked
-        Then it is 50 internal turns
+        Then it is 100 internal turns
 
-        Validates task-work needs ~50 internal turns for all phases.
+        The pin was 50 when task-work first landed (TASK-REV-BB80).
+        TASK-FIX-ASPF-005 deliberately raised it to 100: with --fresh, Player
+        needs ~35-50 turns for scaffolding + file modifications + tests +
+        report writing, and 50 left no headroom. The receipt is in the
+        production comment at agent_invoker.py. The test was pinning the
+        superseded number.
         """
-        assert TASK_WORK_SDK_MAX_TURNS == 50, \
-            f"TASK_WORK_SDK_MAX_TURNS is {TASK_WORK_SDK_MAX_TURNS}, expected 50"
+        assert TASK_WORK_SDK_MAX_TURNS == 100, \
+            f"TASK_WORK_SDK_MAX_TURNS is {TASK_WORK_SDK_MAX_TURNS}, expected 100"
 
     def test_wave_feasibility_four_tasks_within_budget(self):
         """
