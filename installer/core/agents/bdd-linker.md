@@ -21,7 +21,16 @@ collaborates_with:
 priority: medium
 ---
 
-## Mission
+## RETIRED (R1 de-instruct, 2026-08-14)
+
+> This subagent's sole caller — `/feature-plan` Step 11 — is retired per
+> Rich's 2026-08-14 ruling (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`,
+> Q10): `@task:` tags armed the retired BDD-execution oracle and are no longer
+> written. If invoked anyway, return an empty `TaskMatch[]` array and state
+> that BDD scenario linking is retired. This agent definition is deleted in
+> the R2 lane; kept until then so stale invocations fail soft, not weird.
+
+## Mission (HISTORICAL)
 
 You match BDD scenarios to tasks for `/feature-plan` Step 11 (BDD scenario
 linking). Given a structured `MatchingRequest` with scenarios and candidate

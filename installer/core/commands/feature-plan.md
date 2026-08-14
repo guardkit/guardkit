@@ -2381,8 +2381,14 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
       the whole point of TASK-FIX-3C9D; re-splitting them re-opens the
       non-determinism it closed.
 
-10.6. ℹ️ **BDD oracle (R2) activation nudge** — runs transitively via step 8
-      (TASK-FP-NDG1, wired via TASK-FIX-RWOP1.2)
+10.6. ℹ️ **BDD oracle (R2) activation nudge — RETIRED IN INTENT (R1 de-instruct,
+      2026-08-14).** The nudge encouraged users to arm the BDD-execution oracle
+      with `@task:` tags; that oracle is retired per Rich's ruling (options card
+      Q10). Its imperative callsite is a `.py` producer
+      (`lib/generate_feature_yaml.py` → `lib/bdd_oracle_nudge.py`) and is a
+      NAMED FOLLOW-UP for the R1 de-wire lane — do not act on any notice it
+      prints, and never add `@task:` tags on its advice. Historical wiring
+      below. — (TASK-FP-NDG1, wired via TASK-FIX-RWOP1.2)
 
     **No separate step here.** The R2 BDD-oracle nudge's imperative
     callsite lives in `installer/core/commands/lib/generate_feature_yaml.py`
@@ -2564,10 +2570,21 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     - Do not re-home the nudge call out of `generate_feature_yaml.py`
       into a separate post-step. Same reasoning as Step 10.6.
 
-11. 🔗 **BDD scenario linking** — automatic `@task:<TASK-ID>` tagging
-    (TASK-FP-LNKB-19AC, wired via TASK-FIX-RWOP1.1)
+11. 🔗 **BDD scenario linking — RETIRED (R1 de-instruct, 2026-08-14). DO NOT RUN.**
 
-    **Purpose:** Wire up R2 activation deterministically. For every task
+    > **This step is retired per Rich's 2026-08-14 ruling**
+    > (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`, Q10;
+    > mission red-pen #2 discharge note). Do NOT invoke the `bdd-linker`
+    > subagent, do NOT run the `feature-plan-bdd-link` prepare/apply scripts,
+    > and do NOT write `@task:<TASK-ID>` tags into any `.feature` file —
+    > those tags are precisely what armed the retired BDD-execution oracle.
+    > The `.feature` file remains the KEPT specification artifact, untouched.
+    > Scenario verification is moving to frozen executable twins under the
+    > routing law (`verifier:` stamp). The historical instructions below are
+    > preserved for the R1/R2 de-wire lanes' reference and MUST NOT be
+    > executed.
+
+    **Purpose (HISTORICAL):** Wire up R2 activation deterministically. For every task
     just created, invite the `bdd-linker` subagent to map the feature's
     scenarios onto the tasks and rewrite the `.feature` file with
     `@task:<TASK-ID>` tags. This closes the loop between `/feature-spec`

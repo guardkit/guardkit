@@ -477,7 +477,15 @@ Provide feedback when ANY of these are true:
 - ❌ Task-work results file not found
 - ❌ **`bdd_results.scenarios_failed > 0`** (TASK-BDD-E8954)
 
-## BDD Oracle Gate (TASK-BDD-E8954)
+## BDD Oracle Gate (TASK-BDD-E8954) — scheduled for removal (R1/R2)
+
+> **Dated note (R1 de-instruct, 2026-08-14):** this gate's CODE is still wired
+> and behaves exactly as documented below — but per Rich's ruling
+> (`ai-transition/docs/bdd-replacement-options-card-2026-08-09.md`, Q10) no
+> factory surface authors `@task:` tags or step definitions any more, so the
+> gate never fires on new work. The de-wire lane (R1) removes the code; until
+> then this section stays as accurate documentation of a dormant path. Never
+> advise creating the artifacts that would arm it.
 
 Task-work writes a `bdd_results` block into `task_work_results.json` whenever
 a `features/*.feature` file in the worktree carries a `@task:<TASK-ID>` tag

@@ -918,25 +918,30 @@ Capture results:
 - Update project metrics
 
 
-## Development Modes (TDD / BDD / Standard)
+## Development Modes (TDD / Standard; BDD retired)
 
 **"Implementation and testing are inseparable"** — every task flows through implementation, testing, and verification in a single workflow. Quality is built-in, not bolted on.
 
-The `--mode` flag on `/task-work` selects how Phase 3 is executed. All three modes share the same quality gates (Phase 2.5 arch review, Phase 4 tests, Phase 4.5 test enforcement, Phase 5 code review) — only the internal sequencing of Phase 3 differs.
+The `--mode` flag on `/task-work` selects how Phase 3 is executed. All modes share the same quality gates (Phase 2.5 arch review, Phase 4 tests, Phase 4.5 test enforcement, Phase 5 code review) — only the internal sequencing of Phase 3 differs.
 
 ### Mode Selection
 
 ```bash
 /task-work TASK-XXX                  # Standard (default)
 /task-work TASK-XXX --mode=tdd       # Test-Driven Development
-/task-work TASK-XXX --mode=bdd       # Behavior-Driven Development (requires Require-Kit)
 ```
 
 | Mode | When to use | Primary artefact |
 |------|-------------|------------------|
 | **Standard** | Most tasks; implementation and tests co-evolve | Implementation + comprehensive tests written together |
 | **TDD** | Pure logic with clear contracts; high-risk refactors | Failing tests first; minimal code to pass; then refactor |
-| **BDD** | Features with user-visible behaviour; agentic systems with Require-Kit | Gherkin scenarios → step definitions → feature implementation |
+
+> **BDD mode is RETIRED (R1 de-instruct, 2026-08-14** — Rich's ruling,
+> `ai-transition/docs/bdd-replacement-options-card-2026-08-09.md` Q10**).**
+> Gherkin scenarios remain the KEPT specification artifact; step-definition
+> generation and BDD test execution are out. If a task requests `--mode=bdd`,
+> refuse and suggest `--mode=tdd` or standard. Scenario verification is moving
+> to frozen executable twins under the routing law (`verifier:` stamp).
 
 ### Standard Mode (Default)
 
