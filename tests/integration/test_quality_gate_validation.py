@@ -13,11 +13,47 @@ Test Coverage:
 """
 
 import json
+import os
 import subprocess
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pytest
+
+
+# =============================================================================
+# LIVE-RUN GUARD
+# =============================================================================
+#
+# Two tests below do not exercise guardkit in-process: they SHELL OUT to a real
+# `guardkit-py autobuild feature` run and then assert on what it produced. That
+# run needs the CLI on PATH *and* a live model seat to drive Player and Coach.
+# `shutil.which("guardkit-py")` alone was never a sufficient guard — inside a
+# synced venv the binary is always present, so the tests ran, reached the seat,
+# got nothing, and failed with "worktree not created".
+#
+# They are honest tests of a real capability, so they are guarded rather than
+# deleted, and the guard names both dependencies. Opt in deliberately:
+#
+#     GUARDKIT_LIVE_AUTOBUILD_TESTS=1 pytest tests/integration/test_quality_gate_validation.py
+#
+# Do NOT satisfy this by loosening the assertions — a full autobuild run either
+# happened or it did not.
+
+_LIVE_AUTOBUILD_OPT_IN = os.environ.get("GUARDKIT_LIVE_AUTOBUILD_TESTS") == "1"
+_LIVE_AUTOBUILD_CLI = shutil.which("guardkit-py") is not None
+_LIVE_AUTOBUILD_ENABLED = _LIVE_AUTOBUILD_OPT_IN and _LIVE_AUTOBUILD_CLI
+
+if not _LIVE_AUTOBUILD_OPT_IN:
+    _LIVE_AUTOBUILD_SKIP_REASON = (
+        "needs a real `guardkit-py autobuild feature` run against a live model "
+        "seat; set GUARDKIT_LIVE_AUTOBUILD_TESTS=1 to opt in"
+    )
+else:
+    _LIVE_AUTOBUILD_SKIP_REASON = (
+        "GUARDKIT_LIVE_AUTOBUILD_TESTS=1 was set but the guardkit-py CLI is not "
+        "on PATH"
+    )
 
 
 # =============================================================================
@@ -283,9 +319,10 @@ def test_feat_code_test_yaml_valid(feat_code_test_dir: Path):
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.live
 @pytest.mark.skipif(
-    shutil.which("guardkit-py") is None,
-    reason="guardkit-py CLI not available"
+    not _LIVE_AUTOBUILD_ENABLED,
+    reason=_LIVE_AUTOBUILD_SKIP_REASON,
 )
 def test_autobuild_creates_worktree(temp_test_repo: Path):
     """
@@ -313,9 +350,10 @@ def test_autobuild_creates_worktree(temp_test_repo: Path):
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.live
 @pytest.mark.skipif(
-    shutil.which("guardkit-py") is None,
-    reason="guardkit-py CLI not available"
+    not _LIVE_AUTOBUILD_ENABLED,
+    reason=_LIVE_AUTOBUILD_SKIP_REASON,
 )
 def test_quality_gates_evaluated(temp_test_repo: Path):
     """
