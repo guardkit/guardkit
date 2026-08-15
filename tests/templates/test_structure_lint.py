@@ -210,7 +210,11 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
     headers must be surfaced as warnings. Lines shifted +15 after the DF-019
     re-pin (2026-07-11) added the frontmatter block + the F1-emission subsection
     above them (:1827/:1888/:1895/:1918 → :1842/:1903/:1910/:1933); PB-5 kept the
-    anchor BYTES unchanged (fence-aware disposition), only positions moved."""
+    anchor BYTES unchanged (fence-aware disposition), only positions moved.
+    Shifted +40 again by the ROUTING-LAW template additions (card Q8/A.2,
+    2026-08-15): 3 schema-table rows + "The Routing Law" section, both above
+    the anchors (:1842/:1903/:1910/:1933 → :1882/:1943/:1950/:1973); anchor
+    bytes again unchanged."""
     results = lint_command_templates()
     assert "feature-plan.md" in results
     ic = [
@@ -220,7 +224,7 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
         and "integration contracts" in f.message.lower()
     ]
     lines = {f.line for f in ic}
-    assert {1842, 1903, 1910, 1933} <= lines, (
+    assert {1882, 1943, 1950, 1973} <= lines, (
         f"expected the 4 Integration-Contracts anchors flagged, got lines {lines}"
     )
 

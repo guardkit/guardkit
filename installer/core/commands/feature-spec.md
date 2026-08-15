@@ -488,6 +488,45 @@ This summary can be passed to `/feature-plan` as a context file:
 
 ---
 
+## The `verifier:` stamp — ROUTING LAW (card Q8/A.2, ruled 2026-08-14)
+
+**Every approved scenario gets a verification home, assigned at planning
+time, from a closed list.** This is the KEPT half's forward link: the
+scenarios this command produces remain the approved specification, and the
+routing law is how each one is guaranteed a named, mechanical verifier
+instead of a retired execution oracle.
+
+The closed vocabulary (an unknown value is a loud plan-load ERROR in
+guardkit — there is no fallback home):
+
+| Stamp | Home |
+|---|---|
+| `toolchain` | The repo's own test suite under its declared toolchain — with a `test_ref` token pinning the scenario to a named test (see `/feature-plan`) |
+| `hurl` | Frozen `.hurl` twin run as a registered gate / behavioural-oracle command |
+| `exam` | Frozen-input corpus + deterministic marker against the deployed AI surface |
+| `probe:bus` | Ephemeral-NATS scenario probe (never the live fleet broker) |
+| `probe:process` | Venom-grammar process/CLI/stdio-MCP/DB-state probe |
+| `flutter` | Widget/integration tests in-build; emulator tier for device features |
+| `playwright` | Dormant browser home — named so it is never silently dropped |
+| `operator` | Attended verification, listed by name — never silently dropped |
+
+**What this command does about it:** when producing the
+`{feature-name}_summary.md`, append a `## Verifier routing (proposed)`
+section listing each accepted scenario title with a proposed stamp from the
+table above — one line per scenario, e.g.
+`- "User signs in with valid credentials" → hurl`. The proposal is
+advisory; `/feature-plan` writes the **authoritative** per-scenario map into
+the feature YAML (`scenarios:`), where guardkit validates it.
+
+**Enforcement is opt-in per repo** (`routing_law: enforced` in the target
+repo's `.guardkit/config.yaml`, or per feature in its YAML): under the flag,
+a scenario missing from the stamp map REJECTS the plan load. `api_test` — the
+Hurl-pilot repo — flips first. In an unflipped repo the stamp is still
+schema-checked whenever present (unknown home = loud error), but absent
+stamps do not block.
+
+---
+
 ## Domain Language
 
 Write scenarios in the language of the business domain, not the implementation. This is the sharpest quality distinction between good and bad Gherkin.
