@@ -10002,47 +10002,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
     # until R2 deletes it at graduation. Gherkin AUTHORING (feature-spec,
     # gherkin_official validation) is untouched.
 
-    def _run_dcl_oracle(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Run the hermetic task-level DCL oracle (Phase D, design §1 / D1).
-
-        The ``dcl`` spec-track sibling of the (R1-removed) BDD oracle. Runs ONLY
-        when the repo is on the ``dcl`` track (``get_spec_track(worktree) == "dcl"``);
-        on the default ``gherkin`` track this returns ``None`` immediately and the
-        code path is dead (design §0.1 Fallback law).
-
-        Activation is otherwise by artefact presence: if no
-        ``features/**/*.dcl`` carries a ``@task:<TASK-ID>`` marker
-        (absence discipline), :func:`run_dcl_for_task` returns ``None`` and the
-        existing chain proceeds untouched. The oracle is hermetic — it runs the
-        compile gate + derivation only, never assertions against a live URL
-        (that is the live-gate stage's job, design §3).
-
-        Errors during execution are swallowed and logged (including an instrument
-        fault such as a missing node runtime) — DCL failures must never break
-        task-work result writing.
-        """
-        try:
-            from guardkit.qa.spec_track import get_spec_track
-
-            if get_spec_track(self.worktree_path) != "dcl":
-                return None
-
-            from guardkit.qa.dcl import run_dcl_for_task
-
-            logger.info("DCL oracle invoking run_dcl_for_task for %s", task_id)
-            result = run_dcl_for_task(task_id, self.worktree_path)
-        except Exception as exc:  # noqa: BLE001 — protect task-work writer
-            logger.warning(
-                "DCL oracle raised %s for %s; treating as skipped.",
-                exc.__class__.__name__,
-                task_id,
-            )
-            return None
-
-        if result is None:
-            return None
-        return result.to_dict()
-
     # R1 DE-WIRE (Rich 08-14): _run_bdd_authoring_sweep
     # (TASK-AB-BDDAUTHOR01) removed with its invocation — no turn runs
     # pytest-bdd glue sweeps any more.
@@ -11287,40 +11246,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # R1 DE-WIRE (Rich 08-14): the BDD oracle invocation (TASK-BDD-E8954)
         # is removed — task_work_results no longer carries a bdd_results key.
         # bdd_runner.py stays on disk unreferenced until R2 deletes it.
-
-        # Phase D (design §1): the DCL oracle — the optional dcl spec-track
-        # sibling. Gated on get_spec_track(worktree) == "dcl" INSIDE the method;
-        # on the default gherkin track it returns None and this key never
-        # appears, so task_work_results is byte-identical to today.
-        # Activation is otherwise by artefact presence (a @task-tagged .dcl);
-        # absent artifact = absent key at every layer (absence discipline).
-        dcl_results = self._run_dcl_oracle(task_id)
-        if dcl_results is not None:
-            results["dcl_results"] = dcl_results
-
-        # dcl/W2ab: the every-run compile-shadow capture lane. This is THE single
-        # once-per-verification-run hook (the coach_validator seam runs factory
-        # BDD plugin discovery, not this oracle, so wiring here fires exactly once
-        # per run — see capture.py's module docstring for the seam choice). It
-        # runs on EVERY track (unlike the dcl oracle above), but is flag-gated
-        # (dcl.capture, default OFF) INSIDE compile_shadow: on the default gherkin
-        # track with the flag off it returns after the config read — zero reads,
-        # no sink, no checker call, byte-identical task_work_results. compile_shadow
-        # never raises; this guard is belt-and-suspenders so NO capture path can
-        # ever touch the verdict/flow (Fallback law).
-        try:
-            from guardkit.qa.dcl.capture import compile_shadow
-
-            compile_shadow(
-                self.worktree_path,
-                run_id=getattr(self, "_run_id", None) or task_id,
-            )
-        except Exception as exc:  # noqa: BLE001 — capture must never break task-work
-            logger.warning(
-                "DCL compile-shadow raised %s for %s; ignored (verdict untouched).",
-                exc.__class__.__name__,
-                task_id,
-            )
 
         # R1 DE-WIRE (Rich 08-14): the BDD authoring-sweep invocation
         # (TASK-AB-BDDAUTHOR01) is removed — task_work_results no longer
