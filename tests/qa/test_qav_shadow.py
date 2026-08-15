@@ -1,7 +1,7 @@
 """Unit tests for the QAV shadow mode lane (§7, log-only second opinion).
 
-Proves the design's one law on the shadow seam (mirrors the DCL capture
-Fallback-law tests, ``tests/qa/dcl/test_capture.py``):
+Proves the design's one law on the shadow seam (mirrors the Fallback-law tests
+of the since-deleted DCL capture lane):
 
 * **default-OFF** — with the flag absent, ``run_qav_shadow`` / ``schedule_qav_shadow``
   do NOTHING: no receipt, no queue, no ``/running`` probe, no seat call (both are
