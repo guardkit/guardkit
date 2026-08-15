@@ -2627,6 +2627,21 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # THE ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed).
+            # Deterministic backstop mirroring _apply_behavioural_oracle_guard:
+            # when the Coach's hurl_twins leg reports the registered hurl-twins
+            # gate RAN and FAILED against a deployed target, override
+            # approve->feedback with a must_fix naming the failing twins.
+            # absent (no target / not registered / unreachable) is a no-op —
+            # the leg is advisory in-build; the twins' real run is the close.
+            self._apply_hurl_twins_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # FEAT-SCG (SCG-002): mechanical spec-conformance hard-gate.
             # Deterministic backstop modelled on _apply_behavioural_oracle_guard.
             # When the spec_conformance leg reports a failed declarative rule
@@ -7446,6 +7461,120 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # must-persist-to-disk).
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAV-004"
+        )
+
+    def _apply_hurl_twins_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the routed hurl-twins gate ran and failed.
+
+        THE ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed
+        2026-08-15). Deterministic backstop for the Coach's ``hurl_twins``
+        evidence leg (``CoachValidator._produce_hurl_twins``): when the task's
+        feature stamps scenarios ``verifier: hurl`` AND the repo's registered
+        ``hurl-twins`` gate was actually DRIVEN against a deployed target AND
+        it FAILED, override an ``approve`` verdict to ``feedback`` with one
+        ``must_fix`` issue naming the failing twin assertions. Modelled
+        verbatim on :meth:`_apply_behavioural_oracle_guard`.
+
+        Outcome policy — narrow and absence-of-failure-safe
+        (``.claude/rules/absence-of-failure-is-not-success.md``):
+
+        * ``status == "ran"`` and ``passed is False`` -> hard RED override
+          (a timed-out gate is a ran-and-failed gate, COACHRUNPARITY01
+          semantics).
+        * ``status == "absent"`` (no deployed target — the in-build norm;
+          gate not registered; target unreachable; gate undrivable) ->
+          NO-OP. Never a block, never a pass. The leg is ADVISORY evidence;
+          the twins' real run is the close-side live gate.
+        * ``passed is True`` -> no-op.
+        * ``evidence_bundle is None`` / ``hurl_twins is None`` (feature stamps
+          nothing ``hurl``) -> no-op, byte-identical to before this guard.
+        * Only an ``approve`` is overridden; a ``feedback`` verdict is left
+          untouched.
+
+        Mutates ``decision`` in place and re-persists ``coach_turn_N.json``
+        (deterministic-verdict-override-must-persist-to-disk).
+        """
+        if decision.get("decision") != "approve":
+            return
+        if evidence_bundle is None:
+            return
+        twins = getattr(evidence_bundle, "hurl_twins", None)
+        if not isinstance(twins, dict):
+            return
+        if twins.get("status") != "ran":
+            return  # absent — advisory leg, never blocks
+        if twins.get("passed") is not False:
+            return
+
+        gate_id = twins.get("gate_id") or "hurl-twins"
+        env_name = twins.get("base_url_env") or "<base_url_env>"
+        exit_code = twins.get("exit_code")
+        timed_out = bool(twins.get("timed_out", False))
+        duration = twins.get("duration") or 0.0
+        failed = list(twins.get("assertions_failed") or [])
+        scenarios = list(twins.get("scenarios") or [])
+        output_tail = (twins.get("output_tail") or "").strip()
+
+        if timed_out:
+            reason = (
+                f"registered {gate_id} gate timed out after {duration:.0f}s "
+                f"against the target named by {env_name}"
+            )
+        else:
+            reason = (
+                f"registered {gate_id} gate failed with exit_code={exit_code} "
+                f"({len(failed)} failing assertion(s), duration={duration:.1f}s) "
+                f"against the target named by {env_name}"
+            )
+        failing_ids = ", ".join(str(f.get("id")) for f in failed) or "<none enumerated>"
+        rationale = (
+            f"Hurl-twin verification FAILED — {reason}. The feature stamps "
+            f"{len(scenarios)} scenario(s) `verifier: hurl` (the routing law, "
+            f"card A.2) and the Coach drove the repo's registered {gate_id} "
+            f"gate as independent evidence. This overrides the Coach's approve "
+            f"verdict to feedback. Failing assertions: {failing_ids}. "
+            f"Failure output: {output_tail or '<empty>'}"
+        )
+        override_issue = {
+            "severity": "must_fix",
+            "category": "hurl_twins_failure",
+            "description": rationale,
+            # _extract_feedback carries test_output verbatim to the Player.
+            "test_output": output_tail,
+            "details": {
+                "gate_id": gate_id,
+                "base_url_env": env_name,
+                "exit_code": exit_code,
+                "duration": duration,
+                "timed_out": timed_out,
+                "assertions_failed": failed,
+                "scenarios": scenarios,
+                "overridden_decision": "approve",
+            },
+        }
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+        logger.warning(
+            "ROUTING LAW (hurl dispatch): overriding Coach verdict "
+            "'approve'->'feedback' for %s turn %s — %s gate ran-and-failed "
+            "(%s). Failing: %s",
+            task_id,
+            turn,
+            gate_id,
+            "timed_out" if timed_out else f"exit_code={exit_code}",
+            failing_ids,
+        )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="ROUTING-LAW-HURL"
         )
 
     def _spec_conformance_ac_paths_failure(

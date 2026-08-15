@@ -344,6 +344,22 @@ class CoachEvidenceBundle:
     # turn's structured acceptance criteria), not in this leg.
     spec_conformance: Optional[Dict[str, Any]] = None
 
+    # THE ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed
+    # 2026-08-15). When the task's FEATURE carries scenarios stamped
+    # ``verifier: hurl``, the Coach's independent-verification leg ALSO drives
+    # the repo's REGISTERED ``hurl-twins`` gate (``qa/gates/registry.yaml``)
+    # against the deployed target named by that entry's ``base_url_env``.
+    # A dict ``{"status": "absent"|"ran", "reason": ..., "passed": ...,
+    # "assertions_failed": [...], ...}`` produced by
+    # ``CoachValidator._produce_hurl_twins``. ``None`` when the feature stamps
+    # no scenario ``hurl`` (the byte-equivalent no-op for every other task).
+    # ``absent`` covers: gate not registered, env var unset (in-build has no
+    # deployed candidate — the twins run at the close), target unreachable,
+    # gate undrivable — NEVER a failure. Only ``ran`` + ``passed False`` blocks
+    # (``AgentInvoker._apply_hurl_twins_guard``, mirroring the behavioural
+    # oracle guard). The leg is ADVISORY evidence in-build; it is not the close.
+    hurl_twins: Optional[Dict[str, Any]] = None
+
     independent_tests: Optional["IndependentTestResult"] = None
     # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
     # independent test run. Populated by gather_evidence ONLY when independent

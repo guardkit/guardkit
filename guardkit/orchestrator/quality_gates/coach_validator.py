@@ -1391,6 +1391,7 @@ class CoachValidator:
         in_autobuild_context: bool = False,  # WS3-S1 Q1 SPLIT (hard-abort)
         toolchain: Optional["ToolchainDeclaration"] = None,  # TS-lane D.1b
         component: Optional[str] = None,  # per-component seam
+        hurl_scenarios: Optional[List[str]] = None,  # routing law: hurl dispatch (card A.2)
     ):
         """
         Initialize CoachValidator.
@@ -1498,6 +1499,16 @@ class CoachValidator:
             the root block: it becomes a loud INSTRUMENT FAULT (ABSENT /
             UNKNOWN), because running the backend suite as the verdict on an
             ``app/`` task is exactly the false signal this seam removes.
+        hurl_scenarios : Optional[List[str]]
+            THE ROUTING LAW's first routed home (card Q8/A.2, hurl dispatch
+            2026-08-15): the titles of the task's FEATURE scenarios stamped
+            ``verifier: hurl`` (``Feature.scenarios`` via ``feature_loader``),
+            threaded down like ``smoke_command``. Non-empty ⇒
+            ``gather_evidence`` ALSO drives the repo's registered
+            ``hurl-twins`` gate (:meth:`_produce_hurl_twins`) as advisory
+            in-build evidence. ``None`` / empty (every unstamped feature and
+            every non-feature caller) ⇒ the leg is a no-op and the bundle's
+            ``hurl_twins`` field stays ``None`` — byte-identical behaviour.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
@@ -1655,6 +1666,10 @@ class CoachValidator:
         # Threaded from the feature's smoke_gates.expected_exit so the per-task
         # check agrees with the post-wave gate (default 0).
         self.smoke_expected_exit: int = smoke_expected_exit
+        # ROUTING LAW — hurl dispatch (card A.2): the feature's hurl-stamped
+        # scenario titles. Non-empty activates the hurl-twins leg in
+        # gather_evidence; empty keeps the leg a no-op (bundle field None).
+        self.hurl_scenarios: List[str] = list(hurl_scenarios or [])
         # TASK-AB-BASETEMP01: caller-supplied attribution label for the per-run
         # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
         self._basetemp_context: Optional[str] = basetemp_context
@@ -3300,6 +3315,32 @@ class CoachValidator:
             )
 
         # ------------------------------------------------------------------
+        # 9. THE ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed).
+        # When the feature stamps scenarios ``verifier: hurl``, ALSO drive the
+        # repo's registered ``hurl-twins`` gate as advisory in-build evidence.
+        # Populates hurl_twins at the complete-path return only; None for
+        # every unstamped feature (byte-identical). Never breaks gathering.
+        # ------------------------------------------------------------------
+        hurl_twins_dict: Optional[Dict[str, Any]] = None
+
+        try:
+            hurl_twins_dict = self._produce_hurl_twins()
+            if hurl_twins_dict is not None:
+                logger.info(
+                    "gather_evidence: hurl-twins leg complete "
+                    "(status=%s, passed=%s, reason=%s).",
+                    hurl_twins_dict.get("status"),
+                    hurl_twins_dict.get("passed"),
+                    hurl_twins_dict.get("reason"),
+                )
+        except Exception as exc:  # noqa: BLE001 — hurl leg errors must not break gathering
+            logger.warning(
+                "gather_evidence: hurl-twins leg raised %s; "
+                "hurl_twins field left as None.",
+                exc.__class__.__name__,
+            )
+
+        # ------------------------------------------------------------------
         # 7. Independent-test substrate-vs-code classification (TASK-ABFIX-012).
         # The live gather_evidence path carries NO failure classification on the
         # bundle today (the legacy validate() path's _classify_test_failure is
@@ -3378,6 +3419,7 @@ class CoachValidator:
             coverage=coverage_dict,     # Wave-3 (TASK-QAV-003)
             behavioural_oracle=behavioural_oracle_dict,  # Wave-4 (TASK-QAV-006)
             runtime_parity=runtime_parity,
+            hurl_twins=hurl_twins_dict,  # routing law: hurl dispatch (card A.2)
         )
 
     def _gather_runtime_parity(self) -> Optional["RuntimeParityResult"]:
@@ -3501,6 +3543,214 @@ class CoachValidator:
     # ------------------------------------------------------------------
     # L4 behavioural-oracle producer (TASK-QAV-006)
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # THE ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed).
+    # ------------------------------------------------------------------
+
+    #: The registry id of the repo's Hurl-twin gate (``qa/gates/registry.yaml``).
+    #: api_test registered it under this id in the 08-14 pilot; a repo that
+    #: names it differently is "not registered" here — loud in the reason,
+    #: never guessed.
+    HURL_TWINS_GATE_ID: str = "hurl-twins"
+
+    #: The exact ABSENT reason for the in-build no-target case (card A.2's
+    #: honest note): the build has no deployed candidate; the twins' real
+    #: run is the close-side live gate, not this leg.
+    HURL_TWINS_NO_TARGET_REASON: str = (
+        "no deployed target — twins run at the close"
+    )
+
+    def _produce_hurl_twins(self) -> Optional[Dict[str, Any]]:
+        """Drive the repo's registered ``hurl-twins`` gate for a hurl-stamped feature.
+
+        THE ROUTING LAW's first routed home (card Q8/A.2, ruled 2026-08-14;
+        dispatch wired 2026-08-15). Until this leg existed the ``verifier:``
+        stamp VALIDATED at plan load but no home CONSUMED it — a scenario
+        stamped ``hurl`` was routed nowhere. This is the smallest honest
+        consumer: when the task's feature stamps one or more scenarios
+        ``verifier: hurl`` (``self.hurl_scenarios``, threaded from
+        ``Feature.scenarios``), the Coach's independent-verification leg ALSO
+        drives the repo's ``hurl-twins`` gate — IF it is registered in
+        ``qa/gates/registry.yaml`` — against the deployed target named by that
+        entry's ``target.base_url_env``, exactly the way the live-gate runner
+        drives it (``live_gate.executor.execute_gate``: shell the registered
+        script, read exit code + F4 envelope). Wire, don't rebuild.
+
+        **This leg is ADVISORY in-build evidence, never a blocking gate on
+        its own.** In-build there is normally NO deployed candidate — the
+        worktree is source, not a running service — so the common outcome is
+        ``absent`` with the reason ``"no deployed target — twins run at the
+        close"``. Absence is honest, never a failure, and never a pass
+        (``absence-of-failure-is-not-success.md``). The twins' real run stays
+        the close-side live gate. What this leg adds is: when an operator HAS
+        a target up (the env var set and answering), the Coach sees the twins'
+        verdict on the candidate before approving, and a RAN-AND-FAILED result
+        is fed to ``AgentInvoker._apply_hurl_twins_guard`` which flips
+        ``approve`` -> ``feedback`` with a ``must_fix`` (mirroring
+        ``_apply_behavioural_oracle_guard``). Every other outcome is a no-op
+        for the verdict.
+
+        Outcome table (``status``):
+
+        * ``None`` (field absent from the bundle) — the feature stamps no
+          scenario ``hurl``. Byte-identical to before this leg existed.
+        * ``absent`` — one of: no ``qa/gates/registry.yaml`` in the worktree;
+          registry unloadable; no gate with id ``hurl-twins``; the entry's
+          ``base_url_env`` unset (``reason`` = the no-target sentence);
+          target named by the env var not answering (environment, per the
+          F16 reachability check — the same posture as
+          ``DefaultF16ChecklistProvider``); gate script missing / envelope
+          malformed. ``reason`` always says which.
+        * ``ran`` — the gate script executed. ``passed`` mirrors the F4
+          contract (exit 0 AND no failing assertion); ``assertions_failed``
+          lists each failing assertion's ``{id, observed, expected}``;
+          ``timed_out`` marks the executor's timeout exit.
+
+        Never raises (the caller wraps it anyway); every fault degrades to an
+        ``absent`` dict that names the fault.
+
+        Honesty notes: the registry, the gate script and the twin files are
+        read from the WORKTREE (inside the Player's reach — the toolchain
+        snapshot discipline is NOT applied here yet; a follow-up lane may pin
+        the registry pre-turn-1). ``base_url`` values are never echoed into
+        the bundle — only the env var NAME.
+        """
+        scenarios = list(self.hurl_scenarios or [])
+        if not scenarios:
+            return None
+
+        gate_id = self.HURL_TWINS_GATE_ID
+        base: Dict[str, Any] = {
+            "gate_id": gate_id,
+            "scenarios": scenarios,
+            "scenario_count": len(scenarios),
+        }
+
+        def _absent(reason: str, **extra: Any) -> Dict[str, Any]:
+            logger.info(
+                "hurl dispatch: %d hurl-stamped scenario(s) — hurl-twins leg "
+                "ABSENT (%s).",
+                len(scenarios),
+                reason,
+            )
+            return {**base, "status": "absent", "passed": None, "reason": reason, **extra}
+
+        try:
+            from guardkit.orchestrator.live_gate.registry import (
+                load_registry,
+                registry_path_for,
+            )
+        except Exception as exc:  # noqa: BLE001 — never hard-depend on the live-gate package
+            return _absent(f"live-gate package unavailable: {exc}")
+
+        registry_path = registry_path_for(self.worktree_path)
+        if not registry_path.exists():
+            return _absent(
+                f"{gate_id} gate not registered — no qa/gates/registry.yaml "
+                f"in the worktree"
+            )
+        try:
+            registry = load_registry(registry_path)
+        except Exception as exc:  # noqa: BLE001 — a malformed registry is an env fault here
+            return _absent(
+                f"qa/gates/registry.yaml failed to load: "
+                f"{exc.__class__.__name__}: {exc}"
+            )
+
+        gate = next((g for g in registry.gates if g.id == gate_id), None)
+        if gate is None:
+            registered = ", ".join(sorted(g.id for g in registry.gates)) or "none"
+            return _absent(
+                f"{gate_id} gate not registered in qa/gates/registry.yaml "
+                f"(registered gates: {registered})"
+            )
+
+        env_name = gate.target.base_url_env
+        base["base_url_env"] = env_name
+        base["gate_path"] = gate.path
+        base_url = (os.environ.get(env_name) or "").strip()
+        if not base_url:
+            return _absent(
+                self.HURL_TWINS_NO_TARGET_REASON,
+                detail=f"{env_name} is unset; in-build has no deployed candidate",
+            )
+
+        # Reachability (F16, the DefaultF16ChecklistProvider posture): any HTTP
+        # answer = something is listening; no answer = environment, not the
+        # product. Never let a dead target masquerade as a red twin.
+        try:
+            from guardkit.orchestrator.live_gate.preflight import (
+                DefaultF16ChecklistProvider,
+            )
+
+            reach = DefaultF16ChecklistProvider([gate], env=os.environ).checklist()[0]
+        except Exception as exc:  # noqa: BLE001 — reachability probe fault = environment
+            return _absent(
+                f"target named by {env_name} could not be probed: "
+                f"{exc.__class__.__name__}: {exc}"
+            )
+        if not reach.ok:
+            return _absent(
+                f"target named by {env_name} is not reachable — environment, "
+                f"not a product fail; twins run at the close",
+                detail=(reach.detail or "").replace(base_url, "<base_url>"),
+            )
+
+        try:
+            from guardkit.orchestrator.live_gate.executor import (
+                TIMEOUT_EXIT_CODE,
+                SubprocessGateScriptRunner,
+                execute_gate,
+                gate_failed,
+            )
+
+            started = time.monotonic()
+            result = execute_gate(
+                gate,
+                repo_root=self.worktree_path,
+                runner=SubprocessGateScriptRunner(),
+                env=os.environ,
+                timeout_s=float(self.test_timeout),
+            )
+            duration = time.monotonic() - started
+        except Exception as exc:  # noqa: BLE001 — script missing / bad envelope = undrivable
+            return _absent(
+                f"{gate_id} gate could not be driven: "
+                f"{exc.__class__.__name__}: {exc}"
+            )
+
+        failed = [
+            {"id": a.id, "observed": a.observed, "expected": a.expected}
+            for a in result.assertions
+            if a.status == "fail"
+        ]
+        passed = not gate_failed(result)
+        output_tail = "\n".join(
+            f"{f['id']}: observed={f['observed']!r} expected={f['expected']!r}"
+            for f in failed
+        )[-2000:]
+        logger.info(
+            "hurl dispatch: hurl-twins gate RAN (exit=%s, passed=%s, "
+            "assertions=%d, failed=%d, %.1fs) for %d hurl-stamped scenario(s).",
+            result.exit_code,
+            passed,
+            len(result.assertions),
+            len(failed),
+            duration,
+            len(scenarios),
+        )
+        return {
+            **base,
+            "status": "ran",
+            "passed": passed,
+            "exit_code": result.exit_code,
+            "timed_out": result.exit_code == TIMEOUT_EXIT_CODE,
+            "duration": duration,
+            "assertions_total": len(result.assertions),
+            "assertions_failed": failed,
+            "output_tail": output_tail,
+        }
 
     def _produce_behavioural_oracle(
         self,

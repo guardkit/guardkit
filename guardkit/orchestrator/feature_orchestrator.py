@@ -4072,6 +4072,30 @@ The detailed specifications are in the task markdown file.
             logger.info(message)
         return resolved
 
+    @staticmethod
+    def _hurl_scenarios_for(feature: "Feature") -> List[str]:
+        """The feature's scenario titles stamped ``verifier: hurl`` (card A.2).
+
+        THE ROUTING LAW's stamp is validated at plan load
+        (``Feature.scenarios`` -> ``ScenarioStamp``); this is the first
+        CONSUMER of that stamp: the titles are threaded to the per-task Coach
+        (``AutoBuildOrchestrator(hurl_scenarios=...)`` ->
+        ``CoachValidator._produce_hurl_twins``). Order preserved (the YAML
+        map's), duplicates impossible (map keys). Empty when the feature
+        stamps nothing ``hurl`` — the no-op path for every existing feature.
+        Never raises: a feature object with no ``scenarios`` attribute (older
+        test doubles) yields ``[]``.
+        """
+        scenarios = getattr(feature, "scenarios", None) or {}
+        titles: List[str] = []
+        try:
+            for title, stamp in scenarios.items():
+                if getattr(stamp, "verifier", None) == "hurl":
+                    titles.append(title)
+        except Exception:  # noqa: BLE001 — a malformed double must not break the task
+            return []
+        return titles
+
     def _execute_task(
         self,
         task: FeatureTask,
@@ -4197,6 +4221,14 @@ The detailed specifications are in the task markdown file.
                 # CoachValidator.gather_evidence.
                 smoke_command=smoke_command,
                 smoke_expected_exit=smoke_expected_exit,
+                # ROUTING LAW — hurl dispatch (card Q8/A.2, first home routed
+                # 2026-08-15): the feature's scenario titles stamped
+                # ``verifier: hurl``, threaded to the per-task Coach so its
+                # independent-verification leg ALSO drives the repo's
+                # registered hurl-twins gate (advisory in-build evidence;
+                # ABSENT with no deployed target). Empty for every unstamped
+                # feature — byte-identical behaviour.
+                hurl_scenarios=self._hurl_scenarios_for(feature),
             )
 
             # Execute task orchestration
