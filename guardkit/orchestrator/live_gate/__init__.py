@@ -54,6 +54,7 @@ from guardkit.orchestrator.live_gate.disposition import (
     wire_disposition,
 )
 from guardkit.orchestrator.live_gate.errors import LiveGateError, LiveGateStubError
+from guardkit.orchestrator.live_gate.preflight import DefaultF16ChecklistProvider
 from guardkit.orchestrator.live_gate.poller import (
     Classification,
     PollSample,
@@ -77,6 +78,7 @@ __all__ = [
     "LiveGateError",
     "LiveGateStubError",
     "LiveGateRunner",
+    "DefaultF16ChecklistProvider",
     "derive_verdict",
     "classify_operation",
     "PollSample",
