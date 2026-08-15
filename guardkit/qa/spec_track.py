@@ -1,21 +1,17 @@
-"""The per-repo ``spec_track`` switch (Phase D, design §1 / D1).
+"""The per-repo ``spec_track`` switch.
 
-DCL adoption rides an optional *spec track*. A repo declares which track it is
-on; ``gherkin`` is the default and — by the Fallback law (design §0.1) — forever
-the fallback. On the ``dcl`` track a feature's behaviour spec is a
-compiler-checked ``.dcl`` capability whose outside-in verification is *derived*
-from that spec (:mod:`guardkit.qa.dcl`); on ``gherkin`` nothing new runs and
-guardkit behaves byte-for-byte as it does today.
-
-:func:`get_spec_track` follows the :func:`guardkit.qa.enforcement.is_tier1_enforced`
-idiom exactly:
+Historically this selected between the default ``gherkin`` spec track and the
+optional ``dcl`` track. The DCL lane was deleted outright (card Q11, ruled
+08-15); ``gherkin`` is now the only track. :func:`get_spec_track` is kept for
+call-site compatibility and still follows the
+:func:`guardkit.qa.enforcement.is_tier1_enforced` idiom:
 
     precedence  env ``GUARDKIT_SPEC_TRACK`` > ``.guardkit/config.yaml``
                 ``qa.spec_track`` > default ``"gherkin"``.
 
 Unlike the boolean enforcement flag, an *unrecognised* value is a hard, loud
-error rather than a silent OFF: a typo (``gherkins``, ``DCL ``) must never be
-read as ``gherkin`` and quietly disable the DCL track a repo asked for.
+error rather than a silent OFF: a typo (``gherkins``) — or a leftover ``dcl``
+opt-in for the deleted track — must never be silently read as ``gherkin``.
 """
 
 from __future__ import annotations
@@ -39,10 +35,10 @@ __all__ = [
 #: Env override for the spec track. When set it wins over ``.guardkit/config.yaml``.
 SPEC_TRACK_ENV = "GUARDKIT_SPEC_TRACK"
 
-#: The only two legal track values.
-ALLOWED_SPEC_TRACKS = frozenset({"gherkin", "dcl"})
+#: The only legal track value.
+ALLOWED_SPEC_TRACKS = frozenset({"gherkin"})
 
-#: The default + permanent fallback track (design §0.1 Fallback law).
+#: The default (and only) track.
 DEFAULT_SPEC_TRACK = "gherkin"
 
 
@@ -66,8 +62,9 @@ def _validate(value: str, *, source: str) -> str:
     allowed = ", ".join(sorted(ALLOWED_SPEC_TRACKS))
     raise_msg = (
         f"{source} spec_track={value!r} is not a recognised track — "
-        f"allowed values are exactly {{{allowed}}}. A typo must never silently "
-        "mean gherkin; fix the value or remove it to use the default."
+        f"allowed values are exactly {{{allowed}}}. An unrecognised value must "
+        "never silently mean gherkin; fix the value or remove it to use the "
+        "default."
     )
     if value not in ALLOWED_SPEC_TRACKS:
         raise ValueError(raise_msg)
@@ -75,17 +72,19 @@ def _validate(value: str, *, source: str) -> str:
 
 
 def get_spec_track(repo_root: Path) -> str:
-    """Return the spec track for ``repo_root`` (``"gherkin"`` or ``"dcl"``).
+    """Return the spec track for ``repo_root`` (always ``"gherkin"`` when legal).
 
     Precedence: ``GUARDKIT_SPEC_TRACK`` env var > ``.guardkit/config.yaml``
     ``qa.spec_track`` > default ``"gherkin"``.
 
-    Default ``"gherkin"`` everywhere (design §0.1 Fallback law): a repo opts into
-    the ``dcl`` track as an explicit step; with the switch absent nothing new runs.
+    Kept for call-site compatibility after the DCL track's deletion (card Q11):
+    the switch still reads and validates, but ``"gherkin"`` is the only legal
+    value.
 
     Raises:
         ValueError: the env var or config value is set to anything other than
-        ``"gherkin"`` / ``"dcl"`` (a typo is loud, never a silent gherkin).
+        ``"gherkin"`` (an unrecognised value — including a leftover ``"dcl"``
+        opt-in — is loud, never a silent gherkin).
     """
     env: Optional[str] = os.environ.get(SPEC_TRACK_ENV)
     if env is not None and env.strip():

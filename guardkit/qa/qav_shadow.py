@@ -6,9 +6,9 @@ EVERY coach verdict on every factory build — **log-only, never blocks,
 absent-not-fail**.
 
 **The one law over everything (design §"The one law"):** the shadow can never
-change, delay, or fail a build. This module copies the estate's proven DCL
-compile-shadow Fallback law (``guardkit/qa/dcl/capture.py`` — "neither function
-EVER raises, changes a verdict, blocks a run"):
+change, delay, or fail a build. This module copies the estate's proven
+compile-shadow Fallback law (from the since-deleted DCL capture lane —
+"neither function EVER raises, changes a verdict, blocks a run"):
 
 - flag **default OFF** (``autobuild.coach.qav_shadow.enabled`` /
   ``GUARDKIT_QAV_SHADOW``), a bad config reads as OFF;
@@ -716,8 +716,8 @@ def run_qav_shadow(
 ) -> ShadowOutcome:
     """Log a QAV second opinion beside the coach verdict for one turn.
 
-    Synchronous and **never raises** (belt-and-suspenders guard, the DCL
-    ``compile_shadow`` Fallback law). When the flag is OFF this is a provable
+    Synchronous and **never raises** (belt-and-suspenders guard, the
+    compile-shadow Fallback law). When the flag is OFF this is a provable
     no-op: it returns after the config read with NO bundle read, NO probe, NO
     seat call, and NO file. When ON it reads the bundle from
     ``coach_evidence_turn_{turn}.json`` (missing/corrupt ⇒ ``absent(no_bundle)``),

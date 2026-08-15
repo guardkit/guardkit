@@ -2663,37 +2663,6 @@ class CoachValidator:
         # bdd_results.scenarios_failed > 0 → reject) is removed — nothing
         # produces bdd_results any more.
 
-        # 5.7a. DCL oracle gate (Phase D, design §1): the dcl spec-track
-        # sibling gate. It runs ONLY when the repo is on the dcl track; on the
-        # default gherkin track this is dead code. compile_error /
-        # derivation_error → blocking dcl_failure (never silent-green).
-        from guardkit.qa.spec_track import get_spec_track
-
-        if get_spec_track(self.worktree_path) == "dcl":
-            dcl_blocking, dcl_non_blocking = self._check_dcl_results(
-                task_work_results
-            )
-            if dcl_blocking:
-                logger.info(
-                    f"Coach rejected {task_id} turn {turn}: dcl_results.status "
-                    "is a compile/derivation failure"
-                )
-                return self._feedback_result(
-                    task_id=task_id,
-                    turn=turn,
-                    quality_gates=gates_status,
-                    independent_tests=test_result,
-                    requirements=requirements,
-                    issues=advisory_issues + dcl_blocking + dcl_non_blocking,
-                    rationale=(
-                        "DCL oracle failed: "
-                        f"{task_work_results.get('dcl_results', {}).get('status')} "
-                        "on the dcl spec track (compile gate or derivation)."
-                    ),
-                    context_used=context,
-                    honesty_verification=honesty_verification,
-                )
-
         # 5.7b. R1 DE-WIRE (Rich 08-14): the BDD authoring-sweep gate
         # (TASK-AB-BDDAUTHOR01) is removed — nothing produces
         # bdd_authoring_sweep any more.
@@ -8607,100 +8576,6 @@ class CoachValidator:
 
     # R1 DE-WIRE (Rich 08-14): _check_bdd_results (TASK-BDD-E8954) removed
     # with its gate — nothing produces bdd_results any more.
-
-    def _check_dcl_results(
-        self,
-        task_work_results: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Inspect ``task_work_results['dcl_results']`` — the DCL oracle gate.
-
-        The ``dcl`` spec-track sibling of :meth:`_check_bdd_results`, with the
-        same ``(blocking, non_blocking)`` tuple shape and result-dict
-        conventions. The hermetic oracle
-        (:func:`guardkit.qa.dcl.oracle.run_dcl_for_task`) reports a three-state
-        ``status``:
-
-        * ``"pass"`` — clean compile + successful derivation → ``([], [])``.
-        * ``"compile_error"`` — the ``.dcl`` did not compile clean → BLOCKING
-          ``must_fix`` (category ``dcl_failure``).
-        * ``"derivation_error"`` — R1–R10 could not derive an assertion set →
-          BLOCKING ``must_fix`` (category ``dcl_failure``).
-        * Absent ``dcl_results`` key → no gate active (gherkin track, or no
-          tagged ``.dcl``), returns ``([], [])`` — absence is never a verdict.
-
-        Parameters
-        ----------
-        task_work_results : Dict[str, Any]
-            Parsed contents of ``task_work_results.json``.
-
-        Returns
-        -------
-        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
-            ``(blocking_issues, non_blocking_issues)`` — both lists may be empty.
-        """
-        dcl_results = task_work_results.get("dcl_results")
-        if not dcl_results:
-            return [], []
-
-        status = dcl_results.get("status")
-        if status == "pass":
-            return [], []
-
-        dcl_file = dcl_results.get("dcl_file", "<unknown>")
-        feature = dcl_results.get("feature", "<unknown>")
-
-        blocking: List[Dict[str, Any]] = []
-        non_blocking: List[Dict[str, Any]] = []
-
-        if status == "compile_error":
-            errors = dcl_results.get("errors", []) or []
-            error_count = int(dcl_results.get("error_count", 0) or 0)
-            description_parts: List[str] = [
-                f"DCL oracle: {dcl_file} did not compile clean "
-                f"({error_count} error(s)) — the capability spec is broken."
-            ]
-            for msg in errors[:5]:
-                description_parts.append(f"- {msg}")
-            blocking.append({
-                "severity": "must_fix",
-                "category": "dcl_failure",
-                "description": "\n".join(description_parts),
-                "dcl_file": dcl_file,
-                "feature": feature,
-                "error_count": error_count,
-                "compile_errors": list(errors[:10]),
-            })
-        elif status == "derivation_error":
-            derivation_error = (
-                dcl_results.get("derivation_error") or "derivation failed"
-            )
-            blocking.append({
-                "severity": "must_fix",
-                "category": "dcl_failure",
-                "description": (
-                    f"DCL oracle: {dcl_file} compiled clean but its outside-in "
-                    f"assertion set could not be derived — {derivation_error}"
-                ),
-                "dcl_file": dcl_file,
-                "feature": feature,
-                "derivation_error": derivation_error,
-            })
-        else:
-            # An unrecognised status is itself a fault — a DCL result that is
-            # neither pass nor a known failure must never pass silently.
-            blocking.append({
-                "severity": "must_fix",
-                "category": "dcl_failure",
-                "description": (
-                    f"DCL oracle: {dcl_file} reported an unrecognised status "
-                    f"{status!r}; treating as a failure (never silent-green)."
-                ),
-                "dcl_file": dcl_file,
-                "feature": feature,
-                "status": status,
-            })
-
-        return blocking, non_blocking
 
     # R1 DE-WIRE (Rich 08-14): _check_bdd_authoring_sweep
     # (TASK-AB-BDDAUTHOR01) removed with its gate and autobuild's
