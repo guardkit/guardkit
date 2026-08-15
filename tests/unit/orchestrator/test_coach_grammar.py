@@ -191,6 +191,12 @@ class TestGrammarLoadByContract:
     def test_strict_flag_loads_strict(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # This asserts the coachsplit strict grammar. With no contract given,
+        # the loader resolves one from the CURRENT DIRECTORY's config — and
+        # guardkit's own .guardkit/config.yaml pins `contract: v4`, so running
+        # the suite from the repo root silently loaded the v4 grammar. Pin the
+        # contract this test is actually about.
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         coach_grammar.load_coach_verdict_grammar.cache_clear()
         g = coach_grammar.load_coach_verdict_grammar(strict=True)
         assert "root" in g and "prelude" in g
@@ -350,6 +356,9 @@ class TestBackwardCompatibility:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """load_coach_verdict_grammar(strict=True) still works as before."""
+        # Pin the contract: with none given the loader reads the cwd's config,
+        # and guardkit's own config pins v4. See test_strict_flag_loads_strict.
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         coach_grammar.load_coach_verdict_grammar.cache_clear()
         # The existing test in test_coach_synthesis_split.py calls:
         #   load_coach_verdict_grammar(strict=True)
@@ -360,6 +369,9 @@ class TestBackwardCompatibility:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """load_coach_verdict_grammar() (no args) still works as before."""
+        # Pin the contract: with none given the loader reads the cwd's config,
+        # and guardkit's own config pins v4. See test_strict_flag_loads_strict.
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         coach_grammar.load_coach_verdict_grammar.cache_clear()
         g = coach_grammar.load_coach_verdict_grammar()
         assert "root" in g

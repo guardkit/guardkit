@@ -84,6 +84,10 @@ def _make_feature(task_ids_per_wave: List[List[str]]):
             task.current_turn = 0
             task.result = None
             task.file_path = f"tasks/backlog/test-feature/{tid}.md"
+            # `_resolve_wave_task_timeouts` compares this against numbers, so
+            # a MagicMock's auto-attribute raises TypeError. None is the real
+            # "no estimate given" value and takes the default-timeout path.
+            task.estimated_minutes = None
             tasks.append(task)
 
     feature.tasks = tasks

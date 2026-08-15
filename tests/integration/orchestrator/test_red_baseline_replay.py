@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -81,7 +82,14 @@ def red_baseline_worktree(tmp_path) -> Path:
     return wt
 
 
-def _feature(command="python -m pytest -q app/test/slice/happy_path_test.py"):
+# The baseline probe SHELLS OUT to this command. A bare `python` is not on
+# PATH on every machine (this one only has `python3`), which made the test
+# fail for a reason that has nothing to do with red baselines. sys.executable
+# is the interpreter actually running the suite, and it has pytest installed.
+_PYTEST_CMD = f"{sys.executable} -m pytest -q app/test/slice/happy_path_test.py"
+
+
+def _feature(command=_PYTEST_CMD):
     return Feature(
         id="FEAT-VOICE-003", name="voice", description="d",
         created="2026-07-09T00:00:00Z", status="in_progress",
