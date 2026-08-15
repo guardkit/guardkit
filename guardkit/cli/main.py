@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
-from guardkit.cli.dcl import dcl
 from guardkit.cli.feature import feature
 from guardkit.cli.init import init
 from guardkit.cli.memory import memory
@@ -120,9 +119,6 @@ cli.add_command(memory)
 
 # Add QA command group (tier-1 verification formats, WS2 B1)
 cli.add_command(qa)
-
-# Add DCL derivation command group (D2, design §2 — optional dcl spec track)
-cli.add_command(dcl)
 
 # Add Review command
 cli.add_command(review)
