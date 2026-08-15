@@ -50,6 +50,7 @@ from guardkit.orchestrator.live_gate.executor import (
 )
 from guardkit.orchestrator.live_gate.preflight import (
     BrokerDiffProvider,
+    DefaultF16ChecklistProvider,
     F16ChecklistProvider,
     InstrumentSelfCheck,
     ReservationBroker,
@@ -106,8 +107,11 @@ def derive_verdict(
 
 
 class LiveGateRunner:
-    """Deterministic live-gate runner. Seams are injected; the v1 defaults are
-    the loud ``Unconfigured*`` stubs / real subprocess runner."""
+    """Deterministic live-gate runner. Seams are injected; the defaults are
+    the loud ``Unconfigured*`` stubs / real subprocess runner — except F16,
+    whose bare default is :class:`DefaultF16ChecklistProvider` (a real
+    reachability check against each gate's registry ``base_url_env``, ruled
+    08-15) so an unattended CLI run's verdict can follow the gates."""
 
     def __init__(
         self,
@@ -175,12 +179,24 @@ class LiveGateRunner:
         evidence_dir = ensure_evidence_dir(self._evidence_base(), run_id)
         collector = EvidenceCollector()
 
+        # F16 default wiring (ruled 08-15): a bare runner (no provider injected
+        # — the `guardkit qa live-gate` CLI path) gets the minimal REAL
+        # provider: reachability GET against each selected gate's registry
+        # base_url env, remaining perishable prereqs recorded
+        # declared-not-verified. Before this, every bare run short-circuited
+        # to environment_fail on the Unconfigured stub (proven run
+        # PILOT-HURL-local-20260814T205745Z) and the verdict could never
+        # follow the gates.
+        f16 = self.f16_provider or DefaultF16ChecklistProvider(
+            gates, env=self.gate_env
+        )
+
         preflight = run_preflight(
             gates,
             repo_root=self.repo_root,
             reservation_broker=self.reservation_broker,
             broker_diff=self.broker_diff,
-            f16_provider=self.f16_provider,
+            f16_provider=f16,
             instrument_check=self.instrument_check,
             reservation_resource=self.reservation_resource,
             broker_contract_ref=self.broker_contract_ref,

@@ -42,6 +42,12 @@ counts sit two higher for interpreter reasons (see caution 8): 70 failed /
 10,254 passed / 319 skipped, against 70 / 10,252 / 320 for the lane before the
 correction. No failure set changed.
 
+**Amended again 2026-08-15 — L1 cured.** `lane/archival-fix-0815` fixed the
+production defect this lane refused to paper over. Same matched-venv method:
+**70 → 63 failed**, 10,254 → 10,261 passed, the seven `test_feature_archival.py`
+tests green **unchanged**, zero added failures. The ledger below is 68 → **61**.
+Details in "Two findings that outrank the arithmetic" §2.
+
 ---
 
 ## Two findings that outrank the arithmetic
@@ -65,7 +71,7 @@ silently unpinning the coach contract for every test that ran after it in the sa
 session — an active order-polluter, not merely a failing test. Now fixed via
 `monkeypatch`.
 
-### 2. Seven red tests are pointing at a live production bug
+### 2. Seven red tests are pointing at a live production bug — ✅ FIXED 2026-08-15
 
 `feature_orchestrator.py:5082` sets `feature.status = "awaiting_merge"`.
 `feature_loader.py:484` declares:
@@ -87,6 +93,74 @@ status
 
 The tests are right; the code is wrong. Ledgered and left red — the fix is a
 production enum change and belongs in its own gated lane. **Do not make these green.**
+
+#### ✅ Fixed 2026-08-15 — `lane/archival-fix-0815`
+
+That gated lane ran. **The loader was the wrong side**, and here is why, not just
+that:
+
+- `awaiting_merge` is a *specified* state, not a typo. TASK-FC-003
+  ("Implement feature folder archival") states the requirement verbatim —
+  "Update feature YAML: set `status: awaiting_merge`" — and lists it as a signed
+  acceptance criterion. `tasks/backlog/feature-complete/README.md` names it as
+  step 3 of the Wave-1 flow, and the TASK-REV-FC01 review report carries the same
+  line. The writer at `feature_orchestrator.py:5082` is doing exactly what it was
+  commissioned to do.
+- ~~The `Literal` is simply **older than the state it rejects**.~~ **[history
+  corrected at review, 2026-08-15 — the truth is sharper]**: the writer and the
+  Literal were born in the **same commit** (`b7f0472ac` added both files new,
+  990+1816 insertions), as a dataclass whose annotation was **not enforced** —
+  archival genuinely worked. The defect was **armed on 2026-02-15 by the pydantic
+  migration** (`91dfad127`, "Implemented yaml-schema-contract"), which began
+  enforcing the five-value list unwidened. A validation-migration regression,
+  not a stale enum — and provably working before that date.
+- **Widening breaks nothing exhaustive, and this was checked rather than
+  assumed.** No exhaustive construct exists over the feature-status set anywhere
+  in `guardkit/` or `installer/` — no `match`, no status→X dict, no
+  `assert_never`, no `get_args()`. **[reader list corrected at review — there
+  are THREE, not two]**: `FeatureLoader.is_resumable`
+  (`in_progress`/`paused`/`failed`) and `FeatureCompleteOrchestrator`'s
+  `== "completed"` guard both give an awaiting-merge feature the right answer —
+  not resumable, not done — **and `feature_audit`'s status inferrer does NOT**:
+  it can only infer `planned/in_progress/completed`, so every archived feature
+  now reads STALE to `guardkit feature audit`, and `--fix` would silently
+  rewrite the checkpoint back to `completed`. Operator-invoked only, no CI
+  wiring; **ledgered follow-on: widen the inferrer; until then never run
+  `feature audit --fix` over archived features.** The two honest readers give
+  an awaiting-merge feature the right answer, which is
+  the correct semantics for "built, archived, waiting on a human's merge word".
+
+**The change.** One production file, one field, plus the comment explaining it:
+
+```python
+status: Literal[
+    "planned", "in_progress", "completed", "failed", "paused", "awaiting_merge"
+] = "planned"
+```
+
+**Receipts.**
+
+| Check | Result |
+|---|---|
+| The seven L1 tests | 11/11 in `test_feature_archival.py` pass, **file unchanged** (`git diff -- tests/` empty) |
+| Mutation proof | re-narrowing the `Literal` to its old five values re-reddens exactly those seven |
+| Differential, `pytest tests/unit tests/integration`, matched venvs (Python 3.14.4, `uv sync --all-extras`) | **70 → 63 failed**, 10,254 → 10,261 passed |
+| Strict subset | the 63 are a strict subset of the 70; the diff is exactly the seven archival tests; **ZERO added** |
+
+**Two adjacent findings, ledgered not fixed** (they are a different defect from
+L1 and deserve their own decision):
+
+1. Four of the 41 feature YAMLs in this repo's own `.guardkit/features/` **cannot
+   be loaded at all today** — `FEAT-9DDE` and `FEAT-FP-002` carry feature statuses
+   `merged` and `superseded_by_rwop1.5`; `FEAT-MEM-09` and `FEAT-C90E` fail on
+   `FeatureTask.status` and `FeatureTask.result`. This lane deliberately did not
+   bless those values: `merged` is a real vocabulary word (`/feature-complete`
+   Phase 3 writes it) and probably belongs in the Literal, but
+   `superseded_by_rwop1.5` is hand-written drift that should be corrected in the
+   file rather than legalised in the schema. That is a ruling, not a fix.
+2. `FeatureTask.status` (`feature_loader.py:239`) has the **same shape of staleness**:
+   it omits `merged`, `backlog` and `in_review`, all three of which appear in live
+   feature YAMLs on disk. Same class, separate lane.
 
 ---
 
@@ -258,9 +332,13 @@ These four are the valuable output of the exercise. In each case the test is
 probably **right** and the production code is probably **wrong**. The value they are
 currently delivering is the bug report. Resist the pull to make them green.
 
+**Update 2026-08-15:** L1 has been taken through its own gated lane and cured —
+the test was right, the loader was wrong. Three suspects remain open (L8, L10,
+L11), carrying 5 failures between them.
+
 | # | Tests | Diagnosis |
 |---|---|---|
-| **L1** | 7 — `tests/integration/test_feature_archival.py` | `feature_orchestrator.py:5082` writes `status = "awaiting_merge"`; the `Literal` at `feature_loader.py:484` omits it, so **every feature archival raises a validation error on save**. Confirmed outside the suite (see above). `awaiting_merge` appears nowhere else in the codebase. Cure = a production enum change; needs its own gated lane. |
+| ~~**L1**~~ **✅ FIXED 2026-08-15** | ~~7~~ 0 — `tests/integration/test_feature_archival.py` | `feature_orchestrator.py:5082` writes `status = "awaiting_merge"`; the `Literal` at `feature_loader.py:484` omitted it, so **every feature archival raised a validation error on save**. **Verdict: the loader was the wrong side** — `awaiting_merge` is specified verbatim by TASK-FC-003 and the `Literal` predates `/feature-complete` (unchanged since `b7f0472ac`). Cured on `lane/archival-fix-0815` by widening the `Literal`; the seven tests are green **unchanged**, re-narrowing re-reddens exactly them, and the differential is 70 → 63 with zero added. Full receipts in "Two findings that outrank the arithmetic" §2 above. |
 | **L8** | 2 — `tests/integration/test_config_error_fast_exit.py` (residue after F10) | With a genuinely-invalid task type, `CoachValidator.validate` **does** produce the configuration error — verified directly. But `_loop_phase` never fast-exits: it goes on to invoke the LLM Coach, which the tests had stubbed as "should not be reached". The fast-exit wiring may have regressed. Making these green would mean giving that fallback Coach a return value, which would **hide** the fact the fast-exit did not fire. |
 | **L10** | 2 — `tests/integration/test_drift_detection_workflow.py` | `SpecDriftDetector.analyze_drift` reports 100% implemented for a fixture that **deliberately omits a method**, and the formatted report no longer names the implementation file. A drift detector that cannot see a missing method is not detecting drift. |
 | **L11** | 1 — `tests/integration/lib/test_agent_generator_integration.py` | `_identify_capability_needs` returns zero needs where the test states the hard-coded `testing_framework` pattern always fires. |
@@ -301,14 +379,19 @@ local-fleet seat for the duration of one test.
 
 ### Ledger totals
 
-| Group | Count |
-|---|---|
-| Production-defect suspects (L1, L8, L10, L11) | 12 |
-| M0 fence / langgraph cutover (L2, L3, L5, L15) + L4's share | 28 |
-| Dead claims (L6, part of L4) | ~12 |
-| Behavioural disagreements and residue (L7, L9, L12, L13) | 20 |
-| Flaky / ordering (L14) | 1 |
-| **Total** | **68** |
+| Group | Count (as triaged 08-14) | Open after 08-15 |
+|---|---|---|
+| Production-defect suspects (L1, L8, L10, L11) | 12 | **5** (L1's 7 fixed) |
+| M0 fence / langgraph cutover (L2, L3, L5, L15) + L4's share | 28 | 28 |
+| Dead claims (L6, part of L4) | ~12 | ~12 |
+| Behavioural disagreements and residue (L7, L9, L12, L13) | 20 | 20 |
+| Flaky / ordering (L14) | 1 | 1 |
+| **Total** | **68** | **61** |
+
+The 68 → 61 is measured, not arithmetic: `pytest tests/unit tests/integration` in
+matched venvs reports 70 failed on `main` (`bfb2b826`) and 63 on
+`lane/archival-fix-0815`, the difference being exactly the seven archival tests.
+(70 rather than 68 because these venvs run Python 3.14 — see caution 8.)
 
 (The L4 file splits across three causes, so the middle rows overlap by design; the
 per-file counts in the tables above are exact.)
@@ -323,7 +406,9 @@ per-file counts in the tables above are exact.)
 
 2. **L1, L8, L10 and L11 are probably right.** They are bug reports wearing test
    clothing. The temptation to turn a red suite green is exactly what would delete
-   them. Each needs a production lane, not a fixture edit.
+   them. Each needs a production lane, not a fixture edit. **L1 has now had that
+   lane (2026-08-15) and the diagnosis held: the test was right, the loader's
+   `Literal` was stale. L8, L10 and L11 remain open.**
 
 3. **`test_autobuild_delegation.py` has vacuously-passing tests.** Its subprocess
    tests currently pass because the mechanism they patch no longer exists. Green there
