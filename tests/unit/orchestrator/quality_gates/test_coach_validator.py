@@ -96,6 +96,7 @@ def _write(results_dir: Path, results: Dict[str, Any]) -> Path:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): the Coach bdd_results gate (_check_bdd_results, TASK-BDD-E8954) is removed; R2 deletes at graduation")
 def test_bdd_failure_rejects(tmp_worktree, task_work_results_dir):
     """AC: Coach rejects when ``bdd_results.scenarios_failed > 0``."""
     _write(
@@ -151,6 +152,7 @@ def test_bdd_failure_rejects(tmp_worktree, task_work_results_dir):
     assert "BDD scenarios failed" in result.rationale
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): the Coach bdd_results gate (_check_bdd_results, TASK-BDD-E8954) is removed; R2 deletes at graduation")
 def test_bdd_pending_approves_with_feedback(tmp_worktree, task_work_results_dir):
     """AC: pending alone does NOT block; surfaces as ``should_fix`` feedback only."""
     _write(
@@ -210,6 +212,7 @@ def test_bdd_pending_approves_with_feedback(tmp_worktree, task_work_results_dir)
     assert bdd_pending_issues[0]["scenarios_pending"] == 2
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): the Coach bdd_results gate (_check_bdd_results, TASK-BDD-E8954) is removed; R2 deletes at graduation")
 def test_bdd_results_absent_is_silent_skip(tmp_worktree, task_work_results_dir):
     """No ``bdd_results`` key → gate inactive (back-compat: identical to today)."""
     _write(task_work_results_dir, _make_task_work_results(bdd_block=None))
@@ -245,6 +248,7 @@ def test_bdd_results_absent_is_silent_skip(tmp_worktree, task_work_results_dir):
     assert bdd_issues == []
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): the Coach bdd_results gate (_check_bdd_results, TASK-BDD-E8954) is removed; R2 deletes at graduation")
 def test_bdd_failure_and_pending_both_surfaced(tmp_worktree, task_work_results_dir):
     """When both present: failure blocks; pending also surfaces in feedback."""
     _write(

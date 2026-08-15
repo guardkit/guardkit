@@ -84,6 +84,15 @@ false-reds). The harness seam test uses the same subset idiom
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): the guardkit<->guardkitfactory BDD bridge this CI seam audited is removed; "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 import dataclasses
 import inspect
 

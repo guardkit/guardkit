@@ -13,6 +13,15 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): the Coach's guardkitfactory BDD bridge (TASK-BDDW-001/TASK-FIX-BDDFW01) is removed; "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
