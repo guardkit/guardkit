@@ -1479,6 +1479,7 @@ class AutoBuildOrchestrator:
         seed_feedback: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm a)
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        hurl_scenarios: Optional[List[str]] = None,  # routing law: hurl dispatch (card A.2)
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -1683,6 +1684,11 @@ class AutoBuildOrchestrator:
         # Exit code that counts as a clean standalone run (feature's
         # smoke_gates.expected_exit; default 0).
         self._smoke_expected_exit: int = smoke_expected_exit
+        # ROUTING LAW — hurl dispatch (card Q8/A.2): the feature's scenario
+        # titles stamped ``verifier: hurl``, threaded into CoachValidator like
+        # smoke_command so the per-task Coach can drive the repo's registered
+        # hurl-twins gate as advisory evidence. Default None -> no hurl leg.
+        self._hurl_scenarios: List[str] = list(hurl_scenarios or [])
         self._cancellation_event: Optional[threading.Event] = cancellation_event  # Cooperative cancellation (TASK-ASF-007)
         self._timeout_event: Optional[threading.Event] = timeout_event  # Feature-level timeout signal (TASK-ABFIX-006)
         self._progress_logger = progress_logger  # TASK-FIX-OBS2: Per-task progress logging
@@ -7322,6 +7328,7 @@ class AutoBuildOrchestrator:
                 smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
                 in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
                 component=component,  # per-component seam
+                hurl_scenarios=self._hurl_scenarios,  # routing law: hurl dispatch (card A.2)
             )
 
             # TASK-AB-XREPOEV01 (AC-002): same sibling-repo gate as the primary
@@ -7532,6 +7539,7 @@ class AutoBuildOrchestrator:
             smoke_expected_exit=self._smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
             in_autobuild_context=True,  # WS3-S1 Q1 SPLIT (hard-abort)
             component=component,  # per-component seam
+            hurl_scenarios=self._hurl_scenarios,  # routing law: hurl dispatch (card A.2)
         )
 
         # Step 1: gather evidence bundle. Never falls back to validate() on
