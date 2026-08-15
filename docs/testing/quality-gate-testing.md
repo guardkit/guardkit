@@ -529,7 +529,10 @@ mkdir -p tests/integration/test_features/FEAT-MY-TEST
 
 2. **Create feature YAML**:
 ```yaml
-feature_id: FEAT-MY-TEST
+# The loader's key is `id` — a `feature_id:` key here parses to id=None and
+# every downstream lookup fails (the exact drift the 2026-08-14 triage cured
+# in the real fixture; see docs/test-debt-triage-2026-08-14.md, F12).
+id: FEAT-MY-TEST
 name: My Test Feature
 description: Test feature for X
 status: testing
