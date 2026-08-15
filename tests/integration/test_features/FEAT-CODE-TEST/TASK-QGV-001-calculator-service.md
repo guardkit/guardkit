@@ -6,6 +6,7 @@ created: 2025-01-22T00:00:00Z
 priority: medium
 tags: [testing, quality-gates, solid-principles, calculator]
 complexity: 4
+task_type: feature
 ---
 
 # Task: Implement calculator service with SOLID principles
