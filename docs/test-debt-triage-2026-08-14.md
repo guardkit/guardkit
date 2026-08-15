@@ -35,6 +35,13 @@ own baseline, taken before any edit:
 
 The −73 is 71 tests made to pass plus 2 turned into honest, reasoned skips.
 
+**Amended 2026-08-15.** The F12 correction below moved one of those two skips
+back to passing and added a new in-process test, so the current shape is 72 cured
++ 1 skipped. Re-measured in a fresh worktree on Python 3.14.4, where absolute
+counts sit two higher for interpreter reasons (see caution 8): 70 failed /
+10,254 passed / 319 skipped, against 70 / 10,252 / 320 for the lane before the
+correction. No failure set changed.
+
 ---
 
 ## Two findings that outrank the arithmetic
@@ -118,10 +125,111 @@ Every row was measured in this venv, before and after, at file scope.
 | F9 | 1 | `tests/integration/test_autobuild_context_opt.py` | superseded pin | `TASK_WORK_SDK_MAX_TURNS` 50 → 100. The receipt is in the production comment: TASK-FIX-ASPF-005 raised it because with `--fresh`, Player needs ~35–50 turns and 50 left no headroom | 1 → 0 (38 passed) |
 | F10 | 3 | `tests/integration/test_config_error_fast_exit.py` | stale fixture + **dead premise** | invoker defaults, and the "invalid" task type swapped: `enhancement` is now a **registered alias** for `feature` in `TASK_TYPE_ALIASES`, so the tests were feeding a valid type and asserting rejection | 5 → 2 (the 2 are ledgered as L8) |
 | F11 | 3 | `tests/integration/test_ablation_mode.py` | stale fixture | `git init -b main` (a bare `init` gave `master` here, and `WorktreeManager` branches off `main`), plus real values on the `MagicMock(spec=AgentInvoker)` | 3 → 0 (5 passed) |
-| F12 | 2 | `tests/integration/test_quality_gate_validation.py` | **env-dependent** | honest skip-guard. These shell out to a real `guardkit-py autobuild feature` run needing the CLI **and** a live model seat; the old guard only checked `shutil.which`, which is always true in a synced venv. Now marked `live` and gated on `GUARDKIT_LIVE_AUTOBUILD_TESTS=1`, with the skip reason naming both dependencies | 2 failed → 2 skipped |
+| F12 | 2 | `tests/integration/test_quality_gate_validation.py`, `tests/integration/test_features/FEAT-CODE-TEST/*` | stale fixture | **corrected 2026-08-15 — see "F12 was diagnosed wrong" below.** The checked-in FEAT-CODE-TEST fixture had drifted from the schema the feature loader reads, so both tests died at parse time and never reached a model seat. The fixture is repaired; one test now genuinely passes and the other is guarded on the one dependency that really blocks it | 2 failed → 1 passed + 1 skipped |
 | F13 | 1 | `tests/integration/test_autobuild_preloop.py` | superseded pin | the pre-loop gates now normalise `skip_arch_review: False` into the `execute_design_phase` options dict; the pinned call args are updated | 2 → 1 (the 1 is ledgered as L15) |
 
-**Total: 71 cured + 2 honestly skipped.**
+**Total: 72 cured + 1 honestly skipped.**
+
+---
+
+## F12 was diagnosed wrong — corrected 2026-08-15
+
+The first pass of this lane recorded F12 as env-dependent and wrote a skip-guard
+saying the two tests "need a real `guardkit-py autobuild feature` run against a
+live model seat". That was wrong, and the guard hid a plain fixture bug of
+exactly the kind this lane exists to fix. The row above has been rewritten. What
+is true:
+
+**The tests never reached a seat.** They failed in about two seconds with
+`FeatureParseError: Missing required field 'id' in feature definition`. The
+checked-in fixture `tests/integration/test_features/FEAT-CODE-TEST/FEAT-CODE-TEST.yaml`
+had drifted from the schema `guardkit/orchestrator/feature_loader.py` actually
+reads. Five separate pieces of drift, each found by fixing the one in front of it
+and re-running:
+
+| Drift | Fixture had | Loader requires |
+|---|---|---|
+| feature key | `feature_id:` | `id:` (`_parse_feature`, required with `name`) |
+| task key | `file:` | `file_path:` (`_parse_task`, required with `id`) |
+| feature status | `status: testing` | one of `planned`/`in_progress`/`completed`/`failed`/`paused` |
+| orchestration | absent | `validate_feature` reports "Tasks not in orchestration" without it |
+| task frontmatter | no `task_type` | pre-flight validation rejects the task file without it |
+
+The task `file_path` was also flattened to `tasks/backlog/TASK-….md`. AutoBuild
+derives the feature slug from that path and copies task files out of
+`tasks/backlog/<slug>/`, so the flat form made the setup phase log "Task file not
+found … Failed to copy 1 task file(s)". The fixture now uses
+`tasks/backlog/feat-code-test/…` and the temp-repo fixture builds that layout,
+after which the run finds the task and advances it to `design_approved`.
+
+**A green test was holding the drift in place.** `test_feat_code_test_yaml_valid`
+asserted `data["feature_id"] == "FEAT-CODE-TEST"`. It read the YAML with pyyaml
+only, which proves the file is well-formed text and nothing about whether the
+field names are the ones GuardKit reads. It has been updated to pin the corrected
+schema, and a new companion test —
+`test_feat_code_test_yaml_loads_through_feature_loader` — runs the fixture
+through the real `FeatureLoader` in-process (no CLI, no seat, no network). That
+is the test that would have caught this.
+
+**What each test actually needs, measured with the seat made unreachable**
+(`ANTHROPIC_BASE_URL` pointed at a closed port, so no live traffic was possible):
+
+- `test_autobuild_creates_worktree` — **needs no seat.** The shared worktree is
+  created in AutoBuild's setup phase, before any model is invoked. It now passes
+  in about two seconds. Its guard and its `live` marker are removed, and it runs
+  *seatless* by design: the subprocess is given an unreachable model endpoint, so
+  the default suite never drives whatever seat the operator has running. That is
+  a tightening, not a loosening — if worktree creation ever moved to after the
+  first model call, this test would go red, which is the signal wanted.
+- `test_quality_gates_evaluated` — **genuinely needs a working seat.** It asserts
+  a Player report exists, and the Player only writes `player_turn_N.json` if it
+  really runs; with no reachable seat the M0 fence stops it. It keeps the `live`
+  marker and the `GUARDKIT_LIVE_AUTOBUILD_TESTS=1` opt-in, with a skip reason
+  that now names that one dependency and nothing else.
+
+**Two more test-only defects surfaced on the way and were fixed:**
+
+1. `get_latest_turn_reports` looked only in `.guardkit/autobuild/<task_id>/`.
+   Coach reports are now written to `.guardkit/autobuild-private/<task_id>/`, and
+   the Player writes inside the shared worktree, so the helper silently found
+   nothing. It now searches all known locations. Verified: with the seat
+   unreachable the Coach report is found and the Player report is correctly
+   absent, which is what makes the remaining guard honest.
+
+2. The tests shelled out to a bare `guardkit-py` on PATH. On this machine that
+   resolves to `~/.local/bin/guardkit-py`, a system-python shim that imports
+   guardkit from the **main checkout** — so a test running inside a worktree was
+   validating a different tree's code. The call is now
+   `sys.executable -m guardkit.cli.main`, which pins the run to the code under
+   test. Mutation-checked: breaking `required_fields` in the worktree's
+   `feature_loader.py` turns both worktree-touching tests red, which it could not
+   have done before this change.
+
+**Mutation checks on this fix** (each mutation applied alone, then reverted):
+
+| Mutation | Result |
+|---|---|
+| `id:` → `feature_id:` in the fixture | 3 red |
+| `status: planned` → `status: testing` | 3 red |
+| drop the `orchestration` block | 3 red |
+| drop `task_type` from the task frontmatter | 1 red |
+| add a bogus required field to `feature_loader.required_fields` | 2 red |
+
+One candidate change was **dropped** rather than kept: pinning the temp repo to
+`git init -b main`. It reads plausible (`WorktreeManager` branches off `main`,
+and F11 needed exactly that), but with the fixture repaired the tests pass on a
+`master` default too, so the change carried a claim the measurement did not
+support.
+
+**Differential after this fix**, same worktree and venv (Python 3.14.4):
+70 failed / 10254 passed / 319 skipped, against the lane's 70 / 10252 / 320
+before it. Two tests moved from skipped-or-absent to passing, no failure set
+changed, and no failure in the touched file.
+
+**Ledgered, not fixed:** `docs/testing/quality-gate-testing.md:532` still shows
+the old `feature_id:` key in its example YAML. It is documentation, outside this
+lane's tests-only fence, and it will teach the same drift to the next person who
+copies it.
 
 ### Commits in this lane
 
@@ -227,3 +335,36 @@ per-file counts in the tables above are exact.)
 
 5. **Do not reach for `GUARDKIT_ALLOW_FRONTIER=1`.** It would turn the fence off
    inside the suite, which is where you most want it on.
+
+6. **`test_strict_flag_loads_strict` does not guard what its name suggests.** Its
+   assertion is `"root" in g and "prelude" in g`, but `prelude` appears in both
+   coachsplit grammars (`coach-verdict.gbnf` and `coach-verdict-strict.gbnf`) and
+   in neither v4 grammar. So it discriminates coachsplit-vs-v4, not
+   strict-vs-primary: forcing the name to `_PRIMARY` leaves it green. This is a
+   pre-existing weakness the lane inherited unchanged — the F5 contract pin it
+   gained is correct and does bite — but nobody should read it as proof the
+   strict grammar was loaded.
+
+7. **`test_task_work_sdk_max_turns_is_100` is exposed to your environment.** The
+   constant it asserts is derived from `GUARDKIT_SDK_MAX_TURNS`
+   (`agent_invoker.py:667-668`), and the test does not isolate that variable, so
+   it fails spuriously for any operator who has it set. Pre-existing, not
+   introduced here; a `monkeypatch.delenv` plus a module reload would close it.
+
+8. **The 68 ledgered count is exact only on Python 3.12.** On 3.14 two extra
+   tests fail (`tests/integration/feature_plan/test_validate_smoke_gates_step_8_6.py`),
+   asserting stderr is empty when a pydantic-v1-on-3.14 `UserWarning` lands
+   there. They are red on main too, so the strict-subset claim is unaffected —
+   but this is why caution 1 is real advice rather than boilerplate.
+
+---
+
+## Production observation for a future lane (not fixed here)
+
+`guardkit/orchestrator/coach_grammar.py:60` defines its own
+`resolve_coach_contract()`, duplicating the resolver in `coach_contract.py` —
+whose module docstring claims "both prior resolvers delegate here; no duplicated
+env reads (TASK-CMIR-003 AC-1)". That claim is stale. Two independent resolvers
+now read the same environment variable, which means F5's fix silently depends on
+them agreeing. Consolidating them is a production change and belongs in its own
+coach-gated lane.
