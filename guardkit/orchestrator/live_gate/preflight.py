@@ -34,14 +34,23 @@ Every seam has an ``Unconfigured*`` default that RAISES (:class:`LiveGateStubErr
 if invoked — never a silent success (FEAT-DD4F). Pre-flight catches that raise
 at its own boundary and records a not-ready check, so the default (nothing
 wired) run is an honest ``environment_fail``, not a crash and not a false pass.
+The one exception (ruled 08-15): the RUNNER wires
+:class:`DefaultF16ChecklistProvider` for a bare run — a REAL reachability
+check against each gate's registry ``base_url_env`` (never a silent success:
+unset/unreachable is still honestly not-ready) — because the Unconfigured F16
+stub made every bare ``guardkit qa live-gate`` run ``environment_fail``.
+``run_preflight`` itself keeps the loud stub as its default.
 """
 
 from __future__ import annotations
 
+import os
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence
 
 from guardkit.qa.formats import (
     REQUIRED_NEGATIVE_PATHS,
@@ -124,6 +133,101 @@ class UnconfiguredF16ChecklistProvider(F16ChecklistProvider):
             "checklist (F16, WS5-owned) has no source. A run cannot confirm "
             "tokens/broker/model readiness — environment_fail, not pass."
         )
+
+
+#: Default wall-clock cap for one reachability GET.
+DEFAULT_REACHABILITY_TIMEOUT_S: float = 5.0
+
+
+class DefaultF16ChecklistProvider(F16ChecklistProvider):
+    """Minimal REAL F16 source for a bare run (no WS5 checklist wired).
+
+    Before this default existed, the bare ``guardkit qa live-gate`` CLI hit the
+    :class:`UnconfiguredF16ChecklistProvider` stub on every repo and every run
+    was ``environment_fail`` — the verdict could never follow the gates.
+
+    One real check per distinct registry target: **reachability**. For each
+    distinct ``target.base_url_env`` declared by the selected gates, read that
+    env var and GET the URL — ANY HTTP answer (any status code, including 4xx/
+    5xx) proves something is listening, so the target is ready. An unset env
+    var, or a connection-level failure (refused, DNS, timeout), is honestly
+    not-ready → ``environment_fail``, never a guess and never a product
+    ``fail`` misattributed to gates that could not have reached anything.
+
+    The remaining F16 perishable prereqs (tokens, broker health, channel
+    membership, model warm) have no source here and are recorded
+    declared-not-verified with ``ok=True`` — the same recorded-not-faked
+    convention as pre-flight's ``instrument-declared`` line.
+    """
+
+    def __init__(
+        self,
+        gates: Sequence[GateEntry],
+        *,
+        env: Optional[Mapping[str, str]] = None,
+        timeout_s: float = DEFAULT_REACHABILITY_TIMEOUT_S,
+    ) -> None:
+        self._gates = list(gates)
+        self._env: Mapping[str, str] = env if env is not None else dict(os.environ)
+        self._timeout_s = timeout_s
+
+    def checklist(self) -> Sequence[SeamResult]:
+        results: List[SeamResult] = []
+        seen: List[str] = []
+        for gate in self._gates:
+            var = gate.target.base_url_env
+            if var in seen:
+                continue
+            seen.append(var)
+            base_url = (self._env.get(var) or "").strip()
+            if not base_url:
+                results.append(
+                    SeamResult(
+                        ok=False,
+                        detail=(
+                            f"base_url env {var!r} is not set — no target to "
+                            f"verify reachability against; the environment is "
+                            f"not ready"
+                        ),
+                    )
+                )
+                continue
+            results.append(self._reachability(var, base_url))
+        results.append(
+            SeamResult(
+                ok=True,
+                detail=(
+                    "remaining F16 perishable prereqs (tokens, broker health, "
+                    "channel membership, model warm) declared-not-verified — "
+                    "no WS5 checklist source configured (attended)"
+                ),
+            )
+        )
+        return results
+
+    def _reachability(self, var: str, base_url: str) -> SeamResult:
+        """GET ``base_url``; any HTTP answer = ready, no answer = not ready."""
+        try:
+            request = urllib.request.Request(base_url, method="GET")
+            with urllib.request.urlopen(request, timeout=self._timeout_s) as resp:
+                return SeamResult(
+                    ok=True,
+                    detail=f"{var}={base_url} reachable (HTTP {resp.status})",
+                )
+        except urllib.error.HTTPError as exc:
+            # An HTTP status IS an answer — something is serving at the URL.
+            return SeamResult(
+                ok=True,
+                detail=f"{var}={base_url} reachable (HTTP {exc.code})",
+            )
+        except Exception as exc:  # noqa: BLE001 — any transport fault = not ready
+            return SeamResult(
+                ok=False,
+                detail=(
+                    f"{var}={base_url} unreachable: "
+                    f"{exc.__class__.__name__}: {exc}"
+                ),
+            )
 
 
 class InstrumentSelfCheck(ABC):
