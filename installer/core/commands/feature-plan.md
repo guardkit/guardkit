@@ -315,6 +315,9 @@ orchestration:
 | `complexity` | int | No | Aggregate complexity (1-10) |
 | `estimated_tasks` | int | No | Task count |
 | `evidence_repos` | array | No | Sibling repos the feature writes to (see **Cross-Repo Features** below). Default `[]`. |
+| `routing_law` | string | No | `enforced` or `off` — the ROUTING LAW flag (see **The Routing Law** below). Absent = defer to the repo flag in `.guardkit/config.yaml`. |
+| `feature_files` | array | No | Repo-relative Gherkin `.feature` paths naming this feature's approved-scenario universe. **Required when the law is enforced.** |
+| `scenarios` | map | No | Per-scenario verifier map: Gherkin scenario title → `verifier:` stamp (see **The Routing Law** below). |
 
 **Task-level fields:**
 | Field | Type | Required | Description |
@@ -409,6 +412,43 @@ orchestration:
 ```
 
 **Note**: This replaces the older `execution_groups` format which is no longer supported.
+
+#### The Routing Law: `verifier:` stamps (card Q8/A.2, ruled 2026-08-14)
+
+Every approved scenario gets a verification home, assigned at planning time,
+from a **closed vocabulary**: `toolchain` · `hurl` · `exam` · `probe:bus` ·
+`probe:process` · `flutter` · `playwright` · `operator`. An unknown value is
+a **loud plan-load ERROR** — there is no fallback home (the same
+loud-failure law as the `component:` selector). `/feature-spec` proposes the
+routing in its summary; **this command writes the authoritative map** into
+the feature YAML:
+
+```yaml
+routing_law: enforced            # optional — see enforcement below
+feature_files:
+  - features/user-auth/user-auth.feature   # the approved-scenario universe
+scenarios:
+  "User signs in with valid credentials":
+    verifier: hurl
+  "Rate limiter refuses the 6th attempt":
+    verifier: toolchain
+    test_ref: test_rate_limiter_refuses_sixth   # pins the scenario to a named test
+```
+
+**Enforcement is opt-in.** With `routing_law: enforced` (per repo in
+`.guardkit/config.yaml` — `api_test`, the Hurl-pilot repo, flips first — or
+per feature in its YAML, where the feature-level value wins and
+`routing_law: off` is the escape hatch for historical features), a scenario
+found in `feature_files` but missing from `scenarios:` **rejects the plan
+load**, naming the unstamped titles. Without the flag, absent stamps do not
+block — but a present stamp is always schema-checked.
+
+**Task frontmatter:** a task may carry `verifier:` beside `task_type:`
+(same closed vocabulary, same loud validation at task load). For
+`verifier: toolchain`, add `test_ref: <test token>` (and optionally
+`test_paths:`, default `tests/**/*`): autobuild synthesizes a conformance
+`token_coverage` rule requiring that token, pinned pre-turn-1, so the named
+test cannot silently vanish during the build.
 
 ## Clarification Integration
 

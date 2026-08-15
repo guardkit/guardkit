@@ -1895,6 +1895,7 @@ class AutoBuildOrchestrator:
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
         _bo_raw: Any = None
         _component_raw: Any = None
+        _verifier_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -1929,6 +1930,13 @@ class AutoBuildOrchestrator:
             # mixed-touch task must be split, not silently assigned to one
             # component (design §B.2).
             _component_raw = frontmatter.get("component")
+            # ROUTING LAW (card Q8/A.2): the task's `verifier:` stamp, lifted
+            # beside `component:` for the same reason and validated the same
+            # way — RAW here, LOUDLY outside this try. The closed vocabulary
+            # is the law: an unknown home must fail the task load, never fall
+            # back to "no stamp" (a scenario silently routed nowhere is the
+            # unverified green the law removes).
+            _verifier_raw = frontmatter.get("verifier")
             # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
             # frontmatter. Only resolve from frontmatter when a feature did NOT
             # already supply them (feature config wins; avoids double-counting).
@@ -1950,6 +1958,7 @@ class AutoBuildOrchestrator:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
             _bo_raw = None
             _component_raw = None
+            _verifier_raw = None
 
         # PER-COMPONENT SEAM: validate the selector LOUDLY, outside the
         # metadata swallow above (the D.1a cure's precedent in this same
@@ -1958,6 +1967,17 @@ class AutoBuildOrchestrator:
         # falling back would judge one product's work with another product's
         # suite, which is the exact false verdict the seam removes.
         component: Optional[str] = self._resolve_task_component(task_id, _component_raw)
+
+        # ROUTING LAW (card Q8/A.2): validate the `verifier:` stamp LOUDLY,
+        # outside the metadata swallow above — same seam, same law as the
+        # component selector directly above. An unknown home raises here and
+        # the task load fails; there is no fallback vocabulary. The stamp
+        # does not yet ROUTE anything in this wave beyond the toolchain
+        # test_ref linkage (snapshot_task_conformance); validation + the
+        # loud vocabulary IS the Wave-2 deliverable.
+        task_verifier: Optional[str] = self._resolve_task_verifier(
+            task_id, _verifier_raw
+        )
 
         if _bo_raw:
             # Coordinator cure (D.1a coach): the frontmatter path is the
@@ -2476,6 +2496,31 @@ class AutoBuildOrchestrator:
             declaration.component(name).test,
         )
         return name
+
+    def _resolve_task_verifier(self, task_id: str, raw: Any) -> Optional[str]:
+        """ROUTING LAW (card Q8/A.2): validate a task's ``verifier:`` stamp.
+
+        ``None``/absent means "no stamp" — every existing task, unchanged. A
+        PRESENT stamp is checked against the closed vocabulary NOW, at task
+        load, and an unknown home raises — deliberately mirroring
+        ``_resolve_task_component`` directly above (the pattern the law was
+        copied from): loud failure, no fallback, because a scenario silently
+        routed to no home (or the wrong one) is an unverified green.
+
+        Raises
+        ------
+        ValueError
+            If the stamp is not a non-empty string, or names a verifier
+            outside the closed vocabulary.
+        """
+        from guardkit.orchestrator.verifier_stamp import validate_task_verifier
+
+        verifier = validate_task_verifier(task_id, raw)
+        if verifier is not None:
+            logger.info(
+                "ROUTING LAW: task %s is stamped `verifier: %s`", task_id, verifier
+            )
+        return verifier
 
     def _produce_spec_conformance_leg(
         self, task_id: str, turn: int, worktree: "Worktree"
