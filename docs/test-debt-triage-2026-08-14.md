@@ -106,18 +106,28 @@ that:
   step 3 of the Wave-1 flow, and the TASK-REV-FC01 review report carries the same
   line. The writer at `feature_orchestrator.py:5082` is doing exactly what it was
   commissioned to do.
-- The `Literal` is simply **older than the state it rejects**. `git log -L 484,484`
-  shows the list has read `planned/in_progress/completed/failed/paused` unchanged
-  since the original AutoBuild commit `b7f0472ac`, which predates
-  `/feature-complete` entirely. TASK-FC-003 extended `FeatureExecution` with the
-  archival fields and never widened the sibling status list.
-- **Widening breaks nothing, and this was checked rather than assumed.** No
-  exhaustive construct exists over the feature-status set anywhere in `guardkit/`
-  or `installer/` — no `match`, no status→X dict, no `assert_never`, no
-  `get_args()`. The complete reader list is two membership tests:
-  `FeatureLoader.is_resumable` (`in_progress`/`paused`/`failed`) and
-  `FeatureCompleteOrchestrator`'s `== "completed"` guard. Both give an
-  awaiting-merge feature the right answer — not resumable, not done — which is
+- ~~The `Literal` is simply **older than the state it rejects**.~~ **[history
+  corrected at review, 2026-08-15 — the truth is sharper]**: the writer and the
+  Literal were born in the **same commit** (`b7f0472ac` added both files new,
+  990+1816 insertions), as a dataclass whose annotation was **not enforced** —
+  archival genuinely worked. The defect was **armed on 2026-02-15 by the pydantic
+  migration** (`91dfad127`, "Implemented yaml-schema-contract"), which began
+  enforcing the five-value list unwidened. A validation-migration regression,
+  not a stale enum — and provably working before that date.
+- **Widening breaks nothing exhaustive, and this was checked rather than
+  assumed.** No exhaustive construct exists over the feature-status set anywhere
+  in `guardkit/` or `installer/` — no `match`, no status→X dict, no
+  `assert_never`, no `get_args()`. **[reader list corrected at review — there
+  are THREE, not two]**: `FeatureLoader.is_resumable`
+  (`in_progress`/`paused`/`failed`) and `FeatureCompleteOrchestrator`'s
+  `== "completed"` guard both give an awaiting-merge feature the right answer —
+  not resumable, not done — **and `feature_audit`'s status inferrer does NOT**:
+  it can only infer `planned/in_progress/completed`, so every archived feature
+  now reads STALE to `guardkit feature audit`, and `--fix` would silently
+  rewrite the checkpoint back to `completed`. Operator-invoked only, no CI
+  wiring; **ledgered follow-on: widen the inferrer; until then never run
+  `feature audit --fix` over archived features.** The two honest readers give
+  an awaiting-merge feature the right answer, which is
   the correct semantics for "built, archived, waiting on a human's merge word".
 
 **The change.** One production file, one field, plus the comment explaining it:
