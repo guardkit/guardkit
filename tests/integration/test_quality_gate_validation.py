@@ -13,11 +13,57 @@ Test Coverage:
 """
 
 import json
+import os
 import subprocess
 import shutil
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pytest
+
+
+# =============================================================================
+# RUN GUARDS
+# =============================================================================
+#
+# Two tests below do not exercise guardkit in-process: they SHELL OUT to a real
+# AutoBuild run and then assert on what it produced.
+#
+# What each one actually needs was measured, not assumed:
+#
+#   test_autobuild_creates_worktree  — needs nothing beyond this interpreter.
+#       The shared worktree is created in AutoBuild's setup phase, before any
+#       model is invoked. With the seat deliberately made unreachable the run
+#       still creates the worktree and the test passes in about two seconds.
+#       So it is NOT guarded.
+#
+#   test_quality_gates_evaluated     — needs a working model seat. It asserts a
+#       Player report exists, and the Player only writes player_turn_N.json if
+#       it actually runs; with no reachable seat the M0 fence stops the Player
+#       and no report is written. The Coach report is produced either way
+#       (synthetic feedback), so the Coach half of this test is not what needs
+#       the seat.
+#
+# Opt in to the seat-dependent test deliberately:
+#
+#     GUARDKIT_LIVE_AUTOBUILD_TESTS=1 pytest tests/integration/test_quality_gate_validation.py
+#
+# Do NOT satisfy the guard by loosening the assertions.
+#
+# History worth keeping: before 2026-08-14 both tests failed for a reason that
+# had nothing to do with seats. The checked-in fixture had drifted from the
+# schema FeatureLoader reads (`feature_id` instead of `id`, task `file` instead
+# of `file_path`, a `status` value outside the allowed set, no `orchestration`
+# block, and no `task_type` in the task file's frontmatter), so every run died
+# at parse time. Guarding those failures behind an env var would have hidden a
+# plain fixture bug; the fixture was repaired instead.
+
+_LIVE_SEAT_ENABLED = os.environ.get("GUARDKIT_LIVE_AUTOBUILD_TESTS") == "1"
+_LIVE_SEAT_SKIP_REASON = (
+    "needs a working model seat: the Player must really run and write "
+    "player_turn_N.json, and with no reachable seat the M0 fence stops it. "
+    "Set GUARDKIT_LIVE_AUTOBUILD_TESTS=1 (with a seat configured) to opt in"
+)
 
 
 # =============================================================================
@@ -78,11 +124,14 @@ def temp_test_repo(tmp_path: Path, feat_code_test_dir: Path) -> Path:
         features_dir / "FEAT-CODE-TEST.yaml"
     )
 
-    # Create tasks/backlog directory
-    tasks_dir = repo_dir / "tasks" / "backlog"
+    # Create tasks/backlog/<feature-slug>/ directory. AutoBuild derives the
+    # feature slug from the first task's file_path and copies task files from
+    # tasks/backlog/<slug>/, so the layout on disk has to match the file_path
+    # recorded in FEAT-CODE-TEST.yaml.
+    tasks_dir = repo_dir / "tasks" / "backlog" / "feat-code-test"
     tasks_dir.mkdir(parents=True)
 
-    # Copy task file to tasks/backlog
+    # Copy task file to tasks/backlog/<feature-slug>/
     shutil.copy(
         feat_code_test_dir / "TASK-QGV-001-calculator-service.md",
         tasks_dir / "TASK-QGV-001-calculator-service.md"
@@ -113,7 +162,8 @@ def run_autobuild_feature(
     repo_dir: Path,
     feature_id: str,
     max_turns: int = 5,
-    timeout: int = 600
+    timeout: int = 600,
+    seatless: bool = False,
 ) -> Dict[str, Any]:
     """
     Run AutoBuild on a feature and return results.
@@ -123,6 +173,11 @@ def run_autobuild_feature(
         feature_id: Feature ID (e.g., "FEAT-CODE-TEST")
         max_turns: Maximum turns for AutoBuild
         timeout: Timeout in seconds
+        seatless: Point the run at an unreachable model endpoint. Use this for
+            assertions about work AutoBuild does BEFORE it invokes a model, so
+            the test stays hermetic and fast instead of driving whatever seat
+            the operator happens to have running. The M0 fence stops the Player
+            and the run finishes in about two seconds.
 
     Returns:
         Dictionary with:
@@ -133,21 +188,39 @@ def run_autobuild_feature(
 
     Raises:
         TimeoutError: If command exceeds timeout
+
+    Note:
+        The CLI is invoked as `sys.executable -m guardkit.cli.main`, never as
+        the bare `guardkit-py` on PATH. On a developer machine that shim can be
+        a global install pointing at a completely different checkout, so a test
+        running inside a worktree would silently exercise someone else's code.
+        Going through the current interpreter pins the run to the code under
+        test.
     """
     cmd = [
-        "guardkit-py",
+        sys.executable,
+        "-m",
+        "guardkit.cli.main",
         "autobuild",
         "feature",
         feature_id,
         "--max-turns", str(max_turns)
     ]
 
+    env = os.environ.copy()
+    if seatless:
+        # A closed port, not a fake hostname: refused immediately, no DNS, no
+        # retry storm, no traffic to anything the operator is running.
+        env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:1"
+        env["ANTHROPIC_API_KEY"] = "unused-by-design"
+
     result = subprocess.run(
         cmd,
         cwd=repo_dir,
         capture_output=True,
         text=True,
-        timeout=timeout
+        timeout=timeout,
+        env=env,
     )
 
     return {
@@ -199,23 +272,42 @@ def get_latest_turn_reports(
 
     Returns:
         Tuple of (player_report, coach_report) or (None, None) if not found
+
+    Note:
+        Turn artefacts do not all land in one directory any more. Coach reports
+        are written to the repo root's .guardkit/autobuild-private/<task_id>/,
+        and the Player writes its report inside the shared worktree. The old
+        single-directory lookup (.guardkit/autobuild/<task_id>/) silently found
+        nothing. All known locations are searched here so a missing report
+        means the run really did not produce one.
     """
-    autobuild_dir = repo_dir / ".guardkit" / "autobuild" / task_id
+    search_dirs = [
+        repo_dir / ".guardkit" / "autobuild" / task_id,
+        repo_dir / ".guardkit" / "autobuild-private" / task_id,
+    ]
 
-    if not autobuild_dir.exists():
-        return None, None
+    worktrees_root = repo_dir / ".guardkit" / "worktrees"
+    if worktrees_root.is_dir():
+        for worktree in sorted(worktrees_root.iterdir()):
+            search_dirs.append(worktree / ".guardkit" / "autobuild" / task_id)
+            search_dirs.append(
+                worktree / ".guardkit" / "autobuild-private" / task_id
+            )
 
-    # Find latest player report
-    player_reports = sorted(autobuild_dir.glob("player_turn_*.json"))
-    player_report = None
-    if player_reports:
-        player_report = parse_player_report(player_reports[-1])
+    def _latest(pattern: str) -> Optional[Path]:
+        matches: list[Path] = []
+        for directory in search_dirs:
+            if directory.is_dir():
+                matches.extend(directory.glob(pattern))
+        if not matches:
+            return None
+        return sorted(matches, key=lambda p: p.name)[-1]
 
-    # Find latest coach report
-    coach_reports = sorted(autobuild_dir.glob("coach_turn_*.json"))
-    coach_report = None
-    if coach_reports:
-        coach_report = parse_coach_report(coach_reports[-1])
+    player_path = _latest("player_turn_*.json")
+    player_report = parse_player_report(player_path) if player_path else None
+
+    coach_path = _latest("coach_turn_*.json")
+    coach_report = parse_coach_report(coach_path) if coach_path else None
 
     return player_report, coach_report
 
@@ -266,40 +358,74 @@ def test_feat_code_test_structure_exists(feat_code_test_dir: Path):
 @pytest.mark.integration
 @pytest.mark.slow
 def test_feat_code_test_yaml_valid(feat_code_test_dir: Path):
-    """Verify FEAT-CODE-TEST YAML is valid."""
+    """
+    Verify FEAT-CODE-TEST YAML matches the schema the feature loader requires.
+
+    The key names here are load-bearing: FeatureLoader requires 'id' and 'name'
+    at feature level and 'id' and 'file_path' on every task, and Feature.status
+    is a closed set. This test previously pinned 'feature_id', which held a
+    stale fixture in place and hid two real parse failures.
+    """
     import yaml
 
     yaml_path = feat_code_test_dir / "FEAT-CODE-TEST.yaml"
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
 
-    assert data["feature_id"] == "FEAT-CODE-TEST"
+    assert data["id"] == "FEAT-CODE-TEST"
     assert data["name"] == "Quality Gate Validation Feature"
+    assert data["status"] == "planned"
     assert len(data["tasks"]) == 1
     assert data["tasks"][0]["id"] == "TASK-QGV-001"
     assert data["tasks"][0]["complexity"] == 4
     assert data["tasks"][0]["task_type"] == "feature"
+    assert data["tasks"][0]["file_path"] == (
+        "tasks/backlog/feat-code-test/TASK-QGV-001-calculator-service.md"
+    )
+    assert data["orchestration"]["parallel_groups"] == [["TASK-QGV-001"]]
+
+
+@pytest.mark.integration
+def test_feat_code_test_yaml_loads_through_feature_loader(
+    temp_test_repo: Path,
+):
+    """
+    The fixture parses and validates through the real FeatureLoader.
+
+    This is the test that would have caught the drift. Reading the YAML with
+    pyyaml only proves it is well-formed text; running it through the loader
+    proves the field names are the ones GuardKit actually reads. Runs entirely
+    in-process against a temp repo - no CLI, no model seat, no network.
+    """
+    from guardkit.orchestrator.feature_loader import FeatureLoader
+
+    feature = FeatureLoader.load_feature("FEAT-CODE-TEST", repo_root=temp_test_repo)
+
+    assert feature.id == "FEAT-CODE-TEST"
+    assert [task.id for task in feature.tasks] == ["TASK-QGV-001"]
+    assert FeatureLoader.validate_feature(feature, repo_root=temp_test_repo) == []
 
 
 @pytest.mark.integration
 @pytest.mark.slow
-@pytest.mark.skipif(
-    shutil.which("guardkit-py") is None,
-    reason="guardkit-py CLI not available"
-)
 def test_autobuild_creates_worktree(temp_test_repo: Path):
     """
     Test that AutoBuild creates worktree correctly.
 
-    This is a lightweight test that validates worktree creation
-    without running full AutoBuild loop.
+    The shared worktree is created in the setup phase, before any model is
+    invoked, so this runs seatless: the model endpoint is deliberately
+    unreachable and the whole thing takes about two seconds. That keeps the
+    default suite off whatever seat the operator has running, and it keeps the
+    test sharp - if worktree creation ever moved to after the first model call,
+    this would go red, which is exactly the signal wanted.
     """
     # Run AutoBuild with max_turns=1 to minimize execution time
     result = run_autobuild_feature(
         temp_test_repo,
         "FEAT-CODE-TEST",
         max_turns=1,
-        timeout=300  # 5 minutes
+        timeout=300,  # 5 minutes
+        seatless=True,
     )
 
     # Check worktree was created
@@ -313,9 +439,10 @@ def test_autobuild_creates_worktree(temp_test_repo: Path):
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.live
 @pytest.mark.skipif(
-    shutil.which("guardkit-py") is None,
-    reason="guardkit-py CLI not available"
+    not _LIVE_SEAT_ENABLED,
+    reason=_LIVE_SEAT_SKIP_REASON,
 )
 def test_quality_gates_evaluated(temp_test_repo: Path):
     """

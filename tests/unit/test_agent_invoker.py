@@ -591,7 +591,9 @@ class TestPromptBuilding:
         assert feedback in prompt
         assert "Please address all feedback points" in prompt
 
-    def test_build_coach_prompt(self, agent_invoker, worktree_path, sample_player_report):
+    def test_build_coach_prompt(
+        self, agent_invoker, worktree_path, sample_player_report, monkeypatch
+    ):
         """Coach prompt includes requirements and Player report.
 
         TASK-FIX-COACHOUT01 Shape A: the Coach prompt no longer embeds the
@@ -599,7 +601,14 @@ class TestPromptBuilding:
         the file. The orchestrator parses the verdict from Coach's
         response text and writes the file itself. The prompt must instead
         instruct Coach to end its response with a fenced ``json`` block.
+
+        The contract is pinned because the prompt builder otherwise resolves
+        one from the CURRENT DIRECTORY's config, and guardkit's own
+        .guardkit/config.yaml pins `contract: v4` — so run from the repo root
+        this test silently measured the v4 prompt instead of the coachsplit
+        prompt its assertions describe.
         """
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         prompt = agent_invoker._build_coach_prompt(
             task_id="TASK-001",
             turn=1,
@@ -3260,8 +3269,15 @@ class TestBuildCoachPromptWithVerification:
         assert "AC-001" in prompt
         assert "AC-002" in prompt
 
-    def test_prompt_includes_verification_example(self, invoker, sample_player_report):
-        """Coach prompt includes criteria_verification example."""
+    def test_prompt_includes_verification_example(
+        self, invoker, sample_player_report, monkeypatch
+    ):
+        """Coach prompt includes criteria_verification example.
+
+        Contract pinned: the builder otherwise reads the cwd's config, and
+        guardkit's own config pins v4. See test_build_coach_prompt.
+        """
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         criteria = [
             {"id": "AC-001", "text": "OAuth2 flow works correctly"},
         ]
