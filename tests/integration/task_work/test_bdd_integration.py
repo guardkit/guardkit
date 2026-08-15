@@ -10,6 +10,15 @@ patched so this remains a hermetic, fast test.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "R1 de-wire (Rich 08-14): AgentInvoker no longer runs the BDD oracle or writes bdd_results (TASK-BDD-E8954 seam removed); "
+    "bdd_runner.py / guardkitfactory bdd/ stay on disk unreferenced until R2 "
+    "deletes them at graduation.",
+    allow_module_level=True,
+)
+
 import json
 import sys
 from pathlib import Path

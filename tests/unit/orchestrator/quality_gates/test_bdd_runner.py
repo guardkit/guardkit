@@ -962,6 +962,7 @@ class TestAbsentFeatureCollectionIsNeutral:
         assert result is not None
         assert result.scenarios_failed >= 1
 
+    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
     def test_neutral_result_leaves_coach_gate_inactive(
         self, worktree: Path, monkeypatch, tmp_path: Path
     ):
@@ -1021,6 +1022,7 @@ class TestGenuineScenarioFailureStillFails:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
 class TestCoachRejectsRunnerError:
     def test_coach_rejects_synthetic_runner_error_result(
         self, worktree: Path, monkeypatch, tmp_path: Path
@@ -1367,6 +1369,7 @@ class TestCollectionErrorReason:
 
 
 class TestCoachFeedbackEmbedsReason:
+    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_results removed with the Coach bdd_results gate; R2 deletes at graduation")
     def test_check_bdd_results_description_contains_per_failure_reason(
         self, tmp_path: Path
     ):

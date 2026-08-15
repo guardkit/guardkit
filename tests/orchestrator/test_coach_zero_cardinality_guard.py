@@ -130,6 +130,7 @@ class TestZeroCardinalityBDDGuard:
         _init_git_worktree(tmp_path)
         return tmp_path
 
+    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): gather_evidence no longer ingests Player-reported bdd_results, so bundle.bdd cannot be populated via this path; the prompt guard text is retired with R2")
     def test_zero_cardinality_bundle_renders_guard_in_prompt(
         self, worktree: Path,
     ) -> None:
@@ -169,6 +170,7 @@ class TestZeroCardinalityBDDGuard:
         # cite it in its rationale.
         assert "absence-of-failure-is-not-success.md" in prompt
 
+    @pytest.mark.skip(reason="R1 de-wire (Rich 08-14): gather_evidence no longer ingests Player-reported bdd_results, so bundle.bdd cannot be populated via this path; the prompt guard text is retired with R2")
     def test_zero_cardinality_bundle_serialised_in_evidence_section(
         self, worktree: Path,
     ) -> None:

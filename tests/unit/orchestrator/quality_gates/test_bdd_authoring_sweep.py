@@ -269,6 +269,7 @@ class TestGlueOwnership:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): AgentInvoker._run_bdd_authoring_sweep removed; R2 deletes at graduation")
 class TestProducerActivation:
     def _invoker(self, worktree: Path):
         from guardkit.orchestrator.agent_invoker import AgentInvoker
@@ -424,6 +425,7 @@ def _validator() -> CoachValidator:
     return CoachValidator.__new__(CoachValidator)
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): CoachValidator._check_bdd_authoring_sweep removed; R2 deletes at graduation")
 class TestCheckBddAuthoringSweep:
     def test_absent_key_is_inert(self):
         blocking, non_blocking = _validator()._check_bdd_authoring_sweep({})
@@ -495,6 +497,7 @@ class TestCheckBddAuthoringSweep:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="R1 de-wire (Rich 08-14): autobuild._bdd_authoring_sweep_gate removed; R2 deletes at graduation")
 class TestAutobuildSweepGate:
     def _orchestrator(self):
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator

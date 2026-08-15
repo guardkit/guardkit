@@ -69,14 +69,8 @@ from guardkit.orchestrator.quality_gates.exceptions import (
     DesignPhaseError,
     CheckpointRejectedError,
 )
-from guardkit.orchestrator.quality_gates.bdd_runner import (
-    BDDResult,
-    FailureDetail as BDDFailureDetail,
-    PendingDetail as BDDPendingDetail,
-    is_bdd_glue_file,
-    run_bdd_for_task,
-    task_tag as bdd_task_tag,
-)
+# R1 DE-WIRE (Rich 08-14): the bdd_runner re-exports (TASK-BDD-E8954) are
+# removed — bdd_runner.py stays on disk unreferenced until R2 deletes it.
 
 __all__ = [
     # Pre-loop quality gates
@@ -108,11 +102,4 @@ __all__ = [
     "QualityGateBlocked",
     "DesignPhaseError",
     "CheckpointRejectedError",
-    # BDD runner (TASK-BDD-E8954)
-    "BDDResult",
-    "BDDFailureDetail",
-    "BDDPendingDetail",
-    "is_bdd_glue_file",
-    "run_bdd_for_task",
-    "bdd_task_tag",
 ]
