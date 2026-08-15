@@ -460,7 +460,9 @@ class Feature(BaseModel):
     created : str
         ISO timestamp of creation
     status : str
-        Current feature status
+        Current feature status. ``awaiting_merge`` is the merge-ready
+        checkpoint written by ``FeatureOrchestrator._archive_phase`` — the
+        feature is built and archived, and waits on a human's merge word.
     complexity : int
         Aggregate complexity (1-10)
     estimated_tasks : int
@@ -481,7 +483,20 @@ class Feature(BaseModel):
     name: str
     description: str = ""
     created: str = ""
-    status: Literal["planned", "in_progress", "completed", "failed", "paused"] = "planned"
+    # ``awaiting_merge`` is the merge-ready checkpoint specified by TASK-FC-003
+    # ("Update feature YAML: set status: awaiting_merge") and written by
+    # FeatureOrchestrator._archive_phase. This Literal was authored before
+    # /feature-complete existed and was never widened when that state arrived,
+    # so every feature archival raised on save (test-debt triage L1,
+    # 2026-08-14). Widening is additive: nothing matches exhaustively over this
+    # set (no dict, no match statement, no assert_never). The only readers are
+    # the membership tests in FeatureLoader.is_resumable
+    # (in_progress/paused/failed) and FeatureCompleteOrchestrator's
+    # ``== "completed"`` guard, and both correctly treat an awaiting-merge
+    # feature as neither resumable nor done.
+    status: Literal[
+        "planned", "in_progress", "completed", "failed", "paused", "awaiting_merge"
+    ] = "planned"
     complexity: int = 5
     estimated_tasks: int = 0
     tasks: List[FeatureTask] = Field(default_factory=list)
