@@ -743,8 +743,36 @@ def snapshot_task_conformance(
 
         frontmatter = task_data.get("frontmatter") or {}
         raw_block = frontmatter.get("conformance")
-        if raw_block is None:
+
+        # ROUTING LAW toolchain linkage (card Q8/A.2): a task stamped
+        # `verifier: toolchain` carrying a `test_ref` token gets a
+        # synthesized token_coverage rule requiring that token — wired into
+        # THIS snapshot so the existing snapshot → evaluate → Coach-guard
+        # path enforces it with zero new executor machinery (wire, don't
+        # rebuild). The rule rides the same pre-turn-1, Player-unreachable
+        # pin as every declared rule: the named test cannot silently vanish.
+        from guardkit.orchestrator.verifier_stamp import (
+            build_rule_from_frontmatter,
+        )
+
+        synthesized = build_rule_from_frontmatter(frontmatter, task_id=task_id)
+        if raw_block is None and synthesized is None:
             return None  # byte-equivalent no-op for the vast majority of tasks
+        if synthesized is not None:
+            if raw_block is None:
+                raw_block = {"rules": [synthesized]}
+            elif isinstance(raw_block, dict):
+                import copy
+
+                raw_block = copy.deepcopy(raw_block)
+                declared_rules = raw_block.get("rules")
+                if isinstance(declared_rules, list):
+                    declared_rules.append(synthesized)
+                else:
+                    raw_block["rules"] = [synthesized]
+            # A non-dict declared block falls through unchanged and fails
+            # parse_conformance_block loudly below — today's path; the
+            # synthesized rule dies with it, in the same ERROR log.
 
         try:
             block = parse_conformance_block(raw_block)

@@ -27,6 +27,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 import yaml
 
 from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES
+from guardkit.orchestrator.verifier_stamp import (
+    ScenarioStamp,
+    extract_scenario_titles,
+    load_repo_routing_law,
+    normalize_routing_law_flag,
+    parse_scenario_stamp,
+    VERIFIER_HOMES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -531,7 +539,72 @@ class Feature(BaseModel):
     # and per-repo git/test plumbing live in
     # ``guardkit.orchestrator.evidence_repos``.
     evidence_repos: List[Any] = Field(default_factory=list)
+    # ROUTING LAW (card Q8/A.2, ruled 2026-08-14). Three opt-in fields:
+    #
+    # * ``routing_law`` — the per-feature enforcement flag. ``None`` (absent)
+    #   defers to the per-repo flag in .guardkit/config.yaml; an explicit
+    #   value WINS over the repo flag (the task-frontmatter-outranks-broader
+    #   precedence law), so ``off`` is the escape hatch that lets a flipped
+    #   repo still load a historical, pre-law feature.
+    # * ``feature_files`` — repo-relative Gherkin ``.feature`` paths naming
+    #   the feature's approved-scenario universe. Explicit, never inferred
+    #   (the component-selector law: no path inference); required when the
+    #   law is enforced, because an enforcement pass with no enumerable
+    #   universe is a promise wearing a law's name.
+    # * ``scenarios`` — the per-scenario map: Gherkin scenario title ->
+    #   verifier stamp from the closed vocabulary. The stamp SCHEMA is
+    #   validated whenever present (unknown verifier = loud load error, flag
+    #   or no flag); the enforcement flag only controls whether an ABSENT
+    #   stamp rejects the plan load (_enforce_routing_law).
+    routing_law: Optional[Literal["enforced", "off"]] = None
+    feature_files: List[str] = Field(default_factory=list)
+    scenarios: Dict[str, ScenarioStamp] = Field(default_factory=dict)
     file_path: Optional[Path] = None
+
+    @field_validator("feature_files")
+    @classmethod
+    def _validate_feature_files(cls, v: List[str]) -> List[str]:
+        """Each entry must be a non-empty repo-relative path string."""
+        if not isinstance(v, list):
+            raise ValueError("feature_files must be a list of paths")
+        for entry in v:
+            if not isinstance(entry, str) or not entry.strip():
+                raise ValueError(
+                    f"feature_files entries must be non-empty repo-relative "
+                    f"paths; got {entry!r}"
+                )
+        return v
+
+    @field_validator("scenarios", mode="before")
+    @classmethod
+    def _coerce_scenario_stamps(cls, v: Any) -> Any:
+        """Coerce per-scenario map entries via the stamp parser.
+
+        Accepts the bare-string shorthand (``"toolchain"``) and validates the
+        verifier against the closed vocabulary — an unknown value raises HERE,
+        at parse time, flag or no flag (the component-selector loud-failure
+        law). Keys must be scenario-title strings.
+        """
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            raise ValueError(
+                "scenarios must be a mapping of Gherkin scenario title -> "
+                f"verifier stamp; got {type(v).__name__}. Allowed verifier "
+                f"homes: {', '.join(VERIFIER_HOMES)}"
+            )
+        coerced: Dict[str, Any] = {}
+        for title, stamp in v.items():
+            if not isinstance(title, str) or not title.strip():
+                raise ValueError(
+                    f"scenarios keys must be non-empty scenario titles; "
+                    f"got {title!r}"
+                )
+            if isinstance(stamp, ScenarioStamp):
+                coerced[title] = stamp
+            else:
+                coerced[title] = parse_scenario_stamp(stamp, scenario=title)
+        return coerced
 
     @field_validator("evidence_repos")
     @classmethod
@@ -751,6 +824,11 @@ class FeatureLoader:
                 validate_paths=validate_paths,
             )
             feature.file_path = feature_file
+            # ROUTING LAW (card Q8/A.2): when enforcement is on for this
+            # feature (feature-level flag, else the per-repo flag in
+            # .guardkit/config.yaml), an unstamped approved scenario REJECTS
+            # the plan load — loudly, here, before any build machinery runs.
+            FeatureLoader._enforce_routing_law(feature, repo_root)
             # TASK-AB-WAVECTL01: warn (never block) when the configured smoke
             # gate leaves the final wave ungated.
             coverage_warning = (
@@ -761,6 +839,10 @@ class FeatureLoader:
             return feature
         except FeatureParseError:
             # Re-raise with schema hints intact
+            raise
+        except FeatureValidationError:
+            # ROUTING LAW rejections surface as themselves — never re-wrapped
+            # into a generic "Invalid feature structure" parse error below.
             raise
         except KeyError as e:
             # Wrap KeyError with schema context
@@ -957,6 +1039,22 @@ class FeatureLoader:
                 # never activates on the feature path — declaring
                 # ``evidence_repos`` in the YAML was inert (FEAT-RBX repro).
                 "evidence_repos": data.get("evidence_repos", []),
+                # ROUTING LAW (card Q8/A.2): thread the three opt-in fields
+                # through — Feature is extra="ignore", so an unthreaded key
+                # here would be silently dropped exactly the way
+                # evidence_repos once was. The model's own validators do the
+                # loud vocabulary check (unknown verifier = load error);
+                # enforcement of ABSENT stamps runs in load_feature via
+                # _enforce_routing_law, which needs repo_root. The flag is
+                # normalized FIRST because YAML 1.1 parses a bare `off` as
+                # boolean False — the documented value must load, and a
+                # boolean true must be told to write `enforced`, loudly.
+                "routing_law": normalize_routing_law_flag(
+                    data.get("routing_law"),
+                    where=f"feature {data['id']}",
+                ),
+                "feature_files": data.get("feature_files", []),
+                "scenarios": data.get("scenarios", {}),
             })
         except ValidationError as e:
             raise FeatureParseError(
@@ -1030,6 +1128,104 @@ class FeatureLoader:
         raise SmokeGatePathError(
             format_smoke_gate_path_error(missing, repo_root, available_roots)
         )
+
+    @staticmethod
+    def _enforce_routing_law(feature: Feature, repo_root: Path) -> None:
+        """ROUTING LAW (card Q8/A.2): reject unstamped scenarios at plan load.
+
+        Effective flag resolution: the feature's own ``routing_law`` value
+        wins when set (``off`` is the per-feature escape hatch); otherwise
+        the per-repo flag in ``.guardkit/config.yaml`` applies. Absent both
+        ⇒ no enforcement — every existing repo and feature loads exactly as
+        before this method existed. The stamp SCHEMA (closed vocabulary) is
+        validated at parse time regardless; this pass only polices ABSENCE.
+
+        When enforced:
+
+        * ``feature_files`` must name at least one Gherkin file — the
+          approved-scenario universe must be enumerable, or the law is a
+          promise wearing a law's name. Explicit, never inferred.
+        * Every declared feature file must exist under ``repo_root``.
+        * Every scenario title found in those files must appear in the
+          ``scenarios`` map. Unstamped titles are listed BY NAME in the
+          rejection so the planner can fix the YAML in one edit.
+        * A stamp naming a scenario absent from every declared file is a
+          WARNING (stale stamp), never a rejection.
+
+        Raises
+        ------
+        FeatureValidationError
+            On any enforcement violation, or a malformed per-repo flag.
+        """
+        if feature.routing_law is not None:
+            effective = feature.routing_law
+        else:
+            try:
+                effective = load_repo_routing_law(repo_root)
+            except ValueError as exc:
+                raise FeatureValidationError(str(exc)) from exc
+
+        if effective != "enforced":
+            return
+
+        vocabulary = ", ".join(VERIFIER_HOMES)
+
+        if not feature.feature_files:
+            raise FeatureValidationError(
+                f"Feature {feature.id} is under `routing_law: enforced` but "
+                "declares no `feature_files:` — the routing law needs the "
+                "approved-scenario universe to be enumerable (explicit, "
+                "never inferred). FIX: list the feature's Gherkin "
+                "`.feature` path(s) under `feature_files:`, stamp every "
+                "scenario in `scenarios:`, or set `routing_law: off` on "
+                "this feature."
+            )
+
+        titles: List[str] = []
+        for rel in feature.feature_files:
+            path = Path(repo_root) / rel
+            if not path.exists():
+                raise FeatureValidationError(
+                    f"Feature {feature.id} is under `routing_law: enforced` "
+                    f"and declares feature file {rel!r}, which does not "
+                    f"exist under {repo_root}. An enforced law over a "
+                    "missing scenario universe is a silent gap — fix the "
+                    "path or the file."
+                )
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                raise FeatureValidationError(
+                    f"Feature {feature.id}: declared feature file {rel!r} "
+                    f"is unreadable ({exc}) under `routing_law: enforced`."
+                ) from exc
+            titles.extend(extract_scenario_titles(text))
+
+        unstamped = [t for t in dict.fromkeys(titles) if t not in feature.scenarios]
+        if unstamped:
+            listed = "\n".join(f"  - {t}" for t in unstamped)
+            raise FeatureValidationError(
+                f"ROUTING LAW: feature {feature.id} has "
+                f"{len(unstamped)} UNSTAMPED scenario(s) under "
+                f"`routing_law: enforced` — the plan load is rejected "
+                f"(card Q8/A.2: an unstamped scenario is a silent "
+                f"verification gap, and the machinery refuses to proceed "
+                f"over one).\nUnstamped:\n{listed}\n"
+                f"FIX: add each title to this feature's `scenarios:` map "
+                f"with a `verifier:` from the closed list ({vocabulary}), "
+                f"or set `routing_law: off` on this feature."
+            )
+
+        stale = [t for t in feature.scenarios if t not in set(titles)]
+        if stale:
+            logger.warning(
+                "ROUTING LAW: feature %s stamps %d scenario title(s) not "
+                "found in its declared feature_files (stale stamp or "
+                "renamed scenario?): %s",
+                feature.id,
+                len(stale),
+                ", ".join(repr(t) for t in stale),
+            )
 
     @staticmethod
     def _parse_task(task_data: Dict[str, Any]) -> FeatureTask:
@@ -1608,6 +1804,21 @@ class FeatureLoader:
         # operator-declared field unambiguous. (TASK-GK-BS-001)
         if not data.get("bootstrap_extras"):
             data.pop("bootstrap_extras", None)
+
+        # ROUTING LAW fields: same missing-key-equals-null law. Never sprout
+        # ``routing_law: null`` / empty maps into every rewritten feature
+        # file; compact each stamp so ``test_ref: null`` is not persisted.
+        if data.get("routing_law") is None:
+            data.pop("routing_law", None)
+        if not data.get("feature_files"):
+            data.pop("feature_files", None)
+        if not data.get("scenarios"):
+            data.pop("scenarios", None)
+        else:
+            data["scenarios"] = {
+                title: {k: v for k, v in stamp.items() if v is not None}
+                for title, stamp in data["scenarios"].items()
+            }
 
         # Manually serialize execution (dataclass)
         data["execution"] = {
