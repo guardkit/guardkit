@@ -485,15 +485,25 @@ class Feature(BaseModel):
     created: str = ""
     # ``awaiting_merge`` is the merge-ready checkpoint specified by TASK-FC-003
     # ("Update feature YAML: set status: awaiting_merge") and written by
-    # FeatureOrchestrator._archive_phase. This Literal was authored before
-    # /feature-complete existed and was never widened when that state arrived,
-    # so every feature archival raised on save (test-debt triage L1,
-    # 2026-08-14). Widening is additive: nothing matches exhaustively over this
-    # set (no dict, no match statement, no assert_never). The only readers are
-    # the membership tests in FeatureLoader.is_resumable
-    # (in_progress/paused/failed) and FeatureCompleteOrchestrator's
-    # ``== "completed"`` guard, and both correctly treat an awaiting-merge
-    # feature as neither resumable nor done.
+    # FeatureOrchestrator._archive_phase. History, corrected at review
+    # (2026-08-15): the writer and this Literal were born in the SAME commit
+    # (b7f0472ac, as a dataclass whose annotation was not enforced — archival
+    # WORKED); the defect was ARMED by the 2026-02-15 pydantic migration
+    # (91dfad127), which began enforcing the five-value list unwidened. So this
+    # was a validation-migration regression, not a stale enum — and every
+    # feature archival raised on save from that day until the widening
+    # (test-debt triage L1, 2026-08-14). Widening is additive: nothing matches
+    # exhaustively over this set (no dict, no match statement, no
+    # assert_never). KNOWN READERS (three, corrected at review — the third was
+    # missed): FeatureLoader.is_resumable's membership test
+    # (in_progress/paused/failed), FeatureCompleteOrchestrator's
+    # ``== "completed"`` guard — both treat awaiting_merge correctly — and
+    # feature_audit's status inferrer, which can only ever return
+    # planned/in_progress/completed and therefore reports every awaiting_merge
+    # feature as STALE; ``guardkit feature audit --fix`` would silently rewrite
+    # the checkpoint back to completed. Operator-invoked only (no CI wiring);
+    # the inferrer widening is a ledgered follow-on — until it lands, do not
+    # run ``feature audit --fix`` over archived features.
     status: Literal[
         "planned", "in_progress", "completed", "failed", "paused", "awaiting_merge"
     ] = "planned"
