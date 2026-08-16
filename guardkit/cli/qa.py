@@ -231,7 +231,12 @@ def live_gate(
     "--http-surface/--no-http-surface",
     "http_surface",
     default=None,
-    help="Override the repo HTTP-surface detection that gates R9 (hurl).",
+    help=(
+        "Override the repo HTTP-surface detection that gates R9 (hurl). Without "
+        "it the surface is STRUCTURAL: a hurl gate in qa/gates/registry.yaml, "
+        "`surface: http` in .guardkit/config.yaml, or an exact web-framework "
+        "dependency in pyproject/package.json — never free text."
+    ),
 )
 def normalize_stamps(
     feature_id: str,
@@ -298,6 +303,19 @@ def normalize_stamps(
         console.print(str(exc), highlight=False)
         sys.exit(2)
 
+    if result.operator_stamped:
+        # L3: a RULE-MINTED operator stamp is never silent — it is attended
+        # human work handed to Rich. Named in the JSON (`operator_stamped`)
+        # AND in the human echo (stderr, ahead of the JSON, so the hook's
+        # stdout parse stays clean).
+        err_console = Console(stderr=True)
+        err_console.print(
+            f"[bold yellow]! normalize-stamps minted `operator` (attended human work) "
+            f"for {len(result.operator_stamped)} scenario(s):[/bold yellow]",
+            highlight=False,
+        )
+        for title in result.operator_stamped:
+            err_console.print(f"  - {title}", highlight=False)
     click.echo(json.dumps(result.to_dict(), indent=2))
     sys.exit(0)
 

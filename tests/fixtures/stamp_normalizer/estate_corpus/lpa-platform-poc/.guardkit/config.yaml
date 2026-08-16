@@ -1,0 +1,7 @@
+autobuild:
+  coach:
+    # Run the Coach's independent test verification as a local subprocess.
+    # The default "sdk" mode has been returning agent prose ("I'll run the
+    # test command...") with no pytest output, nulling all test/coverage
+    # evidence and driving unrecoverable_stall on every multi-turn task.
+    test_execution: subprocess

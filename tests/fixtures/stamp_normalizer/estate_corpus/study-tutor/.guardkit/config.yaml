@@ -1,0 +1,46 @@
+
+# QAV shadow mode (2026-07-25, design: ai-transition docs/qav-shadow-mode-design-2026-07-25.md).
+# Log-only second opinion beside every coach verdict — never blocks, absent-not-fail,
+# default OFF when this block is missing. Reversible one-line kill: enabled: false or
+# delete the block. Zero verdict impact by construction (never-raise wrappers; the
+# receipt qav_shadow_turn_N.json lands beside coach_turn_N.json).
+autobuild:
+  coach:
+    # Coach v4 flip (2026-07-26, Rich's do-it-now): the tuned coach-ft-v4 seat
+    # + the raw v4 wire contract. env GUARDKIT_COACH_CONTRACT / --coach-model
+    # still override. Rollback = delete these two lines (defaults restore
+    # gemma4-coach pairing at launch + the legacy coachsplit contract).
+    contract: v4
+    model: coach-ft-v4
+    qav_shadow:
+      enabled: true
+      endpoint: http://localhost:9000/v1/chat/completions
+      model: qav-shadow
+      timeout_seconds: 60
+
+# The declared toolchain (stage 4 of the monorepo/Flutter design pass
+# 2026-08-01, landed 2026-08-02 as ONE ATOMIC COMMIT with the app component —
+# splitting root from component is the false-verdict window the pass names:
+# a repo-level test: alone would hand every app/ task the Python suite as its
+# verdict on Dart work). Snapshotted pre-turn-1, Player-unreachable.
+#
+# Root component = the FastAPI backend. The suite is hermetic-or-skip: the
+# Docker-bound fixtures skip without a daemon (guards landed 2026-08-02),
+# so a socketless factory build gets an honest 1488-ish green, and an
+# on-host run gets the full 1687.
+#
+# app component = the Flutter client. flutter/dart are NOT on the daemon's
+# default PATH — the run recipe carries FLUTTER_ROOT and PATH (config-as-code,
+# the node-symlink precedent). Green on THIS host = analyze + test; the apk
+# gate of flutter-app-build-plan.md:16 is NOT runnable here and is NOT
+# declared (Rich's word 2026-08-02: analyze+test is the bar).
+toolchain:
+  test: "uv run --no-sync python -m pytest -q"
+  components:
+    app:
+      test: "flutter test"
+      cwd: "app"
+      # No install: line — per-component install is scoped OUT of the seam
+      # (the loader WARNS it is declared-but-not-run); depth-1 manifest
+      # inference covers app/, and pub get is offline-cheap in the worktree.
+      test_timeout: 900

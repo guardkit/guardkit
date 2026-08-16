@@ -45,6 +45,23 @@ from guardkit.orchestrator.stamp_normalizer import (
 from guardkit.orchestrator.verifier_stamp import VERIFIER_HOMES
 
 FIXTURE_ROOT = Path(__file__).parent.parent / "fixtures" / "stamp_normalizer" / "api_test_5bc6fd1"
+CORPUS_ROOT = Path(__file__).parent.parent / "fixtures" / "stamp_normalizer" / "estate_corpus"
+
+
+def _corpus_scenario(repo: str, feature_rel: str, title: str):
+    """(title, steps, annotations) of a REAL scenario from the read-only
+    estate corpus — the tightened rules are pinned on real prose."""
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    text = (CORPUS_ROOT / repo / feature_rel).read_text(encoding="utf-8")
+    for b in extract_scenario_blocks(text):
+        if b.title == title:
+            return b.title, b.steps_text, b.annotations
+    raise AssertionError(f"{repo}/{feature_rel} has no scenario {title!r}")
+
+
+SIGN_IN = "features/flutter-keycloak-sign-in/flutter-keycloak-sign-in.feature"
+VOICE = "features/flutter-voice-client/flutter-voice-client.feature"
 
 HTTP = NormalizeContext(repo_has_http_surface=True, http_surface_evidence="test")
 NO_HTTP = NormalizeContext(repo_has_http_surface=False)
@@ -295,54 +312,116 @@ def test_ordering_bus_plus_reply_is_probe_bus_not_hurl():
     assert (home.verifier, home.rule) == ("probe:bus", "R4")
 
 
+# M4: R4 requires a BUS NOUN — "acknowledged" alone (an HTTP 204 is
+# acknowledged too) and "subscription" alone (a user has a subscription)
+# NEVER qualify; nor does the school "subject" / curriculum "topic".
+def test_m4_acknowledged_204_and_a_user_subscription_are_not_probe_bus():
+    for title, steps in [
+        ("A delete is acknowledged with 204",
+         "When I send a DELETE request to /users/1\nThen the request is acknowledged with 204\nAnd the body is empty"),
+        ("A subscriber sees premium content",
+         "Given the user has a subscription\nWhen the user opens the premium page\nThen the content is shown"),
+        ("Resume-if-active is subject-scoped",
+         "Given an active session on the subject \"english-literature\"\n"
+         "When the app starts a session on the subject \"maths\" asking to resume if one is active\n"
+         "Then a new session is created"),
+        ("A struggling topic is preferred",
+         "Given Lilymay has a struggling topic last studied 4 days ago\n"
+         "When the system requests three topic recommendations\nThen the struggling topic is first"),
+    ]:
+        for ctx in (HTTP, NO_HTTP):
+            home = classify_scenario(title, steps, ctx)
+            assert home is None or home.verifier != "probe:bus", (title, home)
+    # …while the same words WITH a bus noun are bus.
+    assert _home("Acked", "When the message is acknowledged so the queue advances\nThen it is gone", HTTP).rule == "R4"
+    assert _home("Sub", "Given a JetStream subscription\nWhen it drops\nThen it is re-established", HTTP).rule == "R4"
+
+
 # ---------------------------------------------------------------------------
 # R5 — Flutter / device → flutter (census: 51 — sign-in 25, voice 26)
 # ---------------------------------------------------------------------------
 
 
-R5_CASES = [
-    (
-        "A first-time sign-in through the browser flow reaches the home screen",
-        "Given no one is signed in on the device\n"
-        "When I choose to sign in and complete authentication in the browser\n"
-        "Then I should be signed in\nAnd I should land on the home screen ready to start a session",
-    ),
-    (
-        "The device stays signed in across an app restart without a browser prompt",
-        "Given I signed in earlier and then closed the app\nWhen I reopen the app\n"
-        "Then I should still be signed in without seeing the browser sign-in\nAnd I should land on the home screen",
-    ),
-    (
-        "A second sign-in tap during an in-progress sign-in is ignored",
-        "Given no one is signed in on the device\n"
-        "And a browser sign-in is already in progress showing the loading state\n"
-        "When I tap sign in again\nThen only one sign-in flow should be running",
-    ),
-    (
-        # study-tutor flutter-voice-client
-        "Recording without microphone permission is explained and typing still works",
-        "Given I have not granted the app microphone access\nWhen I try to record a spoken question\n"
-        "Then the app tells me it needs microphone access to record\nAnd I can still ask questions by typing",
-    ),
-    (
-        "An unreadable stored session is treated as signed out",
-        "Given the securely stored session cannot be read at launch\nWhen I open the app\n"
-        "Then I should be shown the sign-in screen\nAnd the app should start normally rather than fail to launch",
-    ),
+# M2: EVERY retained R5 pattern is backed by a REAL flutter-keycloak-sign-in
+# / flutter-voice-client scenario (read from the estate corpus by title), and
+# the pattern each one exercises is named. `flutter` itself appears only in
+# the two Feature: lines (never in a scenario's own steps) — it stays as the
+# home's own word and is pinned on the design phrase.
+R5_REAL = [
+    ("the app returns to the foreground", SIGN_IN, "A sign-in completes after the browser redirects back into the app"),
+    ("the app should not crash", SIGN_IN, "A failed background refresh degrades to the sign-in fallback rather than crashing"),
+    ("the app sits idle", SIGN_IN, "An active session survives an idle period longer than the access-token lifetime"),
+    ("the app tells me", VOICE, "Recording without microphone permission is explained and typing still works"),
+    ("the app stops the recording", VOICE, "Recording stops automatically at the 60-second limit"),
+    ("the app degrades to text", VOICE, "When spoken answers are unavailable the app degrades to text with a clear notice"),
+    ("the app explains why", VOICE, "The app explains why a recording could not be used and stays ready"),
+    ("reopen the app", SIGN_IN, "The device stays signed in across an app restart without a browser prompt"),
+    ("open the app", SIGN_IN, "An unreadable stored session is treated as signed out"),
+    ("closed the app", SIGN_IN, "The device stays signed in across an app restart without a browser prompt"),
+    ("app restart", SIGN_IN, "The device stays signed in across an app restart without a browser prompt"),
+    ("tap", SIGN_IN, "A second sign-in tap during an in-progress sign-in is ignored"),
+    ("microphone access", VOICE, "Recording without microphone permission is explained and typing still works"),
+    ("from the microphone", VOICE, "The shipped app is able to record audio and reach the tutor"),
+    ("mic button", VOICE, "Asking a question by voice and hearing the tutor's spoken answer"),
+    ("secure store", SIGN_IN, "The signed-in session is held in the platform secure store"),
+    ("on the device", SIGN_IN, "A first-time sign-in through the browser flow reaches the home screen"),
+    ("sign-in … browser", SIGN_IN, "A first-time sign-in through the browser flow reaches the home screen"),
+    ("browser sign-in", SIGN_IN, "Cancelling the browser sign-in returns to the sign-in screen signed out"),
+    ("browser opening", SIGN_IN, "Signing in reuses the stored session silently when it is still valid"),
+    ("browser prompt", SIGN_IN, "The device stays signed in across an app restart without a browser prompt"),
+    ("browser redirects back", SIGN_IN, "A sign-in completes after the browser redirects back into the app"),
+    ("home screen", SIGN_IN, "Signing out clears the session and returns to the sign-in screen"),
+    ("sign-in screen", SIGN_IN, "A failed sign-in shows a failure state and lets me try again"),
 ]
 
 
-@pytest.mark.parametrize("title,steps", R5_CASES, ids=[c[0][:40] for c in R5_CASES])
-def test_r5_flutter_device_vocabulary_is_flutter(title, steps):
-    home = _home(title, steps)
+@pytest.mark.parametrize("pattern,feature,title", R5_REAL, ids=[c[0] for c in R5_REAL])
+def test_r5_every_retained_pattern_is_backed_by_a_real_flutter_scenario(pattern, feature, title):
+    t, steps, _ = _corpus_scenario("study-tutor", feature, title)
+    text = f"{t}\n{steps}".lower()
+    # the named idiom really is in the scenario's own text …
+    probe = pattern.replace(" … ", " ").split(" … ")[0]
+    assert probe.split()[0] in text, (pattern, text)
+    home = _home(t, steps, HTTP)  # HTTP ctx: study-tutor IS a starlette repo — R5 still wins
+    assert (home.verifier, home.rule) == ("flutter", "R5"), (title, home)
+
+
+def test_r5_flutter_word_itself_is_the_homes_own_marker():
+    home = _home("A widget renders", "Given the Flutter client is built\nWhen it renders\nThen the label shows", HTTP)
     assert (home.verifier, home.rule) == ("flutter", "R5")
+
+
+# M2 negatives — the 08-16 family's swallowed HTTP scenarios (study-tutor
+# http-app-access-adapter: "the app starts a session") and the dropped
+# "securely stored" / widget / emulator idioms.
+def test_m2_the_app_starts_a_session_is_the_wire_feature_not_flutter():
+    t, steps, _ = _corpus_scenario(
+        "study-tutor",
+        "features/http-app-access-adapter/http-app-access-adapter.feature",
+        "Starting with resume-if-active returns the existing active session",
+    )
+    assert "the app starts" in steps.lower()
+    home = classify_scenario(t, steps, HTTP)
+    assert home is None or home.verifier != "flutter", home
+
+
+def test_m2_securely_stored_widget_emulator_alone_are_not_flutter():
+    for title, steps in [
+        ("A token is stored", "Given the token is securely stored\nWhen it is read\nThen it matches"),
+        ("A widget of the CLI", "Given a widget in the terminal UI\nWhen it renders\nThen the columns align"),
+        ("Runs in the emulator", "Given the emulator is booted\nWhen the suite runs\nThen it is green"),
+    ]:
+        home = classify_scenario(title, steps, NO_HTTP)
+        assert home is None or home.verifier != "flutter", (title, home)
 
 
 def test_r5_beats_r6_for_the_oidc_browser_flow():
     """'in the browser' is an R6 marker; the sign-in scenario also says
     'on the device' / 'browser flow' — R5 is evaluated first, so the Flutter
     OIDC flow is never mis-homed to playwright."""
-    title, steps = R5_CASES[0]
+    title, steps, _ = _corpus_scenario(
+        "study-tutor", SIGN_IN, "A first-time sign-in through the browser flow reaches the home screen"
+    )
     assert "in the browser" in steps
     assert _home(title, steps).verifier == "flutter"
 
@@ -475,6 +554,60 @@ def test_r7_prompt_injection_sanitising_is_not_exam():
     assert home is None or home.verifier != "exam"
 
 
+# M3: R7 reads the THEN clause only, and the family JUDGES quality. A Coach
+# score used as a Given/When INPUT, the NOUN "coach score" (rendered in a
+# notification), a prompt that merely CONTAINS "score each criterion", and
+# bare "narration" are all machinery — REAL forge / specialist-agent / adf /
+# lpa scenarios, pinned as negatives.
+M3_NEGATIVES = [
+    ("forge", "features/mode-a-greenfield-end-to-end/mode-a-greenfield-end-to-end.feature",
+     "Auto-approval is refused at the pull-request review stage even when the upstream Coach score is at the maximum"),
+    ("forge", "features/confidence-gated-checkpoint-protocol/confidence-gated-checkpoint-protocol.feature",
+     "A gated stage with no Coach score cannot be auto-approved"),
+    ("forge", "features/jarvis-notification-bridge/jarvis-notification-bridge.feature",
+     "A pause notification renders the coach score at the range boundaries"),
+    ("forge", "features/unattended-build-service-budget-guards/unattended-build-service-budget-guards.feature",
+     "The coach-score floor fires only once a score is present"),
+    ("specialist-agent", "features/doc-reader-player-coach-factories/doc-reader-player-coach-factories.feature",
+     "Coach system prompt includes the domain prompt"),
+    ("agentic-dataset-factory", "features/gcse-goal-md/gcse-goal-md.feature",
+     "Evaluation criteria weights inform the Coach scoring rubric"),
+    ("lpa-platform-poc", "docs/poc/features/FEAT-POC-006-voice-assistant.feature",
+     "A narration replayed within its freshness window is served from cache"),
+    ("lpa-platform-poc", "docs/poc/features/FEAT-POC-006-voice-assistant.feature",
+     "Voice review is not available without signing in"),
+    ("specialist-agent", "features/adaptive-mode-inference/adaptive-mode-inference.feature",
+     "Input matching no mode produces a clear error"),
+]
+
+
+@pytest.mark.parametrize("repo,feature,title", M3_NEGATIVES, ids=[c[2][:40] for c in M3_NEGATIVES])
+def test_m3_a_coach_score_input_or_noun_and_bare_narration_are_not_exam(repo, feature, title):
+    t, steps, _ = _corpus_scenario(repo, feature, title)
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(t, steps, ctx)
+        assert home is None or home.verifier != "exam", (title, home)
+
+
+def test_m3_r7_reads_the_then_clause_only():
+    from guardkit.orchestrator.stamp_normalizer import then_clause
+
+    steps = "Given the Coach should score everything\nWhen the Coach evaluates\nThen the file is written"
+    assert then_clause(steps) == "Then the file is written"
+    assert classify_scenario("Given/When only", steps, NO_HTTP) is None
+    steps2 = "Given a response\nWhen judged\nThen the Coach should score every criterion\nAnd the file is written"
+    assert _home("Then judges", steps2, NO_HTTP).rule == "R7"
+    assert then_clause("When x\nAnd y") == ""
+
+
+def test_m3_narration_counts_only_when_its_content_is_judged():
+    t, steps, _ = _corpus_scenario(
+        "lpa-platform-poc", "docs/poc/features/FEAT-POC-006-voice-assistant.feature",
+        "The narration reuses the explanation already recorded for the flag",
+    )
+    assert _home(t, steps, NO_HTTP).rule == "R7"
+
+
 # ---------------------------------------------------------------------------
 # R8 — the plan names a test node → toolchain + test_ref (census: 1,573 — 48%)
 # ---------------------------------------------------------------------------
@@ -579,9 +712,56 @@ def test_r9_needs_an_http_surface_else_it_is_undecidable(title, steps):
     assert classify_scenario(title, steps, NO_HTTP) is None
 
 
-def test_r9_path_literal_is_a_wire_marker_but_a_uuid_or_date_is_not():
-    assert _home("Reads /users/{user_id}", "When I fetch /users/{user_id}", HTTP).rule == "R9"
+def test_r9_path_literal_needs_an_http_token_on_the_same_step_line_m1():
+    """M1: a path literal is a wire marker ONLY beside an HTTP-shaped token
+    on the same step line; a bare path never suffices."""
+    home = _home("Reads a user", "When I send a GET request to /users/{user_id}\nThen the status is 200", HTTP)
+    assert home.rule == "R9" and "/users/{user_id}" in home.evidence or home.rule == "R9"
+    assert classify_scenario("Reads /users/{user_id}", "When I fetch /users/{user_id}", HTTP) is None
     assert classify_scenario("Dates", "Given the date 2026/08/15 and a ratio 3/4", HTTP) is None
+
+
+# REAL estate scenarios the 08-16 rules mis-homed to hurl on a path literal
+# (verifier finding M1): slash-commands and unix paths are not endpoints.
+M1_NEGATIVES = [
+    (
+        # forge mode-b-feature-and-mode-c-review-fix
+        "A Mode B build refuses to dispatch /system-arch or /system-design even when a context manifest references those stages",
+        "Given a Mode B build whose context manifest references /system-arch\n"
+        "When the build reaches the planning stage\n"
+        "Then neither /system-arch nor /system-design should be dispatched\n"
+        "And the build should proceed straight to /feature-spec",
+    ),
+    (
+        # jarvis feat-jarvis-002-core-tools-and-dispatch
+        "Calculator rejects expressions containing unsafe tokens",
+        "Given the calculator tool is available\n"
+        "When Rich asks Jarvis to evaluate \"__import__('os').system('cat /etc/passwd')\"\n"
+        "Then the calculator should refuse the expression\nAnd nothing should be executed",
+    ),
+    (
+        # jarvis feat-jarvis-003
+        "The supervisor routes the seven canned acceptance prompts to the expected tools",
+        "Given the supervisor has been built with all FEAT-JARVIS-002 tools, the jarvis-reasoner subagent, "
+        "and the attended tool list including escalate_to_frontier\n"
+        "And the active session is on an attended adapter\n"
+        "When the user says <prompt>\nThen the reasoning model invokes <expected_action>\n"
+        "Examples:\n| prompt | expected_action |\n| \"Write hello to /tmp/test\" | write_file |",
+    ),
+    (
+        # guardkit system-arch-design-commands
+        "Running /system-arch on a project with no existing architecture context",
+        "Given a project with no .guardkit/architecture directory\n"
+        "When the user runs /system-arch\n"
+        "Then the command should ask the structural-pattern question first",
+    ),
+]
+
+
+@pytest.mark.parametrize("title,steps", M1_NEGATIVES, ids=[c[0][:40] for c in M1_NEGATIVES])
+def test_m1_slash_commands_and_unix_paths_are_not_wire_markers(title, steps):
+    home = classify_scenario(title, steps, HTTP)
+    assert home is None or home.verifier != "hurl", home
 
 
 # ---------------------------------------------------------------------------
@@ -591,14 +771,15 @@ def test_r9_path_literal_is_a_wire_marker_but_a_uuid_or_date_is_not():
 
 R10_CASES = [
     (
-        # study-tutor keycloak-idp-standup (operator handoff)
-        "The Keycloak identity service starts and reports healthy",
-        "Given the standup runbook has been executed on the NAS\n"
-        "When the operator checks the identity service status\n"
-        "Then the identity service should be running and report healthy\n"
-        "And it should be the pinned Keycloak 26.6 image, not a floating tag",
+        # forge fleet-memory-deploy-runbook — the real NAS
+        "The executor stands fleet-memory up on the real NAS",
+        "Given the runbook is pointed at the real NAS with the real deploy environment file\n"
+        "When the executor runs the runbook\n"
+        "Then fleet-memory Postgres with pgvector should be live on the NAS\n"
+        "And the smoke gates should all be green",
     ),
     (
+        # study-tutor keycloak-idp-standup — runbook evidence
         "NAS memory is recorded before and after standup and headroom stays positive",
         "Given the operator records the NAS free memory before standup\n"
         "When the identity service standup completes with its 2GB memory limit\n"
@@ -606,18 +787,18 @@ R10_CASES = [
         "Then both readings should be captured in the runbook evidence",
     ),
     (
-        # study-tutor reachy-local-voice-migration (a physical-robot behaviour)
-        "A spoken tutoring question is answered by the study-tutor in the robot's voice",
-        "Given the student is in a tutoring conversation with the robot\n"
-        "When the student asks the robot a tutoring question\n"
-        "Then the robot should obtain the answer from the study-tutor\n"
-        "And the robot should speak the answer in the configured robot voice",
-    ),
-    (
-        # the rules doc's own R10 phrasing
+        # the rules doc's own R10 phrasing (work done by hand)
         "The quarterly key rotation is walked by hand",
         "Given an operator follows the rotation runbook\nWhen each key is rotated by hand\n"
-        "Then the attended checklist is signed off",
+        "Then the checklist is signed off",
+    ),
+    (
+        "A physical robot is driven through the greeting",
+        "Given the physical robot is powered on\nWhen a student says hello\nThen it waves",
+    ),
+    (
+        "The migration is human-executed on the box",
+        "Given the migration is human-executed\nWhen it completes\nThen the ledger records the operator",
     ),
 ]
 
@@ -626,6 +807,108 @@ R10_CASES = [
 def test_r10_explicit_human_work_is_operator(title, steps):
     home = _home(title, steps, HTTP)
     assert (home.verifier, home.rule) == ("operator", "R10")
+
+
+# H1: the operator-handoff TAG / `# operator_handoff:` comment — the
+# annotation channel, fed to R10 and to no other rule (lpa-platform-poc
+# FEAT-POC-007, the two tagged scenarios).
+def test_r10_operator_handoff_tag_and_comment_are_the_annotation_channel():
+    title = "Only active bank connections are revoked at the provider"
+    steps = (
+        "Given demo mode is enabled\n"
+        "And I am signed in as a donor with one active, one already-revoked, and one pending bank connection\n"
+        "When I reset my demo data with provider revocation enabled\n"
+        "Then bank consent should be cancelled at the provider only for the active connection"
+    )
+    assert classify_scenario(title, steps, NO_HTTP) is None  # the steps alone: not human
+    tagged = classify_scenario(title, steps, NO_HTTP, annotations="@boundary @operator-handoff")
+    assert tagged is not None and (tagged.verifier, tagged.rule) == ("operator", "R10")
+    commented = classify_scenario(
+        title, steps, NO_HTTP,
+        annotations="# operator_handoff: the real provider revoke can only be proven against the live Moneyhub sandbox",
+    )
+    assert commented is not None and commented.verifier == "operator"
+    # A comment that merely TALKS about the operator-handoff type (specialist-
+    # agent architect-feature-plan) is not the tag.
+    talked = classify_scenario(
+        "Live-infrastructure work is tagged for operator handoff without prompting",
+        "Given the feature plan names live-infrastructure work\nWhen the tool runs headless\n"
+        "Then the affected task is typed as operator handoff",
+        NO_HTTP,
+        annotations="# [ASSUMPTION: confidence=low] Headless detection auto-applies the operator-handoff type on strong signals",
+    )
+    assert talked is None
+
+
+# H1: the 08-16 family's SILENT operators — REAL estate scenarios, none human.
+H1_NEGATIVES = [
+    (
+        # forge unattended-build-service-budget-guards — `attended` is a MODE word
+        "An attended build is never constrained by budget caps",
+        "Given a build launched with the attended profile\n"
+        "When the build runs past every unattended cap\n"
+        "Then no budget cap should fire",
+    ),
+    (
+        # jarvis feat-jarvis-003 — `attended tools`
+        "Not configuring an ambient tool factory falls back to the attended tools without frontier",
+        "Given no ambient tool factory is configured\nWhen an ambient session starts\n"
+        "Then the session should be built with the attended tools minus escalate_to_frontier",
+    ),
+    (
+        # specialist-agent production-trace-capture — `attended session`
+        "An attended session without fleet dispatch records its lineage as absent by design",
+        "Given an attended session that never dispatched to the fleet\n"
+        "When the trace is captured\nThen the lineage field should read absent-by-design",
+    ),
+    (
+        # specialist-agent architect-ingestion-v2 — CLI persona `the operator runs`
+        "Ingestion completes cleanly when given an empty input",
+        "Given an empty corpus directory\nWhen the operator runs the ingestion command\n"
+        "Then the command should exit zero and report zero chunks",
+    ),
+    (
+        # forge forge-production-image — `the operator runs`
+        "The production image exposes the full forge CLI surface",
+        "Given the production image is built\nWhen the operator runs forge --help inside the container\n"
+        "Then every forge subcommand should be listed",
+    ),
+    (
+        # study-tutor keycloak-idp-standup — `the operator checks` (a status read, not human work)
+        "The Keycloak identity service starts and reports healthy",
+        "Given the standup runbook has been executed on the NAS\n"
+        "When the operator checks the identity service status\n"
+        "Then the identity service should be running and report healthy",
+    ),
+    (
+        # study-tutor reachy-local-voice-migration — bare `robot` is software behaviour
+        "A spoken tutoring question is answered by the study-tutor in the robot's voice",
+        "Given the student is in a tutoring conversation with the robot\n"
+        "When the student asks the robot a tutoring question\n"
+        "Then the robot should obtain the answer from the study-tutor\n"
+        "And the robot should speak the answer in the configured robot voice",
+    ),
+    (
+        # jarvis feat-spl-003 — "traced by hand" is a rationale, not work done by hand
+        "A notification without a thread anchor degrades to the channel and is never dropped",
+        "Given a notification with no thread anchor\nWhen it is delivered\n"
+        "Then it should land in the channel\n"
+        "And the notification should include the correlation identifier so it can be traced by hand",
+    ),
+    (
+        # study-tutor keycloak-idp-standup — bare `on the NAS` (only `on the real NAS` is the marker)
+        "The nightly backup captures both the learner store and the realm state",
+        "Given the identity service is running on the NAS\nWhen the nightly backup runs\n"
+        "Then the archive should contain both databases",
+    ),
+]
+
+
+@pytest.mark.parametrize("title,steps", H1_NEGATIVES, ids=[c[0][:40] for c in H1_NEGATIVES])
+def test_h1_mode_words_cli_persona_and_bare_robot_never_mint_operator(title, steps):
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(title, steps, ctx)
+        assert home is None or home.verifier != "operator", (title, home)
 
 
 def test_operator_is_explicit_only_an_unmatched_scenario_never_becomes_operator():
@@ -681,6 +964,30 @@ def test_extract_scenarios_excludes_background_and_comments_and_tags():
     assert "| 1 |" in scenarios[1][1]
 
 
+def test_extract_scenario_blocks_attributes_tags_and_comments_to_the_right_scenario():
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    text = (
+        "Feature: F\n"
+        "  Scenario: First\n"
+        "    Given a\n"
+        "    # an in-body note\n"
+        "    Then b\n\n"
+        "  # Why: the next one needs the live sandbox\n"
+        "  # operator_handoff: proven against the live sandbox\n"
+        "  @boundary @operator-handoff\n"
+        "  Scenario: Second\n"
+        "    Given c\n"
+        "    Then d\n"
+    )
+    first, second = extract_scenario_blocks(text)
+    assert first.title == "First" and "in-body note" in first.annotations
+    assert "operator" not in first.annotations  # the trailing run belongs to Second
+    assert second.title == "Second"
+    assert "@operator-handoff" in second.annotations and "# operator_handoff:" in second.annotations
+    assert "operator" not in second.steps_text and "#" not in second.steps_text
+
+
 def test_background_exclusion_keeps_the_smoke_probes_hurl_end_to_end():
     """runtime-smoke's Background says 'throwaway sandboxed environment'; had
     the Background been folded into every scenario, all twelve would be R3.
@@ -708,11 +1015,56 @@ def test_http_surface_from_hurl_gate_in_registry(tmp_path: Path):
     assert has and "hurl-twins" in why
 
 
-def test_http_surface_from_web_framework_manifest(tmp_path: Path):
-    (tmp_path / "requirements").mkdir()
-    (tmp_path / "requirements" / "base.txt").write_text("fastapi>=0.104.0\nsqlalchemy\n")
+def test_http_surface_from_pyproject_project_dependencies_structural(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='svc'\ndependencies=['FastAPI[all]>=0.104.0', 'sqlalchemy']\n"
+    )
     has, why = detect_repo_http_surface(tmp_path)
     assert has and "fastapi" in why
+
+
+def test_http_surface_from_poetry_dependencies_and_package_json_dependencies(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.poetry]\nname='svc'\n[tool.poetry.dependencies]\npython='^3.12'\nflask='^3.0'\n"
+    )
+    has, why = detect_repo_http_surface(tmp_path)
+    assert has and "flask" in why
+    node = tmp_path / "node"
+    node.mkdir()
+    (node / "package.json").write_text(json.dumps({"dependencies": {"express": "^4"}}))
+    has, why = detect_repo_http_surface(node)
+    assert has and "express" in why
+
+
+def test_http_surface_from_explicit_config_key(tmp_path: Path):
+    (tmp_path / ".guardkit").mkdir()
+    (tmp_path / ".guardkit" / "config.yaml").write_text("routing_law: enforced\nsurface: http\n")
+    has, why = detect_repo_http_surface(tmp_path)
+    assert has and "surface: http" in why
+    (tmp_path / ".guardkit" / "config.yaml").write_text("surface: [bus, http]\n")
+    assert detect_repo_http_surface(tmp_path)[0] is True
+    (tmp_path / ".guardkit" / "config.yaml").write_text("surface: bus\n")
+    assert detect_repo_http_surface(tmp_path)[0] is False
+
+
+# H2: FREE TEXT NEVER COUNTS — the 08-16 detector word-matched "next" in a
+# forge/jarvis pyproject COMMENT and read both as HTTP; a comment, a
+# devDependency, a requirements*.txt line and an optional extra are all
+# structurally NOT the declared runtime web stack.
+def test_h2_free_text_comments_dev_deps_and_requirements_never_make_an_http_surface(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='forge'\n# the next stage dispatches to express the plan; falcon/tornado/bottle/koa\n"
+        "dependencies=['nats-core', 'click']\n"
+        "[project.optional-dependencies]\ndev=['fastapi']\n"
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {}, "devDependencies": {"next": "14", "express": "4"}, "scripts": {"x": "koa rocket"}})
+    )
+    (tmp_path / "requirements.txt").write_text("fastapi==0.104.1\nuvicorn\n")
+    (tmp_path / "requirements").mkdir()
+    (tmp_path / "requirements" / "base.txt").write_text("fastapi>=0.104.0\n")
+    has, why = detect_repo_http_surface(tmp_path)
+    assert has is False, why
 
 
 def test_no_http_surface_when_neither(tmp_path: Path):
@@ -1057,6 +1409,63 @@ def test_loader_class_flag_drives_the_hook(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(FeatureLoader, "normalize_stamps_on_load", True)
     feature = FeatureLoader.load_feature("FEAT-UCNT", repo_root=repo, validate_paths=False)
     assert len(feature.scenarios) == 6
+
+
+# L1 — the writer accepts `scenarios: null` / `~` / `[]` / `{}` as the block
+# to fill; it never writes a second `scenarios:` key.
+@pytest.mark.parametrize("empty_form", ["null", "~", "[]", "{}", ""])
+def test_l1_writer_fills_an_empty_scenarios_value_in_any_yaml_spelling(tmp_path: Path, empty_form):
+    yp = tmp_path / "F.yaml"
+    yp.write_text(f"id: FEAT-X\nname: X\nscenarios: {empty_form}\ntasks: []\n", encoding="utf-8")
+    write_stamps(yp, {"A GET request works": {"verifier": "hurl"}})
+    text = yp.read_text()
+    assert text.count("scenarios:") == 1, text
+    data = yaml.safe_load(text)
+    assert data["scenarios"] == {"A GET request works": {"verifier": "hurl"}}
+    assert data["tasks"] == [] and data["id"] == "FEAT-X"
+
+
+# L2 — a missing task doc is logged at WARNING naming the path, never swallowed.
+def test_l2_missing_task_doc_is_a_named_warning(tmp_path: Path, caplog):
+    import logging
+
+    missing = tmp_path / "TASK-GONE.md"
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_normalizer"):
+        nodes = collect_plan_test_nodes([missing])
+    assert nodes == []
+    assert any(str(missing) in rec.getMessage() and rec.levelno == logging.WARNING for rec in caplog.records), caplog.text
+
+
+# L3 — a RULE-MINTED operator stamp is never silent: it is listed under a
+# distinct `operator_stamped` key in the JSON and echoed by the CLI.
+OPERATOR_FEATURE = (
+    "Feature: Deploy\n"
+    "  Scenario: The executor stands fleet-memory up on the real NAS\n"
+    "    Given the runbook is pointed at the real NAS with the real deploy environment file\n"
+    "    When the executor runs the runbook\n"
+    "    Then fleet-memory Postgres with pgvector should be live on the NAS\n\n"
+    "  Scenario: The count of an empty store is zero\n"
+    "    When I send a GET request to /users/count\n"
+    "    Then the response status code should be 200\n"
+)
+
+
+def test_l3_operator_stamps_are_named_in_the_result_and_the_cli_echo(tmp_path: Path):
+    from guardkit.cli.main import cli
+
+    repo = _repo(tmp_path, BASE_YAML, feature_text=OPERATOR_FEATURE)
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True)
+    assert result.operator_stamped == ["The executor stands fleet-memory up on the real NAS"]
+    assert result.to_dict()["operator_stamped"] == result.operator_stamped
+    assert result.stamped["The count of an empty store is zero"] == "hurl"
+
+    out = CliRunner().invoke(
+        cli, ["qa", "normalize-stamps", "--feature", "FEAT-UCNT", "--repo", str(repo), "--dry-run"]
+    )
+    assert out.exit_code == 0, out.output
+    payload = json.loads(out.output[out.output.index('{\n  "feature_id"'):])
+    assert payload["operator_stamped"] == ["The executor stands fleet-memory up on the real NAS"]
+    assert "minted `operator`" in out.output and "on the real NAS" in out.output
 
 
 # ---------------------------------------------------------------------------

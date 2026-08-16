@@ -66,6 +66,31 @@ The stamp SCHEMA is validated whenever it is present, flag or no flag — an
 unknown verifier value is always a loud load error. The flag only controls
 whether an *absent* stamp rejects the plan load.
 
+The surface declaration (``surface``)
+-------------------------------------
+THE STAMP NORMALIZER (``stamp_normalizer.py``) mints ``hurl`` (rule R9) only
+for a repo that HAS an HTTP surface, and it learns that STRUCTURALLY — never
+by grepping free text (a pyproject comment saying "next" once made forge read
+as a web app). Three doors, any suffices:
+
+* a hurl-twins gate in ``qa/gates/registry.yaml`` (gate id/path says ``hurl``);
+* top-level ``surface: http`` in ``<repo>/.guardkit/config.yaml`` — the
+  EXPLICIT door, for a repo whose manifests are not read (requirements-only
+  trees such as lpa-platform-poc) or whose web stack is not in the known list;
+  a string, or a list containing ``http``:
+
+  .. code-block:: yaml
+
+      routing_law: enforced
+      surface: http                  # or: surface: [http, bus]
+
+* an EXACT web-framework package under pyproject ``[project] dependencies`` /
+  ``[tool.poetry.dependencies]`` or package.json ``dependencies`` (fastapi,
+  flask, django, starlette, aiohttp, litestar, sanic, tornado, quart, falcon,
+  bottle · express, fastify, koa, hapi, next, @nestjs/core, hono, restify,
+  @sveltejs/kit, nuxt). devDependencies, requirements*.txt, go.mod, Cargo.toml
+  and comments never count.
+
 The toolchain linkage (A.2's stamp-to-rule wiring)
 --------------------------------------------------
 For ``verifier: toolchain`` the scenario's pin into the repo's own suite must
