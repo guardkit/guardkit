@@ -1,0 +1,76 @@
+id: FEAT-B70F
+name: "Version Endpoint"
+description: "Add a read-only /version endpoint exposing application metadata"
+created: "2026-07-09T14:32:00Z"
+status: planned
+complexity: 3
+estimated_tasks: 3
+
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/version-endpoint/version-endpoint.feature
+scenarios:
+  "A GET request to /version returns the application metadata":
+    verifier: hurl
+  "A POST request to /version is rejected as method not allowed":
+    verifier: hurl
+  "A PUT request to /version is rejected as method not allowed":
+    verifier: hurl
+  "A PATCH request to /version is rejected as method not allowed":
+    verifier: hurl
+  "A DELETE request to /version is rejected as method not allowed":
+    verifier: hurl
+  "The /version response is valid JSON with the expected keys":
+    verifier: hurl
+  "Accessing /version without authentication succeeds":
+    verifier: hurl
+  "The git commit hash returned is a short 7-character string":
+    verifier: hurl
+  "The /version response has a flat JSON structure with no nesting":
+    verifier: hurl
+  "The JSON response uses the keys \"version\", \"commit\", and \"service\"":
+    verifier: hurl
+tasks:
+  - id: TASK-B70F-001
+    name: "Create version endpoint and metadata extraction"
+    file_path: "tasks/backlog/version-endpoint/TASK-B70F-001-create-version-endpoint.md"
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 45
+
+  - id: TASK-B70F-002
+    name: "Add tests for /version endpoint"
+    file_path: "tasks/backlog/version-endpoint/TASK-B70F-002-add-version-tests.md"
+    complexity: 3
+    dependencies:
+      - TASK-B70F-001
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+  - id: TASK-B70F-003
+    name: "Update API documentation"
+    file_path: "tasks/backlog/version-endpoint/TASK-B70F-003-update-api-docs.md"
+    complexity: 2
+    dependencies:
+      - TASK-B70F-001
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 20
+
+orchestration:
+  parallel_groups:
+    - - TASK-B70F-001
+    - - TASK-B70F-002
+      - TASK-B70F-003
+  estimated_duration_minutes: 75
+  recommended_parallel: 2

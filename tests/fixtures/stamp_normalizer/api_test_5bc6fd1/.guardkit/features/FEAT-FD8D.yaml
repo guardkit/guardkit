@@ -1,0 +1,70 @@
+id: FEAT-FD8D
+name: Service Uptime Endpoint
+description: "GET /uptime returning service, started_at (UTC ISO-8601) and uptime_seconds\
+  \ (float); mirrors src/health/ module structure; no database access. Factory-1 first\
+  \ pass \u2014 Mode P handoff 41a2e3ef, review TASK-REV-8e9b."
+created: '2026-07-12T08:02:19.551644'
+status: completed
+complexity: 3
+estimated_tasks: 1
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/uptime-endpoint/uptime-endpoint.feature
+scenarios:
+  "Requesting uptime returns the service identity and running time":
+    verifier: hurl
+  "Uptime increases between consecutive requests":
+    verifier: hurl
+    test_ref: qa/twins/uptime-endpoint/uptime-increases.hurl
+  "Uptime immediately after startup is non-negative":
+    verifier: probe:process
+  "Attempting to modify the uptime resource is rejected":
+    verifier: hurl
+  "Uptime remains available when the database is unavailable":
+    verifier: probe:process
+tasks:
+- id: TASK-UPT-001
+  name: Add GET /uptime endpoint
+  file_path: tasks/backlog/uptime-endpoint/TASK-UPT-001-add-uptime-endpoint.md
+  complexity: 3
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 3
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-07-12T08:07:58.478281'
+  completed_at: '2026-07-12T08:30:26.894136'
+orchestration:
+  parallel_groups:
+  - - TASK-UPT-001
+  estimated_duration_minutes: 33
+  recommended_parallel: 1
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-12T08:07:58.346115'
+  completed_at: '2026-07-12T08:30:27.497593'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/api_test/.guardkit/worktrees/FEAT-FD8D
+  total_turns: 3
+  tasks_completed: 1
+  tasks_failed: 0
+  current_wave: 1
+  completed_waves:
+  - 1
+  last_updated: '2026-07-12T08:30:27.496523'
+  archived_at: null
+  archived_to: null

@@ -1,0 +1,204 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "guardkit-py"
+dynamic = ["version"]
+description = "Lightweight AI-Assisted Development Framework"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "GuardKit Contributors", email = "noreply@guardkit.dev"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+# Floor is 3.12 (TASK-MEM08-012, 2026-06-30): raised from 3.11. The `memory`
+# extra (and `all`) depend on fleet-memory, which declares requires-python>=3.12,
+# so a >=3.11 floor made `uv sync --extra memory` an unsatisfiable resolution
+# ("requested Python >=3.11 does not satisfy fleet-memory's >=3.12"). Per
+# docs/guides/portfolio-python-pinning.md §"When a Tighter Pin is Genuinely
+# Required" item 1 (a direct dependency caps interpreters tighter than your
+# code → bump the floor), we raise the floor rather than mask it with a per-dep
+# marker. The prior 3.11 floor (asyncio.timeout(), PEP 654, TASK-INFRA-CIGREEN)
+# is subsumed by 3.12. No upper bound (guide §Rationale). CI gates on 3.12.
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0.0",
+    "python-frontmatter>=1.0.0",
+    "pydantic>=2.0.0",
+    "Jinja2>=3.1.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.0",
+    "gherkin-official>=29.0.0",
+]
+
+[project.optional-dependencies]
+# Claude Agent SDK for AutoBuild Player/Coach adversarial workflow
+# Requires Python 3.12+ (same as guardkit)
+# Docs: https://platform.claude.com/docs/en/agent-sdk/python
+autobuild = [
+    # Lower bound 0.1.49 = first release with typed RateLimitEvent parsing
+    # (TASK-FIX-7A01 / TASK-REV-E4F5 F1). Upper bound <0.2 reflects upstream's
+    # 0.1.x series as the stable surface; re-audit before bumping past 0.2.
+    "claude-agent-sdk>=0.1.49,<0.2",
+    # TASK-HMIG-006 AC-005: cross-repo dispatch through the
+    # HarnessAdapter substrate seam. Resolved from a sibling repo in
+    # operator-side dev via [tool.uv.sources] below; end-user installs
+    # pick up whichever release matches the version contract.
+    "guardkitfactory>=0.2.0,<1",
+]
+# FalkorDB Python client. Used by `guardkit memory migrate-graph`
+# (guardkit/memory/graph_export.py reads Episodic nodes directly). Formerly
+# arrived transitively via graphiti-core[falkordb]; now a direct dependency
+# since FEAT-MEM-09 removed graphiti-core.
+falkordb = [
+    "falkordb>=1.6,<2",
+]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    # pytest-timeout: GuardKit dogfoods the per-test timeout the Coach injects
+    # into its isolated pytest run so a single hanging test is named-FAILED
+    # rather than consuming the whole subprocess budget (TASK-ABFIX-011). Inert
+    # by default (no global `timeout` in addopts) and the Coach injection is
+    # probe-gated, so it only takes effect for guardkit's own worktree venvs.
+    # Lower bound 2.1 = `--timeout-method` stable; upper bound <3 = 2.x stable
+    # surface — re-audit before bumping.
+    "pytest-timeout>=2.1,<3",
+    # pytest-bdd: GuardKit dogfoods the dependency it requires of all consumers
+    # of the BDD oracle (TASK-FIX-BDDM-1 strict-fail behaviour). Added per
+    # TASK-OPS-BDDM-10 / FEAT-BDDM (2026-04-26). Lower bound 8.1 = forge's pin
+    # (forge/pyproject.toml:34); upper bound <9 reflects pytest-bdd's 8.x
+    # series as the stable surface — re-audit before bumping.
+    "pytest-bdd>=8.1,<9",
+    "httpx>=0.25.1",
+    # Deterministic template render+parse gate (DIM1-F4 / PB-8). The gate
+    # renders every `.template`/`.j2` scaffold and parses the output with ONE
+    # tree-sitter parser per language (stack-plugin-architecture.md: one parser +
+    # per-language DATA descriptors, never a python-ast monolith). tree-sitter is
+    # a guardkit-tooling dep (it parses TARGET-project template files), so it
+    # lives in dev/templates, not the runtime deps. Lower bounds = the tested
+    # floor; the language-pack ships precompiled grammars for
+    # python/javascript/typescript/csharp.
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
+]
+# Deterministic template gate deps as a standalone extra so CI (and template
+# authors) can install just the render+parse tooling without the full dev set.
+templates = [
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
+]
+# Memory path: FEAT-HARV writes + FEAT-MEM-08 reads. nats-core is the NATS
+# publisher helper (NATSClient.publish_episode + MemoryEpisodeV1, writes);
+# fleet-memory provides the retrieval surface (fleet_memory.retrieval.search +
+# assemble_context) reused by FleetMemoryClient for reads (TASK-MEM08-011 — the
+# single source of truth the memory_search MCP tool also wraps). Both resolved as
+# editable siblings via [tool.uv.sources] below and threaded into the autobuild
+# worktree venv via `bootstrap_extras: [dev, memory]` (a bare extra is never
+# installed otherwise).
+memory = [
+    "nats-core>=0.4,<1",
+    "fleet-memory>=0.1,<1",
+]
+all = [
+    "claude-agent-sdk>=0.1.49,<0.2",
+    "guardkitfactory>=0.2.0,<1",
+    "nats-core>=0.4,<1",
+    "fleet-memory>=0.1,<1",
+    "falkordb>=1.6,<2",
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    # See dev group above (TASK-ABFIX-011 / TASK-OPS-BDDM-10 / FEAT-BDDM).
+    "pytest-timeout>=2.1,<3",
+    "pytest-bdd>=8.1,<9",
+    "httpx>=0.25.1",
+    # Deterministic template gate (DIM1-F4 / PB-8) — see the dev group above.
+    "tree-sitter>=0.23,<1",
+    "tree-sitter-language-pack>=0.9",
+]
+
+[tool.uv.sources]
+# TASK-HMIG-006 D-5: sibling-repo editable resolution for the unpublished
+# guardkitfactory package. Matches the jarvis / specialist-agent fleet
+# convention for nats-core. Operator-side dev runs
+# `uv sync --extra autobuild` (or `pip install -e ../guardkitfactory`) to
+# pick up the editable install. End users on PyPI get the version-pinned
+# release once guardkitfactory ships there; until then, the [tool.uv.sources]
+# block is the resolution path. See docs/guides/portfolio-python-pinning.md.
+guardkitfactory = { path = "../guardkitfactory", editable = true }
+# FEAT-HARV / P4: nats-core (NATS memory publisher helper) resolved as an
+# editable sibling, same convention as guardkitfactory above. The autobuild
+# orchestrator auto-creates a bridging symlink so this "../nats-core" relative
+# path resolves from the nested worktree at .guardkit/worktrees/<feat>/
+# (env_bootstrap._arrange_uv_sources_symlinks). It is installed into a worktree
+# venv only when an extra naming it is threaded — FEAT-HARV.yaml sets
+# `bootstrap_extras: [dev, memory]`. Requires ../nats-core checked out alongside.
+nats-core = { path = "../nats-core", editable = true }
+# FEAT-MEM-08 / TASK-MEM08-011: fleet-memory (read retrieval surface) resolved as
+# an editable sibling, same convention as nats-core. Installed into a worktree venv
+# only when the `memory` extra is threaded. Requires ../fleet-memory checked out
+# alongside; the autobuild orchestrator bridges the relative path from the nested
+# worktree (env_bootstrap uv-sources symlink).
+fleet-memory = { path = "../fleet-memory", editable = true }
+
+[project.scripts]
+guardkit-py = "guardkit.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/guardkit/guardkit"
+Documentation = "https://github.com/guardkit/guardkit/tree/main/docs"
+Repository = "https://github.com/guardkit/guardkit"
+Issues = "https://github.com/guardkit/guardkit/issues"
+
+[tool.hatch.version]
+path = "guardkit/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["guardkit"]
+# __pycache__/*.pyc are untracked and absent from a clean-checkout build (the CI
+# acceptance gate builds from a clean tree); exclude them defensively so a dirty
+# working tree cannot leak compiled artefacts into the wheel.
+exclude = ["**/__pycache__", "**/*.pyc"]
+
+# DF-011: ship the installer/core template + command payload INSIDE the wheel,
+# under the guardkit namespace, so a plain `pip install guardkit-py` is
+# self-contained (the F1-F5 validator code and the template data it enforces
+# travel together). installer/core stays in place as the authoring source; this
+# mapping is a BUILD-TIME artefact only — there is no second in-repo copy.
+#
+# HARD CONSTRAINT (DF-011 §2.2 / namespace-hygiene): NEVER a top-level
+# `installer` package. `packages = ["guardkit", "installer"]` would collide with
+# the PyPI `pypa/installer` distribution — the same externally-defined-namespace
+# class as the `mcp` shadowing incident. The payload is namespaced under
+# guardkit/ as `guardkit/_installer_core` (resolver.py resolves it via
+# importlib.resources; editable installs fall back to the repo's installer/core).
+[tool.hatch.build.targets.wheel.force-include]
+"installer/core" = "guardkit/_installer_core"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=guardkit --cov-report=term --cov-report=json"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "seam: Seam (technology boundary) integration tests",
+    "e2e: End-to-end integration tests",
+    "slow: Slow-running tests",
+    "real_world: Real-world scenario tests",
+    "integration: Integration tests between modules",
+]

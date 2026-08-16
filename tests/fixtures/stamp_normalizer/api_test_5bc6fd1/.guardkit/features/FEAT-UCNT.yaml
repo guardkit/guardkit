@@ -1,0 +1,56 @@
+id: FEAT-UCNT
+name: "GET /users/count endpoint"
+description: 'Expose the stored-user total at GET /users/count returning exactly
+  {"count": <non-negative int>}. Extends the existing users router (declared before
+  the by-id route so neither shadows the other). Data-bearing: the count reads the
+  real users table, DB-down degrades honestly to 503 naming the cause. The second
+  forge end-to-end run''s demo feature: FEAT-UPT1-class size, one honest step more
+  real. Gherkin + assumptions in features/users-count-endpoint/ (all four assumptions
+  CONFIRMED by Rich 2026-07-27).'
+created: '2026-07-26T20:30:00.000000'
+status: planned
+complexity: 3
+estimated_tasks: 1
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/users-count-endpoint/users-count-endpoint.feature
+scenarios:
+  "The count reflects the number of stored users":
+    verifier: toolchain
+    test_ref: test_count_incremental
+  "The count of an empty store is zero":
+    verifier: toolchain
+    test_ref: test_count_empty
+  "Creating a user increments the count":
+    verifier: toolchain
+    test_ref: test_count_incremental
+  "Requesting a user by id still works alongside the count route":
+    verifier: hurl
+  "Attempting to modify the users count is rejected":
+    verifier: hurl
+  "The count degrades honestly when the database is unavailable":
+    verifier: probe:process
+tasks:
+- id: TASK-UCNT-001
+  name: Add GET /users/count endpoint
+  file_path: tasks/backlog/users-count-endpoint/TASK-UCNT-001-add-users-count-endpoint.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 35
+  requires_infrastructure: []
+orchestration:
+  parallel_groups:
+  - - TASK-UCNT-001
+  estimated_duration_minutes: 35
+  recommended_parallel: 1
+preflight_strict: false
+evidence_repos: []

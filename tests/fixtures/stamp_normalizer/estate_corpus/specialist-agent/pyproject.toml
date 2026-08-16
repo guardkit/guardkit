@@ -1,0 +1,147 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "specialist-agent"
+version = "0.1.0"
+description = "Multi-role specialist agent with adversarial cooperation"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "langchain>=1.2.11,<2",
+    "langchain-core>=1.2.18,<2",
+    "langgraph>=1.1,<2",
+    "deepagents>=0.5.3,<0.6",
+    "python-dotenv>=1.0",
+    "mcp>=1.0",
+    "nats-core>=0.7",
+    "python-docx>=1.0",
+    # FEAT-8E06 (WS1 Session C, C8): the official gherkin parser becomes a
+    # runtime dependency (tool-side parse backstop for FEAT-SPL-007), matching
+    # guardkit's own pin. Lower-bound-only per the portfolio pinning policy.
+    "gherkin-official>=29.0.0",
+]
+
+[project.scripts]
+specialist-agent = "specialist_agent.cli.main:cli"
+
+[project.optional-dependencies]
+providers = [
+    "anthropic>=0.40",
+    "google-genai",
+    "openai",
+    "langchain-openai>=1.2,<2",
+    "langchain-tavily>=0.2,<1",
+]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.23",
+    # pytest-bdd: required for `.feature` scenario discovery so future @task: tags
+    # are not silently bypassed. See guardkit TASK-OPS-BDDM-8 / FEAT-BDDM.
+    "pytest-bdd>=8.1,<9",
+    "pytest-cov",
+]
+# rag: opt-in vector-store backend for the RAG ingestion script.
+# Keep chromadb out of the base install — users explicitly opt in via
+# `pip install -e ".[rag]"`. See TASK-RAG02-001 / parent review TASK-REV-CDB1.
+# Lower bound only, per the portfolio Python pinning policy
+# (`.claude/CLAUDE.md` "Pinning policy"); add an upper bound only with a
+# deliberate breakage review.
+rag = [
+    "chromadb>=0.5",
+]
+# memory: opt-in fleet-memory read backend (retrieval surface) for the
+# Graphiti → fleet-memory cutover. fleet-memory declares requires-python>=3.12
+# while this project is >=3.11 (no upper bound, per `.claude/CLAUDE.md` pinning
+# policy), so fleet-memory MUST be an extra — a base dep would make uv refuse to
+# resolve on 3.11 ("requested Python >=3.11 does not satisfy fleet-memory's
+# >=3.12"). The write path (nats-core) is a base dep; only the read retrieval
+# surface lives here. Install with `uv pip install -e ".[memory]"`. Mirrors the
+# guardkit `memory` extra. Lower bound only, per the portfolio pinning policy.
+memory = [
+    "fleet-memory>=0.1,<1",
+]
+# templates: the FEAT-8E06 (WS1 Session C, seam 2) guardkit template channel.
+# guardkit-py is consumed as installed, version-pinned DATA (templates read via
+# importlib.resources; the loader refuses unpinned versions — templates/pins.py).
+#
+# DATED DEVIATION (2026-07-08) from design §5, which specified guardkit-py as a
+# BASE dependency: guardkit-py==0.1.0 declares requires-python>=3.12, while this
+# project is >=3.11 (no upper bound, per .claude/CLAUDE.md pinning policy). A
+# base dep therefore makes uv refuse to resolve on 3.11 — the EXACT constraint
+# that forces `fleet-memory` (also >=3.12) into the `memory` extra above. So
+# guardkit-py is an extra, layered exactly like fleet-memory: install with
+# `uv pip install -e ../guardkit --no-deps` (design §4.1 frames guardkit as a
+# deployment prerequisite of the specialist container). The loader resolves the
+# templates from the installed distribution (wheel: guardkit/_installer_core;
+# editable: installer/core) and the sha256 pin is the integrity guard.
+# Lower-bound only, per the portfolio pinning policy.
+templates = [
+    "guardkit-py>=0.1",
+]
+
+# ---------------------------------------------------------------------------
+# uv path sources — TASK-IMP-NCSR (parent review TASK-REV-5A1C §7.2)
+# ---------------------------------------------------------------------------
+# `nats-core` is installed from the sibling repository at `../nats-core/`.
+#
+# An unrelated package on PyPI also publishes the name `nats-core`; its
+# Python module is `nats` (not `nats_core`), so without this stanza
+# `uv pip install` resolves the runtime dep above (`nats-core>=0.7`) to
+# the wrong project and `import nats_core` fails with
+# `ModuleNotFoundError: No module named 'nats_core'`. That manifested as
+# 18 pytest collection errors during TASK-REV-5A1C's empirical run on
+# Python 3.14.2.
+#
+# Mirrors the pattern Jarvis uses (`jarvis/pyproject.toml`). The canonical
+# layout assumes `nats-core` is a sibling of `specialist-agent`:
+#
+#   …/appmilla_github/specialist-agent/   ← this project
+#   …/appmilla_github/nats-core/          ← target of `../nats-core`
+#
+# When the upstream namespace conflict is resolved (or the sibling repo is
+# republished under a different name), this stanza can be removed and the
+# runtime dep above will resolve from PyPI cleanly.
+[tool.uv.sources]
+nats-core = { path = "../nats-core", editable = true }
+# `fleet-memory` (the `memory` extra above) is installed from the sibling
+# repository at `../fleet-memory/`. Same sibling-layout assumption as nats-core:
+#
+#   …/appmilla_github/specialist-agent/   ← this project
+#   …/appmilla_github/fleet-memory/       ← target of `../fleet-memory`
+#
+# Editable so the retrieval surface tracks the sibling checkout. When
+# fleet-memory is published to an index this stanza can be dropped and the
+# `memory` extra will resolve from there.
+fleet-memory = { path = "../fleet-memory", editable = true }
+# `guardkit-py` (FEAT-8E06 seam 2) is installed from the sibling repository at
+# `../guardkit/`. Same sibling-layout assumption as nats-core/fleet-memory:
+#
+#   …/appmilla_github/specialist-agent/   ← this project
+#   …/appmilla_github/guardkit/           ← target of `../guardkit`
+#
+# Editable so the template channel resolves the same pinned bytes the contract
+# doc anchors. A published wheel (DF-011: template payload ships under
+# guardkit/_installer_core) is also self-contained; the loader resolves either
+# source and the sha256 pin is the integrity guard. Drop this stanza once
+# guardkit-py is on an index.
+guardkit-py = { path = "../guardkit", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/specialist_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    # Live round-trip against a real fleet-memory store. Skipped unless
+    # FLEET_MEMORY_ENABLED=true — the operator's post-merge memory proof.
+    "live: requires a live fleet-memory store (operator-run; skipped by default)",
+    # Latency benchmarks (TASK-SPL5-009). Fast enough for the default run;
+    # deselect with `-m 'not benchmark'` in latency-sensitive CI lanes.
+    "benchmark: trace-write latency benchmark (deselect with -m 'not benchmark')",
+]

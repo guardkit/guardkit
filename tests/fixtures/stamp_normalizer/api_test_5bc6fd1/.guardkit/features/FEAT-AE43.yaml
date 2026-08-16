@@ -1,0 +1,75 @@
+id: FEAT-AE43
+name: Service Request Statistics Endpoint
+description: "GET /stats endpoint: configured service name, process-lifetime request\
+  \ counter (in-process, no DB), first-request time \u2014 per features/stats-endpoint\
+  \ spec (Mode P cid 2dfb4ef5)"
+created: '2026-07-12T14:55:49.153681'
+status: completed
+complexity: 4
+estimated_tasks: 1
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/stats-endpoint/stats-endpoint.feature
+scenarios:
+  "Requesting statistics returns the service identity and request activity":
+    verifier: hurl
+  "The served-request count increases as requests are handled":
+    verifier: hurl
+  "The first-request time is stable once set":
+    verifier: hurl
+  "A freshly started service counts the statistics request itself":
+    verifier: probe:process
+  "The served-request count never decreases while the service is running":
+    verifier: hurl
+  "Modifying the statistics is not allowed":
+    verifier: hurl
+  "Statistics remain available when the database is unavailable":
+    verifier: probe:process
+  "A service restart begins a fresh count":
+    verifier: probe:process
+tasks:
+- id: TASK-STAT-001
+  name: Add GET /stats endpoint with in-process request counter
+  file_path: tasks/backlog/stats-endpoint/TASK-STAT-001-implement-stats-endpoint.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-12T15:38:48.410470'
+  completed_at: '2026-07-12T15:50:23.864634'
+orchestration:
+  parallel_groups:
+  - - TASK-STAT-001
+  estimated_duration_minutes: 50
+  recommended_parallel: 1
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-12T15:01:21.499571'
+  completed_at: '2026-07-12T15:50:23.867620'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/api_test/.guardkit/worktrees/FEAT-AE43
+  total_turns: 1
+  tasks_completed: 1
+  tasks_failed: 0
+  current_wave: 1
+  completed_waves:
+  - 1
+  last_updated: '2026-07-12T15:50:23.866717'
+  archived_at: null
+  archived_to: null
