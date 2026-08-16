@@ -793,10 +793,12 @@ class FeatureLoader:
             When on, ``stamp_normalizer.normalize_feature`` runs after
             parse and BEFORE the routing-law enforcement pass, WRITING
             rule-minted stamps for unstamped scenarios into the feature
-            YAML (never overwriting an existing stamp) and re-parsing;
-            an undecidable title raises ``StampNormalizerRefusal`` — the
-            load stops, nothing written. Only meaningful when the
-            feature declares ``feature_files:``.
+            YAML (never overwriting an existing stamp) and re-parsing.
+            Undecidable titles are NOT stamped and are logged by name (a
+            partial result — the decided subset IS written; whether an
+            unstamped remainder blocks the load is the routing-law
+            enforcement pass's decision, not the normalizer's). Only
+            meaningful when the feature declares ``feature_files:``.
 
         Returns
         -------

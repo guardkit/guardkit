@@ -1562,9 +1562,23 @@ def normalize_feature(
             "; ".join(result.operator_stamped),
         )
 
+    # Coordinator review 2026-08-16 (pairs with the forge hook's condition 5):
+    # the normalizer's law is ONLY "never invent a home, never overwrite,
+    # refuse the undecidable BY NAME". It WRITES every DECIDED stamp (a
+    # correctly stamped subset is strictly more truth than an empty map; each
+    # written stamp carries its rule in the receipt, so nothing is silent) and
+    # RETURNS the refused list. The DECISION to stop or proceed on a partial
+    # result belongs to the CALLER (forge hook: enforced → stop with the card;
+    # not enforced → proceed with a plain line). Refusals are still LOUD:
+    # logged here by name, and surfaced by the CLI as a distinct exit code.
     if result.refused:
-        # REFUSE LOUD — the run stops; NOTHING is written (no partial stamping).
-        raise StampNormalizerRefusal(feature_id, result.refused)
+        logger.warning(
+            "STAMP NORMALIZER: feature %s — %d scenario(s) UNDECIDABLE by rule "
+            "(no home invented, none written for these): %s",
+            feature_id,
+            len(result.refused),
+            "; ".join(result.refused),
+        )
 
     if dry_run or not result.stamped:
         return result
