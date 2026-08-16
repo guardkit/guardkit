@@ -206,6 +206,102 @@ def live_gate(
     sys.exit(_VERDICT_EXIT_CODES.get(envelope.verdict, 1))
 
 
+@qa.command(name="normalize-stamps")
+@click.option("--feature", "feature_id", required=True, help="Feature id (FEAT-X) to stamp.")
+@click.option(
+    "--repo",
+    "repo_root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("."),
+    help="Target repo root (default: cwd). Reads .guardkit/features/<id>.yaml under it.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Classify and print the result; write nothing.",
+)
+@click.option(
+    "--ignore-existing",
+    is_flag=True,
+    default=False,
+    help="Classify EVERY title as if unstamped (dry-run only; the reproduction proof).",
+)
+@click.option(
+    "--http-surface/--no-http-surface",
+    "http_surface",
+    default=None,
+    help="Override the repo HTTP-surface detection that gates R9 (hurl).",
+)
+def normalize_stamps(
+    feature_id: str,
+    repo_root: Path,
+    dry_run: bool,
+    ignore_existing: bool,
+    http_surface: bool | None,
+) -> None:
+    """THE STAMP NORMALIZER — mint ``verifier:`` stamps by rule (R1–R10) and WRITE them.
+
+    Rules doc: ai-transition/docs/routing-law-stamp-normalizer-rules-2026-08-15.md.
+    Rich's two conditions (08-16): it WRITES the feature YAML's ``scenarios:`` map
+    (only titles lacking a stamp — never overwrites), and NO MODEL IN THE LOOP —
+    anything the rules cannot decide REFUSES LOUD naming every title, and the run
+    stops with nothing written. Prints the result as JSON on stdout (forge's hook
+    parses it); exit 0 = stamped/nothing to do, 2 = refusal or cannot run.
+    """
+    from guardkit.orchestrator.stamp_normalizer import (
+        StampNormalizerError,
+        StampNormalizerRefusal,
+        normalize_feature,
+    )
+
+    features_dir = repo_root / ".guardkit" / "features"
+    yaml_path = features_dir / f"{feature_id}.yaml"
+    if not yaml_path.exists():
+        alt = features_dir / f"{feature_id}.yml"
+        if alt.exists():
+            yaml_path = alt
+    if not yaml_path.exists():
+        payload = {
+            "feature_id": feature_id,
+            "error": f"feature file not found: {yaml_path}",
+            "refused": [],
+        }
+        click.echo(json.dumps(payload, indent=2))
+        console.print(f"[bold red]✗ normalize-stamps: {payload['error']}[/bold red]", highlight=False)
+        sys.exit(2)
+
+    try:
+        result = normalize_feature(
+            yaml_path,
+            None,
+            repo_root,
+            dry_run=dry_run,
+            ignore_existing=ignore_existing,
+            repo_has_http_surface=http_surface,
+        )
+    except StampNormalizerRefusal as exc:
+        payload = {
+            "feature_id": exc.feature_id,
+            "error": str(exc),
+            "refused": list(exc.refused),
+            "written": False,
+        }
+        click.echo(json.dumps(payload, indent=2))
+        console.print("[bold red]✗ normalize-stamps REFUSED (undecidable titles)[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
+    except StampNormalizerError as exc:
+        payload = {"feature_id": feature_id, "error": str(exc), "refused": [], "written": False}
+        click.echo(json.dumps(payload, indent=2))
+        console.print("[bold red]✗ normalize-stamps could not run[/bold red]", highlight=False)
+        console.print(str(exc), highlight=False)
+        sys.exit(2)
+
+    click.echo(json.dumps(result.to_dict(), indent=2))
+    sys.exit(0)
+
+
 def _record_single_run_campaign(envelope, repo_root: Path):
     """Wrap a single B3 run as attempt 1 of an F9 ledger and stamp the envelope.
 

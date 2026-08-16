@@ -1,0 +1,136 @@
+id: FEAT-8737
+name: "Runtime smoke \u2014 seeded round-trip against a sandboxed deployment"
+description: 'Layer-3 runtime verification: deploy the freshly built app into a sandboxed
+  throwaway compose stack (internal-only zero-egress networks, hardened non-root app,
+  pre-built image), seed Postgres with a per-run marker, verify seeded-data round-trip
+  + POST-GET read-back + negative probes via an in-network stdlib probe container;
+  lands as the independent behavioural oracle tests/acceptance/users_roundtrip.py'
+created: '2026-07-25T11:30:10.171777'
+status: completed
+complexity: 5
+estimated_tasks: 3
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/runtime-smoke/runtime-smoke.feature
+scenarios:
+  "Data seeded directly into the database is visible through the running service":
+    verifier: probe:process
+  "A user created through the service reads back with identical details":
+    verifier: hurl
+  "A fully passing smoke run produces a passing verdict and a clean teardown":
+    verifier: probe:process
+  "The smoke completes within the oracle time budget":
+    verifier: probe:process
+  "The listing reflects exactly the records present in the fresh database":
+    verifier: probe:process
+  "Looking up a user that was never created is reported as not found":
+    verifier: hurl
+  "Creating a user with an email already in use is rejected as a conflict":
+    verifier: hurl
+  "A malformed user submission is rejected as invalid":
+    verifier: hurl
+  "A service that returns canned data fails the smoke":
+    verifier: probe:process
+  "A failed run still leaves nothing behind":
+    verifier: probe:process
+  "The smoke never touches the live deployment":
+    verifier: probe:process
+  "The sandboxed application has no route to the outside world":
+    verifier: probe:process
+tasks:
+- id: TASK-SMOKE-001
+  name: Create sandboxed smoke compose stack
+  file_path: tasks/backlog/runtime-smoke/TASK-SMOKE-001-create-sandboxed-smoke-compose-stack.md
+  complexity: 3
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 33
+  requires_infrastructure: []
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-07-25T11:42:26.237390'
+  completed_at: '2026-07-25T12:08:56.353662'
+- id: TASK-SMOKE-002
+  name: Add seed template and stdlib probe
+  file_path: tasks/backlog/runtime-smoke/TASK-SMOKE-002-add-seed-template-and-stdlib-probe.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 50
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-25T12:11:54.991515'
+  completed_at: '2026-07-25T12:35:12.457296'
+- id: TASK-SMOKE-003
+  name: Add users round-trip oracle
+  file_path: tasks/backlog/runtime-smoke/TASK-SMOKE-003-add-users-roundtrip-oracle.md
+  complexity: 6
+  dependencies:
+  - TASK-SMOKE-001
+  - TASK-SMOKE-002
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 113
+  requires_infrastructure: []
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+    deferred_reason: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-07-25T12:35:12.467975'
+  completed_at: '2026-07-25T13:31:25.436403'
+orchestration:
+  parallel_groups:
+  - - TASK-SMOKE-001
+    - TASK-SMOKE-002
+  - - TASK-SMOKE-003
+  estimated_duration_minutes: 196
+  recommended_parallel: 2
+smoke_gates:
+  after_wave: 2
+  command: 'set -e
+
+    python -m pytest tests/acceptance -x -q
+
+    '
+  expected_exit: 0
+  timeout: 600
+  exit5_is_hard_fail: false
+preflight_strict: false
+evidence_repos: []
+execution:
+  started_at: '2026-07-25T11:42:25.867213'
+  completed_at: '2026-07-25T13:31:36.975822'
+  worktree_path: /home/richardwoollcott/Projects/appmilla_github/api_test/.guardkit/worktrees/FEAT-8737
+  total_turns: 5
+  tasks_completed: 3
+  tasks_failed: 0
+  current_wave: 2
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-07-25T13:31:36.974028'
+  archived_at: null
+  archived_to: null

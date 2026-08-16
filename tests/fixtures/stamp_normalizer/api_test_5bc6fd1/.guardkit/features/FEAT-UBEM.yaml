@@ -1,0 +1,53 @@
+id: FEAT-UBEM
+name: "GET /users/by-email endpoint"
+description: 'Look up a user by email at GET /users/by-email?email=<EmailStr> ->
+  200 UserPublic | 404 no match | 422 malformed address | 503 DB-down naming the
+  cause (the /users/count convention). REUSES the existing crud.get_user_by_email
+  (no new query); declared before the by-id route (the FEAT-UCNT route-order
+  precedent). The third forge e2e run''s demo feature — the clean-routine-datum
+  candidate: deliberately thin, the chain is under test. Gherkin + assumptions in
+  features/users-by-email-endpoint/ (assumptions PENDING Rich''s review).'
+created: '2026-07-27T17:00:00.000000'
+status: planned
+complexity: 2
+estimated_tasks: 1
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/users-by-email-endpoint/users-by-email-endpoint.feature
+scenarios:
+  "An existing user is found by their email":
+    verifier: hurl
+  "The lookup returns exactly the matching user among several":
+    verifier: hurl
+  "An unknown email returns not-found":
+    verifier: hurl
+  "A malformed email is rejected as invalid input":
+    verifier: hurl
+  "Requesting a user by id still works alongside the by-email route":
+    verifier: hurl
+  "The lookup degrades honestly when the database is unavailable":
+    verifier: probe:process
+tasks:
+- id: TASK-UBEM-001
+  name: Add GET /users/by-email endpoint
+  file_path: tasks/backlog/users-by-email-endpoint/TASK-UBEM-001-add-users-by-email-endpoint.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 30
+  requires_infrastructure: []
+orchestration:
+  parallel_groups:
+  - - TASK-UBEM-001
+  estimated_duration_minutes: 30
+  recommended_parallel: 1
+preflight_strict: false
+evidence_repos: []
