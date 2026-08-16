@@ -252,7 +252,7 @@ def normalize_stamps(
     (only titles lacking a stamp — never overwrites), and NO MODEL IN THE LOOP —
     anything the rules cannot decide REFUSES LOUD naming every title, and the run
     stops with nothing written. Prints the result as JSON on stdout (forge's hook
-    parses it); exit 0 = stamped/nothing to do, 2 = refusal or cannot run.
+    parses it); exit 0 = all decided (stamped/nothing to do), 3 = PARTIAL (decided stamps written, `refused` names the rest), 2 = cannot run.
     """
     from guardkit.orchestrator.stamp_normalizer import (
         StampNormalizerError,
@@ -316,6 +316,21 @@ def normalize_stamps(
         )
         for title in result.operator_stamped:
             err_console.print(f"  - {title}", highlight=False)
+    if result.refused:
+        # PARTIAL (coordinator review 2026-08-16): every DECIDED stamp was
+        # written; the undecidable titles are named in the JSON `refused` list
+        # and echoed on stderr. Exit 3 is DISTINCT from 2 (cannot run) so the
+        # caller decides stop-vs-proceed — the normalizer never decides that.
+        err_console = Console(stderr=True)
+        err_console.print(
+            f"[bold red]! normalize-stamps PARTIAL: {len(result.refused)} scenario(s) "
+            f"undecidable by rule (no home invented; decided stamps written):[/bold red]",
+            highlight=False,
+        )
+        for title in result.refused:
+            err_console.print(f"  - {title}", highlight=False)
+        click.echo(json.dumps(result.to_dict(), indent=2))
+        sys.exit(3)
     click.echo(json.dumps(result.to_dict(), indent=2))
     sys.exit(0)
 

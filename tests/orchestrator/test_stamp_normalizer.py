@@ -1306,11 +1306,10 @@ def test_background_exclusion_keeps_the_smoke_probes_out_of_r3_end_to_end():
     the Background been folded into every scenario, all twelve would be R3.
     Through the fixture tree, 5.2/5.6/5.7/5.8 are NOT probe:process — under
     the second tightening they REFUSE (their only wire words are the loose
-    idiom), and the run stops loud naming exactly those four."""
+    idiom) — named by the result, not stamped; the other eight are decided."""
     yaml_path = FIXTURE_ROOT / ".guardkit" / "features" / "FEAT-8737.yaml"
-    with pytest.raises(StampNormalizerRefusal) as excinfo:
-        normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
-    assert set(excinfo.value.refused) == {
+    result = normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
+    assert set(result.refused) == {
         "A user created through the service reads back with identical details",
         "Looking up a user that was never created is reported as not found",
         "Creating a user with an email already in use is rejected as a conflict",
@@ -1474,14 +1473,13 @@ def test_api_test_reproduction_32_of_60_28_refuse_zero_silent_divergence():
         assert result.stamped == _hand_stamps(fid) and len(result.stamped) == n, fid
 
 
-def test_api_test_loose_idiom_features_refuse_loud_as_a_unit():
+def test_api_test_loose_idiom_features_come_back_partial_with_refused_named():
     for fid in ("FEAT-FD8D", "FEAT-AE43", "FEAT-8737", "FEAT-UCNT", "FEAT-UBEM", "FEAT-UDBE"):
-        with pytest.raises(StampNormalizerRefusal) as excinfo:
-            normalize_feature(
-                FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml", None, FIXTURE_ROOT,
-                dry_run=True, ignore_existing=True,
-            )
-        assert excinfo.value.refused, fid
+        result = normalize_feature(
+            FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml", None, FIXTURE_ROOT,
+            dry_run=True, ignore_existing=True,
+        )
+        assert result.refused, fid  # PARTIAL: at least one loose-idiom title named
 
 
 def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path):
@@ -1515,9 +1513,12 @@ def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path
     # 7.1 has no node and no strong wire marker: it refuses (no longer hurl).
     assert classify_scenario("The count reflects the number of stored users",
                              blocks["The count reflects the number of stored users"].steps_text, ctx) is None
-    # the feature as a unit still refuses (7.1 + the loose-idiom scenarios).
-    with pytest.raises(StampNormalizerRefusal):
-        normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True, ignore_existing=True)
+    # the feature comes back PARTIAL: 7.2 + 7.3 decided (toolchain), 7.1 + the
+    # loose-idiom scenarios named in `refused` — nothing invented for them.
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True, ignore_existing=True)
+    assert result.stamped["The count of an empty store is zero"] == "toolchain"
+    assert result.stamped["Creating a user increments the count"] == "toolchain"
+    assert "The count reflects the number of stored users" in result.refused
 
 
 def test_ignore_existing_is_dry_run_only(tmp_path: Path):
@@ -1647,7 +1648,11 @@ def test_write_stamps_refuses_a_collision_outright(tmp_path: Path):
     assert yaml_path.read_text() == before
 
 
-def test_refuse_loud_names_every_undecidable_title_and_writes_nothing(tmp_path: Path):
+def test_partial_names_every_undecidable_title_and_writes_the_decided_subset(tmp_path: Path):
+    """Coordinator review 2026-08-16 (pairs with the forge hook's condition 5):
+    the normalizer WRITES every DECIDED stamp and RETURNS the refused list by
+    name — it never decides stop-vs-proceed (the caller does). No home is
+    invented for the undecidable; existing stamps untouched."""
     feature_text = (
         "Feature: Parser\n"
         "  Scenario: The parser accepts an empty document\n"
@@ -1659,28 +1664,40 @@ def test_refuse_loud_names_every_undecidable_title_and_writes_nothing(tmp_path: 
     )
     repo = _repo(tmp_path, BASE_YAML, feature_text=feature_text)
     yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
-    before = yaml_path.read_text()
-    with pytest.raises(StampNormalizerRefusal) as excinfo:
-        normalize_feature(yaml_path, None, repo)
-    exc = excinfo.value
-    assert exc.refused == ["The parser accepts an empty document", "Two flags cannot both be set"]
-    msg = str(exc)
-    assert "STAMP NORMALIZER" in msg and "UNDECIDABLE" in msg and "2 UNDECIDABLE" in msg
-    for title in exc.refused:
-        assert f"  - {title}" in msg
-    for home in VERIFIER_HOMES:
-        assert home in msg  # the closed vocabulary, spelled out
-    assert "operator" in msg and "never as a default" in msg
-    assert "nothing was written" in msg
-    # NOTHING written — not even the decidable DB-down scenario (the run stops).
-    assert yaml_path.read_text() == before
+    result = normalize_feature(yaml_path, None, repo)
+    # the refused are NAMED, in order, and NOT stamped
+    assert result.refused == ["The parser accepts an empty document", "Two flags cannot both be set"]
+    for title in result.refused:
+        assert title not in result.stamped
+    # the decidable DB-down scenario IS written (a stamped subset > empty map)
+    assert result.stamped == {"The endpoint is unaffected by database unavailability": "probe:process"}
+    assert result.written is True
+    import yaml as _yaml
+
+    data = _yaml.safe_load(yaml_path.read_text())
+    assert data["scenarios"]["The endpoint is unaffected by database unavailability"]["verifier"] == "probe:process"
+    for title in result.refused:
+        assert title not in data["scenarios"]  # nothing invented for the undecidable
 
 
-def test_refusal_is_the_same_object_the_loader_hook_surfaces(tmp_path: Path):
+def test_partial_is_loud_in_the_log_by_name(tmp_path: Path, caplog):
     feature_text = "Feature: P\n  Scenario: The parser accepts an empty document\n    Given an empty document\n"
     repo = _repo(tmp_path, BASE_YAML, feature_text=feature_text)
-    with pytest.raises(StampNormalizerRefusal):
-        FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False, normalize_stamps=True)
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo)
+    assert result.refused == ["The parser accepts an empty document"] and result.written is False
+    assert "UNDECIDABLE" in caplog.text and "The parser accepts an empty document" in caplog.text
+
+
+def test_loader_hook_surfaces_a_partial_result_without_raising(tmp_path: Path):
+    """The load-time hook flag runs the same function; a partial result no longer
+    raises — the loader continues (enforcement, if any, is the flag's job)."""
+    feature_text = "Feature: P\n  Scenario: The parser accepts an empty document\n    Given an empty document\n"
+    repo = _repo(tmp_path, BASE_YAML, feature_text=feature_text)
+    feature = FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False, normalize_stamps=True)
+    assert feature is not None
 
 
 def test_no_feature_files_is_a_loud_cannot_run_not_a_silent_no_op(tmp_path: Path):
@@ -1873,7 +1890,7 @@ def test_cli_dry_run_prints_json_and_writes_nothing():
     assert yaml_path.read_text() == before
 
 
-def test_cli_writes_by_default_and_refuses_with_exit_2(tmp_path: Path):
+def test_cli_writes_by_default_and_partial_is_exit_3(tmp_path: Path):
     from guardkit.cli.main import cli
 
     repo = _repo(tmp_path, BASE_YAML)
@@ -1888,10 +1905,11 @@ def test_cli_writes_by_default_and_refuses_with_exit_2(tmp_path: Path):
     yp = repo2 / ".guardkit" / "features" / "FEAT-TIME.yaml"
     before = yp.read_text()
     result2 = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo2)])
-    assert result2.exit_code == 2, result2.output
+    # PARTIAL is a DISTINCT exit (3): the caller decides stop-vs-proceed.
+    assert result2.exit_code == 3, result2.output
     payload2 = json.loads(result2.output[result2.output.index("{"): result2.output.rindex("}") + 1])
     assert payload2["refused"] == ["The parser accepts an empty document"] and payload2["written"] is False
-    assert yp.read_text() == before
+    assert yp.read_text() == before  # the ONLY scenario refused → nothing decided → nothing written
 
 
 def test_cli_missing_feature_is_exit_2_with_json(tmp_path: Path):
@@ -1900,3 +1918,20 @@ def test_cli_missing_feature_is_exit_2_with_json(tmp_path: Path):
     result = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-NOPE", "--repo", str(tmp_path)])
     assert result.exit_code == 2
     assert "not found" in result.output
+
+
+def test_r8_spec_only_run_can_never_mint_toolchain():
+    """Coordinator review 2026-08-16: the estate corpus fixture shows toolchain=0
+    in every repo BECAUSE it is specs-only — R8 fires ONLY from a plan-provided
+    test node (ctx.plan_test_refs). Pin it: with no plan nodes, a scenario that
+    is otherwise internal machinery is REFUSED, never toolchain."""
+    ctx = NormalizeContext(repo_has_http_surface=False, http_surface_evidence="none")
+    steps = "Given a registered user\n    When the loader validates the config\n    Then the parsed object carries the id\n"
+    assert classify_scenario("Config parsing yields the id", steps, ctx) is None
+    ctx2 = NormalizeContext(
+        repo_has_http_surface=False, http_surface_evidence="none",
+        plan_test_refs={"Config parsing yields the id": "tests/test_config.py::test_config_parsing_yields_id"},
+    )
+    home = classify_scenario("Config parsing yields the id", steps, ctx2)
+    assert home is not None and (home.verifier, home.rule) == ("toolchain", "R8")
+    assert home.test_ref == "tests/test_config.py::test_config_parsing_yields_id"
