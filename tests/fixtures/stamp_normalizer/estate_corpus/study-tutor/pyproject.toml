@@ -1,0 +1,182 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "study-tutor"
+version = "0.1.0"
+description = "GCSE study-tutoring backend — session HTTP API + Player/Coach loop + student model (English-first; multi-subject per ADR-TUTOR-MULTI-SUBJECT; legacy MCP adapter retained)"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "langchain>=1.2.11,<2",
+    "langchain-core>=1.2.18,<2",
+    "python-dotenv>=1.0",
+    "mcp>=1.0",
+    "httpx>=0.27",
+    # TASK-APP1-03 / FEAT-APP-001 (2026-07-05): Starlette HTTP server + Uvicorn
+    # ASGI runner for the mobile/voice app HTTP adapter. Previously transitive via
+    # mcp; pinned as direct deps so the served stack version is explicit.
+    # TASK-VS2-004 / FEAT-VOICE-002 (2026-07-08): uvicorn[standard] for WebSocket
+    # support (includes websockets package). Plain uvicorn rejects WS upgrades.
+    "starlette>=0.27",
+    "uvicorn[standard]>=0.27",
+    # TASK-VOX-004 / FEAT-VOICE-001 (2026-07-08): python-multipart for in-memory
+    # multipart parsing. Previously transitive via mcp; pinned as direct dep to
+    # enforce the never-at-rest invariant (no disk spooling) in voice upload
+    # validation. See src/study_tutor/voice/validation.py.
+    "python-multipart>=0.0.6",
+    # TASK-SMP-01 / FEAT-SMP-001 (2026-07-03): SQLAlchemy async + Alembic for
+    # the Postgres StudentStore schema. asyncpg is the async driver; alembic
+    # is the migration engine. Pinned to SQLAlchemy 2.0+ for async ORM support.
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    # TASK-NATS-PH1-001 / FEAT-NATS (2026-05-08): nats-core is the shared
+    # contract library (Topics, AgentConfig, MessageEnvelope, CommandPayload,
+    # ResultPayload, NATSClient) used across the Jarvis Ship's Computer fleet.
+    # The runtime requirement is pinned here; the editable sibling install is
+    # wired through ``[tool.uv.sources]`` below, mirroring specialist-agent's
+    # pattern. See features/nats-fleet-integration/nats-fleet-scope-and-build-plan.md.
+    "nats-core>=0.4",
+    # TASK-KCA2-001 / FEAT-AUTH-002 (2026-07-17): PyJWT with cryptography extra
+    # for RS256/JWKS asymmetric token verification in keycloak mode. The [crypto]
+    # extra pulls the cryptography package required for asymmetric algorithms.
+    # Zero-deps-scope event (same pattern as voice track).
+    "PyJWT[crypto]>=2.8",
+]
+
+[project.scripts]
+study-tutor = "study_tutor.cli.main:cli"
+
+[project.optional-dependencies]
+providers = [
+    "langchain-openai>=1.2,<2",
+    "langchain-anthropic>=1.4,<2",
+    "langchain-google-genai>=4.2,<5",
+    "langchain-aws>=1.4,<2",
+    "langchain-ollama>=1.1,<2",
+]
+# TASK-RAG-001 / FEAT-PRV4: optional dependency group for the primary-text-RAG
+# pipeline. ``chromadb`` is the persistent vector store the ingestion script
+# (``scripts/ingest_corpus.py``) writes into and that the runtime CLI
+# (TASK-RAG-002) hands to ``set_collection_provider``. ``sentence-transformers``
+# is the BGE reranker baseline used by ``study_tutor.knowledge.retrieval``;
+# the ingestion script itself does NOT import it (the dev path stays lightweight),
+# but it ships in the same extra so a single ``uv sync --extra rag`` pins both
+# wave-2 dependencies for the runtime caller.
+#
+# TASK-RAG-001A / DECISION-RAG-001 §7 (2026-05-08): pin ``openai`` explicitly.
+# DECISION-RAG-001 wires ingest through chromadb's ``OpenAIEmbeddingFunction``,
+# which imports ``openai`` at construction time. Today ``openai`` is present
+# transitively via ``langchain-openai``; pinning it here guarantees the EF
+# stays importable even if that upstream drops the dep.
+rag = [
+    "chromadb>=0.5",
+    "sentence-transformers>=3.0",
+    "openai>=1.0",
+    # Declared (not just transitive via sentence-transformers) so the
+    # [tool.uv.sources] pin below can route it to the CPU wheel index.
+    "torch>=2",
+]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov",
+    # TASK-OPS-BDDM-11 / FEAT-BDDM (2026-04-26): proactive add. study-tutor
+    # currently has zero `.feature` files, so there is no active silent-bypass
+    # risk today, but pytest-bdd must be importable in any worktree where
+    # GuardKit's bdd_runner might execute, so the absence of feature files
+    # cannot mask a missing dependency the moment the first .feature lands.
+    # See guardkit:tasks/.../TASK-OPS-BDDM-11-pyproject-study-tutor.md.
+    "pytest-bdd>=8.1,<9",
+    # Monorepo/Flutter design pass D.7 (2026-08-01, landed 2026-08-02): no
+    # per-test hang protection existed — guardkit's --timeout injection is
+    # gated on this plugin being importable, so a single hung test ate the
+    # whole Coach budget and reported tests_run=0 with no attribution.
+    "pytest-timeout",
+]
+
+# ---------------------------------------------------------------------------
+# uv path sources — TASK-NATS-PH1-001 / FEAT-NATS (2026-05-08)
+# ---------------------------------------------------------------------------
+# ``nats-core`` is installed from the sibling repository at ``../nats-core/``.
+#
+# An unrelated package on PyPI also publishes the name ``nats-core``; its
+# Python module is ``nats`` (not ``nats_core``), so without this stanza
+# ``uv pip install`` resolves the runtime dep above (``nats-core>=0.4``) to
+# the wrong project and ``import nats_core`` fails with
+# ``ModuleNotFoundError: No module named 'nats_core'``. Mirrors the pattern
+# specialist-agent uses (see ``specialist-agent/pyproject.toml``), and the
+# canonical layout assumes ``nats-core`` is a sibling of ``study-tutor``:
+#
+#   …/appmilla_github/study-tutor/   ← this project
+#   …/appmilla_github/nats-core/     ← target of ``../nats-core``
+#
+# When the upstream namespace conflict is resolved (or the sibling repo is
+# republished under a different name), this stanza can be removed and the
+# runtime dep above will resolve from PyPI cleanly.
+[tool.uv.sources]
+nats-core = { path = "../nats-core", editable = true }
+# Lane 2 step 1a (2026-08-01): the [rag] extra's reranker runs CPU-only
+# (retrieval.py pins CrossEncoder(device="cpu")), so resolve torch from
+# the PyTorch CPU wheel index — the default PyPI resolution pulls the
+# CUDA stack (~4.3GB of nvidia/triton wheels) that nothing imports.
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/study_tutor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# ``pythonpath = ["."]`` makes the repo root importable so that
+# ``scripts/seed_student_model.py`` (TASK-GSM-006) can be reached as
+# ``scripts.seed_student_model`` by the seam + unit tests. Hatchling only
+# installs ``src/study_tutor`` into site-packages, so without this entry
+# the seeding script — which intentionally lives outside the package —
+# would be unimportable from tests.
+#
+# ``"src"`` is also included so the worktree's ``src/study_tutor`` (rather
+# than the parent repo's editable install) is the one tests resolve. Git
+# worktrees share the parent repo's ``.venv``, and that .venv has the
+# parent repo's ``src/`` baked into ``sys.path`` ahead of any worktree
+# code; without this entry the worktree's in-flight changes to
+# ``study_tutor`` wouldn't be visible to its own tests.
+pythonpath = ["src", "."]
+markers = [
+    "seam: integration-contract seam tests between GuardKit tasks",
+    "integration_contract: marks the specific contract under test (arg: contract name)",
+    "smoke: fast end-to-end-ish smoke tests run by autobuild smoke gates",
+    "feat_ph1_002: tests scoped to the Deterministic Session Planner feature (FEAT-PH1-002)",
+    "feat_ph1_003: tests scoped to the DeepAgents Tutoring Loop with Coach feature (FEAT-PH1-003)",
+    "feat_lca: tests scoped to the MCP LLM Player and Coach Adapters feature (FEAT-6CC5)",
+    "live: operator-conducted live smokes (require real LLM providers / Postgres store; excluded from default CI)",
+    "integration: integration tests requiring live external services (excluded from default hermetic run)",
+    "keycloak: tests requiring live Keycloak dev realm (excluded from default hermetic run)",
+]
+
+# TASK-SMP-04 coverage configuration: exclude NotImplementedError stubs
+# from coverage measurement so task-specific coverage reflects only implemented methods
+[tool.coverage.run]
+omit = []
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

@@ -1,0 +1,32 @@
+# F4 · gate registry (guardkit qa kind: gate-registry) — jarvis QA surface.
+# The durable, named gate scripts this repo carries. The live-gate runner
+# executes ONLY registered gates. Each script honours the F4 contract: exit 0 =
+# pass; a non-zero exit enumerates its failures as a JSON results envelope on
+# stdout (assertion id, observed/expected, evidence_ref).
+#
+# HOST-PROCESS ADAPTATION (vs the api_test/study-tutor HTTP precedent): jarvis's
+# real Slack door is `jarvis serve-nats`, a systemd user unit with NO HTTP
+# endpoint (src/jarvis/cli/main.py:263). So there is no base URL to probe. The
+# GateTarget schema still requires a non-empty `base_url_env` (LPA-02: an env-var
+# NAME, never a hard-coded value), so we name the env var that locates the TARGET
+# UNIT (JARVIS_SERVE_NATS_UNIT, default jarvis-serve-nats) — the gate reads it via
+# systemctl/journalctl, not HTTP. `base_url_reachable` is deliberately NOT a
+# declared preflight here (there is no URL to reach); the gate's own probe is the
+# reachability check.
+#
+# Only ONE gate is registered — the one this lane actually authored. Per-feature
+# pass bars (defect-#20 machinery) are machine-registered by the chain at pilot
+# time and are intentionally NOT hand-authored here.
+format_version: "1.0"
+gates:
+  - id: serve-nats-liveness
+    path: qa/gates/liveness_gate.py
+    target:
+      base_url_env: JARVIS_SERVE_NATS_UNIT
+      environment_id: local
+    preconditions:
+      - suite_vs_ledger
+    preflight:
+      - tool_imports
+    pass_bar_ref: qa/pass-bar-SERVE-NATS-LIVENESS.yaml
+    evidence_dir_pattern: qa/gates/evidence/{run_id}

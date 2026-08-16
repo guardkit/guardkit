@@ -29,22 +29,44 @@ The rules (evaluated in order; first match wins)
 Inputs per scenario: the scenario's OWN title + Given/When/Then text
 (lower-cased; the Background is NOT included — a shared Background line such
 as "a throwaway sandboxed environment" would otherwise route every scenario in
-the file), the repo's surface class (``ctx.repo_has_http_surface``), and any
-test node the plan already names for the scenario (``ctx.plan_test_refs``).
+the file), the scenario's OWN tags/comments (R10 only), the repo's surface
+class (``ctx.repo_has_http_surface`` — STRUCTURAL: a hurl gate, an explicit
+``surface: http`` in ``.guardkit/config.yaml``, or an exact web-framework
+dependency in pyproject/package.json; never free text — H2), and any test
+node the plan already names for the scenario (``ctx.plan_test_refs``).
+
+The 2026-08-16 tightening (verifier findings H1/H2/M1–M4/L1–L3)
+----------------------------------------------------------------
+An adversarial verifier ran the 08-16 rules over every primary-tree
+``.feature`` in the estate and found the two binding conditions HOLD but
+several families minted WRONG homes SILENTLY on real prose — exactly what
+the law forbids. Each family's comment names its fix; the whole estate is
+now pinned as a NEGATIVE CORPUS regression test
+(``tests/fixtures/stamp_normalizer/estate_corpus/`` + ``EXPECTED.json``,
+``tests/orchestrator/test_stamp_normalizer_estate_corpus.py``): the
+per-repo histogram of homes AND the honest refused count are committed, so
+any future rule change shows its delta; ``operator`` must equal the
+enumerated explicit-human scenarios; hurl must be 0 in every repo without a
+hurl gate / declared surface.
 
 R1  DB unavailable / DB down                     → ``probe:process``
 R2  fresh start / restart / fresh process        → ``probe:process``
 R3  runtime-smoke harness-meta (seeded directly, throwaway env, teardown,
     verdict reported, network posture …)         → ``probe:process``
-R4  bus vocabulary (publish … subject/envelope, subscribe, heartbeat,
-    JetStream, NATS, request-reply, inbox …)     → ``probe:bus``
+R4  bus vocabulary — a BUS NOUN required (subject/topic in a bus sense,
+    JetStream, NATS, stream, consumer, inbox, heartbeat, fleet.register,
+    publish(es|ed) to/on …; never bare "acknowledged"/"subscription" — M4)
+                                                 → ``probe:bus``
 R5  Flutter / device vocabulary                  → ``flutter``
 R6  browser vocabulary (and NOT R5 — order)      → ``playwright``
-R7  Then judges AI OUTPUT QUALITY                → ``exam``
+R7  the THEN clause judges AI OUTPUT QUALITY     → ``exam``
 R8  the plan names a test node for this title    → ``toolchain`` + ``test_ref``
 R9  wire-shaped step text AND the repo has an HTTP surface → ``hurl``
-R10 explicitly human (operator follows, by hand, physical robot, on the
-    NAS, attended …)                             → ``operator`` (EXPLICIT only)
+    (a bare path literal never suffices — M1)
+R10 explicitly human (an operator follows, done by hand, physical robot,
+    on the real NAS, runbook evidence, human-executed, or the
+    @operator-handoff tag / `# operator_handoff:` comment)
+                                                 → ``operator`` (EXPLICIT only)
 —   no rule matched                              → **REFUSE LOUD** (``None``)
 
 Ordering rationale (from the design): infrastructure/process rules (R1–R3)
@@ -243,51 +265,85 @@ R3_SMOKE_HARNESS = _family(
 )
 
 # R4 — bus vocabulary (census: 449 bus scenarios estate-wide — forge 182,
-# jarvis 115, fleet-memory 65 …). `envelope`, `broker`, `acknowledg`,
-# `deregister`, `publish … request/reply/message/event/fleet` added — the
-# forge/jarvis lifecycle-envelope and approval-protocol scenarios say
-# "publishes the approval request" / "envelope should be published" without
-# the words subject/topic.
+# jarvis 115, fleet-memory 65 …). TIGHTENED 2026-08-16 (verifier finding M4):
+# R4 requires a BUS NOUN. "acknowledged" alone (an HTTP 204 is acknowledged
+# too) and "subscription" alone (a user has a subscription) NEVER qualify —
+# both are pinned as negative tests. `subject`/`topic`/`stream`/`consumer`
+# are qualified because the estate uses them in other senses too (study-
+# tutor's school subjects and topics; stderr as "the error stream"; guardkit's
+# "consumer types"); `envelope` excludes the verdict/response/JSON envelopes.
 R4_BUS = _family(
-    r"\b(re)?publish(es|ed|ing)?\b .* \b(subject|topic|envelope|message|event|fleet|request|reply)s?\b",
-    r"\b(subject|topic|envelope|message|event)s? .* \b(re)?publish(es|ed|ing)?\b",
-    r"\bsubscri",
-    r"\bheartbeat",
     r"\bjetstream\b",
     r"\bnats\b",
+    r"\bheartbeat",
     r"\bfleet\.register",
     r"\brequest[- ]reply\b",
-    r"\binbox\b",
-    r"\benvelopes?\b",
-    r"\bbroker\b",
-    r"\backnowledg",
-    r"\bderegister",
     r"\bmessage bus\b",
+    r"\breply inbox\b|\b(requester|caller)'s inbox\b|\bon (the|its|his|her|their) inbox\b",
+    r"\b(nats |jetstream |message )?broker\b",
+    # subject — only in a bus qualification (never the school subject).
+    r"\b(command|reply|dead-letter|lifecycle|pipeline|registration|deregistration|"
+    r"heartbeat|fleet|status|approval|manifest|wildcard|documented|dispatch|flat|nats|"
+    r"bus|chat|gateway|fanout|command-fanout|publish\w*)[- ]subjects?\b",
+    r"\bsubjects? pattern\b|\bsubject (name|prefix|hierarchy)\b",
+    r"\b(agents|fleet|pipeline|memory|jarvis|forge|topics)\.[a-z][a-z0-9_-]*\.[a-z0-9_.*>-]+",  # a NATS subject literal
+    # topic / stream / consumer — bus-qualified only.
+    r"\b(nats|bus|message|event|kafka|mqtt) topics?\b",
+    r"\b(memory|agents|fleet|jarvis|forge|nats|durable|pipeline|lifecycle event) streams?\b",
+    r"\bstreams? (is|are) provisioned\b",
+    r"\bdurable consumers?\b|\b(jetstream|nats|relay|pull|push|queue) consumers?\b",
+    r"\bconsumer (attaches|acks?|parks|redelivery|keeps processing)\b|\bconsumer[- ]side\b",
+    # envelope — the lifecycle/command/reply envelope on the wire; not a
+    # verdict/response/JSON envelope.
+    r"(?<!verdict )(?<!result )(?<!json )(?<!response )(?<!error )(?<!http )\benvelopes?\b",
+    # publish — TO/ON a subject, or with a bus noun in the same scenario.
+    r"\b(re)?publish(es|ed|ing)? (to|on|onto)\b",
+    r"\b(re)?publish(es|ed|ing)?\b .* \b(subject|topic|envelope|jetstream|nats|fleet|bus|stream|"
+    r"approval request|approval reply|manifest|lifecycle event|build[- ]\w+ event)s?\b",
+    r"\b(subject|topic|envelope|jetstream|nats|fleet|bus|stream)s? .* \b(re)?publish(es|ed|ing)?\b",
+    # subscribe — to/on a bus thing (never a bare "subscription").
+    r"\b(jetstream|nats|correlation-keyed|one-shot|durable|wildcard|command|reply) subscription\b",
+    r"\bsubscri(bes?|bed|bing) (to|on|against)\b|\bremains? subscribed\b|\bis subscribed\b",
+    r"\bbefore the subscriber started\b|\b(late|early|bus|nats|jetstream|wildcard) subscribers?\b",
+    r"\bsubscri\w* .* \b(subject|jetstream|nats|stream|fleet|bus|dispatch|gateway|command)s?\b",
+    # acknowledge — of a message/envelope/payload (never an HTTP 204).
+    r"\b(message|envelope|payload|dispatch)s? (should be |is |was |are |were |remain |remains )?(un)?(acknowledged|acked)\b",
+    r"\backnowledg\w* (state|so the queue)\b|\bunacknowledged\b|\backed\b",
+    r"\backnowledg\w* .* \b(queue|jetstream|redeliver\w*|inbound message)\b",
+    # fleet protocol verbs.
+    r"\bderegister\w*\b",
+    r"\b(on|from|to|across|joins?|leaves?|registered on|register with) the fleet\b",
+    r"\bfleet (registration|manifest|register|dispatch|observation|wide)\b",
 )
 
 # R5 — Flutter / device vocabulary (census: the 51 Flutter scenarios —
-# sign-in 25, voice 26). Kept narrower than "the app" on purpose: the
-# study-tutor http-app-access-adapter (a wire feature) says "the app
-# authenticates / sends / lists" — those are hurl, not flutter. The added
-# idioms are the sign-in feature's own: "reopen the app", "closed the app",
-# "app restart", "browser sign-in", "home screen", "signed in on the device".
+# sign-in 25, voice 26). TIGHTENED 2026-08-16 (verifier finding M2): "the app
+# starts" is GONE (study-tutor's http-app-access-adapter — a wire feature —
+# says "the app starts a session on that subject"), "securely stored" is
+# GONE (only the noun phrase "secure store/storage" counts), and the
+# unexercised widget/emulator additions are GONE ("browser opening" stays:
+# the sign-in feature really says "signed in without the browser opening").
+# Every pattern kept below is backed by a REAL flutter-keycloak-sign-in /
+# flutter-voice-client scenario, read from the estate corpus by title
+# (pinned in the tests, one case per pattern). Kept narrower than
+# "the app" on purpose: the http adapter says "the app authenticates /
+# sends / lists / starts" — those are hurl, not flutter.
 R5_FLUTTER = _family(
     r"\bflutter\b",
-    r"\bthe app (shows|displays|navigates|is running|is installed|starts|"
-    r"returns to the foreground|sits idle|should (not )?(crash|hang|start))",
+    r"\bthe app (tells me|returns to the foreground|sits idle|should not crash|"
+    r"stops the recording|degrades to text|explains why)\b",
     r"\b(re)?open(s|ed|ing)? the app\b",
     r"\bclose[sd]? the app\b",
     r"\bapp restart\b",
-    r"\btap(s|ped|ping)?\b",
-    r"\bmicrophone\b",
-    r"\bsecure(ly)? stor",
+    r"(?<![\w-])tap(s|ped|ping)?\b",  # never "wire-tap"
+    r"\bmicrophone (access|permission)\b|\bfrom the microphone\b|\bthe app .* microphone\b",
+    r"\bmic button\b",
+    r"\b(platform )?secure stor(e|age)\b",
     r"\bon the (family )?device\b",
     r"\bsign-in .* browser",
     r"\bbrowser sign-in\b",
-    r"\bbrowser (opening|prompt|redirects back)",
-    r"\b(home|sign-in|login|loading) screen\b",
-    r"\bwidget\b",
-    r"\bemulator\b",
+    r"\bbrowser (opening|prompt|redirects back)\b",
+    r"\b(home|sign-in) screen\b",
 )
 
 # R6 — browser vocabulary (census: 2 browser scenarios estate-wide — a
@@ -303,23 +359,38 @@ R6_BROWSER = _family(
     r"\bmenu option\b",
 )
 
-# R7 — Then judges AI OUTPUT QUALITY (census: 208 agent-behaviour scenarios
-# — specialist-agent 136, guardkit 35, LPA 16, tutor 13). The subject may be
-# possessive ("the Coach's reasoning") or carry "should"; "evaluates" and
-# "decision/verdict should be" added from the tutor-loop and product-owner
-# conduct specs; "response … grounded" from primary-text-rag.
+# R7 — the THEN-CLAUSE judges AI OUTPUT QUALITY (census: 208 agent-behaviour
+# scenarios — specialist-agent 136, guardkit 35, LPA 16, tutor 13).
+# TIGHTENED 2026-08-16 (verifier finding M3): R7 is matched against the
+# scenario's THEN clause ONLY (the first `Then` line and everything after it)
+# and the family is JUDGEMENT-shaped. A Coach score used as a Given/When
+# INPUT ("when the upstream Coach score is at the maximum" — forge machinery)
+# never qualifies, nor does the NOUN "coach score" (jarvis renders it); bare
+# "narration" is gone — only a narration whose content is judged counts.
+# The forge machinery examples are pinned as NEGATIVE tests.
 R7_EXAM = _family(
-    r"\b(coach|player|tutor|agent)('s)? (should )?(scores?|rates?|explains?|"
-    r"teaches|remembers?|grades?|marks?|judges?|assess(es)?)\b",
+    # the agent's verdict, as a verb (should score / explains / …). "report /
+    # flag / detect / penalise / reject / accept" are Coach/Player verbs only
+    # — "the agent should report that it cannot infer a mode" (adaptive-mode-
+    # inference) is a CLI reporting an error, not a judgement.
+    r"\b(coach|player|tutor|agent) should (not )?(score|rate|explain|teach|remember|recall|"
+    r"grade|mark|judge|assess)\b",
+    r"\b(coach|player) should (not )?(report|flag|detect|penali[sz]e|reject|accept|indicate|correct|prefer)\b",
+    r"\b(coach|player|tutor|agent) (explains|teaches|recalls|remembers|grades|marks|judges|assesses|rates)\b",
     r"\b(coach|player|tutor|agent) (should )?routes? .* to the expected tool",
-    r"\b(coach|player|tutor|agent) evaluates\b",
-    r"\b(coach|player|tutor|agent)('s)? (decision|verdict|reasoning) (should|is)\b",
-    r"\b(coach|player|tutor|agent) should flag\b",
-    r"\bnarration\b",
-    r"\b(feedback|response|answer) (is|should be|should still be) (grounded|specific)",
+    r"\b(coach|player|tutor|agent)('s)? (decision|verdict|reasoning|feedback) (should|is|are|was)\b",
+    # a score judged against a bar (never a score merely rendered/stored)
+    r"\bscores? .* (correctly|as expected|at least 0\.|at most 0\.|below (the )?(acceptance )?threshold|"
+    r"above (the )?(acceptance )?threshold)",
+    # the output's quality
+    r"\b(feedback|response|answer|explanation|narration|output|reply|transcript|summary)s? "
+    r"(is|should be|should still be|remains?|stays?) (grounded|specific|correct|helpful|coherent|accurate|faithful)\b",
+    r"\bnarration (is|should be|should) (grounded|accurate|reuses?|convey|reflect|explain)",
+    r"\bnarration should not (suppress|fabricate)\b",
+    r"\btreated as ordinary (spoken )?(question|input|tutoring input|content|text)\b",
     r"\binjection .* (ignored|treated as ordinary)",
-    r"\bextract(s|ion)? (correctly|cleanly)",
-    r"\bflag(ged)? .* (correctly|as an? .* violation)",
+    r"\bextract(s|ed|ion)? (correctly|cleanly)\b",
+    r"\bflag(ged|s)? .* (correctly|as an? (\w+ )?violation)\b",
 )
 
 # R9 — wire-shaped step text (census: 417 HTTP scenarios; api_test's 40).
@@ -328,43 +399,102 @@ R7_EXAM = _family(
 # `request(s|ed|ing)` (2.2, 3.2, 3.3, 3.5, 9.5), bare `response(s)` (3.3),
 # `rejected as|with` (3.6), `through the (running) service` (5.2),
 # `look(ing) up` (9.2), `route`.
+# TIGHTENED 2026-08-16 (verifier finding M1): a PATH LITERAL is no longer a
+# wire marker on its own — slash-commands (/system-arch, /task-work) and unix
+# paths (/etc/passwd, /tmp/test) are not endpoints. A path counts only when
+# the SAME STEP LINE also carries an HTTP-shaped token (see
+# `_R9_HTTP_TOKEN_RE`); a bare path never suffices.
 R9_WIRE = _family(
+    # STRONG wire markers — count whenever the repo has an HTTP surface.
     r"\b(get|post|put|patch|delete|options|head) requests?\b",
     r"\bsend(s|ing)? (a|an|two|three|the) .* requests? to\b",
-    r"\bendpoints?\b",
     r"\bstatus code\b",
-    r"\bresponses?\b",
     r"\bcontent[- ]type\b",
-    r"\bjson\b",
-    r"(?<![\w:])/[a-z][\w\-{}]*(/[\w\-{}]+)*",
     r"\bmethod[- ]not[- ]allowed\b",
     r"\bnot[- ]allowed\b",
+    r"\bunauthori[sz]ed\b",
+    r"\b(not[- ]found|service[- ]unavailable|conflict|error|success|[245]\d\d) responses?\b",
+    r"\bresponse (status|body|header|code|payload)s?\b",
+)
+
+# LOOSE wire markers — bare `request` / `response` / `route` / `look up` /
+# `not found` / `conflict` / `rejected as`. api_test's hand-hurl idioms
+# ("I request the service X", "the request should succeed", "the response
+# should report …") are exactly these, so they stay — but ONLY in a
+# scenario with NO agent/MCP vocabulary: study-tutor (a real starlette repo)
+# says "the Player response", "the Coach evaluates the response", "the MCP
+# response", "the system requests three topic recommendations" — LLM/MCP
+# machinery, not the wire (2026-08-16 tightening; pinned as negatives).
+R9_WIRE_LOOSE = _family(
+    r"\bendpoints?\b",  # "the embeddings/inference endpoint" is model-serving, not the wire
+    r"\bjson\b",  # "Coach JSON" / an MCP payload is not the wire
     r"\bnot[- ]found\b",
     r"\bconflict\b",
-    r"\bunauthori[sz]ed\b",
-    r"\brequest(s|ed|ing)?\b",
+    r"(?<!system )(?<!approval )(?<!chat )(?<!narration )(?<!revision )(?<!pull )(?<!merge )"
+    r"(?<!dispatch )\brequest(s|ed|ing)?\b",
+    r"\bresponses?\b",
     r"\brejected (as|with)\b",
     r"\bthrough the (running )?service\b",
     r"\blook(s|ed|ing)? up\b",
     r"\broutes?\b",
 )
+_R9_AGENT_VOCAB_RE = re.compile(
+    r"\b(player|coach|llm|mcp|prompt|narration|quote verifier|inference)\b"
+    r"|\b(language|reasoning) model\b|\bembedd(ing|er)s?\b",
+    re.IGNORECASE,
+)
+
+# The path-literal marker (M1): counts ONLY on a step line that also carries
+# one of these HTTP-shaped tokens.
+_R9_PATH_LITERAL_RE = re.compile(r"(?<![\w:])/[a-z][\w\-{}]*(/[\w\-{}]+)*", re.IGNORECASE)
+_R9_HTTP_TOKEN_RE = re.compile(
+    r"\b(request|requests|response|responses|status|endpoint|endpoints|method|"
+    r"get|post|put|delete|patch|options|head|json body|json)\b",
+    re.IGNORECASE,
+)
+
+
+def _r9_path_with_http_token(text: str) -> Optional[str]:
+    """M1: a path literal is wire-shaped only beside an HTTP token on the
+    same step line. Returns the evidence string or None."""
+    for line in text.splitlines():
+        pm = _R9_PATH_LITERAL_RE.search(line)
+        if pm and _R9_HTTP_TOKEN_RE.search(line):
+            return pm.group(0)
+    return None
+
 
 # R10 — EXPLICITLY human (census: the 3 unclassifiable + operator-handoff
-# tagged scenarios). Explicit match ONLY — never a fallback. `robot` added:
-# the two physical-Reachy scenarios say "the robot", not "physical robot";
-# `the operator records/checks …` and `runbook evidence` from the
-# keycloak-standup operator-handoff scenarios. `(?<!un)attended` so
-# "unattended" never reads as attended.
+# tagged scenarios). Explicit match ONLY — never a fallback.
+# TIGHTENED 2026-08-16 (verifier finding H1): the 08-15 family fired on
+# `attended` (a MODE word — jarvis/forge say "attended session/tools/
+# profile/build"), on "the operator runs|reads|inspects|checks" (CLI-persona
+# prose in specialist-agent/forge) and on bare "robot" (the reachy voice
+# scenarios: software behaviour, not human work) — 115 estate hits, none
+# genuinely human. Those are GONE. What remains is human WORK, explicitly:
+# "an operator follows", an act done "by hand" (a work verb — "traced by
+# hand" is a rationale, not work), "physical robot|device", "on the real
+# NAS", "runbook evidence", "human-executed", "human operator" — plus the
+# @operator-handoff TAG / `# operator_handoff:` comment, matched against the
+# scenario's ANNOTATIONS (tags + comments), which are fed to R10 and to no
+# other rule.
 R10_OPERATOR = _family(
     r"\ban operator follows\b",
-    r"\bthe operator (records|checks|follows|walks|performs|runs|executes|confirms|reads|inspects)\b",
-    r"\bby hand\b",
+    r"\b(performed|executed|done|run|verified|checked|proven|confirmed|applied|deployed|"
+    r"installed|configured|provisioned|completed|walked|rotated|carried out|stood up|driven|"
+    r"signed off|inspected|recorded) by hand\b",
     r"\bphysical (robot|device)\b",
-    r"\brobot\b",
-    r"\bon the (real )?nas\b",
-    r"(?<!un)\battended\b",
+    r"\bon the real nas\b",
     r"\brunbook evidence\b",
+    r"\bhuman[- ]executed\b",
     r"\bhuman[- ]operator\b",
+)
+
+# R10's annotation channel: the @operator-handoff tag or a
+# `# operator_handoff:` comment on the scenario.
+R10_OPERATOR_ANNOTATIONS = _family(
+    r"(?<![\w-])@operator[-_]handoff\b",
+    r"^\s*#\s*operator[-_]handoff\s*:",
 )
 
 
@@ -375,7 +505,6 @@ _ORDERED_TEXT_RULES: Tuple[Tuple[str, str, List[re.Pattern[str]]], ...] = (
     ("R4", "probe:bus", R4_BUS),
     ("R5", "flutter", R5_FLUTTER),
     ("R6", "playwright", R6_BROWSER),
-    ("R7", "exam", R7_EXAM),
 )
 
 
@@ -387,15 +516,35 @@ def _first_match(family: Iterable[re.Pattern[str]], text: str) -> Optional[str]:
     return None
 
 
+_THEN_LINE_RE = re.compile(r"^\s*then\b", re.IGNORECASE)
+
+
+def then_clause(steps_text: str) -> str:
+    """The scenario's THEN clause: the first ``Then`` line and every line
+    after it (its ``And``/``But`` continuations, Examples rows). Empty when
+    the scenario has no ``Then``. R7 reads ONLY this (finding M3)."""
+    lines = steps_text.splitlines()
+    for i, line in enumerate(lines):
+        if _THEN_LINE_RE.match(line):
+            return "\n".join(lines[i:])
+    return ""
+
+
 def classify_scenario(
     title: str,
     steps_text: str,
     ctx: Union[NormalizeContext, Mapping[str, Any], None] = None,
+    *,
+    annotations: str = "",
 ) -> Optional[Home]:
     """Apply R1–R10 in order to one scenario; ``None`` = undecidable.
 
     Pure: no I/O, no logging. ``steps_text`` is the scenario's OWN
     Given/When/Then text (Background excluded — see the module docstring).
+    ``annotations`` is the scenario's OWN tag + comment lines (the
+    ``@…`` lines and ``# …`` lines directly above the title and inside its
+    body) — read by R10 ONLY (the ``@operator-handoff`` tag /
+    ``# operator_handoff:`` comment); no other rule sees them.
     ``None`` means REFUSE — the caller must never map it to a home.
     """
     context = _coerce_ctx(ctx)
@@ -405,6 +554,14 @@ def classify_scenario(
         hit = _first_match(family, text)
         if hit is not None:
             return Home(verifier=verifier, rule=rule, evidence=hit.strip())
+
+    # R7 — the THEN clause judges AI output quality (M3: Then-clause only; a
+    # Given/When "Coach score" input never qualifies).
+    then_text = then_clause(steps_text).lower()
+    if then_text:
+        hit = _first_match(R7_EXAM, then_text)
+        if hit is not None:
+            return Home(verifier="exam", rule="R7", evidence=hit.strip())
 
     # R8 — the plan names a test node for this scenario (task frontmatter
     # `test_ref` or an in-plan `tests/…::test_…` reference with ≥2
@@ -420,17 +577,23 @@ def classify_scenario(
             test_ref=node,
         )
 
-    # R9 — wire-shaped AND the repo has an HTTP surface.
+    # R9 — wire-shaped AND the repo has an HTTP surface. A path literal
+    # counts only beside an HTTP token on the same step line (M1).
     if context.repo_has_http_surface:
-        hit = _first_match(R9_WIRE, text)
+        hit = _first_match(R9_WIRE, text) or _r9_path_with_http_token(text)
+        if hit is None and not _R9_AGENT_VOCAB_RE.search(text):
+            hit = _first_match(R9_WIRE_LOOSE, text)
         if hit is not None:
             why = context.http_surface_evidence or "repo has an HTTP surface"
             return Home(
                 verifier="hurl", rule="R9", evidence=f"{hit.strip()} ({why})"
             )
 
-    # R10 — explicitly human. EXPLICIT match only; never a fallback.
+    # R10 — explicitly human. EXPLICIT match only; never a fallback. The
+    # annotations (tags/comments) are R10's second channel (H1).
     hit = _first_match(R10_OPERATOR, text)
+    if hit is None and annotations:
+        hit = _first_match(R10_OPERATOR_ANNOTATIONS, annotations.lower())
     if hit is not None:
         return Home(verifier="operator", rule="R10", evidence=hit.strip())
 
@@ -448,38 +611,89 @@ _KEYWORD_LINE_RE = re.compile(
 )
 
 
-def extract_scenarios(feature_text: str) -> List[Tuple[str, str]]:
-    """``[(title, steps_text), …]`` in file order (duplicates kept).
+@dataclass(frozen=True)
+class ScenarioBlock:
+    """One scenario as the rules see it: its title, its OWN steps, and its
+    OWN annotations (tags + comments — fed to R10 only)."""
+
+    title: str
+    steps_text: str
+    annotations: str = ""
+
+
+def _is_annotation(line: str) -> bool:
+    return line.startswith("#") or line.startswith("@")
+
+
+def extract_scenario_blocks(feature_text: str) -> List[ScenarioBlock]:
+    """``[ScenarioBlock, …]`` in file order (duplicates kept).
 
     Titles come from the same ``_SCENARIO_LINE_RE`` as
-    ``extract_scenario_titles`` (this function's title list is asserted equal
-    to it). ``steps_text`` is every non-blank, non-comment (``#``), non-tag
-    (``@``) line between this scenario's title line and the next
-    scenario/``Rule:`` line — the scenario's OWN steps and Examples rows,
-    never the Background.
+    ``extract_scenario_titles`` (asserted equal). ``steps_text`` is every
+    non-blank, non-comment (``#``), non-tag (``@``) line between this
+    scenario's title line and the next scenario/``Rule:`` line — the
+    scenario's OWN steps and Examples rows, never the Background.
+    ``annotations`` is the contiguous run of tag/comment lines directly
+    ABOVE the title (Gherkin's own tag placement) plus any comment/tag lines
+    INSIDE the body — R10's tag channel (``@operator-handoff`` /
+    ``# operator_handoff:``); no other rule reads them.
     """
     matches = list(_SCENARIO_LINE_RE.finditer(feature_text))
-    scenarios: List[Tuple[str, str]] = []
+    blocks: List[ScenarioBlock] = []
     for idx, m in enumerate(matches):
         start = m.end()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(feature_text)
         body_lines: List[str] = []
+        body_annotations: List[str] = []
+        pending_annotations: List[str] = []
         for raw in feature_text[start:end].splitlines():
             line = raw.strip()
-            if not line or line.startswith("#") or line.startswith("@"):
+            if not line:
+                continue
+            if _is_annotation(line):
+                # Held until a step follows it: the trailing run of tag/
+                # comment lines before the NEXT title is that scenario's
+                # preamble, not this scenario's body.
+                pending_annotations.append(line)
                 continue
             if _KEYWORD_LINE_RE.match(line):
                 # A `Rule:` (or a stray Feature/Background) closes the block.
                 break
+            body_annotations.extend(pending_annotations)
+            pending_annotations = []
             body_lines.append(line)
-        scenarios.append((m.group("title"), "\n".join(body_lines)))
+        # The preamble: the contiguous tag/comment lines directly above the
+        # title (blank lines allowed inside the run).
+        preamble: List[str] = []
+        for raw in reversed(feature_text[: m.start()].splitlines()):
+            line = raw.strip()
+            if not line:
+                continue
+            if _is_annotation(line):
+                preamble.append(line)
+                continue
+            break
+        preamble.reverse()
+        blocks.append(
+            ScenarioBlock(
+                title=m.group("title"),
+                steps_text="\n".join(body_lines),
+                annotations="\n".join(preamble + body_annotations),
+            )
+        )
 
-    titles = [t for t, _ in scenarios]
+    titles = [b.title for b in blocks]
     if titles != extract_scenario_titles(feature_text):  # pragma: no cover — same regex
         raise StampNormalizerError(
-            "internal: extract_scenarios and extract_scenario_titles disagree"
+            "internal: extract_scenario_blocks and extract_scenario_titles disagree"
         )
-    return scenarios
+    return blocks
+
+
+def extract_scenarios(feature_text: str) -> List[Tuple[str, str]]:
+    """``[(title, steps_text), …]`` — :func:`extract_scenario_blocks` minus
+    the annotations (kept for callers that need only text)."""
+    return [(b.title, b.steps_text) for b in extract_scenario_blocks(feature_text)]
 
 
 # ---------------------------------------------------------------------------
@@ -487,28 +701,126 @@ def extract_scenarios(feature_text: str) -> List[Tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-_WEB_FRAMEWORKS_PY = (
+# H2 (2026-08-16): the surface flag comes from STRUCTURE, never free text.
+# The 08-15 detector word-matched framework names anywhere in a manifest's
+# text — comments included — so forge/jarvis (a pyproject comment saying
+# "next") read as HTTP and R9 minted hurl on hundreds of machinery scenarios.
+# Three doors now, each structural:
+#   (a) a hurl-twins gate in qa/gates/registry.yaml (id or path says "hurl");
+#   (b) an explicit `surface: http` key in .guardkit/config.yaml (documented
+#       below — a string, or a list containing "http");
+#   (c) an EXACT package name under pyproject `[project] dependencies` /
+#       `[tool.poetry.dependencies]` or package.json `dependencies` — parsed
+#       as TOML/JSON, never grepped. Comments never count. requirements*.txt,
+#       go.mod, Cargo.toml and *.csproj are NOT read (guardkit's own
+#       requirements.txt carries a legacy fastapi pin for a demo tree, and
+#       lpa-platform-poc's requirements.poc.txt is its only manifest — that
+#       repo declares `surface: http` (door b) or grows a hurl gate (door a)).
+_WEB_FRAMEWORKS_PY = frozenset({
     "fastapi", "flask", "django", "starlette", "aiohttp", "litestar",
-    "sanic", "tornado", "quart", "falcon", "bottle", "uvicorn",
-)
-_WEB_FRAMEWORKS_NODE = (
+    "sanic", "tornado", "quart", "falcon", "bottle",
+})
+_WEB_FRAMEWORKS_NODE = frozenset({
     "express", "fastify", "koa", "@hapi/hapi", "hapi", "next", "@nestjs/core",
     "hono", "restify", "@sveltejs/kit", "nuxt",
-)
-_WEB_FRAMEWORKS_OTHER = (
-    "gin-gonic", "labstack/echo", "gofiber", "net/http",  # go.mod
-    "Microsoft.AspNetCore", "actix-web", "axum", "rocket",  # csproj / Cargo
-)
+})
+
+SURFACE_CONFIG_KEY = "surface"
+SURFACE_HTTP = "http"
+
+_PEP508_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _normalize_py_dep(spec: str) -> str:
+    """'FastAPI[all]>=0.100 ; python_version>"3.9"' -> 'fastapi'."""
+    m = _PEP508_NAME_RE.match(spec)
+    return m.group(1).lower().replace("_", "-") if m else ""
+
+
+def _read_toml(path: Path) -> Dict[str, Any]:
+    try:
+        import tomllib  # py311+
+    except ModuleNotFoundError:  # pragma: no cover
+        import tomli as tomllib  # type: ignore
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001 — a broken manifest never crashes classification
+        logger.warning("stamp normalizer: could not parse %s: %s", path, exc)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _pyproject_web_framework(root: Path) -> Optional[str]:
+    """Door (c), Python: an exact web-framework name under
+    ``[project] dependencies`` or ``[tool.poetry.dependencies]``."""
+    path = root / "pyproject.toml"
+    if not path.exists():
+        return None
+    data = _read_toml(path)
+    names: List[str] = []
+    project_deps = (data.get("project") or {}).get("dependencies") or []
+    if isinstance(project_deps, list):
+        names.extend(_normalize_py_dep(str(d)) for d in project_deps)
+    poetry_deps = ((data.get("tool") or {}).get("poetry") or {}).get("dependencies") or {}
+    if isinstance(poetry_deps, dict):
+        names.extend(str(k).lower().replace("_", "-") for k in poetry_deps)
+    for name in names:
+        if name in _WEB_FRAMEWORKS_PY:
+            return name
+    return None
+
+
+def _package_json_web_framework(root: Path) -> Optional[str]:
+    """Door (c), Node: an exact package name under package.json
+    ``dependencies`` (not devDependencies)."""
+    path = root / "package.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stamp normalizer: could not parse %s: %s", path, exc)
+        return None
+    deps = data.get("dependencies") if isinstance(data, dict) else None
+    if not isinstance(deps, dict):
+        return None
+    for name in deps:
+        if str(name).lower() in _WEB_FRAMEWORKS_NODE:
+            return str(name)
+    return None
+
+
+def _config_declares_http_surface(root: Path) -> bool:
+    """Door (b): ``surface: http`` (string, or a list containing ``http``)
+    at the top level of ``.guardkit/config.yaml``."""
+    path = root / ".guardkit" / "config.yaml"
+    if not path.exists():
+        return False
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stamp normalizer: could not read %s: %s", path, exc)
+        return False
+    if not isinstance(data, dict):
+        return False
+    value = data.get(SURFACE_CONFIG_KEY)
+    if isinstance(value, str):
+        return value.strip().lower() == SURFACE_HTTP
+    if isinstance(value, (list, tuple)):
+        return any(isinstance(v, str) and v.strip().lower() == SURFACE_HTTP for v in value)
+    return False
 
 
 def detect_repo_http_surface(repo_root: Path) -> Tuple[bool, str]:
-    """(has_surface, evidence). Two doors, either suffices:
+    """(has_surface, evidence). Three STRUCTURAL doors, any suffices:
 
     * ``qa/gates/registry.yaml`` names a gate whose id or path says ``hurl``
       (the hurl-twins gate — the wire class already has a runner here);
-    * a web framework in the repo's manifests (pyproject / requirements* /
-      package.json / go.mod / *.csproj / Cargo.toml) — "the declared
-      toolchain is a web stack".
+    * ``.guardkit/config.yaml`` declares ``surface: http`` (explicit — the
+      door for a repo whose manifests are not read, e.g. requirements-only);
+    * an EXACT web-framework package name under pyproject
+      ``[project] dependencies`` / ``[tool.poetry.dependencies]`` or
+      package.json ``dependencies`` — structural parse, never free text.
     """
     root = Path(repo_root)
     registry = root / "qa" / "gates" / "registry.yaml"
@@ -525,24 +837,19 @@ def detect_repo_http_surface(repo_root: Path) -> Tuple[bool, str]:
         except Exception as exc:  # noqa: BLE001 — a broken registry never crashes classification
             logger.warning("stamp normalizer: could not read %s: %s", registry, exc)
 
-    manifests: List[Path] = []
-    for name in ("pyproject.toml", "package.json", "go.mod", "Cargo.toml"):
-        p = root / name
-        if p.exists():
-            manifests.append(p)
-    manifests.extend(sorted(root.glob("requirements*.txt")))
-    manifests.extend(sorted((root / "requirements").glob("*.txt")) if (root / "requirements").is_dir() else [])
-    manifests.extend(sorted(root.glob("*.csproj")))
-    for m in manifests:
-        try:
-            text = m.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        low = text.lower()
-        for fw in _WEB_FRAMEWORKS_PY + _WEB_FRAMEWORKS_NODE + _WEB_FRAMEWORKS_OTHER:
-            if re.search(r"(?<![\w.-])" + re.escape(fw.lower()) + r"(?![\w-])", low):
-                return True, f"{m.relative_to(root)} declares {fw}"
-    return False, "no hurl gate in qa/gates/registry.yaml and no web framework in the manifests"
+    if _config_declares_http_surface(root):
+        return True, ".guardkit/config.yaml declares surface: http"
+
+    fw = _pyproject_web_framework(root)
+    if fw:
+        return True, f"pyproject.toml [project]/[tool.poetry] dependencies declare {fw}"
+    fw = _package_json_web_framework(root)
+    if fw:
+        return True, f"package.json dependencies declare {fw}"
+    return False, (
+        "no hurl gate in qa/gates/registry.yaml, no `surface: http` in "
+        ".guardkit/config.yaml, and no web framework in pyproject/package.json dependencies"
+    )
 
 
 _STOPWORDS = frozenset(
@@ -601,7 +908,15 @@ def collect_plan_test_nodes(task_paths: Iterable[Path]) -> List[str]:
     for path in task_paths:
         try:
             text = Path(path).read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except OSError as exc:
+            # L2: never swallowed silently — a missing task doc means R8 has
+            # one fewer node to pin, which is a fact the operator should see.
+            logger.warning(
+                "stamp normalizer: plan task doc %s could not be read (%s) — "
+                "its test_ref / test nodes are NOT available to R8",
+                path,
+                exc,
+            )
             continue
         fm = _read_frontmatter(text)
         ref = fm.get("test_ref")
@@ -648,6 +963,10 @@ class NormalizeResult:
     reasons: Dict[str, str] = field(default_factory=dict)  # title -> evidence
     refused: List[str] = field(default_factory=list)
     already_stamped: List[str] = field(default_factory=list)
+    # L3: every RULE-MINTED operator stamp, named — never silent (a rule
+    # that mints `operator` hands Rich a chore; the JSON and the human echo
+    # both say so).
+    operator_stamped: List[str] = field(default_factory=list)
     written: bool = False
     dry_run: bool = False
     repo_has_http_surface: bool = False
@@ -664,6 +983,7 @@ class NormalizeResult:
             "reasons": dict(self.reasons),
             "refused": list(self.refused),
             "already_stamped": list(self.already_stamped),
+            "operator_stamped": list(self.operator_stamped),
             "written": self.written,
             "dry_run": self.dry_run,
             "repo_has_http_surface": self.repo_has_http_surface,
@@ -769,8 +1089,9 @@ def normalize_feature(
             ) from exc
     existing_titles = set() if ignore_existing else {str(t) for t in raw_existing}
 
-    # The scenario universe: titles + own steps, from the declared files.
-    scenarios: List[Tuple[str, str]] = []
+    # The scenario universe: titles + own steps + own annotations, from the
+    # declared files.
+    scenarios: List[ScenarioBlock] = []
     for rel in files:
         path = root / rel
         if not path.exists():
@@ -784,7 +1105,7 @@ def normalize_feature(
             raise StampNormalizerError(
                 f"stamp normalizer: feature {feature_id}: {rel!r} is unreadable ({exc})."
             ) from exc
-        scenarios.extend(extract_scenarios(text))
+        scenarios.extend(extract_scenario_blocks(text))
 
     # Context.
     if repo_has_http_surface is None:
@@ -797,7 +1118,7 @@ def normalize_feature(
         if isinstance(t, dict) and t.get("file_path")
     ]
     nodes = collect_plan_test_nodes(task_paths)
-    titles_in_order = list(dict.fromkeys(t for t, _ in scenarios))
+    titles_in_order = list(dict.fromkeys(b.title for b in scenarios))
     plan_refs = build_plan_test_refs(titles_in_order, nodes)
     ctx = NormalizeContext(
         repo_has_http_surface=has_http,
@@ -815,14 +1136,15 @@ def normalize_feature(
     )
 
     seen: set = set()
-    for title, steps in scenarios:
+    for block in scenarios:
+        title = block.title
         if title in seen:
             continue  # duplicate title in the file: first occurrence classifies
         seen.add(title)
         if title in existing_titles:
             result.already_stamped.append(title)
             continue
-        home = classify_scenario(title, steps, ctx)
+        home = classify_scenario(title, block.steps_text, ctx, annotations=block.annotations)
         if home is None:
             result.refused.append(title)
             continue
@@ -831,6 +1153,18 @@ def normalize_feature(
         result.reasons[title] = f"{home.rule} {home.verifier}: {home.evidence}"
         if home.test_ref:
             result.test_refs[title] = home.test_ref
+        if home.verifier == "operator":
+            result.operator_stamped.append(title)
+
+    if result.operator_stamped:
+        # L3: a rule-minted operator stamp is NEVER silent.
+        logger.warning(
+            "STAMP NORMALIZER: feature %s — R10 minted `operator` (attended "
+            "human work) for %d scenario(s): %s",
+            feature_id,
+            len(result.operator_stamped),
+            "; ".join(result.operator_stamped),
+        )
 
     if result.refused:
         # REFUSE LOUD — the run stops; NOTHING is written (no partial stamping).
@@ -870,7 +1204,11 @@ def normalize_feature(
 # ---------------------------------------------------------------------------
 
 
-_TOP_SCENARIOS_RE = re.compile(r"^scenarios:[ \t]*(\{\s*\}|)[ \t]*(#.*)?$", re.MULTILINE)
+# L1: `scenarios:` bare, or with an EMPTY value in any YAML spelling —
+# `{}`, `[]`, `null`, `~` — is the block to fill; never a second key.
+_TOP_SCENARIOS_RE = re.compile(
+    r"^scenarios:[ \t]*(\{\s*\}|\[\s*\]|null|~|)[ \t]*(#.*)?$", re.MULTILINE | re.IGNORECASE
+)
 
 
 def _render_entries(stamps: Mapping[str, Mapping[str, Any]], indent: str) -> str:
@@ -904,7 +1242,7 @@ def _splice_scenarios(
     if m is None:
         return text + "scenarios:\n" + _render_entries(stamps, "  ")
 
-    if m.group(1):  # `scenarios: {}` — replace the flow-empty line with a block
+    if m.group(1):  # `scenarios: {}` / `[]` / `null` / `~` — replace the empty-value line with a block
         return (
             text[: m.start()]
             + "scenarios:\n"
@@ -1017,8 +1355,13 @@ __all__ = [
     "StampNormalizerError",
     "StampNormalizerRefusal",
     "classify_scenario",
+    "then_clause",
+    "ScenarioBlock",
+    "extract_scenario_blocks",
     "extract_scenarios",
     "detect_repo_http_surface",
+    "SURFACE_CONFIG_KEY",
+    "SURFACE_HTTP",
     "collect_plan_test_nodes",
     "build_plan_test_refs",
     "normalize_feature",
@@ -1031,5 +1374,7 @@ __all__ = [
     "R6_BROWSER",
     "R7_EXAM",
     "R9_WIRE",
+    "R9_WIRE_LOOSE",
     "R10_OPERATOR",
+    "R10_OPERATOR_ANNOTATIONS",
 ]

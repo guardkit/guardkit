@@ -1,0 +1,59 @@
+[project]
+name = "fleet_memory"
+version = "0.1.0"
+description = "LangGraph checkpoint and memory store for distributed agent coordination"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=0.1.0",
+    # [cli] is required to run the relay via `faststream run`; pinned to the 0.7 line
+    # the relay was validated against (0.7 changed the lifespan/Context APIs).
+    "faststream[nats,cli]>=0.7,<0.8",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "langgraph-checkpoint-postgres>=2.0",
+    "httpx",
+    "psycopg[binary]",
+    "psycopg-pool",
+    "tiktoken",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-timeout",
+    "pytest-bdd>=8.1,<9",
+    "ruff",
+    "pyyaml",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: marks tests as integration tests (deselected by default)",
+    "seam: cross-module contract tests",
+    "integration_contract: tests that verify integration contracts",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+]
