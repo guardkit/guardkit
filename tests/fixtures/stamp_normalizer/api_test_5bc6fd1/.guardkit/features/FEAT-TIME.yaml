@@ -1,0 +1,51 @@
+id: FEAT-TIME
+name: "GET /time endpoint"
+description: 'Server current-time endpoint at GET /time -> 200 JSON with exactly
+  two fields: "time" (ISO-8601 UTC, second precision, trailing Z) + "service"
+  ("api_test"). Write methods 405. NO database surface — dependency-down proven
+  as an unaffected 200. The 2026-07-31 routine-sit feature — deliberately thin
+  (the /version weight class); ships FOR REAL what the morning''s machine-chain
+  revival proved on never-merged throwaway branches. Carries the first
+  conformance: block whose receipt SURVIVES (durable receipts live) and rides
+  the first real unattended-profile build. Gherkin + assumptions in
+  features/time-endpoint/ (assumptions PENDING Rich''s review).'
+created: '2026-07-31T12:30:00.000000'
+status: planned
+complexity: 2
+estimated_tasks: 1
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/time-endpoint/time-endpoint.feature
+scenarios:
+  "Reading the current server time":
+    verifier: hurl
+    test_ref: qa/twins/time-endpoint/reading-current-server-time.hurl
+  "The time is fresh on every request":
+    verifier: hurl
+    test_ref: qa/twins/time-endpoint/time-fresh-every-request.hurl
+  "Write methods are rejected":
+    verifier: hurl
+  "The endpoint is unaffected by database unavailability":
+    verifier: probe:process
+tasks:
+- id: TASK-TIME-001
+  name: Add GET /time endpoint
+  file_path: tasks/backlog/time-endpoint/TASK-TIME-001-add-time-endpoint.md
+  complexity: 2
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 30
+  requires_infrastructure: []
+orchestration:
+  parallel_groups:
+  - - TASK-TIME-001
+  estimated_duration_minutes: 30
+  recommended_parallel: 1

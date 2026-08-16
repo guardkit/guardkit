@@ -1,0 +1,60 @@
+id: FEAT-D450
+name: "Ready Endpoint"
+description: "Add /ready endpoint that returns readiness status and rejects POST requests"
+created: "2026-07-09T14:32:00Z"
+status: planned
+complexity: 3
+estimated_tasks: 3
+
+# ROUTING LAW (card Q8/A.2, ruled 2026-08-14; guardkit verifier_stamp.py) — DATA ONLY,
+# stamped 2026-08-15: every approved scenario in feature_files carries a verifier: from
+# the closed vocabulary. Enforcement is NOT flipped here (no routing_law: key; the repo
+# flip is held behind the specialist pin-move drive). Homes: hurl = wire twin (test_ref
+# on the five Gherkin-backed twins names the frozen .hurl; the sixth twin, users-put,
+# has no .feature yet); probe:process = database-
+# unavailable / restart / fresh-start / smoke harness-meta; toolchain = exact-count-on-
+# known-state pinned by test_ref to a real node in tests/.
+feature_files:
+  - features/ready-endpoint/ready-endpoint.feature
+scenarios:
+  "A GET request to the ready endpoint succeeds with the expected response":
+    verifier: hurl
+  "A POST request to the ready endpoint is rejected":
+    verifier: hurl
+tasks:
+  - id: TASK-READY-001
+    name: "Create ready endpoint route"
+    file_path: "tasks/backlog/ready-endpoint/TASK-READY-001-create-ready-endpoint-route.md"
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+  - id: TASK-READY-002
+    name: "Add readiness logic"
+    file_path: "tasks/backlog/ready-endpoint/TASK-READY-002-add-readiness-logic.md"
+    complexity: 3
+    dependencies:
+      - TASK-READY-001
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+  - id: TASK-READY-003
+    name: "Add smoke test"
+    file_path: "tasks/backlog/ready-endpoint/TASK-READY-003-add-smoke-test.md"
+    complexity: 3
+    dependencies:
+      - TASK-READY-002
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+orchestration:
+  parallel_groups:
+    - - TASK-READY-001
+    - - TASK-READY-002
+    - - TASK-READY-003
+  estimated_duration_minutes: 90
+  recommended_parallel: 1

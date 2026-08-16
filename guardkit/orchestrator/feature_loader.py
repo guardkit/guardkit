@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 import yaml
 
 from guardkit.models.task_types import TaskType, TASK_TYPE_ALIASES
+from guardkit.orchestrator.stamp_normalizer import StampNormalizerError
 from guardkit.orchestrator.verifier_stamp import (
     ScenarioStamp,
     extract_scenario_titles,
@@ -750,12 +751,22 @@ class FeatureLoader:
 
     FEATURES_DIR = ".guardkit/features"
 
+    # THE STAMP NORMALIZER's post-load hook flag (Rich's ruling 08-16; rules
+    # doc ai-transition/docs/routing-law-stamp-normalizer-rules-2026-08-15.md).
+    # OFF by default: v1's invoker is forge's plan-commit hook shelling
+    # `guardkit qa normalize-stamps`, NOT every load. Flip this class attribute
+    # (or pass `normalize_stamps=True`) to run the SAME function inline —
+    # after parse, BEFORE the routing-law enforcement pass — so the stamps it
+    # writes are the stamps enforcement reads. Refusals surface as themselves.
+    normalize_stamps_on_load: bool = False
+
     @staticmethod
     def load_feature(
         feature_id: str,
         repo_root: Optional[Path] = None,
         features_dir: Optional[Path] = None,
         validate_paths: bool = True,
+        normalize_stamps: Optional[bool] = None,
     ) -> Feature:
         """
         Load feature file from .guardkit/features/.
@@ -776,6 +787,16 @@ class FeatureLoader:
             can let :func:`validate_feature` aggregate path errors with
             other structural errors instead of failing fast at parse
             time. See TASK-FPSG-004 (L3d).
+        normalize_stamps : Optional[bool]
+            THE STAMP NORMALIZER hook. ``None`` (default) defers to the
+            class flag ``FeatureLoader.normalize_stamps_on_load`` (OFF).
+            When on, ``stamp_normalizer.normalize_feature`` runs after
+            parse and BEFORE the routing-law enforcement pass, WRITING
+            rule-minted stamps for unstamped scenarios into the feature
+            YAML (never overwriting an existing stamp) and re-parsing;
+            an undecidable title raises ``StampNormalizerRefusal`` — the
+            load stops, nothing written. Only meaningful when the
+            feature declares ``feature_files:``.
 
         Returns
         -------
@@ -824,6 +845,29 @@ class FeatureLoader:
                 validate_paths=validate_paths,
             )
             feature.file_path = feature_file
+            # THE STAMP NORMALIZER hook (OFF unless asked): mint stamps by
+            # rule for unstamped scenarios and WRITE them, then re-parse so
+            # enforcement below reads what was written.
+            run_normalizer = (
+                FeatureLoader.normalize_stamps_on_load
+                if normalize_stamps is None
+                else normalize_stamps
+            )
+            if run_normalizer and feature.feature_files:
+                from guardkit.orchestrator.stamp_normalizer import normalize_feature
+
+                outcome = normalize_feature(
+                    feature_file, feature.feature_files, repo_root
+                )
+                if outcome.written:
+                    with open(feature_file, "r") as f:
+                        data = yaml.safe_load(f)
+                    feature = FeatureLoader._parse_feature(
+                        data,
+                        repo_root=repo_root,
+                        validate_paths=validate_paths,
+                    )
+                    feature.file_path = feature_file
             # ROUTING LAW (card Q8/A.2): when enforcement is on for this
             # feature (feature-level flag, else the per-repo flag in
             # .guardkit/config.yaml), an unstamped approved scenario REJECTS
@@ -843,6 +887,10 @@ class FeatureLoader:
         except FeatureValidationError:
             # ROUTING LAW rejections surface as themselves — never re-wrapped
             # into a generic "Invalid feature structure" parse error below.
+            raise
+        except StampNormalizerError:
+            # THE STAMP NORMALIZER's refusal / cannot-run surfaces as itself
+            # (it names every undecidable title) — never re-wrapped.
             raise
         except KeyError as e:
             # Wrap KeyError with schema context
