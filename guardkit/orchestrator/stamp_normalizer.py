@@ -24,8 +24,9 @@ vocabulary and emitted ZERO stamps. Prompting harder tunes around a
 small-model slip; the estate's doctrine is one rule mints the claim and the
 thing claimed.
 
-The rules (evaluated in order; first match wins)
-------------------------------------------------
+The rules (evaluated in the order listed under "Ordering" below; first
+match wins)
+-------------------------------------------------------------------
 Inputs per scenario: the scenario's OWN title + Given/When/Then text
 (lower-cased; the Background is NOT included — a shared Background line such
 as "a throwaway sandboxed environment" would otherwise route every scenario in
@@ -50,47 +51,95 @@ enumerated explicit-human scenarios; hurl must be 0 in every repo without a
 hurl gate / declared surface.
 
 R1  DB unavailable / DB down                     → ``probe:process``
-R2  fresh start / restart / fresh process        → ``probe:process``
+R2  fresh start / restart / fresh process — a token NEGATED within three
+    words (without | never | no | not | instead of) does not count
+                                                 → ``probe:process``
 R3  runtime-smoke harness-meta (seeded directly, throwaway env, teardown,
-    verdict reported, network posture …)         → ``probe:process``
-R4  bus vocabulary — a BUS NOUN required (subject/topic in a bus sense,
-    JetStream, NATS, stream, consumer, inbox, heartbeat, fleet.register,
-    publish(es|ed) to/on …; never bare "acknowledged"/"subscription" — M4)
-                                                 → ``probe:bus``
+    network posture …; "verdict … reported" only with `smoke` in the same
+    scenario, "oracle time budget" only with `smoke|sandbox`)
+                                                 → ``probe:process``
+R7  the THEN clause judges the MODEL'S OUTPUT (a response | answer |
+    narration | extraction | summary judged; the Coach's report | flag |
+    detect | penalise verbs; an output score against a bar) — and the
+    Given/When does NOT supply the score as data; a bare "decision" never
+                                                 → ``exam``
+R4  bus PROTOCOL ACTS — a bus VERB + NOUN pair (publish(es|ed) to/on a
+    subject | topic | stream, subscribe(s|d) to, heartbeat | registration |
+    manifest is sent | published | received, consumer acks | redelivers,
+    request-reply on / the reply inbox, a NATS | JetStream connection |
+    transport | broker that is opened | lost | unreachable, an envelope
+    that is published | delivered | consumed, a message (un)acknowledged,
+    deregister); quoted spans are DATA (blanked — a quoted subject literal
+    is kept); `nats`/`jetstream` inside a hyphenated / dotted identifier
+    (nats-core, nats-py, nats_fleet_pipe.py) never count; a negated act
+    ("no … should be published") never counts   → ``probe:bus``
 R5  Flutter / device vocabulary                  → ``flutter``
 R6  browser vocabulary (and NOT R5 — order)      → ``playwright``
-R7  the THEN clause judges AI OUTPUT QUALITY     → ``exam``
 R8  the plan names a test node for this title    → ``toolchain`` + ``test_ref``
-R9  wire-shaped step text AND the repo has an HTTP surface → ``hurl``
-    (a bare path literal never suffices — M1)
+R9  STRONG wire markers AND the repo has an HTTP surface → ``hurl``
+    (an HTTP verb + "request to" | a /path | "endpoint" in the same step;
+    "send(s) a(n) (http) request to"; "status code should be NNN";
+    "response body|status|header should" beside a verb or /path;
+    "method not allowed"; "content type" — a bare request | response |
+    endpoint | json | route | conflict | not-found | rejected NEVER
+    suffices alone; a bare path literal never suffices — M1)
 R10 explicitly human (an operator follows, done by hand, physical robot,
-    on the real NAS, runbook evidence, human-executed, or the
-    @operator-handoff tag / `# operator_handoff:` comment)
-                                                 → ``operator`` (EXPLICIT only)
+    runbook evidence, human-executed, human operator, "on the real NAS"
+    with NO automation subject in the When/Then, or the @operator-handoff
+    tag / `# operator_handoff:` comment)         → ``operator`` (EXPLICIT only)
 —   no rule matched                              → **REFUSE LOUD** (``None``)
 
-Ordering rationale (from the design): infrastructure/process rules (R1–R3)
-precede wire (R9) because a DB-down scenario also says "request" — the more
-specific need wins. Bus (R4) precedes wire because fleet scenarios say
-"reply". Exam (R7) precedes toolchain (R8) because a scenario judging Coach
-output can also name a test node — the judged quality is the essential
-surface. Toolchain (R8) precedes wire (R9) only when a real test node is
-named — a scenario the plan already pinned to a test keeps that pin.
+Ordering (second tightening, 2026-08-16): R1 · R2 · R3 · **R7** · R4 · R5 ·
+R6 · R8 · R9 · R10. Rationale (from the design): infrastructure/process
+rules (R1–R3) precede wire (R9) because a DB-down scenario also says
+"request" — the more specific need wins. Bus (R4) precedes wire because
+fleet scenarios say "reply". Exam (R7) precedes toolchain (R8) because a
+scenario judging Coach output can also name a test node — the judged quality
+is the essential surface. Toolchain (R8) precedes wire (R9) only when a real
+test node is named. **Honest change against the 08-15 design doc**
+(``RULES_DOC``, which had R4 < R5 < R6 < R7): R7 now runs BEFORE R4 (and so
+before R5/R6). The re-verifier found two specialist-agent Coach EXAM
+scenarios whose Given quotes "NATS JetStream" landing in probe:bus because
+R4 ran first; the same argument the design made for R7-over-R8 applies —
+the judged output is the essential surface. On the estate corpus the
+R7-before-R5/R6 part moves nothing (no flutter/playwright scenario judges
+model output in its Then); it is stated here so nobody has to discover it.
+
+The 2026-08-16 SECOND tightening (re-verifier findings 1–6)
+------------------------------------------------------------
+A second adversarial pass over the tightened rules found ~40 of 496 minted
+stamps still silently mis-homed (8%): (1) R4's bare `\bnats\b`/`\bjetstream\b`
+matched package/repo names and quoted data literals, and R4 ran before R7;
+(2) R9's LOOSE family minted hurl on ~23 non-wire study-tutor scenarios
+('conflict' from a poetry anthology, 'requests' from "serving requests",
+'rejected with' in NATS-command titles, 'route' from a port-forward,
+'endpoint' from "the embeddings endpoint"); (3) R2 ignored negation
+("without restarting"); (4) R3's `verdict .* reported` / `oracle time budget`
+were generic; (5) R7's `coach decision should` fired when the score was an
+Outline INPUT; (6) forge "The executor stands fleet-memory up on the real
+NAS" is done BY THE EXECUTOR. Each fix is named at its rule above and pinned
+on the REAL scenario the re-verifier read; the estate corpus was
+re-baselined DELIBERATELY (``EXPECTED.json`` + README carry the per-title
+"changes vs 8dd28830" list).
 
 Honest divergences from the 2026-08-15 draft's regex families
 --------------------------------------------------------------
 The draft claimed R1–R10 reproduce api_test's 60 hand stamps except
-users-count 7.1–7.3. Running the draft's LITERAL regexes did NOT (41/60):
-R9 as drafted (``response should``, ``endpoint``, ``status code`` …) left
-THIRTEEN hand-``hurl`` scenarios undecidable — their only wire vocabulary is
-"I request the service X" / "the request should succeed" / "rejected as …" /
-"created through the running service" / "looking up" / "not-found" (hyphen)
-— and R3 as drafted left three runtime-smoke harness-meta scenarios
-undecidable ("smoke run", "live deployment", "seeded directly and …"). The
-families below are the draft's PLUS those idioms (each addition named in
-the rule's comment); with them the reproduction is 57/60 — exact except the
-one divergence the design named (7.1–7.3 → hurl by rule when the plan names
-no test node). Pinned in ``tests/orchestrator/test_stamp_normalizer.py``.
+users-count 7.1–7.3. Running the draft's LITERAL regexes did NOT (41/60);
+the first tightening ADDED api_test's loose idioms ("I request the service
+X", "the request should succeed", "rejected as …", "created through the
+running service", "looking up", "not-found") and reached 57/60. The second
+tightening REMOVES them again on the re-verifier's evidence: the same bare
+nouns minted hurl on non-wire prose in a real starlette repo, and a rule
+that mints on a poetry anthology cannot be the rule that mints on api_test.
+THE HONEST NUMBER NOW: **32/60** hand stamps reproduce (all 16 strong-marker
+hurl + all 16 R1/R2/R3 process), **28 REFUSE** (25 hand-hurl in the loose
+idiom + the 3 hand-toolchain users-count scenarios — the 08-15 "named
+divergence" is gone: they refuse instead of minting hurl), and **ZERO** are
+silently minted into a different home. api_test's B70F/D450/TIME features
+reproduce whole; FD8D/AE43/8737/UCNT/UBEM/UDBE refuse loud as units (the
+hand stamps stand — a rule's refusal is never wrong; a silent mis-home is).
+Pinned in ``tests/orchestrator/test_stamp_normalizer.py``.
 """
 
 from __future__ import annotations
@@ -231,9 +280,59 @@ R1_DB_UNAVAILABLE = _family(
     r"postgres\w* .* (stopped|unreachable|down|unavailable)",
 )
 
+# ---------------------------------------------------------------------------
+# Negation (2026-08-16 second tightening, re-verifier findings 1 and 3): a
+# rule's token that is NEGATED within the same step line is not evidence.
+# "resumes at the failed step WITHOUT restarting" is not a restart (R2);
+# "NO build-queued request should be published to Forge" is not a publish
+# (R4). R2 looks back THREE words (the re-verifier's law: without | never |
+# no | not | instead of); R4's act patterns look back over the whole step
+# line, because the negation heads the clause ("no command envelope should
+# be published"). Other lines of the same scenario can still match.
+# ---------------------------------------------------------------------------
+
+_NEGATION_WORD_RE = re.compile(r"\b(?:without|never|no|not|nor|instead of|neither)\b|\bn't\b", re.IGNORECASE)
+
+
+def _line_of(text: str, pos: int) -> Tuple[str, int]:
+    """(the line containing ``pos``, the offset of ``pos`` inside it)."""
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    if end == -1:
+        end = len(text)
+    return text[start:end], pos - start
+
+
+def _negated_within(text: str, pos: int, words: Optional[int]) -> bool:
+    """Is the token at ``pos`` preceded, on its own step line, by a negation
+    word — within ``words`` words (``None`` = anywhere earlier on the line)?"""
+    line, off = _line_of(text, pos)
+    before = line[:off]
+    if words is not None:
+        tail = re.findall(r"\S+", before)[-words:]
+        before = " ".join(tail)
+    return bool(_NEGATION_WORD_RE.search(before))
+
+
+def _first_unnegated_match(
+    family: Iterable[re.Pattern[str]], text: str, *, words: Optional[int]
+) -> Optional[str]:
+    """First match of the family whose token is not negated on its line
+    (a negated hit is skipped; the search continues)."""
+    for pat in family:
+        for m in pat.finditer(text):
+            if not _negated_within(text, m.start(), words):
+                return m.group(0)
+    return None
+
+
 # R2 — fresh start / restart (census: 2.3, 3.4, 3.8 — process control).
 # "an app restart" (the Flutter sign-in feature's device idiom) is NOT a
-# process restart — excluded here so R5 sees it.
+# process restart — excluded here so R5 sees it. SECOND TIGHTENING (finding
+# 3): a restart/start token NEGATED within three words (without | never | no
+# | not | instead of) is not a restart — forge runbook-executor "resumes at
+# the failed step without restarting" is in-process executor logic (pinned
+# negative).
 R2_FRESH_START = _family(
     r"\b(just|freshly) started\b",
     r"(?<!\bapp )\brestart(s|ed|ing)?\b",
@@ -241,13 +340,18 @@ R2_FRESH_START = _family(
     r"\bfresh (process|instance)\b",
     r"handled no other requests",
 )
+_R2_NEGATION_WINDOW_WORDS = 3
 
 # R3 — runtime-smoke harness-meta (census: 5.1, 5.3–5.5, 5.9–5.12).
 # Additions beyond the draft, each from a census scenario the draft's family
 # missed: `seeded directly` generalized (5.5 says "seeded directly and one is
 # created"), `smoke (run|verdict)` / `(fails|passes) the smoke` (5.4, 5.9,
 # 5.11), `live deployment` (5.11), `before seeding` (5.5), `oracle time
-# budget` (5.4).
+# budget` (5.4). SECOND TIGHTENING (finding 4): `verdict .* reported` is a
+# generic idiom (specialist-agent finproxy "the verdict reflects…", guardkit
+# "reported as timed out") — it now REQUIRES the word `smoke` in the same
+# scenario, and `oracle time budget` requires `smoke` or `sandbox`. Both are
+# pinned on the real negatives.
 R3_SMOKE_HARNESS = _family(
     r"seeded directly",
     r"before seeding",
@@ -255,66 +359,245 @@ R3_SMOKE_HARNESS = _family(
     r"throwaway (environment|sandbox)",
     r"\bteardown\b",
     r"no trace .* remain",
-    r"verdict .* reported",
     r"network posture",
     r"route to the outside world",
     r"\bsmoke (run|verdict)\b",
     r"\b(fails|passes|failed|passed) the smoke\b",
     r"\blive deployment\b",
-    r"oracle time budget",
+)
+# The two idioms that need a harness word elsewhere in the scenario.
+R3_SMOKE_QUALIFIED = (
+    (re.compile(r"verdict .* reported", re.IGNORECASE), re.compile(r"\bsmoke\b", re.IGNORECASE)),
+    (re.compile(r"oracle time budget", re.IGNORECASE), re.compile(r"\b(smoke|sandbox\w*)\b", re.IGNORECASE)),
 )
 
+
+def _r3_match(text: str) -> Optional[str]:
+    hit = _first_match(R3_SMOKE_HARNESS, text)
+    if hit is not None:
+        return hit
+    for idiom, needs in R3_SMOKE_QUALIFIED:
+        m = idiom.search(text)
+        if m and needs.search(text):
+            return m.group(0)
+    return None
+
+
 # R4 — bus vocabulary (census: 449 bus scenarios estate-wide — forge 182,
-# jarvis 115, fleet-memory 65 …). TIGHTENED 2026-08-16 (verifier finding M4):
-# R4 requires a BUS NOUN. "acknowledged" alone (an HTTP 204 is acknowledged
-# too) and "subscription" alone (a user has a subscription) NEVER qualify —
-# both are pinned as negative tests. `subject`/`topic`/`stream`/`consumer`
-# are qualified because the estate uses them in other senses too (study-
-# tutor's school subjects and topics; stderr as "the error stream"; guardkit's
-# "consumer types"); `envelope` excludes the verdict/response/JSON envelopes.
-R4_BUS = _family(
-    r"\bjetstream\b",
-    r"\bnats\b",
-    r"\bheartbeat",
-    r"\bfleet\.register",
-    r"\brequest[- ]reply\b",
-    r"\bmessage bus\b",
-    r"\breply inbox\b|\b(requester|caller)'s inbox\b|\bon (the|its|his|her|their) inbox\b",
-    r"\b(nats |jetstream |message )?broker\b",
-    # subject — only in a bus qualification (never the school subject).
-    r"\b(command|reply|dead-letter|lifecycle|pipeline|registration|deregistration|"
-    r"heartbeat|fleet|status|approval|manifest|wildcard|documented|dispatch|flat|nats|"
-    r"bus|chat|gateway|fanout|command-fanout|publish\w*)[- ]subjects?\b",
-    r"\bsubjects? pattern\b|\bsubject (name|prefix|hierarchy)\b",
-    r"\b(agents|fleet|pipeline|memory|jarvis|forge|topics)\.[a-z][a-z0-9_-]*\.[a-z0-9_.*>-]+",  # a NATS subject literal
-    # topic / stream / consumer — bus-qualified only.
-    r"\b(nats|bus|message|event|kafka|mqtt) topics?\b",
-    r"\b(memory|agents|fleet|jarvis|forge|nats|durable|pipeline|lifecycle event) streams?\b",
-    r"\bstreams? (is|are) provisioned\b",
-    r"\bdurable consumers?\b|\b(jetstream|nats|relay|pull|push|queue) consumers?\b",
-    r"\bconsumer (attaches|acks?|parks|redelivery|keeps processing)\b|\bconsumer[- ]side\b",
-    # envelope — the lifecycle/command/reply envelope on the wire; not a
-    # verdict/response/JSON envelope.
-    r"(?<!verdict )(?<!result )(?<!json )(?<!response )(?<!error )(?<!http )\benvelopes?\b",
-    # publish — TO/ON a subject, or with a bus noun in the same scenario.
-    r"\b(re)?publish(es|ed|ing)? (to|on|onto)\b",
-    r"\b(re)?publish(es|ed|ing)?\b .* \b(subject|topic|envelope|jetstream|nats|fleet|bus|stream|"
-    r"approval request|approval reply|manifest|lifecycle event|build[- ]\w+ event)s?\b",
-    r"\b(subject|topic|envelope|jetstream|nats|fleet|bus|stream)s? .* \b(re)?publish(es|ed|ing)?\b",
-    # subscribe — to/on a bus thing (never a bare "subscription").
-    r"\b(jetstream|nats|correlation-keyed|one-shot|durable|wildcard|command|reply) subscription\b",
-    r"\bsubscri(bes?|bed|bing) (to|on|against)\b|\bremains? subscribed\b|\bis subscribed\b",
-    r"\bbefore the subscriber started\b|\b(late|early|bus|nats|jetstream|wildcard) subscribers?\b",
-    r"\bsubscri\w* .* \b(subject|jetstream|nats|stream|fleet|bus|dispatch|gateway|command)s?\b",
-    # acknowledge — of a message/envelope/payload (never an HTTP 204).
-    r"\b(message|envelope|payload|dispatch)s? (should be |is |was |are |were |remain |remains )?(un)?(acknowledged|acked)\b",
-    r"\backnowledg\w* (state|so the queue)\b|\bunacknowledged\b|\backed\b",
-    r"\backnowledg\w* .* \b(queue|jetstream|redeliver\w*|inbound message)\b",
-    # fleet protocol verbs.
-    r"\bderegister\w*\b",
-    r"\b(on|from|to|across|joins?|leaves?|registered on|register with) the fleet\b",
-    r"\bfleet (registration|manifest|register|dispatch|observation|wide)\b",
+# jarvis 115, fleet-memory 65 …). TIGHTENED 2026-08-16 (M4: a bus NOUN was
+# required — never bare "acknowledged"/"subscription"; school subjects and
+# curriculum topics excluded). SECOND TIGHTENING (re-verifier finding 1):
+# the bare nouns `\bnats\b` / `\bjetstream\b` fired on PACKAGE and REPO
+# NAMES (nats-core, nats-py, nats_fleet_pipe.py) and on QUOTED DATA
+# LITERALS ("NATS JetStream" as a Coach scope input; "Via message broker
+# (NATS)" as a user's answer) — so docker-build, stub, MCP-resource and two
+# EXAM scenarios landed in probe:bus. The law now:
+#   * a bus noun counts only as part of a PROTOCOL ACT — a bus VERB + NOUN
+#     pair (publish(es|ed) to/on a subject|topic|stream…, subscribe(s|d) to,
+#     heartbeat|registration|manifest is sent|published|received, consumer
+#     acks|redelivers, request-reply on, the reply inbox, a NATS|JetStream
+#     connection|transport|broker that is opened|lost|unreachable, an
+#     envelope that is published|delivered|consumed, a message that is
+#     (un)acknowledged, deregister); a NAME alone never does;
+#   * quoted spans ("...") are DATA and are blanked before matching — except
+#     a quoted NATS subject literal (`fleet.deregister`, `agents.command.x`),
+#     which is protocol, not data;
+#   * `nats` / `jetstream` inside a hyphenated / dotted / path identifier
+#     (nats-core, nats-py, nats_fleet_pipe.py, NATS-unavailable) never count;
+#   * an act NEGATED on its step line ("no … should be published") is not
+#     an act (see `_negated_within`).
+# Every retained pair is backed by a real forge/jarvis/fleet-*/study-tutor
+# scenario; every named false positive is a pinned negative.
+
+_ID_L = r"(?<![\w.\-/])"  # not the tail of an identifier / path
+_ID_R = r"(?![\w.\-])"  # not the head of one
+_NATS = rf"{_ID_L}(?:nats|jetstream){_ID_R}"
+_SUBJECT_LITERAL = (
+    r"(?:agents|fleet|pipeline|memory|jarvis|forge|topics|tutor|study)"
+    r"\.[a-z][a-z0-9_-]*(?:\.[a-z0-9_.*>-]+)*"
 )
+_SUBJECT_LITERAL_RE = re.compile(rf"^{_SUBJECT_LITERAL}$", re.IGNORECASE)
+_R4_QUOTED_RE = re.compile(r'"([^"\n]*)"')
+_ARTICLES = (
+    r"(?:(?:the|a|an|its|that|this|each|every|their|any|only one|exactly one|a single|no|one|two|three|all|both|"
+    r"such|own|same|real|live|local|configured|documented|canonical|wrong|plural-form|singular|terminal|correct|"
+    r"expected|wildcard|offending|paused|inbound|queued|published|un-published|corresponding|next|fresh|new|second|"
+    r"another|daemon's|default|reachable|running|missed|different|other|first|last|shared|single) )*"
+)
+# A subject/topic/stream/channel qualified by a bus adjective (never the
+# school subject / curriculum topic / stderr stream — M4).
+_QUALIFIED_SUBJECT = (
+    r"(?:command|reply|dead-letter|lifecycle|pipeline|registration|deregistration|"
+    r"heartbeat|fleet|status|approval|manifest|wildcard|documented|dispatch|flat|nats|"
+    r"jetstream|bus|chat|gateway|fanout|command-fanout|publish\w*|jarvis|forge|tutor|"
+    r"build-queued|build-\w+|results?|inbound|outbound|singular|canonical|plural-form|"
+    r"durable|memory|lifecycle event|event|correlation-keyed|escalation|work|planning)"
+    r"[- ](?:subjects?|topics?|streams?|channels?|queues?)"
+)
+# The DESTINATION of a publish (bare subject/topic/stream are fine here —
+# nobody "publishes to the school subject").
+_PUBLISH_DEST = (
+    rf"(?:{_ID_L}(?:subjects?|topics?|streams?|inbox|brokers?|nats|jetstream|fleet|"
+    rf"fleet bus|message bus|event bus|fleet registry|wire|bus){_ID_R}|{_QUALIFIED_SUBJECT}|{_SUBJECT_LITERAL})"
+)
+# The destination/carrier of any other transport act (qualified nouns only —
+# "sends a tutoring turn for subject X" is a school subject, pinned negative).
+_ACT_DEST = (
+    rf"(?:{_ID_L}(?:inbox|brokers?|nats|jetstream|fleet(?! scope)|fleet bus|message bus|event bus|"
+    rf"fleet registry){_ID_R}|{_QUALIFIED_SUBJECT}|{_SUBJECT_LITERAL})"
+)
+_ENVELOPE = r"(?<!verdict )(?<!result )(?<!json )(?<!response )(?<!error )(?<!http )\benvelopes?\b"
+_ACK_NOUN = r"(?:message|envelope|payload|dispatch|brief|command|episode|delivery|publish)s?"
+
+R4_BUS = _family(
+    # publish / republish TO|ON a bus destination (or a subject literal)
+    rf"\b(?:re)?publish(?:es|ed|ing)?\b[^\n]{{0,50}}?\b(?:to|on|onto|over|via|through)\b[^\n]{{0,45}}?{_PUBLISH_DEST}",
+    # send / deliver / listen / reply / connect … TO|ON|FROM a bus carrier
+    rf"\b(?:sent|sends?|sending|deliver\w*|emits?|emitted|emitting|forward\w*|dispatch\w*|arriv\w*|"
+    rf"lands?|landed|listen\w*|receiv\w*|observes?|observed|park\w*|pending|consum\w*|drain\w*|"
+    rf"reply|replies|replied|respond\w*|answer\w*|connect\w*|discoverable|routed|redeliver\w*|"
+    rf"subscrib\w*|advertis\w*)\b[^\n]{{0,30}}?\b(?:to|on|from|over|via|through|onto|across)\b "
+    rf"{_ARTICLES}(?:[\w-]+ )?{_ACT_DEST}",
+    # a qualified subject / channel / queue as the object or subject of an act
+    rf"\b(?:on|to|from|via|over|onto|of|at|against|into) {_ARTICLES}(?:[\w-]+ )?{_QUALIFIED_SUBJECT}\b",
+    rf"\b{_QUALIFIED_SUBJECT} (?:should|is|are|was|were|receives?|carries|carry|pattern|name|names|exists?|the)\b",
+    r"\bsubjects? (?:pattern|hierarchy|prefix)\b|\bsubject (?:name|prefix|hierarchy)\b",
+    rf"\b(?:{_NATS}|durable|memory|lifecycle event|event) streams? (?:is|are|should be|was|were|exists?|provisioned)\b|"
+    r"\bstreams? (?:is|are) provisioned\b",
+    # subscribe / subscription / subscriber acts
+    r"\bsubscri(?:bes?|bed|bing) (?:to|on|against|for)\b",
+    r"\b(?:remains?|stays?|is|are|still|be|been) subscribed\b",
+    r"\b(?:attempt\w*|establish\w*|re-establish\w*|open\w*|drop\w*|dropped|restor\w*|hold\w*|keep\w*|"
+    r"los\w*|lost|creat\w*|maintain\w*|start\w*|has|have|had|with|without|before|after) "
+    r"(?:its |a |the |an |their |own |live |a live |its own )*(?:jetstream |nats |reply |durable |wildcard |"
+    r"command |correlation-keyed |one-shot |live |pull |push |single )subscriptions?\b",
+    r"\b(?:jetstream|nats|reply|durable|wildcard|command|correlation-keyed|one-shot|live) subscriptions? "
+    r"(?:is|are|was|were|should|drops?|dropped|in|against|remains?|stays?|state|poll|to|on)\b",
+    r"\b(?:late|early|new|another|a second) subscribers?\b|\bbefore the subscriber started\b|"
+    r"\ba subscriber (?:is )?listening\b|\bobserved by a subscriber\b|"
+    r"\bthe subscriber should (?:observe|receive|see|remain|continue|stay)\b",
+    # heartbeat / registration / deregistration acts (wide verbs — these nouns
+    # have no other sense in the estate)
+    r"\b(?:heartbeats?|registrations?|deregistrations?) (?:events? |messages? |payloads? )?"
+    r"(?:is |are |was |were |should be |should still be |should have been |gets? |get |being |will be |must be |should )?"
+    r"(?:sent|published|republished|re-published|received|emitted|delivered|observed|discoverable|missed|"
+    r"missing|arrives?|arrived|stops?|stopped|expires?|expired|lapses?|elapses?|replayed|re-emitted)\b",
+    r"\b(?:sends?|sent|sending|publish\w*|emit\w*|receiv\w*|miss\w*|expect\w*|stops? sending|observ\w*|"
+    r"republish\w*|re-emits?|re-emitted|replays?|replayed) "
+    r"(?:a |an |its |the |their |periodic |no |every |each |two |three |one |another |the next |a fresh |"
+    r"a new |its own |the same |the missed |any )*(?:fleet |own |agent |periodic |missed )?"
+    r"(?:heartbeats?|registrations?|deregistrations?)\b",
+    r"\bheartbeat (?:interval|timeout|cadence|period|misses|expir\w*|elapses|is due)\b|\bas a heartbeat\b|"
+    r"\bheartbeat[- ]driven\b|\bmissed heartbeats?\b",
+    r"\bderegister(?:s|ed|ing)?\b",
+    r"\bfleet\.(?:register|deregister|heartbeat|manifest|status)\b",
+    r"\b(?:registers?|registered|registering|re-registers?) (?:on|with|itself on|itself with|again on) the fleet\b|"
+    r"\b(?:joins?|leaves?|joined|left) the fleet\b|"
+    r"\b(?:reachable|available|advertised|discoverable|registered|published|republished|dispatched|dispatch|"
+    r"sent|delivered|forwarded|manifests?|heartbeats?|deregisters?|deregistered) (?:on|to|over|through|across|from|with) the fleet\b(?! scope)",
+    # the capability MANIFEST — only as published / republished / discoverable
+    # (a "context manifest" that is missing is not the fleet — pinned negative)
+    r"\b(?:fleet |capability |agent |own |its |its own |jarvis's |the )*manifests? "
+    r"(?:is |are |was |were |should be |should still be |should have been |gets? |get |will be |must be |should )?"
+    r"(?:published|republished|re-published|discoverable|advertised|received)\b",
+    r"\b(?:publish\w*|republish\w*|re-publish\w*|advertis\w*|receiv\w*) (?:a |an |its |the |their |its own |a fresh |a new |the same )*"
+    r"(?:fleet |capability |agent |own )?manifests?\b",
+    # lifecycle / build / approval traffic — only as TRANSPORTED (published /
+    # delivered / received / replayed / arrives …; a guardkit "event emitted"
+    # is instrumentation, not the bus — pinned negative)
+    r"\b(?:lifecycle events?|build-\w+ events?|runbook-\w+ events?|step-\w+ events?|approval requests?|"
+    r"approval repl(?:y|ies)|approval responses?|paused events?|build-queued requests?|planning requests?) "
+    r"(?:is |are |was |were |should be |should still be |should have been |gets? |get |being |will be |must be |should |for [\w-]+ )?"
+    r"(?:sent|published|republished|re-published|received|delivered|observed|replayed|re-emitted|re-issued|"
+    r"arrives?|arrived|missed|redelivered)\b",
+    r"\b(?:sends?|sent|sending|publish\w*|receiv\w*|observ\w*|republish\w*|re-emits?|re-emitted|"
+    r"re-issues?|re-issued|replays?|replayed|deliver\w*|redeliver\w*|miss\w*|expect\w*) "
+    r"(?:a |an |its |the |their |no |every |each |two |three |one |another |the next |a fresh |a new |its own |"
+    r"the same |the paused |the missed |any |that |this )*(?:paused |missed |fresh |same |own |runbook-\w+ |step-\w+ |build-\w+ )?"
+    r"(?:lifecycle events?|approval requests?|approval repl(?:y|ies)|approval responses?|paused events?|"
+    r"build-\w+ events?|build-queued requests?|planning requests?)\b",
+    r"\bpublished lifecycle events?\b",
+    # consumer / acknowledgement / redelivery acts
+    r"\b(?:durable |pull |push |jetstream |nats |queue |relay |the |a |its )?consumers? "
+    r"(?:acks?|acknowledg\w*|redeliver\w*|attach\w*|park\w*|pull\w*|poll\w*|keeps? processing|is attached)\b",
+    r"\bdurable consumers?\b|\bconsumer[- ]side (?:ack\w*|dedup\w*|redeliver\w*)",
+    r"\b(?:pending|parked|remains?|remain|held|redelivered|delivered) (?:on|to|by|for) the "
+    r"(?:jetstream |nats |durable |same |next )?consumers?\b",
+    rf"\b{_ACK_NOUN} (?:should |is |was |are |were |remain |remains |should remain |gets? |get |must |will |never |not |be |never be |not be |being |been )*"
+    r"(?:un)?(?:acknowledged|acked)\b",
+    rf"\backnowledg\w* (?:the |its |each |every |that |this )?(?:inbound |queued |same |offending |redelivered )?{_ACK_NOUN}\b",
+    r"\bunacknowledged\b|\backed\b|\backs the\b|\backnowledged so the queue\b|\backnowledged on the queue\b|"
+    r"\backnowledg\w*[^\n]{0,20}\b(?:jetstream|redeliver\w*)",
+    r"\bredeliver(?:y|ed|s|ing|able)?\b[^\n]{0,30}\b(?:message|payload|envelope|consumer|jetstream|nats|build|episode)|"
+    r"\b(?:message|payload|envelope|brief|command|build|episode|build-queued \w+)s?\b[^\n]{0,60}\bredeliver",
+    r"\b(?:delivery|redelivery) limit\b|\bwithout being acknowledged\b|\bdelivered \w+ times\b",
+    # request-reply / inbox
+    r"\brequest[- ]reply (?:on|over|via|pattern|round[- ]?trip|exchange|semantics|timeout|call|to|with)\b|"
+    r"\b(?:a|the|via|over|using|through|by) request[- ]reply\b",
+    r"\breply inbox\b|\b(?:requester|caller|sender)'s inbox\b|\bon (?:the|its|his|her|their|an|a) (?:reply )?inbox\b|"
+    r"\binbox subject\b|\bto (?:the|its|their) inbox\b",
+    # NATS / JetStream / broker as a protocol OBJECT in an act (never a name)
+    rf"\b{_NATS} (?:connections?|transports?|servers?|endpoints?|bus|event bus|brokers?|urls?|"
+    rf"subscriptions?|messages?|publish\w*|consumers?|results? topics?|queues?|work queues?|streams?|"
+    rf"subjects?|topics?|payloads?|links?|delivery|deliveries|round[- ]?trips?|acknowledg\w*|acks?|acked|"
+    rf"credentials?|auth\w*|max message size|message size|size limits?|kv|kv buckets?|buckets?)\b",
+    rf"\b{_NATS} (?:will |should |must |would |can )?(?:reject|refuse|accept)s?\b",
+    r"\b(?:kv|key-value|agent-registry(?: kv)?) buckets?\b",
+    rf"\b(?:{_NATS} |jetstream |message |the |a |an |its |their |each |every |the same |the local |the configured |"
+    rf"the documented |the default |a reachable |a real |the real |a live |a running |a single |own |its own )*"
+    rf"brokers? (?:is|are|was|were|becomes?|became|remains?|stays?|fails?|failed|acknowledg\w*|refus\w*|goes|went|"
+    rf"drops?|dropped|comes|came|restarts?|restarted|should|cannot|can't|could not|has|have|url|urls|"
+    rf"unreachable|unavailable|reachable|briefly|being)\b",
+    rf"\b(?:reachable|unreachable|real|live|running|available|unavailable|configured|same|shared|local|"
+    rf"remote|default|documented|single|briefly unavailable) (?:{_NATS} |jetstream |message )?brokers?\b",
+    rf"\b(?:against|to|from|on|via|over|through|with|without) (?:the |a |an |its |their |the same |a real |the real |"
+    rf"a live |the live |the local |the configured |the documented |the default )*(?:{_NATS} |jetstream |message )?brokers?\b",
+    rf"\b{_NATS} (?:is|are|was|were|becomes?|became|remains?|stays?|goes|went|drops?|dropped|comes back|"
+    rf"disconnect\w*|reconnect\w*|fails?|failed|acknowledg\w*|acks?)\b",
+    rf"\b(?:published|publish\w*|received|receiv\w*|sent|send\w*|emit\w*|deliver\w*|consum\w*|subscrib\w*|"
+    rf"connect\w*|listen\w*|dispatch\w*|forward\w*|arriv\w*|routed|routes?|served|serve\w*|reach\w*|"
+    rf"talk\w*|speak\w*|carried|carr\w*|flow\w*|transport\w*|integrat\w*|register\w*|discoverable|"
+    rf"round[- ]?trips?|round[- ]?tripped) "
+    rf"(?:\w+ ){{0,3}}?(?:to|from|on|over|via|through|onto|across|by|against|with) (?:the |a |an |its |their )?{_NATS}\b",
+    rf"\b(?:over|via|through|across|by|on) (?:the |a |an |its |their |the same |a real |the real |a live |the live |"
+    rf"the local |the configured )*(?:{_NATS} |fleet |message |event )bus\b",
+    r"\b(?:fleet |message |nats |event )?bus (?:acknowledges?|acks?|delivers?|drops?|is unavailable|is unreachable|"
+    r"is down|is not configured|becomes? unavailable|goes down|comes back)\b",
+    # envelopes ON THE WIRE — published / delivered / consumed / replayed …
+    # (never a verdict/result/JSON/response/error/HTTP envelope; never mere
+    # construction — fleet-gateway "Building a command envelope from a user
+    # message" declares fields and is a pinned negative)
+    rf"\b(?:published|delivered|received|consumed|replayed|redelivered|inbound|outbound|queued|missed|"
+    rf"in-flight|dispatched|forwarded|emitted) {_ENVELOPE}",
+    rf"{_ENVELOPE}[^\n]{{0,25}}?\b(?:should be |is |was |are |were |gets? |get |has been |have been |"
+    rf"should have been |will be |must be |should still be |should never be |should not be |should |still |also |never |not |be )*"
+    rf"(?:published|delivered|received|consumed|arriv\w*|acknowledged|acked|routed|emitted|forwarded|replayed|"
+    rf"produced|observed|dispatched|sent|missed|lands?|landed|lost|dropped|re-published|re-emitted|"
+    rf"pending|redelivered|redeliverable|resent|re-sent|in flight|in-flight|reaches?|reached|"
+    rf"on the wire|on the bus)\b",
+    rf"\b(?:publish\w*|consum\w*|deliver\w*|receiv\w*|emit\w*|forward\w*|route\w*|acknowledg\w*|replay\w*|"
+    rf"observ\w*|dispatch\w*|send\w*|sent|miss\w*|produc\w*|drop\w*|dropped|los\w*|lost|resent|re-sent|"
+    rf"re-publish\w*|re-emit\w*|redeliver\w*|acks?|acked|await\w*|expect\w*|see|sees|saw|watch\w*) "
+    rf"{_ARTICLES}(?:[\w-]+ )?{_ENVELOPE}",
+)
+_R4_NEGATION_WINDOW_WORDS: Optional[int] = None  # the whole step line before the token
+
+
+def _r4_view(text: str) -> str:
+    """The text R4 reads: quoted DATA literals blanked (a quoted NATS subject
+    literal is kept — it is protocol, not data)."""
+
+    def _keep_or_blank(m: re.Match) -> str:
+        inner = m.group(1).strip()
+        return m.group(0) if _SUBJECT_LITERAL_RE.match(inner) else '"…"'
+
+    return _R4_QUOTED_RE.sub(_keep_or_blank, text)
+
+
+def _r4_match(text: str) -> Optional[str]:
+    return _first_unnegated_match(R4_BUS, _r4_view(text), words=_R4_NEGATION_WINDOW_WORDS)
+
+
 
 # R5 — Flutter / device vocabulary (census: the 51 Flutter scenarios —
 # sign-in 25, voice 26). TIGHTENED 2026-08-16 (verifier finding M2): "the app
@@ -359,32 +642,49 @@ R6_BROWSER = _family(
     r"\bmenu option\b",
 )
 
-# R7 — the THEN-CLAUSE judges AI OUTPUT QUALITY (census: 208 agent-behaviour
+# R7 — the THEN-CLAUSE judges the MODEL'S OUTPUT (census: 208 agent-behaviour
 # scenarios — specialist-agent 136, guardkit 35, LPA 16, tutor 13).
-# TIGHTENED 2026-08-16 (verifier finding M3): R7 is matched against the
-# scenario's THEN clause ONLY (the first `Then` line and everything after it)
-# and the family is JUDGEMENT-shaped. A Coach score used as a Given/When
-# INPUT ("when the upstream Coach score is at the maximum" — forge machinery)
-# never qualifies, nor does the NOUN "coach score" (jarvis renders it); bare
-# "narration" is gone — only a narration whose content is judged counts.
-# The forge machinery examples are pinned as NEGATIVE tests.
+# TIGHTENED 2026-08-16 (M3): R7 is matched against the scenario's THEN clause
+# ONLY and the family is JUDGEMENT-shaped; the "coach score" NOUN and bare
+# "narration" never qualify. SECOND TIGHTENING (re-verifier finding 5):
+# `coach decision should` fired when the score was a Scenario Outline INPUT
+# (study-tutor "Scores at and around the acceptance threshold drive the
+# accept-or-revise decision" — deterministic threshold logic). The law now:
+#   * the JUDGED SUBJECT must be the model's OUTPUT — a response | answer |
+#     explanation | narration | extraction | summary | output judged for
+#     quality; the Coach's/Player's own verdict as a judgement VERB (should
+#     report | flag | detect | penalise | reject | accept | explain | grade …
+#     — never "score", which is scoring plumbing); the Coach's feedback /
+#     verdict / reasoning judged (should indicate | be grounded | specific |
+#     correct | fair | calibrated); an output score judged against a bar;
+#   * a bare (coach|player) `decision` is NOT a judged output — the
+#     accept/revise decision is threshold logic;
+#   * a scenario whose GIVEN/WHEN supplies the score AS DATA ("Given .*
+#     score(s)? (of|at|is) \d", "scores <score>", "the weighted Coach score
+#     meets or exceeds the threshold", an Outline with a `score` column)
+#     never qualifies — the score is an input, not a judgement of output.
 R7_EXAM = _family(
-    # the agent's verdict, as a verb (should score / explains / …). "report /
-    # flag / detect / penalise / reject / accept" are Coach/Player verbs only
-    # — "the agent should report that it cannot infer a mode" (adaptive-mode-
-    # inference) is a CLI reporting an error, not a judgement.
-    r"\b(coach|player|tutor|agent) should (not )?(score|rate|explain|teach|remember|recall|"
+    # the Coach's/Player's judgement, as a VERB about the output — "report /
+    # flag / detect / penalise / reject / accept" are Coach/Player verbs only;
+    # "the agent should report that it cannot infer a mode" (adaptive-mode-
+    # inference) is a CLI reporting an error, not a judgement. "score" is
+    # GONE from this list (finproxy "the Coach should score every criterion"
+    # is scoring plumbing — pinned negative).
+    r"\b(coach|player|tutor|agent) should (not )?(rate|explain|teach|remember|recall|"
     r"grade|mark|judge|assess)\b",
     r"\b(coach|player) should (not )?(report|flag|detect|penali[sz]e|reject|accept|indicate|correct|prefer)\b",
     r"\b(coach|player|tutor|agent) (explains|teaches|recalls|remembers|grades|marks|judges|assesses|rates)\b",
     r"\b(coach|player|tutor|agent) (should )?routes? .* to the expected tool",
-    r"\b(coach|player|tutor|agent)('s)? (decision|verdict|reasoning|feedback) (should|is|are|was)\b",
-    # a score judged against a bar (never a score merely rendered/stored)
+    # the Coach's feedback / verdict / reasoning JUDGED (never a bare decision)
+    r"\b(coach|player|tutor|agent)('s)? (feedback|verdict|reasoning) (should|is|are|was) "
+    r"(not )?(indicate|explain|reference|name|justify|mention|cite|be grounded|be specific|be correct|be fair|"
+    r"be calibrated|be helpful|be accurate|grounded|specific|correct|fair|calibrated|helpful|accurate)\b",
+    # an OUTPUT score judged against a bar (never a score merely rendered/stored)
     r"\bscores? .* (correctly|as expected|at least 0\.|at most 0\.|below (the )?(acceptance )?threshold|"
     r"above (the )?(acceptance )?threshold)",
     # the output's quality
-    r"\b(feedback|response|answer|explanation|narration|output|reply|transcript|summary)s? "
-    r"(is|should be|should still be|remains?|stays?) (grounded|specific|correct|helpful|coherent|accurate|faithful)\b",
+    r"\b(feedback|response|answer|explanation|narration|output|reply|transcript|summary|extraction)s? "
+    r"(is|should be|should still be|remains?|stays?) (grounded|specific|correct|helpful|coherent|accurate|faithful|fair|calibrated)\b",
     r"\bnarration (is|should be|should) (grounded|accurate|reuses?|convey|reflect|explain)",
     r"\bnarration should not (suppress|fabricate)\b",
     r"\btreated as ordinary (spoken )?(question|input|tutoring input|content|text)\b",
@@ -392,57 +692,101 @@ R7_EXAM = _family(
     r"\bextract(s|ed|ion)? (correctly|cleanly)\b",
     r"\bflag(ged|s)? .* (correctly|as an? (\w+ )?violation)\b",
 )
-
-# R9 — wire-shaped step text (census: 417 HTTP scenarios; api_test's 40).
-# Only fires when the repo has an HTTP surface. Additions beyond the draft,
-# each from an api_test hand-`hurl` scenario the draft missed: bare
-# `request(s|ed|ing)` (2.2, 3.2, 3.3, 3.5, 9.5), bare `response(s)` (3.3),
-# `rejected as|with` (3.6), `through the (running) service` (5.2),
-# `look(ing) up` (9.2), `route`.
-# TIGHTENED 2026-08-16 (verifier finding M1): a PATH LITERAL is no longer a
-# wire marker on its own — slash-commands (/system-arch, /task-work) and unix
-# paths (/etc/passwd, /tmp/test) are not endpoints. A path counts only when
-# the SAME STEP LINE also carries an HTTP-shaped token (see
-# `_R9_HTTP_TOKEN_RE`); a bare path never suffices.
-R9_WIRE = _family(
-    # STRONG wire markers — count whenever the repo has an HTTP surface.
-    r"\b(get|post|put|patch|delete|options|head) requests?\b",
-    r"\bsend(s|ing)? (a|an|two|three|the) .* requests? to\b",
-    r"\bstatus code\b",
-    r"\bcontent[- ]type\b",
-    r"\bmethod[- ]not[- ]allowed\b",
-    r"\bnot[- ]allowed\b",
-    r"\bunauthori[sz]ed\b",
-    r"\b(not[- ]found|service[- ]unavailable|conflict|error|success|[245]\d\d) responses?\b",
-    r"\bresponse (status|body|header|code|payload)s?\b",
-)
-
-# LOOSE wire markers — bare `request` / `response` / `route` / `look up` /
-# `not found` / `conflict` / `rejected as`. api_test's hand-hurl idioms
-# ("I request the service X", "the request should succeed", "the response
-# should report …") are exactly these, so they stay — but ONLY in a
-# scenario with NO agent/MCP vocabulary: study-tutor (a real starlette repo)
-# says "the Player response", "the Coach evaluates the response", "the MCP
-# response", "the system requests three topic recommendations" — LLM/MCP
-# machinery, not the wire (2026-08-16 tightening; pinned as negatives).
-R9_WIRE_LOOSE = _family(
-    r"\bendpoints?\b",  # "the embeddings/inference endpoint" is model-serving, not the wire
-    r"\bjson\b",  # "Coach JSON" / an MCP payload is not the wire
-    r"\bnot[- ]found\b",
-    r"\bconflict\b",
-    r"(?<!system )(?<!approval )(?<!chat )(?<!narration )(?<!revision )(?<!pull )(?<!merge )"
-    r"(?<!dispatch )\brequest(s|ed|ing)?\b",
-    r"\bresponses?\b",
-    r"\brejected (as|with)\b",
-    r"\bthrough the (running )?service\b",
-    r"\blook(s|ed|ing)? up\b",
-    r"\broutes?\b",
-)
-_R9_AGENT_VOCAB_RE = re.compile(
-    r"\b(player|coach|llm|mcp|prompt|narration|quote verifier|inference)\b"
-    r"|\b(language|reasoning) model\b|\bembedd(ing|er)s?\b",
+# The score-as-INPUT exclusion (finding 5): matched against the Given/When
+# clause (everything before the first `Then`) and the Examples header.
+_R7_SCORE_INPUT_RE = re.compile(
+    r"\bscore(s|d)?\b[^\n]{0,40}?(\d\.\d+|\d+(\.\d+)?%|<\w*score\w*>|<\w+>)"  # a numeral / outline placeholder
+    r"|\bscores? (of|at|is|meets|exceeds|equals|reaches|falls|stays|remains) (or exceeds |below |above |under |over |at or above |at or below )?"
+    r"(the |a |an |its )?(acceptance |coach |weighted |accept |revise |revision )?(threshold|bar|maximum|minimum|floor|ceiling|\d)"
+    r"|\bscores <\w+>",
     re.IGNORECASE,
 )
+_R7_EXAMPLES_SCORE_COLUMN_RE = re.compile(r"^\s*\|[^\n]*\bscores?\b[^\n]*\|", re.IGNORECASE | re.MULTILINE)
+
+
+def given_when_clause(steps_text: str) -> str:
+    """Everything BEFORE the first ``Then`` line — the scenario's Given/When
+    (its inputs). Whole text when there is no ``Then``."""
+    lines = steps_text.splitlines()
+    for i, line in enumerate(lines):
+        if _THEN_LINE_RE.match(line):
+            return "\n".join(lines[:i])
+    return steps_text
+
+
+def _r7_score_is_an_input(steps_text: str) -> bool:
+    """Finding 5: the score is DATA the scenario supplies (a Given/When
+    numeral or placeholder, a threshold comparison, an Examples column named
+    score) — the Then's 'decision' is threshold logic, not a judged output."""
+    gw = given_when_clause(steps_text)
+    if _R7_SCORE_INPUT_RE.search(gw):
+        return True
+    return bool(_R7_EXAMPLES_SCORE_COLUMN_RE.search(steps_text))
+
+
+def _r7_match(steps_text: str) -> Optional[str]:
+    then_text = then_clause(steps_text).lower()
+    if not then_text:
+        return None
+    hit = _first_match(R7_EXAM, then_text)
+    if hit is None:
+        return None
+    if _r7_score_is_an_input(steps_text.lower()):
+        return None
+    return hit
+
+
+# R9 — wire-shaped step text (census: 417 HTTP scenarios; api_test's 40).
+# Only fires when the repo has an HTTP surface. TIGHTENED 2026-08-16 (M1: a
+# path literal counts only beside an HTTP token on the same step line).
+# SECOND TIGHTENING (re-verifier finding 2): the LOOSE family (bare request /
+# response / endpoint / json / route / conflict / not-found / rejected as|
+# with / look up / through the service) is GONE — it minted hurl on ~23
+# non-wire study-tutor scenarios ('conflict' from "Power and Conflict
+# poetry", 'requests' from "should not begin serving requests", 'rejected
+# with' in NATS-command titles, 'route' from "port-forward … route to it",
+# 'endpoint' from "the embeddings endpoint"). R9 is now STRONG markers ONLY:
+#   * an HTTP verb + "request(s) to" | a /path | "endpoint" in the SAME step;
+#   * "send(s) a(n) (http) request to";
+#   * "status code (should be|is) NNN" / "NNN status";
+#   * "response (status|body|header) (should|is)" — ONLY when the same
+#     scenario also names an HTTP verb or a /path;
+#   * "method not allowed"; "content type".
+# A bare noun (request, response, endpoint, json, route, conflict, not-found,
+# rejected) NEVER suffices alone. api_test's hand-hurl idiom "I request the
+# service X / the request should succeed" is exactly that bare noun — under
+# the law those scenarios REFUSE (loud) rather than mint by a rule that also
+# mints on a poetry anthology; the reproduction number is reported honestly
+# in the tests, not tuned.
+_HTTP_VERB = r"(?:get|post|put|patch|delete|head|options)"
+_PATH_LITERAL = r"(?<![\w:])/[a-z][\w\-{}]*(?:/[\w\-{}]+)*"
+R9_WIRE_STRONG = _family(
+    rf"\b{_HTTP_VERB}\b[^\n]{{0,40}}?\brequests? (?:to|for|against|at)\b",
+    rf"\b(?:non-{_HTTP_VERB}|{_HTTP_VERB}) requests?\b",
+    rf"\b{_HTTP_VERB}\b[^\n]{{0,60}}?(?:{_PATH_LITERAL}|\bendpoints?\b)",
+    r"\bsend(?:s|ing)? (?:a|an|two|three|the|another|each|every|one) (?:\w+ ){0,3}?(?:http )?requests? to\b",
+    r"\bstatus code (?:should be|is|of|was|equals?|should equal) \d{3}\b|\b\d{3} status\b|\bstatus \d{3}\b",
+    r"\bmethod[- ]not[- ]allowed\b",
+    r"\bcontent[- ]type\b",
+)
+# "response (status|body|header) (should|is)" — a strong marker only when the
+# same scenario also names an HTTP verb or a /path.
+_R9_RESPONSE_PART_RE = re.compile(
+    r"\bresponse (?:status|body|header|headers|code|status code) (?:should|is|are|was|were|must|contains?|includes?)\b",
+    re.IGNORECASE,
+)
+_R9_VERB_OR_PATH_RE = re.compile(rf"\b{_HTTP_VERB} requests?\b|\b{_HTTP_VERB}\b[^\n]{{0,40}}?{_PATH_LITERAL}|{_PATH_LITERAL}", re.IGNORECASE)
+
+
+def _r9_match(text: str) -> Optional[str]:
+    hit = _first_match(R9_WIRE_STRONG, text)
+    if hit is not None:
+        return hit
+    m = _R9_RESPONSE_PART_RE.search(text)
+    if m and _R9_VERB_OR_PATH_RE.search(text):
+        return m.group(0)
+    return None
+
 
 # The path-literal marker (M1): counts ONLY on a step line that also carries
 # one of these HTTP-shaped tokens.
@@ -464,6 +808,7 @@ def _r9_path_with_http_token(text: str) -> Optional[str]:
     return None
 
 
+
 # R10 — EXPLICITLY human (census: the 3 unclassifiable + operator-handoff
 # tagged scenarios). Explicit match ONLY — never a fallback.
 # TIGHTENED 2026-08-16 (verifier finding H1): the 08-15 family fired on
@@ -478,16 +823,26 @@ def _r9_path_with_http_token(text: str) -> Optional[str]:
 # @operator-handoff TAG / `# operator_handoff:` comment, matched against the
 # scenario's ANNOTATIONS (tags + comments), which are fed to R10 and to no
 # other rule.
+# SECOND TIGHTENING (re-verifier finding 6): "on the real NAS" is human work
+# only when NO AUTOMATION SUBJECT does the work in the When/Then — forge
+# "The executor stands fleet-memory up on the real NAS" asserts the stand-up
+# was "performed by the executor rather than a manual deploy script"; that
+# scenario is undecidable by rule and now REFUSES (pinned negative).
 R10_OPERATOR = _family(
     r"\ban operator follows\b",
     r"\b(performed|executed|done|run|verified|checked|proven|confirmed|applied|deployed|"
     r"installed|configured|provisioned|completed|walked|rotated|carried out|stood up|driven|"
     r"signed off|inspected|recorded) by hand\b",
     r"\bphysical (robot|device)\b",
-    r"\bon the real nas\b",
     r"\brunbook evidence\b",
     r"\bhuman[- ]executed\b",
     r"\bhuman[- ]operator\b",
+)
+_R10_REAL_NAS_RE = re.compile(r"\bon the real nas\b", re.IGNORECASE)
+_R10_AUTOMATION_SUBJECT_RE = re.compile(
+    r"\b(the executor|an executor|runbook run|runbook executor|script|scripts|forge|the daemon|the pipeline|"
+    r"the runner|automation|automated|automatically|the agent|the bot|jarvis)\b",
+    re.IGNORECASE,
 )
 
 # R10's annotation channel: the @operator-handoff tag or a
@@ -498,14 +853,28 @@ R10_OPERATOR_ANNOTATIONS = _family(
 )
 
 
-_ORDERED_TEXT_RULES: Tuple[Tuple[str, str, List[re.Pattern[str]]], ...] = (
-    ("R1", "probe:process", R1_DB_UNAVAILABLE),
-    ("R2", "probe:process", R2_FRESH_START),
-    ("R3", "probe:process", R3_SMOKE_HARNESS),
-    ("R4", "probe:bus", R4_BUS),
-    ("R5", "flutter", R5_FLUTTER),
-    ("R6", "playwright", R6_BROWSER),
-)
+def when_then_clause(steps_text: str) -> str:
+    """The first ``When`` line and everything after it (the acts and the
+    assertions); the whole text when there is no ``When``."""
+    lines = steps_text.splitlines()
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*when\b", line, re.IGNORECASE):
+            return "\n".join(lines[i:])
+    return steps_text
+
+
+def _r10_match(text: str, steps_text: str, annotations: str) -> Optional[str]:
+    hit = _first_match(R10_OPERATOR, text)
+    if hit is not None:
+        return hit
+    m = _R10_REAL_NAS_RE.search(text)
+    if m and not _R10_AUTOMATION_SUBJECT_RE.search(when_then_clause(steps_text)):
+        return m.group(0)
+    if annotations:
+        hit = _first_match(R10_OPERATOR_ANNOTATIONS, annotations.lower())
+        if hit is not None:
+            return hit
+    return None
 
 
 def _first_match(family: Iterable[re.Pattern[str]], text: str) -> Optional[str]:
@@ -537,7 +906,16 @@ def classify_scenario(
     *,
     annotations: str = "",
 ) -> Optional[Home]:
-    """Apply R1–R10 in order to one scenario; ``None`` = undecidable.
+    """Apply the rules in order to one scenario; ``None`` = undecidable.
+
+    Order (second tightening, 2026-08-16): R1 · R2 · R3 · **R7** · R4 · R5 ·
+    R6 · R8 · R9 · R10. R7 (the Then judges the model's output) now runs
+    BEFORE R4 (bus): a Coach EXAM scenario that names a bus product in its
+    Given ("a scope input naming … NATS JetStream") is an exam, not a bus
+    probe — the judged output is the essential surface, exactly as the design
+    already argued for R7-over-R8. This is an honest ordering change against
+    the 08-15 design doc (which had R4 < R5 < R6 < R7); it is documented in
+    the module docstring.
 
     Pure: no I/O, no logging. ``steps_text`` is the scenario's OWN
     Given/When/Then text (Background excluded — see the module docstring).
@@ -550,18 +928,39 @@ def classify_scenario(
     context = _coerce_ctx(ctx)
     text = f"{title}\n{steps_text}".lower()
 
-    for rule, verifier, family in _ORDERED_TEXT_RULES:
+    # R1 — DB unavailable.
+    hit = _first_match(R1_DB_UNAVAILABLE, text)
+    if hit is not None:
+        return Home(verifier="probe:process", rule="R1", evidence=hit.strip())
+
+    # R2 — fresh start / restart (negation within three words rejects — finding 3).
+    hit = _first_unnegated_match(R2_FRESH_START, text, words=_R2_NEGATION_WINDOW_WORDS)
+    if hit is not None:
+        return Home(verifier="probe:process", rule="R2", evidence=hit.strip())
+
+    # R3 — runtime-smoke harness-meta (the two generic idioms need `smoke`).
+    hit = _r3_match(text)
+    if hit is not None:
+        return Home(verifier="probe:process", rule="R3", evidence=hit.strip())
+
+    # R7 — the THEN clause judges the model's OUTPUT (M3: Then-clause only;
+    # finding 5: a score supplied as Given/When data never qualifies).
+    # BEFORE R4 (finding 1: an exam that names a bus product is an exam).
+    hit = _r7_match(steps_text)
+    if hit is not None:
+        return Home(verifier="exam", rule="R7", evidence=hit.strip())
+
+    # R4 — bus PROTOCOL ACTS (verb+noun pairs; quotes blanked; identifiers
+    # and negated acts excluded — finding 1).
+    hit = _r4_match(text)
+    if hit is not None:
+        return Home(verifier="probe:bus", rule="R4", evidence=hit.strip())
+
+    # R5 / R6 — device / browser vocabulary (R5 before R6, unchanged).
+    for rule, verifier, family in (("R5", "flutter", R5_FLUTTER), ("R6", "playwright", R6_BROWSER)):
         hit = _first_match(family, text)
         if hit is not None:
             return Home(verifier=verifier, rule=rule, evidence=hit.strip())
-
-    # R7 — the THEN clause judges AI output quality (M3: Then-clause only; a
-    # Given/When "Coach score" input never qualifies).
-    then_text = then_clause(steps_text).lower()
-    if then_text:
-        hit = _first_match(R7_EXAM, then_text)
-        if hit is not None:
-            return Home(verifier="exam", rule="R7", evidence=hit.strip())
 
     # R8 — the plan names a test node for this scenario (task frontmatter
     # `test_ref` or an in-plan `tests/…::test_…` reference with ≥2
@@ -577,12 +976,9 @@ def classify_scenario(
             test_ref=node,
         )
 
-    # R9 — wire-shaped AND the repo has an HTTP surface. A path literal
-    # counts only beside an HTTP token on the same step line (M1).
+    # R9 — STRONG wire markers AND the repo has an HTTP surface (finding 2).
     if context.repo_has_http_surface:
-        hit = _first_match(R9_WIRE, text) or _r9_path_with_http_token(text)
-        if hit is None and not _R9_AGENT_VOCAB_RE.search(text):
-            hit = _first_match(R9_WIRE_LOOSE, text)
+        hit = _r9_match(text) or _r9_path_with_http_token(text)
         if hit is not None:
             why = context.http_surface_evidence or "repo has an HTTP surface"
             return Home(
@@ -590,14 +986,14 @@ def classify_scenario(
             )
 
     # R10 — explicitly human. EXPLICIT match only; never a fallback. The
-    # annotations (tags/comments) are R10's second channel (H1).
-    hit = _first_match(R10_OPERATOR, text)
-    if hit is None and annotations:
-        hit = _first_match(R10_OPERATOR_ANNOTATIONS, annotations.lower())
+    # annotations (tags/comments) are R10's second channel (H1); "on the
+    # real NAS" needs no automation subject in the When/Then (finding 6).
+    hit = _r10_match(text, steps_text.lower(), annotations)
     if hit is not None:
         return Home(verifier="operator", rule="R10", evidence=hit.strip())
 
     return None
+
 
 
 # ---------------------------------------------------------------------------
@@ -1356,6 +1752,8 @@ __all__ = [
     "StampNormalizerRefusal",
     "classify_scenario",
     "then_clause",
+    "given_when_clause",
+    "when_then_clause",
     "ScenarioBlock",
     "extract_scenario_blocks",
     "extract_scenarios",
@@ -1373,8 +1771,7 @@ __all__ = [
     "R5_FLUTTER",
     "R6_BROWSER",
     "R7_EXAM",
-    "R9_WIRE",
-    "R9_WIRE_LOOSE",
+    "R9_WIRE_STRONG",
     "R10_OPERATOR",
     "R10_OPERATOR_ANNOTATIONS",
 ]
