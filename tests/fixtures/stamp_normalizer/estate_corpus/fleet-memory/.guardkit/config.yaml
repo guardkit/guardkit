@@ -1,0 +1,11 @@
+# Coach independent-test execution mode.
+#
+# Default "sdk" runs the test command through a one-turn LLM agent with a
+# Bash tool; on this machine that agent replies "I'll run that test command
+# for you..." without executing pytest, so every Coach verification fails
+# with no signal (observed FEAT-CA81 Wave 2, 2026-06-12). "subprocess" runs
+# the same pinned bootstrap-venv interpreter directly — deterministic, no
+# model in the loop.
+autobuild:
+  coach:
+    test_execution: subprocess

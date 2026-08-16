@@ -1,0 +1,273 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "General purpose agent providing access to the Forge and other agents on the NATS Jetstream event bus"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+    { name = "Appmilla" },
+]
+keywords = ["agent", "deepagents", "langchain", "langgraph", "nats"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "License :: OSI Approved :: Apache Software License",
+]
+dependencies = [
+    # ---- Phase 1 (FEAT-JARVIS-001) — see ADR-ARCH-010-rev2 ---------------
+    # langchain-* pins were rebaselined 2026-04-27 (TASK-REV-FA04 follow-up)
+    # from the open-floor `>=0.3 / >=0.2` 0.x pins to coherent 1.x pins after
+    # the 0.x langchain-core stopped publishing the `block_translators.langchain_v0`
+    # compat helpers that langchain 0.x agents still imported. Pinning
+    # `<2` everywhere protects against the next major-bump churn.
+    "deepagents>=0.5.3,<0.6",
+    "langchain-core>=1.3,<2",
+    "langchain>=1.2,<2",
+    "langgraph>=1.1,<2",
+    "langchain-openai>=1.2,<2",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "structlog>=24.1",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+    "pyyaml>=6.0",
+    # ---- Phase 2 (FEAT-JARVIS-002) — TASK-J002-023 -----------------------
+    # Web search provider for `jarvis.tools.general.search_web` (DDR-006).
+    "langchain-tavily>=0.2",
+    # Safe expression evaluator for `jarvis.tools.general.calculate` (DDR-007).
+    "asteval>=0.9.33",
+    # Pydantic payload models for CommandPayload / ResultPayload /
+    # BuildQueuedPayload shape compliance. NOTE: Phase 2 imports the data
+    # classes ONLY — `nats-py` (the live client) is forbidden until Phase 4
+    # per the phase2-dispatch-foundations-scope §Scope Invariants.
+    # Bumped >=0.5 -> >=0.6 (WS1 Session I): FEAT-SPL-003 consumes the new
+    # planning contract surface — NotificationPayload thread_ts/parent_request_id/
+    # target_user/blocks, ApprovalResponsePayload.dispositions, and the planning
+    # lifecycle + spec-ready handoff events. Delta is purely additive.
+    "nats-core>=0.6",
+    # ---- Phase 3 (FEAT-J003-006) — Anthropic SDK -------------------------
+    # `anthropic` is a base dependency so `python -m langgraph dev` (the
+    # default Claude-backed orchestrator path) works without requiring
+    # `pip install .[providers]`. The langchain-anthropic adapter still
+    # lives in `[project.optional-dependencies].providers` for explicit
+    # opt-in, but the underlying SDK is always available.
+    "anthropic>=0.40",
+    # ---- FEAT-28FF (TASK-JNB-001) — Slack SDK for notifications ----------
+    # Slack SDK for posting build notifications to Slack channels.
+    # AsyncWebClient used for async chat.postMessage delivery.
+    "slack-sdk>=3.0,<4",
+]
+
+[project.optional-dependencies]
+# ---- Phase 4 (FEAT-JARVIS-004) — TASK-J004-002 -----------------------------
+# `[nats]` declares the live `nats-py` async client used by
+# `jarvis.transport.nats.*` (DDR-021 — soft-fail when unavailable). The lower
+# bound `>=2.0` mirrors the sibling `nats-core` repository convention
+# (`nats-core/pyproject.toml` runtime dep `nats-py>=2.0`); the upper bound
+# `<3` caps at the next major to protect against the next major-bump churn,
+# matching the Phase 1 `<2` convention applied across the langchain-* pins.
+# `nats-py` stays OUT of `[project].dependencies` per the Phase 2 scope
+# invariant lifted in FEAT-JARVIS-004 — the live transport is opt-in.
+nats = [
+    "nats-py>=2.0,<3",
+]
+providers = [
+    # langchain-* providers rebaselined 2026-04-27 to coherent 1.x; see
+    # ADR-ARCH-010-rev2 / TASK-REV-FA04 follow-up.
+    "langchain-anthropic>=1.4,<2",
+    "langchain-google-genai>=4.2,<5",
+    # Direct Google Gemini SDK — required when the orchestrator targets
+    # Gemini models without going through the langchain-google-genai
+    # adapter (e.g. native Files API, structured output via genai.types).
+    # Added in TASK-J003-006.
+    "google-genai>=0.3.0",
+    # ---- Phase 4 (FEAT-JARVIS-004) — TASK-J004-002 -------------------------
+    # Re-export the FEAT-JARVIS-004 optional groups under the `[providers]`
+    # umbrella so a single `pip install .[providers]` (or
+    # `uv sync --extra providers`) installs every provider/integration this
+    # project can be configured to use. This mirrors the LCOI policy
+    # (TASK-REV-LES1 / LES1 §3) recorded in `.claude/CLAUDE.md`. PEP 631
+    # self-extras references resolve in pip and uv: depending on
+    # `jarvis[nats]` from inside the `jarvis` distribution pulls in the
+    # `[nats]` group's deps.
+    "jarvis[nats]",
+]
+# `dev` mirrors the PEP 735 `[dependency-groups].dev` entries below for
+# consumers (and CI) that prefer the older PEP 631 extras syntax
+# (`pip install .[dev]`). Added in TASK-J003-006 specifically so
+# `langgraph-cli` — the package that powers the `langgraph dev` console
+# script — is installable without uv. The `[inmem]` extra pulls in
+# `langgraph-api`, the in-memory dev-server runtime that `langgraph dev`
+# requires (added 2026-04-27 to close F9 surfaced during Phase-2 manual
+# close-out — without `[inmem]`, `langgraph dev` errors with "Required
+# package 'langgraph-api' is not installed"). Keep this list in sync with
+# `[dependency-groups].dev`.
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "pytest-bdd>=8.1,<9",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "types-PyYAML>=6",
+    "types-click>=7.1",
+    "langgraph-cli[inmem]>=0.1",
+]
+
+# ---------------------------------------------------------------------------
+# uv path sources — Phase 2 (TASK-J002-023) + ADR-ARCH-010-rev2
+# ---------------------------------------------------------------------------
+# `nats-core` is installed from the sibling repository per
+# ADR-ARCH-010 (originally "installed from sibling repo (pip-installed wheel)").
+#
+# Historical rationale (now stale): in 2025-10 the PyPI publication of
+# `nats-core` required Python >=3.13, which collided with the original
+# `requires-python = ">=3.12,<3.13"` pin. Resolving from the sibling
+# working tree (where the package's own `requires-python` was `>=3.10`)
+# avoided the collision.
+#
+# Updated 2026-04-27 (TASK-REV-FA04 follow-up): the upstream `nats-core`
+# package has since broadened to `requires-python = ">=3.10"`, and
+# Jarvis's pin has been rebaselined to `>=3.11`. The collision rationale
+# no longer applies. The sibling-repo install is retained for now to
+# preserve in-place developer iteration on `nats-core` from `appmilla_github/`
+# — when the team is ready to consume `nats-core` purely from PyPI, this
+# `[tool.uv.sources]` entry can be deleted and the runtime dep above
+# (`nats-core>=0.5`) will resolve from PyPI.
+#
+# The canonical layout assumes `nats-core` is a sibling of `jarvis`:
+#
+#   …/appmilla_github/jarvis/        ← this project
+#   …/appmilla_github/nats-core/     ← target of `../nats-core`
+#
+# Note for git worktrees: `uv` resolves the path relative to the directory
+# that contains *this* pyproject.toml. From a worktree at
+# `.guardkit/worktrees/<branch>/` the literal `../nats-core` would resolve
+# to `.guardkit/worktrees/nats-core`, which won't exist. The autobuild
+# workflow places a symlink there pointing at the real sibling so worktrees
+# can lock/sync without rewriting this file.
+[tool.uv.sources]
+nats-core = { path = "../nats-core", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    # pytest-bdd added per TASK-OPS-BDDM-9 / FEAT-BDDM (2026-04-25):
+    # Required to execute the @task:-tagged Gherkin scenarios under
+    # `features/`. Without it, GuardKit's bdd_runner silently bypasses
+    # BDD verification — see jarvis/docs/history/autobuild-FEAT-J002-history.md
+    # (10 occurrences of "pytest-bdd not importable") and TASK-REV-BDDM.
+    "pytest-bdd>=8.1,<9",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "types-PyYAML>=6",
+    "types-click>=7.1",
+    # `langgraph-cli` powers the `langgraph dev` console script (the local
+    # dev server documented in `.claude/CLAUDE.md` Quick Start). Added in
+    # TASK-J003-006. The `[inmem]` extra pulls in `langgraph-api`, the
+    # in-memory dev-server runtime that `langgraph dev` requires (added
+    # 2026-04-27, F9 closeout). Mirrored into `[project.optional-dependencies].dev`
+    # so non-uv consumers can `pip install .[dev]` and get the same set.
+    "langgraph-cli[inmem]>=0.1",
+]
+
+[project.scripts]
+jarvis = "jarvis.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jarvis"]
+
+# ---------------------------------------------------------------------------
+# ruff — ADR-ARCH-015
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Em-dash (RUF002 ambiguous-unicode) is intentional in jarvis prose-style
+# docstrings and ADR-ARCH-021 error strings (`ERROR: <category> — <detail>`).
+# Pinned per FEAT-J002F-001 review fix; see review report §4.2.
+"src/jarvis/**" = ["RUF002"]
+
+# ---------------------------------------------------------------------------
+# mypy — ADR-ARCH-015 (strict mode)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "deepagents.*",
+    "langchain.*",
+    "langchain_core.*",
+    "langchain_openai.*",
+    "langchain_anthropic.*",
+    "langchain_google_genai.*",
+    "langgraph.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest — ADR-ARCH-015
+# ---------------------------------------------------------------------------
+# `testpaths` is intentionally NOT extended to include `features/`
+# (TASK-OPS-J002-BDD / TASK-OPS-BDDM-9). The pytest-bdd collection bridge
+# in `features/conftest.py` is still loaded when GuardKit's `bdd_runner`
+# invokes `pytest <path>/...feature` because pytest discovers conftest.py
+# by walking up from each argv path. Adding `features/` to `testpaths`
+# would double-collect every BDD scenario: once via `.feature` argv
+# (through the bridge) and once via direct discovery of the sibling
+# `test_<slug>.py` glue. Keep this scoped to `tests/`.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--tb=short -q"
+# Custom markers — registered to silence PytestUnknownMarkWarning when
+# pytest-bdd reflects Gherkin tags as marks. The `task_TASK_J002_*` family
+# is the sanitised form (see `features/conftest.py::_sanitise_tag`) used
+# by `bdd_runner._build_pytest_argv` for the `-m` filter. Generic Gherkin
+# tags (`smoke`, `key-example`, ...) cover the @feat-jarvis-002 feature
+# file's category and example tags.
+markers = [
+    "smoke: smoke / sanity scenarios",
+    "key_example: key-example scenarios",
+    "boundary: boundary / parameter-edge scenarios",
+    "negative: negative / failure-mode scenarios",
+    "edge_case: edge-case scenarios",
+    "e2e: end-to-end soft-prereq tests (real NATS + Forge + fleet-memory on GB10). Opt-out via 'pytest -m \"not e2e\"'.",
+    "live: operator-run round-trips against a live fleet-memory store; skip cleanly when disabled (JARVIS_FLEET_MEMORY_ENABLED unset).",
+    "feat_jarvis_002: feature-level tag for FEAT-JARVIS-002",
+    "task_TASK_J002_006: scenarios scoped to TASK-J002-006",
+    "task_TASK_J002_008: scenarios scoped to TASK-J002-008",
+    "task_TASK_J002_009: scenarios scoped to TASK-J002-009",
+    "task_TASK_J002_010: scenarios scoped to TASK-J002-010",
+    "task_TASK_J002_011: scenarios scoped to TASK-J002-011",
+    "task_TASK_J002_012: scenarios scoped to TASK-J002-012",
+    "task_TASK_J002_013: scenarios scoped to TASK-J002-013",
+    "task_TASK_J002_014: scenarios scoped to TASK-J002-014",
+    "task_TASK_J002_015: scenarios scoped to TASK-J002-015",
+    "task_TASK_J002_016: scenarios scoped to TASK-J002-016",
+    "task_TASK_J002_017: scenarios scoped to TASK-J002-017",
+    "task_TASK_J002_019: scenarios scoped to TASK-J002-019",
+    "seam: cross-task integration-contract seam tests (FEAT-BF39)",
+    "integration_contract: names the produced/consumed contract a seam test pins (e.g. WIDENED_FORGENOTIFICATION, BUTTON_METADATA)",
+]

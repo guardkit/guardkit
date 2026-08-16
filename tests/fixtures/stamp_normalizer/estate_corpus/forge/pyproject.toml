@@ -1,0 +1,257 @@
+[project]
+name = "forge"
+version = "0.1.0"
+description = "Pipeline orchestrator and checkpoint manager for the Software Factory"
+readme = "README.md"
+# Raised >=3.11 -> >=3.12 for the `memory` extra: fleet-memory declares
+# requires-python >=3.12 (guardkit TASK-MEM08-012 hit the same floor) and
+# the production image is python:3.14, so nothing installed here ran on
+# 3.11 anyway.
+requires-python = ">=3.12"
+authors = [
+    { name = "Richard Woollcott", email = "rich@appmilla.com" },
+]
+dependencies = [
+    "deepagents>=0.5.3,<0.6",
+    "langchain>=1.2,<2",
+    "langchain-core>=1.3,<2",
+    "langgraph>=1.1,<2",
+    # TASK-FRR-PEB-003 AC-5 — explicit upper bounds on langgraph-sdk and
+    # langgraph-api so a silent minor bump cannot reshape the SSE
+    # ``StreamPart`` payload that ``StreamEventTranslator`` (in
+    # ``forge.lifecycle_bridge.translation``) consumes. The contract test
+    # at ``tests/forge/lifecycle_bridge/test_translation_contract.py``
+    # records the canonical SSE shape; bumping either pin REQUIRES a new
+    # fixture re-record (see the docstring in ``fixtures/__init__.py``).
+    "langgraph-sdk~=0.3.13",
+    "langgraph-api~=0.8.0",
+    "langchain-community>=0.4,<0.5",
+    "langchain-anthropic>=1.4,<2",
+    # nats-core: widened <0.7 -> <0.8 (WS2 B8, 2026-07-09). The 0.6.0 -> 0.7.0
+    # delta is purely additive — the deploy-domain wire payloads B8 consumes:
+    # DeployQueued/Started/Complete/Failed + QAVerdictPayload + LiveGateResultPayload
+    # + AssertionResult, the Topics.Deploy namespace (deploy.>), six new EventType
+    # members (DEPLOY_QUEUED..LIVE_GATE_RESULT), FLEET_CAPABILITY_KINDS taxonomy,
+    # and UsageRollup/LoopStats on StageComplete/BuildComplete (A-4, default None).
+    # No existing payload/EventType/topic/envelope behaviour changed; forge's full
+    # suite passes against the 0.7.0 sibling source. Keep the <0.8 upper bound so a
+    # future 0.8 requires a deliberate re-widen + retest.
+    # Prior: widened <0.6 -> <0.7 (WS1 Session I; additive planning lifecycle +
+    # ApprovalResponsePayload.dispositions + originating_adapter validate_default fix).
+    "nats-core>=0.3.0,<0.8",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    # TASK-FIX-F09A1 (per TASK-REV-F09A §Reproduction C): `click` and `rich`
+    # are imported by `forge.cli.{main,status,skip,history,queue,cancel}`
+    # but were not pulled transitively by langchain/deepagents in the
+    # resolved set, so a fresh install left `forge serve --help` (the
+    # FEAT-FORGE-009 smoke gate) failing with ModuleNotFoundError.
+    # Major-line caps match what `pip install` resolves today; tighten if
+    # the codebase starts depending on click 9.x or rich 15.x APIs.
+    "click>=8.1,<9",
+    "rich>=13,<15",
+    # TASK-FRR-PEB-010: ``packaging`` powers
+    # ``forge.lifecycle_bridge.version_check.check_langgraph_runner_version``'s
+    # ``SpecifierSet``/``Version`` comparison. It is also a transitive
+    # dep via ``setuptools``, but declaring it explicitly here means a
+    # ``setuptools``-less wheel install (or a future setuptools that
+    # stops vendoring ``packaging``) does not silently break the
+    # version-skew diagnostic at daemon boot.
+    "packaging>=24,<26",
+]
+
+[project.optional-dependencies]
+# Every LangChain integration this template can be configured to use MUST appear here.
+# See TASK-REV-LES1 / LES1 §3 LCOI — provider swaps happen via orchestrator-config.yaml,
+# so all supported providers must be declarable in one install command.
+providers = [
+    "langchain-openai>=1.2,<2",
+    "langchain-google-genai>=4.2,<5",
+]
+# TASK-ABW-B4R17 (DEFECT #18a) — the langgraph-runner sidecar
+# (ops/systemd/forge-langgraph-sidecar.service) is launched via
+# ``langgraph dev`` from the ``langgraph-cli`` package with its ``[inmem]``
+# extra (the in-memory dev server the autobuild_runner graph is hosted on).
+# That dependency was NEVER declared here: it survived only as an ad-hoc
+# ``uv pip install`` in the sidecar venv, so a later ``uv sync`` pruned it
+# and the running process limped on deleted inodes until its next restart
+# (B4 round-17 silent-launch defect). Declaring it as a NAMED extra makes
+# ``uv sync`` treat it as a first-class requirement that cannot be pruned.
+# INSTALL RECIPE (coordinator, at deploy — see the sidecar .service file's
+# LOAD-BEARING header): install the sidecar venv with
+# ``uv pip install -e ".[sidecar]"`` (or ``uv sync --extra sidecar``) so the
+# ``langgraph`` CLI the unit's ExecStart depends on is present and pinned.
+sidecar = [
+    "langgraph-cli[inmem]>=0.4,<0.5",
+]
+# Fleet-memory priors wire (forge.adapters.fleet_memory): the gate's
+# priors read reuses fleet-memory's retrieval surface per item
+# (`fm_search` — the exact functions the memory_search MCP tool wraps),
+# keeping ONE source of truth for reads across the estate. Optional by
+# design: the serve composition degrades loudly to EmptyPriorsReader
+# when the extra is absent, so the base install never drags in
+# psycopg/langgraph-checkpoint-postgres.
+memory = [
+    "fleet-memory>=0.1,<1",
+]
+# TASK-FIX-F0E7 (per TASK-REV-F0E4 §5.2): mirrored from [dependency-groups].dev
+# below. PEP 735's [dependency-groups] is read by `uv sync --group dev`,
+# NOT by `uv pip install -e ".[dev]"`. The GuardKit portfolio-pinning
+# recipe uses the latter form, so dev deps must be declared as an extra
+# here as well as in [dependency-groups]. Keep these two lists in sync.
+# `pytest-asyncio` is required because the test suite has 100+
+# `@pytest.mark.asyncio` decorators; without the plugin loaded, every
+# async test fails with `Failed: async def functions are not natively
+# supported` (162 such failures observed in TASK-REV-F0E4's empirical run).
+dev = [
+    "pytest>=9.0.2",
+    "pytest-bdd>=8.1,<9",
+    "pytest-asyncio>=1,<2",
+]
+
+# TASK-PSM-012: Console-script entry point for the ``forge`` CLI.
+# ``pip install`` (or ``pip install -e .``) writes a ``forge`` shim to the
+# active environment's ``bin/`` directory pointing at the Click group
+# defined in ``forge.cli.main:main``. The dotted path matches the
+# entry-point assertion baked into ``tests/forge/test_cli_main.py``
+# (``test_module_dotted_path_matches_pyproject_entry_point``); changing
+# either side without the other breaks the install-time wiring.
+[project.scripts]
+forge = "forge.cli.main:main"
+
+[dependency-groups]
+# PEP 735 dev group — read by `uv sync --group dev`. Mirrored into
+# [project.optional-dependencies].dev above so `uv pip install -e ".[dev]"`
+# also works (see TASK-FIX-F0E7 / TASK-REV-F0E4 §5.2). Keep both lists in sync.
+dev = [
+    "pytest>=9.0.2",
+    "pytest-bdd>=8.1,<9",
+    "pytest-asyncio>=1,<2",
+]
+
+# TASK-FIX-F0E6 (per TASK-REV-F0E4 §5.1): the `nats-core==0.2.0` wheel
+# published to PyPI is malformed — its dist-info is named
+# `nats_core-0.2.0.dist-info` but the wheel's RECORD only contains
+# `nats/client/...` files; the `nats_core/` namespace forge imports
+# (events, envelope, manifest, topics, client) is **absent from the
+# wheel**. On a fresh `uv pip install -e ".[providers]"`, 55 of 108 test
+# files fail to collect with `ModuleNotFoundError: No module named
+# 'nats_core'`. Until the upstream wheel is fixed and republished
+# (tracked as TASK-FIX-F0E6b), resolve `nats-core` from the sibling
+# working tree, which has the correct `src/nats_core/` layout. This
+# mirrors jarvis's existing pattern — see jarvis/pyproject.toml.
+#
+# Canonical layout assumes `nats-core` is a sibling of `forge`:
+#   …/appmilla_github/forge/        ← this project
+#   …/appmilla_github/nats-core/    ← target of `../nats-core`
+#
+# Worktree note: `uv` resolves the path relative to the directory
+# containing this pyproject.toml. From a worktree at
+# `.guardkit/worktrees/<branch>/` the literal `../nats-core` resolves
+# to `.guardkit/worktrees/nats-core`, which won't exist. For autobuild
+# runs that need `uv pip install` inside a worktree, place a symlink
+# at `.guardkit/worktrees/nats-core` pointing at the real sibling
+# (jarvis already does this; forge will need the same once autobuild
+# starts running with this dependency layout).
+[tool.uv.sources]
+nats-core = { path = "../nats-core", editable = true }
+# fleet-memory is not published to PyPI; resolve it from the sibling
+# working tree (same layout assumption as nats-core above):
+#   …/appmilla_github/forge/          ← this project
+#   …/appmilla_github/fleet-memory/   ← target of `../fleet-memory`
+#
+# Worktree note (same caveat nats-core carries): `uv` resolves the path
+# relative to the directory containing this pyproject.toml. From a
+# worktree at `.guardkit/worktrees/<branch>/` the literal
+# `../fleet-memory` resolves to `.guardkit/worktrees/fleet-memory`,
+# which won't exist. For autobuild runs that need `uv pip install`
+# inside a worktree, place a symlink at `.guardkit/worktrees/fleet-memory`
+# pointing at the real sibling (the nats-core symlink recipe,
+# RUNBOOK-FEAT-FORGE-009-nats-core-symlink-fix.md).
+fleet-memory = { path = "../fleet-memory", editable = true }
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship the SQLite DDL alongside the lifecycle package so
+# ``importlib.resources.files("forge.lifecycle") / "schema.sql"`` works
+# from wheel installs as well as editable / source installs. See
+# TASK-PSM-002 — the schema is intentionally a real ``.sql`` file
+# (not a Python string constant) so DBAs and DDR-003 reviewers can
+# diff the schema directly.
+"forge.lifecycle" = ["*.sql"]
+
+[tool.pytest.ini_options]
+# Source layout: production code lives under ``src/forge``. Pytest
+# resolves imports via this ``pythonpath`` entry so ``import forge`` works
+# without callers needing to set ``PYTHONPATH=src`` on every invocation.
+# This matches how the GuardKit BDD oracle (TASK-IC-012) invokes pytest
+# with the feature file as a positional arg — without this entry,
+# ``tests/bdd/conftest.py`` fails to import ``forge.adapters.*`` at
+# collection time and the oracle reports a synthetic BDD failure.
+pythonpath = ["src"]
+# NOTE: a global ``addopts = "--timeout=..."`` was tried here to bound hanging
+# tests but reverted — it hard-fails any interpreter lacking pytest-timeout
+# (the AutoBuild worktree .venv does not install it), turning every pytest run
+# into "unrecognized arguments". Bounding test hangs belongs in the AutoBuild
+# harness (guardkit TASK-ABFIX-010), not as a repo-wide pytest arg. See
+# docs/reviews/FEAT-FMDR-autobuild-false-green-analysis.md.
+# pytest-bdd: feature files live alongside the source-of-truth Gherkin
+# under ``features/``. Scenarios are wired to step functions in
+# ``tests/bdd/``. See TASK-NFI-011.
+bdd_features_base_dir = "features"
+markers = [
+    # Scenario-priority tags mirrored from the .feature files. CI uses these
+    # to gate which subset of the BDD suite must pass per pipeline stage:
+    #   * ``smoke``        — full suite on every PR (3 scenarios for FEAT-FORGE-002)
+    #   * ``key_example``  — full suite on merge to main (7 scenarios)
+    #   * remaining tags   — opportunistically run; explicitly @skip when
+    #                        the owning subtask is not yet complete.
+    "smoke: @smoke scenarios — must pass on every PR",
+    "key_example: @key-example scenarios — must pass on merge to main",
+    "boundary: @boundary scenarios — boundary-condition coverage",
+    "negative: @negative scenarios — negative-path coverage",
+    "edge_case: @edge-case scenarios — edge-case coverage",
+    "security: @security scenarios — security-property coverage",
+    "concurrency: @concurrency scenarios — concurrent-event coverage",
+    "data_integrity: @data-integrity scenarios — data-integrity coverage",
+    "failure: failure-path scenarios — failed-step / halt-and-escalate coverage",
+    "resume: resume / crash-recovery scenarios — re-entry after a recorded step",
+    "integration: @integration scenarios — integration-boundary coverage",
+    # Seam tests stamping the §4 Integration Contract they exercise. The
+    # argument is the contract name (e.g. ``CapabilityResolution``,
+    # ``CorrelationKey``); reviewers grep for the contract to find the
+    # seam test that exercises it.
+    "integration_contract: seam test for a §4 integration contract",
+    # Feature-level tags emitted by /feature-spec onto every scenario in a
+    # generated .feature file. Registered here so pytest does not warn on
+    # unknown marks when pytest-bdd reflects Gherkin tags onto test items.
+    "feat-forge-002: feature-level tag for FEAT-FORGE-002 NATS Fleet Integration",
+    "feat-forge-003: feature-level tag for FEAT-FORGE-003 Specialist Agent Delegation",
+    "feat-forge-004: feature-level tag for FEAT-FORGE-004 Confidence-Gated Checkpoint Protocol",
+    "nats-fleet-integration: feature-slug tag for FEAT-FORGE-002",
+    "specialist-agent-delegation: feature-slug tag for FEAT-FORGE-003",
+    "confidence-gated-checkpoint-protocol: feature-slug tag for FEAT-FORGE-004",
+    "key-example: synonym for ``key_example`` emitted by /feature-spec",
+    "edge-case: synonym for ``edge_case`` emitted by /feature-spec",
+    "data-integrity: synonym for ``data_integrity`` emitted by /feature-spec",
+    "regression: regression-tagged scenarios surface from /feature-spec",
+    # FEAT-FORGE-009 (production image) — registered by TASK-F009-006 so the
+    # 27 forge-production-image scenarios bind cleanly without unknown-mark
+    # warnings. ``slow`` gates the docker-build / multi-replica / broker-outage
+    # tests so the default ``pytest`` invocation excludes them; CI runs them
+    # explicitly via ``pytest -m slow``.
+    "feat-forge-009: feature-level tag for FEAT-FORGE-009 Forge Production Image",
+    "production-image: feature-slug tag for FEAT-FORGE-009",
+    "seam: TASK-F009-006 cross-file seam tests (Contract A drift detector)",
+    "slow: tests that require docker / live NATS — excluded by default",
+    # FEAT-RBX (runbook executor) — registered by TASK-RBX-001 so the
+    # runbook-executor unit tests bind without unknown-mark warnings.
+    "runbook-executor: feature-level tag for FEAT-RBX Runbook Executor",
+    "runbook_executor: feature-slug tag for FEAT-RBX",
+]

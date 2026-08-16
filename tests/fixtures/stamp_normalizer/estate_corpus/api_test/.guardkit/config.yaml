@@ -1,0 +1,31 @@
+# guardkit per-repo config.
+# qa.enforce_tier1 turns on the tier-1 QA gate refusals for THIS repo
+# (guardkit/qa/enforcement.py): suite-vs-ledger (qa/known-failures.yaml), the
+# pass-bar-before-implementation ordering check, and the known-failures diff
+# guard. Reversible: set to false (or delete this file) to restore the default
+# OFF. Env override: GUARDKIT_QA_ENFORCE_TIER1.
+qa:
+  enforce_tier1: true
+  # 2026-08-15: the `spec_track: dcl` opt-in and the `dcl.capture` block that
+  # lived here were REMOVED — the DCL track was deleted outright from guardkit
+  # (card Q11, ruled 2026-08-15; guardkit b138d92c) and from the forge planning
+  # driver the same day. Gherkin is the only track; nothing reads either key.
+
+# QAV shadow mode (2026-07-25, design: ai-transition docs/qav-shadow-mode-design-2026-07-25.md).
+# Log-only second opinion beside every coach verdict — never blocks, absent-not-fail,
+# default OFF when this block is missing. Reversible one-line kill: enabled: false or
+# delete the block. Zero verdict impact by construction (never-raise wrappers; the
+# receipt qav_shadow_turn_N.json lands beside coach_turn_N.json).
+autobuild:
+  coach:
+    # Coach v4 flip (2026-07-26, Rich's do-it-now): the tuned coach-ft-v4 seat
+    # + the raw v4 wire contract. env GUARDKIT_COACH_CONTRACT / --coach-model
+    # still override. Rollback = delete these two lines (defaults restore
+    # gemma4-coach pairing at launch + the legacy coachsplit contract).
+    contract: v4
+    model: coach-ft-v4
+    qav_shadow:
+      enabled: true
+      endpoint: http://localhost:9000/v1/chat/completions
+      model: qav-shadow
+      timeout_seconds: 60

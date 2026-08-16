@@ -1,0 +1,40 @@
+# GuardKit local config for Jarvis.
+#
+# Schema: read by guardkit.orchestrator.autobuild.AutoBuildOrchestrator
+# ._load_coach_config (autobuild.py:5095). Coach section keys consumed at
+# autobuild.py:4986–4987.
+#
+# Why test_execution: subprocess
+#   FEAT-J005-946D run-1 (2026-04-29) saw the SDK pytest path fail with
+#   exit-code-1 on 7/7 invocations and fall back to subprocess every time
+#   (transcript lines 347, 495, 618, 706, 1077, 1518, 1794). The
+#   subprocess path always succeeded in 3–8 s. Until the SDK path is
+#   debugged on this host (claude-agent-sdk 0.1.66 + bundled CLI), pin
+#   Coach to subprocess to eliminate the 10–15 s/turn fallback overhead
+#   and the spurious ERROR log noise. See TASK-REV-E73C review report
+#   .claude/reviews/TASK-REV-E73C-review-report.md (Tier 0).
+autobuild:
+  coach:
+    # Coach v4 flip (2026-07-26, Rich's do-it-now): the tuned coach-ft-v4 seat
+    # + the raw v4 wire contract. env GUARDKIT_COACH_CONTRACT / --coach-model
+    # still override. Rollback = delete these two lines (defaults restore
+    # gemma4-coach pairing at launch + the legacy coachsplit contract).
+    contract: v4
+    model: coach-ft-v4
+    test_execution: subprocess
+    # QAV shadow mode (2026-07-25, design: ai-transition docs/qav-shadow-mode-design-2026-07-25.md).
+    # Log-only second opinion beside every coach verdict — never blocks, absent-not-fail.
+    # Reversible one-line kill: enabled: false or delete the block.
+    qav_shadow:
+      enabled: true
+      endpoint: http://localhost:9000/v1/chat/completions
+      model: qav-shadow
+      timeout_seconds: 60
+
+# QA surface (HB-1, 2026-07-17). jarvis is NOT a DCL venue (register: "clean"),
+# so spec_track stays gherkin — DCL is opt-in per repo and not adopted here.
+# enforce_tier1 turns on the Tier-1 QA gate (F2 suite-vs-ledger + the registered
+# F4 gates in qa/gates/registry.yaml).
+qa:
+  enforce_tier1: true
+  spec_track: gherkin
