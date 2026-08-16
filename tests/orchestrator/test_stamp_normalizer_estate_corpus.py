@@ -10,6 +10,17 @@ keeps them honest: it pins, per repo, how many scenarios land in each home
 AND how many are REFUSED (the honest number), so any future rule change
 shows its delta in a committed file instead of silently re-homing scenarios.
 
+SECOND TIGHTENING (same day, the re-verifier's six findings): the baseline
+below is the DELIBERATE re-baseline after R4 became protocol-acts-only, R9
+became strong-markers-only, R2 learned negation, R3 learned `smoke`, R7
+learned judged-OUTPUT + score-as-input and moved ahead of R4, and R10's
+"on the real NAS" learned to refuse automation subjects. 203 stamps moved
+against 8dd28830 — every one is listed with its why in the fixture README
+("Changes vs 8dd28830"). Headline: hurl 133 → 16 (study-tutor 76 → 0,
+api_test 57 → 16 — the loose idiom refuses), probe:bus 209 → 217 (32 name /
+quote / negation mis-homes out, 42 protocol acts in), exam 44 → 42, process
+73 → 68, operator 4 → 3, refused 2,581 → 2,698.
+
 The corpus (``tests/fixtures/stamp_normalizer/estate_corpus/``) is a
 READ-ONLY copy of every tracked ``features/**/*.feature`` (lpa: ``docs/poc/
 features/``) across forge, jarvis, fleet-memory, fleet-gateway,
@@ -23,10 +34,12 @@ STRUCTURALLY from the fixture itself.
 What is asserted
 ----------------
 (a) ``operator`` == exactly the enumerated explicit-human scenarios
-    (``EXPLICIT_HUMAN``, 4 estate-wide, ≤ 5): the two lpa scenarios carrying
-    the ``@operator-handoff`` tag, forge's "on the real NAS" runbook leg and
-    the keycloak-standup scenario whose evidence is "runbook evidence".
-    Anything else minted operator = a hidden chore for Rich = a failure.
+    (``EXPLICIT_HUMAN``, 3 estate-wide, ≤ 5): the two lpa scenarios carrying
+    the ``@operator-handoff`` tag and the keycloak-standup scenario whose
+    evidence is "runbook evidence". forge's "The executor stands fleet-memory
+    up on the real NAS" is done BY THE EXECUTOR ("rather than a manual deploy
+    script") and now REFUSES (re-verifier finding 6). Anything else minted
+    operator = a hidden chore for Rich = a failure.
 (b) ``hurl`` == 0 in every repo WITHOUT a hurl gate / declared surface — in
     particular forge, jarvis, fleet-memory, specialist-agent and
     agentic-dataset-factory (none has a hurl gate; the 08-16 detector read
@@ -38,30 +51,34 @@ What is asserted
     test_stamp_normalizer_estate_corpus.py`` — then commit the diff and say
     why in the commit.
 
-The committed histogram (2026-08-16, after the tightening)
-----------------------------------------------------------
+The committed histogram (2026-08-16, after the SECOND tightening)
+-----------------------------------------------------------------
 See ``EXPECTED.json`` for the numbers of record; the table below is a
 human echo of the same file at the time of writing.
 
     repo                      http  total  refused  bus  process  exam  flutter  playwright  hurl  operator
-    forge                     no      535      413   92       29     0        0           0     0         1
-    jarvis                    no      279      233   40        6     0        0           0     0         0
-    fleet-memory              no      233      215   13        5     0        0           0     0         0
-    fleet-gateway             no       33       18   15        0     0        0           0     0         0
-    specialist-agent          no      796      731   27        3    35        0           0     0         0
-    study-tutor               YES     501      366   14       10     5       28           1    76         1
-    guardkit                  no      168      159    8        1     0        0           0     0         0
+    forge                     no      535      412   96       27     0        0           0     0         0
+    jarvis                    no      279      229   44        6     0        0           0     0         0
+    fleet-memory              no      233      210   19        4     0        0           0     0         0
+    fleet-gateway             no       33       24    9        0     0        0           0     0         0
+    specialist-agent          no      796      731   28        2    35        0           0     0         0
+    study-tutor               YES     501      444   14       10     3       28           1     0         1
+    guardkit                  no      168      161    7        0     0        0           0     0         0
     lpa-platform-poc          no      205      195    0        0     4        0           4     0         2
     agentic-dataset-factory   no      253      251    0        2     0        0           0     0         0
-    api_test                  YES      74        0    0       17     0        0           0    57         0
+    api_test                  YES      74       41    0       17     0        0           0    16         0
     ------------------------------------------------------------------------------------------------------
-    TOTAL                            3077     2581  209       73    44       28           5   133         4
+    TOTAL                            3077     2698  217       68    42       28           5    16         3
 
 Refused is the HONEST number: under Rich's condition 2 (no model in the
 loop, no fallback home) an undecidable scenario refuses loud rather than
-landing somewhere it does not belong. 2,581 of 3,077 (84%) refuse today —
+landing somewhere it does not belong. 2,698 of 3,077 (88%) refuse today —
 the rules stamp only what they can prove; the rest is the model's (or a
-human's) turn, by design.
+human's) turn, by design. study-tutor's hurl is 0 although it IS a starlette
+repo: its http-app-access-adapter is written in prose ("the app sends the
+message … to that session") with no strong wire marker — under the strong-
+only law those scenarios refuse rather than mint by the same bare nouns that
+minted on a poetry anthology.
 """
 
 from __future__ import annotations
@@ -114,10 +131,8 @@ EXPLICIT_HUMAN: Dict[str, List[str]] = {
         "Only active bank connections are revoked at the provider",
         "A provider revocation failure does not prevent the local data wipe",
     ],
-    "forge": [
-        # "on the real NAS" — the runbook executor's real-hardware leg.
-        "The executor stands fleet-memory up on the real NAS",
-    ],
+    # forge "The executor stands fleet-memory up on the real NAS" is NOT here
+    # any more: the executor does the work (finding 6) — it refuses.
     "study-tutor": [
         # "captured in the runbook evidence" — the operator's readings.
         "NAS memory is recorded before and after standup and headroom stays positive",
@@ -214,7 +229,7 @@ def test_a_operator_is_minted_only_for_the_enumerated_explicit_human_scenarios()
         "R10 minted `operator` outside the enumerated explicit-human list — a "
         f"hidden chore for Rich.\nminted={json.dumps(minted, indent=2)}\nexpected={json.dumps(expected, indent=2)}"
     )
-    assert sum(len(v) for v in minted.values()) == 4
+    assert sum(len(v) for v in minted.values()) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +284,7 @@ def test_c_the_per_repo_histogram_equals_the_committed_baseline():
     total = sum(int(r["total"]) for r in actual.values())
     refused = sum(int(r[REFUSED]) for r in actual.values())
     assert total == 3077
-    assert refused == 2581
+    assert refused == 2698
 
 
 def test_c_the_docstring_table_matches_the_baseline_totals():

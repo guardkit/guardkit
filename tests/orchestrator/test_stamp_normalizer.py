@@ -13,6 +13,15 @@ corpus the 2026-08-09 census read. Where the estate holds fewer than three
 real examples for a rule (R6: two browser scenarios estate-wide) the third is
 the design's own phrase and says so.
 
+SECOND TIGHTENING (2026-08-16, the re-verifier's six findings): R4 = bus
+PROTOCOL ACTS only (quotes blanked, identifiers excluded, negated acts
+skipped) · R9 = STRONG wire markers only (the loose family is gone; api_test's
+"I request the service X" idiom now REFUSES — the reproduction number below is
+reported, not tuned) · R2 negation · R3 `smoke` requirement · R7 judged-OUTPUT
++ score-as-input exclusion, and R7 now runs BEFORE R4 · R10 "on the real NAS"
+needs no automation subject. Each finding is pinned on the REAL scenario the
+re-verifier named, read from the estate corpus by title.
+
 Network-free, subprocess-free: text + tmp_path + a read-only fixture tree.
 """
 
@@ -155,6 +164,27 @@ def test_r2_fresh_start_restart_is_probe_process(title, steps):
     assert (home.verifier, home.rule) == ("probe:process", "R2")
 
 
+# FINDING 3 (second tightening): a restart token NEGATED within three words
+# (without | never | no | not | instead of) is not a restart. forge
+# runbook-executor "resumes at the failed step without restarting" is
+# in-process executor logic — the REAL scenario, pinned.
+def test_finding3_r2_negated_restart_is_not_probe_process():
+    t, steps, _ = _corpus_scenario(
+        "forge", "features/runbook-executor/runbook-executor.feature",
+        "After a failure, re-running resumes at the failed step without restarting",
+    )
+    assert "without restarting" in (t + steps).lower()
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(t, steps, ctx)
+        assert home is None or home.verifier != "probe:process", home
+    # the same token un-negated is R2 (three-word window: "not … restart" is
+    # negated, "not lost across a restart" — four words back — is not).
+    assert _home("R", "When the service restarts\nThen it recounts", NO_HTTP).rule == "R2"
+    assert classify_scenario("R", "When it resumes and never restarts\nThen fine", NO_HTTP) is None
+    assert classify_scenario("R", "When it resumes instead of restarting\nThen fine", NO_HTTP) is None
+    assert _home("R", "Given the count is not lost across a restart\nThen it holds", NO_HTTP).rule == "R2"
+
+
 # ---------------------------------------------------------------------------
 # R3 — runtime-smoke harness-meta → probe:process (census: 5.1, 5.3–5.5, 5.9–5.12)
 # ---------------------------------------------------------------------------
@@ -213,9 +243,13 @@ def test_r3_smoke_harness_meta_is_probe_process(title, steps):
     assert (home.verifier, home.rule) == ("probe:process", "R3")
 
 
-def test_r3_wire_shaped_smoke_probes_stay_hurl():
+def test_r3_wire_shaped_smoke_probes_are_not_swallowed_by_r3_and_now_refuse():
     """The runtime-smoke feature's four negative/round-trip probes are
-    hand-stamped hurl (5.2, 5.6–5.8): R3 must not swallow them."""
+    hand-stamped hurl (5.2, 5.6–5.8): R3 must not swallow them. Under the
+    second tightening their only wire vocabulary is the LOOSE idiom
+    ("created through the running service", "reported as not found",
+    "rejected as a conflict") — so they REFUSE (never mis-home to
+    probe:process; never hurl by a bare noun)."""
     cases = [
         (
             "A user created through the service reads back with identical details",
@@ -238,8 +272,35 @@ def test_r3_wire_shaped_smoke_probes_stay_hurl():
         ),
     ]
     for title, steps in cases:
-        home = _home(title, steps, HTTP)
-        assert (home.verifier, home.rule) == ("hurl", "R9"), title
+        home = classify_scenario(title, steps, HTTP)
+        assert home is None, (title, home)
+
+
+# FINDING 4 (second tightening): `verdict .* reported` needs `smoke` in the
+# same scenario; `oracle time budget` needs `smoke|sandbox`. The REAL
+# negatives: specialist-agent finproxy "The verdict reflects…" and guardkit
+# factory-self-fix "An oracle command that overruns its time budget…".
+FINDING4_NEGATIVES = [
+    ("specialist-agent",
+     "features/finproxy-fine-tune-vs-frontier-comparison/finproxy-fine-tune-vs-frontier-comparison.feature",
+     "The verdict reflects that fine-tune wins on some axes and loses on others"),
+    ("guardkit", "features/factory-self-fix/factory-self-fix.feature",
+     "An oracle command that overruns its time budget is reported as timed out"),
+]
+
+
+@pytest.mark.parametrize("repo,feature,title", FINDING4_NEGATIVES, ids=[c[2][:40] for c in FINDING4_NEGATIVES])
+def test_finding4_generic_verdict_and_oracle_idioms_need_a_smoke_word(repo, feature, title):
+    t, steps, _ = _corpus_scenario(repo, feature, title)
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(t, steps, ctx)
+        assert home is None or home.verifier != "probe:process", (title, home)
+    # …and the api_test smoke scenarios that carry `smoke` still land on R3.
+    assert _home("A service that returns canned data fails the smoke",
+                 "When the smoke runs\nThen the smoke verdict should be reported as failed", HTTP).rule == "R3"
+    assert _home("The smoke completes within the oracle time budget",
+                 "When the full smoke run executes end to end\n"
+                 "Then it should finish inside the oracle time budget with margin to spare", HTTP).rule == "R3"
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +396,91 @@ def test_m4_acknowledged_204_and_a_user_subscription_are_not_probe_bus():
     # …while the same words WITH a bus noun are bus.
     assert _home("Acked", "When the message is acknowledged so the queue advances\nThen it is gone", HTTP).rule == "R4"
     assert _home("Sub", "Given a JetStream subscription\nWhen it drops\nThen it is re-established", HTTP).rule == "R4"
+
+
+# FINDING 1 (second tightening): R4 fired on PACKAGE / REPO NAMES (nats-core,
+# nats-py, nats_fleet_pipe.py) and on QUOTED DATA LITERALS ("NATS JetStream"
+# as a Coach scope input, "Via message broker (NATS)" as a user's answer);
+# a NEGATED publish ("no … should be published to Forge"); "the fleet scope";
+# and pure envelope CONSTRUCTION. Every one below is the REAL scenario the
+# re-verifier named, read from the corpus — none may be probe:bus.
+FINDING1_NEGATIVES = [
+    ("specialist-agent", "features/graphiti-query-tool/graphiti-query-tool.feature",
+     "Query results are scoped and ordered by project then role then fleet"),
+    ("specialist-agent", "features/adaptive-mode-inference/adaptive-mode-inference.feature",
+     "Confirmation prompt is natural language suitable for voice"),
+    ("specialist-agent", "features/clarification-engine/clarification-engine.feature",
+     "Processing an answer generates follow-up questions"),
+    ("forge", "features/forge-production-image/forge-production-image.feature",
+     "The production image builds from a fresh clone using the canonical invocation"),
+    ("forge", "features/forge-production-image/forge-production-image.feature",
+     "The build fails with a clear diagnostic when the nats-core build context is missing"),
+    ("jarvis", "features/feat-jarvis-002-core-tools-and-dispatch/feat-jarvis-002-core-tools-and-dispatch.feature",
+     "Stubbed dispatches construct real nats-core payloads before logging"),
+    ("jarvis", "features/feat-jarvis-005-build-queue-dispatch-to-forge/feat-jarvis-005-build-queue-dispatch-to-forge.feature",
+     "Queueing a build with invalid arguments returns a structured validation error"),
+    ("fleet-memory", "features/memory-mcp-server/memory-mcp-server.feature",
+     "The project resource lists the projects that have memories"),
+    ("fleet-gateway", "features/fleet-gateway-common-and-interfaces/fleet-gateway-common-and-interfaces.feature",
+     "The deployable OpenWebUI pipe is self-contained"),
+    ("fleet-gateway", "features/fleet-gateway-common-and-interfaces/fleet-gateway-common-and-interfaces.feature",
+     "Building a command envelope from a user message"),
+    ("fleet-gateway", "features/fleet-gateway-common-and-interfaces/fleet-gateway-common-and-interfaces.feature",
+     "OpenWebUI pipe rejects a request body with no messages"),
+    # a "context manifest" that is missing is not the fleet manifest
+    ("forge", "features/guardkit-command-invocation-engine/guardkit-command-invocation-engine.feature",
+     "A missing context manifest degrades gracefully to no context flags"),
+    # the school subject / curriculum topic (M4, re-pinned against the new act family)
+    ("study-tutor", "features/reachy-local-voice-migration/reachy-local-voice-migration.feature",
+     "A phone session is resumed only when the robot sends the exact shared subject"),
+    ("study-tutor", "features/graphiti-student-model/graphiti-student-model.feature",
+     "Recording a misconception without a topic reference is rejected at the producer boundary"),
+    # a guardkit instrumentation "event emitted" is not the bus
+    ("guardkit", "features/autobuild-instrumentation/autobuild-instrumentation.feature",
+     "Task lifecycle events are emitted for a successful task"),
+]
+
+
+@pytest.mark.parametrize("repo,feature,title", FINDING1_NEGATIVES, ids=[c[2][:40] for c in FINDING1_NEGATIVES])
+def test_finding1_names_quoted_literals_negated_publishes_are_not_probe_bus(repo, feature, title):
+    t, steps, _ = _corpus_scenario(repo, feature, title)
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(t, steps, ctx)
+        assert home is None or home.verifier != "probe:bus", (title, home)
+
+
+def test_finding1_the_two_domain_fidelity_exams_are_exam_not_bus():
+    """The sharpest mis-home: two Coach EXAM scenarios whose Given quotes
+    "NATS JetStream" landed in probe:bus. R7 now runs before R4, and the
+    quoted literal is data anyway."""
+    for title in (
+        "Coach detects DOMAIN_DILUTION when only some domain terms are genericised",
+        "Coach penalises when Player omits explicitly scoped technology",
+    ):
+        t, steps, _ = _corpus_scenario("specialist-agent", "features/domain-fidelity/domain-fidelity.feature", title)
+        assert '"NATS JetStream"' in steps
+        home = _home(t, steps, NO_HTTP)
+        assert (home.verifier, home.rule) == ("exam", "R7"), (title, home)
+
+
+def test_finding1_r4_law_pairs_quotes_identifiers_negation():
+    """The R4 law in miniature: an act with a bus noun is bus; the same noun
+    as a package name, inside quotes, or negated is not."""
+    assert _home("P", "When the payload is published to the build-queued subject\nThen it lands", NO_HTTP).rule == "R4"
+    assert _home("S", "When the daemon subscribes to the reply subject\nThen it hears", NO_HTTP).rule == "R4"
+    assert _home("H", "When the heartbeat is published every 5 seconds\nThen the fleet sees it", NO_HTTP).rule == "R4"
+    assert _home("C", "When the durable consumer redelivers the message\nThen it is acked", NO_HTTP).rule == "R4"
+    assert _home("N", "Given the NATS connection is lost\nThen it reconnects", NO_HTTP).rule == "R4"
+    assert _home("L", 'Then a payload should be published to "fleet.deregister"', NO_HTTP).rule == "R4"
+    # names, quotes, identifiers, negation
+    assert classify_scenario("N1", "Given the nats-core sibling source is reachable\nThen the image builds", NO_HTTP) is None
+    assert classify_scenario("N2", "Given it requires only nats-py at runtime\nThen it imports", NO_HTTP) is None
+    assert classify_scenario("N3", 'Given a scope input naming "NATS JetStream"\nThen the finding is recorded', NO_HTTP) is None
+    assert classify_scenario("N4", 'When the user answers "Via message broker (NATS)"\nThen follow-ups relate', NO_HTTP) is None
+    assert classify_scenario("N5", "Then no build-queued request should be published to Forge", NO_HTTP) is None
+    assert classify_scenario("N6", "Then no command envelope should be published", NO_HTTP) is None
+    assert classify_scenario("N7", "Given the deployable nats_fleet_pipe.py module\nThen it is self-contained", NO_HTTP) is None
+    assert classify_scenario("N8", "Given the results include entries from the fleet scope\nThen ordered", NO_HTTP) is None
 
 
 # ---------------------------------------------------------------------------
@@ -435,8 +581,8 @@ def test_r5_does_not_swallow_the_http_adapter_that_names_the_app_as_a_client():
         "When the app sends the message \"What does the dagger symbolise?\" to that session\n"
         "Then the response should carry the tutor's reply\nAnd the exchange should be durably recorded"
     )
-    home = _home(title, steps, HTTP)
-    assert home.verifier == "hurl"
+    home = classify_scenario(title, steps, HTTP)
+    assert home is None or home.verifier != "flutter", home  # (bare "response" is no longer wire — it refuses)
 
 
 # ---------------------------------------------------------------------------
@@ -481,12 +627,13 @@ def test_r6_browser_vocabulary_is_playwright(title, steps):
 
 R7_CASES = [
     (
-        # specialist-agent finproxy-fine-tune-vs-frontier-comparison
-        "Coach acceptance is computed against the same six weighted criteria as the baseline",
-        "Given the architect role defines six weighted criteria with composite scoring\n"
-        "When the fine-tune session is evaluated by the Coach\n"
-        "Then the Coach should score every criterion\n"
-        "And the composite score should be computed using the same weights as the baseline run",
+        # specialist-agent adr-output-format (an output score judged against a bar)
+        "Coach penalises flat table format for preferred directions",
+        "Given the Player generates preferred directions as a markdown table\n"
+        "And each row has a one-line alternative and a one-line tradeoff\n"
+        "When the Coach evaluates the output\n"
+        "Then the decision_rationale score should be at most 0.7\n"
+        "And the Coach feedback should indicate structured ADR format is expected",
     ),
     (
         # specialist-agent product-owner-reframe
@@ -497,15 +644,13 @@ R7_CASES = [
         "And the finding should suggest splitting into bounded-context-specific features",
     ),
     (
-        # study-tutor deepagents-tutoring-loop (a live-Coach judgement)
-        "A Player response that meets the Coach threshold is emitted to the learner",
-        "Given the learner has just sent a turn message\nWhen the Player produces a response\n"
-        "And the Coach evaluates the response against the rubric\n"
-        "And the weighted Coach score meets or exceeds the acceptance threshold\n"
-        "Then the Coach decision should be \"accept\"\n"
-        "And the Player's response should be returned to the learner\n"
-        "And the Coach's reasoning should be recorded in session-only logs\n"
-        "And the Coach's reasoning should never be shown to the learner",
+        # specialist-agent assumption-defence (the Coach's judgement of the output)
+        "Coach detects an unstated technology assumption",
+        "Given a product document that does not specify a deployment model\n"
+        "And the Player output assumes cloud deployment with Kubernetes orchestration\n"
+        "When the Coach evaluates the output\n"
+        "Then the Coach should report an UNSTATED_ASSUMPTION detection finding\n"
+        "And the finding description should reference the ungrounded deployment assumption",
     ),
     (
         # study-tutor primary-text-rag-and-quote-verifier
@@ -532,7 +677,7 @@ def test_ordering_exam_beats_toolchain_even_when_the_plan_names_a_test_node():
     title, steps = R7_CASES[0]
     ctx = NormalizeContext(
         repo_has_http_surface=True,
-        plan_test_refs={title: "test_coach_acceptance_six_criteria"},
+        plan_test_refs={title: "test_coach_penalises_flat_table"},
     )
     home = _home(title, steps, ctx)
     assert (home.verifier, home.rule) == ("exam", "R7")
@@ -595,7 +740,7 @@ def test_m3_r7_reads_the_then_clause_only():
     steps = "Given the Coach should score everything\nWhen the Coach evaluates\nThen the file is written"
     assert then_clause(steps) == "Then the file is written"
     assert classify_scenario("Given/When only", steps, NO_HTTP) is None
-    steps2 = "Given a response\nWhen judged\nThen the Coach should score every criterion\nAnd the file is written"
+    steps2 = "Given a response\nWhen judged\nThen the Coach should penalise the generic rationale\nAnd the file is written"
     assert _home("Then judges", steps2, NO_HTTP).rule == "R7"
     assert then_clause("When x\nAnd y") == ""
 
@@ -606,6 +751,64 @@ def test_m3_narration_counts_only_when_its_content_is_judged():
         "The narration reuses the explanation already recorded for the flag",
     )
     assert _home(t, steps, NO_HTTP).rule == "R7"
+
+
+# FINDING 5 (second tightening): `coach decision should` fired when the score
+# was a Scenario Outline INPUT — study-tutor "Scores at and around the
+# acceptance threshold drive the accept-or-revise decision" (deterministic
+# threshold logic). The judged subject must be the model's OUTPUT; a scenario
+# whose Given/When supplies the score as data never qualifies; a bare
+# `decision` is not a judged output; "the Coach should score" is plumbing.
+FINDING5_NEGATIVES = [
+    ("study-tutor", "features/deepagents-tutoring-loop/deepagents-tutoring-loop.feature",
+     "Scores at and around the acceptance threshold drive the accept-or-revise decision"),
+    ("study-tutor", "features/deepagents-tutoring-loop/deepagents-tutoring-loop.feature",
+     "A Player response that meets the Coach threshold is emitted to the learner"),
+    ("specialist-agent",
+     "features/finproxy-fine-tune-vs-frontier-comparison/finproxy-fine-tune-vs-frontier-comparison.feature",
+     "Coach acceptance is computed against the same six weighted criteria as the baseline"),
+    # a Given that supplies the score as a numeral ("scored 0.93 before")
+    ("specialist-agent", "features/domain-fidelity/domain-fidelity.feature",
+     "Structural quality does not regress after domain fidelity additions"),
+]
+
+
+@pytest.mark.parametrize("repo,feature,title", FINDING5_NEGATIVES, ids=[c[2][:40] for c in FINDING5_NEGATIVES])
+def test_finding5_a_score_supplied_as_input_or_a_bare_decision_is_not_exam(repo, feature, title):
+    t, steps, _ = _corpus_scenario(repo, feature, title)
+    for ctx in (HTTP, NO_HTTP):
+        home = classify_scenario(t, steps, ctx)
+        assert home is None or home.verifier != "exam", (title, home)
+
+
+def test_finding5_the_outline_score_column_and_given_score_are_inputs():
+    from guardkit.orchestrator.stamp_normalizer import given_when_clause
+
+    outline = ("Given the learner has just sent a turn message\nWhen the Player produces a response that scores <score>\n"
+               "Then the Coach decision should be <decision>\nExamples:\n| score | decision |\n| 0.70 | accept |")
+    assert given_when_clause(outline).startswith("Given") and "Then" not in given_when_clause(outline)
+    assert classify_scenario("Outline", outline, NO_HTTP) is None
+    # the same Then WITHOUT a score input still is not exam (a decision is threshold logic)
+    assert classify_scenario("D", "When the Coach evaluates\nThen the Coach decision should be accept", NO_HTTP) is None
+    # …but the Coach's judgement of the output IS exam
+    assert _home("J", "When the Coach evaluates the output\nThen the Coach should report a PHANTOM finding", NO_HTTP).rule == "R7"
+    assert _home("F", "When the Coach evaluates\nThen the Coach feedback should indicate the missing rationale", NO_HTTP).rule == "R7"
+    assert _home("G", "When the tutor answers\nThen the response should be grounded in the retrieved chunks", NO_HTTP).rule == "R7"
+
+
+def test_r7_runs_before_r4_the_ordering_change_of_the_second_tightening():
+    """Finding 1's second half: an exam that names a bus product in its Given
+    is an exam. R7 is evaluated before R4 (documented against the design
+    doc's R4 < R7 order in the module docstring)."""
+    steps = ("Given a scope input naming the fleet's message bus\n"
+             "And the payload is published to the command subject before the Coach reads it\n"
+             "When the Coach evaluates the output\n"
+             "Then the Coach should report a DOMAIN_DILUTION detection finding")
+    home = _home("Exam that mentions the bus", steps, NO_HTTP)
+    assert (home.verifier, home.rule) == ("exam", "R7")
+    # without the judging Then, the same bus act is R4
+    steps2 = "Given the payload is published to the command subject\nThen it lands"
+    assert _home("Bus", steps2, NO_HTTP).rule == "R4"
 
 
 # ---------------------------------------------------------------------------
@@ -624,9 +827,10 @@ def test_r8_plan_named_test_node_is_toolchain_with_test_ref():
     ctx = NormalizeContext(repo_has_http_surface=True, plan_test_refs={title: "test_count_empty"})
     home = _home(title, steps, ctx)
     assert (home.verifier, home.rule, home.test_ref) == ("toolchain", "R8", "test_count_empty")
-    # …and without the node the same scenario is R9 hurl (the named divergence).
-    home2 = _home(title, steps, HTTP)
-    assert (home2.verifier, home2.rule) == ("hurl", "R9")
+    # …and without the node the same scenario now REFUSES (second tightening:
+    # "I request the users count / the response should report" is the loose
+    # idiom — a refusal, not the 08-15 divergence to hurl).
+    assert classify_scenario(title, steps, HTTP) is None
 
 
 def test_r8_overlap_law_two_significant_words(tmp_path: Path):
@@ -670,6 +874,38 @@ R9_CASES = [
         "And the response should contain the application version string",
     ),
     (
+        "A POST request to the ready endpoint is rejected",
+        "When I send a POST request to the ready endpoint\n"
+        "Then the request should be rejected with a method-not-allowed response",
+    ),
+    (
+        "The ready endpoint rejects non-GET methods",
+        "When I send a non-GET request to the ready endpoint\n"
+        "Then the request should be rejected or handled appropriately",
+    ),
+    (
+        "Write methods are rejected",
+        "When I send a POST request to \"/time\"\nThen the response status code should be 405\n"
+        "When I send a PUT request to \"/time\"\nThen the response status code should be 405",
+    ),
+    (
+        "A PATCH request to /version is rejected as method not allowed",
+        "When I send a PATCH request to /version\nThen the request should be rejected with method not allowed",
+    ),
+    (
+        "Reading the current server time",
+        "When I send a GET request to \"/time\"\nThen the response status code should be 200\n"
+        "And the response content type should be \"application/json\"",
+    ),
+]
+
+# FINDING 2 (second tightening): the LOOSE family is GONE. These are api_test's
+# own hand-hurl scenarios written in the "I request the service X / the
+# request should succeed / rejected as / not-found / looking up" idiom — under
+# the strong-only law every one REFUSES (loud). A refusal is never wrong; the
+# same bare nouns minted hurl on a poetry anthology.
+R9_LOOSE_NOW_REFUSE = [
+    (
         "Uptime increases between consecutive requests",
         "When I request the service uptime twice in succession\n"
         "Then the second reported uptime should be greater than the first\n"
@@ -692,11 +928,68 @@ R9_CASES = [
         "Then the request should fail with a not-found response",
     ),
     (
-        "Reading the current server time",
-        "When I send a GET request to \"/time\"\nThen the response status code should be 200\n"
-        "And the response content type should be \"application/json\"",
+        "The ready endpoint returns success when the service is ready",
+        "When I request the ready endpoint\nThen the response should indicate the service is ready",
     ),
 ]
+
+
+@pytest.mark.parametrize("title,steps", R9_LOOSE_NOW_REFUSE, ids=[c[0][:40] for c in R9_LOOSE_NOW_REFUSE])
+def test_finding2_bare_wire_nouns_never_suffice_they_refuse(title, steps):
+    assert classify_scenario(title, steps, HTTP) is None
+
+
+# The REAL study-tutor scenarios the loose family mis-homed to hurl (a
+# starlette repo, so R9 is armed): 'conflict' from "Power and Conflict poetry",
+# 'requests' from "should not begin serving requests", 'rejected with' in a
+# NATS-command title, 'route' from a port-forward, 'endpoint' from "the
+# embeddings/cloud endpoint", 'requested' in a title, 'looks up'. None may be hurl.
+FINDING2_NEGATIVES = [
+    ("features/graphiti-student-model/graphiti-student-model.feature",
+     "A learner is associated with the subjects they study and the texts they are working on"),
+    ("features/graphiti-student-model/graphiti-student-model.feature",
+     "Recommending topics returns the requested number when enough are available"),
+    ("features/keycloak-server-token-validation/keycloak-server-token-validation.feature",
+     "Keycloak mode refuses to start when a required OIDC setting is missing"),
+    ("features/nats-fleet-integration/nats-fleet-integration.feature",
+     "A command with an unknown name is rejected with a list of supported commands"),
+    ("features/keycloak-idp-standup/keycloak-idp-standup.feature",
+     "The identity service is not reachable from the public internet"),
+    ("features/graphiti-runtime-integration-repair/graphiti-runtime-integration-repair.feature",
+     "The wired client construction never reads the OpenAI API key from the environment"),
+    ("features/reachy-local-voice-migration/reachy-local-voice-migration.feature",
+     "The student-model lookup reads from the durable student store"),
+    ("features/durable-cross-device-sessions/durable-cross-device-sessions.feature",
+     "Acting on an unknown session reports the session as not found"),
+    ("features/primary-text-rag-and-quote-verifier/primary-text-rag-and-quote-verifier.feature",
+     "A retrieval request for a text absent from the corpus returns an empty result with an explicit reason"),
+]
+
+
+@pytest.mark.parametrize("feature,title", FINDING2_NEGATIVES, ids=[c[1][:40] for c in FINDING2_NEGATIVES])
+def test_finding2_study_tutor_machinery_is_never_hurl_by_a_bare_noun(feature, title):
+    t, steps, _ = _corpus_scenario("study-tutor", feature, title)
+    home = classify_scenario(t, steps, HTTP)
+    assert home is None or home.verifier != "hurl", (title, home)
+
+
+def test_finding2_the_strong_markers_in_miniature():
+    assert _home("V", "When I send a DELETE request to /users/1\nThen it is gone", HTTP).rule == "R9"
+    assert _home("S", "When the client calls the service\nThen the status code should be 404", HTTP).rule == "R9"
+    assert _home("M", "When I submit\nThen it fails with method not allowed", HTTP).rule == "R9"
+    assert _home("C", "When I fetch\nThen the content type is application/json", HTTP).rule == "R9"
+    assert _home("R", "When I send an HTTP request to the service\nThen it answers", HTTP).rule == "R9"
+    # "response body should" counts ONLY beside an HTTP verb or a /path in the scenario
+    assert _home("B", "When I send a GET request to the ready endpoint\nThen the response body should say ready", HTTP).rule == "R9"
+    assert classify_scenario("B2", "When the tutor answers\nThen the response body should be grounded", HTTP) is None
+    # bare nouns: never
+    for steps in ("When I request the users count\nThen the response should report a count of 3",
+                  "When the request is made\nThen the endpoint answers with json",
+                  "When a lookup is made\nThen it is reported as not found",
+                  "Then the creation should be rejected as a conflict",
+                  "When the port-forward is checked\nThen no WAN route should reach it"):
+        assert classify_scenario("bare", steps, HTTP) is None, steps
+
 
 
 @pytest.mark.parametrize("title,steps", R9_CASES, ids=[c[0][:40] for c in R9_CASES])
@@ -771,12 +1064,11 @@ def test_m1_slash_commands_and_unix_paths_are_not_wire_markers(title, steps):
 
 R10_CASES = [
     (
-        # forge fleet-memory-deploy-runbook — the real NAS
-        "The executor stands fleet-memory up on the real NAS",
-        "Given the runbook is pointed at the real NAS with the real deploy environment file\n"
-        "When the executor runs the runbook\n"
-        "Then fleet-memory Postgres with pgvector should be live on the NAS\n"
-        "And the smoke gates should all be green",
+        # "on the real NAS" with NO automation subject in the When/Then — human work
+        "The pgvector extension is enabled on the real NAS",
+        "Given the runbook is pointed at the real NAS\n"
+        "When the operator enables pgvector on the real NAS\n"
+        "Then the extension should be listed",
     ),
     (
         # study-tutor keycloak-idp-standup — runbook evidence
@@ -807,6 +1099,27 @@ R10_CASES = [
 def test_r10_explicit_human_work_is_operator(title, steps):
     home = _home(title, steps, HTTP)
     assert (home.verifier, home.rule) == ("operator", "R10")
+
+
+# FINDING 6 (second tightening): forge "The executor stands fleet-memory up on
+# the real NAS" asserts the stand-up was performed BY THE EXECUTOR "rather
+# than a manual deploy script" — an automation subject in the When/Then. It is
+# undecidable by rule and REFUSES (never operator: that would hand Rich a
+# chore the executor does).
+def test_finding6_on_the_real_nas_with_an_automation_subject_refuses():
+    t, steps, _ = _corpus_scenario(
+        "forge", "features/fleet-memory-deploy-runbook/fleet-memory-deploy-runbook.feature",
+        "The executor stands fleet-memory up on the real NAS",
+    )
+    assert "on the real nas" in (t + steps).lower() and "executor" in steps.lower()
+    for ctx in (HTTP, NO_HTTP):
+        assert classify_scenario(t, steps, ctx) is None
+    # the same words with a human doing the work are operator; a script/forge/
+    # runbook run in the When/Then blocks it.
+    assert _home("N", "When Rich stands the store up on the real NAS\nThen it is live", NO_HTTP).rule == "R10"
+    assert classify_scenario("N", "When the script stands the store up on the real NAS\nThen it is live", NO_HTTP) is None
+    assert classify_scenario("N", "When Forge deploys on the real NAS\nThen it is live", NO_HTTP) is None
+    assert classify_scenario("N", "When the runbook run targets the real NAS\nThen it is live on the real NAS", NO_HTTP) is None
 
 
 # H1: the operator-handoff TAG / `# operator_handoff:` comment — the
@@ -988,17 +1301,21 @@ def test_extract_scenario_blocks_attributes_tags_and_comments_to_the_right_scena
     assert "operator" not in second.steps_text and "#" not in second.steps_text
 
 
-def test_background_exclusion_keeps_the_smoke_probes_hurl_end_to_end():
+def test_background_exclusion_keeps_the_smoke_probes_out_of_r3_end_to_end():
     """runtime-smoke's Background says 'throwaway sandboxed environment'; had
     the Background been folded into every scenario, all twelve would be R3.
-    Through the fixture tree, 5.2/5.6/5.7/5.8 stay hurl."""
+    Through the fixture tree, 5.2/5.6/5.7/5.8 are NOT probe:process — under
+    the second tightening they REFUSE (their only wire words are the loose
+    idiom), and the run stops loud naming exactly those four."""
     yaml_path = FIXTURE_ROOT / ".guardkit" / "features" / "FEAT-8737.yaml"
-    result = normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
-    assert result.stamped["A user created through the service reads back with identical details"] == "hurl"
-    assert result.stamped["Looking up a user that was never created is reported as not found"] == "hurl"
-    assert result.stamped["Creating a user with an email already in use is rejected as a conflict"] == "hurl"
-    assert result.stamped["A malformed user submission is rejected as invalid"] == "hurl"
-    assert result.stamped["The sandboxed application has no route to the outside world"] == "probe:process"
+    with pytest.raises(StampNormalizerRefusal) as excinfo:
+        normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
+    assert set(excinfo.value.refused) == {
+        "A user created through the service reads back with identical details",
+        "Looking up a user that was never created is reported as not found",
+        "Creating a user with an email already in use is rejected as a conflict",
+        "A malformed user submission is rejected as invalid",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1088,13 +1405,24 @@ API_TEST_FEATURES = [
     "FEAT-TIME", "FEAT-UCNT", "FEAT-UBEM", "FEAT-UDBE",
 ]
 
-# The ONE divergence the rules doc named: users-count 7.1–7.3 — hurl by rule
-# (R9) when the plan names no test node; toolchain by hand (test_count_*).
-KNOWN_DIVERGENCE = {
+# The 08-15 design named ONE divergence: users-count 7.1–7.3 — hurl by rule
+# (R9 loose) when the plan names no test node; toolchain by hand. Under the
+# second tightening the loose R9 family is gone, so those three (and every
+# other hand-hurl scenario written in the "I request the service X" idiom)
+# REFUSE — a refusal is never a divergence. THE HONEST NUMBER: 32/60 hand
+# stamps reproduce (all 16 strong-marker hurl + all 16 R1/R2/R3 process),
+# 28 REFUSE (25 hand-hurl + the 3 hand-toolchain), and ZERO are silently
+# minted into a different home. Features that reproduce whole: B70F 10/10,
+# D450 2/2, TIME 4/4; the six with loose-idiom hurl refuse loud as a unit
+# (nothing written) — exactly condition 2.
+FORMERLY_DIVERGENT_NOW_REFUSE = {
     "The count reflects the number of stored users",
     "The count of an empty store is zero",
     "Creating a user increments the count",
 }
+REPRODUCED_WHOLE = {"FEAT-B70F": 10, "FEAT-D450": 2, "FEAT-TIME": 4}
+EXPECTED_SAME = 32
+EXPECTED_REFUSED = 28
 
 
 def _hand_stamps(feature_id: str) -> dict:
@@ -1102,33 +1430,66 @@ def _hand_stamps(feature_id: str) -> dict:
     return {t: (s if isinstance(s, str) else s["verifier"]) for t, s in data["scenarios"].items()}
 
 
-def test_api_test_reproduction_57_of_60_and_only_the_named_divergence():
+def _classify_fixture_titles():
+    """title -> (verifier|None, rule) for every scenario in the fixture tree,
+    classified one by one (the feature-level run refuses as a unit)."""
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    has, ev = detect_repo_http_surface(FIXTURE_ROOT)
+    ctx = NormalizeContext(repo_has_http_surface=has, http_surface_evidence=ev)
+    out = {}
+    for path in (FIXTURE_ROOT / "features").rglob("*.feature"):
+        for b in extract_scenario_blocks(path.read_text(encoding="utf-8")):
+            h = classify_scenario(b.title, b.steps_text, ctx, annotations=b.annotations)
+            out[b.title] = (h.verifier if h else None, h.rule if h else None)
+    return out
+
+
+def test_api_test_reproduction_32_of_60_28_refuse_zero_silent_divergence():
+    by_title = _classify_fixture_titles()
     rows = []
     for fid in API_TEST_FEATURES:
-        hand = _hand_stamps(fid)
-        yaml_path = FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml"
-        result = normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
-        assert result.refused == []
-        assert result.written is False
-        assert set(result.stamped) == set(hand), fid
-        for title, hv in hand.items():
-            rows.append((fid, title, hv, result.stamped[title], result.rules[title]))
+        for title, hv in _hand_stamps(fid).items():
+            gv, rule = by_title[title]
+            rows.append((fid, title, hv, gv, rule))
     assert len(rows) == 60
-    diffs = {(fid, t) for fid, t, hv, gv, _ in rows if hv != gv}
-    assert {t for _, t in diffs} == KNOWN_DIVERGENCE, sorted(diffs)
-    assert all(fid == "FEAT-UCNT" for fid, _ in diffs)
-    for fid, t, hv, gv, rule in rows:
-        if t in KNOWN_DIVERGENCE:
-            assert (hv, gv, rule) == ("toolchain", "hurl", "R9"), t
-    same = sum(1 for _, _, hv, gv, _ in rows if hv == gv)
-    assert same == 57
+    same = [(f, t) for f, t, hv, gv, _ in rows if gv == hv]
+    refused = [(f, t) for f, t, hv, gv, _ in rows if gv is None]
+    silent = [(f, t, hv, gv) for f, t, hv, gv, _ in rows if gv is not None and gv != hv]
+    assert silent == [], silent  # THE LAW: no silent mis-home, ever
+    assert len(same) == EXPECTED_SAME, (len(same), sorted(refused))
+    assert len(refused) == EXPECTED_REFUSED
+    assert FORMERLY_DIVERGENT_NOW_REFUSE <= {t for _, t in refused}
+    # every reproduced stamp is a strong hurl or a process rule
+    for f, t, hv, gv, rule in rows:
+        if gv == hv:
+            assert (gv, rule) in {("hurl", "R9"), ("probe:process", "R1"), ("probe:process", "R2"), ("probe:process", "R3")}, (t, gv, rule)
+    # …and the features that reproduce whole do so through normalize_feature.
+    for fid, n in REPRODUCED_WHOLE.items():
+        result = normalize_feature(
+            FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml", None, FIXTURE_ROOT,
+            dry_run=True, ignore_existing=True,
+        )
+        assert result.refused == [] and result.written is False
+        assert result.stamped == _hand_stamps(fid) and len(result.stamped) == n, fid
+
+
+def test_api_test_loose_idiom_features_refuse_loud_as_a_unit():
+    for fid in ("FEAT-FD8D", "FEAT-AE43", "FEAT-8737", "FEAT-UCNT", "FEAT-UBEM", "FEAT-UDBE"):
+        with pytest.raises(StampNormalizerRefusal) as excinfo:
+            normalize_feature(
+                FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml", None, FIXTURE_ROOT,
+                dry_run=True, ignore_existing=True,
+            )
+        assert excinfo.value.refused, fid
 
 
 def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path):
     """The design's recommendation: R8 wins when the toolchain has a real
     node. Give FEAT-UCNT a task doc naming test_count_empty /
     test_count_incremental and 7.2 + 7.3 come back toolchain (7.1's title
-    shares only 'count' with either node — one word is not a pin)."""
+    shares only 'count' with either node — one word is not a pin). The rest of
+    the feature refuses (loose idiom), so classify per title."""
     import shutil
 
     repo = tmp_path / "api_test"
@@ -1140,14 +1501,23 @@ def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path
         "Pins: `tests/users/test_router.py::test_count_empty`, "
         "`tests/users/test_router.py::test_count_incremental`.\n"
     )
-    result = normalize_feature(
-        repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True, ignore_existing=True
-    )
-    assert result.stamped["The count of an empty store is zero"] == "toolchain"
-    assert result.test_refs["The count of an empty store is zero"] == "test_count_empty"
-    assert result.stamped["Creating a user increments the count"] == "toolchain"
-    assert result.test_refs["Creating a user increments the count"] == "test_count_incremental"
-    assert result.stamped["The count reflects the number of stored users"] == "hurl"
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    nodes = collect_plan_test_nodes([task])
+    feature_text = (repo / "features" / "users-count-endpoint" / "users-count-endpoint.feature").read_text()
+    blocks = {b.title: b for b in extract_scenario_blocks(feature_text)}
+    refs = build_plan_test_refs(list(blocks), nodes)
+    ctx = NormalizeContext(repo_has_http_surface=True, plan_test_refs=refs)
+    empty = _home("The count of an empty store is zero", blocks["The count of an empty store is zero"].steps_text, ctx)
+    assert (empty.verifier, empty.test_ref) == ("toolchain", "test_count_empty")
+    incr = _home("Creating a user increments the count", blocks["Creating a user increments the count"].steps_text, ctx)
+    assert (incr.verifier, incr.test_ref) == ("toolchain", "test_count_incremental")
+    # 7.1 has no node and no strong wire marker: it refuses (no longer hurl).
+    assert classify_scenario("The count reflects the number of stored users",
+                             blocks["The count reflects the number of stored users"].steps_text, ctx) is None
+    # the feature as a unit still refuses (7.1 + the loose-idiom scenarios).
+    with pytest.raises(StampNormalizerRefusal):
+        normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True, ignore_existing=True)
 
 
 def test_ignore_existing_is_dry_run_only(tmp_path: Path):
@@ -1163,15 +1533,24 @@ def test_ignore_existing_is_dry_run_only(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-UCNT_FEATURE = (FIXTURE_ROOT / "features" / "users-count-endpoint" / "users-count-endpoint.feature").read_text()
+# The writer/loader/CLI tests ride the time-endpoint feature (4 scenarios —
+# 3 strong-marker hurl + 1 R1 process — every one decidable under the
+# second tightening's strong-only R9; users-count's loose idiom now refuses).
+TIME_FEATURE = (FIXTURE_ROOT / "features" / "time-endpoint" / "time-endpoint.feature").read_text()
+TIME_TITLES = (
+    "Reading the current server time",
+    "The time is fresh on every request",
+    "Write methods are rejected",
+    "The endpoint is unaffected by database unavailability",
+)
 
 
-def _repo(tmp_path: Path, feature_yaml: str, *, feature_text: str = UCNT_FEATURE, http: bool = True) -> Path:
+def _repo(tmp_path: Path, feature_yaml: str, *, feature_text: str = TIME_FEATURE, http: bool = True) -> Path:
     repo = tmp_path / "repo"
     (repo / ".guardkit" / "features").mkdir(parents=True)
-    (repo / "features" / "users-count-endpoint").mkdir(parents=True)
-    (repo / "features" / "users-count-endpoint" / "users-count-endpoint.feature").write_text(feature_text)
-    (repo / ".guardkit" / "features" / "FEAT-UCNT.yaml").write_text(feature_yaml)
+    (repo / "features" / "time-endpoint").mkdir(parents=True)
+    (repo / "features" / "time-endpoint" / "time-endpoint.feature").write_text(feature_text)
+    (repo / ".guardkit" / "features" / "FEAT-TIME.yaml").write_text(feature_yaml)
     if http:
         (repo / "qa" / "gates").mkdir(parents=True)
         (repo / "qa" / "gates" / "registry.yaml").write_text(
@@ -1181,28 +1560,28 @@ def _repo(tmp_path: Path, feature_yaml: str, *, feature_text: str = UCNT_FEATURE
 
 
 BASE_YAML = (
-    "id: FEAT-UCNT\n"
-    "name: GET /users/count endpoint\n"
+    "id: FEAT-TIME\n"
+    "name: GET /time endpoint\n"
     "# a comment the writer must keep\n"
-    "description: count\n"
-    "created: '2026-07-26T20:30:00'\n"
+    "description: time\n"
+    "created: '2026-07-31T12:30:00'\n"
     "status: planned\n"
-    "complexity: 3\n"
+    "complexity: 2\n"
     "estimated_tasks: 1\n"
     "feature_files:\n"
-    "  - features/users-count-endpoint/users-count-endpoint.feature\n"
+    "  - features/time-endpoint/time-endpoint.feature\n"
     "tasks:\n"
-    "- id: TASK-UCNT-001\n"
-    "  name: Add GET /users/count endpoint\n"
-    "  file_path: tasks/backlog/users-count-endpoint/TASK-UCNT-001.md\n"
-    "  complexity: 3\n"
+    "- id: TASK-TIME-001\n"
+    "  name: Add GET /time endpoint\n"
+    "  file_path: tasks/backlog/time-endpoint/TASK-TIME-001.md\n"
+    "  complexity: 2\n"
     "  dependencies: []\n"
     "  status: pending\n"
     "  implementation_mode: task-work\n"
     "  estimated_minutes: 35\n"
     "orchestration:\n"
     "  parallel_groups:\n"
-    "  - - TASK-UCNT-001\n"
+    "  - - TASK-TIME-001\n"
     "  estimated_duration_minutes: 35\n"
     "  recommended_parallel: 1\n"
     "preflight_strict: false\n"
@@ -1211,31 +1590,31 @@ BASE_YAML = (
 
 def test_it_writes_stamps_into_the_feature_yaml_and_the_loader_accepts_them(tmp_path: Path):
     repo = _repo(tmp_path, BASE_YAML)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     result = normalize_feature(yaml_path, None, repo)
     assert result.written is True and result.refused == []
-    assert len(result.stamped) == 6
+    assert len(result.stamped) == 4
     text = yaml_path.read_text()
     assert "# a comment the writer must keep" in text  # textual splice, comments kept
     data = yaml.safe_load(text)
-    assert data["scenarios"]["The count degrades honestly when the database is unavailable"] == {
+    assert data["scenarios"]["The endpoint is unaffected by database unavailability"] == {
         "verifier": "probe:process"
     }
-    assert data["scenarios"]["Attempting to modify the users count is rejected"] == {"verifier": "hurl"}
-    assert data["tasks"][0]["id"] == "TASK-UCNT-001"  # nothing else changed
+    assert data["scenarios"]["Write methods are rejected"] == {"verifier": "hurl"}
+    assert data["tasks"][0]["id"] == "TASK-TIME-001"  # nothing else changed
     # THE POINT: the routing law's enforcement now LOADS this feature.
     (repo / ".guardkit" / "config.yaml").write_text("routing_law: enforced\n")
-    feature = FeatureLoader.load_feature("FEAT-UCNT", repo_root=repo, validate_paths=False)
+    feature = FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False)
     assert set(feature.scenarios) == set(result.stamped)
 
 
 def test_a_second_run_is_a_no_op(tmp_path: Path):
     repo = _repo(tmp_path, BASE_YAML)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     normalize_feature(yaml_path, None, repo)
     before = yaml_path.read_text()
     again = normalize_feature(yaml_path, None, repo)
-    assert again.written is False and again.stamped == {} and len(again.already_stamped) == 6
+    assert again.written is False and again.stamped == {} and len(again.already_stamped) == 4
     assert yaml_path.read_text() == before
 
 
@@ -1244,27 +1623,27 @@ def test_never_overwrite_an_existing_stamp(tmp_path: Path):
     probe:process): the hand stamp stays; only the five unstamped are written."""
     stamped_yaml = BASE_YAML + (
         "scenarios:\n"
-        "  \"The count degrades honestly when the database is unavailable\":\n"
+        "  \"The endpoint is unaffected by database unavailability\":\n"
         "    verifier: hurl\n"
     )
     repo = _repo(tmp_path, stamped_yaml)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     result = normalize_feature(yaml_path, None, repo)
-    assert result.already_stamped == ["The count degrades honestly when the database is unavailable"]
-    assert "The count degrades honestly when the database is unavailable" not in result.stamped
-    assert len(result.stamped) == 5
+    assert result.already_stamped == ["The endpoint is unaffected by database unavailability"]
+    assert "The endpoint is unaffected by database unavailability" not in result.stamped
+    assert len(result.stamped) == 3
     data = yaml.safe_load(yaml_path.read_text())
-    assert data["scenarios"]["The count degrades honestly when the database is unavailable"] == {"verifier": "hurl"}
-    assert len(data["scenarios"]) == 6
+    assert data["scenarios"]["The endpoint is unaffected by database unavailability"] == {"verifier": "hurl"}
+    assert len(data["scenarios"]) == 4
 
 
 def test_write_stamps_refuses_a_collision_outright(tmp_path: Path):
-    stamped_yaml = BASE_YAML + "scenarios:\n  \"The count of an empty store is zero\":\n    verifier: toolchain\n"
+    stamped_yaml = BASE_YAML + "scenarios:\n  \"The time is fresh on every request\":\n    verifier: toolchain\n"
     repo = _repo(tmp_path, stamped_yaml)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     before = yaml_path.read_text()
     with pytest.raises(StampNormalizerError, match="refusing to overwrite"):
-        write_stamps(yaml_path, {"The count of an empty store is zero": {"verifier": "hurl"}})
+        write_stamps(yaml_path, {"The time is fresh on every request": {"verifier": "hurl"}})
     assert yaml_path.read_text() == before
 
 
@@ -1273,13 +1652,13 @@ def test_refuse_loud_names_every_undecidable_title_and_writes_nothing(tmp_path: 
         "Feature: Parser\n"
         "  Scenario: The parser accepts an empty document\n"
         "    Given an empty document\n    When it is parsed\n    Then no error is raised\n\n"
-        "  Scenario: The count degrades honestly when the database is unavailable\n"
+        "  Scenario: The endpoint is unaffected by database unavailability\n"
         "    Given the database is unavailable\n    Then it degrades\n\n"
         "  Scenario: Two flags cannot both be set\n"
         "    Given both flags\n    Then the loader complains\n"
     )
     repo = _repo(tmp_path, BASE_YAML, feature_text=feature_text)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     before = yaml_path.read_text()
     with pytest.raises(StampNormalizerRefusal) as excinfo:
         normalize_feature(yaml_path, None, repo)
@@ -1301,79 +1680,79 @@ def test_refusal_is_the_same_object_the_loader_hook_surfaces(tmp_path: Path):
     feature_text = "Feature: P\n  Scenario: The parser accepts an empty document\n    Given an empty document\n"
     repo = _repo(tmp_path, BASE_YAML, feature_text=feature_text)
     with pytest.raises(StampNormalizerRefusal):
-        FeatureLoader.load_feature("FEAT-UCNT", repo_root=repo, validate_paths=False, normalize_stamps=True)
+        FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False, normalize_stamps=True)
 
 
 def test_no_feature_files_is_a_loud_cannot_run_not_a_silent_no_op(tmp_path: Path):
     no_files = BASE_YAML.replace(
-        "feature_files:\n  - features/users-count-endpoint/users-count-endpoint.feature\n", ""
+        "feature_files:\n  - features/time-endpoint/time-endpoint.feature\n", ""
     )
     repo = _repo(tmp_path, no_files)
     with pytest.raises(StampNormalizerError, match="no `feature_files:`"):
-        normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo)
+        normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo)
 
 
 def test_feature_files_given_as_argument_are_written_when_the_yaml_lacks_them(tmp_path: Path):
     no_files = BASE_YAML.replace(
-        "feature_files:\n  - features/users-count-endpoint/users-count-endpoint.feature\n", ""
+        "feature_files:\n  - features/time-endpoint/time-endpoint.feature\n", ""
     )
     repo = _repo(tmp_path, no_files)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     result = normalize_feature(
-        yaml_path, ["features/users-count-endpoint/users-count-endpoint.feature"], repo
+        yaml_path, ["features/time-endpoint/time-endpoint.feature"], repo
     )
     assert result.written
     data = yaml.safe_load(yaml_path.read_text())
-    assert data["feature_files"] == ["features/users-count-endpoint/users-count-endpoint.feature"]
-    assert len(data["scenarios"]) == 6
+    assert data["feature_files"] == ["features/time-endpoint/time-endpoint.feature"]
+    assert len(data["scenarios"]) == 4
 
 
 def test_writer_handles_scenarios_flow_empty_and_block_with_trailing_keys(tmp_path: Path):
     # `scenarios: {}` — a plan-writer's empty map.
     y1 = BASE_YAML.replace("tasks:\n", "scenarios: {}\ntasks:\n")
     repo = _repo(tmp_path, y1)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     normalize_feature(yaml_path, None, repo)
     data = yaml.safe_load(yaml_path.read_text())
-    assert len(data["scenarios"]) == 6 and data["tasks"][0]["id"] == "TASK-UCNT-001"
+    assert len(data["scenarios"]) == 4 and data["tasks"][0]["id"] == "TASK-TIME-001"
     # block form in the MIDDLE of the file, with a stamp already there.
     y2 = BASE_YAML.replace(
         "tasks:\n",
-        "scenarios:\n  \"The count of an empty store is zero\":\n    verifier: toolchain\n    test_ref: test_count_empty\n"
+        "scenarios:\n  \"The time is fresh on every request\":\n    verifier: toolchain\n    test_ref: test_time_fresh\n"
         "# trailing comment\ntasks:\n",
     )
     repo2 = tmp_path / "two"
     (repo2 / ".guardkit" / "features").mkdir(parents=True)
-    (repo2 / "features" / "users-count-endpoint").mkdir(parents=True)
-    (repo2 / "features" / "users-count-endpoint" / "users-count-endpoint.feature").write_text(UCNT_FEATURE)
-    (repo2 / ".guardkit" / "features" / "FEAT-UCNT.yaml").write_text(y2)
+    (repo2 / "features" / "time-endpoint").mkdir(parents=True)
+    (repo2 / "features" / "time-endpoint" / "time-endpoint.feature").write_text(TIME_FEATURE)
+    (repo2 / ".guardkit" / "features" / "FEAT-TIME.yaml").write_text(y2)
     (repo2 / "qa" / "gates").mkdir(parents=True)
     (repo2 / "qa" / "gates" / "registry.yaml").write_text("gates:\n  - id: hurl-twins\n    path: x.py\n")
-    yp2 = repo2 / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yp2 = repo2 / ".guardkit" / "features" / "FEAT-TIME.yaml"
     normalize_feature(yp2, None, repo2)
     text = yp2.read_text()
     assert "# trailing comment" in text
     data = yaml.safe_load(text)
-    assert data["scenarios"]["The count of an empty store is zero"] == {
-        "verifier": "toolchain", "test_ref": "test_count_empty",
+    assert data["scenarios"]["The time is fresh on every request"] == {
+        "verifier": "toolchain", "test_ref": "test_time_fresh",
     }
-    assert len(data["scenarios"]) == 6
-    assert data["tasks"][0]["id"] == "TASK-UCNT-001" and data["preflight_strict"] is False
+    assert len(data["scenarios"]) == 4
+    assert data["tasks"][0]["id"] == "TASK-TIME-001" and data["preflight_strict"] is False
 
 
 def test_an_invalid_existing_stamp_is_loud_before_anything_runs(tmp_path: Path):
-    bad = BASE_YAML + "scenarios:\n  \"The count of an empty store is zero\":\n    verifier: pytest\n"
+    bad = BASE_YAML + "scenarios:\n  \"The time is fresh on every request\":\n    verifier: pytest\n"
     repo = _repo(tmp_path, bad)
     with pytest.raises(StampNormalizerError, match="invalid existing stamp"):
-        normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo)
+        normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo)
 
 
 def test_dry_run_writes_nothing(tmp_path: Path):
     repo = _repo(tmp_path, BASE_YAML)
-    yaml_path = repo / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
     before = yaml_path.read_text()
     result = normalize_feature(yaml_path, None, repo, dry_run=True)
-    assert result.dry_run and not result.written and len(result.stamped) == 6
+    assert result.dry_run and not result.written and len(result.stamped) == 4
     assert yaml_path.read_text() == before
 
 
@@ -1387,28 +1766,28 @@ def test_loader_default_is_unchanged_unstamped_feature_still_rejects_under_enfor
     (repo / ".guardkit" / "config.yaml").write_text("routing_law: enforced\n")
     assert FeatureLoader.normalize_stamps_on_load is False
     with pytest.raises(FeatureValidationError, match="UNSTAMPED"):
-        FeatureLoader.load_feature("FEAT-UCNT", repo_root=repo, validate_paths=False)
+        FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False)
     # …and nothing was written by the default path.
-    assert "scenarios:" not in (repo / ".guardkit" / "features" / "FEAT-UCNT.yaml").read_text()
+    assert "scenarios:" not in (repo / ".guardkit" / "features" / "FEAT-TIME.yaml").read_text()
 
 
 def test_loader_hook_stamps_inline_before_enforcement_when_asked(tmp_path: Path):
     repo = _repo(tmp_path, BASE_YAML)
     (repo / ".guardkit" / "config.yaml").write_text("routing_law: enforced\n")
     feature = FeatureLoader.load_feature(
-        "FEAT-UCNT", repo_root=repo, validate_paths=False, normalize_stamps=True
+        "FEAT-TIME", repo_root=repo, validate_paths=False, normalize_stamps=True
     )
-    assert len(feature.scenarios) == 6
-    assert feature.scenarios["The count degrades honestly when the database is unavailable"].verifier == "probe:process"
-    assert "scenarios:" in (repo / ".guardkit" / "features" / "FEAT-UCNT.yaml").read_text()
+    assert len(feature.scenarios) == 4
+    assert feature.scenarios["The endpoint is unaffected by database unavailability"].verifier == "probe:process"
+    assert "scenarios:" in (repo / ".guardkit" / "features" / "FEAT-TIME.yaml").read_text()
 
 
 def test_loader_class_flag_drives_the_hook(tmp_path: Path, monkeypatch):
     repo = _repo(tmp_path, BASE_YAML)
     (repo / ".guardkit" / "config.yaml").write_text("routing_law: enforced\n")
     monkeypatch.setattr(FeatureLoader, "normalize_stamps_on_load", True)
-    feature = FeatureLoader.load_feature("FEAT-UCNT", repo_root=repo, validate_paths=False)
-    assert len(feature.scenarios) == 6
+    feature = FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False)
+    assert len(feature.scenarios) == 4
 
 
 # L1 — the writer accepts `scenarios: null` / `~` / `[]` / `{}` as the block
@@ -1438,12 +1817,14 @@ def test_l2_missing_task_doc_is_a_named_warning(tmp_path: Path, caplog):
 
 # L3 — a RULE-MINTED operator stamp is never silent: it is listed under a
 # distinct `operator_stamped` key in the JSON and echoed by the CLI.
+OPERATOR_TITLE = "NAS memory is recorded before and after standup and headroom stays positive"
 OPERATOR_FEATURE = (
-    "Feature: Deploy\n"
-    "  Scenario: The executor stands fleet-memory up on the real NAS\n"
-    "    Given the runbook is pointed at the real NAS with the real deploy environment file\n"
-    "    When the executor runs the runbook\n"
-    "    Then fleet-memory Postgres with pgvector should be live on the NAS\n\n"
+    "Feature: Standup\n"
+    f"  Scenario: {OPERATOR_TITLE}\n"
+    "    Given the operator records the NAS free memory before standup\n"
+    "    When the identity service standup completes with its 2GB memory limit\n"
+    "    And the operator records the NAS free memory after standup\n"
+    "    Then both readings should be captured in the runbook evidence\n\n"
     "  Scenario: The count of an empty store is zero\n"
     "    When I send a GET request to /users/count\n"
     "    Then the response status code should be 200\n"
@@ -1454,18 +1835,18 @@ def test_l3_operator_stamps_are_named_in_the_result_and_the_cli_echo(tmp_path: P
     from guardkit.cli.main import cli
 
     repo = _repo(tmp_path, BASE_YAML, feature_text=OPERATOR_FEATURE)
-    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True)
-    assert result.operator_stamped == ["The executor stands fleet-memory up on the real NAS"]
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo, dry_run=True)
+    assert result.operator_stamped == [OPERATOR_TITLE]
     assert result.to_dict()["operator_stamped"] == result.operator_stamped
     assert result.stamped["The count of an empty store is zero"] == "hurl"
 
     out = CliRunner().invoke(
-        cli, ["qa", "normalize-stamps", "--feature", "FEAT-UCNT", "--repo", str(repo), "--dry-run"]
+        cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo), "--dry-run"]
     )
     assert out.exit_code == 0, out.output
     payload = json.loads(out.output[out.output.index('{\n  "feature_id"'):])
-    assert payload["operator_stamped"] == ["The executor stands fleet-memory up on the real NAS"]
-    assert "minted `operator`" in out.output and "on the real NAS" in out.output
+    assert payload["operator_stamped"] == [OPERATOR_TITLE]
+    assert "minted `operator`" in out.output and OPERATOR_TITLE in out.output
 
 
 # ---------------------------------------------------------------------------
@@ -1496,17 +1877,17 @@ def test_cli_writes_by_default_and_refuses_with_exit_2(tmp_path: Path):
     from guardkit.cli.main import cli
 
     repo = _repo(tmp_path, BASE_YAML)
-    result = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-UCNT", "--repo", str(repo)])
+    result = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo)])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output[result.output.index("{"):])
-    assert payload["written"] is True and len(payload["stamped"]) == 6
-    assert "scenarios:" in (repo / ".guardkit" / "features" / "FEAT-UCNT.yaml").read_text()
+    assert payload["written"] is True and len(payload["stamped"]) == 4
+    assert "scenarios:" in (repo / ".guardkit" / "features" / "FEAT-TIME.yaml").read_text()
 
     feature_text = "Feature: P\n  Scenario: The parser accepts an empty document\n    Given an empty document\n"
     repo2 = _repo(tmp_path / "r2", BASE_YAML, feature_text=feature_text)
-    yp = repo2 / ".guardkit" / "features" / "FEAT-UCNT.yaml"
+    yp = repo2 / ".guardkit" / "features" / "FEAT-TIME.yaml"
     before = yp.read_text()
-    result2 = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-UCNT", "--repo", str(repo2)])
+    result2 = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo2)])
     assert result2.exit_code == 2, result2.output
     payload2 = json.loads(result2.output[result2.output.index("{"): result2.output.rindex("}") + 1])
     assert payload2["refused"] == ["The parser accepts an empty document"] and payload2["written"] is False
