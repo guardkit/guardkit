@@ -83,6 +83,19 @@ R9  STRONG wire markers AND the repo has an HTTP surface → ``hurl``
     "method not allowed"; "content type" — a bare request | response |
     endpoint | json | route | conflict | not-found | rejected NEVER
     suffices alone; a bare path literal never suffices — M1)
+    **R9 WIDENING (RULED, Rich 2026-08-17) — THE MACHINE IDIOM**, same
+    gate, evaluated after the strong markers: verb+noun pairings in the
+    machine's own voice — (a) "the endpoint returns | responds with |
+    rejects | reports | serves | answers" · (b) "returns zero | one | N |
+    an empty X | the count … when" · (c) "unauthenticated | invalid |
+    malformed request(s) … rejected" · (d) "I request the …" / "request(s)
+    the (service) uptime | statistics | count | version | time | health |
+    user by email | users count" · (e) "the request should succeed | fail |
+    be rejected" · (f) "rejected | reported as (a) conflict | invalid |
+    not-found | unsupported | not allowed" (only beside a wire noun) ·
+    (g) "looking up … should find nothing | not found". Datum: planning
+    run 52606651 — the plan-writer's prose IS this idiom; strict R9
+    refused 5/6. Still never a bare noun.
 R10 explicitly human (an operator follows, done by hand, physical robot,
     runbook evidence, human-executed, human operator, "on the real NAS"
     with NO automation subject in the When/Then, or the @operator-handoff
@@ -132,14 +145,21 @@ running service", "looking up", "not-found") and reached 57/60. The second
 tightening REMOVES them again on the re-verifier's evidence: the same bare
 nouns minted hurl on non-wire prose in a real starlette repo, and a rule
 that mints on a poetry anthology cannot be the rule that mints on api_test.
-THE HONEST NUMBER NOW: **32/60** hand stamps reproduce (all 16 strong-marker
-hurl + all 16 R1/R2/R3 process), **28 REFUSE** (25 hand-hurl in the loose
-idiom + the 3 hand-toolchain users-count scenarios — the 08-15 "named
-divergence" is gone: they refuse instead of minting hurl), and **ZERO** are
-silently minted into a different home. api_test's B70F/D450/TIME features
-reproduce whole; FD8D/AE43/8737/UCNT/UBEM/UDBE refuse loud as units (the
-hand stamps stand — a rule's refusal is never wrong; a silent mis-home is).
-Pinned in ``tests/orchestrator/test_stamp_normalizer.py``.
+After the second tightening the honest number was **32/60** (28 refused, 0
+silent). The R9 WIDENING (RULED, Rich 2026-08-17) brings the idiom back as
+VERB+NOUN PAIRINGS and THE HONEST NUMBER NOW: **55/60** hand stamps
+reproduce, **2 REFUSE** ("created through the running service" and "the
+SECOND request should fail" — neither is a ruled phrase), and the **3
+users-count hand-toolchain scenarios are the design's NAMED divergence
+again** (rule = hurl by the same (d)/(e) idiom that mints hurl on their
+hand-hurl neighbour "Requesting a user by id still works alongside the count
+route" — indistinguishable by text; R8 wins whenever the plan names the
+node; live, an existing stamp is never overwritten). Nothing else diverges.
+B70F/FD8D/AE43/D450/TIME/UBEM reproduce whole; 8737/UDBE come back partial
+with the one title named. Pinned in
+``tests/orchestrator/test_stamp_normalizer.py``; the estate corpus was
+re-baselined DELIBERATELY (57 stamps moved, all REFUSED → hurl on the two
+surface repos, every one listed by title and phrase in the fixture README).
 """
 
 from __future__ import annotations
@@ -276,6 +296,17 @@ def _family(*patterns: str) -> List[re.Pattern[str]]:
 R1_DB_UNAVAILABLE = _family(
     r"database (is|becomes|goes|remains) (unavailable|down|unreachable)",
     r"database unavailab",
+    # R9 WIDENING (RULED, Rich 2026-08-17), the one line OUTSIDE R9: the
+    # datum feature (planning run 52606651, "Today's User Count Endpoint")
+    # writes its DB-down scenario as "Given the user DATA STORE is
+    # unavailable" — without this synonym the machine-idiom phrase (a) "the
+    # endpoint reports" would mint HURL on a DB-down scenario, exactly the
+    # silent divergence the ordering law (R1 before R9) exists to prevent
+    # and exactly what api_test's hand stamps call probe:process. "data
+    # store" only — a bare "store" (the memory store / the runbook store /
+    # the Postgres store's own R1 line above) is NOT widened; the estate
+    # corpus moves by zero on this line.
+    r"\bdata ?store (is|becomes|goes|remains) (unavailable|down|unreachable)",
     r"\bdb(-| )down\b",
     r"postgres\w* .* (stopped|unreachable|down|unavailable)",
 )
@@ -778,6 +809,98 @@ _R9_RESPONSE_PART_RE = re.compile(
 _R9_VERB_OR_PATH_RE = re.compile(rf"\b{_HTTP_VERB} requests?\b|\b{_HTTP_VERB}\b[^\n]{{0,40}}?{_PATH_LITERAL}|{_PATH_LITERAL}", re.IGNORECASE)
 
 
+# ---------------------------------------------------------------------------
+# R9 WIDENING (RULED, Rich 2026-08-17) — THE MACHINE IDIOM sub-family.
+#
+# This is a WIDENING of R9, not a return of the loose family. Datum: planning
+# run 52606651 (api_test, "Today's User Count Endpoint") — the plan-writer's
+# spec prose IS the machine idiom and strict R9 refused 5/6 of its
+# scenarios ("The endpoint returns the count of users created today" · "The
+# endpoint returns zero when no users were created today" · "The endpoint
+# returns one when exactly one user was created today" · "Unauthenticated
+# requests to the endpoint are rejected" · "The endpoint reports an error
+# when the data store is unavailable"); the api_test estate fixture carried
+# 28 refusals in the same voice ("I request the service X / the request
+# should succeed / rejected as X / not-found / looking up").
+#
+# The difference from the loose family the second tightening removed: every
+# phrase here is a VERB+NOUN PAIRING in the machine's own voice — "the
+# endpoint returns", "I request the …", "the request should succeed",
+# "rejected as not-found" — never a bare noun. 'conflict' from a poetry
+# anthology, 'requests' from "serving requests", 'endpoint' from "the
+# embeddings endpoint", 'route' from a port-forward do NOT match any of
+# these (pinned on the same real study-tutor scenarios the re-verifier
+# read; the estate corpus stays hurl=0 on every non-surface repo — the
+# surface gate is unchanged — and study-tutor's movers are listed by title
+# in the corpus README).
+#
+# Same gate as R9 (ctx.repo_has_http_surface), matched over the WHOLE
+# scenario text (title + steps, lower-cased), evaluated AFTER the strong
+# markers so the evidence string names the strong marker when one exists.
+# Rule label: "R9" — the sub-family is R9's, not a new rule; the evidence
+# string says "machine idiom (x)" so a reader can tell which phrase minted.
+#
+# The phrases, each with its letter (the letters are the ruling's):
+#   (a) "the endpoint returns | responds with | rejects | reports | serves | answers"
+#   (b) "returns zero | one | two | N | an empty/non-empty X | the count/total/
+#       number/list/record | no X … when"
+#   (c) "unauthenticated | unauthorised | anonymous | invalid | malformed
+#       request(s) | submission(s) | call(s) … are | is | should be | gets rejected"
+#   (d) "I request the/a/an (service) X" · "request(s|ed|ing) the (service |
+#       user(s) ) uptime | statistics | stats | count | version | time | health |
+#       user by email | user(s) count"
+#   (e) "the request should succeed | fail | be rejected"
+#   (f) "rejected | reported as (a) conflict | invalid (input) | not-found |
+#       unsupported | not allowed | method not allowed"
+#   (g) "looking up | look up | lookup of … should | is find nothing | not
+#       found | reported as not found"
+# ---------------------------------------------------------------------------
+R9_MACHINE_IDIOM: List[Tuple[str, re.Pattern[str]]] = [
+    (letter, re.compile(pattern, re.IGNORECASE))
+    for letter, pattern in (
+        ("a", r"\bthe endpoint (?:returns|responds with|rejects|reports|serves|answers)\b"),
+        ("b", r"\breturns? (?:zero|one|two|\d+|an? (?:empty|non-empty) \w+|the (?:count|total|number|list|record)|no \w+) when\b"),
+        ("c", r"\b(?:unauthenticated|unauthori[sz]ed|anonymous|invalid|malformed) (?:requests?|submissions?|calls?) [^\n]*(?:are|is|should be|gets?) rejected\b"),
+        ("d", r"\bI request (?:the|a|an) (?:service )?\w+"),
+        ("d", r"\brequest(?:s|ed|ing)? the (?:service |users? )?(?:uptime|statistics|stats|count|version|time|health|user by email|users? count)\b"),
+        ("e", r"\bthe request should (?:succeed|fail|be rejected)\b"),
+        ("f", r"\b(?:rejected|reported) as (?:a )?(?:conflict|invalid(?: input)?|not[- ]found|unsupported|not allowed|method not allowed)\b"),
+        ("g", r"\b(?:looking up|look up|lookup of) [^\n]*(?:should|is) (?:find nothing|not found|reported as not found)\b"),
+    )
+]
+
+
+# (f) NARROWED on the estate corpus (same sitting): "rejected as invalid" is
+# also how a Postgres store refuses an out-of-range write (study-tutor
+# "A confidence update outside the valid percentage range is rejected" —
+# "the update should be rejected as invalid", no wire in sight). Phrase (f)
+# therefore fires ONLY when a wire NOUN co-occurs somewhere in the scenario:
+# request(s) | endpoint(s) | submission(s) | user(s) | look(ing) up | lookup.
+# api_test's (f) positives all carry one ("Looking up a USER … reported as
+# not found", "Creating a USER … rejected as a conflict", "A malformed USER
+# SUBMISSION is rejected as invalid"); the store scenario carries none and
+# refuses (loud) as before. study-tutor's "A session identifier that does
+# not exist is reported as not found" (an http-app-access-adapter scenario)
+# also carries none and stays REFUSED — a refusal is never wrong.
+_R9_F_WIRE_NOUN_RE = re.compile(
+    r"\b(?:requests?|endpoints?|submissions?|users?|looking up|look up|lookup)\b",
+    re.IGNORECASE,
+)
+
+
+def _r9_machine_idiom_match(text: str) -> Optional[Tuple[str, str]]:
+    """(letter, matched span) of the first machine-idiom phrase that fires,
+    else None. Whole-scenario text (title + steps); same-line spans only.
+    Phrase (f) additionally needs a wire noun somewhere in the scenario."""
+    for letter, pat in R9_MACHINE_IDIOM:
+        m = pat.search(text)
+        if m:
+            if letter == "f" and not _R9_F_WIRE_NOUN_RE.search(text):
+                continue
+            return letter, m.group(0)
+    return None
+
+
 def _r9_match(text: str) -> Optional[str]:
     hit = _first_match(R9_WIRE_STRONG, text)
     if hit is not None:
@@ -978,11 +1101,20 @@ def classify_scenario(
 
     # R9 — STRONG wire markers AND the repo has an HTTP surface (finding 2).
     if context.repo_has_http_surface:
+        why = context.http_surface_evidence or "repo has an HTTP surface"
         hit = _r9_match(text) or _r9_path_with_http_token(text)
         if hit is not None:
-            why = context.http_surface_evidence or "repo has an HTTP surface"
             return Home(
                 verifier="hurl", rule="R9", evidence=f"{hit.strip()} ({why})"
+            )
+        # R9 WIDENING (RULED, Rich 2026-08-17): the machine idiom — verb+noun
+        # pairings in the machine's own voice, after the strong markers.
+        idiom = _r9_machine_idiom_match(text)
+        if idiom is not None:
+            letter, span = idiom
+            return Home(
+                verifier="hurl", rule="R9",
+                evidence=f"{span.strip()} (machine idiom ({letter}); {why})",
             )
 
     # R10 — explicitly human. EXPLICIT match only; never a fallback. The
@@ -1786,6 +1918,7 @@ __all__ = [
     "R6_BROWSER",
     "R7_EXAM",
     "R9_WIRE_STRONG",
+    "R9_MACHINE_IDIOM",
     "R10_OPERATOR",
     "R10_OPERATOR_ANNOTATIONS",
 ]

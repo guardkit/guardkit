@@ -22,6 +22,21 @@ reported, not tuned) · R2 negation · R3 `smoke` requirement · R7 judged-OUTPU
 needs no automation subject. Each finding is pinned on the REAL scenario the
 re-verifier named, read from the estate corpus by title.
 
+R9 WIDENING (RULED, Rich 2026-08-17 — THE MACHINE IDIOM): the plan-writer's
+own spec prose ("the endpoint returns …", "I request the …", "the request
+should succeed | fail | be rejected", "rejected as not-found", "looking up …
+should find nothing") is now an R9 sub-family, gated by the same HTTP-surface
+test, verb+noun pairings only (never a bare noun). Datum: planning run
+52606651 (api_test "Today's User Count Endpoint") — strict R9 refused 5/6.
+Each phrase (a)–(g) is pinned POSITIVE on the refused titles / the api_test
+fixture and NEGATIVE on real estate-corpus prose (off-surface: the gate;
+on-surface study-tutor: LLM/MCP/RAG/store prose the phrases must not read as
+wire). The api_test reproduction is re-reported: 55/60 same · 2 refused ·
+the 3 users-count hand-TOOLCHAIN scenarios are the design's NAMED divergence
+(rule says hurl by the same idiom that mints hurl on their hand-hurl
+neighbours; R8 wins whenever the plan names the node; a hand stamp is never
+overwritten live).
+
 Network-free, subprocess-free: text + tmp_path + a read-only fixture tree.
 """
 
@@ -243,13 +258,13 @@ def test_r3_smoke_harness_meta_is_probe_process(title, steps):
     assert (home.verifier, home.rule) == ("probe:process", "R3")
 
 
-def test_r3_wire_shaped_smoke_probes_are_not_swallowed_by_r3_and_now_refuse():
-    """The runtime-smoke feature's four negative/round-trip probes are
+def test_r3_wire_shaped_smoke_probes_are_not_swallowed_by_r3():
+    """The runtime-smoke feature's negative/round-trip probes are
     hand-stamped hurl (5.2, 5.6–5.8): R3 must not swallow them. Under the
-    second tightening their only wire vocabulary is the LOOSE idiom
-    ("created through the running service", "reported as not found",
-    "rejected as a conflict") — so they REFUSE (never mis-home to
-    probe:process; never hurl by a bare noun)."""
+    R9 WIDENING (08-17) "reported as not found" and "rejected as a conflict"
+    are machine-idiom phrase (f) — beside the wire noun `user` they mint
+    hurl (their hand home); "created through the running service" is NOT a
+    ruled phrase and still REFUSES (loud). None is probe:process."""
     cases = [
         (
             "A user created through the service reads back with identical details",
@@ -271,9 +286,12 @@ def test_r3_wire_shaped_smoke_probes_are_not_swallowed_by_r3_and_now_refuse():
             "Then the creation should be rejected as a conflict\nAnd the original record should remain unchanged",
         ),
     ]
-    for title, steps in cases:
-        home = classify_scenario(title, steps, HTTP)
-        assert home is None, (title, home)
+    homes = [classify_scenario(title, steps, HTTP) for title, steps in cases]
+    assert homes[0] is None, homes[0]  # "created through the running service": not a ruled phrase
+    for home in homes[1:]:
+        assert (home.verifier, home.rule) == ("hurl", "R9") and "machine idiom (f)" in home.evidence, home
+    for home in homes:
+        assert home is None or home.verifier != "probe:process"
 
 
 # FINDING 4 (second tightening): `verdict .* reported` needs `smoke` in the
@@ -827,10 +845,13 @@ def test_r8_plan_named_test_node_is_toolchain_with_test_ref():
     ctx = NormalizeContext(repo_has_http_surface=True, plan_test_refs={title: "test_count_empty"})
     home = _home(title, steps, ctx)
     assert (home.verifier, home.rule, home.test_ref) == ("toolchain", "R8", "test_count_empty")
-    # …and without the node the same scenario now REFUSES (second tightening:
-    # "I request the users count / the response should report" is the loose
-    # idiom — a refusal, not the 08-15 divergence to hurl).
-    assert classify_scenario(title, steps, HTTP) is None
+    # …and without the node the same scenario mints HURL by the machine idiom
+    # (R9 WIDENING 08-17: "I request the users count" is phrase (d), "the
+    # request should succeed" phrase (e)) — the 08-15 design's NAMED
+    # divergence: rule = hurl, hand = toolchain. R8 wins whenever the plan
+    # names the node (above); live, the hand stamp is never overwritten.
+    without = _home(title, steps, HTTP)
+    assert (without.verifier, without.rule) == ("hurl", "R9") and "machine idiom" in without.evidence
 
 
 def test_r8_overlap_law_two_significant_words(tmp_path: Path):
@@ -899,44 +920,54 @@ R9_CASES = [
     ),
 ]
 
-# FINDING 2 (second tightening): the LOOSE family is GONE. These are api_test's
-# own hand-hurl scenarios written in the "I request the service X / the
-# request should succeed / rejected as / not-found / looking up" idiom — under
-# the strong-only law every one REFUSES (loud). A refusal is never wrong; the
-# same bare nouns minted hurl on a poetry anthology.
-R9_LOOSE_NOW_REFUSE = [
+# FINDING 2 (second tightening) removed the LOOSE family (bare nouns). The
+# R9 WIDENING (RULED, Rich 2026-08-17) brings api_test's own hand-hurl idiom
+# back as VERB+NOUN PAIRINGS — the MACHINE IDIOM, phrases (a)–(g). These are
+# the same five real api_test scenarios the second tightening pinned as
+# refusing; each now mints hurl, and the letter of the phrase that minted it
+# is asserted (the evidence string names it).
+R9_MACHINE_IDIOM_API_TEST = [
     (
         "Uptime increases between consecutive requests",
         "When I request the service uptime twice in succession\n"
         "Then the second reported uptime should be greater than the first\n"
         "And both should report the same process start time",
+        "d",
     ),
     (
         "Modifying the statistics is not allowed",
         "When I attempt to submit changes to the service statistics\n"
         "Then the request should be rejected as not allowed",
+        "e",
     ),
     (
         "Deleting by email removes exactly the matching user",
         "Given 3 users exist with distinct emails\nWhen I delete the user by the second user's email\n"
         "Then looking up the second user's email should find nothing\nAnd the other two users should still exist",
+        "g",
     ),
     (
         "An unknown email returns not-found",
         "Given no user exists with email \"ghost@example.com\"\n"
         "When I request the user by email \"ghost@example.com\"\n"
         "Then the request should fail with a not-found response",
+        "d",
     ),
     (
         "The ready endpoint returns success when the service is ready",
         "When I request the ready endpoint\nThen the response should indicate the service is ready",
+        "d",
     ),
 ]
 
 
-@pytest.mark.parametrize("title,steps", R9_LOOSE_NOW_REFUSE, ids=[c[0][:40] for c in R9_LOOSE_NOW_REFUSE])
-def test_finding2_bare_wire_nouns_never_suffice_they_refuse(title, steps):
-    assert classify_scenario(title, steps, HTTP) is None
+@pytest.mark.parametrize("title,steps,letter", R9_MACHINE_IDIOM_API_TEST, ids=[c[0][:40] for c in R9_MACHINE_IDIOM_API_TEST])
+def test_r9_widening_api_test_machine_idiom_is_hurl_by_the_named_phrase(title, steps, letter):
+    home = _home(title, steps, HTTP)
+    assert (home.verifier, home.rule) == ("hurl", "R9")
+    assert f"machine idiom ({letter})" in home.evidence, home.evidence
+    # the gate is unchanged: no HTTP surface → the same text refuses
+    assert classify_scenario(title, steps, NO_HTTP) is None
 
 
 # The REAL study-tutor scenarios the loose family mis-homed to hurl (a
@@ -982,14 +1013,225 @@ def test_finding2_the_strong_markers_in_miniature():
     # "response body should" counts ONLY beside an HTTP verb or a /path in the scenario
     assert _home("B", "When I send a GET request to the ready endpoint\nThen the response body should say ready", HTTP).rule == "R9"
     assert classify_scenario("B2", "When the tutor answers\nThen the response body should be grounded", HTTP) is None
-    # bare nouns: never
-    for steps in ("When I request the users count\nThen the response should report a count of 3",
-                  "When the request is made\nThen the endpoint answers with json",
-                  "When a lookup is made\nThen it is reported as not found",
+    # bare nouns: never (R9 WIDENING 08-17: a NOUN without its machine VERB —
+    # "the request is made", "the endpoint has", "a lookup is made", "the
+    # response arrives", "no WAN route" — is still not a wire marker; and
+    # phrase (f) "rejected as a conflict" needs a wire noun in the scenario,
+    # which "the creation" is not)
+    for steps in ("When the request is made\nThen the endpoint has json in it",
+                  "When a lookup is made\nThen it is not there",
                   "Then the creation should be rejected as a conflict",
+                  "When the response arrives\nThen the json is well formed",
                   "When the port-forward is checked\nThen no WAN route should reach it"):
         assert classify_scenario("bare", steps, HTTP) is None, steps
 
+
+
+# ---------------------------------------------------------------------------
+# R9 WIDENING (RULED, Rich 2026-08-17) — THE MACHINE IDIOM, phrases (a)–(g)
+# ---------------------------------------------------------------------------
+# Datum: planning run 52606651 (api_test, "Today's User Count Endpoint") — the
+# plan-writer's spec prose IS the machine idiom and strict R9 refused 5/6.
+# The feature is a read-only fixture (tests/fixtures/stamp_normalizer/
+# todays-user-count_52606651.feature, byte-copied from the planning branch).
+# Every phrase below is pinned POSITIVE on a refused title / a real api_test
+# scenario AND NEGATIVE on real estate prose: off-surface (the gate) and
+# on-surface study-tutor LLM/MCP/RAG/store prose (narrowness).
+
+DATUM_FEATURE = Path(__file__).parent.parent / "fixtures" / "stamp_normalizer" / "todays-user-count_52606651.feature"
+
+
+def _datum_blocks():
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    return {b.title: b for b in extract_scenario_blocks(DATUM_FEATURE.read_text(encoding="utf-8"))}
+
+
+def test_r9_widening_the_datum_feature_is_six_of_six_and_the_db_down_one_is_process():
+    """The 52606651 spec, whole: five machine-idiom scenarios mint hurl by
+    the named phrase; the DB-down scenario ("Given the user DATA STORE is
+    unavailable") is probe:process by R1 (the one line outside R9 this
+    widening adds — without it phrase (a) "the endpoint reports" would mint
+    hurl on a DB-down scenario, the silent divergence the R1-before-R9
+    ordering exists to prevent). Off-surface, all six refuse."""
+    blocks = _datum_blocks()
+    assert len(blocks) == 6
+    expect = {
+        "The endpoint returns the count of users created today": ("hurl", "R9", "machine idiom (a)"),
+        "The endpoint returns zero when no users were created today": ("hurl", "R9", "machine idiom (a)"),
+        "The endpoint returns one when exactly one user was created today": ("hurl", "R9", "machine idiom (a)"),
+        "The endpoint rejects non-GET requests": ("hurl", "R9", "get request"),  # the strong marker, as before
+        "Unauthenticated requests to the endpoint are rejected": ("hurl", "R9", "machine idiom (c)"),
+        "The endpoint reports an error when the data store is unavailable": ("probe:process", "R1", "data store is unavailable"),
+    }
+    for title, (verifier, rule, evidence) in expect.items():
+        home = _home(title, blocks[title].steps_text, HTTP)
+        assert (home.verifier, home.rule) == (verifier, rule), (title, home)
+        assert evidence in home.evidence, (title, home.evidence)
+    for title, b in blocks.items():
+        off = classify_scenario(title, b.steps_text, NO_HTTP)
+        assert off is None or off.rule == "R1", (title, off)
+
+
+def test_r9_widening_phrase_b_returns_n_when_and_a_reports_serves_answers_in_miniature():
+    """(b) and the (a) verbs no estate title happens to carry — the ruled
+    phrases in miniature, on the surface, and refused off it."""
+    for title, steps, letter in (
+        ("Returns zero when the store is empty", "When the store is empty\nThen it returns zero when asked", "b"),
+        ("Empty list", "Then the service returns an empty list when nothing matches", "b"),
+        ("Count", "Then it returns the count when asked", "b"),
+        ("Serves", "Then the endpoint serves the file", "a"),
+        ("Answers", "Then the endpoint answers within a second", "a"),
+        ("Responds", "Then the endpoint responds with the record", "a"),
+    ):
+        home = _home(title, steps, HTTP)
+        assert (home.verifier, home.rule) == ("hurl", "R9") and f"machine idiom ({letter})" in home.evidence, (title, home)
+        assert classify_scenario(title, steps, NO_HTTP) is None
+    # near-misses that are NOT the phrase: "returns … " without "when";
+    # "returns a baseline plan when"; a subject that is not "the endpoint".
+    for steps in ("Then it returns an empty list", "Then the planner returns a baseline plan when the store is down",
+                  "Then the tutor returns the reply", "Then the tool returns the file contents as a string"):
+        assert classify_scenario("near-miss", steps, HTTP) is None, steps
+
+
+# The REAL positives from the api_test fixture, one per phrase, by title.
+R9_MACHINE_IDIOM_FIXTURE_POSITIVES = [
+    ("features/uptime-endpoint/uptime-endpoint.feature", "Uptime increases between consecutive requests", "d"),
+    ("features/stats-endpoint/stats-endpoint.feature", "Modifying the statistics is not allowed", "e"),
+    ("features/users-count-endpoint/users-count-endpoint.feature", "Attempting to modify the users count is rejected", "e"),
+    ("features/users-by-email-endpoint/users-by-email-endpoint.feature", "A malformed email is rejected as invalid input", "d"),
+    ("features/users-delete-by-email/users-delete-by-email.feature", "Deleting by email removes exactly the matching user", "g"),
+    ("features/runtime-smoke/runtime-smoke.feature", "Looking up a user that was never created is reported as not found", "f"),
+    ("features/runtime-smoke/runtime-smoke.feature", "Creating a user with an email already in use is rejected as a conflict", "f"),
+    ("features/runtime-smoke/runtime-smoke.feature", "A malformed user submission is rejected as invalid", "f"),
+]
+
+
+@pytest.mark.parametrize("feature,title,letter", R9_MACHINE_IDIOM_FIXTURE_POSITIVES, ids=[c[1][:40] for c in R9_MACHINE_IDIOM_FIXTURE_POSITIVES])
+def test_r9_widening_fixture_positives_by_phrase(feature, title, letter):
+    from guardkit.orchestrator.stamp_normalizer import extract_scenario_blocks
+
+    blocks = {b.title: b for b in extract_scenario_blocks((FIXTURE_ROOT / feature).read_text(encoding="utf-8"))}
+    home = _home(title, blocks[title].steps_text, HTTP)
+    assert (home.verifier, home.rule) == ("hurl", "R9") and f"machine idiom ({letter})" in home.evidence, home
+    assert classify_scenario(title, blocks[title].steps_text, NO_HTTP) is None
+
+
+# The REAL negatives — OFF-SURFACE repos where the phrase text DOES occur:
+# the surface gate (unchanged) keeps them REFUSED. Read from the corpus.
+R9_MACHINE_IDIOM_OFF_SURFACE_NEGATIVES = [
+    ("specialist-agent", "features/mode-2-pipeline-integration/mode-2-pipeline-integration.feature",
+     "Alignment request with missing question", "e"),               # "the request should be rejected" — an LLM alignment request
+    ("specialist-agent", "features/clarification-engine/clarification-engine.feature",
+     "Getting the context summary after exploration", "d"),         # "I request the context summary" — a CLI/engine call
+    ("lpa-platform-poc", "docs/poc/features/FEAT-POC-007-demo-data-reset.feature",
+     "An unauthenticated request cannot reset demo data", "e"),     # "the request should be rejected" — no detected surface
+    ("lpa-platform-poc", "docs/poc/features/FEAT-POC-003-moneyhub-integration.feature",
+     "Donor triggers a manual sync of a connection", "d"),           # "I request a fresh sync"
+]
+
+
+@pytest.mark.parametrize("repo,feature,title,letter", R9_MACHINE_IDIOM_OFF_SURFACE_NEGATIVES, ids=[c[2][:40] for c in R9_MACHINE_IDIOM_OFF_SURFACE_NEGATIVES])
+def test_r9_widening_off_surface_the_gate_holds(repo, feature, title, letter):
+    from guardkit.orchestrator.stamp_normalizer import R9_MACHINE_IDIOM
+
+    t, steps, ann = _corpus_scenario(repo, feature, title)
+    text = f"{t}\n{steps}".lower()
+    assert any(l == letter and pat.search(text) for l, pat in R9_MACHINE_IDIOM), "the phrase text is present"
+    home = classify_scenario(t, steps, NO_HTTP, annotations=ann)
+    assert home is None or home.verifier != "hurl", (title, home)
+
+
+# The REAL negatives ON the surface — study-tutor (starlette): LLM / MCP /
+# RAG / store / NATS prose in the neighbourhood of every phrase; none may
+# mint hurl. (The corpus fence lists study-tutor's 18 genuine HTTP movers by
+# title in the fixture README; these are the ones that must NOT move.)
+R9_MACHINE_IDIOM_STUDY_TUTOR_NEGATIVES = [
+    ("features/mcp-llm-player-coach-adapters/mcp-llm-player-coach-adapters.feature",
+     "The Coach adapter returns a fully-shaped verdict for a valid response"),          # (a): "the Coach adapter returns", not "the endpoint returns"
+    ("features/http-app-access-adapter/http-app-access-adapter.feature",
+     "The service reports ready only once it is answering requests"),                    # (a): "the service reports", "answering requests"
+    ("features/deterministic-session-planner/deterministic-session-planner.feature",
+     "When the student model is unreachable, the planner returns a baseline plan"),      # (b): "returns a baseline plan"
+    ("features/primary-text-rag-and-quote-verifier/primary-text-rag-and-quote-verifier.feature",
+     "A retrieval request for a text absent from the corpus returns an empty result with an explicit reason"),  # (b)/(d): "retrieval request … returns an empty result with"
+    ("features/nats-fleet-integration/nats-fleet-integration.feature",
+     "A command with an unknown name is rejected with a list of supported commands"),    # (c)/(f): a NATS command, "rejected with"
+    ("features/durable-cross-device-sessions/durable-cross-device-sessions.feature",
+     "Requesting session status returns its lifecycle state and turn count"),            # (d): "requesting session status", not "request the …"
+    ("features/durable-cross-device-sessions/durable-cross-device-sessions.feature",
+     "Acting on an unknown session reports the session as not found"),                   # (f): "reports the session as not found", not "reported as"
+    ("features/student-model-postgres-store/student-model-postgres-store.feature",
+     "A confidence update outside the valid percentage range is rejected"),              # (f) NARROWED: "the update should be rejected as invalid" — a store write, no wire noun
+    ("features/reachy-local-voice-migration/reachy-local-voice-migration.feature",
+     "The student-model lookup reads from the durable student store"),                   # (g): "lookup" without "should find nothing / not found"
+]
+
+
+@pytest.mark.parametrize("feature,title", R9_MACHINE_IDIOM_STUDY_TUTOR_NEGATIVES, ids=[c[1][:40] for c in R9_MACHINE_IDIOM_STUDY_TUTOR_NEGATIVES])
+def test_r9_widening_study_tutor_machinery_is_never_hurl_by_the_machine_idiom(feature, title):
+    t, steps, ann = _corpus_scenario("study-tutor", feature, title)
+    home = classify_scenario(t, steps, HTTP, annotations=ann)
+    assert home is None or home.verifier != "hurl", (title, home)
+
+
+def test_r9_widening_phrase_f_needs_a_wire_noun_the_store_write_refuses():
+    """(f) NARROWED on the corpus: "rejected as invalid" without request |
+    endpoint | submission | user(s) | look(ing) up | lookup somewhere in the
+    scenario is a store's refusal, not the wire's."""
+    t, steps, _ = _corpus_scenario("study-tutor", "features/student-model-postgres-store/student-model-postgres-store.feature",
+                                   "A confidence update outside the valid percentage range is rejected")
+    assert "rejected as invalid" in steps.lower()
+    assert classify_scenario(t, steps, HTTP) is None
+    # the same words beside a wire noun ARE the machine idiom
+    home = _home("A malformed user submission is rejected as invalid",
+                 "When a user is submitted with a malformed body\nThen the submission should be rejected as invalid", HTTP)
+    assert "machine idiom (f)" in home.evidence
+
+
+# study-tutor's GENUINE HTTP scenarios the widening now decides — the
+# http-app-access-adapter (plain JSON endpoints on :8100) and the Keycloak
+# server-side token validation of the same server. Listed by title in the
+# corpus README; three are pinned here by phrase.
+R9_MACHINE_IDIOM_STUDY_TUTOR_GENUINE_HTTP = [
+    ("features/http-app-access-adapter/http-app-access-adapter.feature",
+     "A malformed request is rejected without touching any session state", "c"),
+    ("features/http-app-access-adapter/http-app-access-adapter.feature",
+     "A request without a token is rejected as unauthenticated", "e"),
+    ("features/keycloak-server-token-validation/keycloak-server-token-validation.feature",
+     "The Bearer extraction contract is identical in both modes", "e"),
+]
+
+
+@pytest.mark.parametrize("feature,title,letter", R9_MACHINE_IDIOM_STUDY_TUTOR_GENUINE_HTTP, ids=[c[1][:40] for c in R9_MACHINE_IDIOM_STUDY_TUTOR_GENUINE_HTTP])
+def test_r9_widening_study_tutor_genuine_http_scenarios_are_hurl(feature, title, letter):
+    t, steps, ann = _corpus_scenario("study-tutor", feature, title)
+    home = _home(t, steps, HTTP)
+    assert (home.verifier, home.rule) == ("hurl", "R9") and f"machine idiom ({letter})" in home.evidence, home
+
+
+def test_r9_widening_ordering_a_db_down_http_scenario_is_still_probe_process():
+    """R1 before R9 holds through the widening: study-tutor's http adapter
+    "The service degrades cleanly when the store is unreachable" says "the
+    request should fail" (phrase (e)) AND "the Postgres store becomes
+    unreachable" (R1) — process wins, as api_test's hand stamps say."""
+    t, steps, _ = _corpus_scenario("study-tutor", "features/http-app-access-adapter/http-app-access-adapter.feature",
+                                   "The service degrades cleanly when the store is unreachable")
+    assert "the request should fail" in steps.lower()
+    home = _home(t, steps, HTTP)
+    assert (home.verifier, home.rule) == ("probe:process", "R1")
+    # …and "data store" is the R1 synonym the datum needed; a bare "store" is not
+    assert _home("D", "Given the data store is unavailable\nWhen the endpoint reports an error", HTTP).rule == "R1"
+    assert _home("D2", "Given the memory store is unavailable\nThen the endpoint reports an error", HTTP).rule == "R9"
+
+
+def test_r9_widening_evidence_names_the_phrase_and_the_strong_marker_wins_first():
+    """A scenario with BOTH a strong marker and the idiom is evidenced by the
+    strong marker (the widening is evaluated after R9's strong family)."""
+    home = _home("Both", "When I send a GET request to /users/count\nThen the request should succeed", HTTP)
+    assert "machine idiom" not in home.evidence and "get request to" in home.evidence
+    only = _home("Only", "When I request the users count\nThen the request should succeed", HTTP)
+    assert "machine idiom (d)" in only.evidence
 
 
 @pytest.mark.parametrize("title,steps", R9_CASES, ids=[c[0][:40] for c in R9_CASES])
@@ -1305,16 +1547,21 @@ def test_background_exclusion_keeps_the_smoke_probes_out_of_r3_end_to_end():
     """runtime-smoke's Background says 'throwaway sandboxed environment'; had
     the Background been folded into every scenario, all twelve would be R3.
     Through the fixture tree, 5.2/5.6/5.7/5.8 are NOT probe:process — under
-    the second tightening they REFUSE (their only wire words are the loose
-    idiom) — named by the result, not stamped; the other eight are decided."""
+    the R9 WIDENING (08-17) 5.6/5.7/5.8 mint hurl by machine-idiom phrase (f)
+    (their hand home) and 5.2 ("created through the running service", not a
+    ruled phrase) REFUSES — named by the result, not stamped."""
     yaml_path = FIXTURE_ROOT / ".guardkit" / "features" / "FEAT-8737.yaml"
     result = normalize_feature(yaml_path, None, FIXTURE_ROOT, dry_run=True, ignore_existing=True)
     assert set(result.refused) == {
         "A user created through the service reads back with identical details",
+    }
+    for title in (
         "Looking up a user that was never created is reported as not found",
         "Creating a user with an email already in use is rejected as a conflict",
         "A malformed user submission is rejected as invalid",
-    }
+    ):
+        assert result.stamped[title] == "hurl" and result.rules[title] == "R9", title
+    assert "probe:process" not in {result.stamped[t] for t in result.stamped if t.startswith(("Looking", "Creating a user with", "A malformed"))}
 
 
 # ---------------------------------------------------------------------------
@@ -1405,23 +1652,33 @@ API_TEST_FEATURES = [
 ]
 
 # The 08-15 design named ONE divergence: users-count 7.1–7.3 — hurl by rule
-# (R9 loose) when the plan names no test node; toolchain by hand. Under the
-# second tightening the loose R9 family is gone, so those three (and every
-# other hand-hurl scenario written in the "I request the service X" idiom)
-# REFUSE — a refusal is never a divergence. THE HONEST NUMBER: 32/60 hand
-# stamps reproduce (all 16 strong-marker hurl + all 16 R1/R2/R3 process),
-# 28 REFUSE (25 hand-hurl + the 3 hand-toolchain), and ZERO are silently
-# minted into a different home. Features that reproduce whole: B70F 10/10,
-# D450 2/2, TIME 4/4; the six with loose-idiom hurl refuse loud as a unit
-# (nothing written) — exactly condition 2.
-FORMERLY_DIVERGENT_NOW_REFUSE = {
+# when the plan names no test node; toolchain by hand. The second tightening
+# made them REFUSE (loose family gone: 32/60 same · 28 refused · 0 silent).
+# The R9 WIDENING (RULED, Rich 2026-08-17) brings the machine idiom back as
+# verb+noun pairings, and THE HONEST NUMBER IS NOW: 55/60 hand stamps
+# reproduce, 2 REFUSE ("created through the running service" and "the SECOND
+# request should fail" — neither is a ruled phrase), and the 3 users-count
+# hand-TOOLCHAIN scenarios are the design's NAMED DIVERGENCE again: the rule
+# says hurl by exactly the idiom ("I request the users count" (d) / "the
+# request should succeed" (e)) that mints hurl on their hand-hurl neighbour
+# "Requesting a user by id still works alongside the count route" — a rule
+# cannot tell them apart by text; the human could because the test nodes
+# existed. R8 wins whenever the plan names the node (proven below); live, a
+# hand stamp is never overwritten. NOTHING ELSE diverges. Features that
+# reproduce whole: B70F 10/10, FD8D 5/5, AE43 8/8, D450 2/2, TIME 4/4,
+# UBEM 6/6; 8737 and UDBE come back PARTIAL (one refusal each, named).
+NAMED_DIVERGENCE_HAND_TOOLCHAIN_RULE_HURL = {
     "The count reflects the number of stored users",
     "The count of an empty store is zero",
     "Creating a user increments the count",
 }
-REPRODUCED_WHOLE = {"FEAT-B70F": 10, "FEAT-D450": 2, "FEAT-TIME": 4}
-EXPECTED_SAME = 32
-EXPECTED_REFUSED = 28
+STILL_REFUSE = {
+    "A user created through the service reads back with identical details",
+    "Deleting the same email twice reports not found the second time",
+}
+REPRODUCED_WHOLE = {"FEAT-B70F": 10, "FEAT-FD8D": 5, "FEAT-AE43": 8, "FEAT-D450": 2, "FEAT-TIME": 4, "FEAT-UBEM": 6}
+EXPECTED_SAME = 55
+EXPECTED_REFUSED = 2
 
 
 def _hand_stamps(feature_id: str) -> dict:
@@ -1444,7 +1701,7 @@ def _classify_fixture_titles():
     return out
 
 
-def test_api_test_reproduction_32_of_60_28_refuse_zero_silent_divergence():
+def test_api_test_reproduction_55_of_60_2_refuse_3_named_divergence_nothing_silent():
     by_title = _classify_fixture_titles()
     rows = []
     for fid in API_TEST_FEATURES:
@@ -1454,12 +1711,14 @@ def test_api_test_reproduction_32_of_60_28_refuse_zero_silent_divergence():
     assert len(rows) == 60
     same = [(f, t) for f, t, hv, gv, _ in rows if gv == hv]
     refused = [(f, t) for f, t, hv, gv, _ in rows if gv is None]
-    silent = [(f, t, hv, gv) for f, t, hv, gv, _ in rows if gv is not None and gv != hv]
-    assert silent == [], silent  # THE LAW: no silent mis-home, ever
+    divergent = {t: (hv, gv) for f, t, hv, gv, _ in rows if gv is not None and gv != hv}
+    # THE LAW: no silent mis-home — the ONLY divergence is the NAMED one
+    # (hand toolchain → rule hurl on users-count 7.1–7.3), nothing else.
+    assert set(divergent) == NAMED_DIVERGENCE_HAND_TOOLCHAIN_RULE_HURL, divergent
+    assert all(v == ("toolchain", "hurl") for v in divergent.values()), divergent
     assert len(same) == EXPECTED_SAME, (len(same), sorted(refused))
-    assert len(refused) == EXPECTED_REFUSED
-    assert FORMERLY_DIVERGENT_NOW_REFUSE <= {t for _, t in refused}
-    # every reproduced stamp is a strong hurl or a process rule
+    assert {t for _, t in refused} == STILL_REFUSE and len(refused) == EXPECTED_REFUSED
+    # every reproduced stamp is a strong/machine-idiom hurl or a process rule
     for f, t, hv, gv, rule in rows:
         if gv == hv:
             assert (gv, rule) in {("hurl", "R9"), ("probe:process", "R1"), ("probe:process", "R2"), ("probe:process", "R3")}, (t, gv, rule)
@@ -1473,21 +1732,29 @@ def test_api_test_reproduction_32_of_60_28_refuse_zero_silent_divergence():
         assert result.stamped == _hand_stamps(fid) and len(result.stamped) == n, fid
 
 
-def test_api_test_loose_idiom_features_come_back_partial_with_refused_named():
-    for fid in ("FEAT-FD8D", "FEAT-AE43", "FEAT-8737", "FEAT-UCNT", "FEAT-UBEM", "FEAT-UDBE"):
+def test_api_test_the_two_unruled_phrases_come_back_partial_with_the_title_named():
+    """8737 ("created through the running service") and UDBE ("the SECOND
+    request should fail") each carry ONE scenario outside the ruled phrases:
+    PARTIAL, the refused title named, everything else decided."""
+    for fid, title in (
+        ("FEAT-8737", "A user created through the service reads back with identical details"),
+        ("FEAT-UDBE", "Deleting the same email twice reports not found the second time"),
+    ):
         result = normalize_feature(
             FIXTURE_ROOT / ".guardkit" / "features" / f"{fid}.yaml", None, FIXTURE_ROOT,
             dry_run=True, ignore_existing=True,
         )
-        assert result.refused, fid  # PARTIAL: at least one loose-idiom title named
+        assert result.refused == [title], (fid, result.refused)
+        assert len(result.stamped) == len(_hand_stamps(fid)) - 1
 
 
 def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path):
     """The design's recommendation: R8 wins when the toolchain has a real
     node. Give FEAT-UCNT a task doc naming test_count_empty /
     test_count_incremental and 7.2 + 7.3 come back toolchain (7.1's title
-    shares only 'count' with either node — one word is not a pin). The rest of
-    the feature refuses (loose idiom), so classify per title."""
+    shares only 'count' with either node — one word is not a pin), so 7.1
+    stays the ONE named divergence (rule hurl by the machine idiom, hand
+    toolchain); the rest of the feature is hurl by the same idiom."""
     import shutil
 
     repo = tmp_path / "api_test"
@@ -1510,15 +1777,17 @@ def test_api_test_divergence_closes_when_the_plan_names_the_nodes(tmp_path: Path
     assert (empty.verifier, empty.test_ref) == ("toolchain", "test_count_empty")
     incr = _home("Creating a user increments the count", blocks["Creating a user increments the count"].steps_text, ctx)
     assert (incr.verifier, incr.test_ref) == ("toolchain", "test_count_incremental")
-    # 7.1 has no node and no strong wire marker: it refuses (no longer hurl).
-    assert classify_scenario("The count reflects the number of stored users",
-                             blocks["The count reflects the number of stored users"].steps_text, ctx) is None
-    # the feature comes back PARTIAL: 7.2 + 7.3 decided (toolchain), 7.1 + the
-    # loose-idiom scenarios named in `refused` — nothing invented for them.
+    # 7.1 has no node: the machine idiom (R9 WIDENING 08-17) mints hurl —
+    # the named divergence against its hand toolchain stamp.
+    seven_one = _home("The count reflects the number of stored users",
+                      blocks["The count reflects the number of stored users"].steps_text, ctx)
+    assert (seven_one.verifier, seven_one.rule) == ("hurl", "R9") and "machine idiom" in seven_one.evidence
+    # the feature comes back WHOLE: 7.2 + 7.3 toolchain (R8), the rest hurl.
     result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-UCNT.yaml", None, repo, dry_run=True, ignore_existing=True)
     assert result.stamped["The count of an empty store is zero"] == "toolchain"
     assert result.stamped["Creating a user increments the count"] == "toolchain"
-    assert "The count reflects the number of stored users" in result.refused
+    assert result.stamped["The count reflects the number of stored users"] == "hurl"
+    assert result.refused == []
 
 
 def test_ignore_existing_is_dry_run_only(tmp_path: Path):
