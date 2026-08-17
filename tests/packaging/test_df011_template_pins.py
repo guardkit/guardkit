@@ -1,7 +1,7 @@
 """DF-011 seam guard: the packaged template BYTES must not change.
 
 The specialist-agent Session C loader pins the two planning-command templates by
-sha256 content hash (feature-spec.md 79a6c306…, feature-plan.md cb440952…) and
+sha256 content hash (feature-spec.md 2e7a9740…, feature-plan.md 15550590… — bumped 2026-08-17 to main d324f255) and
 refuses any unpinned version. DF-011's packaging change (hatch force-include
 installer/core -> guardkit/_installer_core + importlib.resources resolution) is a
 DISTRIBUTION change only — it must not alter a single byte of those files, or the
