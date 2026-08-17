@@ -514,16 +514,22 @@ guardkit — there is no fallback home):
 `{feature-name}_summary.md`, append a `## Verifier routing (proposed)`
 section listing each accepted scenario title with a proposed stamp from the
 table above — one line per scenario, e.g.
-`- "User signs in with valid credentials" → hurl`. The proposal is
-advisory; `/feature-plan` writes the **authoritative** per-scenario map into
-the feature YAML (`scenarios:`), where guardkit validates it.
+`- "User signs in with valid credentials" → hurl`. **Quote each title
+VERBATIM from the `.feature` file** — the same characters as its
+`Scenario:` line, never a paraphrase — because `/feature-plan` copies these
+titles into the authoritative `scenarios:` map and a paraphrased key is an
+unstamped scenario. The proposal is advisory; `/feature-plan` writes the
+**authoritative** per-scenario map into the feature YAML (`scenarios:`),
+where guardkit validates it.
 
-**Enforcement is opt-in per repo** (`routing_law: enforced` in the target
-repo's `.guardkit/config.yaml`, or per feature in its YAML): under the flag,
-a scenario missing from the stamp map REJECTS the plan load. `api_test` — the
-Hurl-pilot repo — flips first. In an unflipped repo the stamp is still
-schema-checked whenever present (unknown home = loud error), but absent
-stamps do not block.
+**Enforcement is opt-in per repo — and `routing_law:` is REPO/HUMAN
+POLICY.** A human sets `routing_law: enforced` in the target repo's
+`.guardkit/config.yaml` (or, as an escape hatch, per feature in its YAML);
+under the flag, a scenario missing from the stamp map REJECTS the plan load.
+`api_test` — the Hurl-pilot repo — flips first. **Neither this command nor
+`/feature-plan` emits `routing_law:` — the plan-writer never sets policy.**
+In an unflipped repo the stamp is still schema-checked whenever present
+(unknown home = loud error), but absent stamps do not block.
 
 ---
 

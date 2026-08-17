@@ -214,7 +214,12 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
     Shifted +40 again by the ROUTING-LAW template additions (card Q8/A.2,
     2026-08-15): 3 schema-table rows + "The Routing Law" section, both above
     the anchors (:1842/:1903/:1910/:1933 → :1882/:1943/:1950/:1973); anchor
-    bytes again unchanged."""
+    bytes again unchanged. Shifted +9 again by the R9-WIDENING template note
+    (RULED, Rich 2026-08-17): the copyable `routing_law: enforced` line left
+    the worked example, the VERBATIM-titles rule and the "plan-writer never
+    sets policy" instruction were added above the anchors
+    (:1882/:1943/:1950/:1973 → :1891/:1952/:1959/:1982); anchor bytes again
+    unchanged."""
     results = lint_command_templates()
     assert "feature-plan.md" in results
     ic = [
@@ -224,7 +229,7 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
         and "integration contracts" in f.message.lower()
     ]
     lines = {f.line for f in ic}
-    assert {1882, 1943, 1950, 1973} <= lines, (
+    assert {1891, 1952, 1959, 1982} <= lines, (
         f"expected the 4 Integration-Contracts anchors flagged, got lines {lines}"
     )
 
