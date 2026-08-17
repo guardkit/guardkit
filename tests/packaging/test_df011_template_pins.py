@@ -25,10 +25,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # (repo-relative path, expected sha256) — the specialist-seam pins.
 PINNED_TEMPLATES = {
     "installer/core/commands/feature-spec.md": (
-        "f1bd5e603dece5030f746d65e82ac0ab0a899c3689bd16ca093294474d6acf67"
+        "2e7a97405aaa8869838ac37befd75a24c7ec112de934007d96f511e8718cf71e"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)
     ),
     "installer/core/commands/feature-plan.md": (
-        "6e4c87b9a324eb355f7e33844c0558b565987ae8f0bc5ff64d7bfeaaf7447ffb"
+        "15550590cf5e411bb5420e93fef1c12f2ed6bd7c14668e9be674ac5a3dcd42f8"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)
     ),
 }
 
