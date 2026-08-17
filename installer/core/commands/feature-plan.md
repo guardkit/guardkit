@@ -315,9 +315,9 @@ orchestration:
 | `complexity` | int | No | Aggregate complexity (1-10) |
 | `estimated_tasks` | int | No | Task count |
 | `evidence_repos` | array | No | Sibling repos the feature writes to (see **Cross-Repo Features** below). Default `[]`. |
-| `routing_law` | string | No | `enforced` or `off` — the ROUTING LAW flag (see **The Routing Law** below). Absent = defer to the repo flag in `.guardkit/config.yaml`. |
+| `routing_law` | string | No | `enforced` or `off` — the ROUTING LAW flag, **REPO/HUMAN POLICY** (see **The Routing Law** below). Absent = defer to the repo flag in `.guardkit/config.yaml`. **This command never emits it.** |
 | `feature_files` | array | No | Repo-relative Gherkin `.feature` paths naming this feature's approved-scenario universe. **Required when the law is enforced.** |
-| `scenarios` | map | No | Per-scenario verifier map: Gherkin scenario title → `verifier:` stamp (see **The Routing Law** below). |
+| `scenarios` | map | No | Per-scenario verifier map: Gherkin scenario title (**VERBATIM** from the `.feature`) → `verifier:` stamp (see **The Routing Law** below). |
 
 **Task-level fields:**
 | Field | Type | Required | Description |
@@ -424,21 +424,30 @@ routing in its summary; **this command writes the authoritative map** into
 the feature YAML:
 
 ```yaml
-routing_law: enforced            # optional — see enforcement below
 feature_files:
   - features/user-auth/user-auth.feature   # the approved-scenario universe
 scenarios:
-  "User signs in with valid credentials":
+  "User signs in with valid credentials":         # the spec's Scenario title, VERBATIM
     verifier: hurl
-  "Rate limiter refuses the 6th attempt":
+  "Rate limiter refuses the 6th attempt":         # copied, never paraphrased
     verifier: toolchain
     test_ref: test_rate_limiter_refuses_sixth   # pins the scenario to a named test
 ```
 
-**Enforcement is opt-in.** With `routing_law: enforced` (per repo in
-`.guardkit/config.yaml` — `api_test`, the Hurl-pilot repo, flips first — or
-per feature in its YAML, where the feature-level value wins and
-`routing_law: off` is the escape hatch for historical features), a scenario
+**`scenarios:` keys MUST be the spec's `Scenario:` titles VERBATIM** — copy
+the title text from the `.feature` file character for character; never
+paraphrase, re-case, or tidy it. Under the law a key that does not equal a
+title in `feature_files` matches nothing, so **a paraphrased key is an
+unstamped scenario** (and, when enforced, rejects the plan load by name).
+
+**Enforcement is opt-in — and `routing_law:` is REPO/HUMAN POLICY, not a
+plan-writer field.** A human sets `routing_law: enforced` in the target
+repo's `.guardkit/config.yaml` (`api_test`, the Hurl-pilot repo, flips
+first); a human may also set it per feature in its YAML, where the
+feature-level value wins and `routing_law: off` is the escape hatch for
+historical features. **Do NOT emit `routing_law:` in the feature YAML —
+the plan-writer never sets policy**; write `feature_files:` and
+`scenarios:` only, and let the repo flag decide. Under the flag, a scenario
 found in `feature_files` but missing from `scenarios:` **rejects the plan
 load**, naming the unstamped titles. Without the flag, absent stamps do not
 block — but a present stamp is always schema-checked.
