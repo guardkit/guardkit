@@ -24,12 +24,118 @@ Do not edit the copies. Refresh = re-copy from the repos + update MANIFEST.tsv
 | fleet-memory | no | 233 | 210 | 19 | 4 | 0 | 0 | 0 | 0 | 0 |
 | fleet-gateway | no | 33 | 24 | 9 | 0 | 0 | 0 | 0 | 0 | 0 |
 | specialist-agent | no | 796 | 731 | 28 | 2 | 35 | 0 | 0 | 0 | 0 |
-| study-tutor | YES (starlette) | 501 | 444 | 14 | 10 | 3 | 28 | 1 | 0 | 1 |
+| study-tutor | YES (starlette) | 501 | 426 | 14 | 10 | 3 | 28 | 1 | 18 | 1 |
 | guardkit | no | 168 | 161 | 7 | 0 | 0 | 0 | 0 | 0 | 0 |
 | lpa-platform-poc | no | 205 | 195 | 0 | 0 | 4 | 0 | 4 | 0 | 2 |
 | agentic-dataset-factory | no | 253 | 251 | 0 | 2 | 0 | 0 | 0 | 0 | 0 |
-| api_test | YES (hurl-twins gate) | 74 | 41 | 0 | 17 | 0 | 0 | 0 | 16 | 0 |
-| **TOTAL** | | **3077** | **2698** | 217 | 68 | 42 | 28 | 5 | 16 | 3 |
+| api_test | YES (hurl-twins gate) | 74 | 2 | 0 | 17 | 0 | 0 | 0 | 55 | 0 |
+| **TOTAL** | | **3077** | **2641** | 217 | 68 | 42 | 28 | 5 | 73 | 3 |
+
+## Changes vs 0fb8057b (the R9 WIDENING — the machine idiom, RULED by Rich 2026-08-17)
+
+Datum: planning run 52606651 (api_test, "Today's User Count Endpoint") — the
+plan-writer's spec prose IS the machine idiom ("The endpoint returns the count
+of users created today", "Unauthenticated requests to the endpoint are
+rejected" …) and strict R9 refused 5/6; the api_test fixture carried 28
+refusals in the same voice. R9 gained a sub-family of VERB+NOUN PAIRINGS —
+never a bare noun — behind the SAME surface gate:
+
+- (a) `the endpoint (returns|responds with|rejects|reports|serves|answers)`
+- (b) `returns? (zero|one|two|N|an? (empty|non-empty) X|the (count|total|number|list|record)|no X) when`
+- (c) `(unauthenticated|unauthori[sz]ed|anonymous|invalid|malformed) (requests?|submissions?|calls?) … (are|is|should be|gets?) rejected`
+- (d) `I request (the|a|an) (service )?X` · `request(s|ed|ing)? the (service |users? )?(uptime|statistics|stats|count|version|time|health|user by email|users? count)`
+- (e) `the request should (succeed|fail|be rejected)`
+- (f) `(rejected|reported) as (a )?(conflict|invalid( input)?|not[- ]found|unsupported|not allowed|method not allowed)` — NARROWED on this corpus: fires only beside a wire noun (request(s) | endpoint(s) | submission(s) | user(s) | look(ing) up | lookup) in the scenario; study-tutor's Postgres-store "the update should be rejected as invalid" therefore stays REFUSED
+- (g) `(looking up|look up|lookup of) … (should|is) (find nothing|not found|reported as not found)`
+
+Plus ONE line outside R9: R1 learned `data ?store (is|becomes|goes|remains) (unavailable|down|unreachable)` — the datum's DB-down scenario ("Given the user data store is unavailable") would otherwise have been minted hurl by (a) "the endpoint reports"; a bare "store" is NOT widened and this corpus moves by zero on that line.
+
+This baseline was re-drawn DELIBERATELY (`STAMP_CORPUS_REBASELINE=1`).
+
+**57 stamps moved — every one REFUSED → hurl, on the two surface repos only.**
+api_test hurl 16 → 55 (REFUSED 41 → 2: "A user created through the service
+reads back with identical details" — `created through the running service` is
+not a ruled phrase — and "Deleting the same email twice reports not found the
+second time" — "the SECOND request should fail" is not phrase (e)); study-tutor
+hurl 0 → 18 (REFUSED 444 → 426). Every non-surface repo is byte-identical
+(hurl 0 · operator 3 · bus/process/exam unchanged). ZERO silent divergences:
+no probe:process, probe:bus, exam, flutter, playwright or operator scenario
+moved. api_test reproduction (the 60 hand stamps, `test_stamp_normalizer.py`):
+was 32/60 same · 28 refused · 0 silent → now **55/60 same · 2 refused · 3 the
+design's NAMED divergence** (users-count 7.1–7.3: hand toolchain, rule hurl by
+the same (d)/(e) idiom that mints hurl on their hand-hurl neighbour
+"Requesting a user by id still works alongside the count route"; R8 wins
+whenever the plan names the node; live, an existing stamp is never
+overwritten). Refused 2,698 → 2,641. Every row below: title · old → new · the
+phrase that minted it.
+
+### study-tutor REFUSED → hurl — 18 (all genuine HTTP scenarios: the http-app-access-adapter's plain JSON endpoints on :8100 and the Keycloak server-side token validation of the same server — "a request arrives with … / the request should be rejected as unauthenticated")
+
+| repo | feature | scenario | old → new | phrase | matched |
+|---|---|---|---|---|---|
+
+| study-tutor | http-app-access-adapter | A request without a token is rejected as unauthenticated | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | http-app-access-adapter | An unknown token is rejected as unauthenticated | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | http-app-access-adapter | A malformed request is rejected without touching any session state | REFUSED → hurl | (c) "unauthenticated | invalid | malformed request(s) … rejected" | `malformed request is rejected` |
+| study-tutor | http-app-access-adapter | The prod configuration accepts only the single configured student | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | http-app-access-adapter | A token is honoured only from the credential header | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | http-app-access-adapter | A tutor-loop failure mid-turn leaves the session consistent and resumable | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should fail` |
+| study-tutor | keycloak-server-token-validation | The Bearer extraction contract is identical in both modes | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token whose expiry has passed is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token with an unrecognised signature is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token from an unexpected issuer is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token whose audience does not include this server is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A valid token missing the student claim is rejected as unauthenticated | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A valid token for an unseeded student is refused | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A non-Bearer Authorization header is rejected in both modes | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token using an unexpected signing algorithm is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token referencing an unknown signing key is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A garbage Bearer value is refused as unauthenticated in keycloak mode | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| study-tutor | keycloak-server-token-validation | A token that is not yet valid is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+
+### api_test REFUSED → hurl — 39 (the hand-hurl idiom of the estate's first hurl-twins repo)
+
+| repo | feature | scenario | old → new | phrase | matched |
+|---|---|---|---|---|---|
+| api_test | api-test-ready-endpoint | The ready endpoint returns success when the service is ready | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the ready` |
+| api_test | api-test-ready-endpoint | The ready endpoint returns failure when the service is not ready | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the ready` |
+| api_test | api-test-ready-endpoint | The ready endpoint responds within an acceptable time | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the ready` |
+| api_test | api-test-ready-endpoint | The ready endpoint is accessible at the standard path | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the ready` |
+| api_test | api-test-ready-endpoint | The endpoint reflects readiness state changes | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the ready` |
+| api_test | runtime-smoke | Looking up a user that was never created is reported as not found | REFUSED → hurl | (f) "rejected | reported as (a) conflict | invalid | not-found | unsupported | not allowed" (+ wire noun) | `reported as not found` |
+| api_test | runtime-smoke | Creating a user with an email already in use is rejected as a conflict | REFUSED → hurl | (f) "rejected | reported as (a) conflict | invalid | not-found | unsupported | not allowed" (+ wire noun) | `rejected as a conflict` |
+| api_test | runtime-smoke | A malformed user submission is rejected as invalid | REFUSED → hurl | (f) "rejected | reported as (a) conflict | invalid | not-found | unsupported | not allowed" (+ wire noun) | `rejected as invalid` |
+| api_test | stats-endpoint | Requesting statistics returns the service identity and request activity | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service statistics` |
+| api_test | stats-endpoint | The served-request count increases as requests are handled | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service statistics` |
+| api_test | stats-endpoint | The first-request time is stable once set | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service statistics` |
+| api_test | stats-endpoint | The served-request count never decreases while the service is running | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service statistics` |
+| api_test | stats-endpoint | Modifying the statistics is not allowed | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| api_test | uptime-endpoint | Requesting uptime returns the service identity and running time | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service uptime` |
+| api_test | uptime-endpoint | Uptime increases between consecutive requests | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the service uptime` |
+| api_test | uptime-endpoint | Attempting to modify the uptime resource is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| api_test | user-search | Searching for a partial name returns matching users | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching with lowercase matches uppercase names | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching with an empty name returns all users | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching with a single character returns all users containing that character | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching for a name with no matches returns an empty list | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching with special characters returns exact literal matches | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Searching with only whitespace returns all users | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | user-search | Requesting search without a name parameter returns an error | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request a search` |
+| api_test | users-by-email-endpoint | An existing user is found by their email | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the user` |
+| api_test | users-by-email-endpoint | The lookup returns exactly the matching user among several | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the user` |
+| api_test | users-by-email-endpoint | An unknown email returns not-found | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the user` |
+| api_test | users-by-email-endpoint | A malformed email is rejected as invalid input | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the user` |
+| api_test | users-by-email-endpoint | Requesting a user by id still works alongside the by-email route | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should succeed` |
+| api_test | users-count-endpoint | The count reflects the number of stored users | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the users` |
+| api_test | users-count-endpoint | The count of an empty store is zero | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the users` |
+| api_test | users-count-endpoint | Creating a user increments the count | REFUSED → hurl | (d) "I request the/a …" / "request(s) the (service) uptime | statistics | count | …" | `i request the users` |
+| api_test | users-count-endpoint | Requesting a user by id still works alongside the count route | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should succeed` |
+| api_test | users-count-endpoint | Attempting to modify the users count is rejected | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should be rejected` |
+| api_test | users-delete-by-email | An existing user is deleted by their email | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should succeed` |
+| api_test | users-delete-by-email | Deleting by email removes exactly the matching user | REFUSED → hurl | (g) "looking up … should find nothing | not found" | `looking up the second user's email should find nothing` |
+| api_test | users-delete-by-email | Deleting an unknown email reports not found | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should fail` |
+| api_test | users-delete-by-email | A malformed email address is rejected as invalid | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should fail` |
+| api_test | users-delete-by-email | Deleting by id still works alongside the by-email route | REFUSED → hurl | (e) "the request should succeed | fail | be rejected" | `the request should succeed` |
 
 ## Changes vs 8dd28830 (the second tightening, 2026-08-16)
 

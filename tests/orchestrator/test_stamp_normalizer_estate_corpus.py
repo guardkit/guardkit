@@ -21,6 +21,29 @@ api_test 57 → 16 — the loose idiom refuses), probe:bus 209 → 217 (32 name 
 quote / negation mis-homes out, 42 protocol acts in), exam 44 → 42, process
 73 → 68, operator 4 → 3, refused 2,581 → 2,698.
 
+R9 WIDENING (RULED, Rich 2026-08-17 — THE MACHINE IDIOM): the baseline
+below is the second DELIBERATE re-baseline. R9 gained a sub-family of
+verb+noun pairings in the machine's own voice — (a) "the endpoint returns |
+responds with | rejects | reports | serves | answers" · (b) "returns zero |
+one | N | an empty X | the count … when" · (c) "unauthenticated | invalid |
+malformed request(s) … rejected" · (d) "I request the …" / "request(s) the
+(service) uptime | statistics | count | version | time | health | user by
+email | users count" · (e) "the request should succeed | fail | be
+rejected" · (f) "rejected | reported as (a) conflict | invalid (input) |
+not-found | unsupported | not allowed" (needs a wire noun in the scenario) ·
+(g) "looking up … should find nothing | not found" — same surface gate. Plus
+ONE line outside R9: R1 learned "data store is unavailable" (the datum's
+DB-down scenario). **57 stamps moved, all REFUSED → hurl, on the two
+surface repos only**: api_test 16 → 55 hurl (REFUSED 41 → 2 — "created
+through the running service" and "the SECOND request should fail" are not
+ruled phrases), study-tutor 0 → 18 hurl (REFUSED 444 → 426 — the six
+http-app-access-adapter auth/validation scenarios and the twelve Keycloak
+server-side token-validation scenarios: "a request arrives with … / the
+request should be rejected as unauthenticated" — genuine HTTP, listed by
+title in the fixture README). Every non-surface repo is byte-identical
+(hurl 0, operator 3 unchanged); zero silent divergences (no probe:process
+or bus scenario moved). Refused 2,698 → 2,641.
+
 The corpus (``tests/fixtures/stamp_normalizer/estate_corpus/``) is a
 READ-ONLY copy of every tracked ``features/**/*.feature`` (lpa: ``docs/poc/
 features/``) across forge, jarvis, fleet-memory, fleet-gateway,
@@ -51,8 +74,8 @@ What is asserted
     test_stamp_normalizer_estate_corpus.py`` — then commit the diff and say
     why in the commit.
 
-The committed histogram (2026-08-16, after the SECOND tightening)
------------------------------------------------------------------
+The committed histogram (2026-08-17, after the R9 WIDENING)
+------------------------------------------------------------
 See ``EXPECTED.json`` for the numbers of record; the table below is a
 human echo of the same file at the time of writing.
 
@@ -62,23 +85,25 @@ human echo of the same file at the time of writing.
     fleet-memory              no      233      210   19        4     0        0           0     0         0
     fleet-gateway             no       33       24    9        0     0        0           0     0         0
     specialist-agent          no      796      731   28        2    35        0           0     0         0
-    study-tutor               YES     501      444   14       10     3       28           1     0         1
+    study-tutor               YES     501      426   14       10     3       28           1    18         1
     guardkit                  no      168      161    7        0     0        0           0     0         0
     lpa-platform-poc          no      205      195    0        0     4        0           4     0         2
     agentic-dataset-factory   no      253      251    0        2     0        0           0     0         0
-    api_test                  YES      74       41    0       17     0        0           0    16         0
+    api_test                  YES      74        2    0       17     0        0           0    55         0
     ------------------------------------------------------------------------------------------------------
-    TOTAL                            3077     2698  217       68    42       28           5    16         3
+    TOTAL                            3077     2641  217       68    42       28           5    73         3
 
 Refused is the HONEST number: under Rich's condition 2 (no model in the
 loop, no fallback home) an undecidable scenario refuses loud rather than
-landing somewhere it does not belong. 2,698 of 3,077 (88%) refuse today —
+landing somewhere it does not belong. 2,641 of 3,077 (86%) refuse today —
 the rules stamp only what they can prove; the rest is the model's (or a
-human's) turn, by design. study-tutor's hurl is 0 although it IS a starlette
-repo: its http-app-access-adapter is written in prose ("the app sends the
-message … to that session") with no strong wire marker — under the strong-
-only law those scenarios refuse rather than mint by the same bare nouns that
-minted on a poetry anthology.
+human's) turn, by design. study-tutor's hurl is 18 (was 0): the R9 widening
+reads its http-app-access-adapter's and Keycloak token-validation's
+auth/validation prose ("the request should be rejected as unauthenticated",
+"a malformed request is rejected") — the machine idiom, verb+noun — while
+its session/tutor prose ("the app sends the message … to that session") still
+carries no marker and refuses; its LLM/MCP/RAG/store/NATS prose is pinned
+NOT to move (``test_stamp_normalizer.py`` — the study-tutor negatives).
 """
 
 from __future__ import annotations
@@ -284,7 +309,7 @@ def test_c_the_per_repo_histogram_equals_the_committed_baseline():
     total = sum(int(r["total"]) for r in actual.values())
     refused = sum(int(r[REFUSED]) for r in actual.values())
     assert total == 3077
-    assert refused == 2698
+    assert refused == 2641
 
 
 def test_c_the_docstring_table_matches_the_baseline_totals():
