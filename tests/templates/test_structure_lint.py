@@ -219,6 +219,12 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
     the worked example, the VERBATIM-titles rule and the "plan-writer never
     sets policy" instruction were added above the anchors
     (:1882/:1943/:1950/:1973 → :1891/:1952/:1959/:1982); anchor bytes again
+    unchanged. Shifted +26 again by the HOME-CHOOSING RULE (drives 19/21/22
+    datum, 2026-08-18: the model's first-draft default on HTTP scenarios was
+    bare `toolchain` every time — refused, then a wasted rewrite): the "how
+    to choose the home" block, a second hurl example row, and the
+    `test_ref` REQUIRED wording were added above the anchors
+    (:1891/:1952/:1959/:1982 → :1917/:1978/:1985/:2008); anchor bytes again
     unchanged."""
     results = lint_command_templates()
     assert "feature-plan.md" in results
@@ -229,7 +235,7 @@ def test_real_feature_plan_flags_four_integration_contract_anchors():
         and "integration contracts" in f.message.lower()
     ]
     lines = {f.line for f in ic}
-    assert {1891, 1952, 1959, 1982} <= lines, (
+    assert {1917, 1978, 1985, 2008} <= lines, (
         f"expected the 4 Integration-Contracts anchors flagged, got lines {lines}"
     )
 

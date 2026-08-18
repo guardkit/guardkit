@@ -501,8 +501,8 @@ guardkit — there is no fallback home):
 
 | Stamp | Home |
 |---|---|
-| `toolchain` | The repo's own test suite under its declared toolchain — with a `test_ref` token pinning the scenario to a named test (see `/feature-plan`) |
-| `hurl` | Frozen `.hurl` twin run as a registered gate / behavioural-oracle command |
+| `hurl` | **The home for HTTP endpoint scenarios** (request sent → status / body / header checked, method rejected, invalid input) — the DEFAULT for a web-service repo. Frozen `.hurl` twin run as a registered gate / behavioural-oracle command |
+| `toolchain` | The repo's own test suite — **NOT a default: REQUIRES a `test_ref` token naming the test**; a bare `toolchain` is refused at plan load. For internal machinery only (see `/feature-plan` "how to choose the home") |
 | `exam` | Frozen-input corpus + deterministic marker against the deployed AI surface |
 | `probe:bus` | Ephemeral-NATS scenario probe (never the live fleet broker) |
 | `probe:process` | Venom-grammar process/CLI/stdio-MCP/DB-state probe |
