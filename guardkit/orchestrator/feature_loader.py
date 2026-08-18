@@ -1712,6 +1712,19 @@ class FeatureLoader:
         """
         errors = []
 
+        # The YAML-1.1 boolean trap, absorbed at the SCHEMA layer too
+        # (2026-08-18, the api_test enforcement flip): guardkit's own template
+        # writes `routing_law: off` UNQUOTED and YAML 1.1 reads that bare
+        # token as boolean False — the loader path already absorbs it via
+        # normalize_routing_law_flag (see load_feature), but validate_yaml is
+        # what `guardkit feature validate` (forge's plan-commit) runs FIRST,
+        # and Pydantic's Literal["enforced","off"] rejected False on seven
+        # real features. Same absorber, same rules: False -> "off"; True /
+        # anything else stays invalid and is reported by the schema below.
+        # Copy-on-absorb: the caller's dict is never mutated.
+        if isinstance(data, dict) and data.get("routing_law") is False:
+            data = {**data, "routing_law": "off"}
+
         try:
             # Validate using Pydantic Feature model
             Feature.model_validate(data)
