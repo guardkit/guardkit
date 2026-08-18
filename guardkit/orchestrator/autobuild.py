@@ -1896,6 +1896,7 @@ class AutoBuildOrchestrator:
         _bo_raw: Any = None
         _component_raw: Any = None
         _verifier_raw: Any = None
+        _test_ref_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
@@ -1937,6 +1938,11 @@ class AutoBuildOrchestrator:
             # back to "no stamp" (a scenario silently routed nowhere is the
             # unverified green the law removes).
             _verifier_raw = frontmatter.get("verifier")
+            # (3) RULED 2026-08-18: `test_ref:` rides beside the stamp so a
+            # bare `verifier: toolchain` (legal vocabulary, wrong home — the
+            # drive-19 shape) is refused at task load, same rule and message
+            # as the feature-YAML schema.
+            _test_ref_raw = frontmatter.get("test_ref")
             # TASK-AB-XREPOEV01: single-task path may declare evidence_repos in
             # frontmatter. Only resolve from frontmatter when a feature did NOT
             # already supply them (feature config wins; avoids double-counting).
@@ -1959,6 +1965,7 @@ class AutoBuildOrchestrator:
             _bo_raw = None
             _component_raw = None
             _verifier_raw = None
+            _test_ref_raw = None
 
         # PER-COMPONENT SEAM: validate the selector LOUDLY, outside the
         # metadata swallow above (the D.1a cure's precedent in this same
@@ -1976,7 +1983,7 @@ class AutoBuildOrchestrator:
         # test_ref linkage (snapshot_task_conformance); validation + the
         # loud vocabulary IS the Wave-2 deliverable.
         task_verifier: Optional[str] = self._resolve_task_verifier(
-            task_id, _verifier_raw
+            task_id, _verifier_raw, _test_ref_raw
         )
 
         if _bo_raw:
@@ -2497,7 +2504,9 @@ class AutoBuildOrchestrator:
         )
         return name
 
-    def _resolve_task_verifier(self, task_id: str, raw: Any) -> Optional[str]:
+    def _resolve_task_verifier(
+        self, task_id: str, raw: Any, test_ref: Any = None
+    ) -> Optional[str]:
         """ROUTING LAW (card Q8/A.2): validate a task's ``verifier:`` stamp.
 
         ``None``/absent means "no stamp" — every existing task, unchanged. A
@@ -2507,15 +2516,20 @@ class AutoBuildOrchestrator:
         copied from): loud failure, no fallback, because a scenario silently
         routed to no home (or the wrong one) is an unverified green.
 
+        ``test_ref`` is the frontmatter's ``test_ref:`` beside the stamp;
+        (3) RULED 2026-08-18: ``verifier: toolchain`` without it is refused
+        here too — same rule, same message as the feature-YAML schema.
+
         Raises
         ------
         ValueError
-            If the stamp is not a non-empty string, or names a verifier
-            outside the closed vocabulary.
+            If the stamp is not a non-empty string, names a verifier
+            outside the closed vocabulary, or is ``toolchain`` with no
+            ``test_ref``.
         """
         from guardkit.orchestrator.verifier_stamp import validate_task_verifier
 
-        verifier = validate_task_verifier(task_id, raw)
+        verifier = validate_task_verifier(task_id, raw, test_ref)
         if verifier is not None:
             logger.info(
                 "ROUTING LAW: task %s is stamped `verifier: %s`", task_id, verifier

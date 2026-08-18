@@ -861,6 +861,21 @@ class FeatureLoader:
                 outcome = normalize_feature(
                     feature_file, feature.feature_files, repo_root
                 )
+                if outcome.disagreements:
+                    # (2) parity with the CLI echo: the load-time hook says
+                    # where an existing stamp and the rules disagree —
+                    # advisory, never overwritten, never a load failure.
+                    logger.warning(
+                        "STAMP NORMALIZER (load-time hook): feature %s — %d "
+                        "stamp DISAGREEMENT(s) (advisory, not overwritten): %s",
+                        feature_id,
+                        len(outcome.disagreements),
+                        "; ".join(
+                            f"{d['title']!r} stamped {d['stamped']}, rules say "
+                            f"{d['rule_home']} ({d['rule']})"
+                            for d in outcome.disagreements
+                        ),
+                    )
                 if outcome.written:
                     with open(feature_file, "r") as f:
                         data = yaml.safe_load(f)
