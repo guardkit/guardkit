@@ -421,17 +421,41 @@ from a **closed vocabulary**: `toolchain` · `hurl` · `exam` · `probe:bus` ·
 a **loud plan-load ERROR** — there is no fallback home (the same
 loud-failure law as the `component:` selector). `/feature-spec` proposes the
 routing in its summary; **this command writes the authoritative map** into
-the feature YAML:
+the feature YAML.
+
+**HOW TO CHOOSE THE HOME (read this before stamping — it decides most
+scenarios):**
+- A scenario about an **HTTP endpoint** — a request is sent, a response /
+  status / body / header comes back, a method is rejected, an input is
+  invalid — is **`hurl`**. This is the home for almost every API scenario;
+  it is the DEFAULT for a web-service repo, not the exception.
+- **`toolchain` is NOT a default and NOT a fallback.** It means "this NAMED
+  test in the repo's own suite proves the scenario", and it **REQUIRES
+  `test_ref:`** naming that test — a `toolchain` stamp WITHOUT `test_ref`
+  is REJECTED at plan load and at task load. Use it only for internal
+  machinery (parsers, validators, in-process logic) where you can name the
+  test node.
+- `probe:process` for restart / crash-recovery / database-unavailable /
+  process-control scenarios; `probe:bus` for message-bus behaviour; `exam`
+  when the Then judges an AI's output quality; `flutter` for the mobile app;
+  `playwright` for a real browser; `operator` ONLY for explicitly attended
+  human work — never as a guess.
+- If no home fits, leave the title **out** of `scenarios:` — the stamp
+  normalizer decides it by rule at plan-commit or names it as undecidable;
+  never invent one.
 
 ```yaml
+
 feature_files:
   - features/user-auth/user-auth.feature   # the approved-scenario universe
 scenarios:
   "User signs in with valid credentials":         # the spec's Scenario title, VERBATIM
-    verifier: hurl
-  "Rate limiter refuses the 6th attempt":         # copied, never paraphrased
-    verifier: toolchain
-    test_ref: test_rate_limiter_refuses_sixth   # pins the scenario to a named test
+    verifier: hurl                                # an HTTP endpoint scenario → hurl
+  "Signing in with a bad password is rejected":   # copied, never paraphrased
+    verifier: hurl                                # still HTTP → still hurl
+  "Rate limiter refuses the 6th attempt":
+    verifier: toolchain                           # internal logic, AND a named test:
+    test_ref: test_rate_limiter_refuses_sixth   # REQUIRED with toolchain — never omit
 ```
 
 **`scenarios:` keys MUST be the spec's `Scenario:` titles VERBATIM** — copy
@@ -454,8 +478,10 @@ block — but a present stamp is always schema-checked.
 
 **Task frontmatter:** a task may carry `verifier:` beside `task_type:`
 (same closed vocabulary, same loud validation at task load). For
-`verifier: toolchain`, add `test_ref: <test token>` (and optionally
-`test_paths:`, default `tests/**/*`): autobuild synthesizes a conformance
+`verifier: toolchain`, `test_ref: <test token>` is **REQUIRED** — a bare
+`toolchain` is refused at task load (an HTTP endpoint scenario is `hurl`,
+not `toolchain`); optionally add `test_paths:` (default `tests/**/*`):
+autobuild synthesizes a conformance
 `token_coverage` rule requiring that token, pinned pre-turn-1, so the named
 test cannot silently vanish during the build.
 
