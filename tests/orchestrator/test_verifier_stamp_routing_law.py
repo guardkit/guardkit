@@ -571,3 +571,35 @@ class TestSnapshotWiring:
             "void main() { widgetSignInFlow(); }\n"
         )
         assert evaluate_from_snapshot(snap, wt)["status"] == "passed"
+
+
+# ---------------------------------------------------------------------------
+# The YAML-1.1 `off` trap at the SCHEMA layer (2026-08-18, the api_test flip):
+# `guardkit feature validate` runs validate_yaml FIRST, and it rejected seven
+# real features carrying the template's own unquoted `routing_law: off`.
+# ---------------------------------------------------------------------------
+
+
+def _minimal_feature_data(**extra):
+    return {"id": "FEAT-OFF1", "name": "Off trap", "status": "planned", "tasks": [], **extra}
+
+
+def test_validate_yaml_absorbs_bare_off_read_as_false():
+    """`routing_law: off` unquoted → YAML 1.1 False → must validate as "off"."""
+    data = yaml.safe_load("id: FEAT-OFF1\nname: Off trap\nstatus: planned\ntasks: []\nrouting_law: off\n")
+    assert data["routing_law"] is False  # the trap, proven
+    assert FeatureLoader.validate_yaml(data) == []
+
+
+def test_validate_yaml_still_rejects_true_and_garbage_routing_law():
+    """Absorption is False->off ONLY; a boolean True (`on`/`yes`) or an
+    unknown string is still a schema error naming the two allowed values."""
+    for raw in (True, "on", "enforce", "yes"):
+        errors = FeatureLoader.validate_yaml(_minimal_feature_data(routing_law=raw))
+        assert errors and any("routing_law" in e for e in errors), (raw, errors)
+
+
+def test_validate_yaml_does_not_mutate_the_callers_dict():
+    data = _minimal_feature_data(routing_law=False)
+    FeatureLoader.validate_yaml(data)
+    assert data["routing_law"] is False  # caller's dict untouched (copy-on-absorb)
