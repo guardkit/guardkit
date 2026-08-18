@@ -2204,3 +2204,271 @@ def test_r8_spec_only_run_can_never_mint_toolchain():
     home = classify_scenario("Config parsing yields the id", steps, ctx2)
     assert home is not None and (home.verifier, home.rule) == ("toolchain", "R8")
     assert home.test_ref == "tests/test_config.py::test_config_parsing_yields_id"
+
+
+# ---------------------------------------------------------------------------
+# (2) ADVISORY DISAGREEMENTS — RULED by Rich 2026-08-18 (drive-19 datum,
+# planning c585e146: three plain-HTTP scenarios stamped `verifier: toolchain`
+# with no test_ref — legal vocabulary, WRONG home; condition 1 skipped them).
+# The normalizer now classifies already-stamped titles too and RECORDS where
+# the rules would home a title differently: never overwritten, WARNING per
+# title, JSON `disagreements`, stderr echo, exit code UNCHANGED.
+# ---------------------------------------------------------------------------
+
+
+DB_DOWN_TITLE = "The endpoint is unaffected by database unavailability"
+
+
+def test_disagreement_already_stamped_hurl_on_a_db_down_title_is_named_and_untouched(tmp_path: Path, caplog):
+    """Hand-stamped hurl; R1 says probe:process → ONE disagreement, named with
+    its rule and evidence; the stamp stays exactly as written."""
+    import logging
+
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: hurl\n"
+    repo = _repo(tmp_path, stamped_yaml)
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
+    with caplog.at_level(logging.WARNING):
+        result = normalize_feature(yaml_path, None, repo)
+    assert result.already_stamped == [DB_DOWN_TITLE]
+    assert len(result.disagreements) == 1
+    d = result.disagreements[0]
+    assert d["title"] == DB_DOWN_TITLE and d["stamped"] == "hurl"
+    assert d["rule_home"] == "probe:process" and d["rule"] == "R1"
+    assert "database" in d["evidence"] and "unavailab" in d["evidence"]
+    assert set(d) == {"title", "stamped", "rule_home", "rule", "evidence"}
+    # never overwritten
+    data = yaml.safe_load(yaml_path.read_text())
+    assert data["scenarios"][DB_DOWN_TITLE] == {"verifier": "hurl"}
+    assert DB_DOWN_TITLE not in result.stamped
+    # the WARNING per title, in the ruled voice
+    assert "stamp DISAGREEMENT (advisory, not overwritten)" in caplog.text
+    assert f"'{DB_DOWN_TITLE}' is stamped hurl but the rules say probe:process (R1:" in caplog.text
+    # to_dict carries it
+    assert result.to_dict()["disagreements"] == result.disagreements
+
+
+def test_disagreement_already_stamped_correctly_is_silent(tmp_path: Path):
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: probe:process\n"
+    repo = _repo(tmp_path, stamped_yaml)
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo)
+    assert result.already_stamped == [DB_DOWN_TITLE] and result.disagreements == []
+
+
+def test_disagreement_already_stamped_undecidable_is_no_disagreement(tmp_path: Path):
+    """Rules-can't-decide on a stamped title = nothing to compare."""
+    feature_text = (
+        "Feature: P\n"
+        "  Scenario: The parser accepts an empty document\n"
+        "    Given an empty document\n    When it is parsed\n    Then no error is raised\n"
+    )
+    stamped_yaml = BASE_YAML + "scenarios:\n  \"The parser accepts an empty document\":\n    verifier: exam\n"
+    repo = _repo(tmp_path, stamped_yaml, feature_text=feature_text)
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo)
+    assert result.already_stamped == ["The parser accepts an empty document"]
+    assert result.disagreements == [] and result.refused == []  # stamped ≠ refused
+
+
+def test_disagreement_ignore_existing_reclassifies_and_records_none(tmp_path: Path):
+    """--ignore-existing treats every title as unstamped (the reproduction
+    proof) — there is no 'existing stamp' to disagree with."""
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: hurl\n"
+    repo = _repo(tmp_path, stamped_yaml)
+    result = normalize_feature(repo / ".guardkit" / "features" / "FEAT-TIME.yaml", None, repo, dry_run=True, ignore_existing=True)
+    assert result.disagreements == [] and result.stamped[DB_DOWN_TITLE] == "probe:process"
+
+
+def test_disagreement_cli_json_carries_it_stderr_echoes_it_and_the_exit_is_unchanged(tmp_path: Path):
+    from guardkit.cli.main import cli
+
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: hurl\n"
+    repo = _repo(tmp_path, stamped_yaml)
+    out = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo)])
+    assert out.exit_code == 0, out.output  # advisory: exit UNCHANGED
+    payload = json.loads(out.output[out.output.index('{\n  "feature_id"'):])
+    assert payload["written"] is True and len(payload["stamped"]) == 3
+    assert [(d["title"], d["stamped"], d["rule_home"], d["rule"]) for d in payload["disagreements"]] == [
+        (DB_DOWN_TITLE, "hurl", "probe:process", "R1")
+    ]
+    # echoed AHEAD of the JSON
+    echo = f"'{DB_DOWN_TITLE}' is stamped hurl but the rules say probe:process (R1:"
+    assert "stamp DISAGREEMENT(s) (advisory, not overwritten)" in out.output
+    assert out.output.index(echo) < out.output.index('{\n  "feature_id"')
+    # and the file still says hurl
+    data = yaml.safe_load((repo / ".guardkit" / "features" / "FEAT-TIME.yaml").read_text())
+    assert data["scenarios"][DB_DOWN_TITLE] == {"verifier": "hurl"}
+
+
+def test_disagreement_does_not_move_the_partial_exit_3(tmp_path: Path):
+    """PARTIAL (a refused title) is still exit 3 with the disagreement riding
+    beside it — advisory never changes the code."""
+    from guardkit.cli.main import cli
+
+    feature_text = TIME_FEATURE + (
+        "\n  Scenario: The parser accepts an empty document\n"
+        "    Given an empty document\n    When it is parsed\n    Then no error is raised\n"
+    )
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: hurl\n"
+    repo = _repo(tmp_path, stamped_yaml, feature_text=feature_text)
+    out = CliRunner().invoke(cli, ["qa", "normalize-stamps", "--feature", "FEAT-TIME", "--repo", str(repo)])
+    assert out.exit_code == 3, out.output
+    payload = json.loads(out.output[out.output.index('{\n  "feature_id"'): out.output.rindex("}") + 1])
+    assert payload["refused"] == ["The parser accepts an empty document"]
+    assert [d["title"] for d in payload["disagreements"]] == [DB_DOWN_TITLE]
+
+
+def test_disagreement_loader_hook_logs_it_for_parity_and_still_loads(tmp_path: Path, caplog):
+    import logging
+
+    stamped_yaml = BASE_YAML + f"scenarios:\n  \"{DB_DOWN_TITLE}\":\n    verifier: hurl\n"
+    repo = _repo(tmp_path, stamped_yaml)
+    with caplog.at_level(logging.WARNING):
+        feature = FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False, normalize_stamps=True)
+    assert feature.scenarios[DB_DOWN_TITLE].verifier == "hurl"  # never overwritten
+    assert "STAMP NORMALIZER (load-time hook)" in caplog.text and "DISAGREEMENT" in caplog.text
+    assert f"{DB_DOWN_TITLE!r} stamped hurl, rules say probe:process (R1)" in caplog.text
+
+
+# The drive-19 shape: three plain-HTTP titles stamped toolchain.
+USERS_COUNT_FEATURE = (
+    "Feature: Users count\n"
+    "  Scenario: The count of an empty store is zero\n"
+    "    When I send a GET request to /users/count\n"
+    "    Then the response status code should be 200\n\n"
+    "  Scenario: Creating a user increments the count\n"
+    "    When I send a POST request to /users\n"
+    "    Then the response status code should be 201\n\n"
+    "  Scenario: The count reflects the number of stored users\n"
+    "    When I send a GET request to /users/count\n"
+    "    Then the response body should carry the count\n"
+)
+USERS_COUNT_TITLES = (
+    "The count of an empty store is zero",
+    "Creating a user increments the count",
+    "The count reflects the number of stored users",
+)
+
+
+def test_drive_19_shape_bare_toolchain_is_refused_by_the_normalizer_and_the_loader(tmp_path: Path):
+    """(3) at both doors: the normalizer's existing-stamp validation and the
+    plan loader both refuse the bare toolchain stamps before anything runs."""
+    stamped_yaml = BASE_YAML + "scenarios:\n" + "".join(
+        f"  \"{t}\":\n    verifier: toolchain\n" for t in USERS_COUNT_TITLES
+    )
+    repo = _repo(tmp_path, stamped_yaml, feature_text=USERS_COUNT_FEATURE)
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
+    before = yaml_path.read_text()
+    with pytest.raises(StampNormalizerError, match="invalid existing stamp") as exc:
+        normalize_feature(yaml_path, None, repo)
+    assert "this NAMED test proves the scenario" in str(exc.value)
+    assert yaml_path.read_text() == before
+    from guardkit.orchestrator.feature_loader import FeatureParseError
+
+    with pytest.raises(FeatureParseError, match="NAMED test"):
+        FeatureLoader.load_feature("FEAT-TIME", repo_root=repo, validate_paths=False)
+
+
+def test_drive_19_shape_past_the_schema_door_is_named_three_times_as_rules_say_hurl(tmp_path: Path, monkeypatch):
+    """If the three ride in past (3) — here by bypassing the schema door in
+    the normalizer's own existing-stamp check — (2) names ALL THREE as
+    rules→hurl (R9), and nothing is overwritten."""
+    from guardkit.orchestrator import stamp_normalizer as sn
+
+    real_parse = sn.parse_scenario_stamp
+
+    class _BareToolchain:
+        verifier = "toolchain"
+
+    def _lenient(raw, *, scenario=""):
+        if raw == {"verifier": "toolchain"}:  # the drive-19 shape, let through
+            return _BareToolchain()
+        return real_parse(raw, scenario=scenario)
+
+    monkeypatch.setattr(sn, "parse_scenario_stamp", _lenient)
+    stamped_yaml = BASE_YAML + "scenarios:\n" + "".join(
+        f"  \"{t}\":\n    verifier: toolchain\n" for t in USERS_COUNT_TITLES
+    )
+    repo = _repo(tmp_path, stamped_yaml, feature_text=USERS_COUNT_FEATURE)
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
+    before = yaml_path.read_text()
+    result = normalize_feature(yaml_path, None, repo)
+    assert list(result.already_stamped) == list(USERS_COUNT_TITLES)
+    assert [(d["title"], d["stamped"], d["rule_home"], d["rule"]) for d in result.disagreements] == [
+        (t, "toolchain", "hurl", "R9") for t in USERS_COUNT_TITLES
+    ]
+    assert result.stamped == {} and result.written is False
+    assert yaml_path.read_text() == before  # NEVER overwritten
+
+
+def test_drive_19_shape_stamped_toolchain_with_test_ref_but_no_plan_node_still_disagrees(tmp_path: Path):
+    """A schema-VALID toolchain stamp (test_ref present) on a plain-HTTP title
+    the plan names no node for: legal, loads, and (2) still says the rules
+    would home it hurl — advisory, untouched."""
+    stamped_yaml = BASE_YAML + "scenarios:\n" + "".join(
+        f"  \"{t}\":\n    verifier: toolchain\n    test_ref: test_{i}\n" for i, t in enumerate(USERS_COUNT_TITLES)
+    )
+    repo = _repo(tmp_path, stamped_yaml, feature_text=USERS_COUNT_FEATURE)
+    yaml_path = repo / ".guardkit" / "features" / "FEAT-TIME.yaml"
+    result = normalize_feature(yaml_path, None, repo)
+    assert [(d["stamped"], d["rule_home"]) for d in result.disagreements] == [("toolchain", "hurl")] * 3
+    data = yaml.safe_load(yaml_path.read_text())
+    assert data["scenarios"][USERS_COUNT_TITLES[0]] == {"verifier": "toolchain", "test_ref": "test_0"}
+    # …and when the PLAN names the node, R8 agrees with the stamp: no disagreement.
+    task = repo / "tasks" / "backlog" / "time-endpoint" / "TASK-TIME-001.md"
+    task.parent.mkdir(parents=True, exist_ok=True)
+    task.write_text(
+        "---\nid: TASK-TIME-001\nverifier: toolchain\n"
+        "test_ref: tests/test_users_count.py::test_count_empty_store_zero\n---\n# t\n"
+        "Also tests/test_users_count.py::test_creating_user_increments_count and "
+        "tests/test_users_count.py::test_count_reflects_stored_users.\n"
+    )
+    again = normalize_feature(yaml_path, None, repo)
+    assert again.disagreements == []
+
+
+def test_r8_only_ever_mints_toolchain_with_a_test_ref():
+    """R8's own contract, pinned so nothing the normalizer WRITES can trip (3):
+    every rule-minted toolchain Home carries a test_ref, and its to_stamp()
+    passes the schema door."""
+    from guardkit.orchestrator.verifier_stamp import parse_scenario_stamp as _parse
+
+    ctx = NormalizeContext(
+        repo_has_http_surface=True, http_surface_evidence="override",
+        plan_test_refs={"Config parsing yields the id": "tests/test_config.py::test_config_parsing_yields_id"},
+    )
+    steps = "Given a registered user\n    When the loader validates the config\n    Then the parsed object carries the id\n"
+    home = classify_scenario("Config parsing yields the id", steps, ctx)
+    assert home is not None and home.verifier == "toolchain" and home.test_ref
+    assert _parse(home.to_stamp()).test_ref == home.test_ref
+    # And the writer's door: a bare toolchain can no longer be WRITTEN either.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        yp = Path(d) / "F.yaml"
+        yp.write_text("id: F\nscenarios: {}\n")
+        with pytest.raises(StampNormalizerError):
+            write_stamps(yp, {"x": {"verifier": "toolchain"}})
+        assert yaml.safe_load(yp.read_text()) == {"id": "F", "scenarios": {}}
+
+
+def test_disagreements_over_the_hand_stamped_60_are_exactly_the_named_divergence():
+    """The api_test 5bc6fd1 fixture with its hand stamps HONOURED (no
+    --ignore-existing): (2) names exactly the three users-count hand-toolchain
+    titles as rules→hurl — the design's named divergence — and nothing else
+    (57 stamps agree or are undecidable). Also pins that every toolchain
+    hand stamp in the fixture carries its test_ref (the existing-stamp door
+    would refuse otherwise)."""
+    found = {}
+    for y in sorted((FIXTURE_ROOT / ".guardkit" / "features").glob("*.yaml")):
+        result = normalize_feature(y, None, FIXTURE_ROOT, dry_run=True)
+        assert result.stamped == {}  # every title already stamped by hand
+        for d in result.disagreements:
+            found[(y.stem, d["title"])] = (d["stamped"], d["rule_home"], d["rule"])
+    assert found == {
+        ("FEAT-UCNT", "The count of an empty store is zero"): ("toolchain", "hurl", "R9"),
+        ("FEAT-UCNT", "Creating a user increments the count"): ("toolchain", "hurl", "R9"),
+        ("FEAT-UCNT", "The count reflects the number of stored users"): ("toolchain", "hurl", "R9"),
+    }
+    data = yaml.safe_load((FIXTURE_ROOT / ".guardkit" / "features" / "FEAT-UCNT.yaml").read_text())
+    for title, stamp in data["scenarios"].items():
+        if stamp.get("verifier") == "toolchain":
+            assert stamp.get("test_ref"), title

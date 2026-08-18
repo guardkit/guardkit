@@ -34,8 +34,9 @@ Where the stamp lives
 * **Task frontmatter**: a ``verifier:`` key beside ``component:`` /
   ``behavioural_oracle:``, validated at task load with the same loud-failure
   pattern (``AutoBuildOrchestrator._resolve_task_verifier``). A task stamped
-  ``verifier: toolchain`` may carry a ``test_ref:`` token (and optionally
-  ``test_paths:``) — see "The toolchain linkage" below.
+  ``verifier: toolchain`` MUST carry a ``test_ref:`` token (and optionally
+  ``test_paths:``) — see "The toolchain linkage" and "The wrong-home stamp"
+  below.
 
 The closed vocabulary (A.2's home table)
 ----------------------------------------
@@ -94,7 +95,8 @@ as a web app). Three doors, any suffices:
 The toolchain linkage (A.2's stamp-to-rule wiring)
 --------------------------------------------------
 For ``verifier: toolchain`` the scenario's pin into the repo's own suite must
-be mechanical, not a comment: the stamp accepts a ``test_ref`` token, and the
+be mechanical, not a comment: the stamp REQUIRES a ``test_ref`` token (since
+2026-08-18 — a bare toolchain stamp is refused at load), and the
 conformance guard (``spec_conformance.py`` — live, snapshotted pre-turn-1,
 outside the builder's reach) gains a synthesized ``token_coverage`` rule
 requiring that token under the declared ``test_paths`` (default
@@ -106,6 +108,27 @@ A ``test_ref`` on a non-``toolchain`` stamp is DECLARED BUT NOT CONSUMED in
 this wave (future homes may claim it — e.g. a ``hurl`` stamp naming its
 twin); it is logged as a WARNING at build time, mirroring
 ``_warn_about_unconsumed_component_installs``, never silently ignored.
+
+The wrong-home stamp (RULED, Rich 2026-08-18 — drive 19 datum)
+--------------------------------------------------------------
+Planning run c585e146 stamped three plain-HTTP scenarios ``verifier:
+toolchain`` with NO ``test_ref``: legal vocabulary, WRONG home. The routing
+law only checked the vocabulary so it accepted; the normalizer never
+overwrites an existing stamp so the wrong home rode through untouched. Two
+cures, both here or in ``stamp_normalizer``:
+
+* **(3) SCHEMA** — a ``verifier: toolchain`` stamp WITHOUT a ``test_ref`` is
+  REFUSED at load (:class:`ScenarioStamp` model validator; the same rule
+  and message on the task-frontmatter path, ``validate_task_verifier``).
+  ``toolchain`` means "this NAMED test proves the scenario" — R8, the only
+  rule that mints it, only ever mints it WITH a ``test_ref``; the schema
+  now says the same thing back. This is a validity rule like an unknown
+  home: it applies whenever the stamp is PRESENT, flag or no flag — an
+  invalid stamp is never data.
+* **(2) ADVISORY DISAGREEMENTS** — the normalizer classifies already-stamped
+  titles too and RECORDS (never overwrites) where the rules would home a
+  title differently (``NormalizeResult.disagreements``, a WARNING per
+  title, echoed by the CLI ahead of the JSON; exit code unchanged).
 """
 
 from __future__ import annotations
@@ -116,7 +139,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +199,29 @@ def _vocabulary_sentence() -> str:
     )
 
 
+# (3) The wrong-home rule's ONE message — the ScenarioStamp model validator
+# (feature YAML) and validate_task_verifier (task frontmatter) both say it.
+TOOLCHAIN_NEEDS_TEST_REF_MESSAGE = (
+    "verifier: toolchain means 'this NAMED test proves the scenario' — a "
+    "toolchain stamp must carry test_ref: <tests/…::test_node>; name the "
+    "node, or stamp the home the scenario actually needs (hurl for an HTTP "
+    "scenario, probe:process for a process/CLI scenario, probe:bus for a "
+    "bus scenario, exam for judged model output, flutter / playwright for a "
+    "device / browser scenario, operator for attended human work)."
+)
+
+
+def toolchain_stamp_needs_test_ref(verifier: Any, test_ref: Any) -> bool:
+    """True when the stamp is ``toolchain`` and ``test_ref`` is absent/blank.
+
+    The one predicate behind (3): shared by the feature-YAML schema and the
+    task-frontmatter validator so the two paths can never drift.
+    """
+    if verifier != "toolchain":
+        return False
+    return not (isinstance(test_ref, str) and test_ref.strip())
+
+
 class ScenarioStamp(BaseModel):
     """One scenario's ``verifier:`` stamp (feature-YAML per-scenario map).
 
@@ -215,6 +268,20 @@ class ScenarioStamp(BaseModel):
                 )
         return value
 
+    @model_validator(mode="after")
+    def _toolchain_carries_its_named_test(self) -> "ScenarioStamp":
+        """(3) RULED 2026-08-18: ``toolchain`` WITHOUT ``test_ref`` is refused.
+
+        A bare ``verifier: toolchain`` is legal vocabulary in the wrong home
+        (drive 19: three plain-HTTP scenarios stamped toolchain, no test
+        named). R8 — the only rule that mints toolchain — only ever mints it
+        WITH a test_ref; the schema now holds every writer to the same
+        contract. Flag or no flag: an invalid stamp is never data.
+        """
+        if toolchain_stamp_needs_test_ref(self.verifier, self.test_ref):
+            raise ValueError(TOOLCHAIN_NEEDS_TEST_REF_MESSAGE)
+        return self
+
 
 def parse_scenario_stamp(raw: Any, *, scenario: str = "") -> ScenarioStamp:
     """Validate one per-scenario map entry into a :class:`ScenarioStamp`.
@@ -244,7 +311,9 @@ def parse_scenario_stamp(raw: Any, *, scenario: str = "") -> ScenarioStamp:
         ) from exc
 
 
-def validate_task_verifier(task_id: str, raw: Any) -> Optional[str]:
+def validate_task_verifier(
+    task_id: str, raw: Any, test_ref: Any = None
+) -> Optional[str]:
     """ROUTING LAW: validate a task's frontmatter ``verifier:`` stamp.
 
     ``None``/absent is the overwhelmingly common case and means "no stamp" —
@@ -254,11 +323,17 @@ def validate_task_verifier(task_id: str, raw: Any) -> Optional[str]:
     alternative to a loud failure is a scenario silently routed to no home
     (or the wrong home), which is the unverified green the law removes.
 
+    ``test_ref`` is the frontmatter's ``test_ref:`` beside the stamp. (3)
+    RULED 2026-08-18: ``verifier: toolchain`` WITHOUT a non-empty
+    ``test_ref`` is refused with the same message as the feature-YAML
+    schema — the token_coverage linkage downstream silently synthesized
+    NOTHING for that shape (verified: it was NOT enforced before this).
+
     Raises
     ------
     ValueError
-        If the stamp is not a non-empty string, or names a verifier outside
-        the closed vocabulary.
+        If the stamp is not a non-empty string, names a verifier outside
+        the closed vocabulary, or is ``toolchain`` without a ``test_ref``.
     """
     if raw is None:
         return None
@@ -276,6 +351,14 @@ def validate_task_verifier(task_id: str, raw: Any) -> Optional[str]:
             "card Q8/A.2): there is no fallback home, because a scenario "
             "silently routed to the wrong verifier is an unverified green.\n"
             "FIX: use one of the closed-list homes, or remove the stamp."
+        )
+    if toolchain_stamp_needs_test_ref(name, test_ref):
+        raise ValueError(
+            f"Task {task_id} is stamped `verifier: toolchain` with no "
+            f"`test_ref:` beside it. {TOOLCHAIN_NEEDS_TEST_REF_MESSAGE}\n"
+            "This is a LOUD task-load failure on purpose (the routing law, "
+            "wrong-home ruling 2026-08-18): a bare toolchain stamp is legal "
+            "vocabulary in the wrong home — the drive-19 shape."
         )
     return name
 
@@ -411,6 +494,18 @@ def build_rule_from_frontmatter(
         )
         return None
 
+    if verifier == "toolchain" and not test_ref:
+        # (3) the task-load validator REFUSES this shape before any build runs
+        # (validate_task_verifier); this never-raise seam says so once rather
+        # than synthesizing nothing in silence.
+        logger.warning(
+            "ROUTING LAW: task %s is stamped `verifier: toolchain` with no "
+            "`test_ref` — no token_coverage rule can be synthesized. %s",
+            task_id or "<task>",
+            TOOLCHAIN_NEEDS_TEST_REF_MESSAGE,
+        )
+        return None
+
     if isinstance(verifier, str) and verifier != "toolchain" and test_ref:
         logger.warning(
             "ROUTING LAW: task %s declares `test_ref: %s` beside "
@@ -465,6 +560,8 @@ __all__ = [
     "DEFAULT_TEST_REF_PATHS",
     "TEST_REF_RULE_ID",
     "ScenarioStamp",
+    "TOOLCHAIN_NEEDS_TEST_REF_MESSAGE",
+    "toolchain_stamp_needs_test_ref",
     "parse_scenario_stamp",
     "validate_task_verifier",
     "extract_scenario_titles",
