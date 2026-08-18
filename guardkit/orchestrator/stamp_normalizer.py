@@ -18,6 +18,20 @@ CONDITIONS:
    as the place unclassified scenarios land (that would convert every
    unclassified scenario into a hidden chore for Rich).
 
+Condition 1's shadow — ADVISORY DISAGREEMENTS (RULED, Rich 2026-08-18,
+drive-19 datum): planning run c585e146 stamped three plain-HTTP scenarios
+``verifier: toolchain`` with no ``test_ref`` — legal vocabulary, WRONG home;
+the law accepted the vocabulary and, by condition 1, the normalizer skipped
+the stamped titles, so the wrong home rode through untouched. Now the
+normalizer classifies EVERY title, stamped or not: for an already-stamped
+title whose rule-home DIFFERS from the stamp it RECORDS a disagreement
+(``NormalizeResult.disagreements`` — title, stamped, rule_home, rule,
+evidence), logs a WARNING per title, and the CLI echoes each on stderr ahead
+of the JSON. It NEVER overwrites, and the exit code is UNCHANGED (a
+disagreement is advisory). A title the rules cannot decide has nothing to
+compare — no disagreement. The other half of the same ruling — (3) a bare
+``verifier: toolchain`` is REFUSED at load — lives in ``verifier_stamp``.
+
 Why a rule and not a prompt: the first live drive under the routing-law
 templates (planning run d5f2e13b) showed the plan-writer READ the closed
 vocabulary and emitted ZERO stamps. Prompting harder tunes around a
@@ -1495,6 +1509,11 @@ class NormalizeResult:
     # that mints `operator` hands Rich a chore; the JSON and the human echo
     # both say so).
     operator_stamped: List[str] = field(default_factory=list)
+    # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
+    # the rules would home DIFFERENTLY. Each entry: {title, stamped,
+    # rule_home, rule, evidence}. Recorded, warned, echoed — NEVER written
+    # (condition 1 stands) and never an exit code (advisory).
+    disagreements: List[Dict[str, str]] = field(default_factory=list)
     written: bool = False
     dry_run: bool = False
     repo_has_http_surface: bool = False
@@ -1512,6 +1531,7 @@ class NormalizeResult:
             "refused": list(self.refused),
             "already_stamped": list(self.already_stamped),
             "operator_stamped": list(self.operator_stamped),
+            "disagreements": [dict(d) for d in self.disagreements],
             "written": self.written,
             "dry_run": self.dry_run,
             "repo_has_http_surface": self.repo_has_http_surface,
@@ -1607,15 +1627,18 @@ def normalize_feature(
             f"stamp normalizer: feature {feature_id}: `scenarios:` must be a "
             f"mapping of title -> stamp, got {type(raw_existing).__name__}."
         )
+    existing_stamps: Dict[str, str] = {}  # title -> stamped verifier
     for title, raw in raw_existing.items():
         try:
-            parse_scenario_stamp(raw, scenario=str(title))
+            existing_stamps[str(title)] = parse_scenario_stamp(
+                raw, scenario=str(title)
+            ).verifier
         except ValueError as exc:
             raise StampNormalizerError(
                 f"stamp normalizer: feature {feature_id} carries an invalid "
                 f"existing stamp — fix it before normalizing.\n{exc}"
             ) from exc
-    existing_titles = set() if ignore_existing else {str(t) for t in raw_existing}
+    existing_titles = set() if ignore_existing else set(existing_stamps)
 
     # The scenario universe: titles + own steps + own annotations, from the
     # declared files.
@@ -1671,6 +1694,35 @@ def normalize_feature(
         seen.add(title)
         if title in existing_titles:
             result.already_stamped.append(title)
+            # (2) RULED 2026-08-18: still CLASSIFY the stamped title; a
+            # rule-home that DIFFERS is recorded as an ADVISORY disagreement.
+            # Never overwritten (condition 1); undecidable = nothing to
+            # compare = no disagreement.
+            rule_home = classify_scenario(
+                title, block.steps_text, ctx, annotations=block.annotations
+            )
+            stamped = existing_stamps[title]
+            if rule_home is not None and rule_home.verifier != stamped:
+                result.disagreements.append(
+                    {
+                        "title": title,
+                        "stamped": stamped,
+                        "rule_home": rule_home.verifier,
+                        "rule": rule_home.rule,
+                        "evidence": rule_home.evidence,
+                    }
+                )
+                logger.warning(
+                    "STAMP NORMALIZER: feature %s — stamp DISAGREEMENT "
+                    "(advisory, not overwritten): %r is stamped %s but the "
+                    "rules say %s (%s: %s)",
+                    feature_id,
+                    title,
+                    stamped,
+                    rule_home.verifier,
+                    rule_home.rule,
+                    rule_home.evidence,
+                )
             continue
         home = classify_scenario(title, block.steps_text, ctx, annotations=block.annotations)
         if home is None:
@@ -1731,10 +1783,11 @@ def normalize_feature(
     result.written = True
     logger.info(
         "STAMP NORMALIZER: feature %s — %d scenario(s) stamped by rule, "
-        "%d already stamped (untouched); wrote %s",
+        "%d already stamped (untouched; %d advisory disagreement(s)); wrote %s",
         feature_id,
         len(result.stamped),
         len(result.already_stamped),
+        len(result.disagreements),
         yaml_path,
     )
     return result
@@ -1842,7 +1895,13 @@ def write_stamps(
             + ", ".join(repr(t) for t in collisions)
         )
     for title, stamp in stamps.items():
-        parse_scenario_stamp(dict(stamp), scenario=title)  # closed vocabulary, loud
+        try:
+            parse_scenario_stamp(dict(stamp), scenario=title)  # closed vocabulary, loud
+        except ValueError as exc:
+            raise StampNormalizerError(
+                f"stamp normalizer: refusing to write an invalid stamp for "
+                f"{title!r} — nothing written.\n{exc}"
+            ) from exc
 
     new_text = _splice_scenarios(original, stamps, feature_files)
 

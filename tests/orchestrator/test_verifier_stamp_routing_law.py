@@ -48,6 +48,7 @@ from guardkit.orchestrator.quality_gates.spec_conformance import (
 from guardkit.orchestrator.verifier_stamp import (
     DEFAULT_TEST_REF_PATHS,
     TEST_REF_RULE_ID,
+    TOOLCHAIN_NEEDS_TEST_REF_MESSAGE,
     VERIFIER_HOMES,
     ScenarioStamp,
     build_rule_from_frontmatter,
@@ -55,6 +56,7 @@ from guardkit.orchestrator.verifier_stamp import (
     extract_scenario_titles,
     load_repo_routing_law,
     parse_scenario_stamp,
+    toolchain_stamp_needs_test_ref,
     validate_task_verifier,
 )
 
@@ -137,6 +139,13 @@ def _worktree_shaped(repo_root: Path, task_id: str) -> Path:
 class TestStampSchema:
     @pytest.mark.parametrize("home", VERIFIER_HOMES)
     def test_every_closed_list_home_is_accepted(self, home: str) -> None:
+        if home == "toolchain":
+            # (3) RULED 2026-08-18: toolchain is accepted only WITH its named
+            # test — the bare shorthand is the wrong-home shape (see
+            # TestToolchainStampNeedsTestRef below).
+            stamp = {"verifier": home, "test_ref": "tests/test_x.py::test_x"}
+            assert parse_scenario_stamp(stamp).verifier == home
+            return
         assert parse_scenario_stamp(home).verifier == home
         assert parse_scenario_stamp({"verifier": home}).verifier == home
 
@@ -170,6 +179,10 @@ class TestTaskFrontmatterStamp:
 
     @pytest.mark.parametrize("home", VERIFIER_HOMES)
     def test_valid_stamp_resolves(self, home: str) -> None:
+        if home == "toolchain":
+            # (3): toolchain resolves only beside a `test_ref:`.
+            assert validate_task_verifier(TASK_ID, home, "test_x") == home
+            return
         assert validate_task_verifier(TASK_ID, home) == home
 
     def test_unknown_stamp_fails_the_task_load_loudly(self) -> None:
@@ -215,6 +228,180 @@ class TestFeatureMapSchema:
         _write_feature_yaml(tmp_path, {"routing_law": "enforce"})
         with pytest.raises(FeatureParseError):
             _load(tmp_path)
+
+
+class TestToolchainStampNeedsTestRef:
+    """(3) RULED by Rich 2026-08-18 — the WRONG-HOME stamp (drive 19, planning
+    c585e146): the plan-writer stamped three plain-HTTP scenarios
+    ``verifier: toolchain`` with NO ``test_ref``. Legal vocabulary, wrong
+    home; the law checked only the vocabulary and accepted. Now a toolchain
+    stamp WITHOUT a test_ref is REFUSED at load — feature YAML AND task
+    frontmatter, flag or no flag — with one plain-words message. R8's own
+    contract ("this NAMED test proves it") made symmetric."""
+
+    def test_bare_toolchain_shorthand_is_refused_with_the_plain_message(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            parse_scenario_stamp("toolchain", scenario=TITLE_A)
+        msg = str(exc.value)
+        assert "this NAMED test proves the scenario" in msg
+        assert "test_ref" in msg and "hurl for an HTTP scenario" in msg
+        assert TITLE_A in msg  # names the scenario so one edit fixes it
+
+    @pytest.mark.parametrize("bad_ref", [None, "", "   "])
+    def test_toolchain_mapping_without_a_usable_test_ref_is_refused(self, bad_ref) -> None:
+        stamp = {"verifier": "toolchain"}
+        if bad_ref is not None:
+            stamp["test_ref"] = bad_ref
+        with pytest.raises(ValueError) as exc:
+            parse_scenario_stamp(stamp)
+        assert "test_ref" in str(exc.value)
+
+    def test_toolchain_with_test_ref_still_loads(self) -> None:
+        stamp = parse_scenario_stamp(
+            {"verifier": "toolchain", "test_ref": "tests/test_x.py::test_x"}
+        )
+        assert (stamp.verifier, stamp.test_ref) == ("toolchain", "tests/test_x.py::test_x")
+        # The model itself, not just the parser wrapper.
+        assert ScenarioStamp(verifier="toolchain", test_ref="test_x").test_ref == "test_x"
+        with pytest.raises(ValueError):
+            ScenarioStamp(verifier="toolchain")
+
+    def test_the_predicate_is_toolchain_only(self) -> None:
+        assert toolchain_stamp_needs_test_ref("toolchain", None)
+        assert toolchain_stamp_needs_test_ref("toolchain", "  ")
+        assert not toolchain_stamp_needs_test_ref("toolchain", "test_x")
+        for home in VERIFIER_HOMES:
+            if home != "toolchain":
+                assert not toolchain_stamp_needs_test_ref(home, None)
+
+    def test_feature_yaml_bare_toolchain_is_refused_at_load_without_any_flag(
+        self, tmp_path: Path
+    ) -> None:
+        """SCHEMA validity, like an unknown home: it applies whenever the
+        stamp is PRESENT — no routing_law flag anywhere here."""
+        rel = _write_gherkin(tmp_path)
+        _write_feature_yaml(
+            tmp_path,
+            {"feature_files": [rel], "scenarios": {TITLE_A: {"verifier": "toolchain"}}},
+        )
+        with pytest.raises(FeatureParseError) as exc:
+            _load(tmp_path)
+        msg = str(exc.value)
+        assert "this NAMED test proves the scenario" in msg and TITLE_A in msg
+
+    def test_feature_yaml_bare_toolchain_is_refused_under_enforcement_too(
+        self, tmp_path: Path
+    ) -> None:
+        rel = _write_gherkin(tmp_path)
+        _write_feature_yaml(
+            tmp_path,
+            {
+                "routing_law": "enforced",
+                "feature_files": [rel],
+                "scenarios": {TITLE_A: "toolchain", TITLE_B: "hurl"},
+            },
+        )
+        with pytest.raises(FeatureParseError) as exc:
+            _load(tmp_path)
+        assert "test_ref" in str(exc.value)
+
+    def test_feature_yaml_toolchain_with_test_ref_loads(self, tmp_path: Path) -> None:
+        rel = _write_gherkin(tmp_path)
+        _write_feature_yaml(
+            tmp_path,
+            {
+                "routing_law": "enforced",
+                "feature_files": [rel],
+                "scenarios": {
+                    TITLE_A: {"verifier": "toolchain", "test_ref": "tests/test_signin.py::test_valid"},
+                    TITLE_B: {"verifier": "hurl"},
+                },
+            },
+        )
+        feature = _load(tmp_path)
+        assert feature.scenarios[TITLE_A].test_ref == "tests/test_signin.py::test_valid"
+
+    def test_drive_19_shape_three_http_titles_stamped_bare_toolchain_refused_at_load(
+        self, tmp_path: Path
+    ) -> None:
+        """The datum itself: three plain-HTTP scenarios stamped toolchain,
+        no test named. Before this ruling the loader accepted all three."""
+        gherkin = (
+            "Feature: Users count\n"
+            "  Scenario: The count of an empty store is zero\n"
+            "    When I send a GET request to /users/count\n"
+            "    Then the response status code should be 200\n"
+            "  Scenario: Creating a user increments the count\n"
+            "    When I send a POST request to /users\n"
+            "    Then the response status code should be 201\n"
+            "  Scenario: The count reflects the number of stored users\n"
+            "    When I send a GET request to /users/count\n"
+            "    Then the response body should carry the count\n"
+        )
+        rel = "features/users-count.feature"
+        (tmp_path / "features").mkdir(parents=True)
+        (tmp_path / rel).write_text(gherkin, encoding="utf-8")
+        titles = [
+            "The count of an empty store is zero",
+            "Creating a user increments the count",
+            "The count reflects the number of stored users",
+        ]
+        _write_feature_yaml(
+            tmp_path,
+            {"feature_files": [rel], "scenarios": {t: {"verifier": "toolchain"} for t in titles}},
+        )
+        with pytest.raises(FeatureParseError) as exc:
+            _load(tmp_path)
+        assert "this NAMED test proves the scenario" in str(exc.value)
+
+    # -- task frontmatter: verified NOT previously enforced (validate_task_
+    # verifier checked vocabulary only; the linkage synthesized nothing in
+    # silence) — enforced now, same rule, same message.
+
+    def test_task_frontmatter_bare_toolchain_is_refused(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            validate_task_verifier(TASK_ID, "toolchain")
+        msg = str(exc.value)
+        assert TASK_ID in msg and "this NAMED test proves the scenario" in msg
+        for bad in ("", "   ", None):
+            with pytest.raises(ValueError):
+                validate_task_verifier(TASK_ID, "toolchain", bad)
+
+    def test_task_frontmatter_toolchain_with_test_ref_resolves(self) -> None:
+        assert validate_task_verifier(TASK_ID, "toolchain", "test_x") == "toolchain"
+
+    def test_task_frontmatter_other_homes_need_no_test_ref(self) -> None:
+        for home in VERIFIER_HOMES:
+            if home != "toolchain":
+                assert validate_task_verifier(TASK_ID, home) == home
+
+    def test_orchestrator_seam_carries_test_ref_and_refuses_the_bare_stamp(self) -> None:
+        orch = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        assert orch._resolve_task_verifier(TASK_ID, "toolchain", "test_x") == "toolchain"
+        with pytest.raises(ValueError) as exc:
+            orch._resolve_task_verifier(TASK_ID, "toolchain")
+        assert "test_ref" in str(exc.value)
+        with pytest.raises(ValueError):
+            orch._resolve_task_verifier(TASK_ID, "toolchain", None)
+
+    def test_orchestrate_lifts_test_ref_beside_the_stamp(self) -> None:
+        """Pin the call site: the frontmatter path lifts `test_ref` next to
+        `verifier` and hands BOTH to the resolver — outside the metadata
+        swallow, like the component selector."""
+        import inspect
+
+        source = inspect.getsource(AutoBuildOrchestrator)
+        assert '_test_ref_raw = frontmatter.get("test_ref")' in source
+        assert "self._resolve_task_verifier(\n            task_id, _verifier_raw, _test_ref_raw\n        )" in source
+
+    def test_frontmatter_linkage_seam_says_so_when_test_ref_is_missing(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The never-raise snapshot seam (after the loud load) no longer
+        synthesizes nothing in silence for a bare toolchain."""
+        with caplog.at_level(logging.WARNING, "guardkit.orchestrator.verifier_stamp"):
+            assert build_rule_from_frontmatter({"verifier": "toolchain"}, task_id=TASK_ID) is None
+        assert any(TOOLCHAIN_NEEDS_TEST_REF_MESSAGE in r.message for r in caplog.records)
 
 
 # ===========================================================================
@@ -545,8 +732,10 @@ class TestSnapshotWiring:
         }
 
     def test_stamp_without_test_ref_stays_a_no_op(self, tmp_path: Path) -> None:
-        """A toolchain stamp with no test_ref synthesizes nothing — and a
-        stampless, blockless task remains the byte-equivalent no-op."""
+        """A toolchain stamp with no test_ref synthesizes nothing at the
+        never-raise snapshot seam (it is REFUSED earlier, at task load — (3),
+        TestToolchainStampNeedsTestRef) — and a stampless, blockless task
+        remains the byte-equivalent no-op."""
         _write_task_file(
             tmp_path, TASK_ID, "task_type: FEATURE\nverifier: toolchain\n"
         )
