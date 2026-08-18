@@ -253,6 +253,8 @@ def normalize_stamps(
     anything the rules cannot decide REFUSES LOUD naming every title, and the run
     stops with nothing written. Prints the result as JSON on stdout (forge's hook
     parses it); exit 0 = all decided (stamped/nothing to do), 3 = PARTIAL (decided stamps written, `refused` names the rest), 2 = cannot run.
+    Already-stamped titles the rules would home DIFFERENTLY are listed under
+    `disagreements` (advisory: echoed on stderr, never overwritten, exit unchanged).
     """
     from guardkit.orchestrator.stamp_normalizer import (
         StampNormalizerError,
@@ -316,6 +318,24 @@ def normalize_stamps(
         )
         for title in result.operator_stamped:
             err_console.print(f"  - {title}", highlight=False)
+    if result.disagreements:
+        # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
+        # the rules would home differently. Named in the JSON (`disagreements`)
+        # AND echoed on stderr ahead of the JSON. NEVER overwritten; the exit
+        # code is UNCHANGED (0/3/2 — a disagreement is advisory).
+        err_console = Console(stderr=True)
+        err_console.print(
+            f"[bold yellow]! normalize-stamps: {len(result.disagreements)} stamp "
+            f"DISAGREEMENT(s) (advisory, not overwritten):[/bold yellow]",
+            highlight=False,
+        )
+        for d in result.disagreements:
+            err_console.print(
+                f"  - '{d['title']}' is stamped {d['stamped']} but the rules say "
+                f"{d['rule_home']} ({d['rule']}: {d['evidence']})",
+                highlight=False,
+                soft_wrap=True,  # one line per disagreement, never re-flowed
+            )
     if result.refused:
         # PARTIAL (coordinator review 2026-08-16): every DECIDED stamp was
         # written; the undecidable titles are named in the JSON `refused` list
