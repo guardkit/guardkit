@@ -144,4 +144,5 @@ jobs:
             tests/orchestrator/harness/test_bdd_xrepo_contract_seam.py \
             tests/unit/orchestrator/test_wiring_gate.py \
             tests/orchestrator/test_permissive_double_surfacing.py \
+            tests/orchestrator/test_wiring_callsite_drift_seam.py \
             -o addopts="" --strict-markers -v
