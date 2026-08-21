@@ -1029,6 +1029,33 @@ class TestDoctorIntegration:
 # ============================================================================
 
 
+def _has_guardkitfactory() -> bool:
+    """True iff the ``guardkitfactory`` package (the LangGraph harness backend)
+    can be imported.
+
+    ``tests.yml`` deliberately installs only the ``dev`` extra — it does NOT
+    install ``guardkitfactory`` (the autobuild extra would try to resolve it
+    from PyPI, where it is not published). One test below asserts the
+    version-reporting branch, which is only reachable when the package is
+    really importable, so it is skipped when the package is absent and run
+    for real by ``seam-tests.yml`` (which installs the editable sibling).
+    Its counterpart ``test_langgraph_without_guardkitfactory`` covers the
+    absent case and keeps running in the main gate.
+    """
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("guardkitfactory") is not None
+    except Exception:
+        return False
+
+
+_requires_guardkitfactory = pytest.mark.skipif(
+    not _has_guardkitfactory(),
+    reason="reports the installed guardkitfactory version; requires it installed",
+)
+
+
 class TestActiveHarnessCheck:
     """Test ActiveHarnessCheck reports the active GUARDKIT_HARNESS substrate."""
 
@@ -1061,6 +1088,7 @@ class TestActiveHarnessCheck:
         assert result.status == CheckStatus.PASS
         assert "sdk" in result.message.lower()
 
+    @_requires_guardkitfactory
     def test_langgraph_with_guardkitfactory_importable(self, monkeypatch):
         """GUARDKIT_HARNESS=langgraph reports the guardkitfactory version."""
         monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
