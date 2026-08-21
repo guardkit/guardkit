@@ -19,12 +19,17 @@ Options:
     --project-name     Override project name (defaults to directory name)
     --interactive      Interactive setup mode (collects project info -> CLAUDE.md)
     --base-only        Install only the base template when extends is used
+    --update           Refresh already-installed command files from the shipped
+                       payload (never clobbers files you have edited)
+    --force            With --update: overwrite your edited command files too
 
 Example:
     guardkit init                          # Initialize with default template
     guardkit init fastapi-python           # Initialize with FastAPI template
     guardkit init react-typescript -n myapp  # With custom project name
     guardkit init --interactive            # Interactive setup mode
+    guardkit init --update                 # Refresh installed commands
+    guardkit init --update --force         # ... including ones you edited
 
 Coverage Target: >=85%
 """
@@ -716,6 +721,110 @@ def generate_claude_md(info: _ProjectInfo, target_dir: Path) -> None:
     (target_dir / "CLAUDE.md").write_text(content)
 
 
+def update_installed_commands(
+    *, force: bool = False, project_dir: Optional[Path] = None
+) -> int:
+    """Refresh installed slash-command files from the shipped payload.
+
+    WHY THIS EXISTS. ``guardkit init`` copies files **per-file-if-absent**
+    (:func:`_copy_file_if_not_exists` returns early when the destination
+    exists). That is correct for a project's own files — an init must never
+    clobber someone's edits — but it left NO supported way to update an existing
+    install at all: re-running ``init`` changed nothing, so a set of commands
+    installed in July stayed on July's content indefinitely while the guardkit
+    package around them moved on.
+
+    ``--update`` is that missing path. It refreshes only files the install-time
+    manifest already tracks, and it keeps the never-clobber promise: a command
+    whose bytes differ from the manifest has been EDITED by a human, so it is
+    left alone and NAMED in the output. ``--force`` is the explicit opt-in that
+    overwrites those too.
+
+    Args:
+        force: Overwrite locally-edited command files as well.
+        project_dir: Project directory to scan (defaults to the cwd).
+
+    Returns:
+        Exit code: 0 on success, 1 when the shipped payload or the manifest
+        could not be found (nothing could be refreshed safely).
+    """
+    from guardkit.commands.payload import (
+        installed_command_dirs,
+        refresh_commands,
+        resolve_shipped_commands_dir,
+    )
+
+    shipped_dir = resolve_shipped_commands_dir()
+    if shipped_dir is None:
+        console.print(
+            "[red]No shipped command payload found in the installed guardkit "
+            "package.[/red]\n"
+            "  [dim]Nothing to update from. Reinstall guardkit "
+            "(the payload ships inside the wheel).[/dim]"
+        )
+        return 1
+
+    dirs = installed_command_dirs(project=project_dir)
+    if not dirs:
+        console.print("[yellow]No installed commands directory found.[/yellow]")
+        return 1
+
+    console.print(f"[bold]Updating commands from:[/bold] {shipped_dir}")
+    any_manifest = False
+    total_updated = 0
+    total_skipped: List[str] = []
+
+    for d, is_global in dirs:
+        result = refresh_commands(
+            d, is_global=is_global, force=force, shipped_dir=shipped_dir
+        )
+        if result is None:
+            console.print(
+                f"  [yellow]{d}: no MANIFEST.json — skipped[/yellow]\n"
+                "    [dim]Without an install-time manifest there is no way to "
+                "tell an edited file from an out-of-date one, so nothing is "
+                "overwritten.[/dim]"
+            )
+            continue
+        any_manifest = True
+        total_updated += len(result.updated)
+        total_skipped.extend(result.skipped_modified)
+        if result.updated:
+            console.print(
+                f"  [green]{d}: updated {len(result.updated)} file(s)[/green]"
+            )
+            for name in result.updated:
+                console.print(f"      [dim]{name}[/dim]")
+            if result.manifest_written:
+                console.print("      [dim]MANIFEST.json rewritten[/dim]")
+        else:
+            console.print(f"  [dim]{d}: already up to date[/dim]")
+        if result.skipped_modified:
+            console.print(
+                f"  [yellow]{d}: {len(result.skipped_modified)} file(s) were "
+                "edited locally and were NOT overwritten:[/yellow]"
+            )
+            for name in result.skipped_modified:
+                console.print(f"      [yellow]{name}[/yellow]")
+
+    if not any_manifest:
+        return 1
+
+    if total_skipped:
+        console.print(
+            "\n[yellow]Left your edited files alone.[/yellow] To overwrite them "
+            "too, re-run with [bold]--update --force[/bold] "
+            "(this discards those edits)."
+        )
+    if total_updated == 0 and not total_skipped:
+        console.print("\n[bold green]Commands are already current.[/bold green]")
+    else:
+        console.print(
+            f"\n[bold green]Updated {total_updated} command file(s).[/bold green]"
+        )
+    return 0
+
+
 async def _cmd_init(
     template: str,
     project_name: Optional[str] = None,
@@ -848,6 +957,26 @@ async def _cmd_init(
     help="Show all log output including third-party DEBUG/INFO messages.",
 )
 @click.option(
+    "--update",
+    is_flag=True,
+    default=False,
+    help=(
+        "Refresh already-installed slash-command files from the version this "
+        "guardkit package ships. Files you have edited yourself are never "
+        "overwritten \u2014 they are listed instead. Use --force to overwrite "
+        "those too."
+    ),
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help=(
+        "With --update: overwrite command files you have edited locally, "
+        "discarding those edits."
+    ),
+)
+@click.option(
     "--base-only",
     is_flag=True,
     default=False,
@@ -861,9 +990,17 @@ def init(
     project_name: Optional[str],
     interactive: bool,
     verbose: bool,
+    update: bool,
+    force: bool,
     base_only: bool,
 ):
     """Initialize GuardKit in the current directory.
+
+    With --update, does NOT initialize anything: it refreshes the slash-command
+    files already installed (in ~/.agentecflow/commands and, if present, this
+    project's .claude/commands) to the version this guardkit package ships.
+    Commands you have edited yourself are reported, not overwritten, unless you
+    also pass --force.
 
     Applies a template. Knowledge capture is provided by the fleet-memory
     backend and is env-driven (``FLEET_MEMORY_*`` / ``GUARDKIT_MEMORY_BACKEND``),
@@ -872,6 +1009,18 @@ def init(
     TEMPLATE is the name of the template to apply (default: 'default').
     Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation, dotnet-railway-fastendpoints.
     """
+    if force and not update:
+        raise SystemExit(
+            "--force only applies to --update (it overwrites command files you "
+            "have edited). Did you mean `guardkit init --update --force`?"
+        )
+
+    if update:
+        exit_code = update_installed_commands(force=force)
+        if exit_code != 0:
+            raise SystemExit(exit_code)
+        return
+
     exit_code = asyncio.run(
         _cmd_init(
             template,
