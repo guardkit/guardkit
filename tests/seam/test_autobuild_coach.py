@@ -23,6 +23,7 @@ Seam Definition:
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import pytest
@@ -101,6 +102,7 @@ def make_task_work_results(
     violations: int = 0,
     requirements_met: Optional[List[str]] = None,
     tests_written: Optional[List[str]] = None,
+    files_created: Optional[List[str]] = None,
     task_id: str = "TASK-S6-001",
 ) -> Dict[str, Any]:
     """Create task-work results matching actual schema."""
@@ -133,16 +135,66 @@ def make_task_work_results(
             "Token generation",
             "Token refresh",
         ],
-        "tests_written": tests_written or ["tests/test_auth.py"],
-        "files_created": ["src/auth.py", "tests/test_auth.py"],
+        "tests_written": tests_written if tests_written is not None else ["tests/test_auth.py"],
+        "files_created": (
+            files_created
+            if files_created is not None
+            else ["src/auth.py", "tests/test_auth.py"]
+        ),
         "files_modified": [],
     }
 
 
+def materialize_claimed_files(worktree: Path, results: Dict[str, Any]) -> None:
+    """
+    Create, on disk, every file the results claim the Player produced.
+
+    STALENESS REPAIR (2026-08-21). These tests were written 2026-02-16
+    (commit de1ce9b8). On 2026-05-06, commit b9a45694 (TASK-AB-FIX-INVAB1,
+    "wire CoachVerifier into deterministic Coach path") added an ADVERSARIAL
+    HONESTY CHECK as step 1.4 of CoachValidator.validate(): before any quality
+    gate is consulted, the Coach checks that every file the Player claims to
+    have created/modified/tested actually exists in the worktree. If any claim
+    is false, the Coach returns decision="feedback" immediately with
+    quality_gates=None, requirements=None, independent_tests=None.
+
+    The fixtures here claimed "src/auth.py" and "tests/test_auth.py" but never
+    wrote them, so from 2026-05-06 onward every test in this file was stopped
+    at the honesty check and never reached the seam it was written to test.
+    That is the Coach working correctly — a lying Player report is exactly what
+    it is now built to reject. The fixture was the thing that was wrong.
+
+    Materialising the claimed files makes the Player report HONEST, so the
+    tests once again exercise their intended path (requirements validation,
+    quality-gate integrity, zero-test anomaly detection).
+    """
+    claimed = (
+        list(results.get("files_created", []))
+        + list(results.get("files_modified", []))
+        + list(results.get("tests_written", []))
+    )
+    for rel in claimed:
+        target = worktree / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.name.startswith("test_") and target.suffix == ".py":
+            target.write_text("def test_placeholder():\n    assert True\n")
+        else:
+            target.write_text("# fixture-materialised claim\n")
+
+
 def write_task_work_results(results_dir: Path, results: Dict[str, Any]) -> Path:
-    """Write task-work results to file."""
+    """
+    Write task-work results to file AND materialise the files they claim.
+
+    ``results_dir`` is ``<worktree>/.guardkit/autobuild/<TASK-ID>``, so the
+    worktree root is three levels up. See ``materialize_claimed_files`` for
+    why the claims must exist on disk (honesty verifier, 2026-05-06).
+    """
     results_path = results_dir / "task_work_results.json"
     results_path.write_text(json.dumps(results, indent=2))
+    materialize_claimed_files(results_dir.parents[2], results)
     return results_path
 
 
@@ -553,6 +605,13 @@ class TestZeroTestAnomalyDetection:
             total_tests=0,
             coverage_met=True,
             tests_written=[],  # No tests written!
+            # STALENESS REPAIR (2026-08-21): the default files_created still
+            # listed "tests/test_auth.py", which contradicts tests_written=[].
+            # Since the fixture now materialises claimed files on disk (see
+            # materialize_claimed_files), that phantom test file would be found
+            # by independent verification and legitimately suppress the anomaly.
+            # A genuine "Player wrote no tests" run creates NO test file.
+            files_created=["src/auth.py"],
             requirements_met=[feature_criterion],  # Matches acceptance criteria
         )
         # Modify quality_gates to trigger zero-test anomaly
@@ -715,6 +774,21 @@ class TestRealCoachValidatorIntegration:
 
         This is the end-to-end seam test: criteria flow from orchestrator
         through to CoachValidator.validate().
+
+        STALENESS REPAIR (2026-08-21). Written 2026-02-16, when
+        ``_invoke_coach_safely`` always let the deterministic CoachValidator
+        make the approve/feedback decision. On 2026-05-21, commit 51ac051b
+        (TASK-HMIG-008R, "restore LLM Coach as primary + refactor
+        CoachValidator into evidence supplier") inverted that: by default the
+        orchestrator now asks a language-model Coach to decide and
+        CoachValidator only gathers evidence for it. The deterministic path
+        this test describes survives, but only behind the operator revert
+        switch ``GUARDKIT_COACH_LEGACY=1``. Setting that env var is therefore
+        the honest repair: it makes the test exercise the path it was written
+        for instead of silently drifting onto a different one.
+
+        The DEFAULT (language-model) path is covered separately by
+        ``test_default_path_passes_acceptance_criteria_to_llm_coach`` below.
         """
         # Arrange: Write results with specific criteria
         criteria_to_test = [
@@ -746,8 +820,10 @@ class TestRealCoachValidatorIntegration:
 
         player_report = make_player_report()
 
-        # Act: Invoke with specific acceptance criteria
-        with patch("subprocess.run") as mock_run:
+        # Act: Invoke with specific acceptance criteria on the deterministic
+        # (legacy) Coach path — see the docstring for why the env var is set.
+        with patch.dict(os.environ, {"GUARDKIT_COACH_LEGACY": "1"}), \
+                patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
             result = orchestrator._invoke_coach_safely(
@@ -769,6 +845,101 @@ class TestRealCoachValidatorIntegration:
         assert requirements.get("criteria_total") == 3, (
             f"Expected 3 criteria, got {requirements.get('criteria_total')}"
         )
+
+    def test_default_path_passes_acceptance_criteria_to_llm_coach(
+        self,
+        tmp_worktree: Path,
+        task_work_results_dir: Path,
+        mock_worktree: Mock,
+    ):
+        """
+        The DEFAULT Coach path hands the acceptance criteria to the LLM Coach.
+
+        Added 2026-08-21 alongside the staleness repair above. Since commit
+        51ac051b (2026-05-21) the live build loop decides with a language-model
+        Coach, not the deterministic validator. Nothing in this file covered
+        that path, so "do the acceptance criteria reach the Coach?" was only
+        being asked of the retired one.
+
+        The language-model call itself is mocked (no model is invoked); what is
+        asserted is the wiring — that ``invoke_coach`` is called at all, and
+        that the criteria arrive with it.
+        """
+        criteria_to_test = ["Criterion Alpha", "Criterion Beta", "Criterion Gamma"]
+        results = make_task_work_results(requirements_met=criteria_to_test)
+        write_task_work_results(task_work_results_dir, results)
+
+        mock_worktree_manager = Mock()
+        mock_worktree_manager.create.return_value = mock_worktree
+        mock_progress_display = Mock()
+        mock_progress_display.__enter__ = Mock(return_value=mock_progress_display)
+        mock_progress_display.__exit__ = Mock(return_value=False)
+        mock_progress_display.start_turn = Mock()
+        mock_progress_display.complete_turn = Mock()
+        mock_progress_display.console = Mock()
+        mock_progress_display.console.print = Mock()
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=tmp_worktree.parent.parent,
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            progress_display=mock_progress_display,
+            enable_context=False,
+        )
+
+        # Stand in for the SDK invoker. The real signature is probed by
+        # _invoke_coach_primary via inspect.signature, so the stub must
+        # declare the kwargs it wants to receive.
+        captured: Dict[str, Any] = {}
+
+        def fake_invoke_coach(
+            task_id: str,
+            turn: int,
+            requirements: str,
+            player_report: Dict[str, Any],
+            remaining_budget: Any = None,
+            evidence_bundle: Any = None,
+            coach_context: Any = None,
+            acceptance_criteria: Any = None,
+            **kwargs: Any,
+        ) -> AgentInvocationResult:
+            captured["acceptance_criteria"] = acceptance_criteria
+            captured["evidence_bundle"] = evidence_bundle
+            return AgentInvocationResult(
+                success=True,
+                agent_type="coach",
+                report={"decision": "approve", "rationale": "stub"},
+                duration_seconds=0.0,
+            )
+
+        invoker = Mock()
+        invoker.invoke_coach = fake_invoke_coach
+        orchestrator._agent_invoker = invoker
+
+        env_without_legacy = {
+            k: v for k, v in os.environ.items() if k != "GUARDKIT_COACH_LEGACY"
+        }
+        with patch.dict(os.environ, env_without_legacy, clear=True), \
+                patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+
+            orchestrator._invoke_coach_safely(
+                task_id="TASK-S6-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report=make_player_report(),
+                worktree=mock_worktree,
+                acceptance_criteria=criteria_to_test,
+            )
+
+        assert "acceptance_criteria" in captured, (
+            "The default path never called invoke_coach — the LLM Coach was "
+            "not reached at all."
+        )
+        received = captured["acceptance_criteria"]
+        assert received is not None, "Acceptance criteria did not reach the LLM Coach"
+        assert len(received) == 3, f"Expected 3 criteria, got {received}"
+        assert [c["text"] for c in received] == criteria_to_test
 
 
 # ============================================================================

@@ -123,16 +123,33 @@ tests/orchestrator/test_visual_comparator.py::TestVisualComparator::test_compare
 tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_ssim_computation_is_pure_math
 tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_tier1_fail_no_llm_calls
 tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_tier1_pass_no_llm_calls
-tests/seam/test_autobuild_coach.py::TestAcceptanceCriteriaFlow::test_acceptance_criteria_reaches_coach_validator
-tests/seam/test_autobuild_coach.py::TestAcceptanceCriteriaFlow::test_empty_acceptance_criteria_handled_gracefully
-tests/seam/test_autobuild_coach.py::TestCoachFeedbackPropagation::test_approve_decision_includes_quality_data
-tests/seam/test_autobuild_coach.py::TestCoachFeedbackPropagation::test_feedback_decision_with_issues_propagates
-tests/seam/test_autobuild_coach.py::TestCompleteDataFlow::test_complete_approval_flow
-tests/seam/test_autobuild_coach.py::TestCompleteDataFlow::test_complete_feedback_flow
-tests/seam/test_autobuild_coach.py::TestQualityGateStatusIntegrity::test_coach_receives_real_quality_gate_status
-tests/seam/test_autobuild_coach.py::TestQualityGateStatusIntegrity::test_failing_quality_gates_detected
-tests/seam/test_autobuild_coach.py::TestRealCoachValidatorIntegration::test_orchestrator_passes_acceptance_criteria_to_coach
-tests/seam/test_autobuild_coach.py::TestZeroTestAnomalyDetection::test_zero_test_anomaly_detected_when_no_tests_written
+# ---------------------------------------------------------------------------
+# 2026-08-21 UN-QUARANTINED: tests/seam/test_autobuild_coach.py (all 10)
+# ---------------------------------------------------------------------------
+# All ten were STALE TESTS, not live defects. Two independent changes had
+# moved under them, and neither weakened the Coach:
+#
+#   b9a45694 (2026-05-06, TASK-AB-FIX-INVAB1) wired the adversarial honesty
+#   verifier into CoachValidator.validate() as step 1.4: before any quality
+#   gate is consulted the Coach checks that every file the Player claims to
+#   have written actually exists. The fixtures here claimed src/auth.py and
+#   tests/test_auth.py without ever creating them, so from that date every
+#   test in the file was stopped at the honesty check and returned
+#   quality_gates=None. The Coach was rejecting a lying report — correctly.
+#   Repair: the fixture now materialises the files it claims.
+#
+#   51ac051b (2026-05-21, TASK-HMIG-008R) made the language-model Coach the
+#   primary decision-maker and demoted CoachValidator to evidence supplier;
+#   the deterministic path lives on behind GUARDKIT_COACH_LEGACY=1. Repair:
+#   the one orchestrator test that assumed the old path now sets that flag,
+#   and a new test covers the default language-model path.
+#
+# VERIFIED AT SOURCE, not assumed: with an honest Player report the Coach
+# DOES raise the zero-test anomaly (category zero_test_anomaly, severity
+# error) and DOES return a populated QualityGateStatus. Both repaired tests
+# were mutation-checked — neutering _check_zero_test_anomaly and unthreading
+# the acceptance criteria each turns them red.
+# ---------------------------------------------------------------------------
 tests/templates/langchain-deepagents/test_coach_template.py::TestPlaceholders::test_no_hardcoded_deepagents_import
 tests/templates/test_maui_appshell_structure.py::TestAgentSpecifications::test_agent_files_exist
 tests/templates/test_maui_appshell_structure.py::TestAgentSpecifications::test_agent_files_have_required_sections
