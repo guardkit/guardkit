@@ -1,0 +1,62 @@
+# Seam checks for this repository.
+#
+# WHAT THIS FILE IS, in plain words: a short list of things that must still
+# work after a build finishes. GuardKit runs them for real (it starts them in
+# a separate process) instead of trusting the test suite, because a codebase
+# can have a completely green test suite and still be unable to start up.
+#
+# Two kinds are used here:
+#   import    — "does this file load at all?"  GuardKit starts this project's
+#               own Python (the one in its virtual environment, if it has
+#               one) and asks it to import the module. This catches a crash
+#               that happens the moment the file is loaded (a bad import, a
+#               syntax-level mistake, a missing dependency).
+#   construct — "can the object the program is built around actually be
+#               created?"  GuardKit calls the named function or class with
+#               the listed arguments and checks the result is of the expected
+#               type. This is the check that would have caught the case where
+#               a program was assembled with a missing or wrongly-named
+#               argument and blew up the first time anyone ran it.
+#
+# Who may edit this file: people (and the Coach at triage) only. GuardKit
+# reads ONLY the copy that existed at the commit the build branch was created
+# from, so a change made during a build has no effect on that build — it is
+# reported, and it applies from the next build onwards.
+#
+# Reference: docs/design/specs/autobuild-reliability/ws3-s2-seam-check-semantics-2026-07-07.md §4
+version: 1
+
+# The files that assemble the program out of its parts ("composition roots").
+composition_roots:
+  - path: guardkit/cli/main.py
+  - path: guardkit/orchestrator/feature_orchestrator.py
+
+exclusions: []
+
+boot_smoke:
+  # The command-line entry point the `guardkit-py` command runs. If this does
+  # not load, nothing in the tool works.
+  - id: guardkit-cli-loads
+    kind: import
+    target: guardkit.cli.main
+
+  # The build orchestrator module — the largest assembly point in the repo.
+  - id: guardkit-feature-orchestrator-loads
+    kind: import
+    target: guardkit.orchestrator.feature_orchestrator
+
+  # The gate machinery this declaration drives. Declared so the instrument
+  # cannot quietly stop loading without anyone noticing.
+  - id: guardkit-boot-smoke-loads
+    kind: import
+    target: guardkit.orchestrator.boot_smoke
+
+  # The real assembly check: build the orchestrator object the way the
+  # command line builds it (repository root = the working directory) and
+  # confirm we got a FeatureOrchestrator back, not something else and not an
+  # exception.
+  - id: guardkit-feature-orchestrator-constructs
+    kind: construct
+    target: guardkit.orchestrator.feature_orchestrator:FeatureOrchestrator
+    args: ["."]
+    expect_type: guardkit.orchestrator.feature_orchestrator:FeatureOrchestrator
