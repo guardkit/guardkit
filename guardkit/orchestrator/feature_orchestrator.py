@@ -55,6 +55,13 @@ from guardkit.orchestrator.smoke_gates import (
     run_smoke_gate,
     should_fire_for_wave,
 )
+from guardkit.orchestrator.boot_smoke_gate import (
+    BLOCKING_ENV_VAR as BOOT_SMOKE_BLOCKING_ENV_VAR,
+    BootSmokeGateOutcome,
+    failure_summary as boot_smoke_failure_summary,
+    render_report as render_boot_smoke_report,
+    run_final_wave_boot_smoke,
+)
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
     smoke_gate_header,
@@ -88,6 +95,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     _resolve_uv_sources_symlinks,
     check_requires_python_precheck,
     format_requires_python_remediation,
+    probe_worktree_venv,
 )
 from guardkit.models.task_types import TaskType, normalise_task_type
 from guardkit.tasks.task_loader import TaskLoader
@@ -2419,7 +2427,80 @@ The detailed specifications are in the task markdown file.
             if wave_result.all_succeeded and not smoke_blocked:
                 self._mark_wave_completed(feature, wave_number)
 
+        # Start-up checks, after the last wave (WS3-S3 check 2d, spec §4.3).
+        # Everything above proves the tests pass. This proves the thing the
+        # build produced can actually be loaded and assembled. Advisory by
+        # default — see boot_smoke_gate for the flag that makes it blocking.
+        self._run_final_wave_boot_smoke(feature, worktree, wave_results)
+
         return wave_results
+
+    def _run_final_wave_boot_smoke(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+        wave_results: List[WaveExecutionResult],
+    ) -> Optional[BootSmokeGateOutcome]:
+        """Run the repository's declared start-up checks once, after the last wave.
+
+        Plain words: the build is finished, so before anyone calls it done,
+        actually load the program's entry points and build its main objects in
+        a separate process and see whether that works. The list of what to run
+        lives in the repository's ``.guardkit/seam-checks.yaml``; a repository
+        without that file gets a one-line nudge and nothing else.
+
+        This reports and, by default, changes nothing at all. It becomes able
+        to fail a feature only when the operator sets the environment variable
+        named by ``BOOT_SMOKE_BLOCKING_ENV_VAR`` and the declaration was
+        committed before the build started.
+
+        Returns
+        -------
+        Optional[BootSmokeGateOutcome]
+            The outcome, or ``None`` when the checks were skipped (a build that
+            did not finish all its waves, or an unexpected error — neither is
+            allowed to interfere with the build's own result).
+        """
+        # A build that broke early explains its own red; running start-up
+        # checks over a half-finished worktree would only add noise.
+        if any(not wr.all_succeeded for wr in wave_results):
+            logger.info(
+                "Boot smoke skipped: the build did not complete every wave"
+            )
+            return None
+
+        try:
+            venv_python = probe_worktree_venv(worktree.path)
+            outcome = run_final_wave_boot_smoke(
+                worktree.path,
+                venv_python=str(venv_python) if venv_python else None,
+                base_branch=worktree.base_branch,
+            )
+        except Exception as exc:  # noqa: BLE001 — advisory instrument, never fatal
+            logger.warning("Boot smoke could not run: %s", exc)
+            return None
+
+        for line in render_boot_smoke_report(outcome):
+            logger.info(line)
+            if not self.quiet:
+                console.print(line)
+
+        if outcome.blocks_build and wave_results:
+            summary = boot_smoke_failure_summary(outcome)
+            last = wave_results[-1]
+            last.smoke_gate_result = SmokeGateResult(
+                passed=False,
+                exit_code=1,
+                stdout="",
+                stderr=summary,
+                timed_out=False,
+                command=f"boot smoke ({BOOT_SMOKE_BLOCKING_ENV_VAR}=1)",
+                timeout=0,
+                after_wave=last.wave_number,
+            )
+            logger.error("Boot smoke FAILED and blocking is enabled: %s", summary)
+
+        return outcome
 
     def _build_smoke_feedback(
         self,
