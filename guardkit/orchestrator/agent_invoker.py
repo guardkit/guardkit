@@ -18,6 +18,10 @@ from guardkit.orchestrator.permissive_double_advisory import (
     coach_advisory_text as permissive_double_advisory_text,
     split_findings as split_permissive_double_findings,
 )
+from guardkit.orchestrator import zero_test_gate
+from guardkit.orchestrator.zero_test_gate import (
+    coach_advisory_text as zero_test_coach_advisory_text,
+)
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
@@ -2651,6 +2655,24 @@ class AgentInvoker:
                 acceptance_criteria=acceptance_criteria,
             )
 
+            # Zero-test check (2026-08-21, Rich's ruling). ADVISORY BY DEFAULT
+            # — unlike every guard above it, this one records rather than
+            # blocks. When the Player wrote no test file this turn it writes a
+            # durable receipt (feature, task, time, files, what the Coach
+            # decided anyway, repository) so the promotion question — "how
+            # often is a test-free change legitimate?" — can be answered from
+            # evidence rather than guessed. It flips a verdict ONLY when
+            # GUARDKIT_ZERO_TEST_BLOCKING is set. Runs here, in the same
+            # deterministic seam as the guards above, so the receipt records
+            # the FINAL post-override decision.
+            self._apply_zero_test_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
             # the deterministic records. Embeds honesty discrepancies verbatim
             # and strips fabricated "does not exist on disk" claims (the
@@ -4135,13 +4157,26 @@ Turn: {turn}
                 permissive_sharp, permissive_broad
             )
 
+        # Zero-test visibility (2026-08-21, Rich's ruling). Until now the Coach
+        # was never TOLD, in words, that the Player wrote no test file — the
+        # raw counts reached it buried among dozens of sibling keys in the JSON
+        # above and nothing named them. This names it. Advisory prompt text
+        # ONLY: the verdict flip lives behind GUARDKIT_ZERO_TEST_BLOCKING in
+        # _apply_zero_test_guard, and the sentence itself says it does not
+        # block. The wording lives in zero_test_gate so the sentence a
+        # reviewing model reads and the sentence a person reads in the receipt
+        # come from one place.
+        zero_test_advisory = zero_test_coach_advisory_text(
+            bundle_dict.get("zero_test")
+        )
+
         return f"""
 ## Deterministic Evidence Bundle
 
 <evidence_bundle>
 {payload}
 </evidence_bundle>
-{skip_advisory}{permissive_advisory}"""
+{skip_advisory}{permissive_advisory}{zero_test_advisory}"""
 
     @staticmethod
     def _turn_rejecting_discrepancies(
@@ -7081,6 +7116,164 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAWE-004"
         )
+
+    def _apply_zero_test_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+        env: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Record — and, only if asked, block on — a turn that wrote no tests.
+
+        Rich's ruling, 2026-08-21: detect deterministically, but **measure
+        before blocking**. So this method does two different jobs, and only the
+        first one runs by default:
+
+        1. **Always**, when the check fired: write a durable record of the
+           turn — which feature and task, when, what the Player created and
+           modified, whether any test file exists on disk, what the Coach
+           decided anyway, and which repository. That record is the entire
+           reason this exists. Advisory-first is worthless unless the
+           measurement accumulates, and a person later has to be able to
+           adjudicate each row: was this change legitimately test-free (a
+           documentation edit, a rename, deleting dead code, a config change)
+           or was it unverified work?
+
+        2. **Only when ``GUARDKIT_ZERO_TEST_BLOCKING`` is set**: override an
+           ``approve`` verdict to ``feedback``. Without that variable this
+           method never changes a verdict — it is a recorder.
+
+        Detection is not done here. It was done in
+        ``CoachValidator.gather_evidence`` by running the legacy rule
+        ``_check_zero_test_anomaly`` unchanged; this method only reads
+        ``evidence_bundle.zero_test``.
+
+        No-ops when the bundle is absent (legacy / tool-using callers), when
+        the ``zero_test`` field is ``None`` (evidence gathering stopped
+        early — a dishonest report or a failed quality gate, both of which
+        stop the legacy path here too), or when the check did not fire. The
+        override half additionally never touches a ``feedback`` verdict; only
+        an ``approve`` is ever flipped.
+
+        Never raises: a recording instrument that can break a build is worse
+        than no instrument.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the verdict was built over, or ``None``.
+            task_id: Task identifier.
+            turn: Current turn number.
+            coach_output_path: ``coach_turn_N.json``, re-persisted on override.
+            env: Environment mapping for the blocking flag. Defaults to the
+                real process environment; injectable for tests.
+        """
+        if evidence_bundle is None:
+            return
+        zero_test = getattr(evidence_bundle, "zero_test", None)
+        if not isinstance(zero_test, dict) or not zero_test.get("fired"):
+            return
+
+        blocking = zero_test_gate.blocking_requested(env)
+        original_decision = decision.get("decision")
+        should_override = blocking and original_decision == "approve"
+
+        # ---- job 1: the receipt (always) -------------------------------
+        try:
+            repo_root = self._resolve_repo_root()
+            record = zero_test_gate.build_receipt(
+                evidence=zero_test,
+                task_id=task_id,
+                turn=turn,
+                feature_id=self._zero_test_feature_id(),
+                repo=(repo_root or self.worktree_path).name,
+                repo_path=str(repo_root or self.worktree_path),
+                coach_decision=original_decision,
+                blocking=blocking,
+                overridden=should_override,
+            )
+            zero_test_gate.write_receipt(
+                record,
+                worktree_path=self.worktree_path,
+                repo_root=repo_root,
+                task_id=task_id,
+                turn=turn,
+            )
+        except Exception as exc:  # noqa: BLE001 — a recorder must never break a build
+            logger.warning(
+                "zero-test check: failed to write the receipt for %s turn %s "
+                "(%s); the turn is unaffected.",
+                task_id,
+                turn,
+                exc.__class__.__name__,
+            )
+
+        if not should_override:
+            logger.info(
+                "zero-test check FIRED for %s turn %s (severity=%s, Coach "
+                "decided %r). ADVISORY — the verdict is unchanged. Set %s=1 "
+                "to make this block.",
+                task_id,
+                turn,
+                zero_test.get("severity"),
+                original_decision,
+                zero_test_gate.BLOCKING_ENV_VAR,
+            )
+            return
+
+        # ---- job 2: the override (only when explicitly asked for) -------
+        rationale = (
+            "No test file was written for this turn, and "
+            f"{zero_test_gate.BLOCKING_ENV_VAR} is set, so a turn with no "
+            "tests is rejected. Write a test that exercises the behaviour "
+            "this turn added, or — if this change genuinely needs no test "
+            "(a documentation edit, a rename, deleting dead code, a "
+            "configuration change) — say so explicitly in your report."
+        )
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        decision["issues"] = [
+            {
+                "severity": "must_fix",
+                "category": zero_test_gate.ANOMALY_CATEGORY,
+                "description": zero_test.get("description") or rationale,
+                "details": {
+                    "files_created": zero_test.get("files_created") or [],
+                    "files_modified": zero_test.get("files_modified") or [],
+                    "test_files_on_disk": zero_test.get("test_files_on_disk") or [],
+                    "overridden_decision": original_decision,
+                },
+            },
+            *decision.get("issues", []),
+        ]
+        logger.warning(
+            "zero-test check: overriding Coach verdict %r->'feedback' for %s "
+            "turn %s — no test file was written and %s is set.",
+            original_decision,
+            task_id,
+            turn,
+            zero_test_gate.BLOCKING_ENV_VAR,
+        )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="zero-test-check"
+        )
+
+    def _zero_test_feature_id(self) -> Optional[str]:
+        """Name the feature this build belongs to, for the zero-test receipt.
+
+        GuardKit builds run inside ``<repo>/.guardkit/worktrees/<id>/``, where
+        ``<id>`` is the feature identifier for a feature build and the task
+        identifier for a single-task build. The directory name is therefore
+        the best available answer. Returns ``None`` when the build is not
+        running in a worktree at all (nothing to name), so the receipt records
+        an honest absence rather than a guess.
+        """
+        if self._resolve_repo_root() is None:
+            return None
+        return self.worktree_path.name
 
     def _apply_runtime_parity_guard(
         self,
