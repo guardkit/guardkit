@@ -40,6 +40,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
+from guardkit.orchestrator.permissive_double_advisory import (
+    split_findings as split_permissive_double_findings,
+)
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
@@ -2875,7 +2878,10 @@ The detailed specifications are in the task markdown file.
         worktree: Any,
         wave_number: int,
     ) -> None:
-        """Surface WS3-S3 CALLSITE_DRIFT + SYS_MODULES_TAMPER as advisory (§8).
+        """Surface CALLSITE_DRIFT + SYS_MODULES_TAMPER + PERMISSIVE_DOUBLE (§8).
+
+        All three are ADVISORY: they are written to the run log for a person to
+        read, and none of them can reject the turn.
 
         CALLSITE_DRIFT aperture B is already in ``wiring_result`` (analyze_wiring
         runs it without a baseline). Aperture A (changed-signature × stale-site)
@@ -2884,6 +2890,34 @@ The detailed specifications are in the task markdown file.
         ``wiring_result["callsite_drift"]`` for Coach evidence and logged as an
         advisory. Never turn-rejecting until the §8 promotion gate flips it.
         Fail-open: any error leaves the aperture-B result untouched.
+
+        PERMISSIVE_DOUBLE (added 2026-08-21) needs no extra analysis pass: the
+        factory already computes it into ``wiring_result["permissive_double"]``
+        on every run, and until now nothing on the guardkit side read the value.
+        In plain terms, a "permissive double" is a stand-in object a test uses
+        in place of the real thing, which accepts ANY arguments at all — so the
+        test still passes even when the real function would reject the call
+        because the argument names are wrong. That is the exact defect class
+        that shipped Mode P dead on arrival (post-merge review
+        ``forge/docs/reviews/feat-spl-002-post-merge-review-2026-07-06.md``).
+
+        There are far too many findings to print them all, so the log sorts
+        them into a SHARP group and a BROAD group and prints the sharp ones
+        line by line and the broad ones as a count.
+
+        THAT SPLIT IS A VOLUME FILTER, NOT A DEFECT JUDGEMENT — see
+        :py:mod:`guardkit.orchestrator.permissive_double_advisory`, which owns
+        the rule and the reasoning. Short version: the Mode P regression above
+        produced 24 findings and every one of them was BROAD, because the
+        sharp path needs the stand-in's name to match a real symbol and that
+        file's class was named ``RecordingFake``.
+
+        Measured over the estate on 2026-08-21 (guardkit / forge /
+        specialist-agent / guardkitfactory): 3,156 findings in total, of which
+        46 were sharp and 3,110 broad. They fell in 325 distinct test files,
+        and 305 of those 325 (94%) contained only broad findings. Note the
+        denominator: 94% is the share of files that HAVE a finding, not the
+        share of all test files in the estate — that figure was never measured.
         """
         if not isinstance(wiring_result, dict):
             return
@@ -2922,11 +2956,19 @@ The detailed specifications are in the task markdown file.
             env = wiring_result.get("env_tamper") or {}
             env_findings = env.get("findings", []) if env.get("status") == "ran" else []
 
-            if advisory or env_findings:
+            pd_sharp, pd_broad = self._split_permissive_double_findings(wiring_result)
+
+            if advisory or env_findings or pd_sharp or pd_broad:
                 logger.warning(
-                    "[wave %s] WS3-S3 advisory seam findings (not turn-rejecting): "
-                    "%d CALLSITE_DRIFT, %d SYS_MODULES_TAMPER",
+                    "[wave %s] advisory findings — none of these can reject the "
+                    "turn: %d call sites whose function signature moved under "
+                    "them (CALLSITE_DRIFT); %d tests that reach into "
+                    "sys.modules (SYS_MODULES_TAMPER); %d test stand-ins that "
+                    "accept any arguments, so a test using one stays green "
+                    "after the real function's arguments change "
+                    "(PERMISSIVE_DOUBLE) — %d sharp, %d broad",
                     wave_number, len(advisory), len(env_findings),
+                    len(pd_sharp) + len(pd_broad), len(pd_sharp), len(pd_broad),
                 )
                 for f in advisory[:10]:
                     logger.warning(
@@ -2938,8 +2980,44 @@ The detailed specifications are in the task markdown file.
                         "  SYS_MODULES_TAMPER %s:%s %s",
                         f.get("file"), f.get("lineno"), f.get("module_key"),
                     )
+                for f in pd_sharp[:10]:
+                    logger.warning(
+                        "  PERMISSIVE_DOUBLE %s:%s %s '%s' — %s",
+                        f.get("file"), f.get("lineno"), f.get("form"),
+                        f.get("symbol"), f.get("why", ""),
+                    )
+                if pd_broad:
+                    logger.warning(
+                        "  PERMISSIVE_DOUBLE broad group: %d ordinary "
+                        "patch(\"module.function\") stand-ins, listed as a "
+                        "count because there are usually too many to read. "
+                        "Broad does NOT mean safe — sharp/broad is a volume "
+                        "filter, not a defect judgement, and the worst known "
+                        "regression of this class (forge Mode P) was 24 "
+                        "findings that were ALL broad. If this wave changed a "
+                        "function's arguments, grep the run's wiring JSON for "
+                        "that function name.",
+                        len(pd_broad),
+                    )
         except Exception as exc:  # noqa: BLE001 — advisory must never break the gate
             logger.debug("advisory seam surfacing failed: %s", exc)
+
+    @staticmethod
+    def _split_permissive_double_findings(
+        wiring_result: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Sort the analyzer's permissive-double findings into sharp and broad.
+
+        Thin delegation to :py:func:`permissive_double_advisory.split_findings`,
+        which is the single implementation of the rule. The run log (here) and
+        the reviewing model's prompt (in ``agent_invoker``) both go through it,
+        so the two can never drift apart and describe the same run differently.
+
+        Read that module's docstring before changing anything: the split is a
+        VOLUME FILTER for a reader's attention, not a judgement about which
+        findings are real defects.
+        """
+        return split_permissive_double_findings(wiring_result)
 
     def _feature_base_sources(
         self, worktree: Any, authored: List[str]

@@ -14,6 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Set, Tuple, Union
 
+from guardkit.orchestrator.permissive_double_advisory import (
+    coach_advisory_text as permissive_double_advisory_text,
+    split_findings as split_permissive_double_findings,
+)
+
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
     # TASK-HMIG-008R Part C: bundle reference avoids the circular import that
@@ -3932,6 +3937,31 @@ Turn: {turn}
                 + [f"... and {remainder} more (truncated for token budget)"]
             )
 
+    @staticmethod
+    def _count_permissive_doubles(
+        wiring_container: Optional[Dict[str, Any]],
+    ) -> Tuple[int, int]:
+        """Count permissive-double findings as ``(sharp, broad)``.
+
+        A "permissive double" is a stand-in object a test uses in place of the
+        real thing which accepts any arguments at all, so the test stays green
+        even after the real function's argument names have changed underneath
+        it. The analyzer writes these into
+        ``bundle.wiring["permissive_double"]["findings"]``.
+
+        Delegates to :py:func:`permissive_double_advisory.split_findings` —
+        the single implementation of the sharp/broad rule, shared with the run
+        log in ``feature_orchestrator`` so the two can never disagree about the
+        same run. That module's docstring is the place to read WHY the split
+        exists: it is a volume filter for a reader's attention, not a judgement
+        about which findings are real.
+
+        Absence-safe: a missing key or any unexpected shape counts as ``(0, 0)``
+        rather than raising — this must never break prompt construction.
+        """
+        sharp, broad = split_permissive_double_findings(wiring_container)
+        return len(sharp), len(broad)
+
     def _render_evidence_bundle_section(
         self,
         evidence_bundle: "CoachEvidenceBundle",
@@ -3953,10 +3983,21 @@ Turn: {turn}
         * ``evidence_bundle.stub_scan.findings`` — keep first 20 entries.
         * ``evidence_bundle.coverage.findings`` — keep first 20 entries.
         * ``evidence_bundle.behavioural_oracle.findings`` — keep first 20 entries.
+        * ``evidence_bundle.wiring.{permissive_double,callsite_drift,env_tamper,
+          ctor_arity}.findings`` — keep first 20 entries each. These four lists
+          are nested INSIDE the wiring result; before 2026-08-21 they were the
+          only finding lists written into the prompt unbounded.
 
         Each truncation appends a ``"... and N more"`` marker so the Coach
         knows the list was bounded. Non-list fields are bounded by gate
         computation and pass through unchanged.
+
+        An advisory paragraph is appended after the JSON, naming
+        ``wiring.permissive_double``, explaining in plain words what a
+        permissive double is, and saying explicitly that its sharp/broad split
+        is a volume filter rather than a defect judgement. The wording comes
+        from :py:func:`permissive_double_advisory.coach_advisory_text`. It is
+        advisory text only: no gate and no verdict branch reads those counts.
 
         The bundle's honesty channel is NOT duplicated here — it lives in
         the separate ``<honesty_verification>`` section emitted by
@@ -4029,6 +4070,27 @@ Turn: {turn}
         self._truncate_findings(bundle_dict.get("coverage"), self._COACH_WIRING_FINDINGS_LIMIT)
         self._truncate_findings(bundle_dict.get("behavioural_oracle"), self._COACH_WIRING_FINDINGS_LIMIT)
 
+        # Count the permissive-double findings BEFORE truncation, so the
+        # advisory line below reports the true totals.
+        permissive_sharp, permissive_broad = self._count_permissive_doubles(
+            bundle_dict.get("wiring")
+        )
+
+        # The factory nests four more finding lists INSIDE bundle.wiring
+        # (permissive_double / callsite_drift / env_tamper / ctor_arity). They
+        # were being written into the prompt in full, unbounded: one test file
+        # can carry 80+ permissive_double findings, which is thousands of
+        # wasted prompt tokens. Bound them by the same rule as their siblings.
+        wiring_container = bundle_dict.get("wiring")
+        if isinstance(wiring_container, dict):
+            for nested_key in (
+                "permissive_double", "callsite_drift", "env_tamper", "ctor_arity",
+            ):
+                self._truncate_findings(
+                    wiring_container.get(nested_key),
+                    self._COACH_WIRING_FINDINGS_LIMIT,
+                )
+
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
         except Exception as exc:  # noqa: BLE001
@@ -4055,13 +4117,31 @@ Turn: {turn}
                     "only — never reject the turn on this count alone.\n"
                 )
 
+        # Permissive-double visibility (2026-08-21). The analyzer has always
+        # computed this into wiring.permissive_double and it has always been
+        # carried into this JSON, but nothing ever named it — so it sat
+        # unlabelled among a dozen sibling keys and no reader knew what it was.
+        # This names it in plain words. Advisory prompt text ONLY: no gate and
+        # no verdict branch reads it, and the text itself says so.
+        #
+        # The wording lives in permissive_double_advisory so that the sentence
+        # a reviewing model reads and the sentence a person reads in the run
+        # log come from one place. It deliberately does NOT tell the reader the
+        # broad group is safe to skip; see that module's docstring for the
+        # forge Mode P case that proved that wording wrong.
+        permissive_advisory = ""
+        if permissive_sharp or permissive_broad:
+            permissive_advisory = permissive_double_advisory_text(
+                permissive_sharp, permissive_broad
+            )
+
         return f"""
 ## Deterministic Evidence Bundle
 
 <evidence_bundle>
 {payload}
 </evidence_bundle>
-{skip_advisory}"""
+{skip_advisory}{permissive_advisory}"""
 
     @staticmethod
     def _turn_rejecting_discrepancies(
