@@ -40,6 +40,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
+from guardkit.orchestrator.permissive_double_advisory import (
+    split_findings as split_permissive_double_findings,
+)
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
@@ -2768,19 +2771,23 @@ The detailed specifications are in the task markdown file.
         that shipped Mode P dead on arrival (post-merge review
         ``forge/docs/reviews/feat-spl-002-post-merge-review-2026-07-06.md``).
 
-        The detector's own confidence is uneven, so the log separates two
-        groups (measured over the estate 2026-08-21: 3,156 findings across
-        guardkit / forge / specialist-agent / guardkitfactory, of which only 46
-        were in the sharp group):
+        There are far too many findings to print them all, so the log sorts
+        them into a SHARP group and a BROAD group and prints the sharp ones
+        line by line and the broad ones as a count.
 
-        * SHARP — a stand-in named after a real function (``target_evidence``
-          ``name_matched``) or one that literally declares ``*args/**kwargs``
-          (``form`` ``star_args_fake``). Rare and usually a true hit; logged
-          line by line.
-        * BROAD — ``unspecced_mock``: the ordinary
-          ``patch("my.module.my_function")`` idiom with no signature attached.
-          This fires on ~94% of the estate's test files, so it is reported as a
-          count only and must never be read as a defect list.
+        THAT SPLIT IS A VOLUME FILTER, NOT A DEFECT JUDGEMENT — see
+        :py:mod:`guardkit.orchestrator.permissive_double_advisory`, which owns
+        the rule and the reasoning. Short version: the Mode P regression above
+        produced 24 findings and every one of them was BROAD, because the
+        sharp path needs the stand-in's name to match a real symbol and that
+        file's class was named ``RecordingFake``.
+
+        Measured over the estate on 2026-08-21 (guardkit / forge /
+        specialist-agent / guardkitfactory): 3,156 findings in total, of which
+        46 were sharp and 3,110 broad. They fell in 325 distinct test files,
+        and 305 of those 325 (94%) contained only broad findings. Note the
+        denominator: 94% is the share of files that HAVE a finding, not the
+        share of all test files in the estate — that figure was never measured.
         """
         if not isinstance(wiring_result, dict):
             return
@@ -2823,11 +2830,15 @@ The detailed specifications are in the task markdown file.
 
             if advisory or env_findings or pd_sharp or pd_broad:
                 logger.warning(
-                    "[wave %s] advisory seam findings (none of these can reject "
-                    "the turn): %d CALLSITE_DRIFT, %d SYS_MODULES_TAMPER, "
-                    "%d PERMISSIVE_DOUBLE high-confidence (+%d low-confidence)",
+                    "[wave %s] advisory findings — none of these can reject the "
+                    "turn: %d call sites whose function signature moved under "
+                    "them (CALLSITE_DRIFT); %d tests that reach into "
+                    "sys.modules (SYS_MODULES_TAMPER); %d test stand-ins that "
+                    "accept any arguments, so a test using one stays green "
+                    "after the real function's arguments change "
+                    "(PERMISSIVE_DOUBLE) — %d sharp, %d broad",
                     wave_number, len(advisory), len(env_findings),
-                    len(pd_sharp), len(pd_broad),
+                    len(pd_sharp) + len(pd_broad), len(pd_sharp), len(pd_broad),
                 )
                 for f in advisory[:10]:
                     logger.warning(
@@ -2847,59 +2858,36 @@ The detailed specifications are in the task markdown file.
                     )
                 if pd_broad:
                     logger.warning(
-                        "  PERMISSIVE_DOUBLE (low-confidence, count only): %d "
-                        "plain patch()/spec= stand-ins with no signature "
-                        "attached. This form fires on most ordinary test files "
-                        "— do not read it as a defect list.",
+                        "  PERMISSIVE_DOUBLE broad group: %d ordinary "
+                        "patch(\"module.function\") stand-ins, listed as a "
+                        "count because there are usually too many to read. "
+                        "Broad does NOT mean safe — sharp/broad is a volume "
+                        "filter, not a defect judgement, and the worst known "
+                        "regression of this class (forge Mode P) was 24 "
+                        "findings that were ALL broad. If this wave changed a "
+                        "function's arguments, grep the run's wiring JSON for "
+                        "that function name.",
                         len(pd_broad),
                     )
         except Exception as exc:  # noqa: BLE001 — advisory must never break the gate
             logger.debug("advisory seam surfacing failed: %s", exc)
 
-    #: A PERMISSIVE_DOUBLE finding counts as high-confidence when the stand-in
-    #: is named after a real function in this repo (``name_matched``) or when it
-    #: literally declares ``*args``/``**kwargs``. Everything else is the plain
-    #: ``patch("module.function")`` idiom, which is far too common to act on.
-    _PERMISSIVE_DOUBLE_SHARP_EVIDENCE = "name_matched"
-    _PERMISSIVE_DOUBLE_SHARP_FORM = "star_args_fake"
-
-    @classmethod
+    @staticmethod
     def _split_permissive_double_findings(
-        cls,
         wiring_result: Optional[Dict[str, Any]],
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Split the factory's PERMISSIVE_DOUBLE findings into two confidence groups.
+        """Sort the analyzer's permissive-double findings into sharp and broad.
 
-        Returns ``(high_confidence, low_confidence)``. Both lists are advisory:
-        nothing in either list can reject a turn.
+        Thin delegation to :py:func:`permissive_double_advisory.split_findings`,
+        which is the single implementation of the rule. The run log (here) and
+        the reviewing model's prompt (in ``agent_invoker``) both go through it,
+        so the two can never drift apart and describe the same run differently.
 
-        A permissive double is a test stand-in that accepts any arguments at
-        all, so a test using one stays green even when the real call would fail
-        because the argument names are wrong.
-
-        Absence-safe: a missing key, a non-``ran`` status, or any unexpected
-        shape yields two empty lists rather than raising — an absent signal is
-        never evidence of anything.
+        Read that module's docstring before changing anything: the split is a
+        VOLUME FILTER for a reader's attention, not a judgement about which
+        findings are real defects.
         """
-        if not isinstance(wiring_result, dict):
-            return [], []
-        pd = wiring_result.get("permissive_double")
-        if not isinstance(pd, dict) or pd.get("status") != "ran":
-            return [], []
-        findings = pd.get("findings")
-        if not isinstance(findings, list):
-            return [], []
-        sharp: List[Dict[str, Any]] = []
-        broad: List[Dict[str, Any]] = []
-        for f in findings:
-            if not isinstance(f, dict):
-                continue
-            is_sharp = (
-                f.get("target_evidence") == cls._PERMISSIVE_DOUBLE_SHARP_EVIDENCE
-                or f.get("form") == cls._PERMISSIVE_DOUBLE_SHARP_FORM
-            )
-            (sharp if is_sharp else broad).append(f)
-        return sharp, broad
+        return split_permissive_double_findings(wiring_result)
 
     def _feature_base_sources(
         self, worktree: Any, authored: List[str]
