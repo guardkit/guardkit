@@ -2430,10 +2430,40 @@ The detailed specifications are in the task markdown file.
         # Start-up checks, after the last wave (WS3-S3 check 2d, spec §4.3).
         # Everything above proves the tests pass. This proves the thing the
         # build produced can actually be loaded and assembled. Advisory by
-        # default — see boot_smoke_gate for the flag that makes it blocking.
+        # default — see boot_smoke_gate for the flag that makes it blocking,
+        # and for why only the declaration committed BEFORE the build is read.
         self._run_final_wave_boot_smoke(feature, worktree, wave_results)
 
         return wave_results
+
+    def _boot_smoke_skip_reason(
+        self,
+        feature: Feature,
+        wave_results: List[WaveExecutionResult],
+    ) -> Optional[str]:
+        """Why the start-up checks should not run, in words, or ``None`` to run.
+
+        The checks describe a FINISHED build. A build that stopped early, or
+        whose tests failed, or whose own smoke gate already failed, explains
+        its own red — running start-up checks over a half-built working copy
+        would only add noise to it.
+        """
+        planned_waves = len(feature.orchestration.parallel_groups)
+        if not wave_results:
+            return "no wave ran"
+        if len(wave_results) < planned_waves:
+            return (
+                f"the build stopped after wave {len(wave_results)} of "
+                f"{planned_waves}"
+            )
+        if any(not wr.all_succeeded for wr in wave_results):
+            return "a task in the build failed"
+        if any(
+            wr.smoke_gate_result is not None and not wr.smoke_gate_result.passed
+            for wr in wave_results
+        ):
+            return "a smoke gate already failed this build"
+        return None
 
     def _run_final_wave_boot_smoke(
         self,
@@ -2446,8 +2476,10 @@ The detailed specifications are in the task markdown file.
         Plain words: the build is finished, so before anyone calls it done,
         actually load the program's entry points and build its main objects in
         a separate process and see whether that works. The list of what to run
-        lives in the repository's ``.guardkit/seam-checks.yaml``; a repository
-        without that file gets a one-line nudge and nothing else.
+        lives in the repository's ``.guardkit/seam-checks.yaml``, in the copy
+        committed BEFORE this build started — a list the build itself could
+        rewrite would not be a check. A repository without that file gets a
+        one-line nudge and nothing else.
 
         This reports and, by default, changes nothing at all. It becomes able
         to fail a feature only when the operator sets the environment variable
@@ -2458,14 +2490,15 @@ The detailed specifications are in the task markdown file.
         -------
         Optional[BootSmokeGateOutcome]
             The outcome, or ``None`` when the checks were skipped (a build that
-            did not finish all its waves, or an unexpected error — neither is
-            allowed to interfere with the build's own result).
+            did not finish, or an unexpected error — neither is allowed to
+            interfere with the build's own result).
         """
-        # A build that broke early explains its own red; running start-up
-        # checks over a half-finished worktree would only add noise.
-        if any(not wr.all_succeeded for wr in wave_results):
+        skip_reason = self._boot_smoke_skip_reason(feature, wave_results)
+        if skip_reason is not None:
             logger.info(
-                "Boot smoke skipped: the build did not complete every wave"
+                "Start-up checks skipped: %s, so this build already has its "
+                "own answer",
+                skip_reason,
             )
             return None
 
@@ -2483,9 +2516,13 @@ The detailed specifications are in the task markdown file.
         for line in render_boot_smoke_report(outcome):
             logger.info(line)
             if not self.quiet:
-                console.print(line)
+                # markup=False: these lines contain square brackets that mean
+                # exactly what they say ("[did not run]"). Rich would read them
+                # as style tags and delete the verdict from the operator's
+                # screen.
+                console.print(line, markup=False)
 
-        if outcome.blocks_build and wave_results:
+        if outcome.blocks_build:
             summary = boot_smoke_failure_summary(outcome)
             last = wave_results[-1]
             last.smoke_gate_result = SmokeGateResult(
@@ -2494,11 +2531,23 @@ The detailed specifications are in the task markdown file.
                 stdout="",
                 stderr=summary,
                 timed_out=False,
-                command=f"boot smoke ({BOOT_SMOKE_BLOCKING_ENV_VAR}=1)",
+                command=(
+                    "start-up checks (.guardkit/seam-checks.yaml), failing the "
+                    f"build because {BOOT_SMOKE_BLOCKING_ENV_VAR} is set"
+                ),
                 timeout=0,
                 after_wave=last.wave_number,
             )
-            logger.error("Boot smoke FAILED and blocking is enabled: %s", summary)
+            # Same invariant the smoke gate keeps (C1 above): a wave whose gate
+            # failed is never left recorded as completed on disk, or a resume
+            # would skip it and the failed start-up checks would never re-run.
+            self._unmark_wave_completed(feature, last.wave_number)
+            logger.error(
+                "Start-up checks FAILED and %s is set, so this feature is "
+                "marked failed: %s",
+                BOOT_SMOKE_BLOCKING_ENV_VAR,
+                summary,
+            )
 
         return outcome
 
@@ -4974,6 +5023,31 @@ The detailed specifications are in the task markdown file.
         """
         if wave_number not in feature.execution.completed_waves:
             feature.execution.completed_waves.append(wave_number)
+        feature.execution.last_updated = datetime.now().isoformat()
+
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+    def _unmark_wave_completed(
+        self,
+        feature: Feature,
+        wave_number: int,
+    ) -> None:
+        """Take back a wave's "completed" record, and save that.
+
+        Used when a gate that runs AFTER the wave was recorded complete then
+        fails the build. Leaving the record in place would let a later resume
+        skip the wave — and so skip the gate that failed.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to update
+        wave_number : int
+            Wave number to un-record (1-indexed)
+        """
+        if wave_number not in feature.execution.completed_waves:
+            return
+        feature.execution.completed_waves.remove(wave_number)
         feature.execution.last_updated = datetime.now().isoformat()
 
         FeatureLoader.save_feature(feature, self.repo_root)

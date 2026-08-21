@@ -30,19 +30,25 @@ already treats as a failed feature. Accepted values are ``1``, ``true``,
 ``yes`` and ``on`` (case-insensitive); anything else, including the variable
 being absent, means advisory.
 
-WHICH COPY OF THE DECLARATION IS USED
--------------------------------------
-The declaration file is read from the commit the build branched from, not
-from the working tree. The build itself can edit files in the working tree,
-and a check whose own configuration the build can rewrite is not a check.
-See :mod:`guardkit.orchestrator.seam_checks` for the machinery.
+WHICH COPY OF THE DECLARATION IS USED — the one committed before the build
+--------------------------------------------------------------------------
+Only the copy of ``.guardkit/seam-checks.yaml`` that existed at the commit the
+build branched from is ever read, and only the checks in THAT copy are ever
+run. The build itself writes to the working files; a check whose own list of
+things-to-run the build can rewrite is not a check at all. One of the kinds a
+declaration may contain (``kind: command``) names a command line that is then
+executed, so a build that could add entries mid-run could make GuardKit run
+anything it liked.
 
-One consequence: the run that first *adds* the file reads it as absent (it did
-not exist at the branch point). To avoid that meaning "nothing ever runs on the
-day you introduce it", this module falls back to the working-tree copy and runs
-it — but a working-tree-only declaration is **never allowed to block**, whatever
-the environment variable says. Blocking only ever follows from the copy that was
-committed before the build started.
+So: an edit or an addition made during the build has **no effect on that
+build**. It is reported, and it governs from the next build onwards. The
+honest cost, accepted deliberately in the design spec
+(``docs/design/specs/autobuild-reliability/
+ws3-s2-seam-check-semantics-2026-07-07.md`` §1.3): a feature that legitimately
+introduces the declaration cannot arm its own start-up checks in the same run
+— a one-run lag on a new gate, versus a standing hole in every gate. See
+:mod:`guardkit.orchestrator.seam_checks` for the machinery that finds the
+committed copy and reports the difference.
 
 KNOWN LIMITATION, worth knowing before trusting a red
 -----------------------------------------------------
@@ -55,7 +61,8 @@ report of ``No module named <the project>`` as an environment problem first.
 This is one of the reasons the gate reports rather than blocks.
 
 Design reference: ``docs/design/specs/autobuild-reliability/
-ws3-s2-seam-check-semantics-2026-07-07.md`` §4 (check 2d, the boot-smoke gate).
+ws3-s2-seam-check-semantics-2026-07-07.md`` §1.3 (which copy governs) and §4
+(check 2d, the boot-smoke gate).
 """
 
 from __future__ import annotations
@@ -83,9 +90,20 @@ BLOCKING_ENV_VAR = "GUARDKIT_BOOT_SMOKE_BLOCKING"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 #: Where the governing declaration came from.
-SOURCE_FEATURE_BASE = "feature_base"       # committed before the build started
-SOURCE_WORKING_TREE = "working_tree_only"  # added during this build; advisory only
-SOURCE_NONE = "none"                       # no declaration anywhere
+#: The only source whose checks are ever run: committed before the build began.
+SOURCE_FEATURE_BASE = "feature_base"
+#: A declaration exists, but only in files this build can write. It does NOT
+#: govern this build and none of its checks are run — it applies from the next
+#: build onwards.
+SOURCE_ADDED_DURING_BUILD = "added_during_this_build"
+#: No declaration anywhere.
+SOURCE_NONE = "none"
+
+#: Plain-English names for the places a changed declaration can be found.
+_LOCUS_IN_WORDS = {
+    "working_tree": "in the working files",
+    "committed_wave": "in a commit this build made",
+}
 
 
 def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
@@ -108,8 +126,12 @@ class BootSmokeGateOutcome:
 
     @property
     def declared(self) -> bool:
-        """Did this repository declare any start-up checks at all?"""
-        return self.config_source != SOURCE_NONE
+        """Did a declaration govern this run (and so were checks actually run)?
+
+        A declaration that only appeared during the build does not count: it
+        does not govern this build, and nothing in it was run.
+        """
+        return self.config_source == SOURCE_FEATURE_BASE
 
     @property
     def failed(self) -> bool:
@@ -133,23 +155,49 @@ class BootSmokeGateOutcome:
 def resolve_governing_config(
     worktree_path: Path, base_branch: str = "main"
 ) -> tuple[SeamChecksConfig, str]:
-    """Pick the declaration copy that governs this run.
+    """Pick the declaration that governs this run — the committed copy, or none.
 
-    Prefers the copy committed at the point the build branched (which the
-    build cannot rewrite). Falls back to the working-tree copy so a freshly
-    added declaration still runs on the day it is written — that fallback is
-    marked, and never blocks.
+    Reads ``.guardkit/seam-checks.yaml`` as it stood at the commit the build
+    branched from. That is the only copy that can govern, because it is the
+    only copy the build cannot rewrite.
+
+    When that copy declares no start-up checks, this returns an EMPTY
+    configuration — nothing is run — and says which of the two "nothing to
+    run" cases it is, so the report can explain itself:
+
+    * :data:`SOURCE_ADDED_DURING_BUILD` — the working files DO declare checks,
+      but that declaration appeared after the build started, so it applies
+      from the next build on.
+    * :data:`SOURCE_NONE` — no declaration anywhere.
     """
     base_ref = resolve_feature_base(worktree_path, base_branch=base_branch)
     base_config = load_feature_base_config(worktree_path, base_ref)
     if base_config.has_boot_smoke:
         return base_config, SOURCE_FEATURE_BASE
 
-    working = load_working_tree_config(worktree_path)
-    if working.has_boot_smoke:
-        return working, SOURCE_WORKING_TREE
+    if load_working_tree_config(worktree_path).has_boot_smoke:
+        # Deliberately NOT returned for execution: an edit made during the
+        # build has no effect on that build (spec §1.3).
+        return SeamChecksConfig(present=False), SOURCE_ADDED_DURING_BUILD
 
     return SeamChecksConfig(present=False), SOURCE_NONE
+
+
+def _detect_tamper_quietly(
+    worktree_path: Path, base_branch: str
+) -> List[Dict[str, Any]]:
+    """Report any difference from the committed declaration; never raise.
+
+    Runs whatever the outcome, including when the committed copy declares
+    nothing — that is exactly the case where a build has just written a
+    declaration of its own, and the operator should be told.
+    """
+    try:
+        base_ref = resolve_feature_base(worktree_path, base_branch=base_branch)
+        return detect_config_tamper(worktree_path, base_ref)
+    except Exception as exc:  # noqa: BLE001 — never let reporting break a build
+        logger.debug("seam-checks difference detection skipped: %s", exc)
+        return []
 
 
 def run_final_wave_boot_smoke(
@@ -159,7 +207,9 @@ def run_final_wave_boot_smoke(
     base_branch: str = "main",
     env: Optional[Mapping[str, str]] = None,
 ) -> BootSmokeGateOutcome:
-    """Run every declared start-up check for the finished build.
+    """Run every start-up check the COMMITTED declaration names.
+
+    Checks that only appear in the build's own working files are never run.
 
     Parameters
     ----------
@@ -177,24 +227,18 @@ def run_final_wave_boot_smoke(
     """
     config, source = resolve_governing_config(worktree_path, base_branch=base_branch)
     wants_blocking = blocking_requested(env)
+    tamper = _detect_tamper_quietly(Path(worktree_path), base_branch)
 
-    if source == SOURCE_NONE:
+    if source != SOURCE_FEATURE_BASE:
+        # Nothing governs this run, so nothing is executed. This is the
+        # security-relevant branch: a `kind: command` entry runs a command
+        # line, so a declaration the build wrote must stay inert.
         return BootSmokeGateOutcome(
             result=BootSmokeResult(ran=False),
-            config_source=SOURCE_NONE,
+            config_source=source,
+            tamper_findings=tamper,
             blocking_requested=wants_blocking,
         )
-
-    tamper: List[Dict[str, Any]] = []
-    if source == SOURCE_FEATURE_BASE:
-        # Only meaningful when a committed copy exists to compare against. On
-        # the run that first adds the file there is nothing to differ from, and
-        # reporting "this differs from the committed copy" would be nonsense.
-        try:
-            base_ref = resolve_feature_base(worktree_path, base_branch=base_branch)
-            tamper = detect_config_tamper(worktree_path, base_ref)
-        except Exception as exc:  # noqa: BLE001 — never let reporting break a build
-            logger.debug("seam-checks tamper detection skipped: %s", exc)
 
     result = run_boot_smoke(config, Path(worktree_path), venv_python=venv_python)
     return BootSmokeGateOutcome(
@@ -205,21 +249,41 @@ def run_final_wave_boot_smoke(
     )
 
 
+def _difference_lines(outcome: BootSmokeGateOutcome) -> List[str]:
+    """One readable line per place the declaration differs from the committed copy."""
+    lines: List[str] = []
+    for finding in outcome.tamper_findings:
+        where = _LOCUS_IN_WORDS.get(
+            str(finding.get("locus", "")), "somewhere in this build"
+        )
+        lines.append(
+            f"  Note: .guardkit/seam-checks.yaml has been changed {where} since "
+            "the commit this build started from. Changes made during a build "
+            "never take effect in that build; only a change committed before "
+            "the build starts does."
+        )
+    return lines
+
+
 def render_report(outcome: BootSmokeGateOutcome) -> List[str]:
     """Turn the outcome into lines a person can read without context."""
-    if not outcome.declared:
+    if outcome.config_source == SOURCE_NONE:
         return [
             "Start-up checks: none declared. Add .guardkit/seam-checks.yaml to "
             "have GuardKit actually start this project after a build."
         ]
 
+    if outcome.config_source == SOURCE_ADDED_DURING_BUILD:
+        return [
+            "Start-up checks: .guardkit/seam-checks.yaml declares checks, but "
+            "that declaration was not in the commit this build started from, "
+            "so NOTHING in it was run. Gate configuration is changed by a "
+            "person, never by the build itself; the file takes effect from the "
+            "next build onwards.",
+        ] + _difference_lines(outcome)
+
     lines: List[str] = []
     posture = "BLOCKING" if outcome.blocking_requested else "advisory (reports only)"
-    if outcome.config_source == SOURCE_WORKING_TREE:
-        posture = (
-            "advisory (reports only) — the declaration was added during this "
-            "build, so it cannot stop it; it governs from the next build on"
-        )
     lines.append(f"Start-up checks after the final wave — {posture}")
 
     for entry in outcome.result.entries:
@@ -234,12 +298,7 @@ def render_report(outcome: BootSmokeGateOutcome) -> List[str]:
     for followup in outcome.result.operator_followups:
         lines.append(f"  Needs a person: {followup}")
 
-    for finding in outcome.tamper_findings:
-        lines.append(
-            "  Note: .guardkit/seam-checks.yaml differs from the copy committed "
-            f"before this build ({finding.get('locus', 'unknown place')}); the "
-            "committed copy is the one that was used."
-        )
+    lines.extend(_difference_lines(outcome))
 
     if outcome.failed and not outcome.blocks_build:
         lines.append(
