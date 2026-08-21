@@ -37,13 +37,26 @@ from task_utils import create_task_frontmatter, write_task_frontmatter
 # ============================================================================
 
 @pytest.fixture
-def temp_git_repo(tmp_path):
-    """Create a temporary git repository for testing."""
+def temp_git_repo(tmp_path, monkeypatch):
+    """Create a temporary git repository for testing.
+
+    The working directory is changed via ``monkeypatch.chdir`` rather than a
+    bare ``os.chdir`` so pytest restores it when the test ends. Every test in
+    this module changes directory (some of them twice, to simulate a Conductor
+    worktree) and the bare version never changed back — the process was left
+    sitting in a ``/tmp`` fixture directory for the REST of the session. Any
+    later test that opens a repo-relative path (``CLAUDE.md``,
+    ``installer/core/templates/...``, ``mkdocs.yml``) then failed with
+    FileNotFoundError against a file that is present and correct. That leak
+    alone accounted for 97 of the entries on tests/quarantine.txt.
+    ``monkeypatch.chdir`` records the directory at the first call and restores
+    it at teardown regardless of any later ``os.chdir`` inside the test body.
+    """
     repo_dir = tmp_path / "test_repo"
     repo_dir.mkdir()
 
     # Initialize git repo
-    os.chdir(repo_dir)
+    monkeypatch.chdir(repo_dir)
     subprocess.run(["git", "init"], check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test User"], check=True, capture_output=True)
