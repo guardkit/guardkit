@@ -633,6 +633,7 @@ class TestFleetMemoryClientAddEpisode:
         assert result is None
 
 
+@pytest.mark.skipif(not _HAS_NATS_CORE, reason="nats_core (memory extra) not installed")
 class TestTheReturnedKeyIsNotAStoreReceipt:
     """What ``add_episode``'s key proves, and what it does not.
 
