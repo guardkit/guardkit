@@ -43,19 +43,19 @@
     },
     "feature-build.md": {
       "sha256": "580e4f92328b9fd40672c4e9452d6984c3471f8518ddb7bc0ebf48597a492ad8",
-      "source_commit": "eeeca3a1"
+      "source_commit": "90c6a1e4"
     },
     "feature-complete.md": {
       "sha256": "81ee67e73d05c638263f8770f2f8c367e3b224468e1a557bf4397d264e577beb",
       "source_commit": "c5c5add0"
     },
     "feature-plan.md": {
-      "sha256": "6e4c87b9a324eb355f7e33844c0558b565987ae8f0bc5ff64d7bfeaaf7447ffb",
-      "source_commit": "c55bcc6e"
+      "sha256": "20a3061159b6a3324c0bdeea230989e81dd823a2d220db5410a46144932678e3",
+      "source_commit": "e3ac4425"
     },
     "feature-spec.md": {
-      "sha256": "f1bd5e603dece5030f746d65e82ac0ab0a899c3689bd16ca093294474d6acf67",
-      "source_commit": "c55bcc6e"
+      "sha256": "3d956e1ffce2ba85f1aa7ddf3074b7d28af8f6094ae97c9443bc0c4d34347591",
+      "source_commit": "e3ac4425"
     },
     "system-arch.md": {
       "sha256": "196282001c528dc5c12d4025555616b90eaa981857d771295ff8405cbe405eee",
@@ -94,16 +94,16 @@
       "source_commit": "1fd40769"
     },
     "task-work-phases-build-ext.md": {
-      "sha256": "aaa58a0350f660a141c02cd0c33ae64dfd5c74f7f40fe983630c4ea8a02b3a52",
-      "source_commit": "51151e1e"
+      "sha256": "784dae9bbfbfff294bf11c8e0abbf65480a7b2cb6a1375c6f257bf83c9dec7c2",
+      "source_commit": "a87862ef"
     },
     "task-work-phases-plan-ext.md": {
-      "sha256": "f121f6c1bc60555b7b3854c6eda83e9497ed5e43998ec95a47920c72df0f26c3",
-      "source_commit": "eeeca3a1"
+      "sha256": "4f221dd641688c9ba1bb5b6ed80a82f381d10b0854d52e9537b91e24a2ce79c4",
+      "source_commit": "a87862ef"
     },
     "task-work-reference-ext.md": {
-      "sha256": "a64202166edb1b67be1259e78052fd1cbd50f054fa52a4b30fef51dacc3c8827",
-      "source_commit": "1fd40769"
+      "sha256": "d5f821bf3f2d750dad3f7da27450dd9979b8c58a0b9a1518efc64a020136caca",
+      "source_commit": "a87862ef"
     },
     "task-work.md": {
       "sha256": "e78150d2a8bd3ba745b76bf3759702893c9185e2fc7aa995b566dacdcd107ec8",
