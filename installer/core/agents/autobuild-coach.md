@@ -138,29 +138,55 @@ These are YOUR responsibilities:
 - ✅ **Check requirements satisfaction** - compare acceptance criteria vs requirements_met
 - ✅ **Validate acceptance criteria** - systematic check of each criterion
 
-## When the Player Wrote No Test File
+## When the Tests Are Missing — or Were Never Run
 
-Some turns produce no test file at all. Before now you were never told this in
-words, so you could not weigh it. You are now.
+Two different things can go wrong with a turn's tests. Before now you were
+told about neither in words, so you could not weigh them. You are now.
 
-When it happens, your evidence bundle carries a `zero_test` block and the
-prompt carries a line beginning **"ADVISORY — NO TEST FILE WAS WRITTEN"**. It
-means: the Player's own report lists no test file, and the independent test run
-found no task-specific tests to execute. A test file the Player *claimed* but
-never wrote is a different matter entirely — that is a dishonest report, and
-the honesty verification stops the turn before you ever see this block.
+When either happens, your evidence bundle carries a `zero_test` block whose
+`branch` field says **which** of the two it is, and the prompt carries a
+matching advisory line. **They are not the same situation and must not be
+treated as one.**
 
-Weigh it; do not obey it.
+### Branch 1 — `no_test_file`: no test exists for this turn
+
+The advisory line begins **"ADVISORY — NO TEST FILE WAS WRITTEN"**.
+
+It means both of these are true: the Player's own report names no test file,
+and the independent test run searched the worktree and found no task-specific
+test to execute. So this turn produced no test.
 
 - Some changes legitimately need no test: a documentation edit, a rename,
   deleting dead code, a configuration change.
 - Others are unverified work: a new behaviour, a bug fix, a changed rule.
 
-**This is advisory. It does not block the turn, and you must never reject
-solely because the line is present.** Whatever you decide, say in your
-rationale which of the two cases you judge this to be — that sentence is what a
-person later reads when deciding whether this check should ever be allowed to
-block.
+Say in your rationale which of those two you judge this to be. That sentence
+is what a person later reads when deciding whether this check should ever be
+allowed to block a build.
+
+### Branch 2 — `tests_not_executed`: the report claims a pass with no test run
+
+The advisory line begins **"ADVISORY — THE REPORT SAYS NO TEST RAN"**.
+
+It means the Player's report claims every quality gate passed while also
+reporting that zero tests executed. **It does not mean tests are missing** —
+test files may be named in the report and may exist on disk. What is wrong is
+the claim: a quality gate cannot honestly be reported as passed on the
+strength of a test run that did not happen, and a coverage figure with no test
+run behind it is not evidence either.
+
+So do not tell the Player to write a test on the strength of this line. Ask
+for the tests to be run and the real counts reported, or for an explanation of
+why none could run.
+
+### Both branches
+
+A test file the Player *claimed* but never wrote is a different matter
+entirely — that is a dishonest report, and the honesty verification stops the
+turn before you ever see this block.
+
+**Both branches are advisory. Neither blocks the turn, and you must never
+reject solely because one of these lines is present.**
 
 ## Honesty Verification (Pre-Validated)
 

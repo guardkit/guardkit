@@ -1629,6 +1629,14 @@ def _display_ledger_sweep_result(sweep) -> None:
 
 # ============================================================================
 # Zero-Test Report — the reading instrument for the advisory zero-test check
+#
+# THE TWO BRANCHES ARE REPORTED SEPARATELY, ON PURPOSE.
+# The underlying rule fires for two different reasons and used to label both
+# the same way. Only one of them ("no test file") is evidence about whether a
+# turn legitimately needed no test, so only that one feeds the promotion
+# measurement. Blending them would make the one number this instrument exists
+# to produce wrong — and a wrong number is worse than no number, because it
+# gets acted on. See guardkit/orchestrator/zero_test_gate.py.
 # ============================================================================
 
 
@@ -1638,17 +1646,104 @@ def _zero_test_when(row: dict) -> str:
     return stamp[:16].replace("T", " ")
 
 
-def _zero_test_what_changed(row: dict, width: int = 44) -> str:
-    """A short, human-readable summary of what the turn actually touched."""
-    files = list(row.get("files_created") or []) + list(
-        row.get("files_modified") or []
+def _zero_test_on_disk(row: dict) -> str:
+    """Does a test file for this turn actually exist in the worktree?
+
+    This is the field that separates a mis-attributed row from a real one, so
+    it is on the default table rather than hidden behind --json.
+    """
+    on_disk = list(row.get("test_files_on_disk") or [])
+    if on_disk:
+        head = on_disk[0]
+        more = f" +{len(on_disk) - 1}" if len(on_disk) > 1 else ""
+        return f"[green]yes[/green] {head}{more}"
+    return "[red]no[/red]"
+
+
+def _zero_test_claimed_tests(row: dict) -> str:
+    """What the Player claimed it wrote by way of tests."""
+    named = list(row.get("tests_written") or [])
+    if not named:
+        return "(named none)"
+    head = named[0]
+    more = f" +{len(named) - 1}" if len(named) > 1 else ""
+    return f"{head}{more}"
+
+
+def _zero_test_claimed_gates(row: dict) -> str:
+    """What the Player claimed about its own quality gates.
+
+    This is the entire substance of the "report says no test ran" branch: a
+    person cannot adjudicate that row without seeing the claim it makes.
+    """
+    passed = row.get("claimed_all_passed")
+    ran = row.get("claimed_tests_passed")
+    coverage = row.get("claimed_coverage")
+    if passed is None and ran is None and coverage is None:
+        return "(not recorded)"
+    return (
+        f"all_passed={passed}, tests_passed={ran}, coverage={coverage}"
     )
+
+
+def _zero_test_build(row: dict) -> str:
+    return (
+        f"{row.get('feature_id') or '?'} / {row.get('task_id') or '?'}"
+        f" t{row.get('turn')}"
+    )
+
+
+def _zero_test_coach(row: dict) -> str:
+    decision = str(row.get("coach_decision") or "?")
+    return f"[red]{decision}[/red]" if decision == "approve" else decision
+
+
+def _zero_test_files_line(files, label: str) -> str:
+    """One ``label : a, b, c`` line, or nothing when the list is empty."""
+    files = list(files or [])
     if not files:
-        return "(no files reported)"
-    shown = ", ".join(files[:3])
-    if len(files) > 3:
-        shown += f", +{len(files) - 3} more"
-    return shown if len(shown) <= width else shown[: width - 1] + "\u2026"
+        return ""
+    return f"    {label:<18}: " + ", ".join(str(f) for f in files)
+
+
+def _zero_test_print_rows(rows: list, show_repo: bool, heading: str) -> None:
+    """Print one adjudication card per row.
+
+    Cards, not a table: a table wide enough to carry every field a person
+    needs in order to rule on a row does not fit an 80-column terminal, and
+    the console library silently drops the columns that do not fit — which
+    would hide the very fields this section exists to surface.
+    """
+    console.print(f"\n[bold]{heading}[/bold]")
+    for number, row in enumerate(rows, start=1):
+        repo = f"  [dim]{row.get('repo') or '?'}[/dim]" if show_repo else ""
+        console.print(
+            f"\n [bold]{number:>2}[/bold]  [dim]{_zero_test_when(row)}[/dim]  "
+            f"{_zero_test_build(row)}{repo}  coach: {_zero_test_coach(row)}"
+        )
+        console.print(f"    {'test file on disk':<18}: {_zero_test_on_disk(row)}")
+        if row.get("branch") == "tests_not_executed":
+            console.print(
+                f"    {'player claimed':<18}: {_zero_test_claimed_gates(row)}"
+            )
+            console.print(
+                f"    {'tests named':<18}: {_zero_test_claimed_tests(row)}"
+            )
+        else:
+            console.print(
+                f"    {'tests named':<18}: {_zero_test_claimed_tests(row)}"
+            )
+            console.print(
+                f"    {'player claimed':<18}: {_zero_test_claimed_gates(row)}"
+            )
+        for line in (
+            _zero_test_files_line(row.get("files_created"), "created"),
+            _zero_test_files_line(row.get("files_modified"), "modified"),
+        ):
+            if line:
+                console.print(line)
+        if not row.get("files_created") and not row.get("files_modified"):
+            console.print(f"    {'files':<18}: (none reported)")
 
 
 @autobuild.command(name="zero-test-report")
@@ -1667,7 +1762,7 @@ def _zero_test_what_changed(row: dict, width: int = 44) -> str:
     type=int,
     default=20,
     show_default=True,
-    help="How many un-adjudicated rows to list. Use 0 for all of them.",
+    help="How many un-adjudicated rows to list per section. Use 0 for all.",
 )
 @click.option(
     "--json",
@@ -1679,25 +1774,36 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     """
     How many builds wrote no tests — and how many of those were fine.
 
-    Every time an automated build finishes a turn in which the Player wrote no
-    test file, GuardKit records it. The check is advisory: it does not stop the
-    build, it only writes the record. This command reads those records.
-
-    It answers the first half of the question by itself: how many turns wrote
-    no tests. The second half — how many of those were LEGITIMATELY test-free
-    (a documentation edit, a rename, deleting dead code, a config change)
-    rather than unverified work — cannot be answered by a machine. So this
-    prints a short list for you to rule on, and remembers the rulings you have
-    already made.
+    Every time an automated build finishes a turn whose tests are missing or
+    were never run, GuardKit records it. The check is advisory: it does not
+    stop the build, it only writes the record. This command reads those
+    records.
 
     \b
-    To rule on a row, open the ledger and set "legitimately_test_free" on it:
-        <repo>/.guardkit/zero-test/queue.jsonl
+    THE TWO SITUATIONS ARE REPORTED SEPARATELY, because they are different:
+
+      no test file  - no test exists for this turn. The Player named none and
+                      the Coach's own search found none to run. THIS is the
+                      promotion question: was it legitimate to write no test?
+      0 tests ran   - the Player's report claims every quality gate passed
+                      while reporting that zero tests executed. Tests may well
+                      exist. This is a wrong claim, not a missing test, so it
+                      is NOT counted in the promotion measurement.
+
+    \b
+    To rule on a "no test file" row, open the ledger and set
+    "legitimately_test_free" on it:
+        ~/.guardkit/zero-test/<repo>/queue.jsonl
     true means the change genuinely needed no test; false means it did.
 
     \b
-    Each repository keeps its own ledger, because that is where its builds
-    run. Pass --repo-root once per repository to read several at once:
+    The ledger lives outside every repository working tree on purpose, so
+    that `git clean -fdx` and worktree removal cannot delete the measurement
+    (Decision of Record D-OBS-4). Set GUARDKIT_ZERO_TEST_ROOT to move it.
+
+    \b
+    Each repository keeps its own ledger. Pass --repo-root once per
+    repository to read several at once:
         guardkit autobuild zero-test-report --repo-root ../forge --repo-root .
 
     \b
@@ -1715,80 +1821,149 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
         console.print_json(json.dumps(rows))
         sys.exit(0)
 
-    ledgers = [root / zero_test_gate.ZERO_TEST_QUEUE for root in roots]
+    ledgers = [zero_test_gate.ledger_path_for(root) for root in roots]
+    # Rows recorded before the ledger moved out of the repository are still
+    # read from where they were written. Name that file too, or a person
+    # cannot find the row they are being asked to rule on.
+    ledgers += [
+        path
+        for path in (
+            zero_test_gate.legacy_ledger_path_for(root) for root in roots
+        )
+        if path.is_file()
+    ]
     ledger = "\n  ".join(str(path) for path in ledgers)
     if not rows:
         console.print(
-            "[green]No build has been recorded writing zero tests.[/green]\n"
+            "[green]No build has been recorded with missing or unrun "
+            "tests.[/green]\n"
         )
-        console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]")
+        console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]", soft_wrap=True)
         console.print(
-            "[dim]An empty ledger means either that every build wrote a test, "
-            "or that no build has run since the check was installed.[/dim]"
+            "[dim]An empty ledger means either that every build wrote and ran "
+            "a test, or that no build has run since the check was "
+            "installed.[/dim]"
         )
         sys.exit(0)
+
+    show_repo = len(roots) > 1
+    no_test_file = [
+        r for r in rows if r.get("branch") == zero_test_gate.BRANCH_NO_TEST_FILE
+    ]
+    not_executed = [
+        r
+        for r in rows
+        if r.get("branch") == zero_test_gate.BRANCH_TESTS_NOT_EXECUTED
+    ]
+    unlabelled = [
+        r
+        for r in rows
+        if r.get("branch")
+        not in (
+            zero_test_gate.BRANCH_NO_TEST_FILE,
+            zero_test_gate.BRANCH_TESTS_NOT_EXECUTED,
+        )
+    ]
 
     builds = {
         (r.get("repo"), r.get("feature_id") or r.get("task_id")) for r in rows
     }
-    ruled_free = [r for r in rows if r.get("legitimately_test_free") is True]
-    ruled_not = [r for r in rows if r.get("legitimately_test_free") is False]
-    unruled = [r for r in rows if r.get("legitimately_test_free") is None]
-    approved = [r for r in rows if r.get("coach_decision") == "approve"]
+    ruled_free = [
+        r for r in no_test_file if r.get("legitimately_test_free") is True
+    ]
+    ruled_not = [
+        r for r in no_test_file if r.get("legitimately_test_free") is False
+    ]
+    unruled = [
+        r for r in no_test_file if r.get("legitimately_test_free") is None
+    ]
+    approved_no_test = [
+        r for r in no_test_file if r.get("coach_decision") == "approve"
+    ]
 
+    summary = (
+        f"[bold]{len(rows)}[/bold] recorded turn(s) across "
+        f"[bold]{len(builds)}[/bold] build(s), in two different situations:\n\n"
+        f"  [bold]{len(no_test_file)}[/bold] wrote [bold]no test file[/bold] "
+        f"— the Coach approved {len(approved_no_test)} of them anyway.\n"
+        f"  [bold]{len(not_executed)}[/bold] claimed a passing quality gate "
+        f"while reporting that [bold]0 tests ran[/bold].\n"
+    )
+    if unlabelled:
+        summary += (
+            f"  [bold]{len(unlabelled)}[/bold] were recorded before the two "
+            "situations were told apart, so they are unlabelled.\n"
+        )
+    summary += (
+        "\n[bold]The promotion measurement is the first group only.[/bold]\n"
+        f"Of those {len(no_test_file)}, you have ruled "
+        f"[green]{len(ruled_free)}[/green] legitimately test-free and "
+        f"[red]{len(ruled_not)}[/red] not; "
+        f"[yellow]{len(unruled)}[/yellow] still "
+        f"{'needs' if len(unruled) == 1 else 'need'} your ruling.\n"
+        "The second group is excluded: it is a wrong claim about a test run, "
+        "not evidence that a change needed no test."
+    )
     console.print(
         Panel(
-            f"[bold]{len(rows)}[/bold] turn(s) wrote no test file, across "
-            f"[bold]{len(builds)}[/bold] build(s).\n"
-            f"The Coach approved [bold]{len(approved)}[/bold] of them anyway.\n\n"
-            f"Of the {len(rows)}, you have ruled "
-            f"[green]{len(ruled_free)}[/green] legitimately test-free and "
-            f"[red]{len(ruled_not)}[/red] not.\n"
-            f"[yellow]{len(unruled)}[/yellow] still "
-            f"{'needs' if len(unruled) == 1 else 'need'} your ruling.",
-            title="Builds that wrote no tests",
+            summary,
+            title="Missing or unrun tests",
             border_style="cyan",
         )
     )
 
-    if not unruled:
-        console.print(
-            "[green]Every recorded turn has been ruled on.[/green] "
-            "That fraction is the promotion decision."
-        )
-        console.print(f"\n[dim]Ledger(s):\n  {ledger}[/dim]")
-        sys.exit(0)
+    if no_test_file:
+        if unruled:
+            shown = unruled if limit <= 0 else unruled[-limit:]
+            _zero_test_print_rows(
+                shown,
+                show_repo,
+                f"NO TEST FILE — needs your ruling "
+                f"({len(shown)} of {len(unruled)} shown)",
+            )
+            console.print(
+                "\n[dim]Rule on a row by setting "
+                '"legitimately_test_free": true or false on it in:[/dim]'
+            )
+            console.print(f"[dim]  {ledger}[/dim]", soft_wrap=True)
+            console.print(
+                "[dim]true = the change genuinely needed no test (docs, "
+                "rename, dead code, config). false = it was unverified "
+                "work.[/dim]"
+            )
+        else:
+            console.print(
+                "[green]Every recorded no-test-file turn has been ruled "
+                "on.[/green] That fraction is the promotion decision."
+            )
 
-    shown = unruled if limit <= 0 else unruled[-limit:]
-    table = Table(
-        title=f"Needs your ruling ({len(shown)} of {len(unruled)} shown)",
-        show_lines=False,
-    )
-    table.add_column("when", style="dim", no_wrap=True)
-    table.add_column("repo", no_wrap=True)
-    table.add_column("build / task", no_wrap=True)
-    table.add_column("coach", no_wrap=True)
-    table.add_column("what changed")
-    for row in shown:
-        decision = str(row.get("coach_decision") or "?")
-        table.add_row(
-            _zero_test_when(row),
-            str(row.get("repo") or "?"),
-            f"{row.get('feature_id') or '?'} / {row.get('task_id') or '?'}"
-            f" t{row.get('turn')}",
-            f"[red]{decision}[/red]" if decision == "approve" else decision,
-            _zero_test_what_changed(row),
+    if not_executed:
+        shown = not_executed if limit <= 0 else not_executed[-limit:]
+        console.print()
+        _zero_test_print_rows(
+            shown,
+            show_repo,
+            f"REPORT CLAIMED A PASS WITH NO TEST RUN — not part of the "
+            f"promotion measurement ({len(shown)} of {len(not_executed)} "
+            f"shown)",
         )
-    console.print(table)
-    console.print(
-        "\n[dim]Rule on a row by setting \"legitimately_test_free\": true or "
-        "false on it in:[/dim]"
-    )
-    console.print(f"[dim]  {ledger}[/dim]")
-    console.print(
-        "[dim]true = the change genuinely needed no test (docs, rename, dead "
-        "code, config). false = it was unverified work.[/dim]"
-    )
+        console.print(
+            "[dim]These rows are not about missing tests. The tests may "
+            "exist; the report's claim that every quality gate passed is what "
+            "is unsupported. Do not rule these test-free.[/dim]"
+        )
+
+    if unlabelled:
+        console.print()
+        console.print(
+            f"[yellow]{len(unlabelled)} row(s) predate branch recording and "
+            "cannot be attributed to either situation.[/yellow] "
+            "[dim]They are excluded from the promotion measurement; read "
+            'their "description" field with --json to classify them by '
+            "hand.[/dim]"
+        )
+
+    console.print(f"\n[dim]Ledger(s):\n  {ledger}[/dim]", soft_wrap=True)
     sys.exit(0)
 
 
