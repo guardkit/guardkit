@@ -509,17 +509,30 @@ class SDKConnectivityCheck(Check):
 
 
 class CommandManifestDriftCheck(Check):
-    """Report drift between an installed commands dir and the shipped MANIFEST.
+    """Report whether installed slash-commands are EDITED and/or OUT OF DATE.
 
-    PB-3 (DIM3-F6): Gen-1 (~/.agentecflow/commands) and Gen-2 (project
-    .claude/commands) copies are write-once with no staleness signal — the
-    ~/.agentecflow drift sat undetected ~7 weeks. This check compares each
-    installed command markdown's sha256 against the manifest install.sh ships,
-    reporting per-file: current / modified / missing / retired-present / untracked.
+    GuardKit's slash commands (``feature-plan.md``, ``task-work.md``, ...) are
+    copied into ``~/.agentecflow/commands`` at install time, with a
+    ``MANIFEST.json`` recording each file's sha256 as installed.
 
-    REPORT-ONLY (KEEP K10): it never auto-refreshes and never clobbers the
-    per-file-if-absent copy semantics — detection, not mutation. It is optional
-    (a missing manifest or commands dir is a clean PASS, not a failure).
+    This check reports **two independent states**, because the original version
+    only ever reported the first and was widely read as reporting the second:
+
+    * **MODIFIED** — the file on disk differs from the install-time manifest.
+      Someone edited it locally. This is a TAMPER signal.
+    * **STALE** — the install-time manifest differs from the **shipped payload**
+      that the installed guardkit package carries
+      (``guardkit/_installer_core/commands``, DF-011). What was installed is
+      OLDER than the guardkit you now have. This is the STALENESS signal, and
+      the question the check's name implies.
+
+    Reporting only MODIFIED is why a ~7-week drift of ``~/.agentecflow`` read as
+    a clean pass: the installed files matched their install-time manifest
+    perfectly — that manifest was simply describing July's commands.
+
+    A stale install is a WARNING at minimum, never a silent pass, and the
+    message names the remedy (``guardkit init --update``) rather than only a
+    status word. The check itself never mutates anything.
     """
 
     def __init__(self, required: bool = False):
@@ -530,29 +543,23 @@ class CommandManifestDriftCheck(Check):
     def _installed_dirs() -> List[tuple]:
         """Candidate installed command dirs as ``(path, is_global)`` pairs.
 
-        ~/.claude/commands is a symlink to ~/.agentecflow/commands, so only the
-        agentecflow path is scanned for the global surface. A project
-        .claude/commands (a real dir, not the global symlink) is added when
-        present in the cwd and is NOT global — its per-file-if-absent copies
-        (K10) legitimately hold only a subset, so "missing" is never drift there.
+        Delegates to the shared helper so ``doctor`` and ``init --update``
+        cannot disagree about which directories are in scope. Dirs are
+        de-duplicated by RESOLVED path, so it makes no assumption about whether
+        ``~/.claude/commands`` is a symlink to ``~/.agentecflow/commands`` or an
+        independent copy — both are handled.
         """
-        pairs: List[tuple] = []
-        seen: set = set()
-        agentecflow = Path.home() / ".agentecflow" / "commands"
-        proj = Path.cwd() / ".claude" / "commands"
-        for d, is_global in ((agentecflow, True), (proj, False)):
-            try:
-                real = d.resolve()
-            except OSError:
-                continue
-            if d.is_dir() and real not in seen:
-                seen.add(real)
-                pairs.append((d, is_global))
-        return pairs
+        from guardkit.commands.payload import installed_command_dirs
+
+        return [tuple(pair) for pair in installed_command_dirs()]
 
     def run(self) -> CheckResult:
-        import hashlib
-        import json
+        from guardkit.commands.payload import (
+            inspect_commands_dir,
+            load_manifest,
+            payload_hashes,
+            resolve_shipped_commands_dir,
+        )
 
         dirs = self._installed_dirs()
         if not dirs:
@@ -566,13 +573,9 @@ class CommandManifestDriftCheck(Check):
         # Locate the manifest (shipped alongside the installed commands).
         manifest = None
         for d, _is_global in dirs:
-            candidate = d / "MANIFEST.json"
-            if candidate.is_file():
-                try:
-                    manifest = json.loads(candidate.read_text(encoding="utf-8"))
-                    break
-                except (OSError, ValueError):
-                    continue
+            manifest = load_manifest(d)
+            if manifest is not None:
+                break
         if manifest is None:
             return CheckResult(
                 name=self.name,
@@ -582,47 +585,53 @@ class CommandManifestDriftCheck(Check):
                 required=self.required,
             )
 
-        expected = {
-            name: entry.get("sha256")
-            for name, entry in manifest.get("commands", {}).items()
-        }
-        tombstones = {
-            (t.get("name") if isinstance(t, dict) else t)
-            for t in manifest.get("tombstones", [])
-        }
-        version = manifest.get("version", "unknown")
+        shipped_dir = resolve_shipped_commands_dir()
+        shipped = payload_hashes(shipped_dir)
 
         modified: List[str] = []
+        stale: List[str] = []
         missing: List[str] = []
         retired_present: List[str] = []
         current = 0
+        version = manifest.get("version", "unknown")
+        expected_names = set((manifest.get("commands") or {}))
+
         for d, is_global in dirs:
             present = {p.name for p in d.glob("*.md")}
             # A non-global (project) dir is only a command surface if it holds at
             # least one tracked command; skip an unrelated / de-forked .claude
             # dir entirely so it does not report spurious drift.
-            if not is_global and not (present & set(expected)):
+            if not is_global and not (present & expected_names):
                 continue
-            for name, sha in expected.items():
-                target = d / name
-                if not target.is_file():
-                    # Per-file-if-absent (K10): a project dir legitimately holds a
-                    # subset — "missing" is drift only for the global install.
-                    if is_global:
-                        missing.append(name)
-                    continue
-                actual = hashlib.sha256(target.read_bytes()).hexdigest()
-                if actual == sha:
-                    current += 1
-                else:
-                    modified.append(name if is_global else f"{name} ({d})")
-            for name in sorted(tombstones & present):
-                retired_present.append(name if is_global else f"{name} ({d})")
+            report = inspect_commands_dir(
+                d, is_global=is_global, manifest=manifest, shipped=shipped
+            )
+            if report is None:
+                continue
+            current += len(report.current)
+            tag = (lambda n: n) if is_global else (lambda n: f"{n} ({d})")
+            modified.extend(tag(n) for n in report.modified)
+            stale.extend(tag(n) for n in report.stale)
+            missing.extend(report.missing)
+            retired_present.extend(tag(n) for n in report.retired_present)
 
-        drift = modified or missing or retired_present
+        # De-duplicate stale names: the same file behind the payload in two
+        # scanned dirs is ONE staleness fact about the install, not two.
+        stale = sorted(set(stale))
+
         detail_lines: List[str] = [f"manifest version {version}; current: {current}"]
         if modified:
-            detail_lines.append(f"modified ({len(modified)}): " + ", ".join(modified))
+            detail_lines.append(
+                f"MODIFIED — edited locally since install ({len(modified)}): "
+                + ", ".join(modified)
+            )
+        if stale:
+            detail_lines.append(
+                f"STALE — installed copy is older than the guardkit package you "
+                f"have ({len(stale)}): "
+                + ", ".join(stale)
+                + " — run `guardkit init --update` to refresh them"
+            )
         if missing:
             detail_lines.append(f"missing ({len(missing)}): " + ", ".join(missing))
         if retired_present:
@@ -631,18 +640,42 @@ class CommandManifestDriftCheck(Check):
                 + ", ".join(retired_present)
                 + " — re-run install.sh to prune"
             )
+        if shipped_dir is None:
+            detail_lines.append(
+                "shipped command payload not found in the installed package; "
+                "STALENESS COULD NOT BE CHECKED (edits only)"
+            )
 
-        if drift:
+        if modified or stale or missing or retired_present:
+            parts = []
+            if modified:
+                parts.append(f"{len(modified)} modified")
+            if stale:
+                parts.append(f"{len(stale)} STALE — run `guardkit init --update`")
+            if missing:
+                parts.append(f"{len(missing)} missing")
+            if retired_present:
+                parts.append(f"{len(retired_present)} retired-present")
+            return CheckResult(
+                name=self.name,
+                status=CheckStatus.WARNING,
+                message=", ".join(parts),
+                details="; ".join(detail_lines),
+                required=self.required,
+            )
+
+        if shipped_dir is None:
             return CheckResult(
                 name=self.name,
                 status=CheckStatus.WARNING,
                 message=(
-                    f"{len(modified)} modified, {len(missing)} missing, "
-                    f"{len(retired_present)} retired-present (report-only)"
+                    f"{current} command files unedited @ v{version}, but the "
+                    "shipped payload is missing so staleness is unknown"
                 ),
                 details="; ".join(detail_lines),
                 required=self.required,
             )
+
         return CheckResult(
             name=self.name,
             status=CheckStatus.PASS,

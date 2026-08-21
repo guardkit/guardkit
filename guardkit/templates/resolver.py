@@ -82,6 +82,22 @@ def _get_installer_core_dir() -> Path:
     return repo_root / "installer" / "core"
 
 
+def resolve_installer_core_dir() -> Path:
+    """Public accessor for the ``installer/core`` payload root.
+
+    Same resolution as :func:`_get_installer_core_dir` (packaged
+    ``guardkit/_installer_core`` first, repo checkout as the editable-install
+    fallback), exposed under a public name so consumers outside this module —
+    notably the command-payload staleness check and ``guardkit init --update``
+    — reuse the ONE resolution path instead of re-deriving a path themselves.
+
+    Returns:
+        Path to the ``installer/core`` payload root. May not exist on a broken
+        install; callers guard with ``.is_dir()``.
+    """
+    return _get_installer_core_dir()
+
+
 def _get_templates_base_dir() -> Path:
     """Return the base directory containing installed templates.
 
