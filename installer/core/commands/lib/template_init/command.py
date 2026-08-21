@@ -67,6 +67,15 @@ class TemplateInitCommand:
             no_rules_structure: Skip rules structure generation (default: False)
             claude_md_size_limit: Maximum size for core CLAUDE.md in bytes (default: 5000)
         """
+        # Regression fix 2026-08-21 (originally TASK-INIT-007, "two-location
+        # output"): `template_dir` and `output_location` are two different ways
+        # of saying where the finished template goes, and after that port they
+        # disagreed. Remember whether the caller NAMED a directory, because an
+        # explicitly named directory is the more specific instruction and wins;
+        # otherwise the save path comes from `output_location`. See
+        # _get_template_path().
+        self._template_dir_explicit = template_dir is not None
+
         if template_dir is None:
             template_dir = Path("installer/local/templates")
 
@@ -397,6 +406,57 @@ class TemplateInitCommand:
                 + len(getattr(agents, "generated", []))
             )
 
+    def _get_template_path(self, template_name: str) -> Path:
+        """Work out which directory this template will be written to.
+
+        This calculation used to live on the interactive Q&A session class and
+        was lost when that class was rewritten; the call to it survived and
+        crashed. It belongs here, on the command that already owns both
+        `template_dir` and `output_location`.
+
+        Resolution order:
+
+        1. A directory the caller named explicitly (``template_dir=``) wins.
+           It is the most specific instruction available.
+        2. Otherwise ``output_location`` decides:
+
+           * ``'repo'``   -> ``<cwd>/installer/core/templates/<name>`` — the
+             in-repository home, meant for sharing with the team.
+           * ``'global'`` -> ``~/.agentecflow/templates/<name>`` — the
+             per-user home. This is the default.
+        """
+        if self._template_dir_explicit:
+            return self.template_dir / template_name
+
+        if self.output_location == 'repo':
+            return Path.cwd() / "installer" / "core" / "templates" / template_name
+
+        return Path.home() / ".agentecflow" / "templates" / template_name
+
+    def _display_location_guidance(self, template_path: Path) -> None:
+        """Tell the user where the template landed, and what to do next."""
+        print("\n" + "=" * 70)
+        print("  Template Saved")
+        print("=" * 70 + "\n")
+
+        if self.output_location == 'repo' and not self._template_dir_explicit:
+            print(f"\u2705 Repository template: {template_path}")
+            print()
+            print("This one is meant to be shared with the team:")
+            print("  1. Review the generated template")
+            print("  2. Add it to git:  git add installer/core/templates/")
+            print("  3. Push it")
+        else:
+            print(f"\u2705 Template saved: {template_path}")
+            print()
+            print("This template is available to you locally.")
+            print("To create one for team distribution instead, re-run with:")
+            print("  /template-init --output-location=repo")
+
+        print()
+        print("Use it with:")
+        print(f"  /agentic-init {template_path.name}")
+
     def _phase4_save_template(self, template: GreenfieldTemplate, agents: Any) -> Path:
         """Phase 4: Save template to disk
 
@@ -417,10 +477,14 @@ class TemplateInitCommand:
         print("💾 Saving template...")
 
         try:
-            # Use new path resolution based on output_location
-            from ..greenfield_qa_session import TemplateInitQASession
-            session = TemplateInitQASession(output_location=self.output_location)
-            template_path = session._get_template_path(template.name)
+            # Where the template goes is decided by this command itself.
+            # This used to be delegated to the interactive Q&A session class,
+            # which (a) has never accepted an `output_location` argument, so the
+            # call raised TypeError the moment it ran, and (b) no longer has the
+            # path helper the next line called. Building an interactive Q&A
+            # object just to do path arithmetic also dragged the `inquirer`
+            # input library into a save that needs no input at all.
+            template_path = self._get_template_path(template.name)
             template_path.mkdir(parents=True, exist_ok=True)
 
             # Save manifest.json
@@ -505,10 +569,16 @@ class TemplateInitCommand:
             print(f"\n✅ Template saved to: {template_path}")
 
             # Display location-specific guidance
-            session._display_location_guidance(template_path)
+            self._display_location_guidance(template_path)
 
-            # Ensure /template-validate compatibility (TASK-INIT-005)
+            # Ensure /template-validate compatibility (TASK-INIT-005).
+            # These two helpers DO still exist on the Q&A session class, so the
+            # session is built here, inside the guard: constructing it needs the
+            # interactive `inquirer` package, and a non-interactive save must not
+            # hard-require it.
             try:
+                from ..greenfield_qa_session import TemplateInitQASession
+                session = TemplateInitQASession()
                 session.ensure_validation_compatibility(template_path)
                 session.display_validation_guidance(template_path)
             except Exception as e:
@@ -591,12 +661,55 @@ class TemplateInitCommand:
         print("  Level 2: Extended Validation")
         print("=" * 70 + "\n")
 
+        # ------------------------------------------------------------------
+        # FLAGGED FOR REVIEW (2026-08-21) — extended validation cannot run.
+        #
+        # The scoring routine this phase calls, `_run_level2_validation`, used
+        # to live on the greenfield Q&A session class. That class was rewritten
+        # and the routine went with it; this call site was left behind. It was
+        # broken twice over: the session has never accepted a `validate`
+        # argument either, so building it raised TypeError before the missing
+        # method was even reached. The blanket `except Exception` further down
+        # then turned that into a bland "validation failed" warning — so
+        # `--template-init --validate` has been reporting on a score it never
+        # computed.
+        #
+        # A surviving extended validator does exist, at
+        # installer/core/lib/template_generator/extended_validator.py, but it
+        # scores a TemplateCollection of fully described CodeTemplate records
+        # (file type, language, purpose, patterns). The greenfield path only
+        # ever holds a plain {filename: content} dictionary. Connecting the two
+        # would mean inventing those fields, which would yield a
+        # confident-looking grade with nothing behind it.
+        #
+        # So: the original body is kept below, unchanged in intent, behind an
+        # explicit capability check. If the scoring routine is ever restored,
+        # this phase starts working again with no further edit. Until then it
+        # says plainly that no score was produced instead of inventing one.
+        # Deciding whether to rebuild Level 2 scoring for greenfield templates,
+        # or to retire the `--validate` flag, is a design call for Rich.
+        # ------------------------------------------------------------------
         try:
-            # Import greenfield Q&A session for validation methods
             from ..greenfield_qa_session import TemplateInitQASession
+            _level2_available = hasattr(TemplateInitQASession, "_run_level2_validation")
+        except Exception:  # noqa: BLE001 - import shape varies by entry point
+            TemplateInitQASession = None  # type: ignore[assignment]
+            _level2_available = False
 
+        if not _level2_available:
+            print("⚠️  Extended validation did NOT run — no quality score was produced.")
+            print()
+            print("    The Level 2 scoring routine for greenfield templates is not")
+            print("    present in this build, so there is nothing to grade against.")
+            print(f"    The template itself saved correctly to: {template_path}")
+            print()
+            print("    To check the saved template, run:  /template-validate")
+            print()
+            return 1
+
+        try:
             # Create temporary session instance for validation
-            session = TemplateInitQASession(validate=True)
+            session = TemplateInitQASession()
 
             # Prepare template data for validation
             template_data = {
@@ -718,12 +831,18 @@ class TemplateInitCommand:
         print("  Template Creation Complete")
         print("=" * 60 + "\n")
 
+        # Report the path the template was ACTUALLY written to. This used to
+        # print `self.template_dir / name` unconditionally, which disagreed with
+        # where Phase 4 saves when `--output-location` is in play — so the
+        # success message could name a directory that does not exist.
+        saved_at = self._get_template_path(template.name)
+
         print(f"✅ Template created: {template.name}")
-        print(f"   Location: {self.template_dir / template.name}/")
+        print(f"   Location: {saved_at}/")
         print(f"   Agents: {self._count_agents(agents)} total")
 
         print(f"\n💡 Next steps:")
-        print(f"   1. Review template at: {self.template_dir / template.name}/")
+        print(f"   1. Review template at: {saved_at}/")
         print(f"   2. Customize agents if needed")
         print(f"   3. Use template with: /agentic-init {template.name}")
         print()
