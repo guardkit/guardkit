@@ -85,8 +85,20 @@ class TestSynthesisGate:
 
 
 class TestGrammarAsset:
+    """The ``coachsplit`` grammar assets.
+
+    Both tests pass ``contract="coachsplit"`` EXPLICITLY. Left to resolve on
+    its own, ``load_coach_verdict_grammar`` reads
+    ``.guardkit/config.yaml`` from the current working directory — and
+    guardkit's own config has said ``autobuild.coach.contract: v4`` since the
+    2026-07-26 v4 flip (754ce150). So an unpinned call here loaded the *v4*
+    grammar and these assertions failed, which is a property of the repo the
+    suite happens to run in, not of the loader. Pinning the contract is what
+    the assertions were always about; the v4 grammar has its own coverage.
+    """
+
     def test_loader_returns_verdict_grammar(self) -> None:
-        g = load_coach_verdict_grammar()
+        g = load_coach_verdict_grammar(contract="coachsplit")
         # The grammar must enforce the verdict contract the parser consumes.
         assert "root" in g
         assert "req-task-id" in g
@@ -94,7 +106,7 @@ class TestGrammarAsset:
         assert '"approve"' in g and '"feedback"' in g
 
     def test_strict_variant_loads(self) -> None:
-        g = load_coach_verdict_grammar(strict=True)
+        g = load_coach_verdict_grammar(strict=True, contract="coachsplit")
         assert "root" in g and "code-fence" in g
 
     def test_packaged_grammar_is_byte_identical_to_docs_source(self) -> None:

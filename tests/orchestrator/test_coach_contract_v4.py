@@ -49,15 +49,33 @@ def _build_invoker(worktree: Path) -> AgentInvoker:
 
 
 class TestContractResolution:
-    def test_default_is_coachsplit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolution precedence: env > ``.guardkit/config.yaml`` > built-in default.
+
+    The two DEFAULT-tier tests below run from an empty ``tmp_path`` on purpose.
+    ``_resolve_coach_contract()`` reads ``.guardkit/config.yaml`` from the
+    CURRENT WORKING DIRECTORY, and guardkit's own config has declared
+    ``autobuild.coach.contract: v4`` since the 2026-07-26 v4 flip (754ce150,
+    a deliberate production change). Clearing only the environment variable
+    therefore did not reach the default tier at all — it fell through to
+    guardkit's own config and read ``v4``, so the tests were measuring the
+    repo they happened to run in rather than the default they name.
+    Chdir-ing to a directory with no config is what isolates the default tier.
+    (Config-tier behaviour is covered separately by the resolver's own tests.)
+    """
+
+    def test_default_is_coachsplit(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         monkeypatch.delenv("GUARDKIT_COACH_CONTRACT", raising=False)
+        monkeypatch.chdir(tmp_path)  # no .guardkit/config.yaml here
         assert _resolve_coach_contract() == "coachsplit"
 
     @pytest.mark.parametrize("val", ["", "coachsplit", " CoachSplit "])
     def test_coachsplit_values(
-        self, monkeypatch: pytest.MonkeyPatch, val: str
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, val: str
     ) -> None:
         monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", val)
+        monkeypatch.chdir(tmp_path)  # no .guardkit/config.yaml here
         # Empty falls back to default; non-enum values (incl. case/space
         # variants) NORMALIZE then validate — never pass through raw.
         assert _resolve_coach_contract() == "coachsplit"

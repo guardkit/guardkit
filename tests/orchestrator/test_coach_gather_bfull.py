@@ -383,12 +383,25 @@ class TestInvokeCoachGatherRouting:
 
 class TestCriteriaThreading:
     def test_synthesis_prompt_carries_per_ac_checklist_and_example(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """AC-4 root-cause fix: when acceptance_criteria are threaded, the
         synthesis prompt gains the 'verify EACH criterion' section AND the
         criteria_verification example — the absence of which produced run-19's
-        empty criteria_verification arrays."""
+        empty criteria_verification arrays.
+
+        Pinned to the ``coachsplit`` contract, because
+        ``criteria_verification`` is a key of the LEGACY Decision Format. The
+        v4 contract (TASK-CMIR-002) deliberately emits only ``verdict`` +
+        ``findings`` and names no other key, and guardkit's own
+        ``.guardkit/config.yaml`` has selected v4 since the 2026-07-26 flip
+        (754ce150) — so unpinned, this test asserted the legacy example
+        against a v4 prompt and failed on the repo's configuration rather
+        than on any regression. The per-criterion SECTION itself
+        ("Acceptance Criteria to Verify" + each AC id) is threaded under both
+        contracts; only the JSON-key example is coachsplit-specific.
+        """
+        monkeypatch.setenv("GUARDKIT_COACH_CONTRACT", "coachsplit")
         prompt = _make_invoker(tmp_path)._build_coach_prompt(
             task_id="TASK-AC4-001",
             turn=1,
