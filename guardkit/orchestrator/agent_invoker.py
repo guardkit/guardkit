@@ -14,6 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Set, Tuple, Union
 
+from guardkit.orchestrator.permissive_double_advisory import (
+    coach_advisory_text as permissive_double_advisory_text,
+    split_findings as split_permissive_double_findings,
+)
+
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
     # TASK-HMIG-008R Part C: bundle reference avoids the circular import that
@@ -3936,44 +3941,26 @@ Turn: {turn}
     def _count_permissive_doubles(
         wiring_container: Optional[Dict[str, Any]],
     ) -> Tuple[int, int]:
-        """Count permissive-double findings as ``(high_conf, low_conf)``.
+        """Count permissive-double findings as ``(sharp, broad)``.
 
         A "permissive double" is a stand-in object a test uses in place of the
         real thing which accepts any arguments at all, so the test stays green
-        even when the real call would fail because the argument names are
-        wrong. The factory writes these into
+        even after the real function's argument names have changed underneath
+        it. The analyzer writes these into
         ``bundle.wiring["permissive_double"]["findings"]``.
 
-        High confidence means the stand-in is named after a real function in
-        the repo (``target_evidence == "name_matched"``) or literally declares
-        ``*args``/``**kwargs`` (``form == "star_args_fake"``). Everything else
-        is the ordinary ``patch("module.function")`` idiom, which is far too
-        common to treat as a defect signal.
+        Delegates to :py:func:`permissive_double_advisory.split_findings` —
+        the single implementation of the sharp/broad rule, shared with the run
+        log in ``feature_orchestrator`` so the two can never disagree about the
+        same run. That module's docstring is the place to read WHY the split
+        exists: it is a volume filter for a reader's attention, not a judgement
+        about which findings are real.
 
         Absence-safe: a missing key or any unexpected shape counts as ``(0, 0)``
         rather than raising — this must never break prompt construction.
         """
-        if not isinstance(wiring_container, dict):
-            return 0, 0
-        pd = wiring_container.get("permissive_double")
-        if not isinstance(pd, dict) or pd.get("status") != "ran":
-            return 0, 0
-        findings = pd.get("findings")
-        if not isinstance(findings, list):
-            return 0, 0
-        sharp = 0
-        broad = 0
-        for f in findings:
-            if not isinstance(f, dict):
-                continue
-            if (
-                f.get("target_evidence") == "name_matched"
-                or f.get("form") == "star_args_fake"
-            ):
-                sharp += 1
-            else:
-                broad += 1
-        return sharp, broad
+        sharp, broad = split_permissive_double_findings(wiring_container)
+        return len(sharp), len(broad)
 
     def _render_evidence_bundle_section(
         self,
@@ -4005,11 +3992,12 @@ Turn: {turn}
         knows the list was bounded. Non-list fields are bounded by gate
         computation and pass through unchanged.
 
-        One advisory line is appended after the JSON, naming
-        ``wiring.permissive_double`` and explaining in plain words what a
-        permissive double is and which of its findings are worth acting on.
-        The line is advisory text only: no gate and no verdict branch reads
-        those counts.
+        An advisory paragraph is appended after the JSON, naming
+        ``wiring.permissive_double``, explaining in plain words what a
+        permissive double is, and saying explicitly that its sharp/broad split
+        is a volume filter rather than a defect judgement. The wording comes
+        from :py:func:`permissive_double_advisory.coach_advisory_text`. It is
+        advisory text only: no gate and no verdict branch reads those counts.
 
         The bundle's honesty channel is NOT duplicated here — it lives in
         the separate ``<honesty_verification>`` section emitted by
@@ -4129,27 +4117,22 @@ Turn: {turn}
                     "only — never reject the turn on this count alone.\n"
                 )
 
-        # Permissive-double visibility (2026-08-21). The factory has always
+        # Permissive-double visibility (2026-08-21). The analyzer has always
         # computed this into wiring.permissive_double and it has always been
         # carried into this JSON, but nothing ever named it — so it sat
         # unlabelled among a dozen sibling keys and no reader knew what it was.
-        # This line names it in plain words. Advisory prompt text ONLY: no gate
-        # and no verdict branch reads it, and the text itself says so.
+        # This names it in plain words. Advisory prompt text ONLY: no gate and
+        # no verdict branch reads it, and the text itself says so.
+        #
+        # The wording lives in permissive_double_advisory so that the sentence
+        # a reviewing model reads and the sentence a person reads in the run
+        # log come from one place. It deliberately does NOT tell the reader the
+        # broad group is safe to skip; see that module's docstring for the
+        # forge Mode P case that proved that wording wrong.
         permissive_advisory = ""
         if permissive_sharp or permissive_broad:
-            permissive_advisory = (
-                f"\nADVISORY: wiring.permissive_double — "
-                f"{permissive_sharp} high-confidence, {permissive_broad} "
-                "low-confidence. A permissive double is a stand-in object a "
-                "test uses in place of the real thing which accepts ANY "
-                "arguments, so the test stays green even when the real call "
-                "would fail on wrong argument names. High-confidence entries "
-                "(target_evidence \"name_matched\", or form \"star_args_fake\") "
-                "are worth naming in your findings. Low-confidence entries "
-                "(form \"unspecced_mock\"/\"spec_mock\") are the ordinary "
-                "patch(\"module.function\") idiom and fire on most test files "
-                "— they are near-certainly not defects. Advisory only — never "
-                "reject the turn on these counts alone.\n"
+            permissive_advisory = permissive_double_advisory_text(
+                permissive_sharp, permissive_broad
             )
 
         return f"""
