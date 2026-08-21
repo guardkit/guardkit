@@ -2745,7 +2745,10 @@ The detailed specifications are in the task markdown file.
         worktree: Any,
         wave_number: int,
     ) -> None:
-        """Surface WS3-S3 CALLSITE_DRIFT + SYS_MODULES_TAMPER as advisory (§8).
+        """Surface CALLSITE_DRIFT + SYS_MODULES_TAMPER + PERMISSIVE_DOUBLE (§8).
+
+        All three are ADVISORY: they are written to the run log for a person to
+        read, and none of them can reject the turn.
 
         CALLSITE_DRIFT aperture B is already in ``wiring_result`` (analyze_wiring
         runs it without a baseline). Aperture A (changed-signature × stale-site)
@@ -2754,6 +2757,30 @@ The detailed specifications are in the task markdown file.
         ``wiring_result["callsite_drift"]`` for Coach evidence and logged as an
         advisory. Never turn-rejecting until the §8 promotion gate flips it.
         Fail-open: any error leaves the aperture-B result untouched.
+
+        PERMISSIVE_DOUBLE (added 2026-08-21) needs no extra analysis pass: the
+        factory already computes it into ``wiring_result["permissive_double"]``
+        on every run, and until now nothing on the guardkit side read the value.
+        In plain terms, a "permissive double" is a stand-in object a test uses
+        in place of the real thing, which accepts ANY arguments at all — so the
+        test still passes even when the real function would reject the call
+        because the argument names are wrong. That is the exact defect class
+        that shipped Mode P dead on arrival (post-merge review
+        ``forge/docs/reviews/feat-spl-002-post-merge-review-2026-07-06.md``).
+
+        The detector's own confidence is uneven, so the log separates two
+        groups (measured over the estate 2026-08-21: 3,156 findings across
+        guardkit / forge / specialist-agent / guardkitfactory, of which only 46
+        were in the sharp group):
+
+        * SHARP — a stand-in named after a real function (``target_evidence``
+          ``name_matched``) or one that literally declares ``*args/**kwargs``
+          (``form`` ``star_args_fake``). Rare and usually a true hit; logged
+          line by line.
+        * BROAD — ``unspecced_mock``: the ordinary
+          ``patch("my.module.my_function")`` idiom with no signature attached.
+          This fires on ~94% of the estate's test files, so it is reported as a
+          count only and must never be read as a defect list.
         """
         if not isinstance(wiring_result, dict):
             return
@@ -2792,11 +2819,15 @@ The detailed specifications are in the task markdown file.
             env = wiring_result.get("env_tamper") or {}
             env_findings = env.get("findings", []) if env.get("status") == "ran" else []
 
-            if advisory or env_findings:
+            pd_sharp, pd_broad = self._split_permissive_double_findings(wiring_result)
+
+            if advisory or env_findings or pd_sharp or pd_broad:
                 logger.warning(
-                    "[wave %s] WS3-S3 advisory seam findings (not turn-rejecting): "
-                    "%d CALLSITE_DRIFT, %d SYS_MODULES_TAMPER",
+                    "[wave %s] advisory seam findings (none of these can reject "
+                    "the turn): %d CALLSITE_DRIFT, %d SYS_MODULES_TAMPER, "
+                    "%d PERMISSIVE_DOUBLE high-confidence (+%d low-confidence)",
                     wave_number, len(advisory), len(env_findings),
+                    len(pd_sharp), len(pd_broad),
                 )
                 for f in advisory[:10]:
                     logger.warning(
@@ -2808,8 +2839,67 @@ The detailed specifications are in the task markdown file.
                         "  SYS_MODULES_TAMPER %s:%s %s",
                         f.get("file"), f.get("lineno"), f.get("module_key"),
                     )
+                for f in pd_sharp[:10]:
+                    logger.warning(
+                        "  PERMISSIVE_DOUBLE %s:%s %s '%s' — %s",
+                        f.get("file"), f.get("lineno"), f.get("form"),
+                        f.get("symbol"), f.get("why", ""),
+                    )
+                if pd_broad:
+                    logger.warning(
+                        "  PERMISSIVE_DOUBLE (low-confidence, count only): %d "
+                        "plain patch()/spec= stand-ins with no signature "
+                        "attached. This form fires on most ordinary test files "
+                        "— do not read it as a defect list.",
+                        len(pd_broad),
+                    )
         except Exception as exc:  # noqa: BLE001 — advisory must never break the gate
             logger.debug("advisory seam surfacing failed: %s", exc)
+
+    #: A PERMISSIVE_DOUBLE finding counts as high-confidence when the stand-in
+    #: is named after a real function in this repo (``name_matched``) or when it
+    #: literally declares ``*args``/``**kwargs``. Everything else is the plain
+    #: ``patch("module.function")`` idiom, which is far too common to act on.
+    _PERMISSIVE_DOUBLE_SHARP_EVIDENCE = "name_matched"
+    _PERMISSIVE_DOUBLE_SHARP_FORM = "star_args_fake"
+
+    @classmethod
+    def _split_permissive_double_findings(
+        cls,
+        wiring_result: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Split the factory's PERMISSIVE_DOUBLE findings into two confidence groups.
+
+        Returns ``(high_confidence, low_confidence)``. Both lists are advisory:
+        nothing in either list can reject a turn.
+
+        A permissive double is a test stand-in that accepts any arguments at
+        all, so a test using one stays green even when the real call would fail
+        because the argument names are wrong.
+
+        Absence-safe: a missing key, a non-``ran`` status, or any unexpected
+        shape yields two empty lists rather than raising — an absent signal is
+        never evidence of anything.
+        """
+        if not isinstance(wiring_result, dict):
+            return [], []
+        pd = wiring_result.get("permissive_double")
+        if not isinstance(pd, dict) or pd.get("status") != "ran":
+            return [], []
+        findings = pd.get("findings")
+        if not isinstance(findings, list):
+            return [], []
+        sharp: List[Dict[str, Any]] = []
+        broad: List[Dict[str, Any]] = []
+        for f in findings:
+            if not isinstance(f, dict):
+                continue
+            is_sharp = (
+                f.get("target_evidence") == cls._PERMISSIVE_DOUBLE_SHARP_EVIDENCE
+                or f.get("form") == cls._PERMISSIVE_DOUBLE_SHARP_FORM
+            )
+            (sharp if is_sharp else broad).append(f)
+        return sharp, broad
 
     def _feature_base_sources(
         self, worktree: Any, authored: List[str]
