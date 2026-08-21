@@ -319,6 +319,7 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, ClaudeSDKHarness)
 
+    @_requires_guardkitfactory
     def test_langgraph_returns_langgraph_harness(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -427,6 +428,7 @@ class TestSelectHarnessDispatch:
         assert "sdk" in msg
         assert "langgraph" in msg
 
+    @_requires_guardkitfactory
     def test_langgraph_translates_kwargs_so_no_typeerror(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -450,6 +452,7 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, LangGraphHarness)
 
+    @_requires_guardkitfactory
     def test_langgraph_accepts_setting_sources_without_typeerror(
         self,
         monkeypatch: pytest.MonkeyPatch,
