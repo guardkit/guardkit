@@ -169,7 +169,14 @@ def _build_refresh_repo(tmp_path: Path):
     ``(clone_path, worktree)``.
     """
     origin = tmp_path / "origin.git"
-    _git("init", "--bare", "--initial-branch=main", cwd=tmp_path.parent, check=False)
+    # NOTE: do NOT `git init` with cwd=tmp_path.parent. That is pytest's SHARED
+    # basetemp (/tmp/pytest-of-<user>/pytest-N), the parent of every other
+    # test's tmp_path. A stray repo there is silently discovered by any later
+    # test that runs git in a directory which is deliberately NOT a repo, so
+    # `git rev-parse HEAD` stops failing and starts echoing "HEAD" — which is
+    # exactly how test_worktree_checkpoints_evidence.py's
+    # test_failed_sibling_commit_does_not_abort_checkpoint was failing in CI
+    # while passing when run on its own. The line below does the real work.
     subprocess.run(
         ["git", "init", "--bare", "--initial-branch=main", str(origin)],
         check=True, capture_output=True, text=True,

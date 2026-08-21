@@ -21,19 +21,27 @@ from guardkit.orchestrator.worktree_checkpoints import (
 )
 
 
+def _set_identity(path: Path) -> None:
+    """Give a throwaway repo its own committer identity.
+
+    ``git commit`` exits 128 ("Please tell me who you are") wherever no
+    ``user.email``/``user.name`` is configured. A CI runner has none, and
+    neither does a freshly set-up developer machine, so every test repo
+    configures its own REPO-LOCAL identity instead of relying on whatever the
+    machine happens to have globally.
+    """
+    for key, value in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(
+            ["git", "-C", str(path), "config", key, value],
+            check=True,
+            capture_output=True,
+        )
+
+
 def _init_repo(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(path), "config", "user.email", "t@t"],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(path), "config", "user.name", "t"],
-        check=True,
-        capture_output=True,
-    )
+    _set_identity(path)
     (path / ".keep").write_text("x\n")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
@@ -220,6 +228,7 @@ class TestCheckpointJunkExclusion:
         wt = tmp_path / "wt"
         wt.mkdir()
         subprocess.run(["git", "-C", str(wt), "init", "-q"], check=True)
+        _set_identity(wt)
         subprocess.run(
             ["git", "-C", str(wt), "commit", "-q", "--allow-empty", "-m", "seed"],
             check=True,
@@ -266,6 +275,7 @@ class TestCheckpointJunkExclusion:
         wt = tmp_path / "wt"
         wt.mkdir()
         subprocess.run(["git", "-C", str(wt), "init", "-q"], check=True)
+        _set_identity(wt)
         (wt / ".gitignore").write_text(".cache/\n.guardkit/bootstrap_state.json\n")
         subprocess.run(["git", "-C", str(wt), "add", ".gitignore"], check=True)
         subprocess.run(
