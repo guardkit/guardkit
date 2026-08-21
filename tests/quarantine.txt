@@ -23,9 +23,39 @@
 # Format: one pytest node id per line. A bare module path (no `::`) quarantines
 # the whole module. Lines starting with `#` are comments. Remove a line as you
 # fix the test; the gate will then enforce it.
+#
+# ---------------------------------------------------------------------------
+# 2026-08-21 RE-MEASURED. 518 -> 355. What the re-run found:
+# ---------------------------------------------------------------------------
+# The list was measured again, entry by entry, on Python 3.12 with
+# GUARDKIT_NO_QUARANTINE=1. Three things came out of it.
+#
+# 1. 59 entries named tests that NO LONGER EXIST. 52 of them were deleted
+#    wholesale by the graphiti retirement (FEAT-MEM-09, commits c40324d9 /
+#    60ebde5d); 7 more name functions that were renamed or removed. Deleted.
+#
+# 2. 97 entries were NOT red at all. They were casualties of ONE leaked
+#    working directory: tests/test_task_completion_conductor.py used a bare
+#    os.chdir() in its fixture and never changed back, so every later test
+#    that opened a repo-relative path (installer/core/templates/...,
+#    CLAUDE.md, mkdocs.yml) failed against a file that is present and correct.
+#    The fixture now uses monkeypatch.chdir and all 97 pass in the full suite.
+#    Un-quarantined. The whole fastmcp-python template suite (67 tests) was in
+#    this group — it had never actually been failing.
+#
+# 3. Of the 456 entries whose tests still exist, only 5 passed unchanged. The
+#    burn-down is real work, not a stale list. One entry
+#    (test_id_generator.py::test_generate_basic_id) passes alone and in a
+#    quarantine-off full run but fails in the gate's own ordering, so it stays
+#    quarantined and is filed as order-dependent, not as pre-existing red.
+#
+# WHAT THIS LIST DOES NOT BUY. The header below says the quarantine exists so
+# the merge gate can be green. It is NOT green and has not been since
+# 2026-07-09: .github/workflows/tests.yml has failed on all 35 runs since
+# (17 failures on the latest, none of them quarantined). The quarantine is not
+# the reason the gate is red, and burning it down will not turn it green.
 # ===========================================================================
 
-tests/cli/test_graphiti_list.py::TestGraphitiListCommand::test_list_handles_disabled_graphiti
 tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac001_cli_usage_in_claude_md
 tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac002_all_query_commands_documented_with_examples
 tests/docs/test_gr005_completion.py::TestAcceptanceCriteria::test_ac003_turn_state_capture_documented
@@ -50,55 +80,7 @@ tests/docs/test_graphiti_gr005_documentation.py::test_documentation_cross_refere
 tests/docs/test_graphiti_gr005_documentation.py::test_knowledge_groups_match_implementation
 tests/docs/test_graphiti_gr005_documentation.py::test_troubleshooting_provides_actionable_solutions
 tests/docs/test_graphiti_gr005_documentation.py::test_turn_state_schema_documentation_is_complete
-tests/docs/test_graphiti_setup_guide.py::test_expected_output_examples
-tests/docs/test_graphiti_setup_guide.py::test_line_count_within_limit
-tests/docs/test_graphiti_setup_guide.py::test_no_broken_internal_links
-tests/e2e/test_system_context_commands.py::test_all_commands_no_context
-tests/e2e/test_system_context_commands.py::test_graceful_degradation_messages
-tests/e2e/test_system_context_commands.py::test_section_headers_present
-tests/e2e/test_system_context_commands.py::test_system_overview_default
-tests/e2e/test_system_context_commands.py::test_system_overview_graphiti_down
-tests/e2e/test_system_context_commands.py::test_system_overview_no_context
-tests/knowledge/test_config.py::TestSparseConfigFalkorDBWarning::test_neo4j_graph_store_no_warning
-tests/knowledge/test_falkordb_workaround.py::TestApplyEdgeSearchWorkaround::test_called_from_apply_falkordb_workaround
-tests/knowledge/test_falkordb_workaround.py::TestApplyEdgeSearchWorkaround::test_patches_edge_fulltext_search_in_search_module
-tests/knowledge/test_falkordb_workaround.py::TestApplyEdgeSearchWorkaround::test_patches_edge_fulltext_search_in_search_utils
-tests/knowledge/test_falkordb_workaround.py::TestApplyWorkaround::test_idempotent_multiple_calls
-tests/knowledge/test_falkordb_workaround.py::TestApplyWorkaround::test_is_workaround_applied_tracks_state
-tests/knowledge/test_falkordb_workaround.py::TestApplyWorkaround::test_patches_decorator_module
-tests/knowledge/test_falkordb_workaround.py::TestApplyWorkaround::test_remove_workaround_resets_state
-tests/knowledge/test_falkordb_workaround.py::TestApplyWorkaround::test_returns_true_when_graphiti_available
-tests/knowledge/test_falkordb_workaround.py::TestCheckGraphitiCoreIntegration::test_check_graphiti_core_applies_workaround
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_backslashes_stripped
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_backticks_stripped
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_empty_after_sanitization_returns_star
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_forward_slashes_stripped
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_pipes_stripped
-tests/knowledge/test_falkordb_workaround.py::TestFulltextQuerySanitization::test_real_failing_query_from_seed_log
-tests/knowledge/test_falkordb_workaround.py::TestMethodRedecoration::test_all_decorated_methods_are_redecorated
-tests/knowledge/test_falkordb_workaround.py::TestMethodRedecoration::test_graphiti_search_is_redecorated
-tests/knowledge/test_falkordb_workaround.py::TestRecursionDepthGuard::test_edge_fulltext_search_catches_recursion_error
-tests/knowledge/test_graphiti_client_embedder_injection.py::TestGeminiProvider::test_build_llm_client_gemini_missing_api_key_raises
-tests/knowledge/test_graphiti_client.py::TestGraphitiClientAddEpisode::test_add_episode_group_specific_timeouts
-tests/knowledge/test_graphiti_lazy_init.py::TestAsyncContextHandling::test_lazy_init_in_async_context_defers_connection
-tests/knowledge/test_graphiti_lazy_init.py::TestAsyncContextHandling::test_lazy_init_in_sync_context_defers_initialization
-tests/knowledge/test_graphiti_lazy_init.py::TestAutobuildAutoInitIntegration::test_auto_init_block_gets_client_from_lazy_init
-tests/knowledge/test_graphiti_lazy_init.py::TestLazyInitGracefulDegradation::test_lazy_init_defers_initialization_no_connection_attempt
-tests/knowledge/test_graphiti_lazy_init.py::TestLazyInitGracefulDegradation::test_lazy_init_returns_pending_client_when_sync_context
-tests/knowledge/test_graphiti_lazy_init.py::TestLazyInitSuccess::test_lazy_init_creates_factory_from_config
-tests/knowledge/test_graphiti_lazy_init.py::TestLazyInitSuccess::test_lazy_init_sets_factory
-tests/knowledge/test_graph_store_config.py::TestBackwardsCompatibility::test_new_fields_coexist_with_existing
-tests/knowledge/test_graph_store_config.py::TestLazyInitPropagation::test_default_graph_store_propagated
-tests/knowledge/test_graph_store_config.py::TestLazyInitPropagation::test_graph_store_propagated
-tests/knowledge/test_graph_store_config.py::TestLoadConfigGraphStore::test_defaults_without_yaml
-tests/knowledge/test_graph_store_config.py::TestLoadConfigGraphStore::test_yaml_graph_store_falkordb
-tests/knowledge/test_graph_store_config.py::TestLoadConfigGraphStore::test_yaml_invalid_graph_store_raises
-tests/knowledge/test_graph_store_config.py::TestLoadConfigGraphStore::test_yaml_partial_only_graph_store
 tests/knowledge/test_performance_optimization.py::test_early_termination_priority_order
-tests/knowledge/test_seed_enrichment.py::TestContentChunking::test_small_files_are_single_episodes
-tests/knowledge/test_seed_helpers.py::TestAddEpisodesCallsClient::test_passes_correct_kwargs
-tests/knowledge/test_seeding.py::TestFeatureBuildArchitectureSeeding::test_seed_feature_build_architecture_creates_episodes
-tests/knowledge/test_seeding.py::TestIntegrationPointsSeeding::test_seed_integration_points_creates_episodes
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_original_message
 tests/lib/agent_enhancement/test_enhancer_error_messages.py::TestValidationErrorMessage::test_error_includes_position
 tests/lib/agent_enhancement/test_validation_errors.py::TestParserValidationErrors::test_extract_subsection_end_marker_not_found
@@ -114,9 +96,6 @@ tests/lib/template_generator/test_path_resolver.py::TestTemplatePathResolver::te
 tests/lib/template_generator/test_path_resolver.py::TestTemplatePathResolver::test_resolve_with_layer_classification
 tests/lib/template_generator/test_path_resolver.py::TestTemplatePathResolver::test_resolve_with_pattern_fallback
 tests/lib/template_generator/test_path_resolver.py::TestTemplatePathResolver::test_warnings_list_populated
-tests/orchestrator/harness/test_selector.py::TestSelectHarnessDispatch::test_langgraph_accepts_setting_sources_without_typeerror
-tests/orchestrator/harness/test_selector.py::TestSelectHarnessDispatch::test_langgraph_returns_langgraph_harness
-tests/orchestrator/harness/test_selector.py::TestSelectHarnessDispatch::test_langgraph_translates_kwargs_so_no_typeerror
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_context_when_available
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_elements_in_context
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_design_tokens_in_context
@@ -154,9 +133,6 @@ tests/seam/test_autobuild_coach.py::TestQualityGateStatusIntegrity::test_coach_r
 tests/seam/test_autobuild_coach.py::TestQualityGateStatusIntegrity::test_failing_quality_gates_detected
 tests/seam/test_autobuild_coach.py::TestRealCoachValidatorIntegration::test_orchestrator_passes_acceptance_criteria_to_coach
 tests/seam/test_autobuild_coach.py::TestZeroTestAnomalyDetection::test_zero_test_anomaly_detected_when_no_tests_written
-tests/seam/test_graphiti_persistence.py::test_get_relevant_context_delegates_to_search
-tests/seam/test_graphiti_persistence.py::test_mock_at_graphiti_core_level
-tests/seam/test_graphiti_persistence.py::test_search_returns_expected_format
 tests/templates/langchain-deepagents/test_coach_template.py::TestPlaceholders::test_no_hardcoded_deepagents_import
 tests/templates/test_maui_appshell_structure.py::TestAgentSpecifications::test_agent_files_exist
 tests/templates/test_maui_appshell_structure.py::TestAgentSpecifications::test_agent_files_have_required_sections
@@ -188,10 +164,6 @@ tests/templates/test_maui_appshell_structure.py::TestTemplateFiles::test_testing
 tests/templates/test_mcp_typescript_template.py::TestAgentQuality::test_agents_have_code_examples
 tests/test_fastmcp_testing_specialist_agent.py::TestFileExistence::test_core_agent_file_exists
 tests/test_fastmcp_testing_specialist_agent.py::TestFileExistence::test_extended_agent_file_exists
-tests/test_graphiti_integration_guide.py::test_document_length_within_guideline
-tests/test_graphiti_navigation.py::TestGraphitiNavigation::test_all_three_child_pages_linked[AC-003: All 3 child pages linked]
-tests/test_graphiti_navigation.py::TestGraphitiNavigation::test_links_use_correct_mkdocs_format[AC-004: Links use correct URL format]
-tests/test_graphiti_navigation.py::TestGraphitiNavigation::test_referenced_files_exist
 tests/test_security_validation_docs.py::TestDocumentationCompleteness::test_all_required_files_updated
 tests/test_security_validation_docs.py::TestSecurityValidationDocs::test_all_docs_mention_revised_architecture
 tests/test_security_validation_docs.py::TestSecurityValidationDocs::test_autobuild_coach_has_security_section
@@ -335,15 +307,6 @@ tests/test_template_init/test_command.py::TestTemplateInitCommand::test_execute_
 # template_init() wrapper legitimately forwards four arguments now. The test's
 # expectation was never updated when the signature grew.
 tests/test_template_init/test_command.py::TestTemplateInitEntryPoint::test_template_init_with_custom_dir
-tests/unit/documentation/test_claude_md_references.py::test_claude_md_exists
-tests/unit/documentation/test_claude_md_references.py::test_command_syntax_examples
-tests/unit/documentation/test_claude_md_references.py::test_key_references_table
-tests/unit/documentation/test_claude_md_references.py::test_system_context_command_descriptions
-tests/unit/documentation/test_claude_md_references.py::test_system_context_commands_section
-tests/unit/documentation/test_mkdocs_navigation.py::test_mkdocs_navigation_structure
-tests/unit/documentation/test_mkdocs_navigation.py::test_mkdocs_yaml_valid
-tests/unit/documentation/test_mkdocs_navigation.py::test_system_context_guide_files_exist
-tests/unit/documentation/test_mkdocs_navigation.py::test_system_context_guides_in_navigation
 tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestMixedStacks::test_python_plus_node_success_sets_sys_executable
 tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestParentVenvFallback::test_parent_venv_install_persists_to_state_file
 tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestParentVenvFallback::test_parent_venv_install_sets_sys_executable
@@ -352,27 +315,6 @@ tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestPep66
 tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestSkippedBootstrap::test_failed_python_install_does_not_set_venv_python
 tests/unit/orchestrator/test_environment_bootstrap_venv_resolution.py::TestSkippedBootstrap::test_hash_match_preserves_saved_venv_python
 tests/unit/orchestrator/test_smoke_gates_venv.py::test_bootstrap_then_smoke_gate_resolves_python_against_parent_venv
-tests/unit/planning/test_impact_analysis.py::TestBuildQuery::test_build_query_file_read_error
-tests/unit/planning/test_impact_analysis.py::TestBuildQuery::test_build_query_from_task_id
-tests/unit/planning/test_system_plan.py::TestAntiStub::test_contains_architecture_writer
-tests/unit/planning/test_system_plan.py::TestAntiStub::test_contains_detect_mode
-tests/unit/planning/test_system_plan.py::TestAntiStub::test_contains_parse_architecture_spec
-tests/unit/planning/test_system_plan.py::TestAntiStub::test_contains_upsert_calls
-tests/unit/planning/test_system_plan.py::TestAntiStub::test_not_a_stub
-tests/unit/template_creation/test_manifest_generator_imports.py::TestManifestGeneratorImports::test_manifest_generator_imports_classes
-tests/unit/template_creation/test_manifest_generator_imports.py::TestManifestGeneratorImports::test_manifest_generator_uses_standard_imports
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorArguments::test_orchestrator_boolean_flags_are_store_true
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorArguments::test_orchestrator_max_templates_is_integer
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorArguments::test_orchestrator_output_location_choices
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_argument_parser_has_all_flags
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_calls_run_template_create
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_has_argument_parser
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_module_has_main_block
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_passes_args_to_run_template_create
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorEntryPoint::test_orchestrator_returns_proper_exit_code
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorModuleImports::test_orchestrator_does_not_use_global_keyword
-tests/unit/template_creation/test_orchestrator_entry_point.py::TestOrchestratorModuleImports::test_orchestrator_uses_importlib_for_all_imports
-tests/unit/test_agent_invoker.py::TestAgentInvokerClassIntegrity::test_class_method_count_not_degraded
 tests/unit/test_agent_invoker.py::TestInvokeTaskWorkImplement::test_invoke_task_work_implement_mode_passed
 tests/unit/test_agent_invoker_sdk_turn_budget.py::TestCalculateSdkMaxTurns::test_complexity_scaling_at_complexity_1
 tests/unit/test_agent_invoker_session_resume.py::TestInvokeWithRoleCancelledSessionScan::test_captures_session_id_on_cancelled_error
@@ -425,76 +367,7 @@ tests/unit/test_doc_file_paths.py::TestTaskFileReferences::test_f4b8a_subtask_li
 tests/unit/test_doc_file_paths.py::TestTaskFileReferences::test_f4b8b_closed_with_rationale
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_false_in_task_dict
 tests/unit/test_docker_available_wiring.py::TestDockerAvailableWiring::test_docker_available_true_in_task_dict
-tests/unit/test_doctor.py::TestActiveHarnessCheck::test_langgraph_with_guardkitfactory_importable
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_has_async_function
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_has_docstring
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_has_error_handling
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_has_tool_name_placeholder
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_has_type_conversion_pattern
-tests/unit/test_fastmcp_templates.py::TestBasicToolTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestConftestTemplate::test_has_async_fixture
-tests/unit/test_fastmcp_templates.py::TestConftestTemplate::test_has_mcp_client_fixture
-tests/unit/test_fastmcp_templates.py::TestConftestTemplate::test_has_pytest_imports
-tests/unit/test_fastmcp_templates.py::TestConftestTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_has_nonroot_user
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_has_python310_slim
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_has_pythonunbuffered
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_has_stdio_cmd
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_has_workdir
-tests/unit/test_fastmcp_templates.py::TestDockerfileTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_has_dependency_health_checks
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_has_memory_monitoring
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_has_status_reporting
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_has_uptime_tracking
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_has_utc_datetime
-tests/unit/test_fastmcp_templates.py::TestHealthCheckTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_has_cursor_parameter
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_has_has_more_indicator
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_has_items_in_response
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_has_limit_bounds
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_has_next_cursor_response
-tests/unit/test_fastmcp_templates.py::TestPaginatedToolTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_asyncio_mode_auto
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_mcp_dependency
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_project_name_placeholder
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_pytest_asyncio
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_pytest_section
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_has_python310_requirement
-tests/unit/test_fastmcp_templates.py::TestPyprojectTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestResourceTemplate::test_has_async_function
-tests/unit/test_fastmcp_templates.py::TestResourceTemplate::test_has_resource_decorator
-tests/unit/test_fastmcp_templates.py::TestResourceTemplate::test_has_uri_pattern
-tests/unit/test_fastmcp_templates.py::TestResourceTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_fastmcp_import
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_mcp_initialization
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_server_description_placeholder
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_stderr_logging
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_stdio_transport
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_tool_decorator
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_has_tool_description_placeholder
-tests/unit/test_fastmcp_templates.py::TestServerMainTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestServerPyTemplate::test_has_fastmcp_import
-tests/unit/test_fastmcp_templates.py::TestServerPyTemplate::test_has_server_name_placeholder
-tests/unit/test_fastmcp_templates.py::TestServerPyTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_has_async_for_pattern
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_has_asyncgenerator
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_has_cancelled_error_handling
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_has_finally_cleanup
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_has_two_layer_pattern
-tests/unit/test_fastmcp_templates.py::TestStreamingToolTemplate::test_template_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_config_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_resources_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_server_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_templates_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_testing_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTemplateDirectory::test_tools_directory_exists
-tests/unit/test_fastmcp_templates.py::TestTestToolTemplate::test_has_asyncio_markers
-tests/unit/test_fastmcp_templates.py::TestTestToolTemplate::test_has_basic_test_structure
-tests/unit/test_fastmcp_templates.py::TestTestToolTemplate::test_has_pytest_import
-tests/unit/test_fastmcp_templates.py::TestTestToolTemplate::test_has_tool_test_example
-tests/unit/test_fastmcp_templates.py::TestTestToolTemplate::test_template_exists
 tests/unit/test_feature_loader.py::TestSchemaValidationGaps::test_json_schema_comprehensive_validation
-tests/unit/test_feature_loader.py::test_validate_feature_rejects_directory_file_path
 tests/unit/test_generator_close_fix.py::TestGeneratorDrainAfterResultMessage::test_drain_loop_present_in_source
 tests/unit/test_generator_close_fix.py::TestGeneratorDrainAfterResultMessage::test_gen_none_skips_aclose_in_finally
 tests/unit/test_generator_close_fix.py::TestInvokeWithRoleGeneratorClose::test_aclose_timeout_prevents_blocking
@@ -533,8 +406,6 @@ tests/unit/test_sdk_environment_parity.py::TestRunTestsViaSdk::test_sdk_bash_is_
 tests/unit/test_sdk_environment_parity.py::TestRunTestsViaSdk::test_sdk_import_error
 tests/unit/test_sdk_session_config.py::TestInteractivePathNoRegression::test_invoke_with_role_always_uses_project_setting_sources
 tests/unit/test_sdk_session_config.py::TestTaskWorkImplementConfig::test_max_turns_uses_constant
-tests/unit/test_task_769d_agent_invoker.py::TestHeuristicAnalyzerWithFileSamples::test_analyze_with_file_samples
-tests/unit/test_task_769d_agent_invoker.py::TestHeuristicAnalyzerWithFileSamples::test_detect_testing_frameworks_from_file_samples
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_failure_falls_back
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_with_bridge_success
 tests/unit/test_task_769d_ai_analyzer.py::TestCodebaseAnalyzerWithBridge::test_analyze_without_bridge_falls_back_to_heuristics
