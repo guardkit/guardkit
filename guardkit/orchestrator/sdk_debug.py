@@ -156,16 +156,14 @@ def _get_repo_name(repo_root: Union[str, Path]) -> Optional[str]:
     Returns the repo root directory name if git remote confirms it, else None.
     Defensive: swallows git subprocess failures and returns None.
 
-    A path inside a linked worktree is first mapped back to the repository it
-    belongs to (see :func:`_resolve_repo_root`), so that an AutoBuild worktree
-    named after a feature ID is still recognised as its parent repo.
+    This reports the name of the directory it is GIVEN. Mapping a linked
+    worktree back to the repository it belongs to is done by the caller, via
+    :func:`_resolve_repo_root`, and only when it is needed.
     """
     try:
         repo_path = Path(repo_root)
         if not repo_path.exists():
             return None
-
-        repo_path = _resolve_repo_root(repo_path)
 
         # Try git remote to confirm repo identity
         result = subprocess.run(
@@ -350,6 +348,25 @@ def preservation_enabled_for_repo(
         repo_name in DEFAULT_ON_REPOS
         or _is_fleet_repo(repo_name)
     )
+
+    if not is_allowlisted:
+        # The directory name missed the allowlist, but it may be a linked git
+        # WORKTREE, which is named after the piece of work rather than after
+        # the project — AutoBuild runs in folders like
+        # ".guardkit/worktrees/FEAT-1234". Ask git which repository this
+        # belongs to before concluding it is not an allowlisted project.
+        #
+        # Deliberately done only after the direct name misses, so the ordinary
+        # case costs no extra git call.
+        main_root = _resolve_repo_root(Path(repo_root))
+        if main_root != Path(repo_root):
+            resolved_name = _get_repo_name(main_root)
+            if resolved_name:
+                repo_name = resolved_name
+                is_allowlisted = (
+                    repo_name in DEFAULT_ON_REPOS
+                    or _is_fleet_repo(repo_name)
+                )
 
     if not is_allowlisted:
         # Not allowlisted — default OFF

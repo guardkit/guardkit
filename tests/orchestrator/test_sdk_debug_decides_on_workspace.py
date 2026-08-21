@@ -148,7 +148,34 @@ class TestWorktreesResolveToTheirRepository:
             env=env,
         )
 
-        assert sdk_debug._get_repo_name(worktree) == "guardkit"
+        # The folder is called FEAT-1234, so the name alone misses the list...
+        assert sdk_debug._get_repo_name(worktree) == "FEAT-1234"
+        # ...but the decision still recognises which project it belongs to.
+        assert sdk_debug.preservation_enabled_for_repo(worktree) is True
+
+    def test_a_worktree_of_a_non_allowlisted_project_stays_off(self, tmp_path):
+        """The same resolution must not switch capture ON for a client project."""
+        repo = _make_repo(tmp_path, "some-client-project")
+        (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.com",
+        }
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True, env=env)
+
+        worktree = repo / ".guardkit" / "worktrees" / "FEAT-9999"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "--detach", str(worktree)],
+            cwd=repo,
+            check=True,
+            env=env,
+        )
+
+        assert sdk_debug.preservation_enabled_for_repo(worktree) is False
 
     def test_a_plain_directory_falls_back_to_its_own_name(self, tmp_path):
         """Outside any repository, the folder name is still the best answer."""
