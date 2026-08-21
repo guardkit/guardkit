@@ -27,6 +27,7 @@ underneath it is faked in every single test here.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 from pathlib import Path
 from typing import Optional
@@ -940,6 +941,15 @@ class TestACrashNamesTheTerminalItSupersedes:
 # ============================================================================
 
 
+# These two tests drive the REAL publish path
+# (``guardkit.memory.harvest_publisher``), which imports ``nats_core`` at module
+# top. ``nats-core`` is an unpublished sibling repo resolved by local path, so
+# CI's tests.yml (which installs only the ``dev`` extra from PyPI) cannot have
+# it. Skip cleanly there rather than erroring; everything else in this module
+# still runs in the main gate.
+_HAS_NATS_CORE = importlib.util.find_spec("nats_core") is not None
+
+
 class _StalledBroker:
     """A broker that accepts the connection and then answers nothing.
 
@@ -982,6 +992,7 @@ def _client_publishing_into_a_stall():
     return client
 
 
+@pytest.mark.skipif(not _HAS_NATS_CORE, reason="nats_core (memory extra) not installed")
 class TestTheTerminalIsNotHeldOpenByAStalledBroker:
     """The build's last line waits for the ceiling, plus a short goodbye."""
 

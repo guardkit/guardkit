@@ -135,6 +135,23 @@ jobs:
         #     down onto the one class that needs it, so the other 13 tests now
         #     run in tests.yml, and listing the file here runs all 15.
         #
+        #   * test_selector.py — harness DISPATCH (TASK-HMIG-006 Phase 3c).
+        #     Five of its tests construct a real LangGraphHarness
+        #     (`from guardkitfactory.harness import ...`), so they carry the
+        #     module's own `@_requires_guardkitfactory` skip and are inert in
+        #     tests.yml. Until this listing they ran in NO CI job — the same
+        #     trap described above — and three of them carried no guard at
+        #     all, so they ERRORED in tests.yml with ModuleNotFoundError
+        #     instead of skipping. Guarded now, and run for real here.
+        #   * test_doctor.py::TestActiveHarnessCheck — the `guardkit doctor`
+        #     active-harness check. One of its four tests asserts the
+        #     version-reporting branch, which is only reachable with
+        #     guardkitfactory really installed; it is skipped in tests.yml
+        #     and runs here. Scoped to the class node-id on purpose: the rest
+        #     of test_doctor.py is unrelated to the cross-repo seam. The
+        #     module is SDK-clean, so it collects here without
+        #     claude-agent-sdk.
+        #
         # `-o addopts=""` clears the repo's default --cov flags (the seam job
         # gates the contract, not coverage). `--strict-markers` fails fast if
         # the `seam` marker is ever removed from config.
@@ -145,4 +162,6 @@ jobs:
             tests/unit/orchestrator/test_wiring_gate.py \
             tests/orchestrator/test_permissive_double_surfacing.py \
             tests/orchestrator/test_wiring_callsite_drift_seam.py \
+            tests/orchestrator/harness/test_selector.py \
+            tests/unit/test_doctor.py::TestActiveHarnessCheck \
             -o addopts="" --strict-markers -v
