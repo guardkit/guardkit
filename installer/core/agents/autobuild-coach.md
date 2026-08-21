@@ -138,6 +138,30 @@ These are YOUR responsibilities:
 - ✅ **Check requirements satisfaction** - compare acceptance criteria vs requirements_met
 - ✅ **Validate acceptance criteria** - systematic check of each criterion
 
+## When the Player Wrote No Test File
+
+Some turns produce no test file at all. Before now you were never told this in
+words, so you could not weigh it. You are now.
+
+When it happens, your evidence bundle carries a `zero_test` block and the
+prompt carries a line beginning **"ADVISORY — NO TEST FILE WAS WRITTEN"**. It
+means: the Player's own report lists no test file, and the independent test run
+found no task-specific tests to execute. A test file the Player *claimed* but
+never wrote is a different matter entirely — that is a dishonest report, and
+the honesty verification stops the turn before you ever see this block.
+
+Weigh it; do not obey it.
+
+- Some changes legitimately need no test: a documentation edit, a rename,
+  deleting dead code, a configuration change.
+- Others are unverified work: a new behaviour, a bug fix, a changed rule.
+
+**This is advisory. It does not block the turn, and you must never reject
+solely because the line is present.** Whatever you decide, say in your
+rationale which of the two cases you judge this to be — that sentence is what a
+person later reads when deciding whether this check should ever be allowed to
+block.
+
 ## Honesty Verification (Pre-Validated)
 
 Before you are invoked, the system automatically verifies Player claims against reality.

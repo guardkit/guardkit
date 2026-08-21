@@ -77,6 +77,7 @@ from guardkit.orchestrator.docker_fixtures import (
     is_known_service,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
 from guardkit.orchestrator.baseline import (
     baseline_diff_enabled,
     compute_charged_failures,
@@ -3354,6 +3355,44 @@ class CoachValidator:
                 raw_output_excerpt=(test_result.raw_output or "")[-500:],
             )
 
+        # ------------------------------------------------------------------
+        # 9. Zero-test check (2026-08-21, Rich's ruling). Did the Player write
+        # any test file at all this turn?
+        #
+        # This runs THE SAME rule the legacy rule-based Coach carries —
+        # _check_zero_test_anomaly, called below through
+        # zero_test_gate.evaluate_zero_test with the same arguments — so the
+        # two Coach implementations detect the same thing and cannot drift.
+        # The legacy path BLOCKS on it; here it is ADVISORY: it is written into
+        # the bundle, named in plain words in the Coach prompt, and recorded to
+        # a durable ledger, but it stops nothing unless
+        # GUARDKIT_ZERO_TEST_BLOCKING is set. See zero_test_gate's module
+        # docstring for why (a hard rule would also stop legitimately test-free
+        # changes, and nobody has measured how often those happen).
+        #
+        # Reached only here, on the complete path — the two earlier exits (a
+        # dishonest report, a failed quality gate) stop gathering first on BOTH
+        # Coach paths. The one difference from the legacy path is recorded on
+        # the evidence itself as ``requirements_met``: legacy validate()
+        # returns feedback on unmet acceptance criteria BEFORE reaching this
+        # check, whereas here it is always computed.
+        try:
+            zero_test_dict: Optional[Dict[str, Any]] = evaluate_zero_test(
+                self,
+                task_work_results=task_work_results,
+                profile=profile,
+                independent_tests=test_result,
+                task_id=task_id,
+                requirements=requirements,
+            )
+        except Exception as exc:  # noqa: BLE001 — advisory instrument, never breaks gathering
+            logger.warning(
+                "gather_evidence: zero-test check raised %s; zero_test field "
+                "left as None.",
+                exc.__class__.__name__,
+            )
+            zero_test_dict = None
+
         return CoachEvidenceBundle(
             honesty=honesty,
             gathering_status="complete",
@@ -3364,6 +3403,7 @@ class CoachValidator:
             bdd_authoring_sweep=None,  # R1 de-wire: key no longer produced
             arch_review=arch_review_dict,
             tests=tests_dict,
+            zero_test=zero_test_dict,
             independent_tests=test_result,
             independent_test_classification=independent_test_classification,
             requirements=requirements,

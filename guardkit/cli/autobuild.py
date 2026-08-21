@@ -10,6 +10,7 @@ Example:
     $ guardkit autobuild status TASK-AB-001
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -1627,6 +1628,171 @@ def _display_ledger_sweep_result(sweep) -> None:
 
 
 # ============================================================================
+# Zero-Test Report — the reading instrument for the advisory zero-test check
+# ============================================================================
+
+
+def _zero_test_when(row: dict) -> str:
+    """The receipt's timestamp, trimmed to minutes. Empty when unrecorded."""
+    stamp = str(row.get("recorded_at") or "")
+    return stamp[:16].replace("T", " ")
+
+
+def _zero_test_what_changed(row: dict, width: int = 44) -> str:
+    """A short, human-readable summary of what the turn actually touched."""
+    files = list(row.get("files_created") or []) + list(
+        row.get("files_modified") or []
+    )
+    if not files:
+        return "(no files reported)"
+    shown = ", ".join(files[:3])
+    if len(files) > 3:
+        shown += f", +{len(files) - 3} more"
+    return shown if len(shown) <= width else shown[: width - 1] + "\u2026"
+
+
+@autobuild.command(name="zero-test-report")
+@click.option(
+    "--repo-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    multiple=True,
+    default=(),
+    help=(
+        "A repository whose ledger to read. Repeat it to read several at "
+        "once. Defaults to the current directory."
+    ),
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=20,
+    show_default=True,
+    help="How many un-adjudicated rows to list. Use 0 for all of them.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the raw ledger rows as JSON instead of a table.",
+)
+def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
+    """
+    How many builds wrote no tests — and how many of those were fine.
+
+    Every time an automated build finishes a turn in which the Player wrote no
+    test file, GuardKit records it. The check is advisory: it does not stop the
+    build, it only writes the record. This command reads those records.
+
+    It answers the first half of the question by itself: how many turns wrote
+    no tests. The second half — how many of those were LEGITIMATELY test-free
+    (a documentation edit, a rename, deleting dead code, a config change)
+    rather than unverified work — cannot be answered by a machine. So this
+    prints a short list for you to rule on, and remembers the rulings you have
+    already made.
+
+    \b
+    To rule on a row, open the ledger and set "legitimately_test_free" on it:
+        <repo>/.guardkit/zero-test/queue.jsonl
+    true means the change genuinely needed no test; false means it did.
+
+    \b
+    Each repository keeps its own ledger, because that is where its builds
+    run. Pass --repo-root once per repository to read several at once:
+        guardkit autobuild zero-test-report --repo-root ../forge --repo-root .
+
+    \b
+    Exit Codes:
+        0: Always. This is a report, not a gate.
+    """
+    from guardkit.orchestrator import zero_test_gate
+
+    roots = [Path(r) for r in repo_root] or [Path.cwd()]
+    rows = []
+    for root in roots:
+        rows.extend(zero_test_gate.read_receipts(root))
+
+    if as_json:
+        console.print_json(json.dumps(rows))
+        sys.exit(0)
+
+    ledgers = [root / zero_test_gate.ZERO_TEST_QUEUE for root in roots]
+    ledger = "\n  ".join(str(path) for path in ledgers)
+    if not rows:
+        console.print(
+            "[green]No build has been recorded writing zero tests.[/green]\n"
+        )
+        console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]")
+        console.print(
+            "[dim]An empty ledger means either that every build wrote a test, "
+            "or that no build has run since the check was installed.[/dim]"
+        )
+        sys.exit(0)
+
+    builds = {
+        (r.get("repo"), r.get("feature_id") or r.get("task_id")) for r in rows
+    }
+    ruled_free = [r for r in rows if r.get("legitimately_test_free") is True]
+    ruled_not = [r for r in rows if r.get("legitimately_test_free") is False]
+    unruled = [r for r in rows if r.get("legitimately_test_free") is None]
+    approved = [r for r in rows if r.get("coach_decision") == "approve"]
+
+    console.print(
+        Panel(
+            f"[bold]{len(rows)}[/bold] turn(s) wrote no test file, across "
+            f"[bold]{len(builds)}[/bold] build(s).\n"
+            f"The Coach approved [bold]{len(approved)}[/bold] of them anyway.\n\n"
+            f"Of the {len(rows)}, you have ruled "
+            f"[green]{len(ruled_free)}[/green] legitimately test-free and "
+            f"[red]{len(ruled_not)}[/red] not.\n"
+            f"[yellow]{len(unruled)}[/yellow] still "
+            f"{'needs' if len(unruled) == 1 else 'need'} your ruling.",
+            title="Builds that wrote no tests",
+            border_style="cyan",
+        )
+    )
+
+    if not unruled:
+        console.print(
+            "[green]Every recorded turn has been ruled on.[/green] "
+            "That fraction is the promotion decision."
+        )
+        console.print(f"\n[dim]Ledger(s):\n  {ledger}[/dim]")
+        sys.exit(0)
+
+    shown = unruled if limit <= 0 else unruled[-limit:]
+    table = Table(
+        title=f"Needs your ruling ({len(shown)} of {len(unruled)} shown)",
+        show_lines=False,
+    )
+    table.add_column("when", style="dim", no_wrap=True)
+    table.add_column("repo", no_wrap=True)
+    table.add_column("build / task", no_wrap=True)
+    table.add_column("coach", no_wrap=True)
+    table.add_column("what changed")
+    for row in shown:
+        decision = str(row.get("coach_decision") or "?")
+        table.add_row(
+            _zero_test_when(row),
+            str(row.get("repo") or "?"),
+            f"{row.get('feature_id') or '?'} / {row.get('task_id') or '?'}"
+            f" t{row.get('turn')}",
+            f"[red]{decision}[/red]" if decision == "approve" else decision,
+            _zero_test_what_changed(row),
+        )
+    console.print(table)
+    console.print(
+        "\n[dim]Rule on a row by setting \"legitimately_test_free\": true or "
+        "false on it in:[/dim]"
+    )
+    console.print(f"[dim]  {ledger}[/dim]")
+    console.print(
+        "[dim]true = the change genuinely needed no test (docs, rename, dead "
+        "code, config). false = it was unverified work.[/dim]"
+    )
+    sys.exit(0)
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
@@ -1636,6 +1802,7 @@ __all__ = [
     "status",
     "feature",
     "complete",
+    "zero_test_report",
     "_check_sdk_available",
     "_require_sdk",
 ]
