@@ -104,16 +104,68 @@ _ROLE_SUBPATH = {
 }
 
 
+def _resolve_repo_root(path: Path) -> Path:
+    """Map a path that may be a git WORKTREE onto its main repository root.
+
+    AutoBuild does its work inside linked worktrees such as
+    ``<repo>/.guardkit/worktrees/FEAT-1234``. The allowlist in
+    :data:`DEFAULT_ON_REPOS` names REPOSITORIES ("guardkit", "forge", ...), not
+    worktree directories, so reading the leaf directory name of a worktree
+    would see "FEAT-1234" and miss the allowlist entirely.
+
+    ``git rev-parse --git-common-dir`` returns the MAIN checkout's ``.git``
+    directory even when it is run from inside a linked worktree, so its parent
+    is the repository root.
+
+    Defensive on every axis: returns ``path`` unchanged whenever git is
+    missing, the path is not inside a repository, or the answer does not look
+    like a real ``.git`` directory on disk.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode != 0:
+            return path
+
+        answer = (result.stdout or "").strip()
+        if not answer:
+            return path
+
+        common_dir = Path(answer)
+        # Only trust an answer that really is an absolute path to an existing
+        # directory named ".git". Anything else (a bare repo, a submodule's
+        # .git/modules/... path, or a stubbed subprocess in a test) leaves the
+        # caller's path untouched rather than guessing.
+        if common_dir.is_absolute() and common_dir.name == ".git" and common_dir.is_dir():
+            return common_dir.parent
+        return path
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sdk_debug: could not resolve repo root for %s: %s", path, exc)
+        return path
+
+
 def _get_repo_name(repo_root: Union[str, Path]) -> Optional[str]:
     """Derive repo name from directory name with git remote cross-check.
 
     Returns the repo root directory name if git remote confirms it, else None.
     Defensive: swallows git subprocess failures and returns None.
+
+    A path inside a linked worktree is first mapped back to the repository it
+    belongs to (see :func:`_resolve_repo_root`), so that an AutoBuild worktree
+    named after a feature ID is still recognised as its parent repo.
     """
     try:
         repo_path = Path(repo_root)
         if not repo_path.exists():
             return None
+
+        repo_path = _resolve_repo_root(repo_path)
 
         # Try git remote to confirm repo identity
         result = subprocess.run(
@@ -555,10 +607,39 @@ def preserve_prompt(
     to both the prompt and options before writing. If redaction fails, the
     [REDACTION-FAILED] marker is written instead of the raw payload.
     """
-    if not preservation_enabled():
-        return None
+    # Decide using the tree we are about to WRITE INTO, not the directory the
+    # process happens to be running from.
+    #
+    # This previously called preservation_enabled(), which consults
+    # Path.cwd(). That made the answer depend on where the orchestrator was
+    # launched rather than on the workspace being captured, with two real
+    # consequences:
+    #
+    #   1. The keep-out-of-git safety check was run against the wrong tree.
+    #      Its whole job is to guarantee captured prompts cannot be committed,
+    #      and it was checking a directory we were not writing to.
+    #   2. Behaviour changed with the NAME of the checkout directory. A
+    #      checkout called "guardkit" is on the default-on allowlist, so the
+    #      same commit behaved differently in a worktree than in the main
+    #      checkout — including in the test suite.
+    #
+    # `workspace_root` is the directory this function writes to, so it is the
+    # only correct input to the decision.
     try:
         debug_dir = compute_debug_dir(workspace_root, task_id, turn, role)
+    except Exception as exc:  # noqa: BLE001 - never raise into the hot path
+        logger.warning(
+            "sdk_debug: could not compute debug dir for %s turn %s: %s",
+            task_id,
+            turn,
+            exc,
+        )
+        return None
+
+    if not preservation_enabled_for_repo(workspace_root, sdk_debug_dir=debug_dir):
+        return None
+
+    try:
         if debug_dir.exists():
             # Idempotent re-run: wipe any prior turn content. We do this
             # at the leaf (player/coach/test_run) so a new role write in
