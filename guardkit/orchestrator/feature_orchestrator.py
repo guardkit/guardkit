@@ -2869,6 +2869,54 @@ The detailed specifications are in the task markdown file.
         if ctor.get("status") == "ran":
             findings.extend(ctor.get("findings", []))
 
+        # CALLSITE_DRIFT, APERTURE B ONLY — promoted to turn-rejecting on
+        # Rich's word, 2026-08-21, on the strength of two measurements.
+        #
+        # What it catches: a call passing an argument name the receiving
+        # function does not accept. That is a guaranteed crash the moment the
+        # line runs, and it is what broke forge's planning boot three times.
+        #
+        # WHY APERTURE B IS PROMOTED. Two independent measurements:
+        #   * 1,068 tracked non-test files across five repos — 67 warnings
+        #     before the source-reading repairs, of which only 2 were real
+        #     (97% false); 2 after, both genuine, and both since fixed. 0%.
+        #   * 125 real signature-changing commits replayed from history — 6
+        #     findings, all 6 real. One was a live crash in study-tutor's
+        #     voice command line (an audio client built with six named
+        #     settings when its constructor takes a single config object); a
+        #     human found and fixed it weeks later. B would have caught it at
+        #     the point it was written.
+        #
+        # WHY APERTURE A IS **NOT** PROMOTED, and this filter is the whole
+        # point of the line below. Aperture A is the other half: when a
+        # signature changes this turn it hunts for stale callers elsewhere in
+        # the repo. It had NEVER been run in any measurement before
+        # 2026-08-21 — the shared analyzer entry point passes no baseline
+        # ("aperture B only here") and only a real build supplies one, so the
+        # 97%->0% figure never covered it. Measured for the first time over
+        # those same 125 commits it produced ZERO findings, and it is not
+        # blind (10 of 10 synthetic stale callers caught; correctly silent
+        # when the same commit fixed its own callers). But it carries a named,
+        # unrepaired defect: it decides WHICH functions changed by bare name
+        # across the whole repository while deciding WHETHER A CALL MATCHES
+        # per module. Those disagree. 30 of its 203 change-claims were about
+        # functions that never changed — two unrelated files sharing a name —
+        # so 224 of the 277 call sites it examined (81%) had nothing to do
+        # with the change being built. It found nothing there only because
+        # none happened to hold a latent bug. Promote it and a build could one
+        # day be stopped over a defect it did not cause and cannot fix.
+        #
+        # So: B blocks, A stays advisory (still surfaced to the Coach as
+        # evidence). Re-measure A after that name-resolution defect is fixed;
+        # it is the more valuable half in principle and worth having.
+        drift = wiring_result.get("callsite_drift") or {}
+        if drift.get("status") == "ran":
+            findings.extend(
+                f
+                for f in drift.get("findings", [])
+                if f.get("aperture") == "B"
+            )
+
         return findings
 
     def _surface_advisory_seam_findings(
