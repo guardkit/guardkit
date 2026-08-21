@@ -3932,6 +3932,49 @@ Turn: {turn}
                 + [f"... and {remainder} more (truncated for token budget)"]
             )
 
+    @staticmethod
+    def _count_permissive_doubles(
+        wiring_container: Optional[Dict[str, Any]],
+    ) -> Tuple[int, int]:
+        """Count permissive-double findings as ``(high_conf, low_conf)``.
+
+        A "permissive double" is a stand-in object a test uses in place of the
+        real thing which accepts any arguments at all, so the test stays green
+        even when the real call would fail because the argument names are
+        wrong. The factory writes these into
+        ``bundle.wiring["permissive_double"]["findings"]``.
+
+        High confidence means the stand-in is named after a real function in
+        the repo (``target_evidence == "name_matched"``) or literally declares
+        ``*args``/``**kwargs`` (``form == "star_args_fake"``). Everything else
+        is the ordinary ``patch("module.function")`` idiom, which is far too
+        common to treat as a defect signal.
+
+        Absence-safe: a missing key or any unexpected shape counts as ``(0, 0)``
+        rather than raising — this must never break prompt construction.
+        """
+        if not isinstance(wiring_container, dict):
+            return 0, 0
+        pd = wiring_container.get("permissive_double")
+        if not isinstance(pd, dict) or pd.get("status") != "ran":
+            return 0, 0
+        findings = pd.get("findings")
+        if not isinstance(findings, list):
+            return 0, 0
+        sharp = 0
+        broad = 0
+        for f in findings:
+            if not isinstance(f, dict):
+                continue
+            if (
+                f.get("target_evidence") == "name_matched"
+                or f.get("form") == "star_args_fake"
+            ):
+                sharp += 1
+            else:
+                broad += 1
+        return sharp, broad
+
     def _render_evidence_bundle_section(
         self,
         evidence_bundle: "CoachEvidenceBundle",
@@ -3953,10 +3996,20 @@ Turn: {turn}
         * ``evidence_bundle.stub_scan.findings`` — keep first 20 entries.
         * ``evidence_bundle.coverage.findings`` — keep first 20 entries.
         * ``evidence_bundle.behavioural_oracle.findings`` — keep first 20 entries.
+        * ``evidence_bundle.wiring.{permissive_double,callsite_drift,env_tamper,
+          ctor_arity}.findings`` — keep first 20 entries each. These four lists
+          are nested INSIDE the wiring result; before 2026-08-21 they were the
+          only finding lists written into the prompt unbounded.
 
         Each truncation appends a ``"... and N more"`` marker so the Coach
         knows the list was bounded. Non-list fields are bounded by gate
         computation and pass through unchanged.
+
+        One advisory line is appended after the JSON, naming
+        ``wiring.permissive_double`` and explaining in plain words what a
+        permissive double is and which of its findings are worth acting on.
+        The line is advisory text only: no gate and no verdict branch reads
+        those counts.
 
         The bundle's honesty channel is NOT duplicated here — it lives in
         the separate ``<honesty_verification>`` section emitted by
@@ -4029,6 +4082,27 @@ Turn: {turn}
         self._truncate_findings(bundle_dict.get("coverage"), self._COACH_WIRING_FINDINGS_LIMIT)
         self._truncate_findings(bundle_dict.get("behavioural_oracle"), self._COACH_WIRING_FINDINGS_LIMIT)
 
+        # Count the permissive-double findings BEFORE truncation, so the
+        # advisory line below reports the true totals.
+        permissive_sharp, permissive_broad = self._count_permissive_doubles(
+            bundle_dict.get("wiring")
+        )
+
+        # The factory nests four more finding lists INSIDE bundle.wiring
+        # (permissive_double / callsite_drift / env_tamper / ctor_arity). They
+        # were being written into the prompt in full, unbounded: one test file
+        # can carry 80+ permissive_double findings, which is thousands of
+        # wasted prompt tokens. Bound them by the same rule as their siblings.
+        wiring_container = bundle_dict.get("wiring")
+        if isinstance(wiring_container, dict):
+            for nested_key in (
+                "permissive_double", "callsite_drift", "env_tamper", "ctor_arity",
+            ):
+                self._truncate_findings(
+                    wiring_container.get(nested_key),
+                    self._COACH_WIRING_FINDINGS_LIMIT,
+                )
+
         try:
             payload = json.dumps(bundle_dict, indent=2, default=str)
         except Exception as exc:  # noqa: BLE001
@@ -4055,13 +4129,36 @@ Turn: {turn}
                     "only — never reject the turn on this count alone.\n"
                 )
 
+        # Permissive-double visibility (2026-08-21). The factory has always
+        # computed this into wiring.permissive_double and it has always been
+        # carried into this JSON, but nothing ever named it — so it sat
+        # unlabelled among a dozen sibling keys and no reader knew what it was.
+        # This line names it in plain words. Advisory prompt text ONLY: no gate
+        # and no verdict branch reads it, and the text itself says so.
+        permissive_advisory = ""
+        if permissive_sharp or permissive_broad:
+            permissive_advisory = (
+                f"\nADVISORY: wiring.permissive_double — "
+                f"{permissive_sharp} high-confidence, {permissive_broad} "
+                "low-confidence. A permissive double is a stand-in object a "
+                "test uses in place of the real thing which accepts ANY "
+                "arguments, so the test stays green even when the real call "
+                "would fail on wrong argument names. High-confidence entries "
+                "(target_evidence \"name_matched\", or form \"star_args_fake\") "
+                "are worth naming in your findings. Low-confidence entries "
+                "(form \"unspecced_mock\"/\"spec_mock\") are the ordinary "
+                "patch(\"module.function\") idiom and fire on most test files "
+                "— they are near-certainly not defects. Advisory only — never "
+                "reject the turn on these counts alone.\n"
+            )
+
         return f"""
 ## Deterministic Evidence Bundle
 
 <evidence_bundle>
 {payload}
 </evidence_bundle>
-{skip_advisory}"""
+{skip_advisory}{permissive_advisory}"""
 
     @staticmethod
     def _turn_rejecting_discrepancies(
