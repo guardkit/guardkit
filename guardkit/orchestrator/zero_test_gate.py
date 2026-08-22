@@ -33,16 +33,37 @@ makes that number wrong.
 reasons. It returns the same ``category`` for both, so nothing downstream
 could previously tell them apart. This module names them:
 
-``no_test_file`` — **no test exists for this turn.**
-    Fires when the Player's report names no test file at all
-    (``tests_written`` is empty) *and* the Coach's own independent test run
-    searched the worktree for task-specific tests and found none to execute
-    (it reports its command as ``"skipped"``). Both halves must hold.
+``no_test_file`` — **no test was FOUND for this turn.**
+    Fires when the Player's ``tests_written`` list is empty *and* the Coach's
+    own independent test run searched the worktree for task-specific tests
+    and found none to execute (it reports its command as ``"skipped"``).
+    Both halves must hold.
 
-    This is the situation the promotion question is about: a turn produced
-    code and no test, and a person must judge whether that was legitimate
-    (a documentation edit, a rename, deleting dead code, a configuration
-    change) or whether it was unverified work.
+    **Read that literally, because it is narrower than its name.** The rule
+    reads ``tests_written`` and nothing else. A Player may name a test file
+    under ``files_created`` / ``files_modified`` instead — the rule's own
+    remediation text tells it to do exactly that — and the rule will not see
+    it. And the search that reports ``"skipped"`` only ever looks for Python
+    tests it can collect, so it also comes up empty for a test written in
+    another language, a test excluded by ``collect_ignore_glob``, and
+    pytest-bdd glue. All three shapes have been reproduced against the real
+    rule; each reaches this branch with a real test file named in the report
+    and present on disk.
+
+    So this branch covers two situations, and the wording shown to the Coach
+    and printed in the report says which one a row is, from
+    ``claimed_test_files``:
+
+    * ``claimed_test_files`` empty — nothing in the whole report is a file
+      the Coach recognises as a test. **This** is the situation the promotion
+      question is about: a turn produced code and no test, and a person must
+      judge whether that was legitimate (a documentation edit, a rename,
+      deleting dead code, a configuration change) or unverified work.
+    * ``claimed_test_files`` non-empty — the report names test files that the
+      rule did not look at and the search could not run. The row is still
+      recorded under this branch, because the branch is defined by the rule's
+      control flow and nothing else, but a person must open the named files
+      before ruling it test-free. The report flags these rows for that reason.
 
 ``tests_not_executed`` — **tests may well exist; the Player's own report says
 none ran.**
@@ -56,12 +77,15 @@ none ran.**
     quality gate passed while simultaneously reporting that no test executed.
     That is a claim-versus-evidence problem, not a missing-test problem.
 
-Everything the older version of this module asserted about a fired check —
+Everything the first version of this module asserted about a fired check —
 "none of the files is a test file that exists on disk", "the independent test
-run found no task-specific tests" — is true of ``no_test_file`` and can be
-flatly **false** of ``tests_not_executed``. So the sentence shown to the
-Coach, the field written into the receipt, and the report a person reads are
-all branch-specific from here on.
+run found no task-specific tests" — can be flatly **false** of
+``tests_not_executed``. And the second version's replacement for branch one,
+"the Player's report for this turn names no test file", is false of every
+turn in the second bullet above. So the sentence shown to the Coach, the
+field written into the receipt, and the report a person reads are all
+branch-specific from here on, and within branch one they are specific to
+whether the report named a test file.
 
 WHICH BRANCH FEEDS THE PROMOTION MEASUREMENT — only the first
 --------------------------------------------------------------
@@ -72,6 +96,12 @@ and reported, but deliberately kept out of the rate, for three reasons:
 1. The promotion question is "how often does a turn legitimately need no
    test?". A ``tests_not_executed`` turn has not been shown to lack a test, so
    it cannot answer that question either way.
+   (A ``no_test_file`` row whose ``claimed_test_files`` is non-empty has not
+   been shown to lack one either. It still counts, because the branch follows
+   the rule's control flow rather than a second opinion about it, but the
+   report marks it so a person does not rule it test-free by mistake. If that
+   proves common in the accumulated rows, excluding it is a decision for
+   whoever reads the measurement, not for this module to take quietly.)
 2. The adjudication a person performs — marking a row
    ``legitimately_test_free`` — is meaningless for the second branch. The
    useful follow-up there is "why did the report claim a pass with no test
@@ -198,9 +228,25 @@ So this does not rely on that. Every append:
 On a platform without ``fcntl`` the append still happens, unlocked, rather
 than failing.
 
-Read the ledger with::
+ADJUDICATION GOES IN ITS OWN FILE — never in the ledger
+--------------------------------------------------------
+A person rules on a row by marking it ``legitimately_test_free``. That ruling
+is appended to ``rulings.jsonl`` beside the ledger, and the report joins the
+two on ``(repo, task_id, turn)``. It is a separate file because the ``flock``
+above serialises builds against **builds**; nothing serialises a build's
+append against a **person with the ledger open in an editor**, and whoever
+saves last would silently destroy the other's work. Rows already carrying an
+inline ``legitimately_test_free``, written by hand before this file existed,
+are still honoured.
+
+Read the ledger, and rule on a row, with::
 
     guardkit autobuild zero-test-report
+    guardkit autobuild zero-test-rule --task TASK-X --turn 1 --test-free
+
+Both resolve the repository through :func:`resolve_repo_root`, the same
+function the writing side goes through — so neither can be run from a
+directory that quietly looks in the wrong place.
 
 Neither write can ever break a build: every failure swallows to a warning.
 """
@@ -210,9 +256,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 try:  # pragma: no cover - exercised implicitly on POSIX, absent on Windows
     import fcntl
@@ -226,6 +273,7 @@ __all__ = [
     "ZERO_TEST_ROOT_ENV_VAR",
     "ZERO_TEST_HOME",
     "ZERO_TEST_QUEUE_FILENAME",
+    "ZERO_TEST_RULINGS_FILENAME",
     "LEGACY_IN_TREE_QUEUE",
     "ZERO_TEST_RECEIPT",
     "ANOMALY_CATEGORY",
@@ -235,13 +283,19 @@ __all__ = [
     "BRANCH_MEANINGS",
     "COUNTS_TOWARD_PROMOTION",
     "blocking_requested",
+    "resolve_repo_root",
     "ledger_path_for",
+    "rulings_path_for",
     "legacy_ledger_path_for",
     "evaluate_zero_test",
     "build_receipt",
     "write_receipt",
     "coach_advisory_text",
+    "LedgerRead",
+    "read_ledger",
     "read_receipts",
+    "ruling_key",
+    "record_ruling",
     "counts_toward_promotion",
 ]
 
@@ -260,8 +314,13 @@ ZERO_TEST_ROOT_ENV_VAR = "GUARDKIT_ZERO_TEST_ROOT"
 ZERO_TEST_HOME = Path.home() / ".guardkit" / "zero-test"
 
 #: The ledger file inside a repository's durable directory. One JSON object
-#: per line.
+#: per line. **Builds write this; a person never edits it.**
 ZERO_TEST_QUEUE_FILENAME = "queue.jsonl"
+
+#: A person's rulings on recorded rows, beside the ledger and separate from
+#: it. **A person writes this; a build never touches it.** See
+#: :func:`rulings_path_for` for why the two must not be the same file.
+ZERO_TEST_RULINGS_FILENAME = "rulings.jsonl"
 
 #: Where the ledger used to be written, in-tree and therefore destroyed by
 #: ``git clean -fdx``. Still READ so no recorded row is lost; never written.
@@ -276,8 +335,10 @@ ZERO_TEST_RECEIPT = ".guardkit/autobuild/{task_id}/zero_test_turn_{turn}.json"
 #: for BOTH branches below — which is exactly why this module labels them.
 ANOMALY_CATEGORY = "zero_test_anomaly"
 
-#: Branch 1: the Player named no test file AND the Coach's own search found no
-#: task-specific test to run. No test exists for this turn.
+#: Branch 1: the Player's ``tests_written`` list is empty AND the Coach's own
+#: search found no task-specific test to run. Note what this does NOT say —
+#: see :data:`BRANCH_MEANINGS`. The identifier is unchanged so that rows
+#: already in the ledger stay comparable.
 BRANCH_NO_TEST_FILE = "no_test_file"
 
 #: Branch 2: tests may exist, but the Player's report claims every quality
@@ -286,16 +347,18 @@ BRANCH_TESTS_NOT_EXECUTED = "tests_not_executed"
 
 #: Short human labels, for tables and one-line summaries.
 BRANCH_LABELS = {
-    BRANCH_NO_TEST_FILE: "no test file",
+    BRANCH_NO_TEST_FILE: "no test found",
     BRANCH_TESTS_NOT_EXECUTED: "0 tests ran",
 }
 
 #: One sentence per branch, for a person who has never read this module.
 BRANCH_MEANINGS = {
     BRANCH_NO_TEST_FILE: (
-        "No test exists for this turn: the Player named no test file, and the "
-        "Coach's own test run searched the worktree and found no "
-        "task-specific test to execute."
+        "No test was found for this turn: the Player's tests-written list is "
+        "empty, and the Coach's own test run searched the worktree and found "
+        "no task-specific test to execute. This rule never reads the report's "
+        "created/modified lists, so a test file named THERE is still "
+        "possible — check claimed_test_files before ruling on the row."
     ),
     BRANCH_TESTS_NOT_EXECUTED: (
         "Tests may well exist. The Player's report claims every quality gate "
@@ -331,6 +394,82 @@ def counts_toward_promotion(row: Mapping[str, Any]) -> bool:
     return row.get("branch") == COUNTS_TOWARD_PROMOTION
 
 
+def _main_worktree_of(git_link: Path) -> Optional[Path]:
+    """The main checkout behind a linked git worktree, or ``None``.
+
+    A linked worktree (anything made by ``git worktree add``) has a ``.git``
+    **file**, not a directory, holding one line::
+
+        gitdir: /path/to/main-checkout/.git/worktrees/<name>
+
+    The main checkout is the part before ``/.git/worktrees/``. Reading that
+    line is cheaper and more predictable than shelling out to git on a path
+    that only ever reports a measurement.
+    """
+    try:
+        text = git_link.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("gitdir:"):
+            continue
+        gitdir = Path(line.split(":", 1)[1].strip())
+        parts = gitdir.parts
+        for index in range(len(parts) - 1):
+            if parts[index] == ".git" and parts[index + 1] == "worktrees":
+                return Path(*parts[:index]) if index else None
+        return None
+    return None
+
+
+def resolve_repo_root(start: Any) -> Path:
+    """The repository a row belongs to, given ANY path inside it.
+
+    **Both the writing side and the reading side go through this one
+    function, and that is the point.** They used to answer the question
+    separately: a build keyed its rows by the repository it was building,
+    while ``guardkit autobuild zero-test-report`` keyed its lookup by whatever
+    directory the person happened to be standing in. Run the report one level
+    down and it looked in a directory that had never been written to, found
+    nothing, and said so — which reads as "no build skipped its tests". A
+    check whose answer is narrower than it reads is the exact fault this
+    instrument exists to catch, so it must not have one.
+
+    The answer, in order:
+
+    1. **An autobuild worktree** lives at
+       ``<repo>/.guardkit/worktrees/<task or feature id>/...``. Its rows
+       belong to ``<repo>``. This is the same strip
+       ``AgentInvoker._resolve_repo_root`` performs, kept first so the two
+       agree on the case that actually occurs in a build.
+    2. **Any other checkout**: the nearest enclosing directory holding a
+       ``.git``. When that ``.git`` is a *file* — a linked ``git worktree`` —
+       the main checkout behind it is used, so a lane worktree reports the
+       repository's rows rather than its own empty ones.
+    3. **Nothing git-like above it**: the path itself, unchanged. A temporary
+       directory in a test is its own repository, which is what a test wants.
+
+    The result is idempotent: resolving an already-resolved root returns it.
+    """
+    path = Path(start).resolve()
+
+    parts = path.parts
+    for index in range(len(parts) - 1):
+        if parts[index] == ".guardkit" and parts[index + 1] == "worktrees":
+            if index:
+                return Path(*parts[:index])
+
+    for candidate in (path, *path.parents):
+        git = candidate / ".git"
+        if git.is_file():
+            return _main_worktree_of(git) or candidate
+        if git.is_dir():
+            return candidate
+
+    return path
+
+
 def ledger_path_for(
     repo_root: Any, env: Optional[Mapping[str, str]] = None
 ) -> Path:
@@ -339,16 +478,41 @@ def ledger_path_for(
     ``~/.guardkit/zero-test/<repo name>/queue.jsonl`` by default;
     ``$GUARDKIT_ZERO_TEST_ROOT/<repo name>/queue.jsonl`` when that variable is
     set. See the module docstring for the Decision of Record behind this.
+
+    ``repo_root`` may be any path inside the repository: it is put through
+    :func:`resolve_repo_root` first, so a reader standing in a subdirectory
+    and a build writing from its worktree land on the same file **by
+    construction** rather than by both remembering to resolve.
     """
     source = os.environ if env is None else env
     configured = str(source.get(ZERO_TEST_ROOT_ENV_VAR, "") or "").strip()
     home = Path(configured) if configured else ZERO_TEST_HOME
-    return home / Path(repo_root).resolve().name / ZERO_TEST_QUEUE_FILENAME
+    return home / resolve_repo_root(repo_root).name / ZERO_TEST_QUEUE_FILENAME
+
+
+def rulings_path_for(
+    repo_root: Any, env: Optional[Mapping[str, str]] = None
+) -> Path:
+    """Where a person's rulings on this repository's rows are kept.
+
+    **A separate file from the ledger, deliberately.** Builds append to
+    ``queue.jsonl`` continuously and concurrently; the append is serialised
+    against other *builds* by an ``flock`` (see
+    :func:`_append_line_atomically`), but nothing serialises it against a
+    **person with the file open in an editor**. Whoever saves last wins, and
+    what gets lost is either a build's row or a person's ruling — silently,
+    in the one file this instrument exists to accumulate.
+
+    So rulings go in their own append-only journal beside the ledger, and the
+    report joins the two on ``(repo, task_id, turn)``. Nothing a person edits
+    is ever a file a build writes.
+    """
+    return ledger_path_for(repo_root, env).with_name(ZERO_TEST_RULINGS_FILENAME)
 
 
 def legacy_ledger_path_for(repo_root: Any) -> Path:
     """The old in-tree ledger path. Read for continuity; never written."""
-    return Path(repo_root) / LEGACY_IN_TREE_QUEUE
+    return resolve_repo_root(repo_root) / LEGACY_IN_TREE_QUEUE
 
 
 def _string_list(value: Any) -> List[str]:
@@ -519,22 +683,74 @@ def _requirements_met(requirements: Any) -> Optional[bool]:
     return bool(value) if isinstance(value, bool) else None
 
 
+_WEIGH_THIS = (
+    "Weigh this. It is ADVISORY and does NOT block the turn on its own, "
+    "and you must not reject solely because this line is present — say in "
+    "your rationale which of the two cases you judge this to be.\n"
+)
+
+
 def _no_test_file_advisory(evidence: Dict[str, Any]) -> str:
-    """The sentence for branch one. Every claim in it is true of that branch."""
+    """The sentence for branch one — in the two forms that branch really has.
+
+    **Branch one establishes exactly two things**, and this wording must not
+    exceed them:
+
+    * the Player's ``tests_written`` list is empty, and
+    * the Coach's own independent test run found no task-specific test it
+      could execute.
+
+    It does **not** establish that the report names no test file. The rule
+    reads ``tests_written`` and nothing else, while a Player is free to list
+    a test under ``files_created`` / ``files_modified`` — the rule's own
+    remediation text tells it to. And the Coach's search that reports
+    ``skipped`` only ever looks for Python tests it can collect, so it comes
+    up empty for a test written in another language, a test excluded from
+    collection by ``collect_ignore_glob``, and pytest-bdd glue. Every one of
+    those is a turn that reaches this branch with a real, present test file
+    named in its report.
+
+    So the branch has two shapes and gets two sentences. Which one applies is
+    read from ``claimed_test_files`` — the list this module already builds
+    from all three of the report's file lists.
+    """
     created = evidence.get("files_created") or []
     modified = evidence.get("files_modified") or []
+    named = evidence.get("claimed_test_files") or []
+    on_disk = evidence.get("test_files_on_disk") or []
+
+    if not named:
+        return (
+            "\nADVISORY — NO TEST FILE WAS WRITTEN: the Player's report for "
+            "this turn lists nothing under tests_written, none of the "
+            f"{len(created)} file(s) it created or {len(modified)} file(s) it "
+            "modified is a file the Coach recognises as a test, and the "
+            "Coach's own independent test run searched the worktree and found "
+            "no task-specific test to execute.\n"
+            "Some changes legitimately need no test — a documentation edit, a "
+            "rename, deleting dead code, a configuration change. Others do "
+            "not: a new behaviour with no test is unverified work.\n"
+            + _WEIGH_THIS
+        )
+
+    listing = ", ".join(str(name) for name in named[:3])
+    if len(named) > 3:
+        listing += f", +{len(named) - 3} more"
     return (
-        "\nADVISORY — NO TEST FILE WAS WRITTEN: the Player's report for this "
-        f"turn names no test file, lists {len(created)} file(s) created and "
-        f"{len(modified)} file(s) modified, and the Coach's own independent "
-        "test run searched the worktree and found no task-specific test to "
-        "execute.\n"
-        "Some changes legitimately need no test — a documentation edit, a "
-        "rename, deleting dead code, a configuration change. Others do not: a "
-        "new behaviour with no test is unverified work.\n"
-        "Weigh this. It is ADVISORY and does NOT block the turn on its own, "
-        "and you must not reject solely because this line is present — say in "
-        "your rationale which of the two cases you judge this to be.\n"
+        "\nADVISORY — NO TEST RAN, AND NONE WAS LISTED AS WRITTEN: the "
+        "Player's report for this turn lists nothing under tests_written, and "
+        "the Coach's own independent test run found no task-specific test it "
+        f"could execute — but the report DOES name {len(named)} file(s) that "
+        f"look like tests ({listing}), of which {len(on_disk)} exist(s) on "
+        "disk.\n"
+        "This is one of two turns and the check cannot tell which: a turn "
+        "that genuinely produced no test, or a turn whose test the Coach "
+        "could not find or could not run. Its search only collects Python "
+        "tests, so three quite different things look identical to it — a "
+        "test written in another language, a test excluded from collection, "
+        "and a test that is not at the path the report gives. Open the named "
+        "file(s) before you judge.\n"
+        + _WEIGH_THIS
     )
 
 
@@ -774,17 +990,163 @@ def _read_jsonl(ledger_path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
+def ruling_key(row: Mapping[str, Any]) -> Tuple[str, str]:
+    """The identity a ruling and the row it rules on are joined by.
+
+    ``(task, turn)``. The repository is deliberately NOT part of the key:
+    a ledger and its rulings journal are already two files inside one
+    repository's directory, so adding the repository could only ever make a
+    row and its ruling fail to meet — which is how a person's decision goes
+    missing. Rows recorded before the ``repo`` field existed still join.
+
+    Both halves are coerced to strings so a turn recorded as ``1`` and one
+    written as ``"1"`` still meet.
+    """
+    return (str(row.get("task_id") or ""), str(row.get("turn")))
+
+
+def record_ruling(
+    *,
+    repo_root: Any,
+    task_id: str,
+    turn: int,
+    legitimately_test_free: bool,
+    note: Optional[str] = None,
+    repo: Optional[str] = None,
+    env: Optional[Mapping[str, str]] = None,
+    now: Optional[str] = None,
+) -> Path:
+    """Append one person's ruling on one recorded turn. Returns the file.
+
+    Appended, never rewritten, and to a file **no build ever opens** — so a
+    ruling cannot lose a race with a build finishing a turn, in either
+    direction. Ruling the same turn twice is allowed and the later line wins;
+    that is how a person changes their mind without editing anything.
+    """
+    resolved = resolve_repo_root(repo_root)
+    record = {
+        "schema": "zero_test_ruling/1",
+        "ruled_at": now or datetime.now(timezone.utc).isoformat(),
+        "repo": repo or resolved.name,
+        "task_id": task_id,
+        "turn": turn,
+        "legitimately_test_free": bool(legitimately_test_free),
+        "note": note,
+    }
+    path = rulings_path_for(repo_root, env)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _append_line_atomically(path, json.dumps(record, sort_keys=True) + "\n")
+    return path
+
+
+def _apply_rulings(
+    rows: List[Dict[str, Any]], rulings: Sequence[Mapping[str, Any]]
+) -> None:
+    """Fold the rulings journal onto the rows it rules on, in place.
+
+    Later rulings overwrite earlier ones for the same turn. A row already
+    carrying an inline ``legitimately_test_free`` — written by hand into the
+    ledger before rulings had their own file — keeps its value unless a
+    ruling names it, so nothing anybody has already decided is lost.
+    """
+    verdicts: Dict[Tuple[str, str], Mapping[str, Any]] = {}
+    for ruling in rulings:
+        if not isinstance(ruling, Mapping):
+            continue
+        if not isinstance(ruling.get("legitimately_test_free"), bool):
+            continue
+        verdicts[ruling_key(ruling)] = ruling
+
+    for row in rows:
+        ruling = verdicts.get(ruling_key(row))
+        if ruling is None:
+            continue
+        row["legitimately_test_free"] = ruling["legitimately_test_free"]
+        row["ruled_at"] = ruling.get("ruled_at")
+        row["ruling_note"] = ruling.get("note")
+
+
+@dataclass(frozen=True)
+class LedgerRead:
+    """One repository's rows, **and where they were looked for**.
+
+    The second half is not decoration. ``rows == []`` has two completely
+    different causes — no ledger file exists at the resolved location, or a
+    ledger exists and is empty — and only the second is a clean bill of
+    health. Reporting them as one is how a check comes to answer a narrower
+    question than it appears to, so the caller is handed both.
+    """
+
+    repo_root: Path
+    ledger_path: Path
+    legacy_path: Path
+    rulings_path: Path
+    ledger_exists: bool
+    legacy_exists: bool
+    rows: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def any_ledger_file(self) -> bool:
+        """Was there anything to read at all? ``False`` means: never looked."""
+        return self.ledger_exists or self.legacy_exists
+
+    @property
+    def paths_read(self) -> List[Path]:
+        """The files that actually exist, for naming in a report."""
+        return [
+            path
+            for path, exists in (
+                (self.ledger_path, self.ledger_exists),
+                (self.legacy_path, self.legacy_exists),
+            )
+            if exists
+        ]
+
+
+def read_ledger(
+    repo_root: Any, env: Optional[Mapping[str, str]] = None
+) -> LedgerRead:
+    """Read one repository's rows and report where they were read from.
+
+    ``repo_root`` may be any path inside the repository — it goes through
+    :func:`resolve_repo_root`, the same function the writing side goes
+    through, so a report run from a subdirectory reads the file a build
+    wrote.
+
+    Reads the durable ledger, then any rows still sitting at the old in-tree
+    path so that nothing recorded before the move is dropped, then folds on
+    the separate rulings journal. A malformed line is skipped with a warning
+    rather than aborting the read — a measurement instrument that refuses to
+    report because one row is corrupt is worse than one that reports the rest.
+    """
+    resolved = resolve_repo_root(repo_root)
+    ledger = ledger_path_for(resolved, env)
+    legacy = legacy_ledger_path_for(resolved)
+    rulings = rulings_path_for(resolved, env)
+
+    rows = _read_jsonl(ledger)
+    rows.extend(_read_jsonl(legacy))
+    _apply_rulings(rows, _read_jsonl(rulings))
+
+    return LedgerRead(
+        repo_root=resolved,
+        ledger_path=ledger,
+        legacy_path=legacy,
+        rulings_path=rulings,
+        ledger_exists=ledger.is_file(),
+        legacy_exists=legacy.is_file(),
+        rows=rows,
+    )
+
+
 def read_receipts(
     repo_root: Path, env: Optional[Mapping[str, str]] = None
 ) -> List[Dict[str, Any]]:
-    """Read one repository's recorded rows, oldest first.
+    """One repository's recorded rows, oldest first, rulings folded in.
 
-    Reads the durable ledger, and then any rows still sitting at the old
-    in-tree path so that nothing recorded before the move is dropped. A
-    malformed line is skipped with a warning rather than aborting the read —
-    a measurement instrument that refuses to report because one row is corrupt
-    is worse than one that reports the rest.
+    Thin wrapper over :func:`read_ledger` for callers that only want the
+    rows. Anything that prints a verdict should use :func:`read_ledger`
+    instead and check :attr:`LedgerRead.any_ledger_file`, so that "found
+    nothing" is never printed as "nothing to find".
     """
-    rows = _read_jsonl(ledger_path_for(repo_root, env))
-    rows.extend(_read_jsonl(legacy_ledger_path_for(repo_root)))
-    return rows
+    return read_ledger(repo_root, env).rows
