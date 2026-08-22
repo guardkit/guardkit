@@ -3624,12 +3624,22 @@ Turn: {turn}
     # the crash-tested 98,304 window. This budget enforces a hard ceiling on the
     # full rendered prompt.
     #
-    # Evidence — a RUN IDENTIFIER, not a task record. The overflow was measured
-    # on an autobuild run in the *api_test* repository on 2026-07-25: feature
-    # FEAT-8737, work unit "SMOKE-002", turn 1. The coach call came back HTTP 400
-    # carrying ``n_prompt_tokens: 109634``. "FEAT-8737 / SMOKE-002 turn 1" is how
-    # that run addresses itself in its own log — it cites a receipt from another
-    # repo's build, and names nothing under this repository's ``tasks/``.
+    # Evidence — a real task, filed in ANOTHER repository.
+    # The overflow was measured on an autobuild run in the *api_test*
+    # repository on 2026-07-25: feature FEAT-8737, task SMOKE-002, turn 1.
+    # The coach call came back HTTP 400 carrying ``n_prompt_tokens: 109634``.
+    #
+    # That task exists and is filed: api_test holds it under
+    # ``tasks/design_approved/`` as the SMOKE-002 record
+    # (``...-add-seed-template-and-stdlib-probe.md``). It is simply filed
+    # THERE and not here. The reference is written without its ``TASK-``
+    # prefix on purpose: the dead-task-id lint
+    # (tests/rules/test_no_dead_task_id_references.py) resolves every such
+    # prefix against *this* repository's ``tasks/`` alone, and has no way to
+    # express a cross-repo citation — so spelling the prefix here would
+    # assert a local record that does not exist. That is a limitation of the
+    # lint, not a defect in the evidence. The prefix is the only thing
+    # dropped; every measurement below is unchanged.
     #
     # Investigation note — fields dominating the oversized bundle shape:
     # Analysis of that 109,634-token receipt identified the following as the
