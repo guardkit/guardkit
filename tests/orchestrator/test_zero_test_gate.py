@@ -136,6 +136,17 @@ def _feature_profile():
     return get_profile(TaskType.FEATURE)
 
 
+def _coach_instructions() -> str:
+    """The written instructions the live (language-model) Coach is installed with."""
+    return (
+        Path(__file__).resolve().parents[2]
+        / "installer"
+        / "core"
+        / "agents"
+        / "autobuild-coach.md"
+    ).read_text(encoding="utf-8")
+
+
 def _fired_evidence(**overrides) -> dict:
     evidence = {
         "fired": True,
@@ -448,13 +459,7 @@ def test_the_coachs_standing_instructions_mention_the_case() -> None:
     that the model's own instruction file never mentioned the case, so a
     reader could not tell whether the model had weighed it or never seen it.
     """
-    instructions = (
-        Path(__file__).resolve().parents[2]
-        / "installer"
-        / "core"
-        / "agents"
-        / "autobuild-coach.md"
-    ).read_text(encoding="utf-8")
+    instructions = _coach_instructions()
     assert "When the Tests Are Missing — or Were Never Run" in instructions
     # BOTH branches, told apart. An instruction file that described only one
     # of them would leave the model applying branch one's remedy ("write a
@@ -809,7 +814,7 @@ def test_the_report_answers_both_halves_of_the_promotion_question(
     assert result.exit_code == 0
     output = _flat(result.output)
     # Half one: the count, answered by the machine.
-    assert "2 wrote no test file" in output
+    assert "2 had no test found" in output
     assert "the Coach approved 2 of them anyway" in output
     # Half two: the rulings so far, and the short list still needing one.
     assert "1 legitimately test-free" in output
@@ -863,20 +868,59 @@ def test_the_report_can_read_several_repositories_at_once(
     assert "TASK-F" in result.output
 
 
-def test_the_report_says_so_plainly_when_nothing_has_been_recorded(
+def test_the_report_says_so_plainly_when_the_ledger_is_there_and_empty(
     tmp_path: Path,
 ) -> None:
+    """A clean bill of health — and the ONLY case that earns one.
+
+    The ledger exists, so the report really did look at the place builds
+    write to, and really did find nothing there.
+    """
     from click.testing import CliRunner
 
     from guardkit.cli.autobuild import zero_test_report
 
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("")
+
     result = CliRunner().invoke(
         zero_test_report, ["--repo-root", str(tmp_path)]
     )
+    output = _flat(result.output)
     assert result.exit_code == 0
-    assert (
-        "No build has been recorded with missing or unrun tests."
-        in result.output.replace("\n", " ")
+    assert "No build has been recorded with missing or unrun tests." in output
+    assert "The ledger exists and is empty" in output
+    assert "NO LEDGER FILE EXISTS" not in output
+
+
+def test_no_ledger_at_all_is_never_reported_as_a_clean_result(
+    tmp_path: Path,
+) -> None:
+    """"Found nothing" and "nothing to find" are different, and must read so.
+
+    This is the instrument's own disease: a check that answers a narrower
+    question than it appears to. Someone runs the report, sees a clean
+    result, and concludes that no build skipped its tests — when in fact no
+    ledger was ever opened. It must say which of the two happened.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    assert not gate.ledger_path_for(tmp_path).exists()
+
+    result = CliRunner().invoke(
+        zero_test_report, ["--repo-root", str(tmp_path)]
+    )
+    output = _flat(result.output)
+
+    assert result.exit_code == 0
+    assert "NO LEDGER FILE EXISTS" in output
+    assert "not a clean result" in output
+    assert "No build has been recorded" not in output, (
+        "a missing ledger was reported as a clean bill of health — the exact "
+        "fault this instrument exists to catch"
     )
 
 
@@ -1070,10 +1114,18 @@ def test_the_branch_two_advisory_never_claims_that_no_test_was_written() -> None
 
 
 def test_the_branch_one_advisory_says_only_what_is_true_of_branch_one() -> None:
+    """The turn that really wrote nothing gets the flat statement.
+
+    ``claimed_test_files`` empty means nothing anywhere in the report — not
+    just in ``tests_written`` — is a file the Coach recognises as a test. That
+    is the only shape of branch one about which "no test file was written"
+    can be said.
+    """
     text = gate.coach_advisory_text(_fired_evidence())
 
     assert "NO TEST FILE WAS WRITTEN" in text
-    assert "names no test file" in text
+    assert "lists nothing under tests_written" in text
+    assert "is a file the Coach recognises as a test" in text
     assert "found no task-specific test to execute" in text
     assert "does NOT block" in text
 
@@ -1105,7 +1157,7 @@ def test_the_receipt_records_which_branch_fired(tmp_path: Path) -> None:
     assert rows["TASK-TWO"]["branch"] == gate.BRANCH_TESTS_NOT_EXECUTED
     assert rows["TASK-TWO"]["counts_toward_promotion"] is False
     # Each row explains itself to a reader who has never seen this module.
-    assert "no test exists" in rows["TASK-ONE"]["branch_meaning"].lower()
+    assert "no test was found" in rows["TASK-ONE"]["branch_meaning"].lower()
     assert "may well exist" in rows["TASK-TWO"]["branch_meaning"].lower()
 
 
@@ -1190,10 +1242,10 @@ def test_the_report_keeps_the_two_situations_apart(tmp_path: Path) -> None:
     )
 
     # Counted separately...
-    assert "1 wrote no test file" in output
+    assert "1 had no test found" in output
     assert "1 claimed a passing quality gate while reporting that 0 tests ran" in output
     # ...listed separately...
-    assert "NO TEST FILE — needs your ruling" in output
+    assert "NO TEST FOUND — needs your ruling" in output
     assert "REPORT CLAIMED A PASS WITH NO TEST RUN" in output
     # ...and only the first feeds the number the promotion decision rests on.
     assert "The promotion measurement is the first group only" in output
@@ -1267,7 +1319,7 @@ def test_rows_recorded_before_the_branches_existed_are_not_guessed_at(
         .output
     )
 
-    assert "1 were recorded before the two situations were told apart" in output
+    assert "1 was recorded before the two situations were told apart" in output
     assert "excluded from the promotion measurement" in output
 
 
@@ -1509,6 +1561,7 @@ from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("ztg", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
+sys.modules["ztg"] = module  # required before exec_module; see importlib docs
 spec.loader.exec_module(module)
 
 ledger, writer, count, go = Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5]
@@ -1661,3 +1714,692 @@ def test_every_recorded_row_survives_a_reader_running_at_the_same_time(
 
     assert seen_bad == []
     assert len(gate.read_receipts(tmp_path)) == 40
+
+
+# ===========================================================================
+# 12. THE WORDING OF BRANCH ONE MUST BE TRUE OF EVERY TURN THAT REACHES IT
+#
+# The rule reads ``tests_written`` and nothing else. A Player may name a test
+# file under ``files_created`` / ``files_modified`` — the rule's own
+# remediation text tells it to — and the rule will not see it. Separately, the
+# Coach's search that reports ``"skipped"`` only ever collects PYTHON tests,
+# so it also comes up empty for a test in another language, a test excluded
+# from collection, and pytest-bdd glue.
+#
+# Every combination of those reaches branch one on a turn whose report DOES
+# name a real, present test file. The tests below build those turns for real
+# and run the real rule over them: no mocked rule, no hand-made "skipped"
+# result, no hand-written evidence dict.
+# ===========================================================================
+
+
+def _real_branch_one_evidence(worktree: Path, results: dict) -> dict:
+    """Run the REAL rule and the REAL independent test run over one turn.
+
+    Nothing here is stubbed. ``run_independent_tests`` walks its whole
+    detection ladder against the files actually on disk, and
+    ``evaluate_zero_test`` calls ``CoachValidator._check_zero_test_anomaly``
+    itself. What comes back is what a live build would have produced.
+    """
+    validator = CoachValidator(str(worktree), task_id="TASK-ZT-001")
+    independent = validator.run_independent_tests(
+        task_work_results=results, task=None, turn=1
+    )
+    assert independent.test_command == "skipped", (
+        "this turn did not reach branch one; the detection ladder found "
+        f"{independent.test_command!r} to run"
+    )
+    evidence = gate.evaluate_zero_test(
+        validator,
+        task_work_results=results,
+        profile=_feature_profile(),
+        independent_tests=independent,
+        task_id="TASK-ZT-001",
+        requirements=None,
+    )
+    assert evidence["fired"] is True
+    assert evidence["branch"] == gate.BRANCH_NO_TEST_FILE
+    return evidence
+
+
+@pytest.mark.parametrize(
+    "test_file, description",
+    [
+        ("src/widget.test.ts", "a TypeScript test — the search collects only Python"),
+        ("src/widget_test.go", "a Go test — likewise invisible to the search"),
+        ("tests/Widget/Tests/WidgetTests.cs", "a .NET test — likewise"),
+    ],
+)
+def test_branch_one_never_claims_no_test_file_when_the_report_names_one(
+    tmp_path: Path, test_file: str, description: str
+) -> None:
+    """The sentence must be true of THIS turn, not of the branch's name.
+
+    Each of these is a real turn: the Player wrote a test, listed it under
+    ``files_created``, and left ``tests_written`` empty. The rule fires
+    because it only ever reads ``tests_written``, and the Coach's search
+    reports ``skipped`` because it only ever collects Python. Telling the
+    Coach "the Player's report names no test file" would be a plain
+    falsehood, and it is what the previous wording said.
+    """
+    worktree = _worktree(tmp_path)
+    written = worktree / test_file
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text("// a test\n")
+    results = _results(files_created=["src/widget.src", test_file])
+
+    evidence = _real_branch_one_evidence(worktree, results)
+
+    assert evidence["tests_written"] == []
+    assert evidence["claimed_test_files"] == [test_file], description
+    assert evidence["test_files_on_disk"] == [test_file]
+
+    text = gate.coach_advisory_text(evidence)
+    assert "NO TEST FILE WAS WRITTEN" not in text, (
+        f"branch one told the Coach no test file was written, but {test_file} "
+        "is named in the report and present on disk"
+    )
+    assert "names no test file" not in text
+    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" in text
+    assert "lists nothing under tests_written" in text
+    assert "DOES name 1 file(s) that look like tests" in text
+    assert test_file in text
+    assert "1 exist(s) on disk" in text
+    assert "does NOT block" in text
+
+
+def test_branch_one_is_honest_about_a_python_test_excluded_from_collection(
+    tmp_path: Path,
+) -> None:
+    """The same falsehood, reachable without leaving Python.
+
+    A root ``conftest.py`` carrying ``collect_ignore_glob`` tells pytest not
+    to collect a path. The Coach's detection honours it, so a perfectly
+    ordinary ``test_*.py`` written this turn leaves the search with nothing to
+    run — and the rule, reading only ``tests_written``, fires.
+    """
+    worktree = _worktree(tmp_path)
+    (worktree / "conftest.py").write_text('collect_ignore_glob = ["tests/wip/*"]\n')
+    (worktree / "tests" / "wip").mkdir(parents=True, exist_ok=True)
+    (worktree / "tests" / "wip" / "test_widget.py").write_text(
+        "def test_widget():\n    assert True\n"
+    )
+    results = _results(
+        files_created=["src/widget.py", "tests/wip/test_widget.py"]
+    )
+
+    evidence = _real_branch_one_evidence(worktree, results)
+    text = gate.coach_advisory_text(evidence)
+
+    assert evidence["test_files_on_disk"] == ["tests/wip/test_widget.py"]
+    assert "NO TEST FILE WAS WRITTEN" not in text
+    assert "tests/wip/test_widget.py" in text
+    assert "Open the named file(s) before you judge." in text
+
+
+def test_branch_one_still_says_no_test_was_written_when_none_was(
+    tmp_path: Path,
+) -> None:
+    """The control. A genuinely test-free turn must still be named as one.
+
+    Without this, the fix above could be "never say it" — which would lose
+    the finding the instrument exists to make.
+    """
+    worktree = _worktree(tmp_path)
+    (worktree / "docs").mkdir(parents=True, exist_ok=True)
+    (worktree / "docs" / "guide.md").write_text("# guide\n")
+    results = _results(files_created=["docs/guide.md"])
+
+    evidence = _real_branch_one_evidence(worktree, results)
+    text = gate.coach_advisory_text(evidence)
+
+    assert evidence["claimed_test_files"] == []
+    assert "NO TEST FILE WAS WRITTEN" in text
+    assert "is a file the Coach recognises as a test" in text
+    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" not in text
+
+
+def test_the_branch_meaning_stamped_on_every_row_is_true_of_the_branch() -> None:
+    """The receipt carries this sentence; a report months later reads it.
+
+    It must not assert the thing the rule never checked.
+    """
+    meaning = gate.BRANCH_MEANINGS[gate.BRANCH_NO_TEST_FILE]
+
+    assert "tests-written list is empty" in meaning
+    assert "named no test file" not in meaning
+    assert "created/modified lists" in meaning
+
+
+def test_the_coachs_instructions_do_not_claim_the_turn_produced_no_test() -> None:
+    """The Coach's standing instructions said it too, in its own words.
+
+    The advisory line and the instructions are read together, so fixing one
+    and leaving the other still leaves a false statement in front of the
+    model.
+    """
+    text = _coach_instructions()
+
+    assert "So this turn produced no test." not in text
+    assert "the Player's own report names no test file" not in text
+    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" in text
+    assert "reads `tests_written` and nothing else" in text
+    assert "only collects Python tests" in text
+
+
+def test_the_report_flags_a_row_that_names_a_test_the_rule_never_read(
+    tmp_path: Path,
+) -> None:
+    """A person ruling on rows must not rule this one test-free by mistake.
+
+    The card looks identical to a turn that wrote nothing — same branch, same
+    empty ``tests_written``. The only thing separating them is a file list the
+    rule does not consult, so the report has to put it on the card.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "repo": "repo",
+                "task_id": "TASK-TS",
+                "turn": 1,
+                "branch": gate.BRANCH_NO_TEST_FILE,
+                "coach_decision": "approve",
+                "files_created": ["src/widget.ts", "src/widget.test.ts"],
+                "files_modified": [],
+                "tests_written": [],
+                "claimed_test_files": ["src/widget.test.ts"],
+                "test_files_on_disk": ["src/widget.test.ts"],
+                "legitimately_test_free": None,
+            }
+        )
+        + "\n"
+    )
+
+    result = CliRunner().invoke(
+        zero_test_report, ["--repo-root", str(tmp_path)]
+    )
+    output = _flat(result.output)
+
+    assert result.exit_code == 0
+    assert "CHECK BEFORE RULING" in output
+    assert "names 1 test file(s) outside tests_written" in output
+    assert "src/widget.test.ts" in output
+    assert "on disk" in output
+
+
+# ===========================================================================
+# 13. THE READING COMMAND MUST NOT ANSWER A NARROWER QUESTION THAN IT READS
+#
+# A build keys its rows by the repository it is building. The report used to
+# key its lookup by whatever directory the person happened to be standing in,
+# so running it one level down found nothing — and said so in green. That is
+# the instrument's own disease sitting inside the instrument.
+#
+# Both sides now go through one function, ``resolve_repo_root``, so they
+# cannot drift apart again.
+# ===========================================================================
+
+
+def _a_real_repository(tmp_path: Path) -> Path:
+    """An actual git repository, because the resolver looks for a real one."""
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-q"], cwd=str(repo), check=True, capture_output=True
+    )
+    return repo
+
+
+def _one_recorded_row(repo: Path, task_id: str = "TASK-A") -> None:
+    """Write one row the way a real build writes it: keyed by the repository."""
+    build_worktree = repo / ".guardkit" / "worktrees" / "FEAT-X"
+    build_worktree.mkdir(parents=True, exist_ok=True)
+    record = gate.build_receipt(
+        evidence=_fired_evidence(),
+        task_id=task_id,
+        turn=1,
+        feature_id="FEAT-X",
+        repo=repo.name,
+        repo_path=str(repo),
+        coach_decision="approve",
+        blocking=False,
+        overridden=False,
+    )
+    gate.write_receipt(
+        record,
+        worktree_path=build_worktree,
+        repo_root=repo,
+        task_id=task_id,
+        turn=1,
+    )
+
+
+def test_the_report_finds_the_rows_from_anywhere_inside_the_repository(
+    tmp_path: Path,
+) -> None:
+    """Root, subdirectory, build worktree, linked worktree — one answer.
+
+    Run from a subdirectory, the old command looked in a directory named
+    after that subdirectory, found nothing, and printed a clean result.
+    Someone would have concluded no build had skipped its tests.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+
+    deep = repo / "guardkit" / "cli"
+    deep.mkdir(parents=True)
+    build_worktree = repo / ".guardkit" / "worktrees" / "FEAT-X"
+
+    for where in (repo, deep, build_worktree):
+        result = CliRunner().invoke(
+            zero_test_report, ["--repo-root", str(where)]
+        )
+        output = _flat(result.output)
+        assert result.exit_code == 0
+        assert "1 recorded turn(s)" in output, (
+            f"the report found nothing when run from {where} — the row is in "
+            f"{gate.ledger_path_for(repo)}"
+        )
+        assert "TASK-A" in output
+        assert "NO LEDGER FILE EXISTS" not in output
+
+
+def test_read_and_write_resolve_the_same_key_by_construction(
+    tmp_path: Path,
+) -> None:
+    """Not "both remember to resolve" — the same function, one call each.
+
+    If the two sides ever compute the key separately again, this goes red for
+    every path that is not already a repository root.
+    """
+    repo = _a_real_repository(tmp_path)
+    deep = repo / "a" / "b" / "c"
+    deep.mkdir(parents=True)
+    build_worktree = repo / ".guardkit" / "worktrees" / "FEAT-X"
+    build_worktree.mkdir(parents=True)
+
+    written_key = gate.ledger_path_for(repo)
+    for reader_stood_in in (repo, deep, build_worktree):
+        assert gate.ledger_path_for(reader_stood_in) == written_key
+        assert gate.resolve_repo_root(reader_stood_in) == repo.resolve()
+
+
+def test_a_linked_git_worktree_reports_its_repositorys_rows(
+    tmp_path: Path,
+) -> None:
+    """A lane worktree made by ``git worktree add`` is not its own repository.
+
+    Its ``.git`` is a file pointing back into the main checkout. Keyed on its
+    own directory name it would report an empty ledger — in a directory
+    named after the lane, which no build has ever written to.
+    """
+    repo = _a_real_repository(tmp_path)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+         "-q", "--allow-empty", "-m", "first"],
+        cwd=str(repo), check=True, capture_output=True,
+    )
+    lane = tmp_path / "lane-worktree"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "--detach", str(lane)],
+        cwd=str(repo), check=True, capture_output=True,
+    )
+    _one_recorded_row(repo)
+
+    assert gate.resolve_repo_root(lane) == repo.resolve()
+    assert len(gate.read_receipts(lane)) == 1
+
+
+def test_read_ledger_says_whether_it_found_a_ledger_at_all(
+    tmp_path: Path,
+) -> None:
+    """Zero rows has two causes and the caller is told which.
+
+    This is what stops a report printing a clean bill when it simply did not
+    look in the right place.
+    """
+    absent = gate.read_ledger(tmp_path)
+    assert absent.rows == []
+    assert absent.any_ledger_file is False
+    assert absent.paths_read == []
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("")
+
+    empty = gate.read_ledger(tmp_path)
+    assert empty.rows == []
+    assert empty.any_ledger_file is True
+    assert empty.paths_read == [ledger]
+
+
+# ===========================================================================
+# 14. ADJUDICATION GOES IN ITS OWN FILE
+#
+# The ledger's lock serialises BUILDS against builds. Nothing serialises a
+# build's append against a person with the file open in an editor, and
+# whoever saves last silently destroys the other's work.
+# ===========================================================================
+
+
+def test_a_ruling_never_touches_the_file_builds_append_to(
+    tmp_path: Path,
+) -> None:
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+    ledger = gate.ledger_path_for(repo)
+    before = ledger.read_bytes()
+
+    gate.record_ruling(
+        repo_root=repo,
+        task_id="TASK-A",
+        turn=1,
+        legitimately_test_free=True,
+        note="documentation only",
+    )
+
+    assert ledger.read_bytes() == before, (
+        "recording a ruling rewrote the ledger — a concurrent build's append "
+        "can be lost that way"
+    )
+    assert gate.rulings_path_for(repo).is_file()
+    assert gate.rulings_path_for(repo) != ledger
+
+
+def test_the_report_joins_rulings_onto_the_rows_they_rule_on(
+    tmp_path: Path,
+) -> None:
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+
+    assert gate.read_receipts(repo)[0]["legitimately_test_free"] is None
+
+    gate.record_ruling(
+        repo_root=repo, task_id="TASK-A", turn=1, legitimately_test_free=True
+    )
+    ruled = gate.read_receipts(repo)[0]
+    assert ruled["legitimately_test_free"] is True
+    assert ruled["ruled_at"]
+
+
+def test_changing_your_mind_is_a_second_ruling_not_an_edit(
+    tmp_path: Path,
+) -> None:
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+
+    gate.record_ruling(
+        repo_root=repo, task_id="TASK-A", turn=1, legitimately_test_free=True
+    )
+    gate.record_ruling(
+        repo_root=repo,
+        task_id="TASK-A",
+        turn=1,
+        legitimately_test_free=False,
+        note="on reflection this was a behaviour change",
+    )
+
+    ruled = gate.read_receipts(repo)[0]
+    assert ruled["legitimately_test_free"] is False
+    assert ruled["ruling_note"] == "on reflection this was a behaviour change"
+
+
+def test_a_ruling_and_a_concurrent_build_both_survive(tmp_path: Path) -> None:
+    """The failure the separate file exists to prevent, run for real.
+
+    A person rules on a row while a build finishes a turn. Under the old
+    shape both wrote the same file and one of the two was lost. Here neither
+    can be: they are different files.
+    """
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo, task_id="TASK-A")
+
+    ruling_done = threading.Event()
+
+    def rule() -> None:
+        gate.record_ruling(
+            repo_root=repo,
+            task_id="TASK-A",
+            turn=1,
+            legitimately_test_free=True,
+        )
+        ruling_done.set()
+
+    person = threading.Thread(target=rule)
+    person.start()
+    _one_recorded_row(repo, task_id="TASK-B")  # a build, at the same moment
+    person.join()
+
+    assert ruling_done.is_set()
+    rows = {row["task_id"]: row for row in gate.read_receipts(repo)}
+    assert set(rows) == {"TASK-A", "TASK-B"}, (
+        "a build's row and a person's ruling collided and one was lost"
+    )
+    assert rows["TASK-A"]["legitimately_test_free"] is True
+    assert rows["TASK-B"]["legitimately_test_free"] is None
+
+
+def test_a_hand_written_ruling_already_in_the_ledger_is_still_honoured(
+    tmp_path: Path,
+) -> None:
+    """Nobody's earlier work is discarded by moving rulings to their own file."""
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "repo": "repo",
+                "task_id": "TASK-OLD",
+                "turn": 1,
+                "branch": gate.BRANCH_NO_TEST_FILE,
+                "legitimately_test_free": True,
+            }
+        )
+        + "\n"
+    )
+
+    assert gate.read_receipts(tmp_path)[0]["legitimately_test_free"] is True
+
+
+def test_the_ruling_command_works_from_a_subdirectory(tmp_path: Path) -> None:
+    """The write side of adjudication resolves the repository the same way."""
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_rule
+
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+    deep = repo / "guardkit" / "cli"
+    deep.mkdir(parents=True)
+
+    result = CliRunner().invoke(
+        zero_test_rule,
+        ["--task", "TASK-A", "--turn", "1", "--test-free",
+         "--repo-root", str(deep)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert gate.read_receipts(repo)[0]["legitimately_test_free"] is True
+
+
+# ===========================================================================
+# 15. THE TWO SMALL ONES
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "count, expected",
+    [(1, "1 was recorded"), (2, "2 were recorded")],
+)
+def test_the_report_counts_to_one_correctly(
+    tmp_path: Path, count: int, expected: str
+) -> None:
+    """A human-facing surface that cannot count to one is not trusted.
+
+    The neighbouring sentence in the same panel already agrees with its verb.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        "".join(
+            json.dumps({"repo": "repo", "task_id": f"TASK-{n}", "turn": 1})
+            + "\n"
+            for n in range(count)
+        )
+    )
+
+    result = CliRunner().invoke(
+        zero_test_report, ["--repo-root", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0
+    assert expected in _flat(result.output)
+
+
+def test_the_report_asks_the_promotion_rule_rather_than_repeating_it(
+    tmp_path: Path,
+) -> None:
+    """One rule, one implementation, one caller.
+
+    ``counts_toward_promotion`` decides what the measurement counts. The
+    report used to re-implement the same filter inline, so a change to one
+    copy would silently disagree with the other. Narrow the exported rule and
+    the report must narrow with it; that is what this asserts.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "repo": "repo",
+                "task_id": "TASK-A",
+                "turn": 1,
+                "branch": gate.BRANCH_NO_TEST_FILE,
+                "coach_decision": "approve",
+            }
+        )
+        + "\n"
+    )
+
+    # Narrow the ONE exported rule. A report that consults it narrows with
+    # it; a report carrying its own copy of the filter does not notice.
+    with patch.object(
+        gate, "counts_toward_promotion", return_value=False
+    ) as shared_rule:
+        result = CliRunner().invoke(
+            zero_test_report, ["--repo-root", str(tmp_path)]
+        )
+
+    assert result.exit_code == 0
+    assert shared_rule.called, (
+        "the report did not consult zero_test_gate.counts_toward_promotion — "
+        "it is deciding what the measurement counts on its own"
+    )
+    assert "0 had no test found" in _flat(result.output), (
+        "the report still counted the row after the shared promotion rule "
+        "rejected it — there is a second copy of the rule inline"
+    )
+
+
+def test_the_ruling_command_refuses_a_verdict_it_was_not_given(
+    tmp_path: Path,
+) -> None:
+    """A forgotten flag must not file the opposite ruling.
+
+    ``--test-free/--not-test-free`` is a boolean pair, and click does not
+    enforce ``required`` on those: omit both and it hands the body ``False``,
+    which reads as "this change should have had a test". That verdict would
+    go into the promotion measurement having never been made by anyone.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_rule
+
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo)
+
+    result = CliRunner().invoke(
+        zero_test_rule, ["--task", "TASK-A", "--turn", "1",
+                         "--repo-root", str(repo)]
+    )
+
+    assert result.exit_code == 1
+    assert "--test-free or --not-test-free" in _flat(result.output)
+    assert not gate.rulings_path_for(repo).exists()
+    assert gate.read_receipts(repo)[0]["legitimately_test_free"] is None
+
+
+def test_a_ruling_against_a_row_that_is_not_there_is_refused(
+    tmp_path: Path,
+) -> None:
+    """A mistyped identifier must not become a ruling that joins to nothing.
+
+    Left unchecked it is invisible twice over: the row it was meant for still
+    reads as needing a ruling, and the ruling itself is never shown.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_rule
+
+    repo = _a_real_repository(tmp_path)
+    _one_recorded_row(repo, task_id="TASK-A")
+
+    result = CliRunner().invoke(
+        zero_test_rule, ["--task", "TASK-TYPO", "--turn", "1", "--test-free",
+                         "--repo-root", str(repo)]
+    )
+
+    assert result.exit_code == 1
+    assert "No recorded turn matches TASK-TYPO turn 1" in _flat(result.output)
+    assert not gate.rulings_path_for(repo).exists()
+
+
+def test_a_ruling_joins_a_row_recorded_before_the_repo_field_existed(
+    tmp_path: Path,
+) -> None:
+    """The join key is (task, turn) — the repository is already the directory.
+
+    An older row carries no ``repo``. Keying the join on one would leave that
+    row unruleable: the ruling would be written and never shown, and the row
+    would go on asking for a decision that had already been made.
+    """
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "task_id": "TASK-OLD",
+                "turn": 1,
+                "branch": gate.BRANCH_NO_TEST_FILE,
+                "legitimately_test_free": None,
+            }
+        )
+        + "\n"
+    )
+
+    gate.record_ruling(
+        repo_root=tmp_path,
+        task_id="TASK-OLD",
+        turn=1,
+        legitimately_test_free=True,
+    )
+
+    assert gate.read_receipts(tmp_path)[0]["legitimately_test_free"] is True

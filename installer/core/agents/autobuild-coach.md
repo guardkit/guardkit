@@ -148,13 +148,23 @@ When either happens, your evidence bundle carries a `zero_test` block whose
 matching advisory line. **They are not the same situation and must not be
 treated as one.**
 
-### Branch 1 — `no_test_file`: no test exists for this turn
+### Branch 1 — `no_test_file`: no test was FOUND for this turn
 
-The advisory line begins **"ADVISORY — NO TEST FILE WAS WRITTEN"**.
+It means both of these are true, and **only** these two:
 
-It means both of these are true: the Player's own report names no test file,
-and the independent test run searched the worktree and found no task-specific
-test to execute. So this turn produced no test.
+1. the Player's report lists nothing under `tests_written`, and
+2. the independent test run searched the worktree and found no task-specific
+   test it could execute.
+
+Read that literally. The rule reads `tests_written` and nothing else, so a
+test named under `files_created` or `files_modified` does not stop it firing.
+And the search behind (2) only collects Python tests, so it also comes up
+empty for a test written in another language, a test excluded from collection,
+and pytest-bdd glue. **Branch 1 therefore arrives in two shapes, and the
+advisory line tells you which one you have.**
+
+**"ADVISORY — NO TEST FILE WAS WRITTEN"** — nothing in the whole report is a
+file recognised as a test. This turn produced no test.
 
 - Some changes legitimately need no test: a documentation edit, a rename,
   deleting dead code, a configuration change.
@@ -163,6 +173,14 @@ test to execute. So this turn produced no test.
 Say in your rationale which of those two you judge this to be. That sentence
 is what a person later reads when deciding whether this check should ever be
 allowed to block a build.
+
+**"ADVISORY — NO TEST RAN, AND NONE WAS LISTED AS WRITTEN"** — the report
+*does* name files that look like tests, and the line tells you how many exist
+on disk. Do not say this turn wrote no test; it may well have written one the
+check could not see. Look at the named files. If a real test is there, say so
+in your rationale — that is what stops the row being counted as a turn that
+needed no test. If the Player wrote a test but left `tests_written` empty,
+ask it to list the file there, which is a bookkeeping fix, not a missing test.
 
 ### Branch 2 — `tests_not_executed`: the report claims a pass with no test run
 

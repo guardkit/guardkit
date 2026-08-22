@@ -1632,7 +1632,7 @@ def _display_ledger_sweep_result(sweep) -> None:
 #
 # THE TWO BRANCHES ARE REPORTED SEPARATELY, ON PURPOSE.
 # The underlying rule fires for two different reasons and used to label both
-# the same way. Only one of them ("no test file") is evidence about whether a
+# the same way. Only one of them ("no test found") is evidence about whether a
 # turn legitimately needed no test, so only that one feeds the promotion
 # measurement. Blending them would make the one number this instrument exists
 # to produce wrong — and a wrong number is worse than no number, because it
@@ -1668,6 +1668,33 @@ def _zero_test_claimed_tests(row: dict) -> str:
     head = named[0]
     more = f" +{len(named) - 1}" if len(named) > 1 else ""
     return f"{head}{more}"
+
+
+def _zero_test_elsewhere(row: dict) -> str:
+    """Test files the report named somewhere OTHER than ``tests_written``.
+
+    The rule that files these rows reads ``tests_written`` and nothing else,
+    so a test named only under files_created / files_modified does not stop it
+    firing. Those rows look exactly like a turn that wrote no test, and would
+    be ruled test-free by mistake. This line is why they cannot be.
+    """
+    named = [str(f) for f in (row.get("claimed_test_files") or [])]
+    written = {str(f) for f in (row.get("tests_written") or [])}
+    elsewhere = [f for f in named if f not in written]
+    if not elsewhere:
+        return ""
+    on_disk = {str(f) for f in (row.get("test_files_on_disk") or [])}
+    shown = ", ".join(
+        f"{f} [green](on disk)[/green]" if f in on_disk else f
+        for f in elsewhere[:3]
+    )
+    if len(elsewhere) > 3:
+        shown += f", +{len(elsewhere) - 3} more"
+    return (
+        f"    [yellow]{'CHECK BEFORE RULING':<18}[/yellow]: the report names "
+        f"{len(elsewhere)} test file(s) outside tests_written, which this "
+        f"rule never reads: {shown}"
+    )
 
 
 def _zero_test_claimed_gates(row: dict) -> str:
@@ -1744,6 +1771,12 @@ def _zero_test_print_rows(rows: list, show_repo: bool, heading: str) -> None:
                 console.print(line)
         if not row.get("files_created") and not row.get("files_modified"):
             console.print(f"    {'files':<18}: (none reported)")
+        flag = _zero_test_elsewhere(row)
+        if flag:
+            # Wraps like the neighbouring file lines rather than running off
+            # the right edge of an 80-column terminal, where the file name it
+            # exists to show would be the part that vanished.
+            console.print(flag)
 
 
 @autobuild.command(name="zero-test-report")
@@ -1782,19 +1815,24 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     \b
     THE TWO SITUATIONS ARE REPORTED SEPARATELY, because they are different:
 
-      no test file  - no test exists for this turn. The Player named none and
-                      the Coach's own search found none to run. THIS is the
+      no test found - the Player listed no test under tests_written and the
+                      Coach's own search found none to run. THIS is the
                       promotion question: was it legitimate to write no test?
+                      Read it literally: the rule does not look at the
+                      report's created/modified lists, so a few of these rows
+                      DO name a test file. They are flagged; check them before
+                      you rule.
       0 tests ran   - the Player's report claims every quality gate passed
                       while reporting that zero tests executed. Tests may well
                       exist. This is a wrong claim, not a missing test, so it
                       is NOT counted in the promotion measurement.
 
     \b
-    To rule on a "no test file" row, open the ledger and set
-    "legitimately_test_free" on it:
-        ~/.guardkit/zero-test/<repo>/queue.jsonl
-    true means the change genuinely needed no test; false means it did.
+    To rule on a "no test found" row, use the sibling command — do NOT edit
+    the ledger by hand, because builds append to it while you have it open:
+        guardkit autobuild zero-test-rule --task TASK-X --turn 1 --test-free
+    --test-free means the change genuinely needed no test; --not-test-free
+    means it did. Rulings go in their own file and the report joins them on.
 
     \b
     The ledger lives outside every repository working tree on purpose, so
@@ -1802,8 +1840,9 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     (Decision of Record D-OBS-4). Set GUARDKIT_ZERO_TEST_ROOT to move it.
 
     \b
-    Each repository keeps its own ledger. Pass --repo-root once per
-    repository to read several at once:
+    The repository is resolved from wherever you are standing — a
+    subdirectory or a git worktree reads the same ledger the build wrote.
+    Pass --repo-root once per repository to read several at once:
         guardkit autobuild zero-test-report --repo-root ../forge --repo-root .
 
     \b
@@ -1812,43 +1851,71 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     """
     from guardkit.orchestrator import zero_test_gate
 
-    roots = [Path(r) for r in repo_root] or [Path.cwd()]
-    rows = []
-    for root in roots:
-        rows.extend(zero_test_gate.read_receipts(root))
+    starts = [Path(r) for r in repo_root] or [Path.cwd()]
+    # ONE resolver for reading and writing (zero_test_gate.resolve_repo_root),
+    # so a report run from a subdirectory cannot look somewhere a build never
+    # wrote and call the silence a clean result.
+    reads = [zero_test_gate.read_ledger(start) for start in starts]
+    rows = [row for read in reads for row in read.rows]
 
     if as_json:
         console.print_json(json.dumps(rows))
         sys.exit(0)
 
-    ledgers = [zero_test_gate.ledger_path_for(root) for root in roots]
-    # Rows recorded before the ledger moved out of the repository are still
-    # read from where they were written. Name that file too, or a person
-    # cannot find the row they are being asked to rule on.
-    ledgers += [
-        path
-        for path in (
-            zero_test_gate.legacy_ledger_path_for(root) for root in roots
+    ledger = "\n  ".join(
+        str(path) for read in reads for path in read.paths_read
+    )
+    missing = [read for read in reads if not read.any_ledger_file]
+    if missing:
+        # NOT a clean bill. Nothing was read, so nothing is known — and this
+        # is precisely the failure this whole instrument exists to catch,
+        # so it must never be printed in green.
+        if len(reads) == 1:
+            which = missing[0].repo_root.name
+        else:
+            which = (
+                f"{len(missing)} of the {len(reads)} repositories asked about"
+            )
+        console.print(
+            f"[yellow]NO LEDGER FILE EXISTS for {which}.[/yellow] "
+            "[bold]This is not a clean result — it means there was nothing "
+            "to read.[/bold]"
         )
-        if path.is_file()
-    ]
-    ledger = "\n  ".join(str(path) for path in ledgers)
+        for read in missing:
+            console.print(
+                f"[dim]  {read.repo_root} -> looked for "
+                f"{read.ledger_path}[/dim]",
+                soft_wrap=True,
+            )
+        console.print(
+            "[dim]Either no build has recorded a turn for that repository "
+            "since the check was installed, or GUARDKIT_ZERO_TEST_ROOT "
+            "points somewhere other than where the build wrote.[/dim]"
+        )
+        if not rows:
+            sys.exit(0)
+        console.print()
+
     if not rows:
+        # Every ledger asked for exists and every one of them is empty. THIS
+        # is the clean bill, and it is the only case that earns green.
         console.print(
             "[green]No build has been recorded with missing or unrun "
             "tests.[/green]\n"
         )
         console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]", soft_wrap=True)
         console.print(
-            "[dim]An empty ledger means either that every build wrote and ran "
-            "a test, or that no build has run since the check was "
-            "installed.[/dim]"
+            "[dim]The ledger exists and is empty: every build that finished a "
+            "turn wrote and ran a test.[/dim]"
         )
         sys.exit(0)
 
-    show_repo = len(roots) > 1
+    show_repo = len(reads) > 1
+    # The promotion rule lives in ONE place — zero_test_gate — and this is
+    # its caller. It used to be re-implemented here, and two copies of a rule
+    # that decides what a measurement counts will drift.
     no_test_file = [
-        r for r in rows if r.get("branch") == zero_test_gate.BRANCH_NO_TEST_FILE
+        r for r in rows if zero_test_gate.counts_toward_promotion(r)
     ]
     not_executed = [
         r
@@ -1884,15 +1951,19 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     summary = (
         f"[bold]{len(rows)}[/bold] recorded turn(s) across "
         f"[bold]{len(builds)}[/bold] build(s), in two different situations:\n\n"
-        f"  [bold]{len(no_test_file)}[/bold] wrote [bold]no test file[/bold] "
+        f"  [bold]{len(no_test_file)}[/bold] had [bold]no test found[/bold] "
         f"— the Coach approved {len(approved_no_test)} of them anyway.\n"
         f"  [bold]{len(not_executed)}[/bold] claimed a passing quality gate "
         f"while reporting that [bold]0 tests ran[/bold].\n"
     )
     if unlabelled:
+        # The neighbouring count already agrees with its verb; so does this
+        # one now. A human-facing surface that cannot count to one is not
+        # trusted about the numbers that matter.
+        was_were = "was" if len(unlabelled) == 1 else "were"
         summary += (
-            f"  [bold]{len(unlabelled)}[/bold] were recorded before the two "
-            "situations were told apart, so they are unlabelled.\n"
+            f"  [bold]{len(unlabelled)}[/bold] {was_were} recorded before the "
+            "two situations were told apart, so they are unlabelled.\n"
         )
     summary += (
         "\n[bold]The promotion measurement is the first group only.[/bold]\n"
@@ -1918,22 +1989,29 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
             _zero_test_print_rows(
                 shown,
                 show_repo,
-                f"NO TEST FILE — needs your ruling "
+                f"NO TEST FOUND — needs your ruling "
                 f"({len(shown)} of {len(unruled)} shown)",
             )
             console.print(
-                "\n[dim]Rule on a row by setting "
-                '"legitimately_test_free": true or false on it in:[/dim]'
+                "\n[dim]Rule on a row without touching the ledger (builds "
+                "append to it while you read):[/dim]"
             )
-            console.print(f"[dim]  {ledger}[/dim]", soft_wrap=True)
+            example = shown[-1]
             console.print(
-                "[dim]true = the change genuinely needed no test (docs, "
-                "rename, dead code, config). false = it was unverified "
-                "work.[/dim]"
+                "[dim]  guardkit autobuild zero-test-rule --task "
+                f"{example.get('task_id')} --turn {example.get('turn')} "
+                "--test-free[/dim]",
+                soft_wrap=True,
+            )
+            console.print(
+                "[dim]--test-free = the change genuinely needed no test "
+                "(docs, rename, dead code, config). --not-test-free = it was "
+                "unverified work. A row flagged CHECK BEFORE RULING names a "
+                "test file this rule never looked at — open it first.[/dim]"
             )
         else:
             console.print(
-                "[green]Every recorded no-test-file turn has been ruled "
+                "[green]Every recorded no-test-found turn has been ruled "
                 "on.[/green] That fraction is the promotion decision."
             )
 
@@ -1967,6 +2045,126 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     sys.exit(0)
 
 
+@autobuild.command(name="zero-test-rule")
+@click.option(
+    "--task", "task_id", required=True, help="The task identifier on the row."
+)
+@click.option(
+    "--turn", type=int, required=True, help="Which turn of that task."
+)
+@click.option(
+    "--test-free/--not-test-free",
+    "test_free",
+    default=None,
+    # NOT `required=True`: click does not enforce it on a boolean flag pair,
+    # and a forgotten flag would then be recorded as --not-test-free — the
+    # opposite verdict, filed silently. Absence is checked in the body.
+    help=(
+        "--test-free: the change genuinely needed no test (documentation, a "
+        "rename, dead code, configuration). --not-test-free: it was "
+        "unverified work."
+    ),
+)
+@click.option("--note", default=None, help="Optional one-line reason.")
+@click.option(
+    "--repo-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="The repository the row belongs to. Defaults to where you are.",
+)
+def zero_test_rule(task_id: str, turn: int, test_free: bool, note, repo_root):
+    """
+    Rule on one recorded turn: did it legitimately need no test?
+
+    This is the half of the promotion question a machine cannot answer. Each
+    ruling you record here is one data point toward deciding whether the
+    zero-test check should ever be allowed to stop a build.
+
+    \b
+    WHY THIS IS A COMMAND AND NOT AN EDIT.
+    Automated builds append to the ledger continuously, and several run at
+    once. Their appends are serialised against each other by a file lock —
+    but a lock cannot serialise them against a person who has the file open
+    in an editor. Whoever saves last silently wins, and what is lost is
+    either a build's record or your ruling. So rulings are appended to their
+    own file, which no build ever opens, and the report joins the two:
+        ~/.guardkit/zero-test/<repo>/rulings.jsonl
+
+    \b
+    Ruling the same turn twice is fine — the later ruling wins. That is how
+    you change your mind, without editing anything.
+
+    \b
+    Exit Codes:
+        0: The ruling was recorded.
+        1: No verdict given, no such row, or the ruling could not be written.
+    """
+    from guardkit.orchestrator import zero_test_gate
+
+    if test_free is None:
+        console.print(
+            "[red]Say which verdict you are recording: --test-free or "
+            "--not-test-free.[/red] Nothing was written."
+        )
+        sys.exit(1)
+
+    start = repo_root or Path.cwd()
+    resolved = zero_test_gate.resolve_repo_root(start)
+
+    # Refuse to file a ruling against a row that is not there. A mistyped
+    # task id would otherwise sit in the rulings file joining to nothing,
+    # and the row it was meant for would still read as un-ruled.
+    read = zero_test_gate.read_ledger(resolved)
+    wanted = (str(turn), task_id)
+    if not any(
+        (str(row.get("turn")), str(row.get("task_id"))) == wanted
+        for row in read.rows
+    ):
+        console.print(
+            f"[red]No recorded turn matches {task_id} turn {turn} in "
+            f"{resolved.name}.[/red] Nothing was written."
+        )
+        if not read.any_ledger_file:
+            console.print(
+                f"[yellow]There is no ledger file at all for that "
+                f"repository[/yellow] [dim]({read.ledger_path})[/dim]"
+            )
+        else:
+            console.print(
+                "[dim]Run `guardkit autobuild zero-test-report` to see which "
+                "rows exist.[/dim]"
+            )
+        sys.exit(1)
+
+    try:
+        path = zero_test_gate.record_ruling(
+            repo_root=resolved,
+            task_id=task_id,
+            turn=turn,
+            legitimately_test_free=test_free,
+            note=note,
+        )
+    except OSError as exc:
+        console.print(f"[red]Could not record the ruling: {exc}[/red]")
+        sys.exit(1)
+
+    verdict = (
+        "[green]legitimately test-free[/green]"
+        if test_free
+        else "[red]NOT test-free — it was unverified work[/red]"
+    )
+    console.print(
+        f"Recorded: {task_id} turn {turn} in [bold]{resolved.name}[/bold] "
+        f"is {verdict}."
+    )
+    console.print(f"[dim]  {path}[/dim]", soft_wrap=True)
+    console.print(
+        "[dim]Run `guardkit autobuild zero-test-report` to see the "
+        "measurement with this ruling folded in.[/dim]"
+    )
+    sys.exit(0)
+
+
 # ============================================================================
 # Public API
 # ============================================================================
@@ -1978,6 +2176,7 @@ __all__ = [
     "feature",
     "complete",
     "zero_test_report",
+    "zero_test_rule",
     "_check_sdk_available",
     "_require_sdk",
 ]
