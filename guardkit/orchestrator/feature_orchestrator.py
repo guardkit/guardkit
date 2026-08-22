@@ -4092,9 +4092,13 @@ The detailed specifications are in the task markdown file.
 
         TASK-FIX-TTO01. One pass over ``orchestration.parallel_groups`` before
         wave 1, so the run can DECLARE the budgets it will actually enforce
-        instead of only the feature-level default. Tasks whose markdown cannot
-        be loaded are simply absent from the map (the dispatch path applies its
-        own fallback and logs there); this method never raises.
+        instead of only the feature-level default.
+
+        A task is absent from the map only when ``FeatureLoader.find_task``
+        cannot find it in the feature. A task that IS found but whose markdown
+        fails to load still gets a budget resolved and stored (the load error is
+        swallowed to an empty dict, and the budget falls back to the feature
+        default and ``estimated_minutes``). This method never raises.
 
         Returns
         -------

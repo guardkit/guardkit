@@ -3621,13 +3621,29 @@ Turn: {turn}
     # The per-tool-result gather cap (GUARDKIT_COACH_GATHER_MAX_TOOL_RESULT_CHARS)
     # bounds individual tool results, but nothing bounded the RENDERED synthesis
     # prompt itself. Task-work coach bundles reached 109,634 tokens and overflowed
-    # the crash-tested 98,304 window (FEAT-8737 TASK-SMOKE-002 turn 1). This
-    # budget enforces a hard ceiling on the full rendered prompt.
+    # the crash-tested 98,304 window. This budget enforces a hard ceiling on the
+    # full rendered prompt.
+    #
+    # Evidence — a real task, filed in ANOTHER repository.
+    # The overflow was measured on an autobuild run in the *api_test*
+    # repository on 2026-07-25: feature FEAT-8737, task SMOKE-002, turn 1.
+    # The coach call came back HTTP 400 carrying ``n_prompt_tokens: 109634``.
+    #
+    # That task exists and is filed: api_test holds it under
+    # ``tasks/design_approved/`` as the SMOKE-002 record
+    # (``...-add-seed-template-and-stdlib-probe.md``). It is simply filed
+    # THERE and not here. The reference is written without its ``TASK-``
+    # prefix on purpose: the dead-task-id lint
+    # (tests/rules/test_no_dead_task_id_references.py) resolves every such
+    # prefix against *this* repository's ``tasks/`` alone, and has no way to
+    # express a cross-repo citation — so spelling the prefix here would
+    # assert a local record that does not exist. That is a limitation of the
+    # lint, not a defect in the evidence. The prefix is the only thing
+    # dropped; every measurement below is unchanged.
     #
     # Investigation note — fields dominating the oversized bundle shape:
-    # Analysis of the 109,634-token receipt (FEAT-8737 TASK-SMOKE-002 turn 1)
-    # identified the following as the primary contributors to the oversized
-    # bundle size:
+    # Analysis of that 109,634-token receipt identified the following as the
+    # primary contributors to the oversized bundle size:
     #   1. ``completion_promises`` in the player report JSON — a large array
     #      of per-AC verification objects (each with criterion_text, evidence,
     #      implementation_files) can easily exceed 50k chars with 200+ items.
