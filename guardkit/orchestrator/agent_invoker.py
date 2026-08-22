@@ -4167,9 +4167,11 @@ Turn: {turn}
             )
 
         # Zero-test visibility (2026-08-21, Rich's ruling). Until now the Coach
-        # was never TOLD, in words, that the Player wrote no test file — the
-        # raw counts reached it buried among dozens of sibling keys in the JSON
-        # above and nothing named them. This names it. Advisory prompt text
+        # was never TOLD, in words, that no test could be found for the turn —
+        # the raw counts reached it buried among dozens of sibling keys in the
+        # JSON above and nothing named them. This names it, and names it for
+        # what it is: the check reports what it RECOGNISED (six file-naming
+        # conventions, plus a pytest run), never what exists. Advisory prompt text
         # ONLY: the verdict flip lives behind GUARDKIT_ZERO_TEST_BLOCKING in
         # _apply_zero_test_guard, and the sentence itself says it does not
         # block. The wording lives in zero_test_gate so the sentence a
@@ -7154,11 +7156,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
            unverified work?
 
            The branch matters because the two are different situations. A
-           ``no_test_file`` row means no test exists for the turn — that is
-           the row the promotion question is about. A ``tests_not_executed``
-           row means the report claimed a passing quality gate while
-           reporting that zero tests ran; tests may well exist. Only the
-           first counts toward the promotion measurement. See
+           ``no_test_recognised`` row means nothing this check can see
+           identified a test for the turn — not that none exists — and that
+           is the row the promotion question is about. A
+           ``report_says_no_test_ran`` row means the report claimed a passing
+           quality gate while reporting that zero tests ran; tests may well
+           exist. Only the first counts toward the promotion measurement. See
            :mod:`guardkit.orchestrator.zero_test_gate`.
 
         2. **Only when ``GUARDKIT_ZERO_TEST_BLOCKING`` is set**: override an
@@ -7253,11 +7256,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             return
 
         # ---- job 2: the override (only when explicitly asked for) -------
-        # The rationale is BRANCH-SPECIFIC. The two branches assert different
-        # facts (see zero_test_gate's module docstring), and telling a Player
-        # "you wrote no test" when its tests exist but were never run sends it
-        # to fix the wrong thing.
-        if branch == zero_test_gate.BRANCH_TESTS_NOT_EXECUTED:
+        # The rationale is BRANCH-SPECIFIC, and neither branch's rationale
+        # tells the Player something this check cannot know. The two branches
+        # assert different facts (see zero_test_gate's module docstring), and
+        # telling a Player "you wrote no test" — when its test exists in a
+        # language the recogniser has never heard of, or exists and simply was
+        # not run — sends it to fix the wrong thing.
+        if branch == zero_test_gate.BRANCH_REPORT_SAYS_NO_TEST_RAN:
             rationale = (
                 "This turn's report claims every quality gate passed while "
                 "also reporting that zero tests ran, and "
@@ -7268,12 +7273,20 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             )
         else:
             rationale = (
-                "No test file was written for this turn, and "
-                f"{zero_test_gate.BLOCKING_ENV_VAR} is set, so a turn with no "
-                "tests is rejected. Write a test that exercises the behaviour "
-                "this turn added, or — if this change genuinely needs no test "
-                "(a documentation edit, a rename, deleting dead code, a "
-                "configuration change) — say so explicitly in your report."
+                "No test could be recognised for this turn: nothing is listed "
+                "under tests_written, no file name in the report matches a "
+                "test-file naming convention this check knows "
+                f"({zero_test_gate.RECOGNISED_CONVENTIONS_PHRASE}), and the "
+                "Coach's own pytest run found no task-specific test to "
+                "execute. That is what was checked, and it is not proof that "
+                "no test exists. "
+                f"{zero_test_gate.BLOCKING_ENV_VAR} is set, so the turn is "
+                "sent back for one of these three answers: if you did write a "
+                "test, list its path under tests_written and say what command "
+                "runs it; if this change genuinely needs no test (a "
+                "documentation edit, a rename, deleting dead code, a "
+                "configuration change) say so explicitly; otherwise write a "
+                "test that exercises the behaviour this turn added."
             )
         decision["decision"] = "feedback"
         decision["rationale"] = rationale
@@ -7287,6 +7300,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     "branch_meaning": zero_test.get("branch_meaning"),
                     "files_created": zero_test.get("files_created") or [],
                     "files_modified": zero_test.get("files_modified") or [],
+                    "recognised_test_files": (
+                        zero_test.get("recognised_test_files") or []
+                    ),
+                    "files_not_examined": (
+                        zero_test.get("files_not_examined") or []
+                    ),
                     "test_files_on_disk": zero_test.get("test_files_on_disk") or [],
                     "claimed_all_passed": zero_test.get("claimed_all_passed"),
                     "claimed_tests_passed": zero_test.get("claimed_tests_passed"),

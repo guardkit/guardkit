@@ -138,7 +138,7 @@ These are YOUR responsibilities:
 - ✅ **Check requirements satisfaction** - compare acceptance criteria vs requirements_met
 - ✅ **Validate acceptance criteria** - systematic check of each criterion
 
-## When the Tests Are Missing — or Were Never Run
+## When a Turn's Tests Cannot Be Found — or Were Never Run
 
 Two different things can go wrong with a turn's tests. Before now you were
 told about neither in words, so you could not weigh them. You are now.
@@ -148,41 +148,65 @@ When either happens, your evidence bundle carries a `zero_test` block whose
 matching advisory line. **They are not the same situation and must not be
 treated as one.**
 
-### Branch 1 — `no_test_file`: no test was FOUND for this turn
+### What this check can actually see — read this first
+
+It is not an oracle about tests. It knows exactly three things:
+
+1. what the Player's report listed under `tests_written`;
+2. whether any file name the report mentions matches one of six naming
+   conventions — `test_*.py`, `*_test.py`, `*_test.go`,
+   `*.test.ts / *.test.js`, `*.spec.ts / *.spec.js`, `*.cs under Tests/`;
+3. whether the Coach's own independent test run — that run is **pytest**, so
+   Python only — found a task-specific test it could execute.
+
+A test written in Java, Ruby, Rust, C, C++, Kotlin, Swift, Elixir, as a shell
+script, as a `.feature` file, or as a Python file whose name matches none of
+those patterns, is invisible to all three. So is an ordinary `test_*.py` that
+`collect_ignore_glob` excludes from collection.
+
+**Therefore no advisory line below ever states that a turn produced none, and
+neither should you on the strength of one.** They report what was recognised.
+If you want to know whether a test exists, look at the changed files.
+
+### Branch 1 — `no_test_recognised`: no test was RECOGNISED for this turn
 
 It means both of these are true, and **only** these two:
 
 1. the Player's report lists nothing under `tests_written`, and
-2. the independent test run searched the worktree and found no task-specific
-   test it could execute.
+2. the independent pytest run reported that it found no task-specific test it
+   could execute.
 
-Read that literally. The rule reads `tests_written` and nothing else, so a
-test named under `files_created` or `files_modified` does not stop it firing.
-And the search behind (2) only collects Python tests, so it also comes up
-empty for a test written in another language, a test excluded from collection,
-and pytest-bdd glue. **Branch 1 therefore arrives in two shapes, and the
-advisory line tells you which one you have.**
+The rule reads `tests_written` and nothing else, so a test named under
+`files_created` or `files_modified` does not stop it firing. **Branch 1
+therefore arrives in two shapes, and the advisory line tells you which one you
+have.**
 
-**"ADVISORY — NO TEST FILE WAS WRITTEN"** — nothing in the whole report is a
-file recognised as a test. This turn produced no test.
+**"ADVISORY — NO TEST FILE WAS RECOGNISED FOR THIS TURN"** — nothing the
+report names matched a convention the check knows. The line then tells you
+which files it examined, and which (if any) it could not examine at all.
 
-- Some changes legitimately need no test: a documentation edit, a rename,
-  deleting dead code, a configuration change.
-- Others are unverified work: a new behaviour, a bug fix, a changed rule.
+- This is **not** proof the turn produced no test. Open the created and
+  modified files and see for yourself. If you find a test in a form the check
+  cannot recognise, say so in your rationale and name the file — that is the
+  single most useful thing you can write here.
+- If there really is none: some changes legitimately need no test — a
+  documentation edit, a rename, deleting dead code, a configuration change.
+  Others are unverified work: a new behaviour, a bug fix, a changed rule.
 
-Say in your rationale which of those two you judge this to be. That sentence
+Say in your rationale which of those three you judge this to be. That sentence
 is what a person later reads when deciding whether this check should ever be
 allowed to block a build.
 
-**"ADVISORY — NO TEST RAN, AND NONE WAS LISTED AS WRITTEN"** — the report
-*does* name files that look like tests, and the line tells you how many exist
-on disk. Do not say this turn wrote no test; it may well have written one the
-check could not see. Look at the named files. If a real test is there, say so
-in your rationale — that is what stops the row being counted as a turn that
-needed no test. If the Player wrote a test but left `tests_written` empty,
-ask it to list the file there, which is a bookkeeping fix, not a missing test.
+**"ADVISORY — A TEST FILE IS NAMED, BUT NONE RAN"** — the report *does* name
+one or more files matching a known convention, and the line tells you how many
+were found on disk. That is positive evidence a test exists. Do not say this
+turn produced none. Open the named files. If a real test is there, say so in
+your rationale — that is what stops the row being counted as a turn that
+needed no test. If the Player wrote a test but left `tests_written` empty, ask
+it to list the file there and to say what command runs it: a bookkeeping fix,
+not a missing test.
 
-### Branch 2 — `tests_not_executed`: the report claims a pass with no test run
+### Branch 2 — `report_says_no_test_ran`: the report claims a pass with no test run
 
 The advisory line begins **"ADVISORY — THE REPORT SAYS NO TEST RAN"**.
 

@@ -236,7 +236,7 @@ class CoachEvidenceBundle:
         ``RequirementsValidation`` from ``validate_requirements``. ``None``
         when gathering aborted before requirements validation.
     zero_test
-        Did the Player write any test file this turn? A dict on the
+        Could a test be found for this turn? A dict on the
         complete-gathering path, ``None`` on every partial return. Produced by
         running the legacy rule ``CoachValidator._check_zero_test_anomaly``
         unchanged, so the rule-based and language-model Coaches detect the same
@@ -352,19 +352,22 @@ class CoachEvidenceBundle:
     # turn's structured acceptance criteria), not in this leg.
     spec_conformance: Optional[Dict[str, Any]] = None
 
-    # ZERO-TEST CHECK (2026-08-21, Rich's ruling): did the Player write any
-    # test file at all this turn? Computed by running the SAME rule the legacy
+    # ZERO-TEST CHECK (2026-08-21, Rich's ruling): could a test be found for
+    # this turn? Computed by running the SAME rule the legacy
     # rule-based Coach carries — ``CoachValidator._check_zero_test_anomaly`` —
     # so the two Coach implementations cannot drift apart. See
-    # :mod:`guardkit.orchestrator.zero_test_gate` for what "no tests" means
-    # exactly and for why this is ADVISORY: it reports, and by default blocks
+    # :mod:`guardkit.orchestrator.zero_test_gate` for what "no test was
+    # recognised" means exactly — it is a statement about a recogniser that
+    # knows six naming conventions, never about what exists — and for why
+    # this is ADVISORY: it reports, and by default blocks
     # nothing, until there is a measurement of how often a legitimately
     # test-free change (a documentation edit, a rename, a config change) would
     # be caught by it.
     #
     # A dict, never None, on the complete-gathering path:
-    # ``{"fired": bool, "severity": str|None, "files_created": [...],
-    #    "test_files_on_disk": [...], ...}``. ``None`` on every partial return
+    # ``{"fired": bool, "branch": str, "severity": str|None,
+    #    "files_created": [...], "recognised_test_files": [...],
+    #    "files_not_examined": [...], ...}``. ``None`` on every partial return
     # (dishonest report, failed quality gate, exception) — those stop
     # gathering before the check is reached, exactly as the legacy path does.
     zero_test: Optional[Dict[str, Any]] = None
