@@ -3,9 +3,9 @@ id: TASK-FIX-TTO01
 title: The run declares the per-task time budget it actually enforces
 status: completed
 task_type: bugfix
-priority: high
-complexity: 4
-implementation_mode: direct
+priority: high            # inferred at filing, not stated in any source
+complexity: 4             # inferred at filing, not stated in any source
+implementation_mode: direct   # inferred at filing, not stated in any source
 created: 2026-08-01
 updated: 2026-08-22
 completed: 2026-08-01
@@ -30,7 +30,11 @@ related: [TASK-ATR-001]
 > `tests/rules/test_no_dead_task_id_references.py` caught the dangling reference.
 >
 > Everything below is **reconstructed from the shipped code and its commit
-> history**, not from a plan written in advance. The "Acceptance Criteria"
+> history**, not from a plan written in advance. Three frontmatter fields —
+> `priority`, `complexity` and `implementation_mode` — appear in neither the
+> commit nor the code; they are estimates made at filing time and are marked as
+> such inline. Every other field (the commits, the branch, the dates) was read
+> off the repository. The "Acceptance Criteria"
 > section is therefore written as *what the shipped change actually does*, and
 > is ticked because the code and its tests are on `main` — not because anyone
 > ticked them at the time. Nothing here should be read as evidence that this
@@ -112,9 +116,16 @@ All production changes are in `guardkit/orchestrator/feature_orchestrator.py`.
 
 1. **`_resolve_wave_task_timeouts(feature)` — new.** One pass over
    `orchestration.parallel_groups` *before* wave 1, returning
-   `task_id -> effective per-task budget in seconds` in dispatch order. Tasks
-   whose markdown will not load are simply absent from the map (the dispatch path
-   applies its own fallback and logs there); the method never raises.
+   `task_id -> effective per-task budget in seconds` in dispatch order. A task is
+   absent from the map only when `FeatureLoader.find_task` cannot find it in the
+   feature. If the task IS found but its markdown will not load, the exception is
+   swallowed to an empty dict and a budget is still resolved and stored — from the
+   feature default and `estimated_minutes` — so the task stays in the map. The
+   method never raises.
+
+   > The method's own docstring said such tasks "are simply absent from the map".
+   > That was wrong, and this record originally repeated it. Corrected in the same
+   > commit as this filing; see `_resolve_wave_task_timeouts`.
 
 2. **`_format_task_timeout_banner(effective_timeouts)` — new.** Builds the
    once-per-run banner text. It declares the **largest** effective per-task
