@@ -359,16 +359,37 @@ class TestSelectorRoutesToLangGraphHarness:
     """``GUARDKIT_HARNESS=langgraph`` dispatches to LangGraphHarness."""
 
     def test_env_var_routes_to_langgraph(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """End-to-end env-var routing returns a LangGraphHarness."""
+        """End-to-end env-var routing returns a LangGraphHarness.
+
+        ``cwd=`` is REQUIRED on the langgraph branch and is not optional
+        test ceremony. ``select_harness`` threads it into
+        ``guardkitfactory.harness.build_autobuild_backend(worktree)``,
+        which sets ``root_dir=worktree`` on the ``LocalShellBackend`` --
+        i.e. ``cwd`` IS the agent's filesystem confinement boundary, so
+        there is no defensible default the selector could invent.
+
+        The requirement landed in production on 2026-06-03
+        (``812b2c4a``, TASK-FIX-002R-CONSUME), which updated the
+        production call sites but not this test, leaving it red on every
+        machine that has the langchain stack installed. The companion
+        test
+        ``tests/orchestrator/harness/test_selector.py::
+        test_langgraph_missing_cwd_raises_with_actionable_message``
+        pins the guard (and its message) from the other side, so
+        relaxing the selector to make this test pass would break that
+        one. The stale side was this one.
+        """
         from guardkit.orchestrator.harness.selector import select_harness
         from guardkitfactory.harness import LangGraphHarness
 
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
 
         stub_model = _make_stub_model()
-        harness = select_harness(env_var=_TEST_ENV_VAR, model=stub_model)
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, model=stub_model, cwd=tmp_path
+        )
 
         assert isinstance(harness, LangGraphHarness)
         # Not a ClaudeSDKHarness — verify exclusivity.
