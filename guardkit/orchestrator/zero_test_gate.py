@@ -165,6 +165,7 @@ __all__ = [
     "CONVENTION_LABELS",
     "FIELD_PROVENANCE",
     "OBSERVATION_COUNTS",
+    "NOT_RECORDED",
     "conventions_matching",
     "blocking_requested",
     "resolve_repo_root",
@@ -655,8 +656,23 @@ def _render_matching(entries: Any) -> str:
     return _render_list(rendered)
 
 
+#: What a line shows when the row does not carry that field at all. It is a
+#: different thing from ``(none)``, which means the field IS there and is
+#: empty — the row observed something, and what it observed was nothing.
+#: Printing a row written under an older shape as ``(none)`` would state an
+#: observation nothing ever made.
+NOT_RECORDED = "(not recorded)"
+
+
 def _render_value(value: Any) -> str:
-    return "(not recorded)" if value is None else repr(value)
+    return NOT_RECORDED if value is None else repr(value)
+
+
+def _list_field(row: Mapping[str, Any], key: str) -> str:
+    """A recorded list, or :data:`NOT_RECORDED` when the row has no such key."""
+    if key not in row:
+        return NOT_RECORDED
+    return _render_list(row.get(key) or [])
 
 
 def observation_lines(row: Mapping[str, Any]) -> List[Tuple[str, str]]:
@@ -664,31 +680,41 @@ def observation_lines(row: Mapping[str, Any]) -> List[Tuple[str, str]]:
 
     The labels are exactly the ones :data:`FIELD_PROVENANCE` explains, so a
     reader can put any line of a row against the statement of how it was
-    established. Fields a row does not carry render as ``(not recorded)``
-    rather than as an absence of the thing they describe.
+    established.
+
+    A field the row does not carry renders as :data:`NOT_RECORDED`, kept
+    distinct from ``(none)``. The two say different things — "nothing was
+    written down here" against "this was looked at and came back empty" — and
+    a row written under an older shape must not be read as the second.
     """
     if row.get("disk_lookup_performed") is False:
         on_disk = "not looked for (no worktree path was recorded)"
     else:
-        on_disk = _render_list(row.get("matching_names_found_on_disk") or [])
-    gates = (
-        f"all_passed={row.get('report_quality_gates_all_passed')!r}, "
-        f"tests_passed={row.get('report_quality_gates_tests_passed')!r}, "
-        f"coverage={row.get('report_quality_gates_coverage')!r}"
+        on_disk = _list_field(row, "matching_names_found_on_disk")
+    gate_keys = (
+        "report_quality_gates_all_passed",
+        "report_quality_gates_tests_passed",
+        "report_quality_gates_coverage",
     )
+    if any(key in row for key in gate_keys):
+        gates = (
+            f"all_passed={row.get(gate_keys[0])!r}, "
+            f"tests_passed={row.get(gate_keys[1])!r}, "
+            f"coverage={row.get(gate_keys[2])!r}"
+        )
+    else:
+        gates = NOT_RECORDED
+    if "names_matching_a_convention" not in row:
+        matching = NOT_RECORDED
+    else:
+        matching = _render_matching(row.get("names_matching_a_convention"))
     return [
-        (LABEL_TESTS_WRITTEN, _render_list(row.get("report_tests_written") or [])),
-        (LABEL_FILES_CREATED, _render_list(row.get("report_files_created") or [])),
-        (LABEL_FILES_MODIFIED, _render_list(row.get("report_files_modified") or [])),
-        (LABEL_MATCHING, _render_matching(row.get("names_matching_a_convention"))),
-        (
-            LABEL_EXAMINED,
-            _render_list(row.get("names_examined_by_recogniser") or []),
-        ),
-        (
-            LABEL_NOT_EXAMINED,
-            _render_list(row.get("names_not_examined_by_recogniser") or []),
-        ),
+        (LABEL_TESTS_WRITTEN, _list_field(row, "report_tests_written")),
+        (LABEL_FILES_CREATED, _list_field(row, "report_files_created")),
+        (LABEL_FILES_MODIFIED, _list_field(row, "report_files_modified")),
+        (LABEL_MATCHING, matching),
+        (LABEL_EXAMINED, _list_field(row, "names_examined_by_recogniser")),
+        (LABEL_NOT_EXAMINED, _list_field(row, "names_not_examined_by_recogniser")),
         (LABEL_ON_DISK, on_disk),
         (
             LABEL_INDEPENDENT_RUN,
@@ -713,17 +739,32 @@ def render_observation(row: Mapping[str, Any]) -> str:
     return "\n".join(f"  {label}: {value}" for label, value in observation_lines(row))
 
 
+def _recorded_and_empty(row: Mapping[str, Any], key: str) -> bool:
+    """The row carries ``key`` AND what it carries is empty.
+
+    The two halves are both required. A row written under an older shape has
+    no such key, and counting it as "empty" would put it in a total that
+    claims something was looked at and came back with nothing. Nothing was
+    looked at; there is no row here to count either way.
+    """
+    return key in row and not row[key]
+
+
 #: Counts the report prints. Each heading names the observation counted, in
 #: terms of what was looked at — never in terms of what a build did. A count
 #: of facts is a fact; a count called "turns with no test" would not be.
+#:
+#: Every predicate is FALSE for a row that does not carry the field it asks
+#: about, so an old or partial row is left out of that total rather than
+#: guessed into it.
 OBSERVATION_COUNTS: Tuple[Tuple[str, Callable[[Mapping[str, Any]], bool]], ...] = (
     (
-        "the report's tests_written list was empty",
-        lambda row: not row.get("report_tests_written"),
+        "the report's tests_written list was recorded and was empty",
+        lambda row: _recorded_and_empty(row, "report_tests_written"),
     ),
     (
         f"no name in the report was accepted by {RECOGNISER}",
-        lambda row: not row.get("names_matching_a_convention"),
+        lambda row: _recorded_and_empty(row, "names_matching_a_convention"),
     ),
     (
         f"at least one name in the report was accepted by {RECOGNISER}",
@@ -745,7 +786,7 @@ OBSERVATION_COUNTS: Tuple[Tuple[str, Callable[[Mapping[str, Any]], bool]], ...] 
         "the report recorded quality_gates.all_passed true with a "
         "tests_passed value the rule reads as zero",
         lambda row: row.get("report_quality_gates_all_passed") is True
-        and not row.get("report_quality_gates_tests_passed"),
+        and _recorded_and_empty(row, "report_quality_gates_tests_passed"),
     ),
     (
         'the Coach decision recorded was "approve"',

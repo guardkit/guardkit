@@ -1014,13 +1014,49 @@ def test_the_provenance_names_the_recogniser_and_its_whole_reach() -> None:
     assert "pytest" in dict(gate.FIELD_PROVENANCE)[gate.LABEL_INDEPENDENT_RUN]
 
 
-def test_a_row_missing_a_field_renders_as_not_recorded() -> None:
-    """An absent value is an absent value — never an observation of absence."""
-    lines = dict(gate.observation_lines({}))
+def test_a_field_a_row_never_carried_is_not_shown_as_an_empty_one() -> None:
+    """"Nothing was written down" and "this came back empty" are different.
 
-    assert lines[gate.LABEL_INDEPENDENT_RUN] == "(not recorded)"
-    assert lines[gate.LABEL_DECISION] == "(not recorded)"
-    assert lines[gate.LABEL_TESTS_WRITTEN] == "(none)"
+    A row written under an older shape of this record does not carry the
+    fields below. Rendering those as ``(none)`` would put an observation on
+    the page that nothing ever made — the same class of defect as the
+    sentences this instrument had removed, one layer down.
+    """
+    absent = dict(gate.observation_lines({}))
+    for label in (
+        gate.LABEL_TESTS_WRITTEN,
+        gate.LABEL_FILES_CREATED,
+        gate.LABEL_FILES_MODIFIED,
+        gate.LABEL_MATCHING,
+        gate.LABEL_EXAMINED,
+        gate.LABEL_NOT_EXAMINED,
+        gate.LABEL_ON_DISK,
+        gate.LABEL_INDEPENDENT_RUN,
+        gate.LABEL_QUALITY_GATES,
+        gate.LABEL_CRITERIA,
+        gate.LABEL_SEVERITY,
+        gate.LABEL_DECISION,
+    ):
+        assert absent[label] == gate.NOT_RECORDED, (
+            f"{label!r} was rendered as an observation on a row that never "
+            "carried it"
+        )
+
+    # And a field that IS there and holds nothing says so, distinctly.
+    present = dict(
+        gate.observation_lines(
+            {
+                "report_tests_written": [],
+                "names_matching_a_convention": [],
+                "matching_names_found_on_disk": [],
+                "report_quality_gates_all_passed": True,
+            }
+        )
+    )
+    assert present[gate.LABEL_TESTS_WRITTEN] == "(none)"
+    assert present[gate.LABEL_MATCHING] == "(none)"
+    assert present[gate.LABEL_ON_DISK] == "(none)"
+    assert "all_passed=True" in present[gate.LABEL_QUALITY_GATES]
 
 
 # ===========================================================================
@@ -1414,12 +1450,41 @@ def test_every_count_the_report_prints_names_what_it_counted(
         heading: sum(1 for row in rows if predicate(row))
         for heading, predicate in gate.OBSERVATION_COUNTS
     }
-    assert counts["the report's tests_written list was empty"] == 1
+    assert counts["the report's tests_written list was recorded and was empty"] == 1
     assert (
         counts[f"at least one name accepted by {gate.RECOGNISER} was found on disk"]
         == 1
     )
     assert counts['the Coach decision recorded was "approve"'] == 2
+
+
+def test_a_row_that_never_carried_a_field_is_counted_in_no_total() -> None:
+    """No count may absorb a row that has nothing to say about its question.
+
+    A row recorded under an older shape of this record carries none of the
+    observation fields. Every predicate must be False for it, so it lands in
+    no total — rather than being silently counted as an observation of
+    emptiness that nothing ever made.
+    """
+    old_shape = {
+        "schema": "zero_test_receipt/3",
+        "task_id": "TASK-OLD",
+        "turn": 1,
+        "recognised_test_files": ["tests/test_a.py"],
+        "tests_written": [],
+        "files_created": ["docs/x.md"],
+    }
+
+    landed_in = [
+        heading
+        for heading, predicate in gate.OBSERVATION_COUNTS
+        if predicate(old_shape)
+    ]
+
+    assert landed_in == [], (
+        "a row carrying none of the observation fields was counted under "
+        f"{landed_in}"
+    )
 
 
 def test_the_report_distinguishes_an_empty_ledger_from_no_ledger(
