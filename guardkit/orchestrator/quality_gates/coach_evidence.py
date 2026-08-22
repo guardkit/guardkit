@@ -235,6 +235,14 @@ class CoachEvidenceBundle:
     requirements
         ``RequirementsValidation`` from ``validate_requirements``. ``None``
         when gathering aborted before requirements validation.
+    zero_test
+        What was observed when the legacy rule
+        ``CoachValidator._check_zero_test_anomaly`` was run for this turn — a
+        dict on the complete-gathering path, ``None`` on every partial return.
+        The rule is run unchanged, so the rule-based and language-model
+        Coaches detect the same thing. It records and concludes nothing, and
+        blocks nothing unless ``GUARDKIT_ZERO_TEST_BLOCKING`` is set. See
+        :mod:`guardkit.orchestrator.zero_test_gate`.
     severity_recommendations
         Structured hints derived from ``_honesty_issues_from`` demotion logic
         (Layer 2). Each hint is ``{"recommendation": str, "rule": str}``. The
@@ -343,6 +351,22 @@ class CoachEvidenceBundle:
     # ``ac_paths`` presence check is applied in that guard (it needs the Coach
     # turn's structured acceptance criteria), not in this leg.
     spec_conformance: Optional[Dict[str, Any]] = None
+
+    # ZERO-TEST OBSERVATION (2026-08-21, Rich's ruling): what was observed
+    # when the SAME rule the legacy rule-based Coach carries —
+    # ``CoachValidator._check_zero_test_anomaly`` — was run for this turn, so
+    # the two Coach implementations cannot drift apart. It states no
+    # conclusion; :mod:`guardkit.orchestrator.zero_test_gate` lists each
+    # recorded field and how it was established.
+    #
+    # A dict, never None, on the complete-gathering path:
+    # ``{"rule_fired": bool, "rule_severity": str|None,
+    #    "report_tests_written": [...], "names_matching_a_convention": [...],
+    #    "names_not_examined_by_recogniser": [...], ...}``. ``None`` on every
+    # partial return (dishonest report, failed quality gate, exception) —
+    # those stop gathering before the rule is reached, exactly as the legacy
+    # path does.
+    zero_test: Optional[Dict[str, Any]] = None
 
     independent_tests: Optional["IndependentTestResult"] = None
     # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed

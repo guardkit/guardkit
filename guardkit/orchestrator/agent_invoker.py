@@ -18,6 +18,7 @@ from guardkit.orchestrator.permissive_double_advisory import (
     coach_advisory_text as permissive_double_advisory_text,
     split_findings as split_permissive_double_findings,
 )
+from guardkit.orchestrator import zero_test_gate
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
@@ -2649,6 +2650,29 @@ class AgentInvoker:
                 turn=turn,
                 coach_output_path=coach_output_path,
                 acceptance_criteria=acceptance_criteria,
+            )
+
+            # Zero-test observation (2026-08-21, Rich's ruling). Unlike every
+            # guard above it, this one RECORDS and does not block: when the
+            # zero-test rule fires it writes down what was observed, and it
+            # changes a verdict only when GUARDKIT_ZERO_TEST_BLOCKING is set.
+            # Runs here, in the same deterministic seam as the guards above,
+            # so the row records the FINAL post-override decision.
+            #
+            # THIS CALL IS THE ENTIRE PRODUCTION WIRING. Because it records
+            # rather than blocks, deleting this line produces NO build-visible
+            # symptom — the instrument would simply stop recording, silently.
+            # tests/orchestrator/test_zero_test_gate.py pins it by name:
+            #   test_invoke_coach_really_calls_the_zero_test_recorder
+            #   test_a_real_invoke_coach_turn_records_a_ledger_row
+            # Both go red if this call is removed, bypassed, or moved out of
+            # the path a real turn takes.
+            self._record_zero_test_observation(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
             )
 
             # TASK-FIX-COACHNARR01: keep the synthesized narrative faithful to
@@ -7097,6 +7121,167 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAWE-004"
         )
+
+    def _record_zero_test_observation(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+        env: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Write down what the zero-test rule observed. Change nothing else.
+
+        Rich's ruling, 2026-08-21: record facts, interpret nothing. So this
+        method does two jobs, and only the first one runs by default:
+
+        1. **Always**, when the rule fired: write a durable row holding the
+           observations — what the Player's report listed, which names the
+           recogniser accepted and under which naming convention, which names
+           it was never run on, which accepted names were found on disk, what
+           the Coach's own independent test run recorded, what the report
+           claimed about its quality gates, and what the Coach decided. No
+           field on that row states a conclusion; see
+           :mod:`guardkit.orchestrator.zero_test_gate`.
+
+        2. **Only when ``GUARDKIT_ZERO_TEST_BLOCKING`` is set**: change an
+           ``approve`` verdict to ``feedback``, handing the Player the same
+           observations. Without that variable this method never changes a
+           verdict — it is a recorder.
+
+        Detection is not done here. It was done in
+        ``CoachValidator.gather_evidence`` by running the legacy rule
+        ``_check_zero_test_anomaly`` unchanged; this method only reads
+        ``evidence_bundle.zero_test``.
+
+        No-ops when the bundle is absent (legacy / tool-using callers), when
+        the ``zero_test`` field is ``None`` (evidence gathering stopped
+        early — a dishonest report or a failed quality gate, both of which
+        stop the legacy path here too), or when the rule did not fire. The
+        override half additionally never touches a ``feedback`` verdict; only
+        an ``approve`` is ever changed.
+
+        Never raises: a recorder that can break a build is worse than none.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the verdict was built over, or ``None``.
+            task_id: Task identifier.
+            turn: Current turn number.
+            coach_output_path: ``coach_turn_N.json``, re-persisted on override.
+            env: Environment mapping for the blocking flag. Defaults to the
+                real process environment; injectable for tests.
+        """
+        if evidence_bundle is None:
+            return
+        observation = getattr(evidence_bundle, "zero_test", None)
+        if not isinstance(observation, dict) or not observation.get("rule_fired"):
+            return
+
+        blocking = zero_test_gate.blocking_requested(env)
+        original_decision = decision.get("decision")
+        should_override = blocking and original_decision == "approve"
+
+        # ---- job 1: the row (always) -----------------------------------
+        record: Optional[Dict[str, Any]] = None
+        try:
+            repo_root = self._resolve_repo_root()
+            record = zero_test_gate.build_record(
+                observation=observation,
+                task_id=task_id,
+                turn=turn,
+                worktree_dir=self._zero_test_worktree_dir(),
+                repo=(repo_root or self.worktree_path).name,
+                repo_path=str(repo_root or self.worktree_path),
+                coach_decision=original_decision,
+                blocking_env_var_set=blocking,
+                decision_changed=should_override,
+            )
+            zero_test_gate.write_record(
+                record,
+                worktree_path=self.worktree_path,
+                repo_root=repo_root,
+                task_id=task_id,
+                turn=turn,
+                # Same mapping the blocking flag is read from, so a test can
+                # point the durable ledger at a temporary directory instead
+                # of the real one under the user's home.
+                env=env,
+            )
+        except Exception as exc:  # noqa: BLE001 — a recorder must never break a build
+            logger.warning(
+                "zero-test rule: failed to write the row for %s turn %s "
+                "(%s); the turn is unaffected.",
+                task_id,
+                turn,
+                exc.__class__.__name__,
+            )
+
+        if not should_override:
+            logger.info(
+                "zero-test rule fired for %s turn %s (severity=%s); the Coach "
+                "decision %r is unchanged. Set %s=1 to make it change.",
+                task_id,
+                turn,
+                observation.get("rule_severity"),
+                original_decision,
+                zero_test_gate.BLOCKING_ENV_VAR,
+            )
+            return
+
+        # ---- job 2: the override (only when explicitly asked for) -------
+        # The message hands the Player the observations and nothing else. It
+        # tells it nothing about what it did or failed to do, because this
+        # instrument does not know that — and a Player told "you wrote no
+        # test" when its test exists in a language the recogniser has never
+        # heard of goes and fixes the wrong thing.
+        observed = zero_test_gate.render_observation(record or observation)
+        rationale = (
+            f"{zero_test_gate.BLOCKING_ENV_VAR} is set, so the Coach's "
+            f"{original_decision!r} verdict for this turn was changed to "
+            "'feedback' when CoachValidator._check_zero_test_anomaly fired. "
+            "What was observed, and nothing beyond it:\n"
+            f"{observed}\n"
+            "Read those and answer them. If a test for this turn exists, say "
+            "where it is and what command runs it."
+        )
+        decision["decision"] = "feedback"
+        decision["rationale"] = rationale
+        decision["issues"] = [
+            {
+                "severity": "must_fix",
+                "category": zero_test_gate.ANOMALY_CATEGORY,
+                "description": rationale,
+                "details": dict(record or observation),
+            },
+            *decision.get("issues", []),
+        ]
+        logger.warning(
+            "zero-test rule: changing Coach verdict %r->'feedback' for %s "
+            "turn %s — %s is set.",
+            original_decision,
+            task_id,
+            turn,
+            zero_test_gate.BLOCKING_ENV_VAR,
+        )
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="zero-test-observation"
+        )
+
+    def _zero_test_worktree_dir(self) -> Optional[str]:
+        """The name of the directory this build is running in, or ``None``.
+
+        GuardKit builds run inside ``<repo>/.guardkit/worktrees/<id>/``, where
+        ``<id>`` is a feature identifier for a feature build and a task
+        identifier for a single-task build. The row records the directory
+        name, which is what is known; it does not guess which of the two it
+        is. ``None`` when the build is not running in a worktree at all.
+        """
+        if self._resolve_repo_root() is None:
+            return None
+        return self.worktree_path.name
 
     def _apply_runtime_parity_guard(
         self,
