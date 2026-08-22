@@ -1,4 +1,4 @@
-"""Notices — and records — when an automated build's tests are missing or unrun.
+"""Notices — and records — when a build's tests cannot be found, or never ran.
 
 PLAIN-LANGUAGE SUMMARY
 ----------------------
@@ -10,8 +10,8 @@ There are two Coach implementations in this repository:
 
 * The **legacy** Coach is a set of hard-coded rules
   (``CoachValidator.validate``). One of those rules,
-  ``CoachValidator._check_zero_test_anomaly``, refuses to approve a turn whose
-  tests are missing or were never run.
+  ``CoachValidator._check_zero_test_anomaly``, refuses to approve a turn
+  whose tests it cannot find, or whose own report says none ran.
 * The **live** Coach — the default since 2026-05-21 — is a language model.
   The rule-based validator was demoted to gathering evidence for it
   (``CoachValidator.gather_evidence``). On that path the rule was never run,
@@ -23,53 +23,75 @@ This module closes that gap on the live path. It runs **the same rule** —
 puts the answer in front of the language model in plain words, and writes a
 durable record every time it fires.
 
+THE CHECK REPORTS WHAT IT RECOGNISED — NEVER WHAT EXISTS
+---------------------------------------------------------
+This is the single most important paragraph in the module, and three earlier
+versions of it were wrong.
+
+The check has no way of knowing whether the builder wrote a test. It knows
+three much smaller things, and only these three:
+
+1. what the builder's own report listed under ``tests_written``;
+2. whether any file name the report mentions matches one of a **fixed, short
+   list of test-file naming conventions** (see :data:`KNOWN_TEST_CONVENTIONS`)
+   — that recogniser is ``CoachValidator._is_test_file_path``, and it knows
+   Python, Go, TypeScript, JavaScript and .NET and nothing else;
+3. whether the Coach's own independent test run — a **pytest** run, so
+   Python only — found a task-specific test it could execute.
+
+A test written in Java, Ruby, Rust, C, C++, Elixir, Kotlin, Swift, a shell
+script, a ``.feature`` file, or in any Python file whose name does not match
+those conventions, is invisible to all three. So is a perfectly ordinary
+``test_*.py`` that ``collect_ignore_glob`` excludes from collection.
+
+Earlier rounds tried to fix this by teaching the recogniser one more
+language. That is the losing move: there is always one more language. **What
+changed instead is the claim.** Nothing this module writes — to the Coach, to
+the Player, to the ledger, or to a person reading the report — says a test
+does not exist. Every sentence is scoped to recognition, and where the check
+has evidence that a test file *is* named, it says that — and says how strong
+that evidence is — instead of guessing.
+
 THE RULE HAS TWO BRANCHES, AND THEY ARE DIFFERENT SITUATIONS
 ------------------------------------------------------------
-This matters more than anything else in this module, because the whole point
-of the instrument is to produce **one honest number** and a blended claim
-makes that number wrong.
-
 ``_check_zero_test_anomaly`` can fire for either of two entirely different
 reasons. It returns the same ``category`` for both, so nothing downstream
 could previously tell them apart. This module names them:
 
-``no_test_file`` — **no test was FOUND for this turn.**
+``no_test_recognised`` — **no test was RECOGNISED for this turn.**
     Fires when the Player's ``tests_written`` list is empty *and* the Coach's
-    own independent test run searched the worktree for task-specific tests
-    and found none to execute (it reports its command as ``"skipped"``).
-    Both halves must hold.
+    own independent test run reported that it found no task-specific test to
+    execute (its command reads ``"skipped"``). Both halves must hold.
 
-    **Read that literally, because it is narrower than its name.** The rule
-    reads ``tests_written`` and nothing else. A Player may name a test file
-    under ``files_created`` / ``files_modified`` instead — the rule's own
-    remediation text tells it to do exactly that — and the rule will not see
-    it. And the search that reports ``"skipped"`` only ever looks for Python
-    tests it can collect, so it also comes up empty for a test written in
-    another language, a test excluded by ``collect_ignore_glob``, and
-    pytest-bdd glue. All three shapes have been reproduced against the real
-    rule; each reaches this branch with a real test file named in the report
-    and present on disk.
+    The branch says nothing about whether a test exists. It arrives in two
+    shapes, and the wording shown to the Coach, written into the receipt and
+    printed in the report says which shape a row is, read from
+    ``recognised_test_files``:
 
-    So this branch covers two situations, and the wording shown to the Coach
-    and printed in the report says which one a row is, from
-    ``claimed_test_files``:
+    * ``recognised_test_files`` empty — nothing the report names matches a
+      convention the recogniser knows. **This** is the shape the promotion
+      question is about: a person must judge whether the turn legitimately
+      needed no test (a documentation edit, a rename, deleting dead code, a
+      configuration change), whether it is unverified work, or whether it
+      wrote a test in a form nothing here can see.
+    * ``recognised_test_files`` non-empty — the report names test files that
+      the rule did not look at (it reads ``tests_written`` and nothing else)
+      and the pytest run could not execute. That is **positive evidence a
+      test exists**, and the wording says so. The row is still recorded under
+      this branch, because the branch is defined by the rule's control flow
+      and nothing else, but the report flags it so nobody rules it test-free
+      by mistake.
 
-    * ``claimed_test_files`` empty — nothing in the whole report is a file
-      the Coach recognises as a test. **This** is the situation the promotion
-      question is about: a turn produced code and no test, and a person must
-      judge whether that was legitimate (a documentation edit, a rename,
-      deleting dead code, a configuration change) or unverified work.
-    * ``claimed_test_files`` non-empty — the report names test files that the
-      rule did not look at and the search could not run. The row is still
-      recorded under this branch, because the branch is defined by the rule's
-      control flow and nothing else, but a person must open the named files
-      before ruling it test-free. The report flags these rows for that reason.
+    A third possibility is recorded rather than assumed away: if the
+    recogniser is unavailable or raises on a file name, that file goes into
+    ``files_not_examined`` and the sentence says so — it does not quietly
+    count as "not a test".
 
-``tests_not_executed`` — **tests may well exist; the Player's own report says
-none ran.**
+``report_says_no_test_ran`` — **tests may well exist; the Player's own report
+says none ran.**
     Fires when the first branch did *not* apply, and the Player's report
     claims ``quality_gates.all_passed`` is true while reporting
-    ``tests_passed`` as zero.
+    ``tests_passed`` as zero (or as a value this check reads as zero).
 
     Nothing in this branch says a test file is missing. Test files may be
     listed in ``tests_written``, may exist on disk, and may have been written
@@ -77,30 +99,44 @@ none ran.**
     quality gate passed while simultaneously reporting that no test executed.
     That is a claim-versus-evidence problem, not a missing-test problem.
 
-Everything the first version of this module asserted about a fired check —
-"none of the files is a test file that exists on disk", "the independent test
-run found no task-specific tests" — can be flatly **false** of
-``tests_not_executed``. And the second version's replacement for branch one,
-"the Player's report for this turn names no test file", is false of every
-turn in the second bullet above. So the sentence shown to the Coach, the
-field written into the receipt, and the report a person reads are all
-branch-specific from here on, and within branch one they are specific to
-whether the report named a test file.
+THE BRANCH IDENTIFIERS WERE RENAMED; THE ENV VARS AND FILE NAMES WERE NOT
+--------------------------------------------------------------------------
+The two identifiers used to be ``no_test_file`` and ``tests_not_executed``.
+Both named a fact about the world that the check cannot establish, so both
+were renamed — they appear in ``--json`` output and in every receipt, which
+makes them user-facing. Nothing had recorded a row under the old names
+anywhere in this estate when the rename happened, and :data:`LEGACY_BRANCH_IDS`
+maps them forward anyway, so no already-recorded row is lost or reclassified.
+
+What was deliberately **not** renamed, and why:
+
+* ``GUARDKIT_ZERO_TEST_BLOCKING`` and ``GUARDKIT_ZERO_TEST_ROOT`` — an
+  environment variable is an operator's interface. Renaming it would silently
+  turn blocking off for anyone who had set it.
+* the module, the receipt file name, ``queue.jsonl``, and the
+  ``guardkit autobuild zero-test-report`` / ``zero-test-rule`` commands — the
+  command names are installed on people's machines and written into runbooks,
+  and the file names are pinned by the wiring tests that prove the instrument
+  is still connected.
+
+"Zero-test" as a *file and command* name is a neutral label for the
+instrument. It is the *claims* that had to change.
 
 WHICH BRANCH FEEDS THE PROMOTION MEASUREMENT — only the first
 --------------------------------------------------------------
-Only ``no_test_file`` rows count toward the promotion decision
-(:data:`COUNTS_TOWARD_PROMOTION`). ``tests_not_executed`` rows are recorded
-and reported, but deliberately kept out of the rate, for three reasons:
+Only ``no_test_recognised`` rows count toward the promotion decision
+(:data:`COUNTS_TOWARD_PROMOTION`). ``report_says_no_test_ran`` rows are
+recorded and reported, but deliberately kept out of the rate, for three
+reasons:
 
 1. The promotion question is "how often does a turn legitimately need no
-   test?". A ``tests_not_executed`` turn has not been shown to lack a test, so
-   it cannot answer that question either way.
-   (A ``no_test_file`` row whose ``claimed_test_files`` is non-empty has not
-   been shown to lack one either. It still counts, because the branch follows
-   the rule's control flow rather than a second opinion about it, but the
-   report marks it so a person does not rule it test-free by mistake. If that
-   proves common in the accumulated rows, excluding it is a decision for
+   test?". A ``report_says_no_test_ran`` turn has not been shown to lack a
+   test, so it cannot answer that question either way.
+   (A ``no_test_recognised`` row whose ``recognised_test_files`` is non-empty
+   has not been shown to lack one either. It still counts, because the branch
+   follows the rule's control flow rather than a second opinion about it, but
+   the report marks it so a person does not rule it test-free by mistake. If
+   that proves common in the accumulated rows, excluding it is a decision for
    whoever reads the measurement, not for this module to take quietly.)
 2. The adjudication a person performs — marking a row
    ``legitimately_test_free`` — is meaningless for the second branch. The
@@ -111,10 +147,11 @@ and reported, but deliberately kept out of the rate, for three reasons:
 
 HOW THE BRANCH IS DETERMINED — from the rule's own control flow
 ----------------------------------------------------------------
-The rule tests the ``no_test_file`` condition first and returns immediately if
-it holds. So: given that the rule fired, if that first condition holds the
-branch is ``no_test_file``; otherwise it is ``tests_not_executed``. That is
-exact, not a guess at the wording of a message.
+The rule tests the ``no_test_recognised`` condition first and returns
+immediately if it holds. So: given that the rule fired, if that first
+condition holds the branch is ``no_test_recognised``; otherwise it is
+``report_says_no_test_ran``. That is exact, not a guess at the wording of a
+message.
 
 ``tests/orchestrator/test_zero_test_gate.py`` pins the labels against the
 descriptions the real rule produces for each branch, so reordering the rule
@@ -277,11 +314,20 @@ __all__ = [
     "LEGACY_IN_TREE_QUEUE",
     "ZERO_TEST_RECEIPT",
     "ANOMALY_CATEGORY",
-    "BRANCH_NO_TEST_FILE",
-    "BRANCH_TESTS_NOT_EXECUTED",
+    "BRANCH_NO_TEST_RECOGNISED",
+    "BRANCH_REPORT_SAYS_NO_TEST_RAN",
+    "LEGACY_BRANCH_IDS",
     "BRANCH_LABELS",
     "BRANCH_MEANINGS",
+    "KNOWN_TEST_CONVENTIONS",
+    "RECOGNISED_CONVENTIONS_PHRASE",
+    "UNRECOGNISED_EXAMPLES",
+    "HEADLINE_NONE_RECOGNISED",
+    "HEADLINE_TEST_NAMED_NONE_RAN",
+    "HEADLINE_REPORT_SAYS_NO_TEST_RAN",
+    "ADVISORY_HEADLINES",
     "COUNTS_TOWARD_PROMOTION",
+    "normalise_branch",
     "blocking_requested",
     "resolve_repo_root",
     "ledger_path_for",
@@ -336,31 +382,95 @@ ZERO_TEST_RECEIPT = ".guardkit/autobuild/{task_id}/zero_test_turn_{turn}.json"
 ANOMALY_CATEGORY = "zero_test_anomaly"
 
 #: Branch 1: the Player's ``tests_written`` list is empty AND the Coach's own
-#: search found no task-specific test to run. Note what this does NOT say —
-#: see :data:`BRANCH_MEANINGS`. The identifier is unchanged so that rows
-#: already in the ledger stay comparable.
-BRANCH_NO_TEST_FILE = "no_test_file"
+#: pytest run reported that it found no task-specific test to execute. Note
+#: what this does NOT say — see :data:`BRANCH_MEANINGS`. Renamed from
+#: ``no_test_file`` (which asserted a fact about the world the check cannot
+#: establish); :data:`LEGACY_BRANCH_IDS` maps the old value forward.
+BRANCH_NO_TEST_RECOGNISED = "no_test_recognised"
 
 #: Branch 2: tests may exist, but the Player's report claims every quality
-#: gate passed while reporting that zero tests executed.
-BRANCH_TESTS_NOT_EXECUTED = "tests_not_executed"
+#: gate passed while reporting that zero tests executed. Renamed from
+#: ``tests_not_executed`` for the same reason: the check knows what the report
+#: SAYS, not what ran.
+BRANCH_REPORT_SAYS_NO_TEST_RAN = "report_says_no_test_ran"
 
-#: Short human labels, for tables and one-line summaries.
-BRANCH_LABELS = {
-    BRANCH_NO_TEST_FILE: "no test found",
-    BRANCH_TESTS_NOT_EXECUTED: "0 tests ran",
+#: Branch identifiers written by earlier versions of this module, mapped to
+#: the ones in use. Nothing in this estate had recorded a row under the old
+#: names when they were renamed, but a row from anywhere else still classifies
+#: rather than falling into the report's "unlabelled" bucket.
+LEGACY_BRANCH_IDS = {
+    "no_test_file": BRANCH_NO_TEST_RECOGNISED,
+    "tests_not_executed": BRANCH_REPORT_SAYS_NO_TEST_RAN,
 }
 
+#: Short human labels, for tables and one-line summaries. Both are scoped to
+#: what the check saw: it recognises, and it reads a report.
+BRANCH_LABELS = {
+    BRANCH_NO_TEST_RECOGNISED: "no test recognised",
+    BRANCH_REPORT_SAYS_NO_TEST_RAN: "report says 0 tests ran",
+}
+
+#: The test-file naming conventions the recogniser
+#: (``CoachValidator._is_test_file_path``) actually knows, each paired with a
+#: file name it accepts. **This list is the whole of what "recognised" means**,
+#: and it is quoted verbatim to the Coach and to a person reading the report,
+#: so that neither mistakes silence for absence.
+#:
+#: ``tests/orchestrator/test_zero_test_gate.py`` runs every example below
+#: through the real recogniser, so this list cannot drift into claiming more
+#: than the code does.
+KNOWN_TEST_CONVENTIONS = (
+    ("test_*.py", "tests/test_widget.py"),
+    ("*_test.py", "tests/widget_test.py"),
+    ("*_test.go", "widget_test.go"),
+    ("*.test.ts / *.test.js", "src/widget.test.ts"),
+    ("*.spec.ts / *.spec.js", "src/widget.spec.js"),
+    ("*.cs under Tests/", "Tests/WidgetTests.cs"),
+)
+
+#: The conventions above as one parenthetical phrase, for prose.
+RECOGNISED_CONVENTIONS_PHRASE = ", ".join(
+    pattern for pattern, _example in KNOWN_TEST_CONVENTIONS
+)
+
+#: Languages and forms the recogniser and the pytest run are both blind to.
+#: Named explicitly, because "no test was recognised" is only honest if the
+#: reader is told how narrow the recogniser is.
+UNRECOGNISED_EXAMPLES = (
+    "in Java, Ruby, Rust, C, C++, Kotlin, Swift or Elixir, as a shell "
+    "script, as a .feature file, or as a Python file whose name matches none "
+    "of those patterns or that collect_ignore_glob excludes from collection"
+)
+
+#: The headline of every advisory sentence this module can produce, keyed by
+#: the situation it describes. Exported so the Coach's standing instructions
+#: can be checked against the code rather than against a copy of the wording:
+#: if a headline changes here and not in ``installer/core/agents/
+#: autobuild-coach.md``, the guard test goes red.
+HEADLINE_NONE_RECOGNISED = "ADVISORY — NO TEST FILE WAS RECOGNISED FOR THIS TURN"
+HEADLINE_TEST_NAMED_NONE_RAN = "ADVISORY — A TEST FILE IS NAMED, BUT NONE RAN"
+HEADLINE_REPORT_SAYS_NO_TEST_RAN = "ADVISORY — THE REPORT SAYS NO TEST RAN"
+
+#: Every headline above, as one set.
+ADVISORY_HEADLINES = (
+    HEADLINE_NONE_RECOGNISED,
+    HEADLINE_TEST_NAMED_NONE_RAN,
+    HEADLINE_REPORT_SAYS_NO_TEST_RAN,
+)
+
 #: One sentence per branch, for a person who has never read this module.
+#: Every clause is scoped to what the check looked at.
 BRANCH_MEANINGS = {
-    BRANCH_NO_TEST_FILE: (
-        "No test was found for this turn: the Player's tests-written list is "
-        "empty, and the Coach's own test run searched the worktree and found "
-        "no task-specific test to execute. This rule never reads the report's "
-        "created/modified lists, so a test file named THERE is still "
-        "possible — check claimed_test_files before ruling on the row."
+    BRANCH_NO_TEST_RECOGNISED: (
+        "No test was RECOGNISED for this turn: the Player's tests-written "
+        "list is empty, and the Coach's own pytest run reported that it found "
+        "no task-specific test to execute. This is not evidence that no test "
+        "exists — the rule never reads the report's created/modified lists, "
+        "and the recogniser knows only "
+        f"{RECOGNISED_CONVENTIONS_PHRASE}. Check recognised_test_files and "
+        "the created/modified lists before ruling on the row."
     ),
-    BRANCH_TESTS_NOT_EXECUTED: (
+    BRANCH_REPORT_SAYS_NO_TEST_RAN: (
         "Tests may well exist. The Player's report claims every quality gate "
         "passed while also reporting that zero tests ran — a claim-versus-"
         "evidence problem, not a missing-test problem."
@@ -369,7 +479,23 @@ BRANCH_MEANINGS = {
 
 #: The only branch that feeds the promotion measurement. See the module
 #: docstring for why the other one is deliberately excluded.
-COUNTS_TOWARD_PROMOTION = BRANCH_NO_TEST_FILE
+COUNTS_TOWARD_PROMOTION = BRANCH_NO_TEST_RECOGNISED
+
+
+def normalise_branch(value: Any) -> Optional[str]:
+    """The branch identifier in use, given whatever a row carries.
+
+    Maps the identifiers earlier versions wrote (:data:`LEGACY_BRANCH_IDS`)
+    onto the current ones and passes the current ones through. Anything else —
+    including a row recorded before branches existed at all — comes back
+    ``None``, which every caller treats as "cannot be attributed", never as a
+    guess.
+    """
+    if not isinstance(value, str):
+        return None
+    if value in BRANCH_LABELS:
+        return value
+    return LEGACY_BRANCH_IDS.get(value)
 
 
 def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
@@ -386,12 +512,14 @@ def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
 def counts_toward_promotion(row: Mapping[str, Any]) -> bool:
     """Does this receipt belong in the promotion measurement?
 
-    Only ``no_test_file`` rows do. A row written before branches were recorded
-    carries no ``branch`` at all; those are treated as NOT counting, because
-    guessing would put unverified rows into the one number this instrument
-    exists to produce.
+    Only ``no_test_recognised`` rows do. A row written before branches were
+    recorded carries no ``branch`` at all; those are treated as NOT counting,
+    because guessing would put unverified rows into the one number this
+    instrument exists to produce. A row carrying one of the identifiers an
+    earlier version wrote is mapped forward by :func:`normalise_branch` rather
+    than dropped.
     """
-    return row.get("branch") == COUNTS_TOWARD_PROMOTION
+    return normalise_branch(row.get("branch")) == COUNTS_TOWARD_PROMOTION
 
 
 def _main_worktree_of(git_link: Path) -> Optional[Path]:
@@ -528,24 +656,24 @@ def _fired_branch(
     """Which of the rule's two branches produced the finding.
 
     Derived from the rule's own control flow, not from the wording of its
-    message: ``_check_zero_test_anomaly`` evaluates the ``no_test_file``
-    condition first and returns immediately when it holds. So, GIVEN that the
+    message: ``_check_zero_test_anomaly`` evaluates the
+    ``no_test_recognised`` condition first and returns immediately when it holds. So, GIVEN that the
     rule fired, that condition holding means branch one; anything else means
     the rule fell through to branch two.
     """
     raw_tests_written = task_work_results.get("tests_written", [])
     try:
-        named_no_test_file = len(raw_tests_written) == 0
+        listed_no_test = len(raw_tests_written) == 0
     except TypeError:  # a report with a non-sequence there; the rule would
-        named_no_test_file = False  # have raised, and we record honestly.
+        listed_no_test = False  # have raised, and we record honestly.
 
     search_found_nothing = (
         bool(independent_tests)
         and getattr(independent_tests, "test_command", None) == "skipped"
     )
-    if named_no_test_file and search_found_nothing:
-        return BRANCH_NO_TEST_FILE
-    return BRANCH_TESTS_NOT_EXECUTED
+    if listed_no_test and search_found_nothing:
+        return BRANCH_NO_TEST_RECOGNISED
+    return BRANCH_REPORT_SAYS_NO_TEST_RAN
 
 
 def evaluate_zero_test(
@@ -568,8 +696,14 @@ def evaluate_zero_test(
     (``branch_meaning``), and whether the row belongs in the promotion
     measurement (``counts_toward_promotion``). Everything else is context for
     the person who will later adjudicate the row: what the Player said it
-    created, modified and claimed, which of those look like test files, and
-    which of THOSE are actually present on disk.
+    created, modified and claimed, which of those names the recogniser
+    MATCHED (``recognised_test_files``), which it never got to examine
+    (``files_not_examined``), and which of the matched names are actually
+    present on disk.
+
+    Nothing here decides that a file is not a test. A name the recogniser
+    could not examine is recorded as unexamined, not as a non-test, so no
+    sentence built from this evidence can claim more than was looked at.
 
     Never raises. If the rule itself blows up, the result records that fact
     with ``fired`` false — an instrument that cannot report must not
@@ -588,20 +722,39 @@ def evaluate_zero_test(
     is_test_path = getattr(validator, "_is_test_file_path", None)
     worktree_path = getattr(validator, "worktree_path", None)
 
-    claimed_test_files: List[str] = []
+    # THE RECOGNITION PASS. Three outcomes per file name, kept apart, because
+    # collapsing the third into the second is exactly how this instrument came
+    # to state a falsehood: "the recogniser did not match it" and "the
+    # recogniser never looked at it" are different facts, and only the first
+    # one licenses saying anything at all about the file.
+    recognised_test_files: List[str] = []
+    files_examined: List[str] = []
+    files_not_examined: List[str] = []
+    recogniser_available = callable(is_test_path)
+    seen: List[str] = []
     for candidate in [*tests_written, *files_created, *files_modified]:
-        if candidate in claimed_test_files:
+        if candidate in seen:
+            continue
+        seen.append(candidate)
+        if not recogniser_available:
+            files_not_examined.append(candidate)
             continue
         try:
-            looks_like_a_test = bool(is_test_path and is_test_path(candidate))
+            looks_like_a_test = bool(is_test_path(candidate))
         except Exception:  # noqa: BLE001 — a heuristic must never break gathering
-            looks_like_a_test = False
+            files_not_examined.append(candidate)
+            continue
+        files_examined.append(candidate)
         if looks_like_a_test:
-            claimed_test_files.append(candidate)
+            recognised_test_files.append(candidate)
 
+    # Whether a recognised file is actually THERE. Only knowable when the
+    # validator carries a worktree path; when it does not, the answer is
+    # "not checked", never "no".
+    disk_checked = worktree_path is not None
     test_files_on_disk: List[str] = []
-    if worktree_path is not None:
-        for candidate in claimed_test_files:
+    if disk_checked:
+        for candidate in recognised_test_files:
             try:
                 if (Path(worktree_path) / candidate).exists():
                     test_files_on_disk.append(candidate)
@@ -629,11 +782,20 @@ def evaluate_zero_test(
         "files_created": files_created,
         "files_modified": files_modified,
         "tests_written": tests_written,
-        "claimed_test_files": claimed_test_files,
+        # WHAT THE RECOGNISER SAW. Named for what it is: files whose NAME
+        # matches one of KNOWN_TEST_CONVENTIONS. Never read as "the tests".
+        "recognised_test_files": recognised_test_files,
+        "files_examined": files_examined,
+        "files_not_examined": files_not_examined,
+        "recogniser_available": recogniser_available,
+        "recognised_conventions": [
+            pattern for pattern, _example in KNOWN_TEST_CONVENTIONS
+        ],
+        "disk_checked": disk_checked,
         "test_files_on_disk": test_files_on_disk,
         "any_test_file_on_disk": bool(test_files_on_disk),
         # What the Player CLAIMED about its own quality gates. Recorded
-        # because it is the entire substance of the tests_not_executed
+        # because it is the entire substance of the report_says_no_test_ran
         # branch, and a person cannot adjudicate that branch without it.
         "claimed_all_passed": quality_gates.get("all_passed"),
         "claimed_tests_passed": quality_gates.get("tests_passed"),
@@ -686,75 +848,196 @@ def _requirements_met(requirements: Any) -> Optional[bool]:
 _WEIGH_THIS = (
     "Weigh this. It is ADVISORY and does NOT block the turn on its own, "
     "and you must not reject solely because this line is present — say in "
-    "your rationale which of the two cases you judge this to be.\n"
+    "your rationale which of the cases above you judge this to be.\n"
+)
+
+#: The one paragraph that keeps every "nothing was recognised" sentence
+#: honest. It is appended to that sentence and nowhere else, and it is what
+#: separates a statement about this check from a statement about the world.
+_RECOGNITION_IS_NOT_EXISTENCE = (
+    "That is the WHOLE of what is known, and all of it is about recognition, "
+    "not about what exists. A test written "
+    f"{UNRECOGNISED_EXAMPLES} is invisible to every one of those checks. Do "
+    "not conclude from this line that the turn produced no test — look at the "
+    "changed files yourself and say what you found.\n"
 )
 
 
-def _no_test_file_advisory(evidence: Dict[str, Any]) -> str:
-    """The sentence for branch one — in the two forms that branch really has.
+def _plural_files(count: int) -> str:
+    return "1 file" if count == 1 else f"{count} files"
+
+
+def _listing(names: Sequence[Any], limit: int = 3) -> str:
+    """``a, b, c, +2 more`` — a bounded, readable file listing."""
+    shown = ", ".join(str(name) for name in names[:limit])
+    if len(names) > limit:
+        shown += f", +{len(names) - limit} more"
+    return shown
+
+
+def _pytest_run_clause() -> str:
+    """What the Coach's own test run reported. Scoped to the report of a run.
+
+    Branch one is reached only when that run's command reads ``"skipped"``,
+    which ``run_independent_tests`` sets in exactly one place: it looked for a
+    task-specific test to execute and found none. The clause says that, and
+    names the run's one blind spot — it is pytest, so it can only ever find
+    Python tests it is able to collect.
+    """
+    return (
+        "the Coach's own independent test run reported that it found no "
+        "task-specific test to execute (that run is pytest, so it can only "
+        "find Python tests it is able to collect)"
+    )
+
+
+def _recognition_clauses(evidence: Dict[str, Any]) -> List[str]:
+    """What the recogniser did and did not look at, as true clauses.
+
+    Three separate facts, each stated only when it holds:
+
+    * files that were examined and matched nothing;
+    * files that could not be examined at all (the recogniser was missing or
+      raised on the name) — these are never reported as "not a test";
+    * what "matched" even means, quoted from :data:`KNOWN_TEST_CONVENTIONS`.
+    """
+    examined = evidence.get("files_examined") or []
+    not_examined = evidence.get("files_not_examined") or []
+    clauses: List[str] = []
+    if len(examined) == 1:
+        clauses.append(
+            f"the one file it names ({examined[0]}) does not match a "
+            "test-file naming convention this check knows "
+            f"({RECOGNISED_CONVENTIONS_PHRASE})"
+        )
+    elif examined:
+        clauses.append(
+            f"none of the {len(examined)} files it names matches a "
+            "test-file naming convention this check knows "
+            f"({RECOGNISED_CONVENTIONS_PHRASE})"
+        )
+    if not_examined:
+        clauses.append(
+            f"{_plural_files(len(not_examined))} it names could not be "
+            "examined by this check at all, so nothing is known about "
+            f"{'it' if len(not_examined) == 1 else 'them'} "
+            f"({_listing(not_examined)})"
+        )
+    return clauses
+
+
+def _on_disk_clause(evidence: Dict[str, Any]) -> str:
+    """How many recognised files are present — or that presence was not checked."""
+    if not evidence.get("disk_checked"):
+        return "this check could not look on disk to see whether they are there"
+    on_disk = evidence.get("test_files_on_disk") or []
+    if not on_disk:
+        return "none of them was found on disk at the path the report gives"
+    if len(on_disk) == 1:
+        return "1 of them is present on disk"
+    return f"{len(on_disk)} of them are present on disk"
+
+
+def _no_test_recognised_advisory(evidence: Dict[str, Any]) -> str:
+    """The sentence for branch one — in the two shapes that branch really has.
 
     **Branch one establishes exactly two things**, and this wording must not
     exceed them:
 
     * the Player's ``tests_written`` list is empty, and
-    * the Coach's own independent test run found no task-specific test it
-      could execute.
+    * the Coach's own independent test run reported that it found no
+      task-specific test it could execute.
 
-    It does **not** establish that the report names no test file. The rule
-    reads ``tests_written`` and nothing else, while a Player is free to list
-    a test under ``files_created`` / ``files_modified`` — the rule's own
-    remediation text tells it to. And the Coach's search that reports
-    ``skipped`` only ever looks for Python tests it can collect, so it comes
-    up empty for a test written in another language, a test excluded from
-    collection by ``collect_ignore_glob``, and pytest-bdd glue. Every one of
-    those is a turn that reaches this branch with a real, present test file
-    named in its report.
+    It does **not** establish that no test file exists, and it does not even
+    establish that the report names none. The rule reads ``tests_written`` and
+    nothing else, while a Player is free to list a test under
+    ``files_created`` / ``files_modified`` — the rule's own remediation text
+    tells it to. The recogniser that inspects those lists knows six naming
+    conventions across five languages and nothing else. And the run behind the
+    second bullet is pytest, so it comes up empty for a test in any other
+    language, for a test excluded from collection by ``collect_ignore_glob``,
+    and for pytest-bdd glue.
 
-    So the branch has two shapes and gets two sentences. Which one applies is
-    read from ``claimed_test_files`` — the list this module already builds
-    from all three of the report's file lists.
+    So the branch has two shapes and gets two sentences, chosen by whether
+    anything was recognised. Neither sentence says a test does not exist;
+    the second one says, positively, that one is named.
     """
-    created = evidence.get("files_created") or []
-    modified = evidence.get("files_modified") or []
-    named = evidence.get("claimed_test_files") or []
-    on_disk = evidence.get("test_files_on_disk") or []
+    named = evidence.get("recognised_test_files") or []
 
-    if not named:
+    if named:
+        # The strength of the claim follows the evidence. A recognised name
+        # that is ALSO on disk is positive evidence; a recognised name with
+        # nothing at that path is not, and must not be reported as if it were.
+        on_disk = evidence.get("test_files_on_disk") or []
+        if on_disk:
+            reading = (
+                "So there is positive evidence a test for this turn exists; "
+                "what is missing is a run of it and an entry in tests_written."
+            )
+        elif evidence.get("disk_checked"):
+            reading = (
+                "So the report names a test, but nothing was found at "
+                "the path(s) it gives — either the path is wrong or the file "
+                "was not written. This check cannot tell which."
+            )
+        else:
+            reading = (
+                "So the report names a test that this check could neither run "
+                "nor look for on disk."
+            )
         return (
-            "\nADVISORY — NO TEST FILE WAS WRITTEN: the Player's report for "
-            "this turn lists nothing under tests_written, none of the "
-            f"{len(created)} file(s) it created or {len(modified)} file(s) it "
-            "modified is a file the Coach recognises as a test, and the "
-            "Coach's own independent test run searched the worktree and found "
-            "no task-specific test to execute.\n"
-            "Some changes legitimately need no test — a documentation edit, a "
-            "rename, deleting dead code, a configuration change. Others do "
-            "not: a new behaviour with no test is unverified work.\n"
+            f"\n{HEADLINE_TEST_NAMED_NONE_RAN}: the Player's report for this "
+            "turn lists nothing under tests_written, and "
+            f"{_pytest_run_clause()} — but the report DOES name "
+            f"{_plural_files(len(named))} matching a test-file naming "
+            f"convention ({_listing(named)}), and "
+            f"{_on_disk_clause(evidence)}.\n"
+            f"{reading} Open "
+            f"the named file{'' if len(named) == 1 else 's'} and say what you "
+            "found. If a real test is there, say so — that is what stops this "
+            "turn being counted as one that needed no test. If the Player "
+            "wrote a test but left tests_written empty, ask it to list the "
+            "file there: a bookkeeping fix, not a missing test.\n"
             + _WEIGH_THIS
         )
 
-    listing = ", ".join(str(name) for name in named[:3])
-    if len(named) > 3:
-        listing += f", +{len(named) - 3} more"
+    clauses = [
+        "the Player's report for this turn lists nothing under tests_written",
+        *_recognition_clauses(evidence),
+        _pytest_run_clause(),
+    ]
+    if len(clauses) == 2:
+        body = f"{clauses[0]}, and {clauses[1]}"
+    else:
+        body = "; ".join(clauses[:-1]) + f"; and {clauses[-1]}"
     return (
-        "\nADVISORY — NO TEST RAN, AND NONE WAS LISTED AS WRITTEN: the "
-        "Player's report for this turn lists nothing under tests_written, and "
-        "the Coach's own independent test run found no task-specific test it "
-        f"could execute — but the report DOES name {len(named)} file(s) that "
-        f"look like tests ({listing}), of which {len(on_disk)} exist(s) on "
-        "disk.\n"
-        "This is one of two turns and the check cannot tell which: a turn "
-        "that genuinely produced no test, or a turn whose test the Coach "
-        "could not find or could not run. Its search only collects Python "
-        "tests, so three quite different things look identical to it — a "
-        "test written in another language, a test excluded from collection, "
-        "and a test that is not at the path the report gives. Open the named "
-        "file(s) before you judge.\n"
+        f"\n{HEADLINE_NONE_RECOGNISED}: {body}.\n"
+        + _RECOGNITION_IS_NOT_EXISTENCE
+        + "If the turn really did produce no test, some changes legitimately "
+        "need none — a documentation edit, a rename, deleting dead code, a "
+        "configuration change. Others do not: a new behaviour with no test is "
+        "unverified work.\n"
         + _WEIGH_THIS
     )
 
 
-def _tests_not_executed_advisory(evidence: Dict[str, Any]) -> str:
+def _reported_zero_clause(evidence: Dict[str, Any]) -> str:
+    """How the report expressed "no tests ran" — quoted, not paraphrased.
+
+    The rule reads ``quality_gates.tests_passed`` through ``... or 0``, so it
+    treats a missing key, ``null``, ``false`` and ``""`` as zero just as it
+    treats ``0``. Printing ``tests_passed=0`` for all of them would put a
+    number in the report that the Player never wrote.
+    """
+    reported = evidence.get("claimed_tests_passed")
+    if reported == 0 and not isinstance(reported, bool):
+        return "reporting tests_passed=0"
+    if reported is None:
+        return "reporting no tests_passed count at all"
+    return f"reporting tests_passed as {reported!r}, which this check reads as zero"
+
+
+def _report_says_no_test_ran_advisory(evidence: Dict[str, Any]) -> str:
     """The sentence for branch two.
 
     Deliberately says nothing about test files being absent. They may be
@@ -764,21 +1047,22 @@ def _tests_not_executed_advisory(evidence: Dict[str, Any]) -> str:
     named = evidence.get("tests_written") or []
     if on_disk:
         presence = (
-            f"{len(on_disk)} test file(s) named by this turn DO exist on "
-            "disk, so this is not a report of missing tests"
+            f"{_plural_files(len(on_disk))} named by this turn "
+            f"{'is' if len(on_disk) == 1 else 'are'} present on disk, so this "
+            "is not a report of missing tests"
         )
     elif named:
         presence = (
-            f"{len(named)} test file(s) are named in the report but none was "
-            "confirmed on disk by this check"
+            f"{_plural_files(len(named))} named in the report as written, none "
+            "of which this check confirmed on disk"
         )
     else:
-        presence = "this check did not confirm any test file for this turn"
+        presence = "this check recognised no test file for this turn"
     coverage = evidence.get("claimed_coverage")
     return (
-        "\nADVISORY — THE REPORT SAYS NO TEST RAN: the Player's report claims "
-        "every quality gate passed while also reporting that zero tests "
-        f"executed (tests_passed=0, coverage={coverage}). Note that "
+        f"\n{HEADLINE_REPORT_SAYS_NO_TEST_RAN}: the Player's report claims "
+        "every quality gate passed while also "
+        f"{_reported_zero_clause(evidence)} (coverage={coverage}). Note that "
         f"{presence}.\n"
         "This is a claim-versus-evidence problem, not a missing-test "
         "problem: a quality gate cannot honestly be reported as passed on the "
@@ -794,13 +1078,20 @@ def coach_advisory_text(evidence: Optional[Dict[str, Any]]) -> str:
     """The plain sentence the language-model Coach is shown. Empty when clean.
 
     This is the behaviour change that costs nothing and helps immediately:
-    before this, the Coach was never told, in words, that its tests were
-    missing or unrun. The numbers were buried among dozens of sibling keys in
-    the evidence JSON and nothing named them.
+    before this, the Coach was never told, in words, that its tests could not
+    be found or were never run. The numbers were buried among dozens of
+    sibling keys in the evidence JSON and nothing named them.
 
     **The sentence is branch-specific**, because the two branches assert
-    different facts and a blended sentence is false for one of them. See the
-    module docstring.
+    different facts and a blended sentence is false for one of them. Within
+    branch one it is specific again, to whether anything was recognised. See
+    the module docstring.
+
+    **Every sentence it can produce is scoped to what this check looked at.**
+    None of them asserts that a test does not exist, because no reachable turn
+    entitles it to. Its headline is always one of
+    :data:`ADVISORY_HEADLINES`, and the Coach's standing instructions are
+    checked against that tuple rather than against a copy of the wording.
 
     The wording deliberately states that the check does not block, so the
     Coach neither treats it as a rule it must obey nor as a fact it may
@@ -808,9 +1099,9 @@ def coach_advisory_text(evidence: Optional[Dict[str, Any]]) -> str:
     """
     if not isinstance(evidence, dict) or not evidence.get("fired"):
         return ""
-    if evidence.get("branch") == BRANCH_TESTS_NOT_EXECUTED:
-        return _tests_not_executed_advisory(evidence)
-    return _no_test_file_advisory(evidence)
+    if normalise_branch(evidence.get("branch")) == BRANCH_REPORT_SAYS_NO_TEST_RAN:
+        return _report_says_no_test_ran_advisory(evidence)
+    return _no_test_recognised_advisory(evidence)
 
 
 def build_receipt(
@@ -831,12 +1122,18 @@ def build_receipt(
     Carries everything a person needs, months later, to adjudicate the row
     without re-running anything or opening another file: **which branch
     fired**, which feature and task, when, what the Player created, modified
-    and claimed, whether any test file exists on disk, what the Coach decided
-    anyway, and which repository it happened in.
+    and claimed, **which names the recogniser matched and which it never
+    examined**, whether any recognised file was found on disk, what the Coach
+    decided anyway, and which repository it happened in.
+
+    The recognition fields are stored separately from the file lists on
+    purpose. A row that says only "no test" cannot be adjudicated: a person
+    reading it two years from now has to be able to see that the check knew
+    six naming conventions and ran pytest, and nothing more.
     """
-    branch = evidence.get("branch")
+    branch = normalise_branch(evidence.get("branch"))
     return {
-        "schema": "zero_test_receipt/2",
+        "schema": "zero_test_receipt/3",
         "recorded_at": now or datetime.now(timezone.utc).isoformat(),
         "repo": repo,
         "repo_path": repo_path,
@@ -845,6 +1142,9 @@ def build_receipt(
         "turn": turn,
         # WHICH OF THE TWO SITUATIONS THIS IS. Never conflate them downstream.
         "branch": branch,
+        # The short human label AND the full sentence, both stored, so a
+        # person reading a two-year-old row needs nothing but the row.
+        "branch_label": BRANCH_LABELS.get(branch),
         "branch_meaning": evidence.get("branch_meaning"),
         "counts_toward_promotion": bool(evidence.get("counts_toward_promotion")),
         "coach_decision": coach_decision,
@@ -854,7 +1154,16 @@ def build_receipt(
         "files_created": evidence.get("files_created") or [],
         "files_modified": evidence.get("files_modified") or [],
         "tests_written": evidence.get("tests_written") or [],
-        "claimed_test_files": evidence.get("claimed_test_files") or [],
+        # RECOGNITION, not existence. ``recognised_test_files`` is the set of
+        # names matching one of ``recognised_conventions``; ``files_not_
+        # examined`` is the set the recogniser never got to look at, kept
+        # apart from the ones it looked at and rejected.
+        "recognised_test_files": evidence.get("recognised_test_files") or [],
+        "recognised_conventions": evidence.get("recognised_conventions") or [],
+        "files_examined": evidence.get("files_examined") or [],
+        "files_not_examined": evidence.get("files_not_examined") or [],
+        "recogniser_available": bool(evidence.get("recogniser_available")),
+        "disk_checked": bool(evidence.get("disk_checked")),
         "test_files_on_disk": evidence.get("test_files_on_disk") or [],
         "any_test_file_on_disk": bool(evidence.get("any_test_file_on_disk")),
         "claimed_all_passed": evidence.get("claimed_all_passed"),
@@ -869,7 +1178,7 @@ def build_receipt(
         "description": evidence.get("description"),
         # Left for a person to fill in later, by hand or by a follow-up tool.
         # This is the half of the promotion question a machine cannot answer,
-        # and it is only meaningful for a ``no_test_file`` row.
+        # and it is only meaningful for a ``no_test_recognised`` row.
         "legitimately_test_free": None,
     }
 

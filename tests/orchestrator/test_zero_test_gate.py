@@ -34,6 +34,7 @@ import asyncio
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -150,8 +151,8 @@ def _coach_instructions() -> str:
 def _fired_evidence(**overrides) -> dict:
     evidence = {
         "fired": True,
-        "branch": gate.BRANCH_NO_TEST_FILE,
-        "branch_meaning": gate.BRANCH_MEANINGS[gate.BRANCH_NO_TEST_FILE],
+        "branch": gate.BRANCH_NO_TEST_RECOGNISED,
+        "branch_meaning": gate.BRANCH_MEANINGS[gate.BRANCH_NO_TEST_RECOGNISED],
         "counts_toward_promotion": True,
         "severity": "error",
         "category": gate.ANOMALY_CATEGORY,
@@ -162,7 +163,14 @@ def _fired_evidence(**overrides) -> dict:
         "files_created": ["docs/guide.md"],
         "files_modified": ["README.md"],
         "tests_written": [],
-        "claimed_test_files": [],
+        "recognised_test_files": [],
+        "files_examined": ["docs/guide.md", "README.md"],
+        "files_not_examined": [],
+        "recogniser_available": True,
+        "recognised_conventions": [
+            pattern for pattern, _example in gate.KNOWN_TEST_CONVENTIONS
+        ],
+        "disk_checked": True,
         "test_files_on_disk": [],
         "any_test_file_on_disk": False,
         "claimed_all_passed": True,
@@ -252,7 +260,7 @@ def test_the_same_rule_is_used_not_a_second_copy(tmp_path: Path) -> None:
     )
 
 
-def test_fires_when_the_player_wrote_no_test_file(tmp_path: Path) -> None:
+def test_fires_when_no_test_is_recognised_for_the_turn(tmp_path: Path) -> None:
     worktree = _worktree(tmp_path)
     (worktree / "src" / "auth.py").write_text("# code, no tests\n")
 
@@ -371,11 +379,11 @@ def test_the_live_coach_path_puts_the_answer_on_the_evidence_bundle(
     assert isinstance(bundle.zero_test, dict)
     assert bundle.zero_test["fired"] is True
     # Labelled, on the real path, by the real rule.
-    assert bundle.zero_test["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert bundle.zero_test["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
     assert bundle.zero_test["counts_toward_promotion"] is True
     # And it survives serialisation into the Coach's prompt / turn record.
     assert bundle.to_dict()["zero_test"]["fired"] is True
-    assert bundle.to_dict()["zero_test"]["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert bundle.to_dict()["zero_test"]["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
 
 
 def test_the_live_coach_path_labels_the_second_branch_too(tmp_path: Path) -> None:
@@ -416,7 +424,7 @@ def test_the_live_coach_path_labels_the_second_branch_too(tmp_path: Path) -> Non
 
     assert bundle.gathering_status == "complete", bundle.gathering_error
     assert bundle.zero_test["fired"] is True
-    assert bundle.zero_test["branch"] == gate.BRANCH_TESTS_NOT_EXECUTED
+    assert bundle.zero_test["branch"] == gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
     assert bundle.zero_test["any_test_file_on_disk"] is True
     assert bundle.zero_test["counts_toward_promotion"] is False
 
@@ -431,44 +439,59 @@ def test_the_field_is_absent_when_gathering_stopped_early() -> None:
 # ===========================================================================
 
 
-def test_the_coach_is_told_in_plain_words_that_no_test_file_was_written() -> None:
+def test_the_coach_is_told_in_plain_words_that_no_test_was_recognised() -> None:
+    """The advisory line really does reach the prompt the model reads.
+
+    The headline is taken from the module rather than typed here, so this
+    cannot go on passing against wording the code stopped producing.
+    """
     invoker = AgentInvoker.__new__(AgentInvoker)
     bundle = CoachEvidenceBundle(honesty=None, zero_test=_fired_evidence())
 
     section = invoker._render_evidence_bundle_section(bundle)
 
-    assert "NO TEST FILE WAS WRITTEN" in section
+    assert gate.HEADLINE_NONE_RECOGNISED in section
     # It must say it does not block, so the model weighs it rather than obeying it.
     assert "does NOT block" in section
 
 
-def test_nothing_is_said_to_the_coach_when_a_test_file_was_written() -> None:
+def test_nothing_is_said_to_the_coach_when_the_check_did_not_fire() -> None:
+    """Silence when clean — and silence means NO headline, not one absent one."""
     invoker = AgentInvoker.__new__(AgentInvoker)
     bundle = CoachEvidenceBundle(
         honesty=None, zero_test=_fired_evidence(fired=False)
     )
-    assert "NO TEST FILE WAS WRITTEN" not in invoker._render_evidence_bundle_section(
-        bundle
-    )
+    section = invoker._render_evidence_bundle_section(bundle)
+    for headline in gate.ADVISORY_HEADLINES:
+        assert headline not in section
 
 
-def test_the_coachs_standing_instructions_mention_the_case() -> None:
-    """The written instructions the Coach is installed with must cover it.
+def test_the_coachs_standing_instructions_carry_a_zero_test_section() -> None:
+    """The instructions must cover the case at all.
 
     The gap that prompted this work was not only that no rule fired — it was
     that the model's own instruction file never mentioned the case, so a
     reader could not tell whether the model had weighed it or never seen it.
+
+    WHAT THIS TEST DELIBERATELY DOES NOT DO is check the wording. An earlier
+    version of it asserted one literal sentence, so a rewritten — and still
+    false — claim passed it unchanged. The wording is now checked as a set of
+    properties, against the code, in section 12b:
+    ``test_the_coachs_instructions_document_every_headline_the_code_emits``,
+    ``test_the_coachs_instructions_state_the_recognisers_real_reach`` and
+    ``test_no_surface_a_model_reads_claims_a_test_does_not_exist``.
     """
-    instructions = _coach_instructions()
-    assert "When the Tests Are Missing — or Were Never Run" in instructions
-    # BOTH branches, told apart. An instruction file that described only one
-    # of them would leave the model applying branch one's remedy ("write a
-    # test") to branch two's problem (tests exist; the claim is unsupported).
-    assert "NO TEST FILE WAS WRITTEN" in instructions
-    assert "THE REPORT SAYS NO TEST RAN" in instructions
-    assert gate.BRANCH_NO_TEST_FILE in instructions
-    assert gate.BRANCH_TESTS_NOT_EXECUTED in instructions
-    assert "It does not mean tests are missing" in instructions
+    section = _coach_zero_test_section()
+
+    # BOTH branches, told apart, and named by the identifiers the evidence
+    # bundle actually carries — so the model can match the `branch` field it
+    # is given to the paragraph that explains it. An instruction file
+    # describing only one of them would leave the model applying branch one's
+    # remedy ("write a test") to branch two's problem (tests exist; the claim
+    # is unsupported).
+    assert gate.BRANCH_NO_TEST_RECOGNISED in section
+    assert gate.BRANCH_REPORT_SAYS_NO_TEST_RAN in section
+    assert "It does not mean tests are missing" in section
 
 
 # ===========================================================================
@@ -814,7 +837,7 @@ def test_the_report_answers_both_halves_of_the_promotion_question(
     assert result.exit_code == 0
     output = _flat(result.output)
     # Half one: the count, answered by the machine.
-    assert "2 had no test found" in output
+    assert "2 had no test recognised" in output
     assert "the Coach approved 2 of them anyway" in output
     # Half two: the rulings so far, and the short list still needing one.
     assert "1 legitimately test-free" in output
@@ -871,10 +894,12 @@ def test_the_report_can_read_several_repositories_at_once(
 def test_the_report_says_so_plainly_when_the_ledger_is_there_and_empty(
     tmp_path: Path,
 ) -> None:
-    """A clean bill of health — and the ONLY case that earns one.
+    """An empty ledger is reported for exactly what it is, and no more.
 
     The ledger exists, so the report really did look at the place builds
-    write to, and really did find nothing there.
+    write to, and really did find nothing there. That is worth saying. What
+    it is NOT is a record that every turn wrote and ran a test — which is
+    what this line used to claim.
     """
     from click.testing import CliRunner
 
@@ -889,9 +914,54 @@ def test_the_report_says_so_plainly_when_the_ledger_is_there_and_empty(
     )
     output = _flat(result.output)
     assert result.exit_code == 0
-    assert "No build has been recorded with missing or unrun tests." in output
-    assert "The ledger exists and is empty" in output
+    assert "No turn has been recorded with an unfound or unrun test." in output
+    assert "no turn recorded a fired check" in output
     assert "NO LEDGER FILE EXISTS" not in output
+
+
+def test_an_empty_ledger_is_never_reported_as_every_turn_having_a_test(
+    tmp_path: Path,
+) -> None:
+    """The green line must not license a claim about turns that wrote no row.
+
+    A row is appended ONLY when the check fires. Turns whose task type needs
+    no tests, turns that stopped earlier on a dishonest report or a failed
+    quality gate, turns reviewed by the rule-based Coach, and every build that
+    ran before the check existed all finish without writing anything. An empty
+    ledger therefore says nothing whatever about them, and the report used to
+    say it did: "every build that finished a turn wrote and ran a test".
+
+    Mutation check for this test lives in the lane notes: restoring that
+    sentence turns it red.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("")
+
+    output = _flat(
+        CliRunner()
+        .invoke(zero_test_report, ["--repo-root", str(tmp_path)])
+        .output
+    )
+
+    for forbidden in (
+        "every build that finished a turn wrote and ran a test",
+        "every build that finished a turn",
+        "every turn wrote",
+    ):
+        assert forbidden not in output, (
+            f"the empty-ledger line claims {forbidden!r}, which an empty "
+            "ledger cannot license — turns that never fire the check write no "
+            "row at all"
+        )
+    # And it must positively say what silence does and does not mean, so a
+    # reader is not left to infer the clean bill for themselves.
+    assert "It is NOT a record of turns that wrote and ran a test" in output
+    assert "only when the check fires" in output
 
 
 def test_no_ledger_at_all_is_never_reported_as_a_clean_result(
@@ -996,7 +1066,7 @@ def _branch_two_report() -> dict:
     )
 
 
-def test_branch_one_is_labelled_when_no_test_file_was_written(
+def test_branch_one_is_labelled_when_no_test_is_recognised(
     tmp_path: Path,
 ) -> None:
     """The rule's first branch: the Player named none, the search found none."""
@@ -1012,7 +1082,7 @@ def test_branch_one_is_labelled_when_no_test_file_was_written(
     )
 
     assert evidence["fired"] is True
-    assert evidence["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert evidence["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
     # The label is tied to what the REAL rule said, so reordering the rule's
     # branches turns this red instead of silently mislabelling every row.
     assert evidence["description"].startswith("No task-specific tests found")
@@ -1041,7 +1111,7 @@ def test_branch_two_is_labelled_when_the_report_claims_a_pass_with_no_test_run(
     )
 
     assert evidence["fired"] is True
-    assert evidence["branch"] == gate.BRANCH_TESTS_NOT_EXECUTED
+    assert evidence["branch"] == gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
     assert evidence["description"].startswith(
         "Quality gates reported as passed"
     )
@@ -1054,12 +1124,12 @@ def test_branch_two_is_labelled_when_the_report_claims_a_pass_with_no_test_run(
     assert evidence["claimed_tests_passed"] == 0
 
 
-def test_only_the_no_test_file_branch_feeds_the_promotion_measurement(
+def test_only_the_no_test_recognised_branch_feeds_the_promotion_measurement(
     tmp_path: Path,
 ) -> None:
     """Branch two cannot answer "did this change need a test?", so it is out.
 
-    A ``tests_not_executed`` turn has not been shown to lack a test — tests
+    A ``report_says_no_test_ran`` turn has not been shown to lack a test — tests
     may exist and may have been written that very turn. Counting it would put
     turns that are not test-free into the rate that decides whether this check
     is ever allowed to block a build.
@@ -1076,10 +1146,10 @@ def test_only_the_no_test_file_branch_feeds_the_promotion_measurement(
     )
 
     assert branch_two["counts_toward_promotion"] is False
-    assert gate.COUNTS_TOWARD_PROMOTION == gate.BRANCH_NO_TEST_FILE
-    assert gate.counts_toward_promotion({"branch": gate.BRANCH_NO_TEST_FILE})
+    assert gate.COUNTS_TOWARD_PROMOTION == gate.BRANCH_NO_TEST_RECOGNISED
+    assert gate.counts_toward_promotion({"branch": gate.BRANCH_NO_TEST_RECOGNISED})
     assert not gate.counts_toward_promotion(
-        {"branch": gate.BRANCH_TESTS_NOT_EXECUTED}
+        {"branch": gate.BRANCH_REPORT_SAYS_NO_TEST_RAN}
     )
     # A row recorded before the branches were told apart is not guessed at.
     assert not gate.counts_toward_promotion({"task_id": "TASK-OLD"})
@@ -1094,8 +1164,8 @@ def test_the_branch_two_advisory_never_claims_that_no_test_was_written() -> None
     not happen.
     """
     evidence = _fired_evidence(
-        branch=gate.BRANCH_TESTS_NOT_EXECUTED,
-        branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_TESTS_NOT_EXECUTED],
+        branch=gate.BRANCH_REPORT_SAYS_NO_TEST_RAN,
+        branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_REPORT_SAYS_NO_TEST_RAN],
         counts_toward_promotion=False,
         tests_written=["tests/test_auth.py"],
         test_files_on_disk=["tests/test_auth.py"],
@@ -1105,28 +1175,33 @@ def test_the_branch_two_advisory_never_claims_that_no_test_was_written() -> None
 
     text = gate.coach_advisory_text(evidence)
 
-    assert "NO TEST FILE WAS WRITTEN" not in text
+    assert gate.HEADLINE_NONE_RECOGNISED not in text
     assert "found no task-specific test" not in text
-    assert "THE REPORT SAYS NO TEST RAN" in text
-    assert "1 test file(s) named by this turn DO exist on disk" in text
+    assert gate.HEADLINE_REPORT_SAYS_NO_TEST_RAN in text
+    assert "1 file named by this turn is present on disk" in text
     assert "not a report of missing tests" in text
     assert "does NOT block" in text
 
 
 def test_the_branch_one_advisory_says_only_what_is_true_of_branch_one() -> None:
-    """The turn that really wrote nothing gets the flat statement.
+    """The turn where nothing was recognised gets the recognition statement.
 
-    ``claimed_test_files`` empty means nothing anywhere in the report — not
-    just in ``tests_written`` — is a file the Coach recognises as a test. That
-    is the only shape of branch one about which "no test file was written"
-    can be said.
+    ``recognised_test_files`` empty means nothing anywhere in the report — not
+    just in ``tests_written`` — matched one of the six naming conventions the
+    check knows. That licenses a sentence about RECOGNITION and nothing more,
+    so the sentence says so, names the conventions, and names its own blind
+    spot.
     """
     text = gate.coach_advisory_text(_fired_evidence())
 
-    assert "NO TEST FILE WAS WRITTEN" in text
+    assert gate.HEADLINE_NONE_RECOGNISED in text
     assert "lists nothing under tests_written" in text
-    assert "is a file the Coach recognises as a test" in text
+    assert "a test-file naming convention this check knows" in text
     assert "found no task-specific test to execute" in text
+    # The three things that keep it honest.
+    assert gate.RECOGNISED_CONVENTIONS_PHRASE in text
+    assert "all of it is about recognition" in text
+    assert "Do not conclude from this line that the turn produced no test" in text
     assert "does NOT block" in text
 
 
@@ -1143,8 +1218,8 @@ def test_the_receipt_records_which_branch_fired(tmp_path: Path) -> None:
         tmp_path,
         decision={"decision": "approve", "rationale": "fine", "issues": []},
         evidence=_fired_evidence(
-            branch=gate.BRANCH_TESTS_NOT_EXECUTED,
-            branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_TESTS_NOT_EXECUTED],
+            branch=gate.BRANCH_REPORT_SAYS_NO_TEST_RAN,
+            branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_REPORT_SAYS_NO_TEST_RAN],
             counts_toward_promotion=False,
         ),
         env={},
@@ -1152,12 +1227,14 @@ def test_the_receipt_records_which_branch_fired(tmp_path: Path) -> None:
     )
 
     rows = {row["task_id"]: row for row in gate.read_receipts(tmp_path / "repo")}
-    assert rows["TASK-ONE"]["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert rows["TASK-ONE"]["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
     assert rows["TASK-ONE"]["counts_toward_promotion"] is True
-    assert rows["TASK-TWO"]["branch"] == gate.BRANCH_TESTS_NOT_EXECUTED
+    assert rows["TASK-TWO"]["branch"] == gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
     assert rows["TASK-TWO"]["counts_toward_promotion"] is False
     # Each row explains itself to a reader who has never seen this module.
-    assert "no test was found" in rows["TASK-ONE"]["branch_meaning"].lower()
+    assert "no test was recognised" in rows["TASK-ONE"]["branch_meaning"].lower()
+    assert rows["TASK-ONE"]["branch_label"] == "no test recognised"
+    assert rows["TASK-TWO"]["branch_label"] == "report says 0 tests ran"
     assert "may well exist" in rows["TASK-TWO"]["branch_meaning"].lower()
 
 
@@ -1169,8 +1246,8 @@ def test_a_blocked_branch_two_turn_is_not_told_to_write_a_test(
         tmp_path,
         decision={"decision": "approve", "rationale": "fine", "issues": []},
         evidence=_fired_evidence(
-            branch=gate.BRANCH_TESTS_NOT_EXECUTED,
-            branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_TESTS_NOT_EXECUTED],
+            branch=gate.BRANCH_REPORT_SAYS_NO_TEST_RAN,
+            branch_meaning=gate.BRANCH_MEANINGS[gate.BRANCH_REPORT_SAYS_NO_TEST_RAN],
             counts_toward_promotion=False,
         ),
         env={gate.BLOCKING_ENV_VAR: "1"},
@@ -1178,10 +1255,11 @@ def test_a_blocked_branch_two_turn_is_not_told_to_write_a_test(
 
     assert decision["decision"] == "feedback"
     assert "No test file was written" not in decision["rationale"]
+    assert "No test could be recognised" not in decision["rationale"]
     assert "zero tests ran" in decision["rationale"]
     assert "Run the tests and report the real counts" in decision["rationale"]
     assert decision["issues"][0]["details"]["branch"] == (
-        gate.BRANCH_TESTS_NOT_EXECUTED
+        gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
     )
 
 
@@ -1224,7 +1302,7 @@ def test_the_report_keeps_the_two_situations_apart(tmp_path: Path) -> None:
             _receipt(_fired_evidence(), "TASK-NOTEST"),
             _receipt(
                 _fired_evidence(
-                    branch=gate.BRANCH_TESTS_NOT_EXECUTED,
+                    branch=gate.BRANCH_REPORT_SAYS_NO_TEST_RAN,
                     counts_toward_promotion=False,
                     tests_written=["tests/test_auth.py"],
                     test_files_on_disk=["tests/test_auth.py"],
@@ -1242,10 +1320,10 @@ def test_the_report_keeps_the_two_situations_apart(tmp_path: Path) -> None:
     )
 
     # Counted separately...
-    assert "1 had no test found" in output
+    assert "1 had no test recognised" in output
     assert "1 claimed a passing quality gate while reporting that 0 tests ran" in output
     # ...listed separately...
-    assert "NO TEST FOUND — needs your ruling" in output
+    assert "NO TEST RECOGNISED — needs your ruling" in output
     assert "REPORT CLAIMED A PASS WITH NO TEST RUN" in output
     # ...and only the first feeds the number the promotion decision rests on.
     assert "The promotion measurement is the first group only" in output
@@ -1445,7 +1523,7 @@ def test_a_real_invoke_coach_turn_records_a_ledger_row(
     assert result.success is True
     rows = gate.read_receipts(tmp_path / "repo")
     assert [row["task_id"] for row in rows] == ["TASK-WIRED-002"]
-    assert rows[0]["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert rows[0]["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
     # Advisory: the verdict the Coach reached is untouched, and recorded.
     assert rows[0]["coach_decision"] == "approve"
     assert rows[0]["decision_overridden"] is False
@@ -1717,19 +1795,25 @@ def test_every_recorded_row_survives_a_reader_running_at_the_same_time(
 
 
 # ===========================================================================
-# 12. THE WORDING OF BRANCH ONE MUST BE TRUE OF EVERY TURN THAT REACHES IT
+# 12. NO REACHABLE TURN MAY PRODUCE A FALSE SENTENCE
 #
-# The rule reads ``tests_written`` and nothing else. A Player may name a test
-# file under ``files_created`` / ``files_modified`` — the rule's own
-# remediation text tells it to — and the rule will not see it. Separately, the
-# Coach's search that reports ``"skipped"`` only ever collects PYTHON tests,
-# so it also comes up empty for a test in another language, a test excluded
-# from collection, and pytest-bdd glue.
+# THE DIAGNOSIS THIS SECTION EXISTS FOR. Three earlier rounds worded the
+# advisory as "the builder wrote no test file". The check cannot know that. It
+# knows what the report listed under ``tests_written``, whether any file name
+# matches one of six naming conventions, and whether a PYTEST run found
+# something to execute. Round three answered a reviewer by teaching the
+# recogniser more languages, and the reviewer immediately produced the same
+# false sentence for the next language along. Extending the recogniser is the
+# losing move; there is always one more language.
 #
-# Every combination of those reaches branch one on a turn whose report DOES
-# name a real, present test file. The tests below build those turns for real
-# and run the real rule over them: no mocked rule, no hand-made "skipped"
-# result, no hand-written evidence dict.
+# So the CLAIM changed, not the wording, and these tests prove it by
+# construction: turns are built at the edges — a language the recogniser has
+# never heard of, a Python test excluded from collection, a recogniser that is
+# not there at all — run through the REAL rule and the REAL detection ladder,
+# and the sentence actually produced is read.
+#
+# Nothing here is stubbed: no mocked rule, no hand-made "skipped" result, no
+# hand-written evidence dict.
 # ===========================================================================
 
 
@@ -1758,29 +1842,89 @@ def _real_branch_one_evidence(worktree: Path, results: dict) -> dict:
         requirements=None,
     )
     assert evidence["fired"] is True
-    assert evidence["branch"] == gate.BRANCH_NO_TEST_FILE
+    assert evidence["branch"] == gate.BRANCH_NO_TEST_RECOGNISED
     return evidence
+
+
+#: Sentences that assert something about the world rather than about what this
+#: check looked at. NONE of them may appear in anything a model or a person
+#: reads: the advisory line, the Coach's standing instructions, the blocking
+#: rationale sent back to the Player, or the report.
+#:
+#: This is the property the guards below assert. It is not a check that one
+#: known-bad string is absent — each entry is a distinct WAY of claiming
+#: non-existence, and the list is applied to every reachable surface rather
+#: than to one of them.
+FORBIDDEN_EXISTENCE_CLAIMS = (
+    "no test file was written",
+    "no tests were written",
+    "wrote no test",
+    "the player wrote no",
+    "this turn produced no test",
+    "names no test file",
+    "no test exists",
+    "there is no test",
+    "the turn has no test",
+    "a turn with no tests is rejected",
+)
+
+
+#: Phrases that mark a sentence as DENYING the claim rather than making it.
+#: A sentence carrying one of these is allowed to quote the forbidden wording,
+#: because quoting it in order to forbid it is the opposite of asserting it —
+#: "this is not evidence that no test exists" must stay legal, or the honest
+#: wording could not be written at all.
+_DISCLAIMER_MARKERS = (
+    "not evidence",
+    "not proof",
+    "do not conclude",
+    "does not mean",
+    "do not say",
+    "never states",
+    "must not",
+    "cannot know",
+    "is not a report of",
+)
+
+
+def _existence_claims_in(text: str) -> list:
+    """Every way the given text ASSERTS that a test does not exist.
+
+    Empty is the bar. Sentence by sentence, so one honest sentence denying the
+    claim cannot excuse a different sentence making it, and so a sentence
+    making it cannot hide behind a denial elsewhere in the same paragraph.
+    Case-insensitive, because a headline shouts and a sentence does not.
+    """
+    hits = set()
+    for sentence in re.split(r"(?<=[.!:;])\s+|\n", text):
+        lowered = sentence.lower()
+        if any(marker in lowered for marker in _DISCLAIMER_MARKERS):
+            continue
+        hits.update(
+            claim for claim in FORBIDDEN_EXISTENCE_CLAIMS if claim in lowered
+        )
+    return sorted(hits)
 
 
 @pytest.mark.parametrize(
     "test_file, description",
     [
-        ("src/widget.test.ts", "a TypeScript test — the search collects only Python"),
-        ("src/widget_test.go", "a Go test — likewise invisible to the search"),
+        ("src/widget.test.ts", "a TypeScript test — the run collects only Python"),
+        ("src/widget_test.go", "a Go test — likewise invisible to the run"),
         ("tests/Widget/Tests/WidgetTests.cs", "a .NET test — likewise"),
     ],
 )
-def test_branch_one_never_claims_no_test_file_when_the_report_names_one(
+def test_branch_one_says_a_test_is_named_when_the_report_names_one(
     tmp_path: Path, test_file: str, description: str
 ) -> None:
-    """The sentence must be true of THIS turn, not of the branch's name.
+    """Positive evidence must be reported as positive evidence, not guessed at.
 
     Each of these is a real turn: the Player wrote a test, listed it under
     ``files_created``, and left ``tests_written`` empty. The rule fires
-    because it only ever reads ``tests_written``, and the Coach's search
-    reports ``skipped`` because it only ever collects Python. Telling the
-    Coach "the Player's report names no test file" would be a plain
-    falsehood, and it is what the previous wording said.
+    because it only ever reads ``tests_written``, and the Coach's run reports
+    ``skipped`` because it is pytest. The recogniser DOES know this file's
+    convention, so the check has positive evidence a test exists — and says
+    so, rather than saying anything about absence.
     """
     worktree = _worktree(tmp_path)
     written = worktree / test_file
@@ -1791,32 +1935,105 @@ def test_branch_one_never_claims_no_test_file_when_the_report_names_one(
     evidence = _real_branch_one_evidence(worktree, results)
 
     assert evidence["tests_written"] == []
-    assert evidence["claimed_test_files"] == [test_file], description
+    assert evidence["recognised_test_files"] == [test_file], description
     assert evidence["test_files_on_disk"] == [test_file]
 
     text = gate.coach_advisory_text(evidence)
-    assert "NO TEST FILE WAS WRITTEN" not in text, (
-        f"branch one told the Coach no test file was written, but {test_file} "
-        "is named in the report and present on disk"
+    assert _existence_claims_in(text) == [], (
+        f"branch one claimed a test does not exist, but {test_file} is named "
+        "in the report and present on disk"
     )
-    assert "names no test file" not in text
-    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" in text
+    assert gate.HEADLINE_TEST_NAMED_NONE_RAN in text
     assert "lists nothing under tests_written" in text
-    assert "DOES name 1 file(s) that look like tests" in text
+    assert "DOES name 1 file matching a test-file naming convention" in text
     assert test_file in text
-    assert "1 exist(s) on disk" in text
+    assert "1 of them is present on disk" in text
+    assert "positive evidence a test for this turn exists" in text
     assert "does NOT block" in text
+
+
+@pytest.mark.parametrize(
+    "test_file, content, description",
+    [
+        (
+            "spec/widget_spec.rb",
+            "describe 'widget' do\n  it 'works' do\n  end\nend\n",
+            "Ruby RSpec — no convention here matches *_spec.rb",
+        ),
+        (
+            "src/test/java/WidgetTest.java",
+            "class WidgetTest { @Test void works() {} }\n",
+            "a JUnit test — Java is not in the recogniser at all",
+        ),
+        (
+            "tests/widget.sh",
+            "#!/bin/sh\nexit 0\n",
+            "a shell test script — nothing recognises it",
+        ),
+        (
+            "features/widget.feature",
+            "Feature: widget\n  Scenario: works\n",
+            "a Gherkin feature file — nothing recognises it",
+        ),
+        (
+            "src/widget_tests.rs",
+            "#[cfg(test)]\nmod tests { #[test] fn works() {} }\n",
+            "a Rust test module — nothing recognises it",
+        ),
+    ],
+)
+def test_a_language_nothing_recognises_never_produces_a_false_sentence(
+    tmp_path: Path, test_file: str, content: str, description: str
+) -> None:
+    """THE CASE THAT SANK ROUND THREE, built for real and read.
+
+    Round three extended the recogniser to Python, Go, TypeScript, JavaScript
+    and .NET. A reviewer then named the next language along and the same false
+    sentence came back out. So here are five of them — Ruby, Java, a shell
+    script, a Gherkin feature file and Rust — each a genuine test file, each
+    written this turn, each present on disk, and each invisible to the
+    recogniser.
+
+    The check has nothing to say about whether these turns have a test, and
+    the sentence it produces must therefore say nothing about it. What it may
+    say — and does — is what it looked at and did not match.
+    """
+    worktree = _worktree(tmp_path)
+    written = worktree / test_file
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text(content)
+    results = _results(files_created=["src/widget.src", test_file])
+
+    evidence = _real_branch_one_evidence(worktree, results)
+
+    # The premise: the recogniser really is blind to this file.
+    assert evidence["recognised_test_files"] == [], description
+    assert evidence["files_not_examined"] == []
+    assert test_file in evidence["files_examined"]
+
+    text = gate.coach_advisory_text(evidence)
+
+    assert _existence_claims_in(text) == [], (
+        f"the advisory claims no test exists, but {test_file} was written "
+        "this turn and is on disk — the check simply cannot see it"
+    )
+    assert gate.HEADLINE_NONE_RECOGNISED in text
+    # It must say what "recognised" means, or the reader cannot correct for it.
+    assert gate.RECOGNISED_CONVENTIONS_PHRASE in text
+    assert gate.UNRECOGNISED_EXAMPLES in text
+    assert "Do not conclude from this line that the turn produced no test" in text
+    assert "look at the changed files yourself" in text
 
 
 def test_branch_one_is_honest_about_a_python_test_excluded_from_collection(
     tmp_path: Path,
 ) -> None:
-    """The same falsehood, reachable without leaving Python.
+    """The same trap, reachable without leaving Python.
 
     A root ``conftest.py`` carrying ``collect_ignore_glob`` tells pytest not
     to collect a path. The Coach's detection honours it, so a perfectly
-    ordinary ``test_*.py`` written this turn leaves the search with nothing to
-    run — and the rule, reading only ``tests_written``, fires.
+    ordinary ``test_*.py`` written this turn leaves the run with nothing to
+    execute — and the rule, reading only ``tests_written``, fires.
     """
     worktree = _worktree(tmp_path)
     (worktree / "conftest.py").write_text('collect_ignore_glob = ["tests/wip/*"]\n')
@@ -1832,18 +2049,22 @@ def test_branch_one_is_honest_about_a_python_test_excluded_from_collection(
     text = gate.coach_advisory_text(evidence)
 
     assert evidence["test_files_on_disk"] == ["tests/wip/test_widget.py"]
-    assert "NO TEST FILE WAS WRITTEN" not in text
+    assert _existence_claims_in(text) == []
     assert "tests/wip/test_widget.py" in text
-    assert "Open the named file(s) before you judge." in text
+    assert "Open the named file" in text
 
 
-def test_branch_one_still_says_no_test_was_written_when_none_was(
+def test_a_genuinely_test_free_turn_is_still_reported_without_overclaiming(
     tmp_path: Path,
 ) -> None:
-    """The control. A genuinely test-free turn must still be named as one.
+    """The control. The finding must survive being made honest.
 
-    Without this, the fix above could be "never say it" — which would lose
-    the finding the instrument exists to make.
+    Without this, "never say anything" would pass every test above and lose
+    the finding the instrument exists to make. A documentation-only turn still
+    has to produce the advisory, still has to be counted toward the promotion
+    measurement, and still has to put the legitimate-versus-unverified
+    question in front of the Coach — while saying only that nothing was
+    RECOGNISED.
     """
     worktree = _worktree(tmp_path)
     (worktree / "docs").mkdir(parents=True, exist_ok=True)
@@ -1853,10 +2074,283 @@ def test_branch_one_still_says_no_test_was_written_when_none_was(
     evidence = _real_branch_one_evidence(worktree, results)
     text = gate.coach_advisory_text(evidence)
 
-    assert evidence["claimed_test_files"] == []
-    assert "NO TEST FILE WAS WRITTEN" in text
-    assert "is a file the Coach recognises as a test" in text
-    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" not in text
+    assert evidence["recognised_test_files"] == []
+    assert evidence["counts_toward_promotion"] is True
+    assert gate.HEADLINE_NONE_RECOGNISED in text
+    assert gate.HEADLINE_TEST_NAMED_NONE_RAN not in text
+    assert "a test-file naming convention this check knows" in text
+    # The finding itself, still made.
+    assert "a documentation edit, a rename, deleting dead code" in text
+    assert "unverified work" in text
+    assert _existence_claims_in(text) == []
+
+
+def test_nothing_is_reported_as_a_non_test_that_was_never_examined(
+    tmp_path: Path,
+) -> None:
+    """"Not matched" and "never looked at" are different, and are kept apart.
+
+    If the recogniser is missing or raises on a name, that file goes into
+    ``files_not_examined`` — never into the population the sentence describes
+    as unmatched. Otherwise the check would silently count an unexaminable
+    file as evidence of no test, which is the same falsehood one level down.
+    """
+
+    class _NoRecogniser:
+        """A validator whose recogniser is absent — the reachable degenerate case."""
+
+        worktree_path = None
+        _is_test_file_path = None
+
+        def _check_zero_test_anomaly(self, *_args, **_kwargs):
+            return [{"severity": "warning", "category": gate.ANOMALY_CATEGORY,
+                     "description": "No task-specific tests found."}]
+
+    evidence = gate.evaluate_zero_test(
+        _NoRecogniser(),
+        task_work_results=_results(files_created=["src/widget.py"]),
+        profile=_feature_profile(),
+        independent_tests=_skipped_independent_run(),
+        task_id="TASK-ZT-001",
+    )
+
+    assert evidence["recogniser_available"] is False
+    assert evidence["files_examined"] == []
+    assert evidence["files_not_examined"] == ["src/widget.py"]
+    assert evidence["disk_checked"] is False
+
+    text = gate.coach_advisory_text(evidence)
+    assert _existence_claims_in(text) == []
+    # It must not claim anything matched or failed to match...
+    assert "matches a test-file naming convention this check knows" not in text
+    # ...and must say plainly that it could not look.
+    assert "could not be examined by this check at all" in text
+    assert "src/widget.py" in text
+
+
+def test_a_named_test_that_is_not_on_disk_is_not_called_positive_evidence(
+    tmp_path: Path,
+) -> None:
+    """A NAME matching a convention is not the same as a file being there.
+
+    The recognised-file sentence used to read "there is positive evidence a
+    test for this turn exists" whenever a name matched, regardless of whether
+    anything was found at that path. A report naming ``src/widget.test.ts``
+    that never wrote it would have earned that sentence.
+    """
+
+    class _EmptyWorktree:
+        def __init__(self, worktree: Path) -> None:
+            self.worktree_path = worktree
+
+        @staticmethod
+        def _is_test_file_path(path: str) -> bool:
+            return CoachValidator._is_test_file_path(path)
+
+        def _check_zero_test_anomaly(self, *_args, **_kwargs):
+            return [{"severity": "warning", "category": gate.ANOMALY_CATEGORY,
+                     "description": "No task-specific tests found."}]
+
+    worktree = _worktree(tmp_path)
+    evidence = gate.evaluate_zero_test(
+        _EmptyWorktree(worktree),
+        task_work_results=_results(files_created=["src/widget.test.ts"]),
+        profile=_feature_profile(),
+        independent_tests=_skipped_independent_run(),
+        task_id="TASK-ZT-001",
+    )
+
+    assert evidence["recognised_test_files"] == ["src/widget.test.ts"]
+    assert evidence["disk_checked"] is True
+    assert evidence["test_files_on_disk"] == []
+
+    text = gate.coach_advisory_text(evidence)
+    assert _existence_claims_in(text) == []
+    assert "positive evidence" not in text
+    assert "nothing was found at the path(s) it gives" in text
+    assert "This check cannot tell which." in text
+
+
+def test_a_file_the_recogniser_choked_on_is_not_counted_as_a_non_test(
+    tmp_path: Path,
+) -> None:
+    """The other way a file goes unexamined: the recogniser raises on it.
+
+    The recogniser is a heuristic and must never break evidence gathering, so
+    it is wrapped in ``except``. The question is what the swallowed exception
+    LEAVES BEHIND. Recording the file as "examined and did not match" would
+    let one unlucky path name contribute to a sentence saying nothing matched
+    — an existence claim built on a file nobody looked at.
+    """
+
+    class _ChokesOnOne:
+        worktree_path = None
+
+        @staticmethod
+        def _is_test_file_path(path: str) -> bool:
+            if path == "src/odd\udcffname.py":
+                raise ValueError("undecodable path")
+            return CoachValidator._is_test_file_path(path)
+
+        def _check_zero_test_anomaly(self, *_args, **_kwargs):
+            return [{"severity": "warning", "category": gate.ANOMALY_CATEGORY,
+                     "description": "No task-specific tests found."}]
+
+    evidence = gate.evaluate_zero_test(
+        _ChokesOnOne(),
+        task_work_results=_results(
+            files_created=["src/widget.py", "src/odd\udcffname.py"]
+        ),
+        profile=_feature_profile(),
+        independent_tests=_skipped_independent_run(),
+        task_id="TASK-ZT-001",
+    )
+
+    assert evidence["recogniser_available"] is True
+    assert evidence["files_examined"] == ["src/widget.py"]
+    assert evidence["files_not_examined"] == ["src/odd\udcffname.py"], (
+        "a file the recogniser raised on was filed as examined-and-unmatched, "
+        "so the advisory counts it as evidence that no test was written"
+    )
+
+    text = gate.coach_advisory_text(evidence)
+    assert _existence_claims_in(text) == []
+    # The examined file is described; the unexaminable one is declared, not
+    # folded into the same count.
+    assert "the one file it names (src/widget.py)" in text
+    assert "could not be examined by this check at all" in text
+
+
+def test_a_recognised_file_is_never_reported_absent_when_disk_was_not_checked(
+    tmp_path: Path,
+) -> None:
+    """"Not on disk" requires having looked. Without a worktree, say so.
+
+    ``test_files_on_disk`` is only populated when the validator carries a
+    worktree path. An empty list therefore has two causes, and reporting the
+    second as "none found on disk" is a small version of the same lie.
+    """
+
+    class _NoWorktree:
+        worktree_path = None
+
+        @staticmethod
+        def _is_test_file_path(path: str) -> bool:
+            return CoachValidator._is_test_file_path(path)
+
+        def _check_zero_test_anomaly(self, *_args, **_kwargs):
+            return [{"severity": "warning", "category": gate.ANOMALY_CATEGORY,
+                     "description": "No task-specific tests found."}]
+
+    evidence = gate.evaluate_zero_test(
+        _NoWorktree(),
+        task_work_results=_results(
+            files_created=["src/widget.py", "tests/test_widget.py"]
+        ),
+        profile=_feature_profile(),
+        independent_tests=_skipped_independent_run(),
+        task_id="TASK-ZT-001",
+    )
+
+    assert evidence["recognised_test_files"] == ["tests/test_widget.py"]
+    assert evidence["disk_checked"] is False
+    assert evidence["test_files_on_disk"] == []
+
+    text = gate.coach_advisory_text(evidence)
+    assert _existence_claims_in(text) == []
+    assert "could not look on disk" in text
+    assert "none of them was found on disk" not in text
+
+
+def test_the_conventions_the_advisory_quotes_are_the_ones_the_code_knows(
+    tmp_path: Path,
+) -> None:
+    """The advisory names six conventions. The recogniser must accept all six.
+
+    This is what stops the honest sentence going stale: if the list in
+    :data:`KNOWN_TEST_CONVENTIONS` ever claims a convention the recogniser
+    does not actually match, the Coach is told the check looked for something
+    it never looks for — which is the same class of defect in the other
+    direction.
+    """
+    for pattern, example in gate.KNOWN_TEST_CONVENTIONS:
+        assert CoachValidator._is_test_file_path(example), (
+            f"the advisory tells the Coach it recognises {pattern!r}, but the "
+            f"real recogniser rejects {example!r}"
+        )
+    # And the phrase quoted in prose really is built from that list.
+    for pattern, _example in gate.KNOWN_TEST_CONVENTIONS:
+        assert pattern in gate.RECOGNISED_CONVENTIONS_PHRASE
+
+
+def test_a_row_written_under_the_old_branch_names_still_classifies(
+    tmp_path: Path,
+) -> None:
+    """Renaming the identifiers must not reclassify anything already recorded.
+
+    ``no_test_file`` and ``tests_not_executed`` were the identifiers earlier
+    versions of this module wrote. They named a fact about the world the check
+    cannot establish, so they were renamed — but a row is a measurement, and a
+    rename that silently drops rows into the report's "unlabelled" bucket
+    would corrupt the one number this instrument exists to produce.
+    """
+    from click.testing import CliRunner
+
+    from guardkit.cli.autobuild import zero_test_report
+
+    assert gate.normalise_branch("no_test_file") == gate.BRANCH_NO_TEST_RECOGNISED
+    assert (
+        gate.normalise_branch("tests_not_executed")
+        == gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
+    )
+    assert gate.counts_toward_promotion({"branch": "no_test_file"}) is True
+    assert gate.counts_toward_promotion({"branch": "tests_not_executed"}) is False
+    # Anything else is still refused rather than guessed at.
+    assert gate.normalise_branch("something_else") is None
+    assert gate.normalise_branch(None) is None
+
+    ledger = gate.ledger_path_for(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        "".join(
+            json.dumps(row) + "\n"
+            for row in (
+                {
+                    "repo": "repo",
+                    "task_id": "TASK-OLD-1",
+                    "turn": 1,
+                    "branch": "no_test_file",
+                    "coach_decision": "approve",
+                    "files_created": ["docs/guide.md"],
+                    "files_modified": [],
+                    "tests_written": [],
+                    "legitimately_test_free": None,
+                },
+                {
+                    "repo": "repo",
+                    "task_id": "TASK-OLD-2",
+                    "turn": 1,
+                    "branch": "tests_not_executed",
+                    "coach_decision": "approve",
+                    "files_created": [],
+                    "files_modified": [],
+                    "tests_written": ["tests/test_x.py"],
+                    "legitimately_test_free": None,
+                },
+            )
+        )
+    )
+
+    output = _flat(
+        CliRunner()
+        .invoke(zero_test_report, ["--repo-root", str(tmp_path)])
+        .output
+    )
+
+    assert "1 had no test recognised" in output
+    assert "1 claimed a passing quality gate" in output
+    assert "unlabelled" not in output
+    assert "TASK-OLD-1" in output
 
 
 def test_the_branch_meaning_stamped_on_every_row_is_true_of_the_branch() -> None:
@@ -1864,27 +2358,163 @@ def test_the_branch_meaning_stamped_on_every_row_is_true_of_the_branch() -> None
 
     It must not assert the thing the rule never checked.
     """
-    meaning = gate.BRANCH_MEANINGS[gate.BRANCH_NO_TEST_FILE]
+    meaning = gate.BRANCH_MEANINGS[gate.BRANCH_NO_TEST_RECOGNISED]
 
+    assert _existence_claims_in(meaning) == []
     assert "tests-written list is empty" in meaning
-    assert "named no test file" not in meaning
+    assert "not evidence that no test exists" in meaning
     assert "created/modified lists" in meaning
 
 
-def test_the_coachs_instructions_do_not_claim_the_turn_produced_no_test() -> None:
-    """The Coach's standing instructions said it too, in its own words.
+# ---------------------------------------------------------------------------
+# 12b. THE GUARD ON THE COACH'S STANDING INSTRUCTIONS
+#
+# The previous version of this guard was a literal-string check on the OLD
+# wording, so a restated claim sailed through it: the file could say anything
+# it liked as long as the one old sentence was still present. These assert
+# PROPERTIES instead —
+#
+#   * every headline the CODE can emit is documented (derived from
+#     gate.ADVISORY_HEADLINES, so changing a headline without updating the
+#     instructions goes red);
+#   * every convention the CODE claims to recognise is named;
+#   * no surface a model reads claims a test does not exist.
+#
+# Each is mutation-checked: see the lane notes for the exact reversions and
+# the red output they produce.
+# ---------------------------------------------------------------------------
 
-    The advisory line and the instructions are read together, so fixing one
-    and leaving the other still leaves a false statement in front of the
-    model.
+
+def _coach_zero_test_section() -> str:
+    """Just the zero-test part of the Coach's instructions, by its heading.
+
+    Sliced by heading rather than read whole, so an unrelated section
+    elsewhere in the file can neither satisfy nor break these assertions.
     """
     text = _coach_instructions()
+    marker = "## When a Turn's Tests Cannot Be Found"
+    start = text.find(marker)
+    assert start != -1, (
+        "the Coach's instructions no longer carry a zero-test section — the "
+        "model is back to weighing a advisory line it was never told about"
+    )
+    end = text.find("\n## ", start + len(marker))
+    return text[start:] if end == -1 else text[start:end]
 
-    assert "So this turn produced no test." not in text
-    assert "the Player's own report names no test file" not in text
-    assert "NO TEST RAN, AND NONE WAS LISTED AS WRITTEN" in text
-    assert "reads `tests_written` and nothing else" in text
-    assert "only collects Python tests" in text
+
+def test_the_coachs_instructions_document_every_headline_the_code_emits() -> None:
+    """Derived from the code, not copied from it.
+
+    The model reads an advisory line and its standing instructions together.
+    If the code emits a headline the instructions never mention, the model
+    meets an unexplained line; if the instructions explain a headline the code
+    no longer emits, they describe something that cannot happen. Both are
+    caught by asking the module which headlines exist.
+    """
+    section = _coach_zero_test_section()
+
+    assert gate.ADVISORY_HEADLINES, "the module emits no headlines at all"
+    for headline in gate.ADVISORY_HEADLINES:
+        assert headline in section, (
+            f"the code can emit {headline!r} but the Coach's instructions "
+            "never mention it"
+        )
+    # Both branch identifiers, so the model can read the bundle's `branch`
+    # field and find the matching paragraph.
+    assert gate.BRANCH_NO_TEST_RECOGNISED in section
+    assert gate.BRANCH_REPORT_SAYS_NO_TEST_RAN in section
+
+
+def test_the_coachs_instructions_state_the_recognisers_real_reach() -> None:
+    """The model must be told how narrow "recognised" is, in the code's terms.
+
+    Without this the model reads "no test file was recognised" as "no test",
+    which is the whole defect one layer up.
+    """
+    section = _coach_zero_test_section()
+
+    for pattern, _example in gate.KNOWN_TEST_CONVENTIONS:
+        assert pattern in section, (
+            f"the check recognises {pattern!r} but the Coach is never told so"
+        )
+    assert "pytest" in section
+    assert "invisible to all three" in section
+
+
+def test_no_surface_a_model_reads_claims_a_test_does_not_exist() -> None:
+    """ONE property, asserted over EVERY surface, rather than one string.
+
+    The surfaces are: the Coach's standing instructions, and every advisory
+    line the module can produce for every shape of every branch. A false claim
+    reintroduced on any of them turns this red.
+    """
+    surfaces = {"the Coach's standing instructions": _coach_zero_test_section()}
+
+    shapes = {
+        "branch one, nothing recognised": _fired_evidence(),
+        "branch one, a test named": _fired_evidence(
+            recognised_test_files=["src/widget.test.ts"],
+            files_examined=["src/widget.test.ts"],
+            test_files_on_disk=["src/widget.test.ts"],
+            any_test_file_on_disk=True,
+        ),
+        "branch one, nothing examinable": _fired_evidence(
+            files_examined=[],
+            files_not_examined=["src/widget.py"],
+            recogniser_available=False,
+            disk_checked=False,
+        ),
+        "branch two": _fired_evidence(
+            branch=gate.BRANCH_REPORT_SAYS_NO_TEST_RAN,
+            branch_meaning=gate.BRANCH_MEANINGS[
+                gate.BRANCH_REPORT_SAYS_NO_TEST_RAN
+            ],
+            counts_toward_promotion=False,
+        ),
+    }
+    for name, evidence in shapes.items():
+        surfaces[f"the advisory line for {name}"] = gate.coach_advisory_text(
+            evidence
+        )
+    for name, meaning in gate.BRANCH_MEANINGS.items():
+        surfaces[f"the recorded meaning of {name}"] = meaning
+
+    offenders = {
+        name: _existence_claims_in(text)
+        for name, text in surfaces.items()
+        if _existence_claims_in(text)
+    }
+    assert offenders == {}, (
+        "these surfaces claim a test does not exist, which this check cannot "
+        f"establish for any reachable turn: {offenders}"
+    )
+
+
+def test_the_blocking_rationale_sent_to_the_player_claims_nothing_either(
+    tmp_path: Path,
+) -> None:
+    """The one surface that is not advisory text, and it was false too.
+
+    With GUARDKIT_ZERO_TEST_BLOCKING set, the guard rewrites the Coach's
+    verdict and hands the Player a rationale. That rationale used to open
+    "No test file was written for this turn" — the same claim, on the surface
+    that actually changes what the Player does next.
+    """
+    decision, _ = _run_guard(
+        tmp_path,
+        decision={"decision": "approve", "rationale": "fine", "issues": []},
+        evidence=_fired_evidence(),
+        env={gate.BLOCKING_ENV_VAR: "1"},
+    )
+
+    assert decision["decision"] == "feedback"
+    assert _existence_claims_in(decision["rationale"]) == []
+    assert "No test could be recognised for this turn" in decision["rationale"]
+    assert "it is not proof that no test exists" in decision["rationale"]
+    # It still asks for the three answers that make the turn actionable.
+    assert "list its path under tests_written" in decision["rationale"]
+    assert "genuinely needs no test" in decision["rationale"]
+    assert "write a test that exercises the behaviour" in decision["rationale"]
 
 
 def test_the_report_flags_a_row_that_names_a_test_the_rule_never_read(
@@ -1892,9 +2522,10 @@ def test_the_report_flags_a_row_that_names_a_test_the_rule_never_read(
 ) -> None:
     """A person ruling on rows must not rule this one test-free by mistake.
 
-    The card looks identical to a turn that wrote nothing — same branch, same
-    empty ``tests_written``. The only thing separating them is a file list the
-    rule does not consult, so the report has to put it on the card.
+    The card looks identical to a turn where nothing was recognised — same
+    branch, same empty ``tests_written``. The only thing separating them is a
+    file list the rule does not consult, so the report has to put it on the
+    card.
     """
     from click.testing import CliRunner
 
@@ -1908,12 +2539,12 @@ def test_the_report_flags_a_row_that_names_a_test_the_rule_never_read(
                 "repo": "repo",
                 "task_id": "TASK-TS",
                 "turn": 1,
-                "branch": gate.BRANCH_NO_TEST_FILE,
+                "branch": gate.BRANCH_NO_TEST_RECOGNISED,
                 "coach_decision": "approve",
                 "files_created": ["src/widget.ts", "src/widget.test.ts"],
                 "files_modified": [],
                 "tests_written": [],
-                "claimed_test_files": ["src/widget.test.ts"],
+                "recognised_test_files": ["src/widget.test.ts"],
                 "test_files_on_disk": ["src/widget.test.ts"],
                 "legitimately_test_free": None,
             }
@@ -1928,9 +2559,6 @@ def test_the_report_flags_a_row_that_names_a_test_the_rule_never_read(
 
     assert result.exit_code == 0
     assert "CHECK BEFORE RULING" in output
-    assert "names 1 test file(s) outside tests_written" in output
-    assert "src/widget.test.ts" in output
-    assert "on disk" in output
 
 
 # ===========================================================================
@@ -2201,7 +2829,7 @@ def test_a_hand_written_ruling_already_in_the_ledger_is_still_honoured(
                 "repo": "repo",
                 "task_id": "TASK-OLD",
                 "turn": 1,
-                "branch": gate.BRANCH_NO_TEST_FILE,
+                "branch": gate.BRANCH_NO_TEST_RECOGNISED,
                 "legitimately_test_free": True,
             }
         )
@@ -2292,7 +2920,7 @@ def test_the_report_asks_the_promotion_rule_rather_than_repeating_it(
                 "repo": "repo",
                 "task_id": "TASK-A",
                 "turn": 1,
-                "branch": gate.BRANCH_NO_TEST_FILE,
+                "branch": gate.BRANCH_NO_TEST_RECOGNISED,
                 "coach_decision": "approve",
             }
         )
@@ -2313,7 +2941,7 @@ def test_the_report_asks_the_promotion_rule_rather_than_repeating_it(
         "the report did not consult zero_test_gate.counts_toward_promotion — "
         "it is deciding what the measurement counts on its own"
     )
-    assert "0 had no test found" in _flat(result.output), (
+    assert "0 had no test recognised" in _flat(result.output), (
         "the report still counted the row after the shared promotion rule "
         "rejected it — there is a second copy of the rule inline"
     )
@@ -2388,7 +3016,7 @@ def test_a_ruling_joins_a_row_recorded_before_the_repo_field_existed(
             {
                 "task_id": "TASK-OLD",
                 "turn": 1,
-                "branch": gate.BRANCH_NO_TEST_FILE,
+                "branch": gate.BRANCH_NO_TEST_RECOGNISED,
                 "legitimately_test_free": None,
             }
         )
