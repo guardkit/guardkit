@@ -165,3 +165,92 @@ jobs:
             tests/orchestrator/harness/test_selector.py \
             tests/unit/test_doctor.py::TestActiveHarnessCheck \
             -o addopts="" --strict-markers -v
+
+  # ---------------------------------------------------------------------
+  # Second cross-repo job: FOUR enumerated lists in the specialist-agent
+  # contract document, checked against guardkit's own source.
+  #
+  # Why it lives in this workflow
+  #   This file is where guardkit runs checks that need a SIBLING REPOSITORY
+  #   checked out — that is its established purpose, and the job above is the
+  #   precedent. The document being checked lives in specialist-agent, the
+  #   values it states live here, and the two are only ever side by side in a
+  #   job that checks out both. specialist-agent itself has no CI of any kind,
+  #   so it cannot be the home.
+  #
+  # Why it is a SEPARATE job rather than more modules in the seam job above
+  #   The seam job installs the guardkitfactory + langchain stack, and every
+  #   module it runs depends on it. This check depends on neither — it needs
+  #   pydantic and PyYAML, nothing more (the import chain is SDK-free and
+  #   guardkitfactory-free). Folding it in would make a documentation check
+  #   fail whenever an unrelated harness dependency failed to install, and
+  #   would hide it behind an install step it has no use for.
+  #
+  # Why a missing document FAILS here instead of skipping
+  #   GUARDKIT_CONTRACT_DOC_REQUIRED=1 tells the test module that this job is
+  #   supposed to have specialist-agent on disk. If it does not, the tests
+  #   fail loudly instead of skipping. A check that skips in the one job built
+  #   to run it is invisible, and an invisible check is exactly the defect
+  #   this guards against. Everywhere else — a laptop, the tests.yml job —
+  #   the same module skips with a reason naming the paths it searched.
+  #
+  # WHAT THIS JOB DOES NOT DO
+  #   It verifies four lists of values. It does NOT verify the contract
+  #   document. It cannot see prose that is wrong without being enumerable,
+  #   and it covers nothing in Part A of that document. Read the module
+  #   docstring before treating a green run here as "the contract is right".
+  contract-doc:
+    name: Contract doc — four enumerated lists
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout guardkit
+        uses: actions/checkout@v4
+
+      # The document under check. Same pattern as the guardkitfactory
+      # checkout above: sibling repo into a path under the workspace root.
+      - name: Checkout specialist-agent (holds the contract document)
+        uses: actions/checkout@v4
+        with:
+          repository: guardkit/specialist-agent
+          path: specialist-agent
+          token: ${{ secrets.SPECIALIST_AGENT_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install guardkit (dev extra)
+        # No autobuild extra and no claude-agent-sdk: the checked module
+        # imports only guardkit.models.task_types and
+        # guardkit.orchestrator.feature_loader, whose import chain is
+        # pydantic + PyYAML.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Fail loudly if the contract document is not on disk
+        # A guard on the guard. If the checkout step above silently produced
+        # nothing, the pytest run below would skip every test and the job
+        # would go green having checked nothing. This step makes that state a
+        # failure before pytest is ever reached.
+        run: |
+          DOC="specialist-agent/docs/design/contracts/CONTRACT-feature-spec-plan-outputs.md"
+          if [ ! -f "$DOC" ]; then
+            echo "COULD NOT CHECK — $DOC is not present after checkout."
+            echo "This job exists to check that file. Fix the checkout step."
+            exit 1
+          fi
+          echo "Contract document present: $DOC"
+
+      - name: Check the four enumerated lists against the code
+        env:
+          # Turns "document missing" from a skip into a failure. See above.
+          GUARDKIT_CONTRACT_DOC_REQUIRED: '1'
+        # `-o addopts=""` clears the repo default --cov flags (this gate is
+        # pass/fail, not coverage). `--strict-markers` fails fast if a marker
+        # is ever removed from config.
+        run: |
+          python -m pytest \
+            tests/contracts/test_contract_doc_enumerated_lists.py \
+            -o addopts="" -p no:cacheprovider --strict-markers -v
