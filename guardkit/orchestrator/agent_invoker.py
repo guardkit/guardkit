@@ -3621,13 +3621,19 @@ Turn: {turn}
     # The per-tool-result gather cap (GUARDKIT_COACH_GATHER_MAX_TOOL_RESULT_CHARS)
     # bounds individual tool results, but nothing bounded the RENDERED synthesis
     # prompt itself. Task-work coach bundles reached 109,634 tokens and overflowed
-    # the crash-tested 98,304 window (FEAT-8737 TASK-SMOKE-002 turn 1). This
-    # budget enforces a hard ceiling on the full rendered prompt.
+    # the crash-tested 98,304 window. This budget enforces a hard ceiling on the
+    # full rendered prompt.
+    #
+    # Evidence — a RUN IDENTIFIER, not a task record. The overflow was measured
+    # on an autobuild run in the *api_test* repository on 2026-07-25: feature
+    # FEAT-8737, work unit "SMOKE-002", turn 1. The coach call came back HTTP 400
+    # carrying ``n_prompt_tokens: 109634``. "FEAT-8737 / SMOKE-002 turn 1" is how
+    # that run addresses itself in its own log — it cites a receipt from another
+    # repo's build, and names nothing under this repository's ``tasks/``.
     #
     # Investigation note — fields dominating the oversized bundle shape:
-    # Analysis of the 109,634-token receipt (FEAT-8737 TASK-SMOKE-002 turn 1)
-    # identified the following as the primary contributors to the oversized
-    # bundle size:
+    # Analysis of that 109,634-token receipt identified the following as the
+    # primary contributors to the oversized bundle size:
     #   1. ``completion_promises`` in the player report JSON — a large array
     #      of per-AC verification objects (each with criterion_text, evidence,
     #      implementation_files) can easily exceed 50k chars with 200+ items.
