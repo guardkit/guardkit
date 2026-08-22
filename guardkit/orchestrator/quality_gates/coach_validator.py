@@ -3356,26 +3356,22 @@ class CoachValidator:
             )
 
         # ------------------------------------------------------------------
-        # 9. Zero-test check (2026-08-21, Rich's ruling). Did the Player write
-        # any test file at all this turn?
+        # 9. Zero-test observation (2026-08-21, Rich's ruling).
         #
         # This runs THE SAME rule the legacy rule-based Coach carries —
         # _check_zero_test_anomaly, called below through
         # zero_test_gate.evaluate_zero_test with the same arguments — so the
         # two Coach implementations detect the same thing and cannot drift.
-        # The legacy path BLOCKS on it; here it is ADVISORY: it is written into
-        # the bundle, named in plain words in the Coach prompt, and recorded to
-        # a durable ledger, but it stops nothing unless
-        # GUARDKIT_ZERO_TEST_BLOCKING is set. See zero_test_gate's module
-        # docstring for why (a hard rule would also stop legitimately test-free
-        # changes, and nobody has measured how often those happen).
+        # The legacy path BLOCKS on it; here it is written into the bundle and
+        # recorded to a durable ledger, and it stops nothing unless
+        # GUARDKIT_ZERO_TEST_BLOCKING is set.
         #
         # Reached only here, on the complete path — the two earlier exits (a
         # dishonest report, a failed quality gate) stop gathering first on BOTH
         # Coach paths. The one difference from the legacy path is recorded on
-        # the evidence itself as ``requirements_met``: legacy validate()
-        # returns feedback on unmet acceptance criteria BEFORE reaching this
-        # check, whereas here it is always computed.
+        # the row itself as report_requirements_all_criteria_met: legacy
+        # validate() returns feedback on unmet acceptance criteria BEFORE
+        # reaching this rule, whereas here it is always run.
         try:
             zero_test_dict: Optional[Dict[str, Any]] = evaluate_zero_test(
                 self,
@@ -3385,10 +3381,10 @@ class CoachValidator:
                 task_id=task_id,
                 requirements=requirements,
             )
-        except Exception as exc:  # noqa: BLE001 — advisory instrument, never breaks gathering
+        except Exception as exc:  # noqa: BLE001 — a recorder never breaks gathering
             logger.warning(
-                "gather_evidence: zero-test check raised %s; zero_test field "
-                "left as None.",
+                "gather_evidence: the zero-test rule raised %s; zero_test "
+                "field left as None.",
                 exc.__class__.__name__,
             )
             zero_test_dict = None
