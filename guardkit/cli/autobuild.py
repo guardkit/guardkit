@@ -10,6 +10,7 @@ Example:
     $ guardkit autobuild status TASK-AB-001
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -1627,6 +1628,227 @@ def _display_ledger_sweep_result(sweep) -> None:
 
 
 # ============================================================================
+# Zero-Test Report — the reading instrument for the zero-test observations
+#
+# IT RENDERS FACTS AND OFFERS NO VERDICT. Every line it prints is either a
+# value copied from a recorded row, a statement of how that value was
+# established (zero_test_gate.FIELD_PROVENANCE), or a count of rows meeting a
+# condition whose heading names the condition exactly. Nothing here says what
+# a build did or did not do — a person reads the rows and rules on them.
+#
+# See guardkit/orchestrator/zero_test_gate.py.
+# ============================================================================
+
+
+def _zero_test_when(row: dict) -> str:
+    """The row's timestamp, trimmed to minutes. Empty when unrecorded."""
+    stamp = str(row.get("recorded_at") or "")
+    return stamp[:16].replace("T", " ")
+
+
+def _zero_test_build(row: dict) -> str:
+    return (
+        f"{row.get('worktree_dir') or '?'} / {row.get('task_id') or '?'}"
+        f" t{row.get('turn')}"
+    )
+
+
+def _zero_test_print_provenance() -> None:
+    """State, once, how every field on every row below was established."""
+    from rich.markup import escape
+
+    from guardkit.orchestrator import zero_test_gate
+
+    console.print("\n[bold]HOW EACH FIELD BELOW WAS ESTABLISHED[/bold]")
+    for label, how in zero_test_gate.FIELD_PROVENANCE:
+        # Escaped: these strings carry file-name patterns such as "*.test.ts"
+        # and bracketed labels, which the console would otherwise read as
+        # style markup and silently swallow.
+        console.print(f"  [bold]{escape(label)}[/bold]", soft_wrap=True)
+        console.print(f"    [dim]{escape(how)}[/dim]", soft_wrap=True)
+
+
+def _zero_test_print_rows(rows: list, show_repo: bool, heading: str) -> None:
+    """Print one card per recorded row.
+
+    Cards, not a table: a table wide enough to carry every field does not fit
+    an 80-column terminal, and the console library silently drops the columns
+    that do not fit — which would hide the very values this exists to show.
+    """
+    from rich.markup import escape
+
+    from guardkit.orchestrator import zero_test_gate
+
+    console.print(f"\n[bold]{heading}[/bold]")
+    for number, row in enumerate(rows, start=1):
+        # Every value below is escaped: a recorded value is a file name or a
+        # convention label such as "[test_*.py]", and the console would read
+        # the brackets as style markup and drop the very text this exists to
+        # show.
+        repo = (
+            f"  [dim]{escape(str(row.get('repo') or '?'))}[/dim]"
+            if show_repo
+            else ""
+        )
+        console.print(
+            f"\n [bold]{number:>2}[/bold]  [dim]{escape(_zero_test_when(row))}[/dim]"
+            f"  {escape(_zero_test_build(row))}{repo}"
+        )
+        for label, value in zero_test_gate.observation_lines(row):
+            console.print(
+                f"    {escape(label):<32}: {escape(value)}", soft_wrap=True
+            )
+
+
+@autobuild.command(name="zero-test-report")
+@click.option(
+    "--repo-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    multiple=True,
+    default=(),
+    help=(
+        "A repository whose ledger to read. Repeat it to read several at "
+        "once. Defaults to the current directory."
+    ),
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=20,
+    show_default=True,
+    help="How many rows to print. Use 0 for all.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the raw recorded rows as JSON instead of cards.",
+)
+def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
+    """
+    What was observed each time the zero-test rule fired.
+
+    While gathering evidence for the language-model Coach, GuardKit runs a
+    rule (CoachValidator._check_zero_test_anomaly). When the rule fires,
+    GuardKit writes down what it observed. On that path the rule changes
+    nothing unless GUARDKIT_ZERO_TEST_BLOCKING is set.
+
+    \b
+    This command prints those observations and nothing else. It states no
+    conclusion about whether a turn should have had a test: it prints each
+    recorded value, states how that value was established, and counts rows.
+    Reading them and ruling on them is your job.
+
+    \b
+    The ledger lives outside every repository working tree on purpose, so
+    that `git clean -fdx` and worktree removal cannot delete it (Decision of
+    Record D-OBS-4). Set GUARDKIT_ZERO_TEST_ROOT to move it.
+
+    \b
+    The repository is resolved from wherever you are standing — a
+    subdirectory or a git worktree reads the same ledger the build wrote.
+    Pass --repo-root once per repository to read several at once:
+        guardkit autobuild zero-test-report --repo-root ../forge --repo-root .
+
+    \b
+    Exit Codes:
+        0: Always. This is a report, not a gate.
+    """
+    from guardkit.orchestrator import zero_test_gate
+
+    starts = [Path(r) for r in repo_root] or [Path.cwd()]
+    # ONE resolver for reading and writing (zero_test_gate.resolve_repo_root),
+    # so a report run from a subdirectory cannot look somewhere a build never
+    # wrote.
+    reads = [zero_test_gate.read_ledger(start) for start in starts]
+    rows = [row for read in reads for row in read.rows]
+
+    if as_json:
+        console.print_json(json.dumps(rows))
+        sys.exit(0)
+
+    ledger = "\n  ".join(str(path) for read in reads for path in read.paths_read)
+    missing = [read for read in reads if not read.any_ledger_file]
+    if missing:
+        # Nothing was read. That is a different fact from "a ledger was read
+        # and held no rows", and the two must never be printed as one.
+        if len(reads) == 1:
+            which = missing[0].repo_root.name
+        else:
+            which = f"{len(missing)} of the {len(reads)} repositories asked about"
+        console.print(
+            f"[yellow]No ledger file exists for {which}, so no row was "
+            "read.[/yellow]"
+        )
+        for read in missing:
+            console.print(
+                f"[dim]  {read.repo_root} -> looked for {read.ledger_path}[/dim]",
+                soft_wrap=True,
+            )
+        console.print(
+            "[dim]A row is written only when the rule fires, and no ledger "
+            "file is present at the location above.[/dim]"
+        )
+        if not rows:
+            sys.exit(0)
+        console.print()
+
+    if not rows:
+        # Every ledger asked for exists and every one of them holds no rows.
+        console.print(
+            "[bold]0 rows recorded.[/bold] The ledger file(s) below exist and "
+            "hold no rows.\n"
+        )
+        console.print(f"[dim]Ledger(s) read:\n  {ledger}[/dim]", soft_wrap=True)
+        console.print(
+            "[dim]A row is written only when "
+            "CoachValidator._check_zero_test_anomaly fires on the "
+            "language-model Coach's evidence-gathering path. Turns whose task "
+            "type does not require tests, turns that stopped earlier on a "
+            "dishonest report or a failed quality gate, turns reviewed by the "
+            "rule-based Coach, and every build that ran before this "
+            "instrument was installed write no row.[/dim]"
+        )
+        sys.exit(0)
+
+    show_repo = len(reads) > 1
+    builds = {(r.get("repo"), r.get("worktree_dir") or r.get("task_id")) for r in rows}
+
+    from rich.markup import escape
+
+    counted = "\n".join(
+        f"  [bold]{sum(1 for row in rows if predicate(row))}[/bold]  "
+        f"{escape(heading)}"
+        for heading, predicate in zero_test_gate.OBSERVATION_COUNTS
+    )
+    console.print(
+        Panel(
+            f"[bold]{len(rows)}[/bold] row(s) recorded, across "
+            f"[bold]{len(builds)}[/bold] build worktree(s).\n\n"
+            "Of those rows:\n"
+            f"{counted}\n\n"
+            "[dim]Each count above is a count of rows meeting the condition "
+            "named beside it. The groups overlap, and a row can appear in "
+            "several.[/dim]",
+            title="Rows recorded when the zero-test rule fired",
+            border_style="cyan",
+        )
+    )
+
+    _zero_test_print_provenance()
+
+    shown = rows if limit <= 0 else rows[-limit:]
+    _zero_test_print_rows(
+        shown,
+        show_repo,
+        f"ROWS ({len(shown)} of {len(rows)} shown, in the order they were read)",
+    )
+
+    console.print(f"\n[dim]Ledger(s):\n  {ledger}[/dim]", soft_wrap=True)
+    sys.exit(0)
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
@@ -1636,6 +1858,7 @@ __all__ = [
     "status",
     "feature",
     "complete",
+    "zero_test_report",
     "_check_sdk_available",
     "_require_sdk",
 ]
