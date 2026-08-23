@@ -16,6 +16,18 @@
 #   including every new or newly-fixed test — is gated. The quarantine is
 #   burned down by a follow-up task; removing a line re-arms the gate for it.
 #
+# What this job installs, and why it is not just `.[dev]` (2026-08-23)
+#   The job checks out the sibling repo guardkit/guardkitfactory and installs
+#   it editable. Before that it did not, and 26 test modules that guard on
+#   `pytest.importorskip("guardkitfactory...")` / langchain skipped here while
+#   running on every developer machine. seam-tests.yml was assumed to cover
+#   them; it does not — it runs seven enumerated file paths, so anything not on
+#   that list ran in NO CI job. A real defect (`select_harness()` for langgraph
+#   grew a required `cwd=` argument, its test never updated) lived in that gap,
+#   red on every laptop, invisible to CI, until 2026-08-23. Details, the
+#   measured effect, and why the `autobuild` extra is still the wrong way to do
+#   it are on the install steps below. Do not undo this to save 20 seconds.
+#
 # Floor is 3.12 (TASK-MEM08-012, raised from 3.11): the `memory`/`all` extras depend
 # on fleet-memory (requires-python>=3.12), so a 3.11 floor made `uv sync --extra memory`
 # unsatisfiable. The orchestrator's asyncio.timeout() (3.11+) requirement is subsumed.
@@ -50,6 +62,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The harness/backend sibling repo, into ./guardkitfactory under the
+      # workspace root. Same pattern (and same reason) as the checkout in
+      # seam-tests.yml — see the "Install guardkitfactory" step below for why
+      # this job needs it. guardkit/guardkitfactory is a PUBLIC repository, so
+      # the workflow's own GITHUB_TOKEN can read it and no secret is needed;
+      # the `token:` line falls back to a PAT secret if it is ever made
+      # private.
+      - name: Checkout guardkitfactory (sibling harness repo)
+        uses: actions/checkout@v4
+        with:
+          repository: guardkit/guardkitfactory
+          path: guardkitfactory
+          token: ${{ secrets.GUARDKITFACTORY_TOKEN || github.token }}
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -57,13 +83,96 @@ jobs:
           cache: pip
 
       - name: Install guardkit (dev extra)
-        # `.[dev]` pulls the core deps (incl. the graphiti-core git pin) plus
-        # pytest/pytest-asyncio/pytest-bdd. We deliberately do NOT install the
-        # `autobuild` extra (it would try to resolve guardkitfactory from PyPI);
-        # the cross-repo harness contract is gated separately by seam-tests.yml.
+        # `.[dev]` pulls the core deps plus pytest/pytest-asyncio/pytest-bdd.
+        # We still do NOT install the `autobuild` extra, and the original
+        # reason is unchanged and was re-verified on 2026-08-23: that extra
+        # declares `guardkitfactory>=0.2.0,<1`, guardkitfactory is not
+        # published to PyPI (https://pypi.org/simple/guardkitfactory/ → 404),
+        # and pip does not read the `[tool.uv.sources]` sibling-path override
+        # that makes `uv sync --extra autobuild` work locally. `pip install -e
+        # ".[autobuild]"` on a runner would therefore fail to resolve.
+        # The editable sibling install below satisfies the same import without
+        # any PyPI resolution — exactly the workaround seam-tests.yml uses.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+
+      # -------------------------------------------------------------------
+      # WHY THIS STEP EXISTS (added 2026-08-23)
+      #
+      # This step's comment used to say the cross-repo harness contract "is
+      # gated separately by seam-tests.yml", and treated that as covering the
+      # whole guardkitfactory-dependent surface. That belief was wrong, and it
+      # cost real coverage:
+      #
+      #   * seam-tests.yml runs SEVEN ENUMERATED PATHS, not a tree. Anything
+      #     guardkitfactory-gated that is not on that list runs in no CI job at
+      #     all. It skipped here (package absent) and was never collected
+      #     there.
+      #   * A real defect lived in exactly that gap: `select_harness()` for the
+      #     langgraph substrate grew a required `cwd=` argument and its test in
+      #     tests/orchestrator/harness/test_selector.py was never updated. It
+      #     failed on every developer machine, where guardkitfactory IS
+      #     installed, and no CI job could see it. Fixed 2026-08-23 in
+      #     e96d41dc / ee9e470c.
+      #   * tests/unit/orchestrator/quality_gates/test_bdd_multi_stack_routing.py
+      #     still says in its own docstring "in the seam-tests CI job it runs".
+      #     It is not on seam-tests.yml's list. Its 11 tests ran nowhere until
+      #     this step existed.
+      #
+      # MEASURED effect of adding this step (runner install simulated locally,
+      # full `tests/` tree, junit node-id diff with vs without the sibling):
+      #   * 65 tests move from skipped to running, and all 65 PASS.
+      #     (34 newly collected where a module-level importorskip lifted;
+      #      31 already-collected tests whose per-test skipif lifted.)
+      #   * 18 more tests in tests/orchestrator/harness/test_xrepo_contract_seam.py
+      #     now COLLECT but still skip in this job: tests/knowledge/conftest.py
+      #     registers a collection hook that skips every `integration`-marked
+      #     test unless `--run-integration` is passed. Those 18 do run in
+      #     seam-tests.yml, which invokes that file by path and so never loads
+      #     that conftest. Not a regression; named so nobody re-derives it.
+      #   * FAILURE IDENTITIES ARE UNCHANGED — zero new failures, zero
+      #     disappeared. This step does not turn the gate red.
+      #   * COST: the checkout is a 861 KB public repo; the editable install
+      #     adds 39 packages (deepagents, langgraph, langchain*, openai,
+      #     anthropic, google-genai, tiktoken, tree-sitter grammars, ...),
+      #     ~119 MB of site-packages. Measured install time: ~17 s cold (no
+      #     pip cache), ~5-8 s warm, plus ~1.5 s for the guard step below.
+      #     Suite RUNTIME did not measurably change: two full replays of this
+      #     file measured 229 s without / 220 s with, i.e. inside run noise.
+      #
+      # DO NOT "simplify" this back to the autobuild extra. See the step above.
+      # -------------------------------------------------------------------
+      - name: Install guardkitfactory (editable sibling — no PyPI resolve)
+        run: python -m pip install -e ./guardkitfactory
+
+      - name: Fail loudly if guardkitfactory did not install
+        # A guard on the guard. If the checkout or the install above silently
+        # produced nothing, every test this step exists to un-skip would go
+        # back to skipping and the job would go green having checked less than
+        # it did yesterday — the exact failure mode this whole step is fixing.
+        # Same precedent as the "Fail loudly if the contract document is not on
+        # disk" step in seam-tests.yml.
+        run: |
+          python - <<'EOF'
+          import importlib, sys
+          missing = []
+          for name in ("guardkitfactory", "guardkitfactory.wiring",
+                       "guardkitfactory.harness", "langchain_core"):
+              try:
+                  importlib.import_module(name)
+              except Exception as exc:
+                  missing.append("%s (%s: %s)" % (name, type(exc).__name__, exc))
+          if missing:
+              print("COULD NOT CHECK - not importable after install:")
+              for m in missing:
+                  print("  -", m)
+              print("Every guardkitfactory-gated test would silently skip and")
+              print("this job would go green having checked less than before.")
+              print("Fix the checkout / install steps above.")
+              sys.exit(1)
+          print("guardkitfactory importable - its gated tests will run.")
+          EOF
 
       - name: Install SDK + hang-protection (so SDK unit tests run + gate)
         # claude-agent-sdk is a standalone PyPI package (guardkit's autobuild
