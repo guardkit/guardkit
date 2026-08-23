@@ -5,6 +5,23 @@ from pathlib import Path
 
 import pytest
 
+# ---------------------------------------------------------------------------
+# "What did not run" report (Rich, 2026-08-23: "I don't like skipping things and
+# leaving them for later because they get forgotten.")
+# ---------------------------------------------------------------------------
+# Importing these four hook functions by name makes them attributes of THIS
+# conftest module, which is how pytest discovers hooks. They record every skip
+# in the session and print a plain-language summary at the very end of the run.
+# They REPORT ONLY: nothing in tests/skip_report.py touches the exit code, and
+# nothing there interferes with the quarantine below — it reads the reports the
+# quarantine's own skips produce, and counts them under their own heading.
+from tests.skip_report import (  # noqa: F401  (imported for the hooks alone)
+    pytest_collectreport,
+    pytest_runtest_logreport,
+    pytest_sessionstart,
+    pytest_unconfigure,
+)
+
 # Add installer/core to Python path (to allow "from lib.X import Y")
 global_path = Path(__file__).parent.parent / "installer" / "core"
 sys.path.insert(0, str(global_path))
