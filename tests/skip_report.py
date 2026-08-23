@@ -344,7 +344,15 @@ def build_report_lines() -> "list[str]":
     if not _skips:
         return []
     if os.environ.get("GUARDKIT_SKIP_REPORT", "").lower() == "full":
-        return _compose(*_SIZE_LADDER[0])
+        # GENUINELY unbounded. This used to return _compose(*_SIZE_LADDER[0]),
+        # which is (40, 40) — hard caps — while the docstring promised "every
+        # file and every reason with no budget trimming". Measured with 200
+        # package-absent files and 400 reasons: 40 named, "... and 360 more
+        # reasons" silently dropped. It looked correct only because today's
+        # suite (11 whole files, 24 reasons) fits under both caps. `full` exists
+        # for the person actually working through the list, which is exactly
+        # when a silent cap is worst.
+        return _compose(len(_skips) or 1, len(_skips) or 1)
     for max_files, max_reasons in _SIZE_LADDER:
         lines = _compose(max_files, max_reasons)
         if len("\n".join(lines)) <= TAIL_BUDGET_CHARS:
