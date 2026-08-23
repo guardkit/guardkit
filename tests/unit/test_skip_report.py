@@ -37,6 +37,23 @@ RECEIPT_TAIL_CHARS = 4000
 
 
 # ---------------------------------------------------------------------------
+# These tests describe DEFAULT behaviour, so they must not read the operator's
+# environment. Without this, the module's own documented switches turned this
+# very suite RED: GUARDKIT_SKIP_REPORT=off made pytest_unconfigure write
+# nothing, and =full bypassed the size budget — each failing a test in the class
+# literally named "the report can never turn a run red". Measured before the
+# fix: `GUARDKIT_SKIP_REPORT=off pytest tests/unit/test_skip_report.py` gave
+# 1 failed / 26 passed. CI never sets the variable, so the merge gate was safe;
+# the first person to use the advertised escape hatch would have been the one to
+# find this. A test that reads ambient configuration is not testing a default.
+# Tests that deliberately exercise a switch set it themselves via monkeypatch.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _no_ambient_skip_report_setting(monkeypatch):
+    monkeypatch.delenv("GUARDKIT_SKIP_REPORT", raising=False)
+
+
+# ---------------------------------------------------------------------------
 # A private copy of the module, so unit tests cannot pollute the live run
 # ---------------------------------------------------------------------------
 @pytest.fixture
@@ -487,7 +504,21 @@ class TestTheBlockFitsWhatAReceiptKeeps:
         self._flood(isolated_report)
         monkeypatch.setenv("GUARDKIT_SKIP_REPORT", "full")
         block = "\n".join(isolated_report.build_report_lines())
+
+        # "Bigger than the budget" is NOT the claim. The docstring promises
+        # every file and every reason, and the old assertion passed happily
+        # while 360 of 400 reasons were silently dropped — the block was over
+        # budget AND truncated at the same time. `full` exists for the person
+        # working through the list, which is precisely when a silent cap is
+        # worst. Assert the ABSENCE of any "and N more", which is the only
+        # thing that distinguishes complete from merely long.
         assert len(block) > isolated_report.TAIL_BUDGET_CHARS
+        assert "more reasons" not in block, (
+            "full mode dropped reasons:\n" + block[-600:]
+        )
+        assert "more file" not in block, (
+            "full mode dropped files:\n" + block[-600:]
+        )
 
 
 class TestFilesAreGroupedByThePackageTheyWereWaitingFor:
