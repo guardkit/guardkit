@@ -1378,7 +1378,9 @@ class FeatureLoader:
                 errors.append(
                     f"Task file_path does not contain 'tasks' directory: {task.id} at {task.file_path}"
                 )
-            elif not task_file.exists():
+            elif not task_file.exists() and not _resolve_task_across_lifecycle(
+                repo_root, task.id
+            ):
                 errors.append(f"Task file not found: {task.id} at {task.file_path}")
 
         # Check orchestration has all tasks
@@ -2290,3 +2292,40 @@ __all__ = [
     "TaskType",
     "TASK_TYPE_ALIASES",
 ]
+
+
+def _resolve_task_across_lifecycle(repo_root: Path, task_id: str) -> Path | None:
+    """Find a task file by ID anywhere in the task lifecycle.
+
+    A feature's ``file_path`` is written once, at planning time, pointing into ``tasks/backlog/``.
+    The file then MOVES as the task progresses (``backlog`` -> ``design_approved`` -> ...), and
+    nothing rewrites the pin. Validation that only checks the pinned path therefore fails for any
+    feature whose tasks actually progressed — and passes only when a stale duplicate happens to
+    remain in backlog.
+
+    Measured in api_test on 2026-08-24: FEAT-F811 validated ONLY because copies lingered in both
+    ``tasks/backlog/`` and ``tasks/backlog/version-endpoint/``; FEAT-0CAC and FEAT-F2B0 both failed
+    with their task sitting correctly in ``tasks/design_approved/``. A green result that depends on
+    leftover duplicates is not a check.
+
+    The lifecycle directories are the same list ``TaskLoader.SEARCH_PATHS`` already uses — imported
+    rather than restated so the two cannot drift.
+    """
+    try:
+        from guardkit.tasks.task_loader import TaskLoader
+
+        search_paths = TaskLoader.SEARCH_PATHS
+    except Exception:  # noqa: BLE001 - loader is optional in some install shapes
+        search_paths = ["backlog", "in_progress", "design_approved", "in_review", "blocked"]
+
+    tasks_root = Path(repo_root) / "tasks"
+    if not tasks_root.is_dir():
+        return None
+    for state in search_paths:
+        state_dir = tasks_root / state
+        if not state_dir.is_dir():
+            continue
+        # the file may sit directly in the state dir or in a per-feature subdirectory
+        for candidate in state_dir.glob(f"**/{task_id}-*.md"):
+            return candidate
+    return None
