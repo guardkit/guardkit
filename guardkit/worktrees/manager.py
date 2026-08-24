@@ -459,6 +459,7 @@ class WorktreeManager:
         self,
         worktree: Worktree,
         target_branch: str = "main",
+        message: Optional[str] = None,
     ) -> None:
         """
         Merge worktree branch into target branch.
@@ -469,6 +470,9 @@ class WorktreeManager:
         Args:
             worktree: Worktree to merge
             target_branch: Branch to merge into (default: "main")
+            message: Merge commit message. ``None`` (the default) keeps the
+                historical ``"Merge {task_id} from AutoBuild"`` message
+                byte-identically.
 
         Raises:
             WorktreeMergeError: If merge fails or has conflicts
@@ -484,11 +488,17 @@ class WorktreeManager:
                 f"Failed to checkout {target_branch}: {e}"
             )
 
+        commit_message = (
+            message
+            if message is not None
+            else f"Merge {worktree.task_id} from AutoBuild"
+        )
+
         # Merge with --no-ff for explicit merge commit
         try:
             self._run_git([
                 "merge", "--no-ff",
-                "-m", f"Merge {worktree.task_id} from AutoBuild",
+                "-m", commit_message,
                 worktree.branch_name
             ])
         except WorktreeError as e:

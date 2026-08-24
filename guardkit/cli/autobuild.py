@@ -1848,6 +1848,155 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     sys.exit(0)
 
 
+@autobuild.command("merge")
+@click.argument("feature_id")
+@click.option(
+    "--target",
+    default="main",
+    show_default=True,
+    help="Branch to merge the feature branch into.",
+)
+@click.option(
+    "--expect-main-sha",
+    "expect_main_sha",
+    default=None,
+    help=(
+        "The commit the target branch pointed at when the checks ran. "
+        "If the target has moved since, the merge is refused loudly — "
+        "nothing half-done."
+    ),
+)
+@click.option(
+    "--baseline-json",
+    "baseline_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "The pre-merge record of failing test names: either a bare JSON "
+        "list of pytest node ids, or a baseline.json object with a "
+        "failing_node_ids field. Without it, every observed failure is "
+        "reported (never an invented clean)."
+    ),
+)
+@click.option(
+    "--verify/--no-verify",
+    "verify",
+    default=True,
+    show_default=True,
+    help=(
+        "Re-run the repo's test suite and validate the feature file on the "
+        "merged result. Only a positive pass ever reads as success."
+    ),
+)
+@click.option(
+    "--verify-timeout",
+    type=int,
+    default=600,
+    show_default=True,
+    help="Seconds before the post-merge verification run is killed.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the merge report as JSON on stdout.",
+)
+def merge(
+    feature_id: str,
+    target: str,
+    expect_main_sha: Optional[str],
+    baseline_json: Optional[Path],
+    verify: bool,
+    verify_timeout: int,
+    as_json: bool,
+):
+    """
+    Merge branch autobuild/FEATURE_ID into the target branch — the merge word
+    as a mechanism.
+
+    Run from the repository root. The branch is ALWAYS kept after merging
+    (it is the rollback path). A dirty tree, a missing branch, or a target
+    that has moved since the checks ran each refuse the merge before
+    anything is touched. A conflict aborts cleanly and reports the files.
+
+    \b
+    Examples:
+        guardkit autobuild merge FEAT-E613
+        guardkit autobuild merge FEAT-E613 --expect-main-sha 3f2c1a9
+        guardkit autobuild merge FEAT-E613 --baseline-json baseline.json
+        guardkit autobuild merge FEAT-E613 --no-verify --json
+
+    \b
+    Exit Codes:
+        0: Merged (and verification passed, when on)
+        1: Unexpected error
+        2: Refused (dirty tree / target moved / branch missing)
+        3: Conflict (merge aborted, tree left clean, branch kept)
+        4: Merged, but verification failed or gave no verdict
+    """
+    from guardkit.orchestrator.merge_executor import (
+        OUTCOME_CONFLICT,
+        OUTCOME_MERGED,
+        OUTCOME_REFUSED,
+        execute_merge,
+    )
+
+    try:
+        baseline_failing = (
+            _load_baseline_failing(baseline_json)
+            if baseline_json is not None
+            else None
+        )
+
+        report = execute_merge(
+            repo_root=Path.cwd(),
+            feature_id=feature_id,
+            target_branch=target,
+            expect_target_sha=expect_main_sha,
+            verify=verify,
+            baseline_failing=baseline_failing,
+            verify_timeout=verify_timeout,
+        )
+    except Exception as e:  # noqa: BLE001 — the CLI boundary reports plainly
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        logger.error(f"autobuild merge failed unexpectedly: {e}", exc_info=True)
+        sys.exit(1)
+
+    if as_json:
+        click.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        for line in report.receipt_lines():
+            # markup=False: pytest node ids like test[x-y] read as Rich tags
+            # otherwise and get silently dropped from the display.
+            console.print(line, soft_wrap=True, markup=False)
+
+    if report.outcome == OUTCOME_REFUSED:
+        sys.exit(2)
+    if report.outcome == OUTCOME_CONFLICT:
+        sys.exit(3)
+    if report.outcome == OUTCOME_MERGED and verify and not report.verify_ok:
+        sys.exit(4)
+    sys.exit(0)
+
+
+def _load_baseline_failing(path: Path) -> list:
+    """Read --baseline-json: a bare JSON list of failing pytest node ids, or
+    a baseline.json object carrying a ``failing_node_ids`` field."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return [str(x) for x in data]
+    if isinstance(data, dict):
+        ids = data.get("failing_node_ids")
+        if isinstance(ids, list):
+            return [str(x) for x in ids]
+        raise ValueError(
+            f"{path} is an object without a failing_node_ids list"
+        )
+    raise ValueError(
+        f"{path} must be a JSON list of node ids or a baseline.json object"
+    )
+
+
 # ============================================================================
 # Public API
 # ============================================================================
@@ -1858,6 +2007,7 @@ __all__ = [
     "status",
     "feature",
     "complete",
+    "merge",
     "zero_test_report",
     "_check_sdk_available",
     "_require_sdk",
