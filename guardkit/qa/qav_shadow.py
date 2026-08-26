@@ -32,7 +32,9 @@ network, and a bounded OpenAI-compatible call against llama-swap (lazy
 **The receipt** (design §"The receipt") is written beside the verdict it
 shadows at ``.guardkit/autobuild/{task_id}/qav_shadow_turn_{turn}.json`` and the
 same object is appended (``sort_keys=True``) to
-``.guardkit/qav-shadow/queue.jsonl`` (the DCL sink convention). ``agree`` is
+``.guardkit/qav-shadow/queue.jsonl`` (the DCL sink convention) — resolved at
+the MAIN checkout root, never a nested build worktree, so each build has ONE
+unambiguous queue file (:func:`_main_checkout_root`). ``agree`` is
 precomputed so burn-in tallies are one-liners.
 """
 
@@ -181,8 +183,10 @@ DEFAULT_TIMEOUT_S = 30.0
 _DEFAULT_TEMPERATURE = 0.0
 _DEFAULT_MAX_TOKENS = 4096
 
-#: The shadow sink (the DCL ``.guardkit/<lane>/queue.jsonl`` convention),
-#: repo-root relative.
+#: The shadow sink (the DCL ``.guardkit/<lane>/queue.jsonl`` convention).
+#: Resolved against the MAIN checkout root (:func:`_main_checkout_root`), NOT
+#: the worktree the turn ran in — autobuild builds inside a nested, gitignored,
+#: transient worktree, and a queue appended there is a queue nobody ever reads.
 QAV_SHADOW_QUEUE = ".guardkit/qav-shadow/queue.jsonl"
 
 #: llama-swap set/model name tokens whose presence in ``/running`` means an
@@ -213,6 +217,10 @@ ABSENT_REASONS = frozenset(
         "timeout",
         "no_bundle",
         "skipped_set",
+        # A guard-caught crash inside the shadow itself. Before 2026-08-26 a
+        # swallowed internal error left NO row at all — indistinguishable from
+        # the lane being off. Now it still leaves exactly one absent row.
+        "internal_error",
     }
 )
 
@@ -654,6 +662,43 @@ def _receipt_path(repo: Path, task_id: str, turn: int) -> Path:
     return repo / rel.format(task_id=task_id, turn=turn)
 
 
+def _main_checkout_root(repo: Path) -> Path:
+    """The queue sink root: the OUTERMOST checkout this build runs in.
+
+    Autobuild runs each feature inside a nested git worktree
+    (``<build checkout>/.guardkit/worktrees/FEAT-X/``). A queue row appended
+    inside that nested worktree is a row nobody ever reads: the worktree is
+    gitignored, transient, and every reader (the receipts harvest included)
+    looks at ``<build checkout>/.guardkit/qav-shadow/queue.jsonl``. Exactly this
+    made the shadow look silent across four builds on 2026-08-25/26 — the rows
+    WERE written, but only inside the soon-deleted nested worktrees.
+
+    Resolution: when ``repo`` is a linked git worktree — its ``.git`` is a
+    *file* reading ``gitdir: <main>/.git/worktrees/<name>`` — return
+    ``<main>``; otherwise return ``repo`` itself. Never raises; any surprise
+    in the layout falls back to ``repo``.
+    """
+    try:
+        gitfile = repo / ".git"
+        if not gitfile.is_file():
+            return repo
+        text = gitfile.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"^gitdir:\s*(.+?)\s*$", text, flags=re.MULTILINE)
+        if not m:
+            return repo
+        gitdir = Path(m.group(1))
+        if not gitdir.is_absolute():
+            gitdir = (repo / gitdir).resolve()
+        # <main>/.git/worktrees/<name> -> <main>
+        if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+            main_root = gitdir.parent.parent.parent
+            if main_root.is_dir():
+                return main_root
+        return repo
+    except Exception:  # noqa: BLE001 — path resolution can never break the shadow
+        return repo
+
+
 def _write_receipt(repo: Path, task_id: str, turn: int, record: Dict[str, Any]) -> Optional[Path]:
     """Write the per-turn receipt + append the queue row. A failed write itself
     swallows to WARNING (design §"The one law"); returns the path or None."""
@@ -670,16 +715,42 @@ def _write_receipt(repo: Path, task_id: str, turn: int, record: Dict[str, Any]) 
         path = None  # type: ignore[assignment]
 
     # The queue append is independent — a receipt that wrote must still try the
-    # sink, and a sink failure must not lose the receipt.
-    qpath = repo / QAV_SHADOW_QUEUE
+    # sink, and a sink failure must not lose the receipt. The sink lives at the
+    # MAIN checkout root, not the (possibly nested) worktree this turn ran in:
+    # one build = one checkout = one unambiguous queue file (2026-08-26 fix —
+    # see _main_checkout_root for the silent-four-builds story).
+    line = json.dumps(record, sort_keys=True) + "\n"
+    root = _main_checkout_root(repo)
+    qpath = root / QAV_SHADOW_QUEUE
     try:
         qpath.parent.mkdir(parents=True, exist_ok=True)
         with qpath.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, sort_keys=True) + "\n")
+            fh.write(line)
     except OSError as exc:
-        logger.warning(
-            "qav_shadow: unwritable queue %s (%r) — row dropped", qpath, exc
-        )
+        if root != repo:
+            # Last resort: better a row beside the worktree receipt than none.
+            fallback = repo / QAV_SHADOW_QUEUE
+            try:
+                fallback.parent.mkdir(parents=True, exist_ok=True)
+                with fallback.open("a", encoding="utf-8") as fh:
+                    fh.write(line)
+                logger.warning(
+                    "qav_shadow: unwritable queue %s (%r) — row appended to %s instead",
+                    qpath,
+                    exc,
+                    fallback,
+                )
+            except OSError as exc2:
+                logger.warning(
+                    "qav_shadow: unwritable queue %s (%r after %r) — row dropped",
+                    fallback,
+                    exc2,
+                    exc,
+                )
+        else:
+            logger.warning(
+                "qav_shadow: unwritable queue %s (%r) — row dropped", qpath, exc
+            )
     return path
 
 
@@ -697,6 +768,59 @@ def _read_bundle(bundle_path: Path) -> Optional[Dict[str, Any]]:
         )
         return None
     return obj if isinstance(obj, dict) else None
+
+
+def _emit_absent_last_resort(
+    repo: Path, task_id: str, turn: int, coach_decision: str
+) -> None:
+    """Write an ``absent(internal_error)`` row after a guard-caught crash.
+
+    The contract this protects: with the lane ON, EVERY coach verdict leaves
+    exactly one queue row — a real comparison when the shadow answered, an
+    absent row when it could not. Before 2026-08-26 a crash swallowed by the
+    never-raise guards left no row at all, indistinguishable from the lane
+    being off. Never raises; does nothing when the lane is OFF or when this
+    turn's receipt already landed (never two rows for one verdict).
+    """
+    try:
+        repo = Path(repo)
+        if not is_qav_shadow_enabled(repo):
+            return
+        if _receipt_path(repo, task_id, turn).exists():
+            return  # a record for this verdict already landed
+        cfg = load_qav_shadow_config(repo)
+        record = _build_record(
+            task_id=task_id,
+            turn=turn,
+            ts=_utc_now_iso(),
+            coach_decision=str(coach_decision),
+            status="absent",
+            absent_reason="internal_error",
+            agree=None,
+            verdict=None,
+            findings=[],
+            json_extracted=False,
+            raw=None,
+            model=_model(cfg),
+            endpoint=_endpoint(cfg),
+            bundle_sha256=None,
+            prompt_sha256=None,
+            sampling={
+                "temperature": _DEFAULT_TEMPERATURE,
+                "max_tokens": _DEFAULT_MAX_TOKENS,
+            },
+            usage=None,
+            wall_time_s=None,
+            truncated=False,
+        )
+        _write_receipt(repo, task_id, turn, record)
+    except Exception as exc:  # noqa: BLE001 — the last resort must never raise
+        logger.warning(
+            "qav_shadow: last-resort absent row also failed (%r) for %s turn %s",
+            exc,
+            task_id,
+            turn,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -742,6 +866,8 @@ def run_qav_shadow(
             task_id,
             turn,
         )
+        # Even a swallowed crash must leave its one queue row (absent, named).
+        _emit_absent_last_resort(Path(repo_root), task_id, turn, coach_decision)
         return ShadowOutcome(enabled=True, error=f"guard:{type(exc).__name__}")
 
 
@@ -949,6 +1075,8 @@ def schedule_qav_shadow(
                 run(repo, task_id, turn, coach_decision)
             except Exception as exc:  # noqa: BLE001 — the thread can never surface
                 logger.warning("qav_shadow: threaded run swallowed %r", exc)
+                # A crashed run must still leave its one (absent) queue row.
+                _emit_absent_last_resort(repo, task_id, turn, coach_decision)
 
         thread = threading.Thread(
             target=_body, name=f"qav-shadow-{task_id}-t{turn}", daemon=False
@@ -959,4 +1087,7 @@ def schedule_qav_shadow(
         logger.warning(
             "qav_shadow: schedule guard swallowed %r for %s turn %s", exc, task_id, turn
         )
+        # Best effort: a scheduling failure must still leave its one queue row
+        # (the helper re-checks the flag itself and never raises).
+        _emit_absent_last_resort(Path(repo_root), task_id, turn, coach_decision)
         return None
