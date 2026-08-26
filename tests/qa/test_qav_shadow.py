@@ -864,3 +864,186 @@ def test_default_seat_base_url_accepts_both_endpoint_shapes(monkeypatch):
         except RuntimeError:
             pass
     assert captured["bases"] == ["http://h:9000/v1"] * 3
+
+
+# ===========================================================================
+# 2026-08-26 repair — the silent-queue defect (four builds, zero visible rows).
+#
+# The shadow ran and wrote rows the whole time, but the queue path resolved
+# against the NESTED autobuild worktree (`.guardkit/worktrees/FEAT-*` —
+# gitignored, transient, unread), so four builds' rows died with their
+# worktrees. These tests pin the two guarantees of the fix:
+#   * the queue row lands at the MAIN checkout root — per-build-unambiguous;
+#   * with the lane ON, every coach verdict leaves exactly one queue row,
+#     even when the shadow call fails or the shadow itself crashes.
+# ===========================================================================
+
+
+def _make_linked_worktree(tmp_path):
+    """A build checkout with a nested linked worktree, laid out exactly as
+    autobuild lays them out on disk (no git binary needed — just the shape:
+    the nested worktree's ``.git`` is a FILE pointing into the build
+    checkout's ``.git/worktrees/<name>``)."""
+    build_root = tmp_path / "build-checkout"
+    (build_root / ".git" / "worktrees" / "FEAT-X").mkdir(parents=True)
+    nested = build_root / ".guardkit" / "worktrees" / "FEAT-X"
+    nested.mkdir(parents=True)
+    (nested / ".git").write_text(
+        f"gitdir: {build_root / '.git' / 'worktrees' / 'FEAT-X'}\n",
+        encoding="utf-8",
+    )
+    return build_root, nested
+
+
+def test_failed_seat_call_still_writes_absent_queue_row(tmp_path):
+    """A failed shadow call must still leave exactly one queue row (absent)."""
+    repo = tmp_path
+    _write_config(repo, enabled=True)
+    _write_bundle(repo, "TASK-1", 1, _sample_bundle())
+
+    def _die(*_a, **_k):
+        raise TimeoutError("seat unreachable from the build context")
+
+    outcome = q.run_qav_shadow(
+        repo, "TASK-1", 1, "approve", seat_call=_die, running_probe=_free_probe(),
+    )
+
+    assert outcome.status == "absent"
+    rows = _read_queue(repo)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["status"] == "absent"
+    assert row["absent_reason"] == "timeout"
+    assert row["task_id"] == "TASK-1"
+    assert row["turn"] == 1
+    assert row["coach_decision"] == "approve"
+
+
+def test_internal_crash_still_writes_absent_queue_row(tmp_path, monkeypatch, caplog):
+    """A crash INSIDE the shadow (swallowed by the never-raise guard) must no
+    longer mean a missing row: exactly one absent(internal_error) row lands."""
+    repo = tmp_path
+    _write_config(repo, enabled=True)
+    _write_bundle(repo, "TASK-1", 1, _sample_bundle())
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("eligibility check exploded")
+
+    monkeypatch.setattr(q, "_probe_eligibility", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="guardkit.qa.qav_shadow"):
+        outcome = q.run_qav_shadow(
+            repo, "TASK-1", 1, "approve",
+            seat_call=_raise_if_called, running_probe=_free_probe(),
+        )
+
+    assert outcome.error == "guard:RuntimeError"  # still never raises
+    rows = _read_queue(repo)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "absent"
+    assert rows[0]["absent_reason"] == "internal_error"
+    # The per-turn receipt landed beside the coach verdict too.
+    record = _read_receipt(repo, "TASK-1", 1)
+    assert record["absent_reason"] == "internal_error"
+
+
+def test_thread_crash_still_writes_absent_queue_row(tmp_path):
+    """A runner that explodes inside the fire-and-forget thread still leaves
+    its one absent row."""
+    repo = tmp_path
+    _write_config(repo, enabled=True)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("run exploded")
+
+    thread = q.schedule_qav_shadow(
+        repo, task_id="TASK-1", turn=1, coach_decision="approve", runner=_boom
+    )
+    assert thread is not None
+    thread.join(timeout=5)
+
+    rows = _read_queue(repo)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "absent"
+    assert rows[0]["absent_reason"] == "internal_error"
+
+
+def test_queue_row_lands_in_build_checkout_not_nested_worktree(tmp_path):
+    """PINS THE WRITE PATH: run in a nested autobuild worktree, the queue row
+    lands at ``<build checkout>/.guardkit/qav-shadow/queue.jsonl`` — the one
+    per-build location the receipts harvest reads — while the per-turn receipt
+    stays beside the coach verdict inside the worktree."""
+    build_root, nested = _make_linked_worktree(tmp_path)
+    _write_config(nested, enabled=True)
+    _write_bundle(nested, "TASK-1", 1, _sample_bundle())
+
+    outcome = q.run_qav_shadow(
+        nested, "TASK-1", 1, "approve",
+        seat_call=_seat(_assistant("approve")), running_probe=_free_probe(),
+    )
+
+    assert outcome.status == "ok"
+    # The queue is at the OUTER build checkout, not inside the worktree.
+    assert not (nested / q.QAV_SHADOW_QUEUE).exists()
+    rows = _read_queue(build_root)
+    assert len(rows) == 1
+    assert rows[0]["agree"] is True
+    assert rows[0]["task_id"] == "TASK-1"
+    # The per-turn receipt still lands beside the coach verdict.
+    record = _read_receipt(nested, "TASK-1", 1)
+    assert record["status"] == "ok"
+
+
+def test_queue_path_pinned_for_plain_checkout(tmp_path):
+    """PINS THE WRITE PATH for a normal checkout (``.git`` is a directory):
+    the queue stays at ``<repo>/.guardkit/qav-shadow/queue.jsonl``."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write_config(repo, enabled=True)
+    _write_bundle(repo, "TASK-1", 1, _sample_bundle())
+
+    q.run_qav_shadow(
+        repo, "TASK-1", 1, "approve",
+        seat_call=_seat(_assistant("approve")), running_probe=_free_probe(),
+    )
+
+    assert q._main_checkout_root(repo) == repo
+    assert (repo / ".guardkit" / "qav-shadow" / "queue.jsonl").is_file()
+    assert len(_read_queue(repo)) == 1
+
+
+def test_queue_falls_back_to_worktree_when_build_root_unwritable(tmp_path, caplog):
+    """When the build-checkout sink cannot be written, the row falls back to
+    the worktree queue rather than being dropped."""
+    build_root, nested = _make_linked_worktree(tmp_path)
+    _write_config(nested, enabled=True)
+    _write_bundle(nested, "TASK-1", 1, _sample_bundle())
+    # Block the build-root sink: a FILE where the qav-shadow dir must be.
+    (build_root / ".guardkit" / "qav-shadow").write_text("i am a file", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="guardkit.qa.qav_shadow"):
+        outcome = q.run_qav_shadow(
+            nested, "TASK-1", 1, "approve",
+            seat_call=_seat(_assistant("approve")), running_probe=_free_probe(),
+        )
+
+    assert outcome.status == "ok"
+    rows = _read_queue(nested)  # the fallback location: the worktree itself
+    assert len(rows) == 1
+    assert any("row appended to" in r.message for r in caplog.records)
+
+
+def test_main_checkout_root_falls_back_on_odd_layouts(tmp_path):
+    """Any surprise in the layout resolves to the worktree itself — never a raise."""
+    # No .git at all.
+    assert q._main_checkout_root(tmp_path) == tmp_path
+    # A .git file with no gitdir line.
+    odd = tmp_path / "odd"
+    odd.mkdir()
+    (odd / ".git").write_text("not a pointer", encoding="utf-8")
+    assert q._main_checkout_root(odd) == odd
+    # A gitdir that does not match the worktree layout.
+    odd2 = tmp_path / "odd2"
+    odd2.mkdir()
+    (odd2 / ".git").write_text("gitdir: /nonexistent/somewhere/else\n", encoding="utf-8")
+    assert q._main_checkout_root(odd2) == odd2
