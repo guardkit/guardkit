@@ -70,6 +70,12 @@ from guardkit.orchestrator.stale_test_attribution import (
     smoke_gate_header,
     stale_test_notes,
 )
+from guardkit.orchestrator.twin_coverage import (
+    check_twin_coverage,
+    is_twin_coverage_enforced,
+    render_twin_coverage_lines,
+    write_twin_coverage_receipt,
+)
 from guardkit.orchestrator.baseline import (
     BaselineResult,
     feature_baseline_path,
@@ -4838,6 +4844,50 @@ The detailed specifications are in the task markdown file.
             final_status = "paused"  # Partial completion (resume mode)
             success = False
 
+        # Hurl twin coverage (advisory-first, 2026-08-26). A plan can stamp
+        # every scenario "verifier: hurl" and the build can still finish
+        # without writing a single .hurl twin file — nothing between plan
+        # approval and here checked that the promised twin artifacts exist
+        # (the FEAT-0E07 hole: 5/5 complete, zero twins). Runs once, after
+        # the final task, only for a build that finished clean (a build that
+        # already failed has its own answer). Writes a plain receipt and a
+        # warning; fails the build ONLY when the repo opted in
+        # (qa.enforce_twin_coverage in .guardkit/config.yaml, read from the
+        # MAIN checkout so a build cannot switch its own gate off).
+        twin_error: Optional[str] = None
+        if final_status == "completed":
+            try:
+                twin_report = check_twin_coverage(
+                    feature_id=feature.id,
+                    scenarios=getattr(feature, "scenarios", None) or {},
+                    root=Path(worktree.path),
+                    enforced=is_twin_coverage_enforced(self.repo_root),
+                )
+                receipt_path = write_twin_coverage_receipt(
+                    twin_report, Path(worktree.path)
+                )
+                for line in render_twin_coverage_lines(
+                    twin_report, receipt_path
+                ):
+                    if twin_report.missing:
+                        logger.warning(line)
+                    else:
+                        logger.info(line)
+                    if not self.quiet:
+                        # markup=False: scenario titles may carry square
+                        # brackets; Rich would read them as style tags.
+                        console.print(line, markup=False)
+                if twin_report.blocks_build:
+                    final_status = "failed"
+                    success = False
+                    twin_error = (
+                        f"{len(twin_report.missing)} scenario(s) are marked "
+                        "for a Hurl twin but have no twin file (see "
+                        f"{receipt_path})"
+                    )
+            except Exception as exc:  # noqa: BLE001 — the check never crashes a build
+                logger.warning("Twin coverage check could not run: %s", exc)
+
         # Update feature
         feature.status = final_status
         feature.execution.completed_at = datetime.now().isoformat()
@@ -4865,9 +4915,13 @@ The detailed specifications are in the task markdown file.
                 None
                 if success
                 else (
-                    "smoke gate failed between waves"
-                    if smoke_gate_failed and tasks_failed == 0
-                    else f"{tasks_failed} task(s) failed"
+                    twin_error
+                    if twin_error is not None
+                    else (
+                        "smoke gate failed between waves"
+                        if smoke_gate_failed and tasks_failed == 0
+                        else f"{tasks_failed} task(s) failed"
+                    )
                 )
             ),
         )
