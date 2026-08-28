@@ -2472,3 +2472,32 @@ def test_disagreements_over_the_hand_stamped_60_are_exactly_the_named_divergence
     for title, stamp in data["scenarios"].items():
         if stamp.get("verifier") == "toolchain":
             assert stamp.get("test_ref"), title
+
+
+def test_r9_widening_h_concurrency_idiom_ruled_2026_08_28():
+    """R9 WIDENING clause (h) (RULED, Rich 2026-08-28, option A): the three
+    REAL refusals from the architect exam (sentences 4 and 5) now mint hurl;
+    a concurrent scenario with no wire noun in the phrase still refuses."""
+    cases = [
+        ("Concurrent requests return consistent domain lists",
+         "When several clients request the domains list at the same time\n"
+         "Then concurrent requests return consistent domain lists"),
+        ("Concurrent requests to the domains endpoint return consistent results",
+         "When two concurrent requests to the domains endpoint are made\n"
+         "Then both responses should contain identical lists"),
+        ("Concurrent deactivation requests are handled gracefully",
+         "When two concurrent deactivation requests target the same user\n"
+         "Then concurrent deactivation requests are handled gracefully\n"
+         "And exactly one succeeds with the other reporting a conflict"),
+    ]
+    for title, steps in cases:
+        home = classify_scenario(title, steps, HTTP)
+        assert home is not None and (home.verifier, home.rule) == ("hurl", "R9"), (title, home)
+        assert "machine idiom (h)" in home.evidence, home.evidence
+    negative = classify_scenario(
+        "Concurrent file writes remain consistent",
+        "When two writers append to the ledger file at once\n"
+        "Then the resulting file remains consistent",
+        HTTP,
+    )
+    assert negative is None, negative

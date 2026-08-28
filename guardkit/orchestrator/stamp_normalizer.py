@@ -880,6 +880,18 @@ R9_MACHINE_IDIOM: List[Tuple[str, re.Pattern[str]]] = [
         ("e", r"\bthe request should (?:succeed|fail|be rejected)\b"),
         ("f", r"\b(?:rejected|reported) as (?:a )?(?:conflict|invalid(?: input)?|not[- ]found|unsupported|not allowed|method not allowed)\b"),
         ("g", r"\b(?:looking up|look up|lookup of) [^\n]*(?:should|is) (?:find nothing|not found|reported as not found)\b"),
+        # (h) CONCURRENCY IDIOM (RULED, Rich 2026-08-28, option A): three real
+        # refusals across exam sentences 4 and 5 ("Concurrent requests return
+        # consistent domain lists", "Concurrent requests to the domains
+        # endpoint return consistent results", "Concurrent deactivation
+        # requests are handled gracefully") — the spec seat reliably emits one
+        # concurrent-X scenario per endpoint and no rule decided them. The
+        # wire noun (requests/calls) is part of the phrase itself; a
+        # concurrent scenario about files, jobs or writes does not match and
+        # still refuses loud. Hurl approximates concurrency with repeated
+        # requests — the ruled, stated limitation.
+        ("h", r"\bconcurrent (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled gracefully|succeed|identical|all succeed)"),
+        ("h", r"\b(?:simultaneous|parallel) (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled gracefully|succeed|identical)"),
     )
 ]
 
