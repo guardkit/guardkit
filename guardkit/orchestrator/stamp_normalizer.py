@@ -890,8 +890,8 @@ R9_MACHINE_IDIOM: List[Tuple[str, re.Pattern[str]]] = [
         # concurrent scenario about files, jobs or writes does not match and
         # still refuses loud. Hurl approximates concurrency with repeated
         # requests — the ruled, stated limitation.
-        ("h", r"\bconcurrent (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled gracefully|succeed|identical|all succeed)"),
-        ("h", r"\b(?:simultaneous|parallel) (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled gracefully|succeed|identical)"),
+        ("h", r"\bconcurrent (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled (?:gracefully|safely|correctly|atomically)|succeed|identical|all succeed|exactly one succeeds)"),
+        ("h", r"\b(?:simultaneous|parallel) (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled (?:gracefully|safely|correctly|atomically)|succeed|identical)"),
     )
 ]
 

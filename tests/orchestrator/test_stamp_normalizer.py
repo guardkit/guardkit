@@ -2485,6 +2485,9 @@ def test_r9_widening_h_concurrency_idiom_ruled_2026_08_28():
         ("Concurrent requests to the domains endpoint return consistent results",
          "When two concurrent requests to the domains endpoint are made\n"
          "Then both responses should contain identical lists"),
+        ("Concurrent deactivation requests for the same user are handled safely",
+         "When two concurrent deactivation requests target the same user\n"
+         "Then concurrent deactivation requests for the same user are handled safely"),
         ("Concurrent deactivation requests are handled gracefully",
          "When two concurrent deactivation requests target the same user\n"
          "Then concurrent deactivation requests are handled gracefully\n"
