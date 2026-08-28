@@ -2504,3 +2504,26 @@ def test_r9_widening_h_concurrency_idiom_ruled_2026_08_28():
         HTTP,
     )
     assert negative is None, negative
+
+
+def test_r9_widening_i_parameter_filtering_idiom_ruled_2026_08_28():
+    """R9 clause (i) (RULED, Rich 2026-08-28, second widening): the five REAL
+    refused titles from exam sentence 7 mint hurl; a non-wire filtering
+    sentence (no parameter/count/query noun) still refuses."""
+    titles = [
+        "Filtering domains with a valid min_count returns only domains meeting the threshold",
+        "Omitting the min_count parameter returns all domains",
+        "A minimum count of 0 includes all domains",
+        "A minimum count of 1 excludes domains with zero users",
+        "A very large minimum count returns no domains",
+    ]
+    for t in titles:
+        home = classify_scenario(t, f"When the request is made\nThen {t.lower()}", HTTP)
+        assert home is not None and (home.verifier, home.rule) == ("hurl", "R9"), (t, home)
+        assert "machine idiom (i)" in home.evidence, home.evidence
+    negative = classify_scenario(
+        "Filtering log noise returns only warnings",
+        "When the log filter runs\nThen filtering log noise returns only warnings",
+        HTTP,
+    )
+    assert negative is None, negative
