@@ -892,8 +892,23 @@ R9_MACHINE_IDIOM: List[Tuple[str, re.Pattern[str]]] = [
         # requests — the ruled, stated limitation.
         ("h", r"\bconcurrent (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled (?:gracefully|safely|correctly|atomically)|succeed|identical|all succeed|exactly one succeeds)"),
         ("h", r"\b(?:simultaneous|parallel) (?:\w+ )?(?:requests?|calls?)\b[^\n]*(?:consistent|handled (?:gracefully|safely|correctly|atomically)|succeed|identical)"),
+        # (i) PARAMETER-FILTERING IDIOM (RULED, Rich 2026-08-28, second widening
+        # of the day): five real refusals on exam sentence 7 — the spec seat's
+        # filtering voice ("returns only/all/no X", "includes/excludes X",
+        # "omitting the X parameter", "a minimum count of N") sat outside the
+        # 08-16 census. Fires ONLY when a parameter/count/query/wire noun
+        # co-occurs in the scenario (see _R9_I_PARAM_NOUN_RE) so a non-wire
+        # filtering sentence still refuses loud.
+        ("i", r"\b(?:filtering|filtered) \w+[^\n]*(?:returns? (?:only|all|no)\b|meeting the threshold)"),
+        ("i", r"\bomitting the \w+ parameter\b[^\n]*returns?"),
+        ("i", r"\ba (?:minimum|maximum) \w+ of \d+\b[^\n]*(?:includes?|excludes?|returns?)"),
+        ("i", r"\ba very (?:large|small|high|low) (?:minimum|maximum) \w+\b[^\n]*returns?"),
     )
 ]
+
+_R9_I_PARAM_NOUN_RE = re.compile(
+    r"\b(?:parameters?|param|query|count|endpoints?|requests?)\b", re.IGNORECASE
+)
 
 
 # (f) NARROWED on the estate corpus (same sitting): "rejected as invalid" is
@@ -922,6 +937,8 @@ def _r9_machine_idiom_match(text: str) -> Optional[Tuple[str, str]]:
         m = pat.search(text)
         if m:
             if letter == "f" and not _R9_F_WIRE_NOUN_RE.search(text):
+                continue
+            if letter == "i" and not _R9_I_PARAM_NOUN_RE.search(text):
                 continue
             return letter, m.group(0)
     return None
