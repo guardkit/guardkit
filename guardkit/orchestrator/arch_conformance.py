@@ -83,7 +83,11 @@ def _relative_files(worktree_path: Path, changed_files: Optional[Iterable[str]])
             if p.is_absolute():
                 rel = p.resolve().relative_to(root).as_posix()
             else:
-                rel = p.as_posix().lstrip("./")
+                # Anchor to the worktree and resolve, so "./x" tidies to "x",
+                # ".hidden/x" keeps its leading dot, and "../outside" raises
+                # ValueError below and is dropped (lstrip stripped characters,
+                # not a prefix — it invented in-tree paths from outside ones).
+                rel = (root / p).resolve().relative_to(Path(root).resolve()).as_posix()
         except ValueError:
             continue  # not inside this worktree
         if rel:
