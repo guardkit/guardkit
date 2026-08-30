@@ -4563,6 +4563,38 @@ class AutoBuildOrchestrator:
                 turn,
             )
 
+        # Architecture rules, watched only (2026-08-30). The repository under build
+        # can write down how it is meant to be built, in
+        # docs/architecture-rules.yaml; the checker in guardkit/conformance reads
+        # that file and reports where the code sits against it. Here it runs over
+        # this task's touched files and writes its report beside this turn's Coach
+        # verdict, and that is all it does. NOTHING READS THE RECEIPT: no verdict
+        # changes, no issue reaches the Player, nothing appears on a card, nothing
+        # is read at merge. A repository with no rules file gets one small receipt
+        # saying nothing was checked — which is not the same as clean — and costs
+        # the build nothing else. The call cannot raise (it owns its own
+        # try/except); this one is belt-and-braces so no path here can ever touch
+        # the turn.
+        try:
+            from guardkit.orchestrator.arch_conformance import (
+                observe_task_conformance,
+            )
+
+            observe_task_conformance(
+                worktree.path,
+                task_id=task_id,
+                turn=turn,
+                changed_files=sorted(self._cumulative_source_files),
+            )
+        except Exception as _arch_exc:  # noqa: BLE001 — never touches the turn
+            logger.warning(
+                "Architecture rules receipt raised %s for %s turn %s; ignored "
+                "(build untouched).",
+                _arch_exc.__class__.__name__,
+                task_id,
+                turn,
+            )
+
         # Parse Coach decision
         if not coach_result.success:
             self._progress_display.complete_turn(
