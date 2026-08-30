@@ -412,3 +412,18 @@ def test_the_hook_is_wired_at_the_per_turn_coach_seam():
     )
     call = source[source.index("observe_task_conformance(") :][:400]
     assert "must_fix" not in call and "decision" not in call
+
+
+def test_relative_file_tidying_strips_prefixes_not_characters(tmp_path):
+    """The coach's driving inputs, pinned: './' tidies, '.hidden' survives,
+    '../outside' is dropped instead of becoming an invented in-tree path."""
+    from guardkit.orchestrator.arch_conformance import _relative_files
+
+    got = _relative_files(
+        ["./src/a.py", ".hidden/pkg/mod.py", "../elsewhere/mod.py", "src/b.py"],
+        tmp_path,
+    )
+    assert "src/a.py" in got
+    assert ".hidden/pkg/mod.py" in got
+    assert "src/b.py" in got
+    assert all("elsewhere" not in g for g in got)
