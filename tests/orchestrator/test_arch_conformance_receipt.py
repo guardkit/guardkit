@@ -420,8 +420,8 @@ def test_relative_file_tidying_strips_prefixes_not_characters(tmp_path):
     from guardkit.orchestrator.arch_conformance import _relative_files
 
     got = _relative_files(
-        ["./src/a.py", ".hidden/pkg/mod.py", "../elsewhere/mod.py", "src/b.py"],
         tmp_path,
+        ["./src/a.py", ".hidden/pkg/mod.py", "../elsewhere/mod.py", "src/b.py"],
     )
     assert "src/a.py" in got
     assert ".hidden/pkg/mod.py" in got
