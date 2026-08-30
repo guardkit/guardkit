@@ -92,6 +92,14 @@ class TaskArtifactPaths:
     # QAV shadow receipt — the log-only second-opinion record written beside the
     # coach verdict it shadows (guardkit/qa/qav_shadow.py). Default-OFF lane.
     QAV_SHADOW: str = ".guardkit/autobuild/{task_id}/qav_shadow_turn_{turn}.json"
+    # Architecture-rules receipt — what the repository's own
+    # docs/architecture-rules.yaml says about the files this task touched, written
+    # beside the coach verdict for the same turn
+    # (guardkit/orchestrator/arch_conformance.py). Nothing reads it: it is a record
+    # kept so the receipts exist before anything is allowed to act on them.
+    ARCH_CONFORMANCE: str = (
+        ".guardkit/autobuild/{task_id}/arch_conformance_turn_{turn}.json"
+    )
     TASK_WORK_RESULTS: str = ".guardkit/autobuild/{task_id}/task_work_results.json"
     DESIGN_RESULTS: str = ".guardkit/autobuild/{task_id}/design_results.json"
     COACH_FEEDBACK: str = ".guardkit/autobuild/{task_id}/coach_feedback_{turn}.json"
@@ -298,6 +306,32 @@ class TaskArtifactPaths:
         PosixPath('/repo/.guardkit/autobuild/TASK-001/qav_shadow_turn_1.json')
         """
         return worktree / cls.QAV_SHADOW.format(task_id=task_id, turn=turn)
+
+    @classmethod
+    def arch_conformance_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
+        """Get path for the architecture-rules receipt (beside the coach decision).
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Turn number (1-indexed)
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the arch_conformance_turn_{turn}.json receipt file
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.arch_conformance_path("TASK-001", 1, Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild/TASK-001/arch_conformance_turn_1.json')
+        """
+        return worktree / cls.ARCH_CONFORMANCE.format(task_id=task_id, turn=turn)
 
     @classmethod
     def task_work_results_path(cls, task_id: str, worktree: Path) -> Path:
