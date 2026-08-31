@@ -104,7 +104,11 @@ MAX_TIMEOUT_S = 60.0
 
 #: One word per title, so the reply is tiny. Kept small on purpose: a model
 #: that starts writing prose runs out of room and its answer is rejected.
-MAX_ANSWER_TOKENS = 2048
+MAX_ANSWER_TOKENS = 8192
+#: Raised from 2048 on 2026-08-31 after a live refusal: the deletion titles in
+#: sentence 6 of the exam needed more thinking than the concurrency titles, and at
+#: 2048 the reply came back empty again. 8192 answered them. The budget is for the
+#: model's reasoning, not the answer — the answer is one word.
 #: Generous for an answer of a few words, because the seat that answers is a
 #: reasoning model: it writes its thinking first and the answer last, both out of
 #: the same budget. At the first value here the thinking used the whole budget and
