@@ -711,8 +711,13 @@ def snapshot_task_conformance(
 
     Absence-of-failure / no-regression discipline:
 
-    * No ``conformance`` block ⇒ returns ``None``, writes nothing (a build
-      without the block is a byte-equivalent no-op).
+    * No ``conformance`` block, and nothing added from outside the task ⇒
+      returns ``None``, writes nothing (a build without the block is a
+      byte-equivalent no-op). Two things can be added from outside the task and
+      make it write anyway: the routing law's ``test_ref`` rule, and — only when
+      ``GUARDKIT_ARCH_CONFORMANCE_BLOCKING`` is set and the repository under
+      build has written its own ``docs/architecture-rules.yaml`` — the
+      architecture rules check.
     * A MALFORMED block ⇒ logged loudly at ERROR (the CMIR loud-degrade
       lesson), then degrades to ``None`` — a schema typo in an opt-in feature
       must never crash an existing build. (The schema itself raises for direct
@@ -756,20 +761,41 @@ def snapshot_task_conformance(
         )
 
         synthesized = build_rule_from_frontmatter(frontmatter, task_id=task_id)
-        if raw_block is None and synthesized is None:
+
+        # ARCHITECTURE RULES (2026-08-31). The same move, one rule further
+        # along: when the repository under build has written down how it is
+        # meant to be built, in docs/architecture-rules.yaml, and the switch
+        # GUARDKIT_ARCH_CONFORMANCE_BLOCKING is set, a "run this command" rule
+        # is added here that checks the code generator's own changed files
+        # against those rules. It rides this same freeze-before-turn-1 pin and
+        # the same Coach guard, so a place the rules do not name comes back as
+        # one fix-this issue on the next turn with nobody involved. With the
+        # switch unset — the default — this returns None and a build is
+        # byte-for-byte what it was. It never raises; it owns its own
+        # try/except.
+        from guardkit.orchestrator.arch_conformance import (
+            build_arch_conformance_rule,
+        )
+
+        architecture = build_arch_conformance_rule(
+            worktree_path, task_id=task_id
+        )
+
+        injected = [r for r in (synthesized, architecture) if r is not None]
+        if raw_block is None and not injected:
             return None  # byte-equivalent no-op for the vast majority of tasks
-        if synthesized is not None:
+        for rule_dict in injected:
             if raw_block is None:
-                raw_block = {"rules": [synthesized]}
+                raw_block = {"rules": [rule_dict]}
             elif isinstance(raw_block, dict):
                 import copy
 
                 raw_block = copy.deepcopy(raw_block)
                 declared_rules = raw_block.get("rules")
                 if isinstance(declared_rules, list):
-                    declared_rules.append(synthesized)
+                    declared_rules.append(rule_dict)
                 else:
-                    raw_block["rules"] = [synthesized]
+                    raw_block["rules"] = [rule_dict]
             # A non-dict declared block falls through unchanged and fails
             # parse_conformance_block loudly below — today's path; the
             # synthesized rule dies with it, in the same ERROR log.
