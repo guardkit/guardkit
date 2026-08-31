@@ -513,8 +513,19 @@ def test_the_cli_json_carries_the_model_decided_titles_and_the_stderr_echo(tmp_p
 # ---------------------------------------------------------------------------
 
 
-def test_the_timeout_is_short_enough_that_a_hung_endpoint_cannot_stall_a_run():
-    assert 10.0 <= DEFAULT_TIMEOUT_S <= 20.0
+def test_the_timeout_is_bounded_but_long_enough_to_reach_a_cold_model():
+    """Two things have to be true at once, and the first draft only had one.
+
+    A hung endpoint must not stall a planning run indefinitely — hence an upper
+    bound. But the estate serves one model at a time and swaps them in on demand,
+    so the first call after a swap waits about ninety seconds for a 35-billion
+    parameter model to load. The original 10-20 second window was inside the
+    bound and never once reached a cold model: every live call timed out and
+    every title stayed refused, so the fallback would have looked safe and done
+    nothing. Measured 2026-08-31.
+    """
+    assert DEFAULT_TIMEOUT_S >= 120.0, "must outlast a cold model load"
+    assert DEFAULT_TIMEOUT_S <= 300.0, "must still be bounded"
 
 
 def test_the_endpoint_falls_back_to_openai_base_url_and_the_model_name_has_a_default(monkeypatch):
