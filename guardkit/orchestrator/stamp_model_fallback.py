@@ -195,6 +195,12 @@ def rule_table(doc: Optional[str] = None) -> List[RuleSummary]:
 # ---------------------------------------------------------------------------
 
 
+#: The closed list minus the one word the model cannot deliver. A ``toolchain``
+#: stamp must name the test node that proves the scenario; the model has no node
+#: to name, so offering it invites an answer that cannot be written.
+OFFERABLE_HOMES = tuple(h for h in VERIFIER_HOMES if h != "toolchain")
+
+
 def build_prompt(titles: Sequence[str], *, rules: Optional[Sequence[RuleSummary]] = None) -> str:
     """The exact text sent to the model: the closed list, the rules' own
     summary as the rationale for what each word means, the refused titles, and
@@ -205,7 +211,11 @@ def build_prompt(titles: Sequence[str], *, rules: Optional[Sequence[RuleSummary]
         "A build system proves every test scenario in exactly ONE way.",
         "",
         "The closed list of ways — your answer must use these words and nothing else:",
-        "  " + ", ".join(VERIFIER_HOMES),
+        "  " + ", ".join(OFFERABLE_HOMES),
+        "",
+        "The rules below mention one more way, toolchain, which is NOT available"
+        " to you: it has to name the particular test that proves the scenario, and"
+        " you have no test to name. Never answer toolchain.",
         "",
         "What each way means. These are the rules the build system applies first,"
         " in the order it applies them. None of them matched the titles below,"
@@ -266,7 +276,19 @@ def parse_answer(text: object, titles: Sequence[str]) -> Dict[str, str]:
         if home not in VERIFIER_HOMES:
             raise ModelAnswerRejected(
                 f"the model answered {word!r} for {title!r}, which is not one of "
-                f"the allowed words ({', '.join(VERIFIER_HOMES)})"
+                f"the allowed words ({', '.join(OFFERABLE_HOMES)})"
+            )
+        if home not in OFFERABLE_HOMES:
+            # A toolchain stamp must name the test node that proves the scenario,
+            # and the model has no node to name — so it is not offered above, and
+            # is refused here too if it is answered anyway. Without this the
+            # answer is accepted, the writer then rejects it for the missing node,
+            # and the run dies mid-write with a validation error instead of the
+            # plain refusal the law is supposed to give (found by the coach, 08-31).
+            raise ModelAnswerRejected(
+                f"the model answered {word!r} for {title!r}; that way of proving a "
+                f"scenario has to name the test that proves it, and the model has "
+                f"no test to name, so the title stays refused"
             )
         decided[title] = home
     return decided
