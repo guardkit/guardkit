@@ -220,14 +220,25 @@ def check_module_import_boundary(rule: Rule, rel: str, facts: FileFacts,
                     f"{layout.source_root}/{own}")
         if public:
             leaf = parts[2] if len(parts) > 2 else None
+            if leaf is None and imp.is_from and imp.names and all(
+                    n in public for n in imp.names):
+                # ``from src.other import crud`` — the same public files as
+                # ``from src.other.crud import x``, written the way most Python is
+                # written. Refusing this form while permitting the dotted one taught
+                # the code generator nothing and cost a build its turns (2026-08-31).
+                continue
             if leaf is None:
+                named = [n for n in imp.names if n not in public] if imp.is_from else []
                 observed = (
                     f"an import of {target}, the whole of feature module "
                     f"{layout.source_root}/{other}, which reaches every file in it, "
                     f"written in feature module {layout.source_root}/{own}; only that "
-                    f"feature's public read interface is importable: {interface}")
+                    f"feature's public read interface is importable: {interface}"
+                    + (f" (import {' and '.join(sorted(named))} from {target} another way — "
+                       f"those are not part of it)" if named else ""))
             elif leaf in public:
-                private_names = [n for n in imp.names if n.startswith("_")]
+                private_names = [n for n in imp.names
+                                 if n.startswith("_") and not n.startswith("__")]
                 if not private_names:
                     continue      # the sanctioned way to read another feature's data
                 observed = (

@@ -841,3 +841,69 @@ def test_taking_a_session_as_an_annotated_parameter_is_not_building_one(check):
     """
     report = check({"src/users/router.py": text}, SESSION_RULES)
     assert findings_at(report, "R-DI") == set()
+
+
+# --- the idiomatic from-import form (2026-08-31) -----------------------------
+# `from src.users import crud` reaches exactly the same public file as
+# `from src.users.crud import x`. Refusing one form while permitting the other
+# said "no" to the code generator without telling it the legal rewrite, which is
+# the shape of mistake that cost a real build its turns.
+
+
+def test_from_feature_import_public_module_is_allowed(check):
+    text = """
+    from src.users import crud
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == set()
+
+
+def test_from_feature_import_several_public_modules_is_allowed(check):
+    text = """
+    from src.users import crud, schemas
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == set()
+
+
+def test_from_feature_import_private_module_is_still_a_finding(check):
+    text = """
+    from src.users import models
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == {
+        f"src/analytics/crud.py:{line_of(text, 'from src.users import models')}"}
+
+
+def test_mixing_a_private_module_into_the_import_is_still_a_finding(check):
+    """crud is public, models is not; naming both must not launder models."""
+    text = """
+    from src.users import crud, models
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") != set()
+    assert "models" in outcome(report, "R-IMPORT").findings[0].observed
+
+
+def test_bare_package_import_is_still_a_finding(check):
+    """`import src.users` reaches every file in the feature, public or not."""
+    text = """
+    import src.users
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") != set()
+
+
+def test_a_dunder_from_a_public_file_is_not_described_as_private(check):
+    text = """
+    from src.users.crud import __all__
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    for site in outcome(report, "R-IMPORT").findings:
+        assert "underscore" not in site.observed
