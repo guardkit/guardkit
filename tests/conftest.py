@@ -199,6 +199,27 @@ M0_FLEET_SEAT = "qwen36-workhorse"
 M0_FLEET_BASE_URL = "http://127.0.0.1:9/v1"
 
 
+# ---------------------------------------------------------------------------
+# The stamp-normalizer model fence: no test may ask a live model
+# ---------------------------------------------------------------------------
+# The stamp normalizer hands titles no rule could decide to a model (ruled
+# 2026-08-31). It finds the endpoint in the environment, and on the factory
+# seat OPENAI_BASE_URL points at the live llama-swap — so a test that produced
+# a refusal would call it for real and wait on the network. This fixture
+# declares "no endpoint configured" for every test, which is the normalizer's
+# oldest behaviour: refuse loud, never ask, never invent a stamp. A test whose
+# SUBJECT is the fallback injects its own fake call (or sets the variable
+# itself with monkeypatch, which overrides this).
+
+
+@pytest.fixture(autouse=True)
+def stamp_normalizer_model_is_never_live(monkeypatch):
+    """No test asks a real model through the stamp normalizer's fallback."""
+    from guardkit.orchestrator.stamp_model_fallback import MODEL_URL_ENV
+
+    monkeypatch.setenv(MODEL_URL_ENV, "")
+
+
 @pytest.fixture
 def m0_routine_fleet_route(monkeypatch):
     """Declare the routine local-fleet route for the duration of one test.
