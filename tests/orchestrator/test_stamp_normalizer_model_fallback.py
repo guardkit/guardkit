@@ -37,6 +37,7 @@ import yaml
 from click.testing import CliRunner
 
 from guardkit.orchestrator.stamp_model_fallback import (
+    OFFERABLE_HOMES,
     DEFAULT_MODEL_NAME,
     DEFAULT_TIMEOUT_S,
     MAX_TIMEOUT_S,
@@ -249,7 +250,9 @@ def test_nothing_refused_means_the_model_is_not_asked_at_all(tmp_path: Path):
 
 def test_the_prompt_carries_the_closed_list_the_rules_and_the_titles():
     prompt = build_prompt(REFUSED_THIS_WEEK)
-    assert ", ".join(VERIFIER_HOMES) in prompt
+    # The offered list, not the whole closed list: toolchain is deliberately
+    # withheld because the model has no test node to name (2026-08-31).
+    assert ", ".join(OFFERABLE_HOMES) in prompt
     for entry in rule_table():
         assert f"{entry.rule} -> {entry.home}:" in prompt
     for number, title in enumerate(REFUSED_THIS_WEEK, 1):
@@ -601,3 +604,31 @@ def test_a_reply_without_an_answer_is_a_malformed_reply_not_a_stamp(monkeypatch)
     asker = build_default_asker()
     assert asker is not None
     assert decide_refused_titles(["a title"], ask_model=asker) == {}
+
+
+# --- toolchain is offered to nobody (2026-08-31, the coach's finding) ---------
+# A toolchain stamp must name the test that proves the scenario. The model has no
+# test to name, so an accepted toolchain answer died later in the writer, taking
+# the feature's correctly rule-decided stamps down with it. It is now absent from
+# the words offered, said plainly in the prompt, and refused if answered anyway.
+
+def test_toolchain_is_not_among_the_words_offered():
+    from guardkit.orchestrator.stamp_model_fallback import OFFERABLE_HOMES
+    assert "toolchain" not in OFFERABLE_HOMES
+    assert "hurl" in OFFERABLE_HOMES and "operator" in OFFERABLE_HOMES
+
+
+def test_the_prompt_tells_the_model_not_to_answer_toolchain():
+    from guardkit.orchestrator.stamp_model_fallback import build_prompt
+    prompt = build_prompt(["Concurrent requests are handled idempotently"])
+    assert "Never answer toolchain." in prompt
+
+
+def test_a_toolchain_answer_is_refused_and_says_why():
+    from guardkit.orchestrator.stamp_model_fallback import (
+        ModelAnswerRejected, parse_answer)
+    import pytest
+    with pytest.raises(ModelAnswerRejected) as caught:
+        parse_answer("toolchain\n", ["Concurrent requests are handled idempotently"])
+    assert "no test to name" in str(caught.value)
+    assert "stays refused" in str(caught.value)
