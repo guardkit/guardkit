@@ -186,6 +186,115 @@ def test_the_composition_root_may_import_every_feature(check):
 
 
 # --------------------------------------------------------------------------
+# module-import-boundary, with a public read interface named
+#
+# ADR-001 in the pilot repository was amended on 2026-08-31 to say which of a
+# feature's files another feature may import: crud.py and schemas.py, and nothing
+# else. A rule says so by listing `public_modules`. A rule that does not list them
+# must behave exactly as it did before the signal existed, and the last test here
+# is the one that pins that.
+# --------------------------------------------------------------------------
+
+PUBLIC_IMPORT_RULES = IMPORT_RULES.replace(
+    "      allowed_target_modules: [src.core, src.db]\n",
+    "      allowed_target_modules: [src.core, src.db]\n"
+    "      public_modules: [crud, schemas]\n")
+
+USERS_FEATURE = {
+    "src/users/crud.py": "def get_user(db, user_id):\n    return None\n\n"
+                         "def _row_to_schema(row):\n    return row\n",
+    "src/users/schemas.py": "class UserRead:\n    pass\n",
+    "src/users/models.py": "class User:\n    pass\n",
+    "src/users/router.py": "router = 1\n",
+}
+
+
+def test_importing_another_features_public_read_interface_is_allowed(check):
+    text = """
+    from src.db.dependencies import get_db
+    from src.users.crud import get_user
+    from src.users.schemas import UserRead
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == set()
+
+
+def test_importing_another_features_private_file_is_still_a_finding(check):
+    text = """
+    from src.users.models import User
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == {
+        f"src/analytics/crud.py:{line_of(text, 'src.users.models')}"}
+    site = outcome(report, "R-IMPORT").findings[0]
+    assert "private file of feature module src/users" in site.observed
+    assert "crud.py, schemas.py" in site.observed
+
+
+def test_an_underscore_name_from_a_public_file_is_still_a_finding(check):
+    """A public file's address does not make a private helper public."""
+    text = """
+    from src.users.crud import get_user, _row_to_schema
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == {
+        f"src/analytics/crud.py:{line_of(text, '_row_to_schema')}"}
+    assert "_row_to_schema" in outcome(report, "R-IMPORT").findings[0].observed
+
+
+def test_importing_the_whole_feature_package_is_still_a_finding(check):
+    """`import src.users` names no file, so it reaches every file in the feature."""
+    text = """
+    import src.users
+    """
+    report = check({"src/analytics/crud.py": text, **USERS_FEATURE},
+                   PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == {
+        f"src/analytics/crud.py:{line_of(text, 'import src.users')}"}
+
+
+def test_same_feature_and_infrastructure_imports_stay_silent_with_a_public_interface(check):
+    files = {
+        "src/analytics/crud.py": "from src.db.dependencies import get_db\n"
+                                 "from src.core.config import settings\n"
+                                 "from src.analytics.models import Event\n"
+                                 "from src.analytics._helpers import fold\n",
+        "src/analytics/models.py": "class Event:\n    pass\n",
+        "src/analytics/_helpers.py": "def fold(x):\n    return x\n",
+        **USERS_FEATURE,
+    }
+    report = check(files, PUBLIC_IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == set()
+
+
+def test_a_rule_naming_no_public_modules_behaves_exactly_as_it_did_before(check):
+    """The backwards-compatibility guarantee, pinned line by line and word for word.
+
+    Every import into another feature is reported, including the two the amended
+    record would allow, and the wording of the finding is unchanged.
+    """
+    text = """
+    from src.users.crud import get_user
+    from src.users.schemas import UserRead
+    from src.users.models import User
+    """
+    files = {"src/analytics/crud.py": text, **USERS_FEATURE}
+    report = check(files, IMPORT_RULES)
+    assert findings_at(report, "R-IMPORT") == {
+        f"src/analytics/crud.py:{line_of(text, 'src.users.crud')}",
+        f"src/analytics/crud.py:{line_of(text, 'src.users.schemas')}",
+        f"src/analytics/crud.py:{line_of(text, 'src.users.models')}",
+    }
+    assert [s.observed for s in outcome(report, "R-IMPORT").findings] == [
+        f"an import of src.users.{name}, which is in feature module src/users, "
+        f"written in feature module src/analytics"
+        for name in ("crud", "schemas", "models")]
+
+
+# --------------------------------------------------------------------------
 # file-layout
 # --------------------------------------------------------------------------
 

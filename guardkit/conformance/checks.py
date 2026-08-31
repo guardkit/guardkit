@@ -181,8 +181,22 @@ def check_module_import_boundary(rule: Rule, rel: str, facts: FileFacts,
     direction and are not reported. Imports within the same feature are not reported.
     The composition root — the file whose job is joining the features together — is
     excluded by the engine before this is called.
+
+    **The public read interface**, when the rule names one. A rule may list
+    ``public_modules`` — file basenames such as ``[crud, schemas]``. An import that
+    resolves to ``src.<other feature>.<one of those>`` is then the sanctioned way for one
+    feature to read another's data, and is not reported. Two things are still reported
+    even so: a name in that import starting with an underscore, which is that feature's
+    private helper wearing a public file's address; and an import of the feature package
+    itself, with no file named after it, which reaches every file in it.
+
+    A rule that names no ``public_modules`` behaves exactly as it did before this signal
+    existed — every import into another feature is reported, in the same words.
     """
     allowed = {str(m).replace("/", ".") for m in (rule.signal("allowed_target_modules") or [])}
+    public_order = [str(m).removesuffix(".py") for m in (rule.signal("public_modules") or [])]
+    public = set(public_order)
+    interface = ", ".join(f"{m}.py" for m in public_order)
     own = layout.module_of(rel)
     pkg_parts = rel.split("/")[:-1]
     tally.add("imports read", len(facts.imports))
@@ -200,11 +214,37 @@ def check_module_import_boundary(rule: Rule, rel: str, facts: FileFacts,
         other = parts[1]
         if other not in layout.feature_names or other == own:
             continue
+
+        observed = (f"an import of {target}, which is in feature module "
+                    f"{layout.source_root}/{other}, written in feature module "
+                    f"{layout.source_root}/{own}")
+        if public:
+            leaf = parts[2] if len(parts) > 2 else None
+            if leaf is None:
+                observed = (
+                    f"an import of {target}, the whole of feature module "
+                    f"{layout.source_root}/{other}, which reaches every file in it, "
+                    f"written in feature module {layout.source_root}/{own}; only that "
+                    f"feature's public read interface is importable: {interface}")
+            elif leaf in public:
+                private_names = [n for n in imp.names if n.startswith("_")]
+                if not private_names:
+                    continue      # the sanctioned way to read another feature's data
+                observed = (
+                    f"an import of {', '.join(private_names)} from {target}, "
+                    f"{'names' if len(private_names) > 1 else 'a name'} starting with an "
+                    f"underscore and so private to feature module "
+                    f"{layout.source_root}/{other}, written in feature module "
+                    f"{layout.source_root}/{own}")
+            else:
+                observed = (
+                    f"an import of {target}, which is a private file of feature module "
+                    f"{layout.source_root}/{other}, written in feature module "
+                    f"{layout.source_root}/{own}; that feature's public read interface "
+                    f"is {interface}")
+
         out.append(Site(
-            rule.id, rel, imp.line,
-            f"an import of {target}, which is in feature module "
-            f"{layout.source_root}/{other}, written in feature module "
-            f"{layout.source_root}/{own}",
+            rule.id, rel, imp.line, observed,
             f"python ast: {'ImportFrom' if imp.is_from else 'Import'} resolving to "
             f"{target!r} at line {imp.line}  ({imp.text})"))
     return out

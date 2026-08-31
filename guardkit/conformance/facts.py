@@ -62,6 +62,12 @@ class ImportSite:
     text: str            # the import as a reader would write it
     level: int           # 0 for absolute, 1+ for relative
     is_from: bool
+    # The names the statement actually brings in, as written: ["get_user", "_hash"] for
+    # `from src.users.crud import get_user, _hash`, and ["src.users.crud"] for
+    # `import src.users.crud`, where the module path is the name that gets bound.
+    # Last field and defaulted, so every existing construction of an ImportSite and every
+    # check that never looks at it goes on working unchanged.
+    names: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -116,16 +122,18 @@ class FileFacts:
                 mod = node.module or ""
                 for alias in node.names:
                     self.imported_from[alias.asname or alias.name] = mod
-                text = (f"from {'.' * node.level}{mod} import "
-                        + ", ".join(a.name for a in node.names))
-                self.imports.append(ImportSite(mod, node.lineno, text, node.level, True))
+                names = [a.name for a in node.names]
+                text = f"from {'.' * node.level}{mod} import " + ", ".join(names)
+                self.imports.append(
+                    ImportSite(mod, node.lineno, text, node.level, True, names))
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     # `import a.b.c` binds `a`; `import a.b as ab` binds `ab`.
                     bound = alias.asname or alias.name.split(".")[0]
                     self.imported_from[bound] = alias.name
                     self.imports.append(
-                        ImportSite(alias.name, node.lineno, f"import {alias.name}", 0, False))
+                        ImportSite(alias.name, node.lineno, f"import {alias.name}", 0, False,
+                                   [alias.name]))
 
     # -- the walk --------------------------------------------------------
 
