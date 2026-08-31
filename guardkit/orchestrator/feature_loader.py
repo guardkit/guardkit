@@ -876,6 +876,20 @@ class FeatureLoader:
                             for d in outcome.disagreements
                         ),
                     )
+                if outcome.model_stamped:
+                    # Parity with the CLI echo: a stamp the MODEL decided
+                    # (because no rule could) is never silent at load time
+                    # either.
+                    logger.warning(
+                        "STAMP NORMALIZER (load-time hook): feature %s — the "
+                        "model decided %d scenario(s) no rule could decide: %s",
+                        feature_id,
+                        len(outcome.model_stamped),
+                        "; ".join(
+                            f"{title!r} -> {outcome.stamped.get(title, '?')}"
+                            for title in outcome.model_stamped
+                        ),
+                    )
                 if outcome.written:
                     with open(feature_file, "r") as f:
                         data = yaml.safe_load(f)

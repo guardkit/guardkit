@@ -18,6 +18,29 @@ CONDITIONS:
    as the place unclassified scenarios land (that would convert every
    unclassified scenario into a hidden chore for Rich).
 
+Condition 2 as it now stands — THE MODEL FALLBACK (RULED, Rich 2026-08-31,
+repair item 11). Condition 2's "no model in the loop" was a v1 condition and
+Rich has now ruled the v2 the design always described ("What the model is
+asked, when asked", ``RULES_DOC``). The rules still decide everything they
+can, and a title a rule decided NEVER goes near a model. Only the titles the
+rules REFUSED are handed to one — with the closed list and the rules' own
+summary — to answer one word each; the answer is checked against the closed
+list and a single bad word rejects the whole answer. Everything else is
+unchanged, and every failure (no model configured, unreachable endpoint,
+timeout, HTTP error, malformed reply, bogus answer) leaves the titles refused
+exactly as before, plus one plain line saying the model could not be asked. A
+stamp is never invented. A model-decided stamp is marked as model-decided
+everywhere it is recorded (``NormalizeResult.model_stamped``, ``rules[title]
+= "model"``, and a comment line above the stamp in the feature YAML) so
+nobody can mistake it for a rule-decided one; ``operator`` from the model is
+named on the card like any other operator stamp — never silent. The datum for
+the ruling: clause (h) was widened for concurrency phrasings on 2026-08-28
+and the very next runs still refused "Concurrent requests return the same
+7-day data" and "Concurrent deactivation requests are handled idempotently" —
+the spec seat's vocabulary outruns a hand-maintained synonym list. The
+machinery lives in ``stamp_model_fallback.py``; it attaches at ONE place, the
+refusal point in :func:`normalize_feature`.
+
 Condition 1's shadow — ADVISORY DISAGREEMENTS (RULED, Rich 2026-08-18,
 drive-19 datum): planning run c585e146 stamped three plain-HTTP scenarios
 ``verifier: toolchain`` with no ``test_ref`` — legal vocabulary, WRONG home;
@@ -188,6 +211,12 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
+from guardkit.orchestrator.stamp_model_fallback import (
+    MODEL_RULE,
+    MODEL_STAMP_COMMENT,
+    ModelAsker,
+    decide_refused_titles,
+)
 from guardkit.orchestrator.verifier_stamp import (
     VERIFIER_HOMES,
     _SCENARIO_LINE_RE,
@@ -1538,6 +1567,12 @@ class NormalizeResult:
     # that mints `operator` hands Rich a chore; the JSON and the human echo
     # both say so).
     operator_stamped: List[str] = field(default_factory=list)
+    # THE MODEL FALLBACK (RULED 2026-08-31): every title the MODEL decided
+    # after the rules refused it — provenance, so a model-decided stamp is
+    # never mistaken for a rule-decided one. `rules[title]` for these titles
+    # is "model", never an R-number, and the YAML carries a comment above
+    # the stamp saying the same thing.
+    model_stamped: List[str] = field(default_factory=list)
     # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
     # the rules would home DIFFERENTLY. Each entry: {title, stamped,
     # rule_home, rule, evidence}. Recorded, warned, echoed — NEVER written
@@ -1560,6 +1595,7 @@ class NormalizeResult:
             "refused": list(self.refused),
             "already_stamped": list(self.already_stamped),
             "operator_stamped": list(self.operator_stamped),
+            "model_stamped": list(self.model_stamped),
             "disagreements": [dict(d) for d in self.disagreements],
             "written": self.written,
             "dry_run": self.dry_run,
@@ -1590,6 +1626,7 @@ def normalize_feature(
     dry_run: bool = False,
     ignore_existing: bool = False,
     repo_has_http_surface: Optional[bool] = None,
+    ask_model: Optional[ModelAsker] = None,
 ) -> NormalizeResult:
     """Stamp every unstamped scenario of one feature by rule, and WRITE.
 
@@ -1612,6 +1649,12 @@ def normalize_feature(
         overwritten.
     repo_has_http_surface
         Override the manifest/registry detection (CLI ``--http-surface``).
+    ask_model
+        THE MODEL FALLBACK's call — ``(prompt) -> answer text``. Default
+        ``None`` builds it from the environment (``GUARDKIT_STAMP_MODEL_URL``
+        / ``OPENAI_BASE_URL``; see ``stamp_model_fallback``), and with no
+        endpoint configured the model is never asked and the refusal stands.
+        Tests inject a fake so nothing reaches the network.
 
     Raises
     ------
@@ -1765,14 +1808,62 @@ def normalize_feature(
         if home.verifier == "operator":
             result.operator_stamped.append(title)
 
+    # THE MODEL FALLBACK (RULED, Rich 2026-08-31 — repair item 11). THE ONLY
+    # place a model touches the routing law, and it attaches HERE, at the
+    # refusal point: exactly the titles no rule could decide are handed to a
+    # model with the closed list and the rules' own summary; a title a rule
+    # decided never goes near it. The answer is checked against the closed
+    # list, all or nothing. Every failure — no model configured, unreachable,
+    # timed out, an HTTP error, a malformed reply, a bogus answer — returns
+    # nothing here, which leaves the refusal exactly as the rules left it,
+    # plus one plain line saying the model could not be asked. A stamp is
+    # never invented.
+    if result.refused:
+        decided_by_model = decide_refused_titles(
+            result.refused, ask_model=ask_model, feature_id=feature_id
+        )
+        for title in list(result.refused):
+            verifier = decided_by_model.get(title)
+            if verifier is None:
+                continue
+            result.refused.remove(title)
+            result.stamped[title] = verifier
+            result.rules[title] = MODEL_RULE
+            result.reasons[title] = (
+                f"{MODEL_RULE} {verifier}: no rule (R1-R10) matched this title, "
+                "so the model decided it"
+            )
+            result.model_stamped.append(title)
+            if verifier == "operator":
+                result.operator_stamped.append(title)
+        if result.model_stamped:
+            # Never silent: the model's decisions are named, with the word it
+            # chose, in the same voice as every other line here.
+            logger.warning(
+                "STAMP NORMALIZER: feature %s — the model decided %d scenario(s) "
+                "no rule could decide: %s",
+                feature_id,
+                len(result.model_stamped),
+                "; ".join(
+                    f"{title} -> {result.stamped[title]}"
+                    for title in result.model_stamped
+                ),
+            )
+
     if result.operator_stamped:
-        # L3: a rule-minted operator stamp is NEVER silent.
+        # L3: an operator stamp is NEVER silent — by rule (R10) or, since
+        # 2026-08-31, from the model. Each title says which decided it.
         logger.warning(
-            "STAMP NORMALIZER: feature %s — R10 minted `operator` (attended "
-            "human work) for %d scenario(s): %s",
+            "STAMP NORMALIZER: feature %s — `operator` (attended human work) "
+            "was stamped for %d scenario(s): %s",
             feature_id,
             len(result.operator_stamped),
-            "; ".join(result.operator_stamped),
+            "; ".join(
+                f"{title} (decided by the model)"
+                if title in result.model_stamped
+                else f"{title} (R10)"
+                for title in result.operator_stamped
+            ),
         )
 
     # Coordinator review 2026-08-16 (pairs with the forge hook's condition 5):
@@ -1808,6 +1899,9 @@ def normalize_feature(
         yaml_path,
         new_stamps,
         feature_files=files if not data.get("feature_files") else None,
+        # Provenance in the file itself: a model-decided stamp carries a
+        # comment saying so; a rule-decided stamp keeps exactly today's shape.
+        comments={title: MODEL_STAMP_COMMENT for title in result.model_stamped},
     )
     result.written = True
     logger.info(
@@ -1835,9 +1929,18 @@ _TOP_SCENARIOS_RE = re.compile(
 )
 
 
-def _render_entries(stamps: Mapping[str, Mapping[str, Any]], indent: str) -> str:
+def _render_entries(
+    stamps: Mapping[str, Mapping[str, Any]],
+    indent: str,
+    comments: Optional[Mapping[str, str]] = None,
+) -> str:
     lines: List[str] = []
     for title, stamp in stamps.items():
+        note = (comments or {}).get(title)
+        if note:
+            # One comment line above the entry (YAML data is untouched — this
+            # is how a model-decided stamp says so in the file itself).
+            lines.append(f"{indent}{note}")
         lines.append(f"{indent}{json.dumps(title, ensure_ascii=False)}:")
         for key, value in stamp.items():
             lines.append(f"{indent}  {key}: {json.dumps(value, ensure_ascii=False)}")
@@ -1848,6 +1951,7 @@ def _splice_scenarios(
     text: str,
     stamps: Mapping[str, Mapping[str, Any]],
     feature_files: Optional[Sequence[str]],
+    comments: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Return the new file text with ``stamps`` appended to the top-level
     ``scenarios:`` block (created at EOF when absent). Comments and every
@@ -1864,13 +1968,13 @@ def _splice_scenarios(
 
     m = _TOP_SCENARIOS_RE.search(text)
     if m is None:
-        return text + "scenarios:\n" + _render_entries(stamps, "  ")
+        return text + "scenarios:\n" + _render_entries(stamps, "  ", comments)
 
     if m.group(1):  # `scenarios: {}` / `[]` / `null` / `~` — replace the empty-value line with a block
         return (
             text[: m.start()]
             + "scenarios:\n"
-            + _render_entries(stamps, "  ")
+            + _render_entries(stamps, "  ", comments)
             + text[m.end():].lstrip("\n")
         )
 
@@ -1895,7 +1999,7 @@ def _splice_scenarios(
         last_block_line = i
     head = "\n".join(lines[: last_block_line + 1]) + "\n"
     tail = "\n".join(lines[last_block_line + 1:])
-    return text[: m.end()] + head + _render_entries(stamps, indent) + tail
+    return text[: m.end()] + head + _render_entries(stamps, indent, comments) + tail
 
 
 def write_stamps(
@@ -1903,6 +2007,7 @@ def write_stamps(
     stamps: Mapping[str, Mapping[str, Any]],
     *,
     feature_files: Optional[Sequence[str]] = None,
+    comments: Optional[Mapping[str, str]] = None,
 ) -> None:
     """Append ``stamps`` (title -> {verifier[, test_ref]}) to the YAML's
     ``scenarios:`` map. NEVER overwrites an existing title. Comments and key
@@ -1910,6 +2015,11 @@ def write_stamps(
     new stamp verified before the original file is replaced (atomic
     ``os.replace``). A failed verification leaves the original untouched
     and raises.
+
+    ``comments`` (title -> one comment line) writes that line above the
+    title's entry — how a model-decided stamp says so in the file itself. It
+    is a comment, so the YAML data is identical either way, and a
+    rule-decided stamp (no comment) keeps exactly the shape it has today.
     """
     yaml_path = Path(feature_yaml_path)
     original = yaml_path.read_text(encoding="utf-8")
@@ -1932,7 +2042,7 @@ def write_stamps(
                 f"{title!r} — nothing written.\n{exc}"
             ) from exc
 
-    new_text = _splice_scenarios(original, stamps, feature_files)
+    new_text = _splice_scenarios(original, stamps, feature_files, comments)
 
     # Verify by re-parse BEFORE touching the file.
     try:
@@ -1979,6 +2089,10 @@ def write_stamps(
 
 __all__ = [
     "RULES_DOC",
+    "MODEL_RULE",
+    "MODEL_STAMP_COMMENT",
+    "ModelAsker",
+    "decide_refused_titles",
     "Home",
     "NormalizeContext",
     "NormalizeResult",

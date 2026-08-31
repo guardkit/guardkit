@@ -248,10 +248,11 @@ def normalize_stamps(
     """THE STAMP NORMALIZER — mint ``verifier:`` stamps by rule (R1–R10) and WRITE them.
 
     Rules doc: ai-transition/docs/routing-law-stamp-normalizer-rules-2026-08-15.md.
-    Rich's two conditions (08-16): it WRITES the feature YAML's ``scenarios:`` map
-    (only titles lacking a stamp — never overwrites), and NO MODEL IN THE LOOP —
-    anything the rules cannot decide REFUSES LOUD naming every title, and the run
-    stops with nothing written. Prints the result as JSON on stdout (forge's hook
+    Rich's conditions: it WRITES the feature YAML's ``scenarios:`` map (only titles
+    lacking a stamp — never overwrites). Titles no rule can decide are handed to a
+    model (ruled 2026-08-31; only those titles, answer checked against the closed
+    list, listed under `model_stamped`); anything still undecided REFUSES LOUD by
+    name and nothing is stamped for it. Prints the result as JSON on stdout (forge's hook
     parses it); exit 0 = all decided (stamped/nothing to do), 3 = PARTIAL (decided stamps written, `refused` names the rest), 2 = cannot run.
     Already-stamped titles the rules would home DIFFERENTLY are listed under
     `disagreements` (advisory: echoed on stderr, never overwritten, exit unchanged).
@@ -305,11 +306,28 @@ def normalize_stamps(
         console.print(str(exc), highlight=False)
         sys.exit(2)
 
+    if result.model_stamped:
+        # THE MODEL FALLBACK (RULED 2026-08-31): the titles no rule could
+        # decide, and what the model decided for each. Named in the JSON
+        # (`model_stamped`) AND echoed on stderr ahead of the JSON, so nobody
+        # mistakes a model-decided stamp for a rule-decided one.
+        err_console = Console(stderr=True)
+        err_console.print(
+            f"[bold yellow]! normalize-stamps: the model decided "
+            f"{len(result.model_stamped)} scenario(s) no rule could decide:[/bold yellow]",
+            highlight=False,
+        )
+        for title in result.model_stamped:
+            err_console.print(
+                f"  - {title} -> {result.stamped.get(title, '?')}",
+                highlight=False,
+                soft_wrap=True,
+            )
     if result.operator_stamped:
-        # L3: a RULE-MINTED operator stamp is never silent — it is attended
-        # human work handed to Rich. Named in the JSON (`operator_stamped`)
-        # AND in the human echo (stderr, ahead of the JSON, so the hook's
-        # stdout parse stays clean).
+        # L3: an operator stamp is never silent — it is attended human work
+        # handed to Rich. Named in the JSON (`operator_stamped`) AND in the
+        # human echo (stderr, ahead of the JSON, so the hook's stdout parse
+        # stays clean). Each title says whether a rule or the model decided it.
         err_console = Console(stderr=True)
         err_console.print(
             f"[bold yellow]! normalize-stamps minted `operator` (attended human work) "
@@ -317,7 +335,8 @@ def normalize_stamps(
             highlight=False,
         )
         for title in result.operator_stamped:
-            err_console.print(f"  - {title}", highlight=False)
+            how = "decided by the model" if title in result.model_stamped else "rule R10"
+            err_console.print(f"  - {title} ({how})", highlight=False, soft_wrap=True)
     if result.disagreements:
         # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
         # the rules would home differently. Named in the JSON (`disagreements`)
