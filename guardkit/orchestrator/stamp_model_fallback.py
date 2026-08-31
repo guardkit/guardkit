@@ -90,13 +90,27 @@ DEFAULT_MODEL_NAME = "qwen36-workhorse"
 
 #: How long to wait for the answer (seconds).
 MODEL_TIMEOUT_ENV = "GUARDKIT_STAMP_MODEL_TIMEOUT_S"
-DEFAULT_TIMEOUT_S = 15.0
+MODEL_MAX_TOKENS_ENV = "GUARDKIT_STAMP_MODEL_MAX_TOKENS"
+DEFAULT_TIMEOUT_S = 180.0
+#: Long, deliberately. The estate serves one model at a time and swaps them in on
+#: demand, so the first call after a swap waits for a 35-billion-parameter model to
+#: load — about a minute and a half on this box. A 15 second timeout (the first
+#: value here) never once reached a cold model: every call timed out, every title
+#: stayed refused, and the whole mechanism would have looked safe while doing
+#: nothing. Measured 2026-08-31. One stamp decision per feature, inside a planning
+#: run that already takes fifteen minutes, is worth the wait.
 MIN_TIMEOUT_S = 1.0
 MAX_TIMEOUT_S = 60.0
 
 #: One word per title, so the reply is tiny. Kept small on purpose: a model
 #: that starts writing prose runs out of room and its answer is rejected.
-MAX_ANSWER_TOKENS = 256
+MAX_ANSWER_TOKENS = 2048
+#: Generous for an answer of a few words, because the seat that answers is a
+#: reasoning model: it writes its thinking first and the answer last, both out of
+#: the same budget. At the first value here the thinking used the whole budget and
+#: the answer came back EMPTY every time — a live call that looked like a model
+#: refusing to answer, when it had simply been cut off mid-thought. Measured
+#: 2026-08-31 against qwen36-workhorse.
 
 #: What a model-decided stamp is recorded as, wherever a rule id is recorded
 #: (``NormalizeResult.rules``). Never an R-number: nobody may mistake a
@@ -350,7 +364,7 @@ def build_default_asker(model_name: Optional[str] = None) -> Optional[ModelAsker
             {
                 "model": model,
                 "temperature": 0.0,
-                "max_tokens": MAX_ANSWER_TOKENS,
+                "max_tokens": int(os.environ.get(MODEL_MAX_TOKENS_ENV, "") or MAX_ANSWER_TOKENS),
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode("utf-8")
@@ -372,6 +386,17 @@ def build_default_asker(model_name: Optional[str] = None) -> Optional[ModelAsker
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str):
             raise ValueError(f"the reply from {url} carried no answer text: {payload!r}")
+        if not content.strip():
+            # A reasoning model that ran out of budget mid-thought answers with an
+            # empty string. Say so, rather than letting it look like a refusal to
+            # answer: the two need different fixes.
+            reason = message.get("reasoning_content") if isinstance(message, dict) else None
+            raise ValueError(
+                f"the reply from {url} was empty"
+                + (f" — the model was still thinking when it ran out of room "
+                   f"(raise {MODEL_MAX_TOKENS_ENV} above {MAX_ANSWER_TOKENS})"
+                   if isinstance(reason, str) and reason.strip() else "")
+            )
         return content
 
     return _ask
