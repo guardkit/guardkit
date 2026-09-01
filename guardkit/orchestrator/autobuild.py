@@ -334,8 +334,221 @@ FAILURE_CATEGORY_MAP: Dict[str, str] = {
     # but mapped here so consumers that look the label up resolve it to the
     # isolation/environment cause rather than "other".
     "parallel_interference_stall": "env_failure",
+    # TASK-AB-NOCHANGE01: stall sub-type label (STALL_NO_FILE_CHANGES). Never a
+    # top-level final_decision either; mapped so consumers resolve it.
+    "no_file_changes_stall": "other",
 }
 """Map final_decision strings to FailureCategory controlled vocabulary values."""
+
+
+# ============================================================================
+# Did this turn change anything? (TASK-AB-NOCHANGE01)
+# ============================================================================
+
+_NON_RUN_TEST_COMMANDS = frozenset(
+    {
+        # IndependentTestResult.skipped() — no tests belonging to this task were
+        # found, so nothing ran. It is recorded as tests_passed=True with this
+        # placeholder command, which is why it must be excluded by name from
+        # anything that reads "the tests passed" (TASK-AB-NOCHANGE01).
+        "skipped",
+        # IndependentTestResult.absent() when the whole detection ladder came up
+        # empty. Already carries signal_absent=True; listed for belt and braces.
+        "<no test command declared or detected>",
+    }
+)
+"""Placeholder ``test_command`` values that mean no test run happened."""
+
+_TEST_RUN_ARTEFACT_PATTERNS: Tuple[re.Pattern, ...] = (
+    # Files a test run drops on the way past. The generator runs tests inside
+    # its own turn, so these land between the two photographs the change probe
+    # takes — and a repository that does not gitignore them would make every
+    # silent turn look busy, which would quietly stop the no-file-changes stall
+    # from ever firing. None of them is ever work product.
+    #
+    # Deliberately narrow, and local to this probe: it does NOT touch the
+    # shared orchestrator-managed path list the honesty check uses.
+    re.compile(r"(?:.*/)?__pycache__/"),
+    re.compile(r"(?:.*/)?\.pytest_cache/"),
+    re.compile(r"(?:.*/)?\.mypy_cache/"),
+    re.compile(r"(?:.*/)?\.ruff_cache/"),
+    re.compile(r"(?:.*/)?\.hypothesis/"),
+    re.compile(r"(?:.*/)?htmlcov/"),
+    re.compile(r"(?:.*/)?\.coverage(?:\.[^/]*)?$"),
+    re.compile(r"(?:.*/)?coverage\.(?:json|xml)$"),
+    re.compile(r"(?:.*/)?[^/]*\.py[co]$"),
+)
+"""Paths a test run leaves behind. Never work product; never counted."""
+
+
+def _is_test_run_artefact(rel_path: str) -> bool:
+    """True when ``rel_path`` is something a test run dropped, not work."""
+    return any(p.match(rel_path) for p in _TEST_RUN_ARTEFACT_PATTERNS)
+
+
+_UNTRACKED_STAT_CAP = 5000
+"""Most untracked paths the change probe will stat before giving up on the
+finer signature and comparing path lists alone."""
+
+WORKTREE_CHANGE_PROBE_TIMEOUT_S = 30
+"""Ceiling on each git call in the per-turn "did anything change" measurement.
+
+A probe that times out returns ABSENT (``None``), never "nothing changed" —
+absence of a measurement must not be readable as absence of work.
+"""
+
+
+def _worktree_change_snapshot(
+    worktree_path: Path,
+    timeout_s: int = WORKTREE_CHANGE_PROBE_TIMEOUT_S,
+) -> Optional[Dict[str, str]]:
+    """Take a git snapshot of everything uncommitted in ``worktree_path``.
+
+    Returns a mapping of worktree-relative path to a short signature of that
+    path's current state, or ``None`` when git could not answer (missing
+    binary, non-zero exit, timeout, unreadable worktree). ``None`` means
+    UNKNOWN and is never treated as "nothing changed".
+
+    The signature is built from two cheap, deterministic sources:
+
+    * ``git status --porcelain -uall`` — which paths differ from HEAD at all,
+      including files git is not tracking yet.
+    * ``git diff --numstat HEAD`` — how many lines each tracked path differs
+      by, so a second edit to an already-changed file is still visible as a
+      change (the path set alone would not move).
+
+    For untracked paths git has no numstat, so size and modification time
+    stand in: any write moves at least one of them.
+
+    Paths the orchestrator owns rather than the generator — task state files,
+    the build's own ``.guardkit/autobuild/`` records, installed packages,
+    ``node_modules`` and friends — are filtered out with the same shared
+    predicate the Player report filter uses. Without that filter every turn
+    would look busy because the build writes its own bookkeeping every turn.
+    The leavings of a test run (``__pycache__``, ``.coverage``, ``htmlcov`` and
+    the like) are dropped for the same reason — the generator runs tests inside
+    its own turn, so those land between the two photographs.
+    """
+    try:
+        from guardkit.orchestrator.agent_invoker import (
+            _is_orchestrator_managed_path,
+        )
+    except ImportError:  # pragma: no cover - defensive
+        logger.debug(
+            "worktree change probe: orchestrator-managed path filter "
+            "unavailable; treating the measurement as absent."
+        )
+        return None
+
+    worktree_path = Path(worktree_path)
+    if not worktree_path.exists():
+        return None
+
+    def _git(args: List[str]) -> Optional[str]:
+        try:
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=str(worktree_path),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning(
+                "worktree change probe: 'git %s' failed in %s (%s); "
+                "the turn's file-change count stays absent.",
+                " ".join(args), worktree_path, exc,
+            )
+            return None
+        if proc.returncode != 0:
+            logger.warning(
+                "worktree change probe: 'git %s' exited %s in %s (%s); "
+                "the turn's file-change count stays absent.",
+                " ".join(args), proc.returncode, worktree_path,
+                (proc.stderr or "").strip()[:200],
+            )
+            return None
+        return proc.stdout
+
+    status_out = _git(["status", "--porcelain", "-uall"])
+    if status_out is None:
+        return None
+
+    snapshot: Dict[str, str] = {}
+    untracked: List[str] = []
+    for line in status_out.splitlines():
+        if len(line) < 4:
+            continue
+        code = line[:2]
+        path_part = line[3:]
+        if " -> " in path_part:
+            path_part = path_part.split(" -> ")[-1]
+        rel = path_part.strip().strip('"')
+        if not rel:
+            continue
+        if _is_orchestrator_managed_path(rel, worktree_path):
+            continue
+        if _is_test_run_artefact(rel):
+            continue
+        snapshot[rel] = code
+        if code == "??":
+            untracked.append(rel)
+
+    # Tracked paths: line-level signature so a further edit to an
+    # already-changed file still registers.
+    numstat_out = _git(["diff", "--numstat", "HEAD"])
+    if numstat_out is None:
+        return None
+    for line in numstat_out.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        added, removed, rel = parts[0], parts[1], parts[-1].strip().strip('"')
+        if not rel or _is_orchestrator_managed_path(rel, worktree_path):
+            continue
+        if _is_test_run_artefact(rel):
+            continue
+        snapshot[rel] = f"{snapshot.get(rel, '')}|{added}/{removed}"
+
+    # Untracked paths: git has no diff for them, so stat stands in. Capped so
+    # a worktree with a huge un-ignored tree (an npm install that landed
+    # outside .gitignore, say) cannot turn a per-turn probe into a filesystem
+    # walk; above the cap the path set alone carries the signal.
+    if len(untracked) > _UNTRACKED_STAT_CAP:
+        logger.info(
+            "worktree change probe: %s untracked paths in %s exceeds the "
+            "stat cap of %s; comparing the path list only.",
+            len(untracked), worktree_path, _UNTRACKED_STAT_CAP,
+        )
+        untracked = []
+    for rel in untracked:
+        try:
+            st = (worktree_path / rel).stat()
+        except OSError:
+            continue
+        snapshot[rel] = f"{snapshot[rel]}|{st.st_size}/{st.st_mtime_ns}"
+
+    return snapshot
+
+
+def count_changed_paths(
+    before: Optional[Dict[str, str]],
+    after: Optional[Dict[str, str]],
+) -> Optional[int]:
+    """How many paths differ between two worktree snapshots.
+
+    Returns ``None`` when either snapshot is absent — an unmeasured turn is
+    unknown, not empty. Otherwise returns the number of paths that appeared,
+    disappeared, or changed signature between the two.
+    """
+    if before is None or after is None:
+        return None
+    changed = 0
+    for path in set(before) | set(after):
+        if before.get(path) != after.get(path):
+            changed += 1
+    return changed
 
 
 # ============================================================================
@@ -376,6 +589,23 @@ isolation problem is not read as a Player-quality problem. Co-fires
 additively alongside ``STALL_CONTEXT_POLLUTION`` (which names the terminal
 CONDITION); the top-level ``final_decision`` stays ``unrecoverable_stall``.
 TASK-AB-STALLTAX01."""
+
+STALL_NO_FILE_CHANGES = "no_file_changes_stall"
+"""Stall sub-type: the code generator wrote nothing. The trailing N turns each
+recorded ``files_changed_this_turn == 0`` — a deterministic git measurement of
+the worktree taken before and after the generator ran, never the generator's
+own account of itself — and the reviewer approved on none of them.
+
+Two real builds in the 2026-08-30 architecture exam ended this way and neither
+said so: FEAT-245E TASK-245E-002 (the record forbade the only route to the data
+the task needed, so no legal edit existed) and FEAT-B0EF TASK-B0EF-002 (the
+filtering the task asked for was already in the file). In both the generator
+claimed edits git showed had not happened, the honesty check flagged the claim
+every turn, and the loop ran out of turns and reported ``max_turns_exceeded`` —
+the symptom, not the cause, at about 25 minutes of wall clock apiece.
+
+When no file changed for N turns running, no later turn can change that, so the
+loop stops here and says which of the two things it is likely to be. TASK-AB-NOCHANGE01."""
 
 STALL_CLASSIFICATION_THRESHOLD = 3
 """Single source of truth for the trailing-turn window every stall scan uses
@@ -526,6 +756,63 @@ def _extract_environment_stall_signal(
             and issue.get("failure_classification") == "infrastructure"
         ):
             return issue
+    return None
+
+
+def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
+    """True only when this turn was MEASURED and the measurement was zero.
+
+    ``files_changed_this_turn`` is ``None`` when no measurement was taken —
+    git could not answer, or the turn ended before the measurement point.
+    ``None`` returns False here, so an unmeasured turn can never join a
+    no-file-changes window. Defensive against Mock turn records in tests and
+    partial state on error paths (TASK-AB-NOCHANGE01).
+    """
+    try:
+        value = getattr(turn_record, "files_changed_this_turn", None)
+    except (AttributeError, TypeError):
+        return False
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
+def _coach_first_issue_description(
+    turn_record: "TurnRecord", max_chars: int = 300
+) -> Optional[str]:
+    """The description of the first issue the reviewer raised on this turn.
+
+    Used to tell a person what was being asked for at the point the build gave
+    up. Returns ``None`` when the turn carries no readable issue. Trimmed to
+    ``max_chars`` so a terminal message stays a terminal message.
+
+    The deterministic honesty records (``honesty`` / ``claim_audit``) are
+    passed over when anything else is available. On exactly the runs this is
+    written for, those records say "the generator claimed a file it did not
+    change" — which is the fact the message already states in its first line.
+    Quoting it back as the thing being asked for would be circular and would
+    hide the real request.
+    """
+    issues = list(_coach_report_issues(turn_record))
+    honesty_categories = {"honesty", "claim_audit"}
+
+    def _clean(issue: Dict[str, Any]) -> Optional[str]:
+        description = issue.get("description")
+        if not isinstance(description, str) or not description.strip():
+            return None
+        text = " ".join(description.split())
+        if len(text) > max_chars:
+            text = text[: max_chars - 1].rstrip() + "\u2026"
+        return text
+
+    for issue in issues:
+        if issue.get("category") in honesty_categories:
+            continue
+        text = _clean(issue)
+        if text is not None:
+            return text
+    for issue in issues:
+        text = _clean(issue)
+        if text is not None:
+            return text
     return None
 
 
@@ -810,6 +1097,10 @@ def classify_stall(
 
     Classification rules:
 
+    0. **no_file_changes_stall** — fires when the trailing ``threshold`` turns
+       each recorded ``files_changed_this_turn == 0`` (the orchestrator's own
+       git measurement of the worktree, not the Player's report) and none of
+       them was approved. Checked first so it takes the primary label.
     1. **coach_agent_invocations_stall** — fires when the trailing ``threshold``
        turns all carry an ``agent_invocations_violation`` issue. The detector
        walks ``coach_result.report["issues"]`` for the schema-stable category
@@ -862,6 +1153,21 @@ def classify_stall(
     expected_phases: Optional[int] = None
     actual_invocations: Optional[int] = None
 
+    # Check no_file_changes_stall FIRST so it takes the primary label
+    # (TASK-AB-NOCHANGE01). When the generator wrote nothing at all for the
+    # whole trailing window, that is the deepest true statement about the run
+    # and the one an operator can act on; any other sub-type that also fires
+    # is describing a consequence of it. Schema match on the orchestrator's own
+    # git measurement, never on report text. A turn with no measurement
+    # (``files_changed_this_turn is None``) breaks the window, so this can
+    # never fire on a history recorded before the field existed.
+    if len(turn_history) >= threshold:
+        recent = turn_history[-threshold:]
+        if all(_turn_changed_no_files(tr) for tr in recent) and all(
+            getattr(tr, "decision", None) != "approve" for tr in recent
+        ):
+            co_fires.append(STALL_NO_FILE_CHANGES)
+
     # Check coach_agent_invocations_stall: trailing N turns all have
     # agent_invocations_violation category.
     if len(turn_history) >= threshold:
@@ -903,7 +1209,9 @@ def classify_stall(
     # but independent_tests failed with infrastructure-class failure_classification
     # AND identical failure_confidence across the window. agent_invocations and
     # context_pollution take precedence per the AC, so only check when neither
-    # has fired (TASK-ABSR-C3D4).
+    # has fired (TASK-ABSR-C3D4). no_file_changes takes precedence for the same
+    # reason: if nothing was written at all, a failing test is downstream of
+    # that, not the thing to report (TASK-AB-NOCHANGE01).
     if not co_fires and len(turn_history) >= threshold:
         recent = turn_history[-threshold:]
         env_signals = [
@@ -1276,6 +1584,10 @@ class TurnRecord:
         Context retrieval status for Player invocation (None if not tracked)
     coach_context_status : Optional[ContextStatus]
         Context retrieval status for Coach invocation (None if not tracked)
+    files_changed_this_turn : Optional[int]
+        Number of files this turn actually changed in the worktree, measured
+        from git rather than taken from the Player's report. ``None`` when no
+        measurement was taken (git unavailable, or the turn ended early).
 
     Examples
     --------
@@ -1304,6 +1616,17 @@ class TurnRecord:
     sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
     is_configuration_error: bool = False       # TASK-ABFIX-003: True when Coach flagged a config error (e.g. invalid task_type)
     command_results: Optional[Tuple[CommandExecutionResult, ...]] = None  # TASK-RFX-528E: Structured command execution results
+    # TASK-AB-NOCHANGE01: how many files this turn actually changed in the
+    # worktree, measured with git before the generator ran and again after it
+    # (and after the orchestrator's own Phase 4/5 specialists) finished — never
+    # from the generator's report, which is exactly the thing that lies. Paths
+    # the orchestrator owns (``.guardkit/autobuild/``, ``tasks/<state>/``,
+    # site-packages, node_modules, ...) are filtered out via the shared
+    # ``_is_orchestrator_managed_path``. ``None`` means NOT MEASURED — git could
+    # not answer, or this turn ended before the measurement point. ``None`` is
+    # never read as zero: an absent measurement can neither stall a task nor
+    # complete one.
+    files_changed_this_turn: Optional[int] = None
 
 
 @dataclass
@@ -1646,6 +1969,10 @@ class AutoBuildOrchestrator:
         # to emit the context_pollution_stall_no_checkpoint sub-type. Reset
         # per _loop_phase invocation.
         self._context_pollution_no_checkpoint_fired: bool = False
+        # TASK-AB-NOCHANGE01: receipt text when a task completed because the
+        # work it asked for was already present and nothing needed changing.
+        # None on every other outcome. Reset per _loop_phase invocation.
+        self._already_implemented_receipt_text: Optional[str] = None
         # Accumulated peak criteria count across turns — criteria verified in turn N
         # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
         self._max_criteria_passed: int = 0
@@ -3285,6 +3612,7 @@ class AutoBuildOrchestrator:
         # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
         # classify_stall() sees fresh state per task.
         self._context_pollution_no_checkpoint_fired = False
+        self._already_implemented_receipt_text = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -3543,6 +3871,23 @@ class AutoBuildOrchestrator:
                     )
                     return turn_history, "configuration_error"
 
+                # TASK-AB-NOCHANGE01 (part 2): the work was already there.
+                # When this turn changed no files AND the reviewer's own test
+                # run for this task ran and passed, the task is done — there
+                # was nothing left to do. Both halves are the orchestrator's
+                # own measurements (git, and the reviewer's independent pytest
+                # pass); the generator cannot reach either one by what it
+                # claims, which is the point. Zero changes with red or absent
+                # checks is NOT this — it falls through to the stall below.
+                already_done = self._already_implemented_receipt(turn_record)
+                if already_done is not None:
+                    logger.info("[%s] %s", task_id, already_done)
+                    self._already_implemented_receipt_text = already_done
+                    self._progress_display.console.print(
+                        f"\n[bold green]{already_done}[/bold green]\n"
+                    )
+                    return turn_history, "approved"
+
                 # Create checkpoint after turn completes (if enabled)
                 # Skip checkpoint for configuration errors — tests were never run (TASK-ABFIX-003)
                 if self.enable_checkpoints and self._checkpoint_manager:
@@ -3620,6 +3965,24 @@ class AutoBuildOrchestrator:
                         f"failed at the SDK layer. Exiting loop early."
                     )
                     return turn_history, "player_invocation_stall"
+
+                # TASK-AB-NOCHANGE01 (part 1): the generator wrote nothing.
+                # N turns running with no file changed and no approval — no
+                # later turn can change that, so stop here and say so, instead
+                # of burning the remaining turns and reporting
+                # ``max_turns_exceeded``, which names the symptom and hides
+                # the cause. Placed after the player-invocation check (an SDK
+                # layer failure also produces no files, and that has its own
+                # more specific label) and before the feedback stall.
+                if self._is_no_file_change_stalled(turn_history):
+                    logger.error(
+                        "[%s] %s",
+                        task_id,
+                        self._no_file_change_stall_message(
+                            task_id, turn_history
+                        ),
+                    )
+                    return turn_history, "unrecoverable_stall"
 
                 # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
                 if turn_record.decision == "feedback" and turn_record.feedback:
@@ -3892,6 +4255,20 @@ class AutoBuildOrchestrator:
         - SDK timeouts: Treated as errors
         """
         timestamp = datetime.now().isoformat()
+
+        # TASK-AB-NOCHANGE01: photograph the worktree before the generator
+        # runs. The matching photograph is taken after the generator and the
+        # orchestrator's own Phase 4/5 specialists have finished and before the
+        # reviewer starts, so the reviewer's test run (which can leave cache
+        # files behind) cannot be mistaken for work. The difference between the
+        # two is the only account of what this turn changed that the generator
+        # cannot write.
+        files_changed_this_turn: Optional[int] = None
+        pre_turn_snapshot = (
+            _worktree_change_snapshot(worktree.path)
+            if worktree is not None
+            else None
+        )
 
         # ===== Player Phase =====
 
@@ -4451,6 +4828,24 @@ class AutoBuildOrchestrator:
             # No cancellation: pass the caller-provided remaining budget to Coach
             coach_remaining_budget = remaining_budget
 
+        # TASK-AB-NOCHANGE01: the matching photograph (see the pre-turn one at
+        # the top of this method). Taken here, before the reviewer runs, so
+        # anything the reviewer's own test pass writes is outside the frame.
+        files_changed_this_turn = count_changed_paths(
+            pre_turn_snapshot,
+            _worktree_change_snapshot(worktree.path)
+            if worktree is not None
+            else None,
+        )
+        logger.info(
+            "[%s] turn %s changed %s file(s) in the worktree (git-measured).",
+            task_id,
+            turn,
+            "an unmeasured number of"
+            if files_changed_this_turn is None
+            else files_changed_this_turn,
+        )
+
         # ===== Coach Phase =====
 
         # Skip Coach validation if ablation mode is active
@@ -4472,6 +4867,7 @@ class AutoBuildOrchestrator:
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
             )
 
         # TASK-AB-COACHVENV01: when THIS turn modified a dependency manifest,
@@ -4501,6 +4897,7 @@ class AutoBuildOrchestrator:
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
             )
 
         self._progress_display.start_turn(turn, "Coach Validation")
@@ -4615,6 +5012,7 @@ class AutoBuildOrchestrator:
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
             )
 
         # Extract decision and feedback
@@ -4644,6 +5042,7 @@ class AutoBuildOrchestrator:
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
             )
 
         else:  # feedback
@@ -4680,6 +5079,7 @@ class AutoBuildOrchestrator:
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
                 is_configuration_error=is_config_error,
                 command_results=tuple(command_exec_results) if command_exec_results else None,
+                files_changed_this_turn=files_changed_this_turn,
             )
 
     def _finalize_phase(
@@ -5901,6 +6301,150 @@ class AutoBuildOrchestrator:
             f"criteria-passed count did not move (latest turn: "
             f"{criteria_passed} passing; peak: {self._max_criteria_passed})."
             f"{blocker_note} Exiting loop early."
+        )
+
+    # ------------------------------------------------------------------
+    # The generator wrote nothing (TASK-AB-NOCHANGE01)
+    # ------------------------------------------------------------------
+
+    def _is_no_file_change_stalled(self, turn_history: List[TurnRecord]) -> bool:
+        """True when the last N turns each changed no files and none approved.
+
+        N is ``STALL_CLASSIFICATION_THRESHOLD`` — the same trailing window
+        every other stall scan uses. Reads only the orchestrator's own git
+        measurement (``TurnRecord.files_changed_this_turn``), so the generator
+        cannot influence it by what it says about its work. A turn with no
+        measurement (``None``) breaks the window.
+        """
+        threshold = STALL_CLASSIFICATION_THRESHOLD
+        if len(turn_history) < threshold:
+            return False
+        recent = turn_history[-threshold:]
+        if not all(_turn_changed_no_files(tr) for tr in recent):
+            return False
+        return all(tr.decision != "approve" for tr in recent)
+
+    def _no_file_change_stall_message(
+        self,
+        task_id: str,
+        turn_history: List[TurnRecord],
+    ) -> str:
+        """The line a person reads when the build stops for writing nothing.
+
+        Says three things and nothing else: no files changed for N turns
+        running; what the reviewer was asking for on the last of those turns;
+        and the two things that usually means. It does not pick between them —
+        the build cannot tell, and guessing would be worse than saying so.
+        """
+        threshold = STALL_CLASSIFICATION_THRESHOLD
+        recent = turn_history[-threshold:] if turn_history else []
+        turn_numbers = [str(tr.turn) for tr in recent]
+        if len(turn_numbers) > 1:
+            turns_phrase = (
+                ", ".join(turn_numbers[:-1]) + " and " + turn_numbers[-1]
+            )
+        else:
+            turns_phrase = turn_numbers[0] if turn_numbers else "?"
+
+        last_ask = (
+            _coach_first_issue_description(recent[-1]) if recent else None
+        )
+        if last_ask is None and recent and recent[-1].feedback:
+            last_ask = " ".join(str(recent[-1].feedback).split())[:300]
+        ask_line = (
+            f'On turn {turn_numbers[-1] if turn_numbers else "?"} the reviewer '
+            f'was still asking for this: "{last_ask}"'
+            if last_ask
+            else (
+                "The reviewer gave no readable description of what it wanted "
+                "on the last of those turns."
+            )
+        )
+
+        return (
+            f"Unrecoverable stall detected after {len(turn_history)} turn(s) "
+            f"[{STALL_NO_FILE_CHANGES}].\n"
+            f"The code generator changed no files for {threshold} turns "
+            f"running (turns {turns_phrase}) and the reviewer approved none of "
+            f"them. Nothing was written, changed or deleted in the worktree on "
+            f"any of those turns, so another turn cannot help.\n"
+            f"{ask_line}\n"
+            f"This usually means one of two things, and the build cannot tell "
+            f"you which:\n"
+            f"  - the work is already there, and nothing needed changing; or\n"
+            f"  - the task cannot be done as written \u2014 something it asks "
+            f"for is blocked, or contradicts a rule the build has to keep.\n"
+            f"Read the task ({task_id}) and the files it names, then either "
+            f"close it as already done or rewrite it.\n"
+            f"Worktree preserved for inspection."
+        )
+
+    # ------------------------------------------------------------------
+    # The work was already there (TASK-AB-NOCHANGE01, part 2)
+    # ------------------------------------------------------------------
+
+    def _already_implemented_receipt(
+        self, turn_record: TurnRecord
+    ) -> Optional[str]:
+        """Receipt line when a turn changed nothing and the tests still pass.
+
+        Returns the receipt text when BOTH of these hold, and ``None``
+        otherwise:
+
+        1. This turn changed no files, by the orchestrator's own git
+           measurement (``files_changed_this_turn == 0``). An unmeasured turn
+           (``None``) never qualifies.
+        2. The reviewer's OWN test run for this task ran, and passed:
+           ``validation_results.independent_tests`` with ``signal_absent`` not
+           true, ``tests_passed`` true, and a real test command behind it.
+
+        Point 2 is the whole safety of this path. ``independent_tests`` is the
+        pytest run the orchestrator starts itself, in the worktree, scoped to
+        this task's own tests — the "trust but verify" leg. The generator
+        writes no part of it; nothing it puts in its report can reach it. The
+        two green-looking non-answers are both excluded: an ABSENT signal
+        (the run timed out or never reported) is excluded by ``signal_absent``,
+        and a SKIPPED run (no tests for this task were found, which the code
+        records as ``tests_passed=True`` with the command ``"skipped"``) is
+        excluded by the command check. So a task whose tests were never
+        written can never complete this way — it goes to the stall instead.
+
+        The generator's own quality gates (``validation_results.quality_gates``)
+        are deliberately NOT consulted: those are derived from
+        ``task_work_results.json``, which the generator writes.
+        """
+        if not _turn_changed_no_files(turn_record):
+            return None
+
+        coach_result = getattr(turn_record, "coach_result", None)
+        if coach_result is None or not getattr(coach_result, "success", False):
+            return None
+        report = getattr(coach_result, "report", None)
+        if not isinstance(report, dict):
+            return None
+        validation = report.get("validation_results")
+        if not isinstance(validation, dict):
+            return None
+        independent = validation.get("independent_tests")
+        if not isinstance(independent, dict):
+            return None
+        if independent.get("signal_absent") is True:
+            return None
+        if independent.get("tests_passed") is not True:
+            return None
+
+        command = independent.get("test_command")
+        if not isinstance(command, str) or not command.strip():
+            return None
+        if command.strip() in _NON_RUN_TEST_COMMANDS:
+            return None
+
+        return (
+            "Completed with no changes: the work this task asks for was "
+            "already present. The code generator changed no files on turn "
+            f"{turn_record.turn}, and the reviewer's own test run for this "
+            f"task passed anyway (`{command.strip()}`). Nothing needed "
+            "changing, so the task is done."
         )
 
     def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
@@ -8395,6 +8939,16 @@ class AutoBuildOrchestrator:
                 validation["independent_tests"] = indep_dict
             indep_dict.setdefault("signal_absent", independent.signal_absent)
             indep_dict.setdefault("tests_passed", independent.tests_passed)
+            # TASK-AB-NOCHANGE01: carry the command too. A SKIPPED independent
+            # run (no tests belonging to this task were found) is recorded as
+            # ``tests_passed=True`` with ``signal_absent=False``, so the pass/
+            # absent pair alone reads green for a task that was never tested.
+            # The command is what tells those apart, and the already-implemented
+            # completion path refuses to fire without a real one.
+            indep_dict.setdefault("test_command", independent.test_command)
+            indep_dict.setdefault(
+                "test_output_summary", independent.test_output_summary
+            )
 
         return report
 
@@ -8791,6 +9345,20 @@ class AutoBuildOrchestrator:
             Formatted summary details
         """
         if final_decision == "approved":
+            # TASK-AB-NOCHANGE01 (part 2): the task finished because the work
+            # was already there. Say that in the summary rather than letting it
+            # read as an ordinary build that produced a diff.
+            already_done = getattr(
+                self, "_already_implemented_receipt_text", None
+            )
+            if already_done:
+                return (
+                    f"{already_done}\n"
+                    f"No files were changed, so there is nothing to review in "
+                    f"the diff.\n"
+                    f"Worktree preserved at: "
+                    f"{self._worktree_manager.worktrees_dir}"
+                )
             # Check if this was a conditional approval (infrastructure-dependent)
             last_coach = turn_history[-1] if turn_history else None
             coach_report = (
@@ -8931,6 +9499,36 @@ class AutoBuildOrchestrator:
                 turn_history,
                 threshold=STALL_CLASSIFICATION_THRESHOLD,
             )
+            # TASK-AB-NOCHANGE01: the generator wrote nothing. Rendered
+            # before every other sub-type because it is the primary label
+            # whenever it fires (see classify_stall) and because the other
+            # messages would describe consequences of it.
+            if (
+                classification is not None
+                and STALL_NO_FILE_CHANGES in classification.co_fires
+            ):
+                task_id_str = (
+                    turn_history[-1].player_result.task_id
+                    if turn_history and turn_history[-1].player_result
+                    else "this task"
+                )
+                message = self._no_file_change_stall_message(
+                    task_id_str, turn_history
+                )
+                if len(classification.co_fires) > 1:
+                    others = [
+                        cf
+                        for cf in classification.co_fires
+                        if cf != STALL_NO_FILE_CHANGES
+                    ]
+                    message += (
+                        f"\nOther stall sub-types also fired: "
+                        f"{', '.join(others)}."
+                    )
+                if interference_block:
+                    message += f"\n{interference_block}"
+                return message
+
             if (
                 classification is not None
                 and STALL_COACH_AGENT_INVOCATIONS in classification.co_fires
