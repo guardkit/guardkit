@@ -13,6 +13,8 @@ Test Coverage:
 Coverage Target: >=85%
 """
 
+import itertools
+
 import pytest
 from pathlib import Path
 
@@ -547,23 +549,58 @@ class TestMediumTaskEdgeCases:
         if task_scenario["complexity"] != 5:
             pytest.skip("Test requires medium scenario")
 
-        # Mock all turns with feedback (never approve)
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
+        # Mock all turns with feedback (never approve).
+        #
+        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
+        # turn. This test's premise is five turns of real work that never
+        # earns approval, and the loop now measures with git whether a turn
+        # changed anything in the worktree. A mocked Player that only *claims*
+        # files_created leaves the worktree untouched, which is the fiction
+        # the no-file-changes stop exists to catch: the build would correctly
+        # end at turn 3 as a stall instead of running the five turns this test
+        # is about.
+        #
+        # The reviewer also raises a DIFFERENT point each turn. One identical
+        # complaint repeated for three turns with no criteria passing is the
+        # separate, older feedback-stall stop (added 2026-02-05, after this
+        # test was written), which would likewise end the build early.
+        _player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
         )
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="feedback",
-            issues=[
-                {
-                    "type": "ongoing",
-                    "description": "Issues persist",
-                    "suggestion": "Continue improvements",
-                }
-            ],
+        _worktree_dir = task_scenario["worktree_dir"]
+        _player_turns = itertools.count(1)
+        _coach_turns = itertools.count(1)
+
+        def _player_that_writes_something(*args, **kwargs):
+            turn = next(_player_turns)
+            (_worktree_dir / f"auth_service_turn_{turn}.py").write_text(
+                f"# turn {turn} of the authentication service\n"
+            )
+            return _player_result
+
+        def _coach_with_a_fresh_point(*args, **kwargs):
+            turn = next(_coach_turns)
+            return make_coach_result(
+                task_id=task_scenario["task_id"],
+                turn=turn,
+                decision="feedback",
+                issues=[
+                    {
+                        "type": "ongoing",
+                        "description": (
+                            f"Issue group {turn} persists after the turn-"
+                            f"{turn} changes"
+                        ),
+                        "suggestion": "Continue improvements",
+                    }
+                ],
+            )
+
+        mock_agent_invoker.invoke_player.side_effect = (
+            _player_that_writes_something
         )
+        mock_agent_invoker.invoke_coach.side_effect = _coach_with_a_fresh_point
 
         # Execute orchestration
         result = mock_orchestrator.orchestrate(

@@ -14,6 +14,8 @@ Test Coverage:
 Coverage Target: >=85%
 """
 
+import itertools
+
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -143,28 +145,64 @@ class TestTestFailureScenarios:
             - Final decision = "max_turns_exceeded"
             - Error mentions test failures
         """
-        # Mock all turns with test failures
+        # Mock all turns with test failures.
+        #
+        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
+        # turn. This test's premise is a build that keeps ATTEMPTING the fix
+        # and keeps failing its tests — the attempts are the whole point — and
+        # the loop now measures with git whether a turn changed anything in
+        # the worktree. A mocked Player that only *claims* files_created is
+        # exactly the fiction the no-file-changes stop exists to catch, so
+        # without a real edit per turn the build correctly stops at turn 3 as
+        # a stall and never reaches the turn budget this test is about.
+        #
+        # The reviewer also names a DIFFERENT failing test each turn. One
+        # identical complaint repeated for three turns with no criteria
+        # passing is the separate, older feedback-stall stop (added
+        # 2026-02-05, after this test was written); a build that honestly
+        # exhausts its turn budget is one where what the reviewer is asking
+        # for keeps moving.
         player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
         )
         player_result.report["tests_passed"] = False
 
-        coach_result = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="feedback",
-            issues=[
-                {
-                    "type": "test_failure",
-                    "description": "Tests still failing",
-                    "suggestion": "Debug test failures",
-                }
-            ],
-        )
+        _worktree_dir = task_scenario["worktree_dir"]
+        _player_turns = itertools.count(1)
+        _coach_turns = itertools.count(1)
 
-        mock_agent_invoker.invoke_player.return_value = player_result
-        mock_agent_invoker.invoke_coach.return_value = coach_result
+        def _player_that_writes_something(*args, **kwargs):
+            turn = next(_player_turns)
+            (_worktree_dir / f"attempted_fix_turn_{turn}.py").write_text(
+                f"# turn {turn}: another attempt at the failing tests\n"
+            )
+            return player_result
+
+        def _coach_naming_a_different_failure(*args, **kwargs):
+            turn = next(_coach_turns)
+            return make_coach_result(
+                task_id=task_scenario["task_id"],
+                turn=turn,
+                decision="feedback",
+                issues=[
+                    {
+                        "type": "test_failure",
+                        "description": (
+                            f"test_persistence_case_{turn} is still failing "
+                            f"after the turn-{turn} attempt"
+                        ),
+                        "suggestion": "Debug test failures",
+                    }
+                ],
+            )
+
+        mock_agent_invoker.invoke_player.side_effect = (
+            _player_that_writes_something
+        )
+        mock_agent_invoker.invoke_coach.side_effect = (
+            _coach_naming_a_different_failure
+        )
 
         # Execute orchestration
         result = mock_orchestrator.orchestrate(
@@ -405,12 +443,18 @@ class TestArchitecturalReviewFailures:
         """
         from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
 
-        # Configure pre-loop to raise QualityGateBlocked
+        # Configure pre-loop to raise QualityGateBlocked.
+        #
+        # The keywords here are the ones QualityGateBlocked actually takes:
+        # reason, gate_name, details. It has never accepted score=/threshold=/
+        # message=, so this call raised TypeError inside the test body and the
+        # orchestrator was never reached — the test has been red since it was
+        # written. The score and threshold now travel in `details`, which is
+        # where the exception carries structured context.
         mock_pre_loop_gates.execute.side_effect = QualityGateBlocked(
+            reason="SOLID/DRY/YAGNI score 45/100 below threshold (60)",
             gate_name="architectural_review",
-            score=45,
-            threshold=60,
-            message="SOLID/DRY/YAGNI score 45/100 below threshold (60)",
+            details={"score": 45, "threshold": 60},
         )
 
         # Execute orchestration (should fail in pre-loop)
@@ -634,17 +678,60 @@ class TestMaxTurnsExceeded:
             - All turns recorded in history
             - Error message helpful
         """
-        # Mock all turns with feedback (never approve)
-        mock_agent_invoker.invoke_player.return_value = make_player_result(
+        # Mock all turns with feedback (never approve).
+        #
+        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on every
+        # turn. This test asserts the worktree is preserved "with all
+        # implementation work intact", so there has to BE implementation work:
+        # the loop now measures with git whether a turn changed anything, and
+        # a Player that only claims files_created leaves the worktree empty.
+        # Three empty turns is the no-file-changes stall, not a build that ran
+        # out of turns.
+        #
+        # The reviewer also raises a DIFFERENT point each turn. One identical
+        # complaint repeated for three turns with no criteria passing is the
+        # separate, older feedback-stall stop (added 2026-02-05, after this
+        # test was written), which would also end the build before the turn
+        # budget ran out.
+        _player_result = make_player_result(
             task_id=task_scenario["task_id"],
             turn=1,
         )
+        _worktree_dir = task_scenario["worktree_dir"]
+        _player_turns = itertools.count(1)
+        _coach_turns = itertools.count(1)
 
-        mock_agent_invoker.invoke_coach.return_value = make_coach_result(
-            task_id=task_scenario["task_id"],
-            turn=1,
-            decision="feedback",
+        def _player_that_writes_something(*args, **kwargs):
+            turn = next(_player_turns)
+            (_worktree_dir / f"implementation_turn_{turn}.py").write_text(
+                f"# turn {turn} implementation work\n"
+            )
+            return _player_result
+
+        def _coach_with_a_fresh_point(*args, **kwargs):
+            turn = next(_coach_turns)
+            return make_coach_result(
+                task_id=task_scenario["task_id"],
+                turn=turn,
+                decision="feedback",
+                issues=[
+                    {
+                        "type": "missing_test",
+                        "severity": "medium",
+                        "description": (
+                            f"Edge case group {turn} is still uncovered"
+                        ),
+                        "suggestion": (
+                            f"Add tests for edge case group {turn}"
+                        ),
+                    }
+                ],
+            )
+
+        mock_agent_invoker.invoke_player.side_effect = (
+            _player_that_writes_something
         )
+        mock_agent_invoker.invoke_coach.side_effect = _coach_with_a_fresh_point
 
         # Execute orchestration
         result = mock_orchestrator.orchestrate(

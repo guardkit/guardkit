@@ -454,11 +454,57 @@ class TestSimpleTaskEdgeCases:
             turn_2_result,
         ]
 
-        # Mock Player for both turns
-        mock_agent_invoker.invoke_player.side_effect = [
-            make_player_result(task_id=task_scenario["task_id"], turn=1),
-            make_player_result(task_id=task_scenario["task_id"], turn=2),
+        # Mock the Coach for both turns.
+        #
+        # invoke_coach was never configured here, so awaiting it returned a
+        # bare AsyncMock: coach_result.report.get("decision") produced a
+        # coroutine rather than "approve"/"feedback", the loop fell into the
+        # feedback branch and _extract_feedback tried to slice that coroutine.
+        # The test died on turn 1 with "'coroutine' object is not
+        # subscriptable" and never reached its assertions. These two results
+        # say the same thing the CoachValidator mock above says — feedback on
+        # turn 1, approve on turn 2 — so the two halves of the Coach now
+        # agree.
+        mock_agent_invoker.invoke_coach.side_effect = [
+            make_coach_result(
+                task_id=task_scenario["task_id"],
+                turn=1,
+                decision="feedback",
+                issues=[{"type": "coverage", "description": "Add more tests"}],
+            ),
+            make_coach_result(
+                task_id=task_scenario["task_id"],
+                turn=2,
+                decision="approve",
+            ),
         ]
+
+        # Mock Player for both turns.
+        #
+        # TASK-AB-NOCHANGE01: the simulated Player writes a real file on each
+        # turn. The premise is a build that implements, takes one round of
+        # feedback and then addresses it, and the loop now measures with git
+        # whether a turn changed anything in the worktree — a Player that only
+        # claims files_created leaves it empty, which is the fiction the
+        # no-file-changes stop exists to catch.
+        _player_results = iter(
+            [
+                make_player_result(task_id=task_scenario["task_id"], turn=1),
+                make_player_result(task_id=task_scenario["task_id"], turn=2),
+            ]
+        )
+        _worktree_dir = task_scenario["worktree_dir"]
+
+        def _player_that_writes_something(*args, **kwargs):
+            result = next(_player_results)
+            (_worktree_dir / f"simple_feature_turn_{result.turn}.py").write_text(
+                f"# turn {result.turn} implementation\n"
+            )
+            return result
+
+        mock_agent_invoker.invoke_player.side_effect = (
+            _player_that_writes_something
+        )
 
         # Execute orchestration
         result = mock_orchestrator.orchestrate(
