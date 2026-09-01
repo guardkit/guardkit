@@ -128,11 +128,33 @@ class TestComplexTaskScenarios:
         if task_scenario["complexity"] != 8:
             pytest.skip("Test requires complex scenario")
 
-        # Mock 4-turn workflow
-        mock_agent_invoker.invoke_player.side_effect = [
-            make_player_result(task_id=task_scenario["task_id"], turn=i)
-            for i in range(1, 5)
-        ]
+        # Mock 4-turn workflow.
+        #
+        # TASK-AB-NOCHANGE01: the simulated Player writes a file on each turn.
+        # This test's premise is a build that IS making progress — three
+        # different pieces of feedback and then an approval — and the loop now
+        # measures, with git, whether anything actually changed. A mocked
+        # Player that writes nothing is the signature of the failure that stop
+        # exists to catch, so without a real edit per turn the build correctly
+        # ends after three silent turns and never reaches turn 4.
+        _player_results = iter(
+            [
+                make_player_result(task_id=task_scenario["task_id"], turn=i)
+                for i in range(1, 5)
+            ]
+        )
+        _worktree_dir = task_scenario["worktree_dir"]
+
+        def _player_that_writes_something(*args, **kwargs):
+            result = next(_player_results)
+            (_worktree_dir / f"state_machine_turn_{result.turn}.py").write_text(
+                f"# turn {result.turn} implementation\n"
+            )
+            return result
+
+        mock_agent_invoker.invoke_player.side_effect = (
+            _player_that_writes_something
+        )
 
         mock_agent_invoker.invoke_coach.side_effect = [
             make_coach_result(
