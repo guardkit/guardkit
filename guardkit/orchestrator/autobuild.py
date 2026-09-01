@@ -869,6 +869,147 @@ def _coach_report_issues(
     return [issue for issue in issues if isinstance(issue, dict)]
 
 
+# ----------------------------------------------------------------------------
+# Vetoes on the "already there" receipt (TASK-AB-NOCHANGE01, part 2 hardening)
+# ----------------------------------------------------------------------------
+
+_UNMODIFIED_CLAIM_TYPE = "claim_audit_unmodified"
+"""The honesty record that says: the generator named files it never changed."""
+
+
+def _turn_claimed_unmodified_files(turn_record: "TurnRecord") -> bool:
+    """True when this turn carries a ``claim_audit_unmodified`` honesty record.
+
+    That record is written by the deterministic honesty check
+    (``coach_verification``), not by the generator: it fires when the
+    generator's own report names a file that git says it did not change this
+    turn. It is exactly the fingerprint of a turn that did nothing and said
+    otherwise, so it vetoes the "already there" completion.
+
+    Defensive against Mock records and partial reports — any shape mismatch
+    reads as "no such record" and the other vetoes still apply.
+    """
+    for issue in _coach_report_issues(turn_record):
+        details = issue.get("details")
+        if isinstance(details, dict):
+            if details.get("claim_type") == _UNMODIFIED_CLAIM_TYPE:
+                return True
+        if issue.get("claim_type") == _UNMODIFIED_CLAIM_TYPE:
+            return True
+        description = issue.get("description")
+        if (
+            isinstance(description, str)
+            and _UNMODIFIED_CLAIM_TYPE in description
+        ):
+            return True
+    return False
+
+
+def _criteria_the_reviewer_did_not_verify(
+    turn_record: "TurnRecord",
+) -> List[str]:
+    """Names of the acceptance criteria the reviewer did NOT mark verified.
+
+    Reads the reviewer's own per-criterion verdicts —
+    ``criteria_verification`` first, and the older
+    ``acceptance_criteria_verification.criteria_results`` shape as a fallback.
+    An entry counts as verified only when it says so; anything else
+    ("rejected", "pending", "fail", missing, unreadable) counts as not
+    verified. An empty or absent list yields an empty result: there is nothing
+    to read, so this check says nothing either way.
+    """
+    if turn_record.coach_result is None:
+        return []
+    report = getattr(turn_record.coach_result, "report", None)
+    if not isinstance(report, dict):
+        return []
+
+    entries = report.get("criteria_verification")
+    if not isinstance(entries, list) or not entries:
+        legacy = report.get("acceptance_criteria_verification")
+        if isinstance(legacy, dict):
+            entries = legacy.get("criteria_results")
+    if not isinstance(entries, list):
+        return []
+
+    unverified: List[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            unverified.append(f"criterion {index + 1}")
+            continue
+        verdict = entry.get("result")
+        if not isinstance(verdict, str) or not verdict.strip():
+            verdict = entry.get("status")
+        if isinstance(verdict, str) and verdict.strip().lower() == "verified":
+            continue
+        name = entry.get("criterion_id")
+        unverified.append(
+            name if isinstance(name, str) and name.strip()
+            else f"criterion {index + 1}"
+        )
+    return unverified
+
+
+def _reviewer_counted_criteria_unmet(turn_record: "TurnRecord") -> bool:
+    """True when the reviewer's own criteria count says work is outstanding.
+
+    Reads ``validation_results.requirements`` — the same authoritative count
+    ``_count_criteria_passed`` uses. Covers the case where the reviewer says
+    "not all criteria met" without filling in a per-criterion list. Absent or
+    unreadable counts return False: unknown is not treated as unmet, the
+    per-criterion check and the honesty check still apply.
+    """
+    if turn_record.coach_result is None:
+        return False
+    report = getattr(turn_record.coach_result, "report", None)
+    if not isinstance(report, dict):
+        return False
+    validation = report.get("validation_results")
+    if not isinstance(validation, dict):
+        return False
+    requirements = validation.get("requirements")
+    if not isinstance(requirements, dict):
+        return False
+
+    total = requirements.get("criteria_total")
+    if not isinstance(total, int) or isinstance(total, bool) or total <= 0:
+        return False
+    if requirements.get("all_criteria_met") is False:
+        return True
+    met = requirements.get("criteria_met")
+    if isinstance(met, int) and not isinstance(met, bool) and met < total:
+        return True
+    return False
+
+
+def _already_implemented_veto(turn_record: "TurnRecord") -> Optional[str]:
+    """Why this turn must NOT finish as "the work was already there".
+
+    Returns a plain sentence naming the reason, or ``None`` when nothing
+    objects. The receipt is a completion, so anything saying the work is not
+    done outranks it: the reviewer's verdict on the acceptance criteria, and
+    the deterministic honesty record that the generator claimed files it did
+    not change. Neither is written by the generator.
+    """
+    if _turn_claimed_unmodified_files(turn_record):
+        return (
+            "the honesty check found the generator listed files it did not "
+            "actually change on this turn"
+        )
+    unverified = _criteria_the_reviewer_did_not_verify(turn_record)
+    if unverified:
+        return (
+            "the reviewer has not marked these acceptance criteria as done: "
+            + ", ".join(unverified)
+        )
+    if _reviewer_counted_criteria_unmet(turn_record):
+        return (
+            "the reviewer's own count says not all of this task's acceptance "
+            "criteria are met"
+        )
+    return None
+
+
 def _test_verification_issues(
     turn_record: "TurnRecord",
 ) -> List[Dict[str, Any]]:
@@ -6388,17 +6529,26 @@ class AutoBuildOrchestrator:
     ) -> Optional[str]:
         """Receipt line when a turn changed nothing and the tests still pass.
 
-        Returns the receipt text when BOTH of these hold, and ``None``
+        Returns the receipt text when ALL of these hold, and ``None``
         otherwise:
 
         1. This turn changed no files, by the orchestrator's own git
            measurement (``files_changed_this_turn == 0``). An unmeasured turn
            (``None``) never qualifies.
-        2. The reviewer's OWN test run for this task ran, and passed:
+        2. Nothing on the turn says the work is unfinished — see
+           ``_already_implemented_veto``. The reviewer marking any acceptance
+           criterion as not done, or the deterministic honesty check recording
+           that the generator named files it did not change
+           (``claim_audit_unmodified``), each block the receipt on its own.
+           A green test run plus zero changes is NOT sufficient by itself: the
+           generator picks which tests the completion check runs, so it can
+           point at a pre-existing passing test it never touched. That is the
+           turn the honesty record catches.
+        3. The reviewer's OWN test run for this task ran, and passed:
            ``validation_results.independent_tests`` with ``signal_absent`` not
            true, ``tests_passed`` true, and a real test command behind it.
 
-        Point 2 is the whole safety of this path. ``independent_tests`` is the
+        Point 3 is what makes a green result trustworthy. ``independent_tests`` is the
         pytest run the orchestrator starts itself, in the worktree, scoped to
         this task's own tests — the "trust but verify" leg. The generator
         writes no part of it; nothing it puts in its report can reach it. The
@@ -6414,6 +6564,22 @@ class AutoBuildOrchestrator:
         ``task_work_results.json``, which the generator writes.
         """
         if not _turn_changed_no_files(turn_record):
+            return None
+
+        # Anything that says the work is NOT done outranks this receipt.
+        # ``_already_implemented_veto`` reads the reviewer's verdict on the
+        # acceptance criteria and the deterministic honesty record; neither is
+        # written by the generator. Without this, a task could finish "already
+        # there" on a turn where the reviewer had just said every criterion was
+        # unmet and the honesty check had caught the generator naming files it
+        # never touched.
+        veto = _already_implemented_veto(turn_record)
+        if veto is not None:
+            logger.info(
+                "Turn %s changed no files, but it is not finished: %s.",
+                turn_record.turn,
+                veto,
+            )
             return None
 
         coach_result = getattr(turn_record, "coach_result", None)

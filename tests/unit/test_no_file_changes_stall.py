@@ -54,6 +54,7 @@ from guardkit.orchestrator.autobuild import (
     STALL_FEEDBACK_GENERIC,
     STALL_NO_FILE_CHANGES,
     TurnRecord,
+    _already_implemented_veto,
     _coach_first_issue_description,
     _turn_changed_no_files,
     _worktree_change_snapshot,
@@ -107,21 +108,49 @@ def _player_claiming_edits(
     )
 
 
+def _player_reporting_no_edits(
+    turn: int, task_id: str = "TASK-B0EF-002"
+) -> AgentInvocationResult:
+    """An honest Player report: it wrote nothing, and it says so.
+
+    The shape of a genuine "the work was already there" turn — no file is
+    named, so the honesty check has nothing to contradict and raises no
+    ``claim_audit_unmodified`` record.
+    """
+    return AgentInvocationResult(
+        task_id=task_id,
+        turn=turn,
+        agent_type="player",
+        success=True,
+        report={
+            "files_modified": [],
+            "files_created": [],
+            "tests_passed": True,
+            "test_count": 12,
+        },
+        duration_seconds=180.0,
+        error=None,
+    )
+
+
 def _coach_asking_for_changes(
     turn: int,
     ask: str = B0EF_ASK,
     task_id: str = "TASK-B0EF-002",
     validation_results: Optional[Dict[str, Any]] = None,
+    honesty_record: bool = True,
+    criteria_verification: Optional[List[Dict[str, Any]]] = None,
+    decision: str = "feedback",
 ) -> AgentInvocationResult:
-    report: Dict[str, Any] = {
-        "decision": "feedback",
-        "feedback": f"Not yet: {ask}",
-        "issues": [
-            {
-                "severity": "must_fix",
-                "category": "missing_requirement",
-                "description": ask,
-            },
+    issues: List[Dict[str, Any]] = [
+        {
+            "severity": "must_fix",
+            "category": "missing_requirement",
+            "description": ask,
+        },
+    ]
+    if honesty_record:
+        issues.append(
             {
                 "severity": "should_fix",
                 "category": "claim_audit",
@@ -130,9 +159,15 @@ def _coach_asking_for_changes(
                     "Player claimed file app/features/users/crud.py but "
                     "'git status --porcelain' shows no change for it."
                 ),
-            },
-        ],
+            }
+        )
+    report: Dict[str, Any] = {
+        "decision": decision,
+        "feedback": f"Not yet: {ask}",
+        "issues": issues,
     }
+    if criteria_verification is not None:
+        report["criteria_verification"] = criteria_verification
     if validation_results is not None:
         report["validation_results"] = validation_results
     return AgentInvocationResult(
@@ -153,13 +188,25 @@ def _turn(
     decision: str = "feedback",
     task_id: str = "TASK-B0EF-002",
     validation_results: Optional[Dict[str, Any]] = None,
+    honesty_record: bool = True,
+    criteria_verification: Optional[List[Dict[str, Any]]] = None,
 ) -> TurnRecord:
     coach = _coach_asking_for_changes(
-        turn, ask=ask, task_id=task_id, validation_results=validation_results
+        turn,
+        ask=ask,
+        task_id=task_id,
+        validation_results=validation_results,
+        honesty_record=honesty_record,
+        criteria_verification=criteria_verification,
+    )
+    player = (
+        _player_claiming_edits(turn, task_id=task_id)
+        if honesty_record
+        else _player_reporting_no_edits(turn, task_id=task_id)
     )
     return TurnRecord(
         turn=turn,
-        player_result=_player_claiming_edits(turn, task_id=task_id),
+        player_result=player,
         coach_result=coach,
         decision=decision,
         feedback=coach.report["feedback"],
@@ -511,9 +558,12 @@ class TestAlreadyDoneCompletes:
     ):
         orch = _orchestrator(tmp_path)
         record = _turn(
-            1, 0, validation_results=_independent_tests(tests_passed=True)[
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_independent_tests(tests_passed=True)[
                 "validation_results"
-            ]
+            ],
         )
         receipt = orch._already_implemented_receipt(record)
         assert receipt is not None
@@ -524,9 +574,12 @@ class TestAlreadyDoneCompletes:
     def test_receipt_reaches_the_summary(self, tmp_path):
         orch = _orchestrator(tmp_path)
         record = _turn(
-            1, 0, validation_results=_independent_tests(tests_passed=True)[
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_independent_tests(tests_passed=True)[
                 "validation_results"
-            ]
+            ],
         )
         orch._already_implemented_receipt_text = (
             orch._already_implemented_receipt(record)
@@ -652,6 +705,250 @@ class TestAlreadyDoneCompletes:
             files_changed_this_turn=0,
         )
         assert orch._already_implemented_receipt(record) is None
+
+
+# ---------------------------------------------------------------------------
+# 5b. "Already done" is refused whenever anything says the work is not done
+#
+#     Two ways a task could otherwise be marked finished with the work
+#     genuinely missing:
+#
+#     (a) the reviewer says every acceptance criterion is unmet, the generator
+#         writes nothing, and the receipt fires anyway because it only ever
+#         looked at "zero changes + a green test run";
+#     (b) the generator picks WHICH tests the completion check runs. Naming a
+#         pre-existing, already-passing test file it never touched is enough
+#         to produce a green run. The deterministic honesty check catches
+#         exactly that turn (``claim_audit_unmodified``), so the receipt must
+#         consult it.
+# ---------------------------------------------------------------------------
+
+
+def _criteria(*results: str) -> List[Dict[str, Any]]:
+    """Per-criterion verdicts in the reviewer's own shape."""
+    return [
+        {
+            "criterion_id": f"AC-{i + 1:03d}",
+            "criterion_text": f"Criterion {i + 1}",
+            "result": result,
+            "status": result,
+            "notes": "checked",
+            "evidence": "checked",
+        }
+        for i, result in enumerate(results)
+    ]
+
+
+def _green() -> Dict[str, Any]:
+    return _independent_tests(tests_passed=True)["validation_results"]
+
+
+class TestAlreadyDoneIsRefusedWhenTheWorkIsNotDone:
+    @pytest.mark.parametrize("decision", ["feedback", "reject"])
+    def test_a_reviewer_failing_every_criterion_blocks_the_receipt(
+        self, tmp_path, decision
+    ):
+        """The reproduction: every AC marked failed, nothing written, green run."""
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1,
+            0,
+            decision="feedback",
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("fail", "fail"),
+        )
+        record.coach_result.report["decision"] = decision
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_one_rejected_criterion_among_verified_ones_blocks_it(
+        self, tmp_path
+    ):
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("verified", "rejected"),
+        )
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_a_pending_criterion_blocks_it(self, tmp_path):
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("verified", "pending"),
+        )
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_every_criterion_verified_still_completes(self, tmp_path):
+        """The receipt is not dead: a genuinely finished task still gets it."""
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("verified", "verified"),
+        )
+        receipt = orch._already_implemented_receipt(record)
+        assert receipt is not None
+        assert "already present" in receipt
+
+    def test_the_legacy_criteria_shape_is_read_too(self, tmp_path):
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=_green()
+        )
+        record.coach_result.report["acceptance_criteria_verification"] = {
+            "criteria_results": _criteria("verified", "rejected")
+        }
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_the_honesty_record_alone_blocks_the_receipt(self, tmp_path):
+        """The other half: the generator named a test file it never touched.
+
+        Zero changes, a green run on a pre-existing test the generator chose,
+        and no per-criterion verdicts at all. The honesty record is the only
+        thing that knows, and it must be enough.
+        """
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1, 0, honesty_record=True, validation_results=_green()
+        )
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_the_honesty_record_is_found_in_the_details_shape(self, tmp_path):
+        """Real records carry ``claim_type`` inside ``details``."""
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=_green()
+        )
+        record.coach_result.report["issues"].append(
+            {
+                "severity": "should_fix",
+                "category": "honesty",
+                "description": "Deterministic honesty record (see details).",
+                "details": {
+                    "source": "deterministic_honesty_gate",
+                    "claim_type": "claim_audit_unmodified",
+                    "player_claim": "Player claimed file tests/test_health.py",
+                    "actual_value": "no change for it",
+                    "severity": "should_fix",
+                },
+            }
+        )
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_a_different_honesty_record_does_not_block_it(self, tmp_path):
+        """Only the "claimed a file it did not change" record vetoes."""
+        orch = _orchestrator(tmp_path)
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=_green()
+        )
+        record.coach_result.report["issues"].append(
+            {
+                "severity": "should_fix",
+                "category": "honesty",
+                "description": "Deterministic honesty record (gitignored).",
+                "details": {
+                    "source": "deterministic_honesty_gate",
+                    "claim_type": "claim_audit_gitignored",
+                    "severity": "should_fix",
+                },
+            }
+        )
+        assert orch._already_implemented_receipt(record) is not None
+
+    def test_the_reviewers_own_criteria_count_blocks_it(self, tmp_path):
+        """No per-criterion list, but the count says work is outstanding."""
+        orch = _orchestrator(tmp_path)
+        validation = dict(_green())
+        validation["requirements"] = {
+            "criteria_total": 3,
+            "criteria_met": 1,
+            "all_criteria_met": False,
+            "missing": ["AC-002", "AC-003"],
+        }
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=validation
+        )
+        assert orch._already_implemented_receipt(record) is None
+
+    def test_a_full_criteria_count_still_completes(self, tmp_path):
+        orch = _orchestrator(tmp_path)
+        validation = dict(_green())
+        validation["requirements"] = {
+            "criteria_total": 3,
+            "criteria_met": 3,
+            "all_criteria_met": True,
+            "missing": [],
+        }
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=validation
+        )
+        assert orch._already_implemented_receipt(record) is not None
+
+    def test_a_task_with_no_criteria_at_all_is_not_blocked_by_the_count(
+        self, tmp_path
+    ):
+        orch = _orchestrator(tmp_path)
+        validation = dict(_green())
+        validation["requirements"] = {
+            "criteria_total": 0,
+            "criteria_met": 0,
+            "all_criteria_met": False,
+            "missing": [],
+        }
+        record = _turn(
+            1, 0, honesty_record=False, validation_results=validation
+        )
+        assert orch._already_implemented_receipt(record) is not None
+
+    def test_the_veto_says_which_criteria_are_outstanding(self, tmp_path):
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("verified", "fail"),
+        )
+        reason = _already_implemented_veto(record)
+        assert reason is not None
+        assert "AC-002" in reason
+        assert "AC-001" not in reason
+
+    def test_the_veto_says_when_the_honesty_check_objects(self, tmp_path):
+        record = _turn(1, 0, validation_results=_green())
+        reason = _already_implemented_veto(record)
+        assert reason is not None
+        assert "did not actually change" in reason
+
+    def test_the_veto_is_silent_when_nothing_objects(self, tmp_path):
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=_green(),
+            criteria_verification=_criteria("verified"),
+        )
+        assert _already_implemented_veto(record) is None
+
+    def test_a_turn_with_no_reviewer_at_all_is_not_vetoed(self, tmp_path):
+        record = TurnRecord(
+            turn=1,
+            player_result=_player_reporting_no_edits(1),
+            coach_result=None,
+            decision="feedback",
+            feedback=None,
+            timestamp="2026-08-30T14:01:00Z",
+            files_changed_this_turn=0,
+        )
+        assert _already_implemented_veto(record) is None
 
 
 # ---------------------------------------------------------------------------
@@ -867,7 +1164,10 @@ class TestTheLoopStopsAndSaysWhy:
         """FEAT-B0EF as it should have ended: done, on the first quiet turn."""
         orch = _loop_orchestrator(tmp_path)
         green = _independent_tests(tests_passed=True)["validation_results"]
-        turns = [_turn(t, 0, validation_results=green) for t in range(1, 11)]
+        turns = [
+            _turn(t, 0, honesty_record=False, validation_results=green)
+            for t in range(1, 11)
+        ]
         history, decision = _run_loop(orch, turns, tmp_path)
         assert decision == "approved"
         assert len(history) == 1
@@ -882,6 +1182,61 @@ class TestTheLoopStopsAndSaysWhy:
         red = _independent_tests(tests_passed=False)["validation_results"]
         turns = [
             _turn(t, 0, ask=E245_ASK, validation_results=red)
+            for t in range(1, 11)
+        ]
+        history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        assert len(history) == STALL_CLASSIFICATION_THRESHOLD
+        assert orch._already_implemented_receipt_text is None
+
+    def test_a_rejecting_reviewer_stalls_even_with_a_green_test_run(
+        self, tmp_path
+    ):
+        """The blocker, through the real loop.
+
+        The reviewer marks every acceptance criterion failed and says the work
+        is absent; the generator writes nothing; the reviewer's own test run is
+        green because the task has no tests of its own yet. This must end as a
+        stall a person is asked to look at, never as a finished task.
+        """
+        orch = _loop_orchestrator(tmp_path)
+        green = _independent_tests(tests_passed=True)["validation_results"]
+        turns = [
+            _turn(
+                t,
+                0,
+                ask="AC-001 unmet: rate limiting is absent.",
+                honesty_record=False,
+                validation_results=green,
+                criteria_verification=_criteria("fail", "fail"),
+            )
+            for t in range(1, 11)
+        ]
+        history, decision = _run_loop(orch, turns, tmp_path)
+        assert decision == "unrecoverable_stall"
+        assert len(history) == STALL_CLASSIFICATION_THRESHOLD
+        assert orch._already_implemented_receipt_text is None
+
+    def test_a_generator_naming_a_test_it_never_touched_stalls(self, tmp_path):
+        """The other half of the blocker, through the real loop.
+
+        The generator changes nothing and names a pre-existing passing test
+        file in its report, which is enough to produce a green test run. The
+        honesty check records that it claimed a file it did not change, and
+        that record stops the completion.
+        """
+        orch = _loop_orchestrator(tmp_path)
+        green = _independent_tests(
+            tests_passed=True, test_command="pytest tests/test_health.py -v"
+        )["validation_results"]
+        turns = [
+            _turn(
+                t,
+                0,
+                ask="AC-001 unmet: rate limiting is absent.",
+                honesty_record=True,
+                validation_results=green,
+            )
             for t in range(1, 11)
         ]
         history, decision = _run_loop(orch, turns, tmp_path)
@@ -950,7 +1305,12 @@ class TestTheTestCommandIsCarriedThrough:
         )
         independent = report["validation_results"]["independent_tests"]
         assert independent["test_command"] == "pytest tests/test_users.py"
-        record = _turn(1, 0, validation_results=report["validation_results"])
+        record = _turn(
+            1,
+            0,
+            honesty_record=False,
+            validation_results=report["validation_results"],
+        )
         assert orch._already_implemented_receipt(record) is not None
 
     def test_a_skipped_command_is_merged_and_refused(self, tmp_path):
