@@ -414,8 +414,9 @@ def _worktree_change_snapshot(
     * ``git status --porcelain -uall`` — which paths differ from HEAD at all,
       including files git is not tracking yet.
     * ``git diff --numstat HEAD`` — how many lines each tracked path differs
-      by, so a second edit to an already-changed file is still visible as a
-      change (the path set alone would not move).
+      by — PLUS that file's size and modification time, because the line counts
+      alone do not move for a one-line-for-one-line edit, and three of those in
+      a row would otherwise read as three turns of no progress.
 
     For untracked paths git has no numstat, so size and modification time
     stand in: any write moves at least one of them.
@@ -509,7 +510,20 @@ def _worktree_change_snapshot(
             continue
         if _is_test_run_artefact(rel):
             continue
-        snapshot[rel] = f"{snapshot.get(rel, '')}|{added}/{removed}"
+        # The line counts alone are NOT enough: a one-line-for-one-line edit
+        # keeps added/removed identical, so three genuine consecutive edits
+        # measured as three zero-change turns and aborted a healthy build as a
+        # stall (found by review, 2026-09-01, before this ever ran a build).
+        # The file's own size and timestamp move on any write, so they close
+        # it. If a tool touches a file without changing it the signature moves
+        # anyway — that only ever suppresses a stall, never invents one, which
+        # is the direction to fail in.
+        try:
+            st = (worktree_path / rel).stat()
+            stamp = f"{st.st_size}/{st.st_mtime_ns}"
+        except OSError:
+            stamp = "unreadable"
+        snapshot[rel] = f"{snapshot.get(rel, '')}|{added}/{removed}|{stamp}"
 
     # Untracked paths: git has no diff for them, so stat stands in. Capped so
     # a worktree with a huge un-ignored tree (an npm install that landed
@@ -2113,7 +2127,6 @@ class AutoBuildOrchestrator:
         # TASK-AB-NOCHANGE01: receipt text when a task completed because the
         # work it asked for was already present and nothing needed changing.
         # None on every other outcome. Reset per _loop_phase invocation.
-        self._already_implemented_receipt_text: Optional[str] = None
         # Accumulated peak criteria count across turns — criteria verified in turn N
         # remain counted in turn N+1 to prevent false stall detection (TASK-FIX-AE7E)
         self._max_criteria_passed: int = 0
@@ -3753,7 +3766,6 @@ class AutoBuildOrchestrator:
         # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
         # classify_stall() sees fresh state per task.
         self._context_pollution_no_checkpoint_fired = False
-        self._already_implemented_receipt_text = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -4012,22 +4024,21 @@ class AutoBuildOrchestrator:
                     )
                     return turn_history, "configuration_error"
 
-                # TASK-AB-NOCHANGE01 (part 2): the work was already there.
-                # When this turn changed no files AND the reviewer's own test
-                # run for this task ran and passed, the task is done — there
-                # was nothing left to do. Both halves are the orchestrator's
-                # own measurements (git, and the reviewer's independent pytest
-                # pass); the generator cannot reach either one by what it
-                # claims, which is the point. Zero changes with red or absent
-                # checks is NOT this — it falls through to the stall below.
-                already_done = self._already_implemented_receipt(turn_record)
-                if already_done is not None:
-                    logger.info("[%s] %s", task_id, already_done)
-                    self._already_implemented_receipt_text = already_done
-                    self._progress_display.console.print(
-                        f"\n[bold green]{already_done}[/bold green]\n"
-                    )
-                    return turn_history, "approved"
+                # WITHDRAWN 2026-09-01, before it ever ran a build. A second
+                # part of this change let a turn that changed nothing FINISH the
+                # task as done when the reviewer's own test run was green. An
+                # independent review proved it could finish a task the reviewer
+                # had just REFUSED: the completion never read the reviewer's
+                # decision, so a report saying "rate limiting is absent from
+                # src/api.py" — the documented feedback shape — completed as
+                # approved with the work skipped. It only ever ran on non-approve
+                # turns, so overriding the reviewer was its whole operating range.
+                # Deciding "already done" safely means enumerating every way a
+                # reviewer can object, which is a bigger design than this lane.
+                # The no-progress stall below covers the same builds honestly:
+                # they stop in one turn instead of twenty-five minutes, and say
+                # that the work may already be done or the task may be
+                # unsatisfiable, without pretending to know which.
 
                 # Create checkpoint after turn completes (if enabled)
                 # Skip checkpoint for configuration errors — tests were never run (TASK-ABFIX-003)
@@ -6523,95 +6534,6 @@ class AutoBuildOrchestrator:
     # ------------------------------------------------------------------
     # The work was already there (TASK-AB-NOCHANGE01, part 2)
     # ------------------------------------------------------------------
-
-    def _already_implemented_receipt(
-        self, turn_record: TurnRecord
-    ) -> Optional[str]:
-        """Receipt line when a turn changed nothing and the tests still pass.
-
-        Returns the receipt text when ALL of these hold, and ``None``
-        otherwise:
-
-        1. This turn changed no files, by the orchestrator's own git
-           measurement (``files_changed_this_turn == 0``). An unmeasured turn
-           (``None``) never qualifies.
-        2. Nothing on the turn says the work is unfinished — see
-           ``_already_implemented_veto``. The reviewer marking any acceptance
-           criterion as not done, or the deterministic honesty check recording
-           that the generator named files it did not change
-           (``claim_audit_unmodified``), each block the receipt on its own.
-           A green test run plus zero changes is NOT sufficient by itself: the
-           generator picks which tests the completion check runs, so it can
-           point at a pre-existing passing test it never touched. That is the
-           turn the honesty record catches.
-        3. The reviewer's OWN test run for this task ran, and passed:
-           ``validation_results.independent_tests`` with ``signal_absent`` not
-           true, ``tests_passed`` true, and a real test command behind it.
-
-        Point 3 is what makes a green result trustworthy. ``independent_tests`` is the
-        pytest run the orchestrator starts itself, in the worktree, scoped to
-        this task's own tests — the "trust but verify" leg. The generator
-        writes no part of it; nothing it puts in its report can reach it. The
-        two green-looking non-answers are both excluded: an ABSENT signal
-        (the run timed out or never reported) is excluded by ``signal_absent``,
-        and a SKIPPED run (no tests for this task were found, which the code
-        records as ``tests_passed=True`` with the command ``"skipped"``) is
-        excluded by the command check. So a task whose tests were never
-        written can never complete this way — it goes to the stall instead.
-
-        The generator's own quality gates (``validation_results.quality_gates``)
-        are deliberately NOT consulted: those are derived from
-        ``task_work_results.json``, which the generator writes.
-        """
-        if not _turn_changed_no_files(turn_record):
-            return None
-
-        # Anything that says the work is NOT done outranks this receipt.
-        # ``_already_implemented_veto`` reads the reviewer's verdict on the
-        # acceptance criteria and the deterministic honesty record; neither is
-        # written by the generator. Without this, a task could finish "already
-        # there" on a turn where the reviewer had just said every criterion was
-        # unmet and the honesty check had caught the generator naming files it
-        # never touched.
-        veto = _already_implemented_veto(turn_record)
-        if veto is not None:
-            logger.info(
-                "Turn %s changed no files, but it is not finished: %s.",
-                turn_record.turn,
-                veto,
-            )
-            return None
-
-        coach_result = getattr(turn_record, "coach_result", None)
-        if coach_result is None or not getattr(coach_result, "success", False):
-            return None
-        report = getattr(coach_result, "report", None)
-        if not isinstance(report, dict):
-            return None
-        validation = report.get("validation_results")
-        if not isinstance(validation, dict):
-            return None
-        independent = validation.get("independent_tests")
-        if not isinstance(independent, dict):
-            return None
-        if independent.get("signal_absent") is True:
-            return None
-        if independent.get("tests_passed") is not True:
-            return None
-
-        command = independent.get("test_command")
-        if not isinstance(command, str) or not command.strip():
-            return None
-        if command.strip() in _NON_RUN_TEST_COMMANDS:
-            return None
-
-        return (
-            "Completed with no changes: the work this task asks for was "
-            "already present. The code generator changed no files on turn "
-            f"{turn_record.turn}, and the reviewer's own test run for this "
-            f"task passed anyway (`{command.strip()}`). Nothing needed "
-            "changing, so the task is done."
-        )
 
     def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
         """
@@ -9511,20 +9433,6 @@ class AutoBuildOrchestrator:
             Formatted summary details
         """
         if final_decision == "approved":
-            # TASK-AB-NOCHANGE01 (part 2): the task finished because the work
-            # was already there. Say that in the summary rather than letting it
-            # read as an ordinary build that produced a diff.
-            already_done = getattr(
-                self, "_already_implemented_receipt_text", None
-            )
-            if already_done:
-                return (
-                    f"{already_done}\n"
-                    f"No files were changed, so there is nothing to review in "
-                    f"the diff.\n"
-                    f"Worktree preserved at: "
-                    f"{self._worktree_manager.worktrees_dir}"
-                )
             # Check if this was a conditional approval (infrastructure-dependent)
             last_coach = turn_history[-1] if turn_history else None
             coach_report = (
