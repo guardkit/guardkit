@@ -1,0 +1,16 @@
+{
+  "task_id": "TASK-44A8-004",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "finding",
+      "severity": "major",
+      "description": "independent_tests.signal_absent=true: \"Independent test verification skipped (tests not required for documentation tasks)\" \u2014 the trust-but-verify run did not execute; absence of failure here is not success",
+      "suggestion": "",
+      "requirement": ""
+    }
+  ],
+  "contract": "v4",
+  "findings_provenance": "coach-ft-v4"
+}

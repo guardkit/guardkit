@@ -2578,6 +2578,32 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # TASK-FIX-COACHMISREAD01: the exact inverse of guard #6 above.
+            # When the record shows the independent test run was skipped ON
+            # PURPOSE (signal_absent=false, test_command='skipped', and the
+            # task type's profile does not require tests) and the Coach
+            # rejected the turn claiming that signal was ABSENT, the objection
+            # contradicts the Coach's own evidence — build-FEAT-44A8 /
+            # TASK-44A8-004, 2026-09-04, all three turns. The false finding is
+            # voided and, when nothing else was objected to, the verdict is
+            # promoted feedback->approve.
+            #
+            # Ordering is deliberate and is the safety property: it runs
+            # BEFORE every remaining fail-closed guard, so a promotion made
+            # here is still offered to each of them and any one of them can
+            # flip it straight back to feedback. Those guards only ever act on
+            # an `approve`, so promoting AFTER them could unblock a turn one
+            # of them would have blocked. It runs AFTER guard #6 because that
+            # guard owns the opposite (genuinely absent) signal, and after
+            # guard #5, whose incomplete-gather case this one refuses outright.
+            self._reconcile_contradicted_absent_test_claim(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # TASK-QAWE-004: SPEC_GAP whole-file deselection hard-gate.
             # Modelled on _reconcile_absent_independent_test_signal; fires
             # when spec_gap.whole_file_deselection is True (ground truth > 0,
@@ -7009,6 +7035,300 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # override (returned in the result) already rejects it.
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-FIX-COACHFG01"
+        )
+
+    # TASK-FIX-COACHMISREAD01: the two halves of "this finding claims the
+    # independent-test signal was absent". A finding must NAME the signal
+    # (first tuple) AND make an ABSENCE claim about it (second tuple) before
+    # it can be voided. Either half on its own is never enough, so an ordinary
+    # finding that merely mentions tests, or merely says something "did not
+    # run", is left completely alone.
+    _ABSENT_CLAIM_SIGNAL_REFS = (
+        "signal_absent",
+        "signal absent",
+        "independent test",
+        "independent_test",
+        "independent verification",
+        "independently verif",
+        "trust-but-verify",
+        "trust but verify",
+    )
+    _ABSENT_CLAIM_ABSENCE_PHRASES = (
+        "signal_absent=true",
+        "signal_absent = true",
+        'signal_absent": true',
+        "signal absent",
+        "absent signal",
+        "signal is absent",
+        "signal was absent",
+        "did not complete",
+        "did not execute",
+        "did not run",
+        "never completed",
+        "never executed",
+        "never ran",
+        "no signal",
+        "produced no verdict",
+        "was not run",
+        "was not executed",
+        "not completed",
+    )
+
+    @classmethod
+    def _claims_independent_test_signal_absent(cls, issue: Dict[str, Any]) -> bool:
+        """True when ``issue`` asserts the independent-test signal was absent.
+
+        TASK-FIX-COACHMISREAD01 helper. Reads only the free-text fields the
+        coach contracts populate (``description`` carries the v4 ``locus``);
+        a finding must both name the independent-test signal and claim it was
+        absent/incomplete. Deliberately conservative: an unmatched finding is
+        always KEPT, because voiding a genuine objection is the expensive
+        mistake and leaving one standing is the cheap one.
+        """
+        text = " ".join(
+            str(issue.get(field, ""))
+            for field in (
+                "description",
+                "suggestion",
+                "locus",
+                "message",
+                "title",
+                "requirement",
+            )
+        ).lower()
+        if not text.strip():
+            return False
+        names_signal = any(ref in text for ref in cls._ABSENT_CLAIM_SIGNAL_REFS)
+        claims_absence = any(
+            phrase in text for phrase in cls._ABSENT_CLAIM_ABSENCE_PHRASES
+        )
+        return names_signal and claims_absence
+
+    def _reconcile_contradicted_absent_test_claim(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Void a Coach objection that contradicts the record about a MANDATED skip.
+
+        TASK-FIX-COACHMISREAD01. The exact inverse of
+        :meth:`_reconcile_absent_independent_test_signal`, and its sibling in
+        style, placement and logging. That guard fires when the RECORD says
+        the independent-test signal was absent and the Coach approved anyway;
+        NOTHING handled the mirror image, which build-FEAT-44A8 hit on
+        2026-09-04: for the documentation task TASK-44A8-004 the record said
+        the independent test run was skipped ON PURPOSE (the profile for that
+        task type does not require tests) —
+        ``independent_tests.signal_absent=false``,
+        ``test_command="skipped"``, ``tests.tests_required=false`` — and the
+        Coach nonetheless rejected all three turns with one objection quoting
+        ``"independent_tests.signal_absent=true"``. The verdict was a
+        misreading of the Coach's own evidence: prompt guard #6
+        (``INDEPENDENT-TEST ABSENT GUARD`` in ``_build_coach_prompt``) tells
+        the model to write almost exactly that sentence, but ONLY when the
+        field is true. Receipt:
+        ``forge-state/receipts/build-FEAT-44A8-20260904131328/.guardkit/
+        autobuild-private/TASK-44A8-004``.
+
+        In plain words: when the record shows the test run was skipped because
+        this kind of task does not need tests, and the Coach's objection says
+        the test signal was missing, the objection is factually wrong. It is
+        removed; and if it was the ONLY thing standing between the turn and an
+        approval, the turn is approved with a rationale that says exactly why.
+
+        Narrow and identity-bounded — every one of these must hold before any
+        finding is touched:
+
+        * ``evidence_bundle.gathering_status == "complete"``. A mandated skip
+          is only trustworthy when the evidence pass actually finished; the
+          aborted-gather case belongs to guard #5
+          (:meth:`_reconcile_incomplete_evidence_gathering`), which only ever
+          flips ``approve`` -> ``feedback`` and so would not notice a
+          promotion made here.
+        * ``evidence_bundle.independent_tests`` is present and
+          ``signal_absent is False``. A GENUINE absent signal
+          (``signal_absent is True``) is guard #6's case and MUST keep failing
+          closed exactly as today — this method returns immediately on it.
+        * ``independent_tests.test_command == "skipped"``. A run that actually
+          happened (pass or fail) is out of scope entirely.
+        * The bundle's own gate slice says the task type does not require
+          tests: ``evidence_bundle.tests["tests_required"] is False``. This is
+          what separates the PROFILE-MANDATED skip from the other reason
+          ``test_command`` reads ``"skipped"`` — "no task-specific tests were
+          found" on a profile that DOES require them, which is the zero-test
+          anomaly (``CoachValidator._check_zero_test_anomaly``) and a
+          perfectly legitimate thing to reject over. **Absent-key safety**
+          mirrors :meth:`_apply_spec_gap_absent_guard`: the key must be
+          present and exactly ``False``; a missing key is UNKNOWN and no-ops.
+        * Only findings that BOTH name the independent-test signal AND claim
+          it was absent are voided
+          (:meth:`_claims_independent_test_signal_absent`). Every other
+          finding is kept, untouched, whatever it says.
+        * The decision is promoted ``feedback`` -> ``approve`` ONLY when no
+          other finding survives. One real objection alongside the false one
+          means the turn stays rejected.
+
+        On any change the decision dict gains machine-readable markers —
+        ``contradicted_absent_claim_voided: true`` and
+        ``contradicted_absent_claim`` (the voided findings verbatim, the
+        record values they contradict, and the overridden decision when the
+        verdict was promoted) — and ``coach_turn_N.json`` is re-persisted, per
+        ``.claude/rules/deterministic-verdict-override-must-persist-to-disk.md``,
+        so the operator artifact and the Layer-4 late-approval reader
+        (``feature_orchestrator._check_late_approval``) see the same verdict
+        the caller does.
+
+        Wired BEFORE the remaining fail-closed guards
+        (:meth:`_apply_spec_gap_absent_guard`,
+        :meth:`_apply_runtime_parity_guard`,
+        :meth:`_apply_independent_test_code_failure_guard`,
+        :meth:`_apply_behavioural_oracle_guard`,
+        :meth:`_apply_spec_conformance_guard`) on purpose: each of those acts
+        only on an ``approve``, so a verdict promoted here is still offered to
+        every one of them and any of them can flip it straight back to
+        ``feedback``. Promoting after them could unblock a turn one of them
+        would have blocked.
+
+        Mutates ``decision`` in place. No-op for every shape except the one
+        above; idempotent (a second call finds no matching finding).
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: The bundle the synthesis verdict was built over,
+                or ``None`` for legacy/tool-using callers (no-op when ``None``).
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                change.
+        """
+        if decision.get("decision") not in ("approve", "feedback"):
+            return
+        if evidence_bundle is None:
+            return
+        # A mandated skip is only trustworthy when the evidence pass actually
+        # finished. On an aborted gather the legs below may be stale or
+        # missing, and guard #5 (_reconcile_incomplete_evidence_gathering)
+        # owns that case — it only ever flips approve->feedback, so it would
+        # not notice a promotion made here.
+        if getattr(evidence_bundle, "gathering_status", None) != "complete":
+            return
+        independent = evidence_bundle.independent_tests
+        if independent is None:
+            return
+        # A genuine absent signal belongs to guard #6 and must keep failing
+        # closed. `is not False` (never `if signal_absent:`) so an unexpected
+        # non-boolean is treated as UNKNOWN and no-ops.
+        if getattr(independent, "signal_absent", None) is not False:
+            return
+        if getattr(independent, "test_command", None) != "skipped":
+            return
+        # Absent-key safety: only a profile that explicitly does NOT require
+        # tests makes the skip mandated. Missing key / True / None => no-op.
+        tests_slice = getattr(evidence_bundle, "tests", None)
+        if (
+            not isinstance(tests_slice, dict)
+            or "tests_required" not in tests_slice
+            or tests_slice["tests_required"] is not False
+        ):
+            return
+
+        issues = decision.get("issues")
+        if not isinstance(issues, list) or not issues:
+            return
+
+        kept: List[Any] = []
+        voided: List[Dict[str, Any]] = []
+        for issue in issues:
+            if isinstance(issue, dict) and self._claims_independent_test_signal_absent(
+                issue
+            ):
+                voided.append(issue)
+            else:
+                kept.append(issue)
+
+        if not voided:
+            return
+
+        original_decision = decision["decision"]
+        summary = (getattr(independent, "test_output_summary", "") or "").strip()
+        voided_text = [str(issue.get("description", "")) for issue in voided]
+
+        decision["issues"] = kept
+        marker: Dict[str, Any] = {
+            "voided_findings": voided,
+            "voided_text": voided_text,
+            "record": {
+                "signal_absent": False,
+                "test_command": "skipped",
+                "tests_required": False,
+                "task_type": getattr(evidence_bundle, "task_type", None),
+                "profile_name": getattr(evidence_bundle, "profile_name", None),
+                "test_output_summary": summary,
+            },
+            "overridden_decision": None,
+        }
+
+        promoted = original_decision == "feedback" and not kept
+        if promoted:
+            marker["overridden_decision"] = original_decision
+            decision["decision"] = "approve"
+            decision["rationale"] = (
+                "Approved by a deterministic check, not by the Coach's own "
+                "words. The record for this turn shows the separate "
+                "(independent) test run was skipped ON PURPOSE because this "
+                "task type does not require tests: independent_tests."
+                "signal_absent=false, independent_tests.test_command="
+                "'skipped', tests.tests_required=false"
+                + (f" — recorded note: {summary}" if summary else "")
+                + ". The Coach's only objection said that test signal was "
+                "absent, which contradicts that record, so the objection was "
+                "removed; nothing else was objected to, so the turn is "
+                "approved. A genuinely absent test signal is a different case "
+                "and is still rejected (see "
+                "_reconcile_absent_independent_test_signal)."
+            )
+
+        decision["contradicted_absent_claim_voided"] = True
+        decision["contradicted_absent_claim"] = marker
+
+        if promoted:
+            logger.warning(
+                "TASK-FIX-COACHMISREAD01: overriding Coach verdict "
+                "'feedback'->'approve' for %s turn %s — the record shows a "
+                "profile-mandated independent-test skip (signal_absent=false, "
+                "test_command='skipped', tests_required=false) and the only "
+                "finding contradicted it: %s",
+                task_id,
+                turn,
+                voided_text,
+            )
+        else:
+            logger.warning(
+                "TASK-FIX-COACHMISREAD01: voided %d Coach finding(s) for %s "
+                "turn %s that claimed an absent independent-test signal the "
+                "record contradicts (mandated skip); verdict %r left "
+                "unchanged (%d other finding(s) still stand): %s",
+                len(voided),
+                task_id,
+                turn,
+                original_decision,
+                len(kept),
+                voided_text,
+            )
+
+        # Re-persist so the operator-facing coach_turn_N.json and the Layer-4
+        # late-approval reader see the corrected verdict. A persistence hiccup
+        # must never change the turn's outcome — the in-memory decision
+        # (returned in the result) already governs it.
+        self._persist_coach_decision(
+            decision,
+            coach_output_path,
+            tag="TASK-FIX-COACHMISREAD01",
+            kind="overridden" if promoted else "reconciled",
         )
 
     def _apply_spec_gap_absent_guard(
