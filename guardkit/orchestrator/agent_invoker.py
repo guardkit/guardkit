@@ -61,7 +61,11 @@ from guardkit.orchestrator.coach_verification import (
     InterpreterResolutionError,
     format_verification_context,
 )
-from guardkit.orchestrator.coach_narrative_reconciler import is_must_fix_class
+from guardkit.orchestrator.coach_narrative_reconciler import (
+    DETERMINISTIC_SOURCE,
+    MUST_FIX_DISCREPANCY_SEVERITIES,
+    is_must_fix_class,
+)
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.schemas import (
@@ -7104,6 +7108,39 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         )
         return names_signal and claims_absence
 
+    @staticmethod
+    def _is_never_rejecting_finding(issue: Any) -> bool:
+        """True when ``issue`` is a finding that can never reject a turn.
+
+        Exactly one class qualifies: a deterministic honesty record embedded by
+        :mod:`guardkit.orchestrator.coach_narrative_reconciler` (it carries
+        ``details['source'] == DETERMINISTIC_SOURCE``) whose severity is NOT
+        turn-rejecting. That module's own contract is that only a
+        ``critical``-severity honesty record rejects a turn — everything else
+        ("should_fix", "warning", "info") is advisory and "a warning never
+        burns a build" (see its module docstring, LANE-WF).
+
+        Everything else returns False and therefore keeps blocking: a Coach's
+        own objection (no ``details.source``), a ``must_fix`` honesty record,
+        and any shape this method does not recognise. Fail-closed by
+        construction — an unknown finding is never treated as ignorable.
+        """
+        if not isinstance(issue, dict):
+            return False
+        details = issue.get("details")
+        if not isinstance(details, dict):
+            return False
+        if details.get("source") != DETERMINISTIC_SOURCE:
+            return False
+        # Both the rendered issue severity ("must_fix") and the underlying
+        # record severity ("critical") must be non-rejecting. Either one
+        # saying "turn-rejecting" keeps the finding blocking.
+        if issue.get("severity") == "must_fix":
+            return False
+        if details.get("severity") in MUST_FIX_DISCREPANCY_SEVERITIES:
+            return False
+        return True
+
     def _reconcile_contradicted_absent_test_claim(
         self,
         *,
@@ -7169,8 +7206,23 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
           (:meth:`_claims_independent_test_signal_absent`). Every other
           finding is kept, untouched, whatever it says.
         * The decision is promoted ``feedback`` -> ``approve`` ONLY when no
-          other finding survives. One real objection alongside the false one
-          means the turn stays rejected.
+          finding that could reject the turn survives. One real objection
+          alongside the false one means the turn stays rejected. Findings
+          that could never have rejected the turn do not block the promotion
+          — see :meth:`_is_never_rejecting_finding`; they stay attached to
+          the approve as advisory, and the decision gains
+          ``contradicted_absent_claim_voided_then_approved: true`` so the
+          receipt shows the promotion happened over them.
+
+          Today the live ordering means those advisory honesty records are
+          embedded AFTER this guard runs (by
+          ``_reconcile_coach_narrative_with_records``), so on the first pass
+          ``kept`` is usually empty anyway. This clause is what makes the
+          guard give the same answer whatever the order — and what makes a
+          second call over an already-reconciled decision idempotent instead
+          of newly blocking. The receipt for build-FEAT-99E2 /
+          TASK-DEACT-005 turn 3 is that shape: one false objection plus six
+          ``claim_audit_unmodified`` records at ``should_fix``.
 
         On any change the decision dict gains machine-readable markers —
         ``contradicted_absent_claim_voided: true`` and
@@ -7272,10 +7324,27 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             "overridden_decision": None,
         }
 
-        promoted = original_decision == "feedback" and not kept
+        # What is left standing after the false objection is removed. A turn
+        # is promoted when nothing is left, and ALSO when the only things left
+        # are findings that could never have rejected the turn in the first
+        # place — non-critical deterministic honesty records, whose own module
+        # says "a warning never burns a build". Counting those as blockers
+        # would leave the turn rejected with no rejecting reason on it.
+        # Anything else standing (a Coach objection, a critical honesty
+        # record, an unrecognised shape) still blocks: fail-closed.
+        advisory_only = bool(kept) and all(
+            self._is_never_rejecting_finding(issue) for issue in kept
+        )
+        marker["retained_advisory_findings"] = kept if advisory_only else []
+        promoted = original_decision == "feedback" and (not kept or advisory_only)
         if promoted:
             marker["overridden_decision"] = original_decision
+            marker["promotion_basis"] = (
+                "advisory_records_only" if advisory_only else "no_findings_remained"
+            )
             decision["decision"] = "approve"
+            if advisory_only:
+                decision["contradicted_absent_claim_voided_then_approved"] = True
             decision["rationale"] = (
                 "Approved by a deterministic check, not by the Coach's own "
                 "words. The record for this turn shows the separate "
@@ -7286,8 +7355,18 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 + (f" — recorded note: {summary}" if summary else "")
                 + ". The Coach's only objection said that test signal was "
                 "absent, which contradicts that record, so the objection was "
-                "removed; nothing else was objected to, so the turn is "
-                "approved. A genuinely absent test signal is a different case "
+                "removed; "
+                + (
+                    (
+                        f"the only thing left standing was {len(kept)} "
+                        "non-critical honesty warning(s), which never reject a "
+                        "turn (they stay attached as advisory), so the turn is "
+                        "approved"
+                    )
+                    if advisory_only
+                    else "nothing else was objected to, so the turn is approved"
+                )
+                + ". A genuinely absent test signal is a different case "
                 "and is still rejected (see "
                 "_reconcile_absent_independent_test_signal)."
             )

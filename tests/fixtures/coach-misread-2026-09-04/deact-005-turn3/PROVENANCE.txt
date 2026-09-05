@@ -1,0 +1,36 @@
+PROVENANCE — real coach records from a real build; DO NOT hand-edit.
+
+What these two files are
+  A copy, byte for byte, of two records the coach wrote during a real build on
+  4 September 2026. The build is build-FEAT-99E2 and the task is
+  TASK-DEACT-005, a documentation task, which is a task type whose profile does
+  not ask for tests. This is turn 3 of that task.
+
+Where they came from (read-only copy, taken 2026-09-05)
+  /home/richardwoollcott/forge-state/receipts/build-FEAT-99E2-20260904084900/
+    .guardkit/autobuild-private/TASK-DEACT-005/coach_evidence_turn_3.json
+    .guardkit/autobuild-private/TASK-DEACT-005/coach_turn_3.json
+
+Checksums of the copies (sha256), identical to the source files
+  1a8ada0596e1a73617390b0983192e06cd7df40ba0cbf5a45de126e924f64c49  coach_evidence_turn_3.json
+  623411318b13fc6984a070310dc65cfe147f46dabf2ff06119ab272cdd35884c  coach_turn_3.json
+
+Why they are kept here
+  This turn is the second shape of the same misreading. The evidence record
+  says the separate test run was skipped on purpose (signal_absent = false,
+  test_command = "skipped", tests_required = false) and the coach rejected the
+  turn over exactly that. What makes turn 3 different from the TASK-44A8-004
+  turn 1 beside it is what stands next to the false objection: six
+  deterministic honesty records of type claim_audit_unmodified, each at
+  severity should_fix — warnings that, by guardkit's own reconciler
+  (coach_narrative_reconciler.py), never reject a turn.
+
+  The saved decision file shows those six records already embedded ahead of the
+  coach's own objection, because the file on disk was written after the
+  narrative reconciler ran. Live, the guard runs before that step, so it sees
+  the coach's objection alone. The tests built on these files cover both
+  orders, so the guard gives the same answer either way.
+
+No secrets: both files were scanned for API keys, passwords, tokens and
+message-broker or database connection strings before they were copied (zero
+matches).
