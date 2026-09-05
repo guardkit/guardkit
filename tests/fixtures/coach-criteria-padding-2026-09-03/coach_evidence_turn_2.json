@@ -1,0 +1,190 @@
+{
+  "honesty": {
+    "verified": true,
+    "discrepancies": [],
+    "honesty_score": 1.0,
+    "resolved_paths": [],
+    "should_fix_count": 0
+  },
+  "gathering_status": "complete",
+  "gathering_error": null,
+  "quality_gates": {
+    "tests_passed": true,
+    "coverage_met": true,
+    "arch_review_passed": true,
+    "plan_audit_passed": true,
+    "tests_required": true,
+    "coverage_required": true,
+    "arch_review_required": false,
+    "plan_audit_required": true,
+    "all_gates_passed": true
+  },
+  "coverage_details": {
+    "coverage_met": null,
+    "line_coverage": null,
+    "branch_coverage": null,
+    "line_threshold": null,
+    "branch_threshold": null,
+    "coverage_required": true
+  },
+  "plan_audit": {
+    "status": "skipped",
+    "severity": null,
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no implementation plan on disk"
+  },
+  "bdd": null,
+  "bdd_authoring_sweep": null,
+  "arch_review": null,
+  "tests": {
+    "tests_passed": true,
+    "tests_required": true,
+    "tests_run": null,
+    "tests_failed": 0,
+    "all_passed": null,
+    "requires_infrastructure": []
+  },
+  "wiring": null,
+  "mocked_seam": null,
+  "spec_gap": null,
+  "stub_scan": null,
+  "coverage": null,
+  "behavioural_oracle": {
+    "status": "ran",
+    "passed": true,
+    "oracle_path": "tests/acceptance/users_roundtrip.py",
+    "exit_code": 0,
+    "duration": 11.89747166633606,
+    "timed_out": false,
+    "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0\nrootdir: /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B\nconfigfile: pyproject.toml\nplugins: cov-7.1.0, anyio-4.15.0, asyncio-1.4.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/acceptance/users_roundtrip.py .                                    [100%]\n\n=============================== warnings summary ===============================\n.venv/lib/python3.11/site-packages/fastapi/testclient.py:1\n  /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n.venv/lib/python3.11/site-packages/starlette/testclient.py:53\n  /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.\n    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================== 1 passed, 2 warnings in 11.44s ========================",
+    "provenance": "independent"
+  },
+  "spec_conformance": {
+    "status": "passed",
+    "failures": []
+  },
+  "zero_test": {
+    "rule": "CoachValidator._check_zero_test_anomaly",
+    "rule_fired": false,
+    "rule_severity": null,
+    "rule_error": null,
+    "category": "zero_test_anomaly",
+    "report_tests_written": [],
+    "report_files_created": [],
+    "report_files_modified": [
+      "src/users/crud.py",
+      "tests/users/test_created_per_day.py"
+    ],
+    "recogniser": "CoachValidator._is_test_file_path",
+    "recogniser_available": true,
+    "recogniser_conventions": [
+      "test_*.py",
+      "*_test.py",
+      "*_test.go",
+      "*.test.ts / *.test.js",
+      "*.spec.ts / *.spec.js",
+      "*.cs under a Tests/ directory"
+    ],
+    "names_matching_a_convention": [
+      {
+        "name": "tests/users/test_created_per_day.py",
+        "conventions": [
+          "test_*.py"
+        ]
+      }
+    ],
+    "names_examined_by_recogniser": [
+      "src/users/crud.py",
+      "tests/users/test_created_per_day.py"
+    ],
+    "names_not_examined_by_recogniser": [],
+    "disk_lookup_performed": true,
+    "matching_names_found_on_disk": [
+      "tests/users/test_created_per_day.py"
+    ],
+    "independent_test_run_command": "pytest tests/users/test_created_per_day.py -v --tb=short",
+    "report_quality_gates_all_passed": null,
+    "report_quality_gates_tests_passed": 8,
+    "report_quality_gates_coverage": null,
+    "report_requirements_all_criteria_met": false
+  },
+  "independent_tests": {
+    "tests_passed": true,
+    "test_command": "pytest tests/users/test_created_per_day.py -v --tb=short",
+    "test_output_summary": "Result:\ntests/users/test_created_per_day.py::test_date_format_is_iso8601 PASSED  [ 62%]\ntests/users/test_created_per_day.py::test_count_type_is_int PASSED       [ 75%]\ntests/users/test_created_per_day.py::test_includes_current_day PASSED    [ 87%]\ntests/users/test_created_per_day.py::test_window_is_exactly_7_days PASSED [100%]\n======================== 8 passed, 2 warnings in 0.06s =========================",
+    "duration_seconds": 0.5487051010131836,
+    "raw_output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/bin/python\ncachedir: .pytest_cache\nrootdir: /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B\nconfigfile: pyproject.toml\nplugins: cov-7.1.0, anyio-4.15.0, asyncio-1.4.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollecting ... collected 8 items\n\ntests/users/test_created_per_day.py::test_returns_exactly_7_data_points PASSED [ 12%]\ntests/users/test_created_per_day.py::test_ordered_oldest_first PASSED    [ 25%]\ntests/users/test_created_per_day.py::test_empty_days_return_zero PASSED  [ 37%]\ntests/users/test_created_per_day.py::test_counts_with_users_on_specific_day PASSED [ 50%]\ntests/users/test_created_per_day.py::test_date_format_is_iso8601 PASSED  [ 62%]\ntests/users/test_created_per_day.py::test_count_type_is_int PASSED       [ 75%]\ntests/users/test_created_per_day.py::test_includes_current_day PASSED    [ 87%]\ntests/users/test_created_per_day.py::test_window_is_exactly_7_days PASSED [100%]\n\n=============================== warnings summary ===============================\n.venv/lib/python3.11/site-packages/fastapi/testclient.py:1\n  /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n.venv/lib/python3.11/site-packages/starlette/testclient.py:53\n  /tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.\n    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================== 8 passed, 2 warnings in 0.06s =========================\n",
+    "signal_absent": false,
+    "tests_skipped": 0,
+    "resolved_interpreter": "/tmp/forge-autobuild-worktrees/build-FEAT-9C7B-20260903193134/.guardkit/worktrees/FEAT-9C7B/.venv/bin/python"
+  },
+  "independent_test_classification": null,
+  "requirements": {
+    "criteria_total": 4,
+    "criteria_met": 0,
+    "all_criteria_met": false,
+    "missing": [
+      "Query returns exactly 7 data points",
+      "Data points are ordered oldest first",
+      "Empty days return 0 instead of being omitted",
+      "All modified files pass project-configured lint/format checks with zero errors"
+    ],
+    "criteria_results": [
+      {
+        "criterion_id": "AC-001",
+        "criterion_text": "Query returns exactly 7 data points",
+        "result": "rejected",
+        "status": "rejected",
+        "evidence": "No completion promise for AC-001"
+      },
+      {
+        "criterion_id": "AC-002",
+        "criterion_text": "Data points are ordered oldest first",
+        "result": "rejected",
+        "status": "rejected",
+        "evidence": "No completion promise for AC-002"
+      },
+      {
+        "criterion_id": "AC-003",
+        "criterion_text": "Empty days return 0 instead of being omitted",
+        "result": "rejected",
+        "status": "rejected",
+        "evidence": "No completion promise for AC-003"
+      },
+      {
+        "criterion_id": "AC-004",
+        "criterion_text": "All modified files pass project-configured lint/format checks with zero errors",
+        "result": "rejected",
+        "status": "rejected",
+        "evidence": "No completion promise for AC-004"
+      }
+    ]
+  },
+  "runtime_parity": null,
+  "evidence_repo_tests": [],
+  "severity_recommendations": [],
+  "advisory_issues": [
+    {
+      "severity": "warning",
+      "category": "agent_invocations_advisory",
+      "description": "Advisory (non-blocking): task-work produced a report with 2 of 3 expected agent invocations. Missing phases: 3 (Implementation). Consider invoking these agents via the Task tool to strengthen stack-specific quality:\n- Phase 3: `the stack-specific Phase-3 specialist` (Implementation)",
+      "details": {
+        "missing_phases": [
+          "3"
+        ],
+        "expected_phases": 3,
+        "actual_invocations": 2
+      }
+    }
+  ],
+  "task_type": "feature",
+  "profile_name": "feature"
+}

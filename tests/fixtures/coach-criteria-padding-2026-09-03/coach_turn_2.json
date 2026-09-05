@@ -1,0 +1,8 @@
+{
+  "task_id": "TASK-9C7B-002",
+  "turn": 2,
+  "decision": "approve",
+  "issues": [],
+  "contract": "v4",
+  "findings_provenance": "coach-ft-v4"
+}

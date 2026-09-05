@@ -1,0 +1,42 @@
+PROVENANCE — real build records; DO NOT hand-edit.
+
+What these four files are
+  Byte-for-byte copies of records written during a real build on 3 September
+  2026: build-FEAT-9C7B, task TASK-9C7B-002 ("users created per day", a
+  feature task with four acceptance criteria).
+
+Where they came from (read-only copy, taken 2026-09-05)
+  /home/richardwoollcott/forge-state/receipts/build-FEAT-9C7B-20260903193134/
+    worktrees/FEAT-9C7B/.guardkit/autobuild/TASK-9C7B-002/player_turn_1.json
+    worktrees/FEAT-9C7B/.guardkit/autobuild/TASK-9C7B-002/player_turn_2.json
+    .guardkit/autobuild-private/TASK-9C7B-002/coach_evidence_turn_2.json
+    .guardkit/autobuild-private/TASK-9C7B-002/coach_turn_2.json
+
+Checksums of the copies (sha256), identical to the source files
+  dc466b757d7cb49c0b35874ad16e5a40ac20630f7ffbb0cdf723ba0ab3bc7fb0  coach_evidence_turn_2.json
+  2fd999dac2d46229134b1ee29abae34d7bce0f202dc8e3cd9c73fd24a06049c8  coach_turn_2.json
+  d2bd394b4cb8470d8f17ae879b4662c48932124f76e3dd757979c6be3a151b54  player_turn_1.json
+  22ce16d840eef6acc9a7596242de3cc64a87606092e6531a32ebb4d49a53d93c  player_turn_2.json
+
+What they show
+  Turn 1: the player wrote its four completion promises with the ids AC-001 to
+  AC-004. The coach's requirements check matched all four and recorded 4 of 4
+  criteria met. That turn was still sent back, over a separate finding: the
+  database query sat in query.py where the architecture says crud.py.
+
+  Turn 2: the player moved the query to crud.py and wrote the same four
+  promises again, all marked complete, but this time with the ids AC-1 to
+  AC-4. The coach builds its own criterion ids by position, zero-padded, so it
+  looked for AC-001 to AC-004, found nothing, and recorded 0 of 4 criteria met
+  with the reason "No completion promise for AC-00x" against each one. The
+  coach approved the turn anyway, and the approval was right: the independent
+  test run passed eight tests, the spec-conformance check passed, and the
+  behavioural oracle passed. Only the criteria count was wrong.
+
+  These files are the ground truth for the padding fix in
+  CoachValidator._normalize_numeric_ac_id: AC-1 and AC-001 are the same
+  criterion written two ways.
+
+No secrets: every file was scanned for API keys, passwords, tokens and
+message-broker or database connection strings before it was copied (zero
+matches).
