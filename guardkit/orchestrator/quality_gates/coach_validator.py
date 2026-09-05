@@ -6522,12 +6522,38 @@ class CoachValidator:
                 promise_map[text_id] = p
                 fallback_origins[text_id] = cid
 
+        # Zero-padding tolerance (2026-09-05). A SECOND pass, after every
+        # explicit key is registered, so a padded alias can never shadow
+        # another promise's exact ID: ``AC-1`` also answers to ``AC-001``.
+        # See :meth:`_normalize_numeric_ac_id` for the receipt this comes from.
+        for p in completion_promises:
+            cid = p.get("criterion_id") or p.get("ac_id", "")
+            padded = self._normalize_numeric_ac_id(cid)
+            if padded and padded != cid and padded not in promise_map:
+                promise_map[padded] = p
+                fallback_origins[padded] = cid
+
         criteria_results: List[CriterionResult] = []
         missing: List[str] = []
 
         for i, criterion_text in enumerate(acceptance_criteria):
             criterion_id = extracted_ids[i] or f"AC-{i+1:03d}"
             promise = promise_map.get(criterion_id)
+
+            # The mirror of the second registration pass above: a criterion
+            # labelled ``AC-1`` in the task markdown also matches a promise
+            # written ``AC-001``. Exact match always wins; this only runs when
+            # the exact lookup found nothing.
+            if promise is None:
+                padded_criterion = self._normalize_numeric_ac_id(criterion_id)
+                if padded_criterion and padded_criterion != criterion_id:
+                    promise = promise_map.get(padded_criterion)
+                    if promise is not None:
+                        fallback_origins.setdefault(
+                            criterion_id,
+                            promise.get("criterion_id")
+                            or promise.get("ac_id", ""),
+                        )
 
             # TASK-CVAC-002: Surface contract drift when Coach's lookup
             # succeeded only via the criterion_text fallback. Operators can
@@ -6693,6 +6719,37 @@ class CoachValidator:
         return CoachValidator._BARE_CHECKBOX_PREFIX_RE.sub(
             '', text.lstrip(), count=1
         ).strip()
+
+    # A simple, all-numeric acceptance-criterion ID: ``AC-1``, ``AC-01``,
+    # ``AC-001``. Compound IDs (``AC-LOAD-01``) deliberately do not match —
+    # only the numeric tail's zero-padding is normalised.
+    _NUMERIC_AC_ID_RE = re.compile(r"^AC-0*(\d+)$", re.IGNORECASE)
+
+    @classmethod
+    def _normalize_numeric_ac_id(cls, ac_id: Optional[str]) -> Optional[str]:
+        """Canonicalise a simple numeric AC ID to the zero-padded ``AC-NNN``
+        form, or ``None`` when the ID is not simple-numeric.
+
+        Why this exists (2026-09-05). ``AC-1`` and ``AC-001`` are the same
+        criterion written two ways. The Coach builds its own criterion IDs by
+        index as ``AC-{i+1:03d}``, so they are always zero-padded; the Player
+        writes whatever it writes. On build ``build-FEAT-9C7B-20260903193134``
+        the Player emitted four complete promises for ``TASK-9C7B-002`` turn 2
+        keyed ``AC-1``..``AC-4``, none of them matched, and the requirements
+        slice recorded ``0 of 4 criteria met — no completion promise`` for
+        work that was in fact done and whose tests passed. The turn before it,
+        the same Player wrote ``AC-001``..``AC-004`` and scored 4 of 4.
+
+        Only the padding is normalised: a compound ID (``AC-LOAD-01``) and
+        anything that is not ``AC-<digits>`` return ``None`` and are matched
+        exactly as before.
+        """
+        if not isinstance(ac_id, str) or not ac_id.strip():
+            return None
+        m = cls._NUMERIC_AC_ID_RE.match(ac_id.strip())
+        if not m:
+            return None
+        return f"AC-{int(m.group(1)):03d}"
 
     @staticmethod
     def _extract_ac_id(cleaned: str) -> Tuple[str, Optional[str]]:
