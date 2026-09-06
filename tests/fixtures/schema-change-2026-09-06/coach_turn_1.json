@@ -1,0 +1,28 @@
+{
+  "task_id": "TASK-8388-001",
+  "turn": 1,
+  "decision": "feedback",
+  "issues": [
+    {
+      "type": "finding",
+      "severity": "major",
+      "description": "gathering_status=\"partial_gate_abort\" \u2014 evidence gathering aborted on a quality gate; tests.tests_run=null, tests.all_passed=null, coverage.coverage_met=null, bdd=null, arch_review=null, plan_audit.status=\"skipped\" (violations=0, message=\"no implementation plan on disk\"); zero-cardinality signals (null/None) are absent evidence, not passes",
+      "suggestion": "",
+      "requirement": ""
+    },
+    {
+      "severity": "should_fix",
+      "category": "absence_of_failure",
+      "description": "Verification infrastructure could not collect/run any tests (interpreter: /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/bin/python, command: pytest tests/users/test_user_domain.py -v --tb=short) \u2014 this is NOT a signal about your code; do not rewrite the implementation in response. Check the worktree venv / re-run environment bootstrap so the verifier can produce a verdict.",
+      "details": {
+        "gathering_status": "partial_gate_abort",
+        "signal_absent": true,
+        "verifier_infrastructure": true,
+        "resolved_interpreter": "/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/bin/python",
+        "test_command": "pytest tests/users/test_user_domain.py -v --tb=short"
+      }
+    }
+  ],
+  "contract": "v4",
+  "findings_provenance": "coach-ft-v4"
+}

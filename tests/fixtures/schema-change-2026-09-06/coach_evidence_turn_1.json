@@ -1,0 +1,100 @@
+{
+  "honesty": {
+    "verified": true,
+    "discrepancies": [],
+    "honesty_score": 1.0,
+    "resolved_paths": [],
+    "should_fix_count": 0
+  },
+  "gathering_status": "partial_gate_abort",
+  "gathering_error": null,
+  "quality_gates": {
+    "tests_passed": null,
+    "coverage_met": true,
+    "arch_review_passed": true,
+    "plan_audit_passed": true,
+    "tests_required": true,
+    "coverage_required": false,
+    "arch_review_required": false,
+    "plan_audit_required": true,
+    "all_gates_passed": false
+  },
+  "coverage_details": {
+    "coverage_met": null,
+    "line_coverage": null,
+    "branch_coverage": null,
+    "line_threshold": null,
+    "branch_threshold": null,
+    "coverage_required": false
+  },
+  "plan_audit": {
+    "status": "skipped",
+    "severity": null,
+    "violations": 0,
+    "extra_files": [],
+    "missing_files": [],
+    "extra_modifications": [],
+    "missing_modifications": [],
+    "extra_dependencies": [],
+    "missing_dependencies": [],
+    "loc_variance_pct": null,
+    "discrepancies_count": 0,
+    "message": "no implementation plan on disk"
+  },
+  "bdd": null,
+  "bdd_authoring_sweep": null,
+  "arch_review": null,
+  "tests": {
+    "tests_passed": null,
+    "tests_required": true,
+    "tests_run": null,
+    "tests_failed": 0,
+    "all_passed": null,
+    "requires_infrastructure": []
+  },
+  "wiring": null,
+  "mocked_seam": null,
+  "spec_gap": null,
+  "stub_scan": null,
+  "coverage": null,
+  "behavioural_oracle": null,
+  "spec_conformance": {
+    "status": "passed",
+    "failures": []
+  },
+  "zero_test": null,
+  "independent_tests": null,
+  "independent_test_classification": null,
+  "requirements": null,
+  "runtime_parity": null,
+  "evidence_repo_tests": [],
+  "severity_recommendations": [],
+  "advisory_issues": [
+    {
+      "severity": "warning",
+      "category": "agent_invocations_advisory",
+      "description": "Advisory (non-blocking): task-work produced a report with 0 of 2 expected agent invocations. Missing phases: 4 (Testing), 5 (Code Review). Consider invoking these agents via the Task tool to strengthen stack-specific quality:\n- Phase 4: `test-orchestrator` (Testing)\n- Phase 5: `code-reviewer` (Code Review)",
+      "details": {
+        "missing_phases": [
+          "4",
+          "5"
+        ],
+        "expected_phases": 2,
+        "actual_invocations": 0
+      }
+    },
+    {
+      "severity": "should_fix",
+      "category": "specialist_substrate",
+      "description": "Orchestrator-invoked specialist 'test-orchestrator' (Phase 4) did not produce evidence: absent test signal (deterministic Phase 4): Error detail:\nImportError while loading conftest '/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/conftest.py'. This is a substrate failure attributed to the orchestrator, not a Player honesty issue \u2014 the phase's evidence is ABSENT, not failed.",
+      "details": {
+        "phase": "4",
+        "agent": "test-orchestrator",
+        "status": "failed",
+        "error": "absent test signal (deterministic Phase 4): Error detail:\nImportError while loading conftest '/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/conftest.py'"
+      }
+    }
+  ],
+  "task_type": "declarative",
+  "profile_name": "declarative"
+}
