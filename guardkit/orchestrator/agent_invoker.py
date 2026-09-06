@@ -2665,20 +2665,22 @@ class AgentInvoker:
 
             # 2026-09-06: a model change without a migration. Deterministic,
             # modelled on _apply_spec_gap_absent_guard. On a repository with
-            # an Alembic tree, when this turn adds a column or table line to
-            # a Python file outside tests/ and the migrations tree, and adds
-            # or changes nothing under the migrations' versions/ directory,
-            # override approve->feedback. build-FEAT-8388 got through the
-            # coach and the July-image oracle this way (the model change came
-            # in on TASK-8388-001 turn 1, a turn sent back for another reason
-            # and then committed by that turn's checkpoint; every later
-            # verdict approved a clean tree) and was refused at the Docker
-            # Sandbox deploy (users table had no "domain" column on a fresh
-            # database). Reads the worktree's difference from HEAD, not the
-            # bundle, so it sees this turn's uncommitted changes only — the
-            # known limit is in the method's docstring; no-ops, logging why,
-            # when git cannot run. Only approve is ever flipped; runs after
-            # the oracle guard and before narrative reconciliation like the rest.
+            # an Alembic tree, when the feature as a whole has added a column
+            # or table line to a Python file outside tests/ and the migrations
+            # tree, and has added or changed nothing under the migrations'
+            # versions/ directory, override approve->feedback. build-FEAT-8388
+            # got through the coach and the July-image oracle this way (the
+            # model change came in on TASK-8388-001 turn 1, a turn sent back
+            # for another reason and then committed by that turn's
+            # checkpoint; every later verdict approved a clean tree) and was
+            # refused at the Docker Sandbox deploy (users table had no
+            # "domain" column on a fresh database). Reads the worktree's
+            # difference from the FEATURE'S BASE COMMIT (resolved the way the
+            # seam checks resolve it), not from HEAD and not from the bundle,
+            # so a change committed by an earlier turn's checkpoint is still
+            # seen; no-ops, logging why, when the base cannot be resolved or
+            # git cannot run. Only approve is ever flipped; runs after the
+            # oracle guard and before narrative reconciliation like the rest.
             self._apply_schema_change_without_migration_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
@@ -7558,7 +7560,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         turn: int,
         coach_output_path: Path,
     ) -> None:
-        """Fail closed when the turn changes a database model but adds no migration.
+        """Fail closed when the feature changes a database model but adds no migration.
 
         Why (2026-09-06). Build ``build-FEAT-8388`` on api_test. On
         ``TASK-8388-001`` turn 1 the Player added a ``domain`` column to
@@ -7576,8 +7578,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         failed, the candidate was refused. Nothing between the Player and the
         deploy had read the model change against the migrations tree. This
         guard does, deterministically, on repositories that use Alembic.
-        (``TASK-8388-002``'s turn-1 records, a real approval from that build,
-        are kept under ``tests/fixtures/schema-change-2026-09-06/`` with their
+        (``TASK-8388-001``'s records for both turns — the feedback that
+        carried the column in and the approval that let it through — are
+        kept under ``tests/fixtures/schema-change-2026-09-06/`` with their
         provenance.)
 
         Fires only when ALL of these hold, else no-op:
@@ -7585,31 +7588,33 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         * the worktree has an Alembic tree — ``alembic.ini`` at the root, or
           ``alembic/env.py``, or ``migrations/env.py``
           (:meth:`_alembic_migrations_dir`);
-        * this turn's changes add a line matching ``mapped_column(``,
+        * the feature's changes add a line matching ``mapped_column(``,
           ``Column(`` or ``__tablename__`` in a Python file outside the
           migrations tree and outside ``tests/``;
-        * no file under the migrations tree's ``versions/`` directory is
-          added or changed this turn.
+        * no file under the migrations tree's ``versions/`` directory has
+          been added or changed by the feature.
 
-        "This turn's changes" are the worktree's difference from ``HEAD``:
-        the coach judges a turn before that turn's checkpoint commit, so the
-        turn's own edits are in ``git diff HEAD`` and a new migration file is
-        still untracked (``git status --porcelain``). If git cannot run in
-        the worktree the guard no-ops and logs why — an absent signal is
-        never read as a defect (the estate's absence-of-failure rule).
-
-        Known limit (2026-09-06). ``autobuild.py`` (``_loop_phase``)
-        checkpoints EVERY completed turn — an approve at the first
-        ``create_checkpoint``, every other verdict at the second — so a model
-        change made on an earlier turn is already in ``HEAD`` by the next
-        turn and this guard does not see it. On build-FEAT-8388's actual
-        path it would have seen the three uncommitted files on
-        ``TASK-8388-001`` turn 1, a verdict that was already feedback (this
-        guard only overrides an approve), and nothing on the two approved
-        turns that followed, whose trees were clean. Reading further back
-        than ``HEAD`` (the task's starting commit, or carrying the finding
-        across checkpoints) is a design decision for the lane's spec author;
-        it is named here, not taken.
+        "The feature's changes" are the worktree's difference from the
+        FEATURE'S BASE COMMIT — the commit the feature's worktree was created
+        from — resolved exactly the way guardkit's own seam checks resolve it
+        (:func:`guardkit.orchestrator.seam_checks.resolve_feature_base`: the
+        recorded ``.guardkit/autobuild/<feature>/feature_base.json``, else
+        ``git merge-base HEAD main``). Not ``HEAD``: ``autobuild.py``
+        (``_loop_phase``) checkpoints EVERY completed turn, feedback turns
+        included, so on build-FEAT-8388's real path the model change was
+        already committed by the time either approval was given and a diff
+        against ``HEAD`` would have been silent on the very build this guard
+        exists for. Against the base, a model change committed by an earlier
+        turn's checkpoint (or an earlier task of the same feature) is still
+        seen, and so is a migration added by an earlier turn or task — the
+        guard fires only while the feature as a whole has changed a model
+        without adding a migration. Tracked changes come from
+        ``git diff <base> -U0`` (the added lines); untracked files from
+        ``git status --porcelain --untracked-files=all``; both run with
+        ``-c core.quotePath=false`` so a non-ASCII filename is read as it is.
+        If the base cannot be resolved, or git cannot run in the worktree,
+        the guard no-ops and logs why — an absent signal is never read as a
+        defect (the estate's absence-of-failure rule).
 
         Narrow and identity-bounded, like :meth:`_apply_spec_gap_absent_guard`:
         only an ``approve`` is overridden; a ``feedback`` verdict is left
@@ -7617,8 +7622,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         ``schema_change_without_migration``) is prepended, the verdict is
         re-persisted, and a WARNING is logged. The issue's plain sentence
         names the first matching file; ``details`` carries every matching
-        file, the matching lines, and the migrations directory looked in.
-        ``evidence_bundle`` is not read — the signal is the worktree itself.
+        file, the matching lines, the migrations directory looked in, and the
+        base commit the changes were read against. ``evidence_bundle`` is not
+        read — the signal is the worktree itself.
 
         Args:
             decision: The loaded, schema-validated Coach verdict dict.
@@ -7640,7 +7646,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if migrations_dir is None:
             return
 
-        changes = self._turn_changes_for_schema_guard(worktree)
+        feature_base = self._feature_base_for_schema_guard(worktree)
+        if feature_base is None:
+            return  # no base to read against; the reason is already logged
+
+        changes = self._feature_changes_for_schema_guard(worktree, feature_base)
         if changes is None:
             return  # git could not run; the reason is already logged
         changed_paths, added_lines_by_file = changes
@@ -7686,6 +7696,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 "matching_lines": matches,
                 "migrations_dir": migrations_dir,
                 "versions_dir": versions_prefix.rstrip("/"),
+                "feature_base": feature_base,
                 "overridden_decision": original_decision,
             },
         }
@@ -7694,12 +7705,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         logger.warning(
             "schema change without migration: overriding Coach verdict "
             "%r->'feedback' for %s turn %s — %s adds or changes a column or "
-            "table and nothing was added under %s (matching files: %s)",
+            "table and nothing was added under %s since the feature's base "
+            "commit %s (matching files: %s)",
             original_decision,
             task_id,
             turn,
             named_file,
             versions_prefix,
+            feature_base[:8],
             ", ".join(matches),
         )
 
@@ -7784,36 +7797,72 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 added[current].append(line[1:])
         return added
 
-    def _turn_changes_for_schema_guard(
-        self, worktree: Path
-    ) -> Optional[Tuple[List[str], Dict[str, List[str]]]]:
-        """This turn's changes as git sees them, or ``None`` when git could
-        not run in the worktree (the reason is logged at WARNING).
+    @staticmethod
+    def _feature_base_for_schema_guard(worktree: Path) -> Optional[str]:
+        """The feature's base commit, or ``None`` (logged at WARNING) when it
+        cannot be resolved.
 
-        Returns ``(paths, added_lines_by_file)``: every changed or untracked
-        path, and the added lines per file — from ``git diff HEAD -U0`` for
-        tracked files, and the whole file for an untracked Python file. Runs
-        ``git diff HEAD --name-only``, ``git diff HEAD -U0`` and
-        ``git status --porcelain --untracked-files=all`` under the class git
-        lock, like :meth:`_detect_git_changes`. ``--untracked-files=all`` so a
-        new file inside a new directory — the first migration in an empty
-        ``versions/`` — is named rather than folded into its directory.
+        Read exactly the way guardkit's seam checks read it
+        (:func:`guardkit.orchestrator.seam_checks.resolve_feature_base`): the
+        recorded ``.guardkit/autobuild/<feature>/feature_base.json`` under
+        the worktree, else ``git merge-base HEAD main``. An unresolvable base
+        (an older worktree with no record and no ``main``, a directory that
+        is not a repository, or git unable to run) is an absent signal, never
+        a defect: the guard stays out of the verdict.
+        """
+        from guardkit.orchestrator.seam_checks import resolve_feature_base
+
+        base = resolve_feature_base(worktree)
+        if not base:
+            logger.warning(
+                "schema change without migration: the feature's base commit "
+                "could not be resolved in %s (no recorded feature_base.json "
+                "and no merge-base with main); the turn is judged without "
+                "this guard",
+                worktree,
+            )
+            return None
+        return base
+
+    def _feature_changes_for_schema_guard(
+        self, worktree: Path, feature_base: str
+    ) -> Optional[Tuple[List[str], Dict[str, List[str]]]]:
+        """The feature's changes since its base commit as git sees them, or
+        ``None`` when git could not run in the worktree (the reason is logged
+        at WARNING).
+
+        Returns ``(paths, added_lines_by_file)``: every path changed since
+        ``feature_base`` (committed by a checkpoint or still uncommitted) or
+        untracked, and the added lines per file — from
+        ``git diff <base> -U0`` for tracked files, and the whole file for an
+        untracked Python file. Runs ``git diff <base> --name-only`` (so a
+        changed ``versions/`` file with no added lines is still named),
+        ``git diff <base> -U0`` and ``git status --porcelain
+        --untracked-files=all`` under the class git lock, like
+        :meth:`_detect_git_changes`. Every command runs with
+        ``-c core.quotePath=false`` so a filename with non-ASCII characters
+        is printed as it is rather than as octal escapes; a name git still
+        quotes (a double-quote, a backslash or a control character in it) is
+        unquoted. ``--untracked-files=all`` so a new file inside a new
+        directory — the first migration in an empty ``versions/`` — is named
+        rather than folded into its directory.
         """
         import subprocess
 
         def run(args: List[str]) -> "subprocess.CompletedProcess[str]":
             return subprocess.run(
-                ["git", *args],
+                ["git", "-c", "core.quotePath=false", *args],
                 cwd=str(worktree),
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
 
         with self._git_lock:
             try:
-                name_only = run(["diff", "HEAD", "--name-only"])
-                diff = run(["diff", "HEAD", "-U0", "--no-color", "--no-ext-diff"])
+                name_only = run(["diff", feature_base, "--name-only"])
+                diff = run(["diff", feature_base, "-U0", "--no-color", "--no-ext-diff"])
                 status = run(["status", "--porcelain", "--untracked-files=all"])
             except subprocess.TimeoutExpired:
                 logger.warning(
@@ -7833,8 +7882,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 return None
 
         for label, proc in (
-            ("diff HEAD --name-only", name_only),
-            ("diff HEAD -U0", diff),
+            (f"diff {feature_base[:8]} --name-only", name_only),
+            (f"diff {feature_base[:8]} -U0", diff),
             ("status --porcelain", status),
         ):
             if proc.returncode != 0:

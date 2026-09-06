@@ -1,52 +1,23 @@
 {
   "honesty": {
-    "verified": false,
-    "discrepancies": [
-      {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/crud.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-        "severity": "should_fix",
-        "ignore_rule": null
-      },
-      {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/exceptions.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-        "severity": "should_fix",
-        "ignore_rule": null
-      },
-      {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/router.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-        "severity": "should_fix",
-        "ignore_rule": null
-      },
-      {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/schemas.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-        "severity": "should_fix",
-        "ignore_rule": null
-      }
-    ],
+    "verified": true,
+    "discrepancies": [],
     "honesty_score": 1.0,
     "resolved_paths": [],
-    "should_fix_count": 4
+    "should_fix_count": 0
   },
-  "gathering_status": "complete",
+  "gathering_status": "partial_gate_abort",
   "gathering_error": null,
   "quality_gates": {
-    "tests_passed": true,
+    "tests_passed": null,
     "coverage_met": true,
     "arch_review_passed": true,
     "plan_audit_passed": true,
     "tests_required": true,
-    "coverage_required": true,
+    "coverage_required": false,
     "arch_review_required": false,
     "plan_audit_required": true,
-    "all_gates_passed": true
+    "all_gates_passed": false
   },
   "coverage_details": {
     "coverage_met": null,
@@ -54,7 +25,7 @@
     "branch_coverage": null,
     "line_threshold": null,
     "branch_threshold": null,
-    "coverage_required": true
+    "coverage_required": false
   },
   "plan_audit": {
     "status": "skipped",
@@ -74,7 +45,7 @@
   "bdd_authoring_sweep": null,
   "arch_review": null,
   "tests": {
-    "tests_passed": true,
+    "tests_passed": null,
     "tests_required": true,
     "tests_run": null,
     "tests_failed": 0,
@@ -86,97 +57,15 @@
   "spec_gap": null,
   "stub_scan": null,
   "coverage": null,
-  "behavioural_oracle": {
-    "status": "ran",
-    "passed": true,
-    "oracle_path": "tests/acceptance/users_roundtrip.py",
-    "exit_code": 0,
-    "duration": 11.512944221496582,
-    "timed_out": false,
-    "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0\nrootdir: /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388\nconfigfile: pyproject.toml\nplugins: cov-7.1.0, anyio-4.15.1, asyncio-1.4.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/acceptance/users_roundtrip.py .                                    [100%]\n\n=============================== warnings summary ===============================\n.venv/lib/python3.11/site-packages/fastapi/testclient.py:1\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n.venv/lib/python3.11/site-packages/starlette/testclient.py:53\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.\n    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================== 1 passed, 2 warnings in 11.08s ========================",
-    "provenance": "independent"
-  },
+  "behavioural_oracle": null,
   "spec_conformance": {
     "status": "passed",
     "failures": []
   },
-  "zero_test": {
-    "rule": "CoachValidator._check_zero_test_anomaly",
-    "rule_fired": false,
-    "rule_severity": null,
-    "rule_error": null,
-    "category": "zero_test_anomaly",
-    "report_tests_written": [],
-    "report_files_created": [],
-    "report_files_modified": [],
-    "recogniser": "CoachValidator._is_test_file_path",
-    "recogniser_available": true,
-    "recogniser_conventions": [
-      "test_*.py",
-      "*_test.py",
-      "*_test.go",
-      "*.test.ts / *.test.js",
-      "*.spec.ts / *.spec.js",
-      "*.cs under a Tests/ directory"
-    ],
-    "names_matching_a_convention": [],
-    "names_examined_by_recogniser": [],
-    "names_not_examined_by_recogniser": [],
-    "disk_lookup_performed": true,
-    "matching_names_found_on_disk": [],
-    "independent_test_run_command": "pytest tests/users/test_count_by_domain.py tests/users/test_crud.py -v --tb=short",
-    "report_quality_gates_all_passed": null,
-    "report_quality_gates_tests_passed": 0,
-    "report_quality_gates_coverage": null,
-    "report_requirements_all_criteria_met": true
-  },
-  "independent_tests": {
-    "tests_passed": true,
-    "test_command": "pytest tests/users/test_count_by_domain.py tests/users/test_crud.py -v --tb=short",
-    "test_output_summary": "Result:\ntests/users/test_count_by_domain.py:736\n/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/users/test_count_by_domain.py:736: PytestUnknownMarkWarning: Unknown pytest.mark.seam - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\ntests/users/test_count_by_domain.py:737\n/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/users/test_count_by_domain.py:737: PytestUnknownMarkWarning: Unknown pytest.mark.integration_contract - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n======================== 50 passed, 4 warnings in 0.33s ========================",
-    "duration_seconds": 0.8289928436279297,
-    "raw_output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/bin/python\ncachedir: .pytest_cache\nrootdir: /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388\nconfigfile: pyproject.toml\nplugins: cov-7.1.0, anyio-4.15.1, asyncio-1.4.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollecting ... collected 50 items\n\ntests/users/test_count_by_domain.py::TestCountByDomainCrud::test_count_by_domain_empty PASSED [  2%]\ntests/users/test_count_by_domain.py::TestCountByDomainCrud::test_count_by_domain_single_domain PASSED [  4%]\ntests/users/test_count_by_domain.py::TestCountByDomainCrud::test_count_by_domain_multiple_domains PASSED [  6%]\ntests/users/test_count_by_domain.py::TestCountByDomainCrud::test_count_by_domain_domain_extraction PASSED [  8%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCount::test_count_by_domain_min_count_filters_low_domains PASSED [ 10%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCount::test_count_by_domain_min_count_exact_match PASSED [ 12%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCount::test_count_by_domain_min_count_no_matches PASSED [ 14%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCount::test_count_by_domain_no_min_count_returns_all PASSED [ 16%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCount::test_count_by_domain_min_count_zero_returns_all PASSED [ 18%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_count_by_domain_with_min_count_filters PASSED [ 20%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_count_by_domain_min_count_zero_returns_all PASSED [ 22%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_count_by_domain_min_count_excludes_all PASSED [ 24%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_count_by_domain_without_min_count_returns_all PASSED [ 26%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_api_count_by_domain_without_min_count PASSED [ 28%]\ntests/users/test_count_by_domain.py::TestCountByDomainMinCountFiltering::test_api_count_by_domain_with_min_count PASSED [ 30%]\ntests/users/test_count_by_domain.py::TestCountByDomainEndpoint::test_count_by_domain_returns_200 PASSED [ 32%]\ntests/users/test_count_by_domain.py::TestCountByDomainEndpoint::test_count_by_domain_empty_response PASSED [ 34%]\ntests/users/test_count_by_domain.py::TestCountByDomainEndpoint::test_count_by_domain_response_format PASSED [ 36%]\ntests/users/test_count_by_domain.py::TestCountByDomainEndpoint::test_count_by_domain_ordering PASSED [ 38%]\ntests/users/test_count_by_domain.py::TestDomainCountSchema::test_schema_domain_and_count PASSED [ 40%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_returns_filtered_domains PASSED [ 42%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_omitted_returns_all_domains PASSED [ 44%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_integer_type PASSED [ 46%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_zero_returns_all PASSED [ 48%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_excludes_all_domains PASSED [ 50%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_non_integer_returns_400 PASSED [ 52%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_negative_returns_400 PASSED [ 54%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_empty_returns_400 PASSED [ 56%]\ntests/users/test_count_by_domain.py::TestMinCountParameter::test_min_count_exceeds_max_returns_400 PASSED [ 58%]\ntests/users/test_count_by_domain.py::TestMinCountCrud::test_crud_min_count_filters_by_integer PASSED [ 60%]\ntests/users/test_count_by_domain.py::TestMinCountCrud::test_crud_min_count_none_returns_all PASSED [ 62%]\ntests/users/test_count_by_domain.py::TestMinCountCrud::test_schema_invalid_count_type PASSED [ 64%]\ntests/users/test_count_by_domain.py::test_domain_count_endpoint_format PASSED [ 66%]\ntests/users/test_crud.py::TestCreateUser::test_create_user_success PASSED [ 68%]\ntests/users/test_crud.py::TestCreateUser::test_create_user_duplicate_email PASSED [ 70%]\ntests/users/test_crud.py::TestCreateUser::test_create_user_minimal PASSED [ 72%]\ntests/users/test_crud.py::TestGetUser::test_get_user_found PASSED        [ 74%]\ntests/users/test_crud.py::TestGetUser::test_get_user_not_found PASSED    [ 76%]\ntests/users/test_crud.py::TestGetUsers::test_get_users_empty PASSED      [ 78%]\ntests/users/test_crud.py::TestGetUsers::test_get_users_with_data PASSED  [ 80%]\ntests/users/test_crud.py::TestGetUsers::test_get_users_pagination PASSED [ 82%]\ntests/users/test_crud.py::TestGetUserByEmail::test_get_user_by_email_found PASSED [ 84%]\ntests/users/test_crud.py::TestGetUserByEmail::test_get_user_by_email_not_found PASSED [ 86%]\ntests/users/test_crud.py::TestUpdateUser::test_update_user_found PASSED  [ 88%]\ntests/users/test_crud.py::TestUpdateUser::test_update_user_partial PASSED [ 90%]\ntests/users/test_crud.py::TestUpdateUser::test_update_user_not_found PASSED [ 92%]\ntests/users/test_crud.py::TestDeleteUser::test_delete_user_found PASSED  [ 94%]\ntests/users/test_crud.py::TestDeleteUser::test_delete_user_not_found PASSED [ 96%]\ntests/users/test_crud.py::TestCountUsers::test_count_users_empty PASSED  [ 98%]\ntests/users/test_crud.py::TestCountUsers::test_count_users_with_data PASSED [100%]\n\n=============================== warnings summary ===============================\n.venv/lib/python3.11/site-packages/fastapi/testclient.py:1\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n.venv/lib/python3.11/site-packages/starlette/testclient.py:53\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.\n    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]\n\ntests/users/test_count_by_domain.py:736\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/users/test_count_by_domain.py:736: PytestUnknownMarkWarning: Unknown pytest.mark.seam - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.seam\n\ntests/users/test_count_by_domain.py:737\n  /tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/users/test_count_by_domain.py:737: PytestUnknownMarkWarning: Unknown pytest.mark.integration_contract - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.integration_contract(\"domain_count_endpoint\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n======================== 50 passed, 4 warnings in 0.33s ========================\n",
-    "signal_absent": false,
-    "tests_skipped": 0,
-    "resolved_interpreter": "/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/.venv/bin/python"
-  },
+  "zero_test": null,
+  "independent_tests": null,
   "independent_test_classification": null,
-  "requirements": {
-    "criteria_total": 4,
-    "criteria_met": 4,
-    "all_criteria_met": true,
-    "missing": [],
-    "criteria_results": [
-      {
-        "criterion_id": "AC-001",
-        "criterion_text": "GET /users/count-by-domain returns domain counts",
-        "result": "verified",
-        "status": "verified",
-        "evidence": "Endpoint at src/users/router.py:231-255 implements GET /users/count-by-domain. It calls crud.count_users_by_domain() which uses SQLAlchemy 2.0 select/execute patterns with GROUP BY on domain expression. Returns list[DomainCountResponse] ordered by count descending. Supports optional min_count filter. All 34 count-by-domain tests pass."
-      },
-      {
-        "criterion_id": "AC-002",
-        "criterion_text": "POST /users creates a new user",
-        "result": "verified",
-        "status": "verified",
-        "evidence": "Endpoint at src/users/router.py:119-136 implements POST /users. It calls crud.create_user() which creates a User ORM object, adds it to the session, flushes, refreshes, and commits. Returns UserPublic. Domain is auto-extracted from email in UserCreate schema. Tests include test_create_user_success, test_create_user_minimal."
-      },
-      {
-        "criterion_id": "AC-003",
-        "criterion_text": "Duplicate email handling returns error",
-        "result": "verified",
-        "status": "verified",
-        "evidence": "crud.create_user() catches SQLAlchemy IntegrityError on unique constraint violation, rolls back the transaction, and raises UserAlreadyExistsError which maps to HTTP 409 Conflict. The router endpoint declares 409 in its responses. Test test_create_user_duplicate_email verifies this behavior."
-      },
-      {
-        "criterion_id": "AC-004",
-        "criterion_text": "All modified files pass project-configured lint/format checks with zero errors",
-        "result": "verified",
-        "status": "verified",
-        "evidence": "Ruff check on src/users/crud.py and src/users/router.py passes with zero errors. The project uses ruff with select=[E,F,I,UP]. Source files are clean. Pre-existing test file lint errors (in test_models.py, test_schemas.py, test_validators.py, test_router.py) are outside the scope of this task as they were not modified by this session."
-      }
-    ]
-  },
+  "requirements": null,
   "runtime_parity": null,
   "evidence_repo_tests": [],
   "severity_recommendations": [],
@@ -184,56 +73,28 @@
     {
       "severity": "warning",
       "category": "agent_invocations_advisory",
-      "description": "Advisory (non-blocking): task-work produced a report with 2 of 3 expected agent invocations. Missing phases: 3 (Implementation). Consider invoking these agents via the Task tool to strengthen stack-specific quality:\n- Phase 3: `the stack-specific Phase-3 specialist` (Implementation)",
+      "description": "Advisory (non-blocking): task-work produced a report with 0 of 2 expected agent invocations. Missing phases: 4 (Testing), 5 (Code Review). Consider invoking these agents via the Task tool to strengthen stack-specific quality:\n- Phase 4: `test-orchestrator` (Testing)\n- Phase 5: `code-reviewer` (Code Review)",
       "details": {
         "missing_phases": [
-          "3"
+          "4",
+          "5"
         ],
-        "expected_phases": 3,
-        "actual_invocations": 2
+        "expected_phases": 2,
+        "actual_invocations": 0
       }
     },
     {
       "severity": "should_fix",
-      "category": "claim_audit",
-      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file src/users/crud.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
+      "category": "specialist_substrate",
+      "description": "Orchestrator-invoked specialist 'test-orchestrator' (Phase 4) did not produce evidence: absent test signal (deterministic Phase 4): Error detail:\nImportError while loading conftest '/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/conftest.py'. This is a substrate failure attributed to the orchestrator, not a Player honesty issue \u2014 the phase's evidence is ABSENT, not failed.",
       "details": {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/crud.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
-      }
-    },
-    {
-      "severity": "should_fix",
-      "category": "claim_audit",
-      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file src/users/exceptions.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-      "details": {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/exceptions.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
-      }
-    },
-    {
-      "severity": "should_fix",
-      "category": "claim_audit",
-      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file src/users/router.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-      "details": {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/router.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
-      }
-    },
-    {
-      "severity": "should_fix",
-      "category": "claim_audit",
-      "description": "Player-claimed file is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player likely swept an orchestrator-managed path into files_modified. Player claimed file src/users/schemas.py. Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication.",
-      "details": {
-        "claim_type": "claim_audit_unmodified",
-        "player_claim": "Player claimed file src/users/schemas.py",
-        "actual_value": "Path is tracked in git but 'git status --porcelain' shows no change for it \u2014 the Player claimed work on a file it did not actually modify this turn. Most likely cause: the report writer swept an orchestrator-managed path (e.g. a file under .guardkit/autobuild/ or tasks/<state>/) into files_modified. Defence-in-depth for the agent_invoker-side filter; this is a warning, not a turn-rejecting fabrication."
+        "phase": "4",
+        "agent": "test-orchestrator",
+        "status": "failed",
+        "error": "absent test signal (deterministic Phase 4): Error detail:\nImportError while loading conftest '/tmp/forge-autobuild-worktrees/build-FEAT-8388-20260906180545/.guardkit/worktrees/FEAT-8388/tests/conftest.py'"
       }
     }
   ],
-  "task_type": "feature",
-  "profile_name": "feature"
+  "task_type": "declarative",
+  "profile_name": "declarative"
 }
