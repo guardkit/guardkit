@@ -2663,6 +2663,30 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
+            # 2026-09-06: a model change without a migration. Deterministic,
+            # modelled on _apply_spec_gap_absent_guard. On a repository with
+            # an Alembic tree, when this turn adds a column or table line to
+            # a Python file outside tests/ and the migrations tree, and adds
+            # or changes nothing under the migrations' versions/ directory,
+            # override approve->feedback. build-FEAT-8388 got through the
+            # coach and the July-image oracle this way (the model change came
+            # in on TASK-8388-001 turn 1, a turn sent back for another reason
+            # and then committed by that turn's checkpoint; every later
+            # verdict approved a clean tree) and was refused at the Docker
+            # Sandbox deploy (users table had no "domain" column on a fresh
+            # database). Reads the worktree's difference from HEAD, not the
+            # bundle, so it sees this turn's uncommitted changes only — the
+            # known limit is in the method's docstring; no-ops, logging why,
+            # when git cannot run. Only approve is ever flipped; runs after
+            # the oracle guard and before narrative reconciliation like the rest.
+            self._apply_schema_change_without_migration_guard(
+                decision=decision,
+                evidence_bundle=evidence_bundle,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+
             # FEAT-SCG (SCG-002): mechanical spec-conformance hard-gate.
             # Deterministic backstop modelled on _apply_behavioural_oracle_guard.
             # When the spec_conformance leg reports a failed declarative rule
@@ -7520,6 +7544,334 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-QAWE-004"
         )
+
+    # 2026-09-06: the lines that mean "a column or a table changed" in a
+    # SQLAlchemy model file. Matched against ADDED lines only.
+    _SCHEMA_CHANGE_LINE_RE = re.compile(r"mapped_column\(|Column\(|__tablename__")
+
+    def _apply_schema_change_without_migration_guard(
+        self,
+        *,
+        decision: Dict[str, Any],
+        evidence_bundle: Optional["CoachEvidenceBundle"],
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """Fail closed when the turn changes a database model but adds no migration.
+
+        Why (2026-09-06). Build ``build-FEAT-8388`` on api_test. On
+        ``TASK-8388-001`` turn 1 the Player added a ``domain`` column to
+        ``src/users/models.py`` (with ``src/users/schemas.py`` and a new
+        ``tests/users/test_user_domain.py``) and no Alembic migration. The
+        coach sent that turn back for an unrelated reason (the independent
+        test run could not collect any tests), the turn was checkpointed
+        anyway (``fcb67c59``), and every verdict after it — ``TASK-8388-001``
+        turn 2 and ``TASK-8388-002`` turn 1, both with no changes in the tree
+        — approved. The unit tests passed, because they build the schema from
+        the model; the behavioural oracle passed, because it was testing a
+        Docker image from July. The deploy into the Docker Sandbox — which
+        builds the schema by running the migrations on a fresh database — then
+        found the users table had no ``domain`` column: 44 checks passed, 6
+        failed, the candidate was refused. Nothing between the Player and the
+        deploy had read the model change against the migrations tree. This
+        guard does, deterministically, on repositories that use Alembic.
+        (``TASK-8388-002``'s turn-1 records, a real approval from that build,
+        are kept under ``tests/fixtures/schema-change-2026-09-06/`` with their
+        provenance.)
+
+        Fires only when ALL of these hold, else no-op:
+
+        * the worktree has an Alembic tree — ``alembic.ini`` at the root, or
+          ``alembic/env.py``, or ``migrations/env.py``
+          (:meth:`_alembic_migrations_dir`);
+        * this turn's changes add a line matching ``mapped_column(``,
+          ``Column(`` or ``__tablename__`` in a Python file outside the
+          migrations tree and outside ``tests/``;
+        * no file under the migrations tree's ``versions/`` directory is
+          added or changed this turn.
+
+        "This turn's changes" are the worktree's difference from ``HEAD``:
+        the coach judges a turn before that turn's checkpoint commit, so the
+        turn's own edits are in ``git diff HEAD`` and a new migration file is
+        still untracked (``git status --porcelain``). If git cannot run in
+        the worktree the guard no-ops and logs why — an absent signal is
+        never read as a defect (the estate's absence-of-failure rule).
+
+        Known limit (2026-09-06). ``autobuild.py`` (``_loop_phase``)
+        checkpoints EVERY completed turn — an approve at the first
+        ``create_checkpoint``, every other verdict at the second — so a model
+        change made on an earlier turn is already in ``HEAD`` by the next
+        turn and this guard does not see it. On build-FEAT-8388's actual
+        path it would have seen the three uncommitted files on
+        ``TASK-8388-001`` turn 1, a verdict that was already feedback (this
+        guard only overrides an approve), and nothing on the two approved
+        turns that followed, whose trees were clean. Reading further back
+        than ``HEAD`` (the task's starting commit, or carrying the finding
+        across checkpoints) is a design decision for the lane's spec author;
+        it is named here, not taken.
+
+        Narrow and identity-bounded, like :meth:`_apply_spec_gap_absent_guard`:
+        only an ``approve`` is overridden; a ``feedback`` verdict is left
+        untouched. On override, one ``must_fix`` issue (category
+        ``schema_change_without_migration``) is prepended, the verdict is
+        re-persisted, and a WARNING is logged. The issue's plain sentence
+        names the first matching file; ``details`` carries every matching
+        file, the matching lines, and the migrations directory looked in.
+        ``evidence_bundle`` is not read — the signal is the worktree itself.
+
+        Args:
+            decision: The loaded, schema-validated Coach verdict dict.
+            evidence_bundle: Unused; accepted so the guard has the same shape
+                as its siblings in the override chain.
+            task_id: Task identifier (for the WARNING log).
+            turn: Current turn number (for the WARNING log).
+            coach_output_path: Path to ``coach_turn_N.json`` to re-persist on
+                override.
+        """
+        if decision.get("decision") != "approve":
+            return
+        worktree = getattr(self, "worktree_path", None)
+        if worktree is None:
+            return
+        worktree = Path(worktree)
+
+        migrations_dir = self._alembic_migrations_dir(worktree)
+        if migrations_dir is None:
+            return
+
+        changes = self._turn_changes_for_schema_guard(worktree)
+        if changes is None:
+            return  # git could not run; the reason is already logged
+        changed_paths, added_lines_by_file = changes
+
+        versions_prefix = f"{migrations_dir}/versions/"
+        if any(path.startswith(versions_prefix) for path in changed_paths):
+            return
+
+        matches: Dict[str, List[str]] = {}
+        for path in sorted(added_lines_by_file):
+            if not self._is_schema_source_file(path, migrations_dir):
+                continue
+            hits = [
+                line
+                for line in added_lines_by_file[path]
+                if self._SCHEMA_CHANGE_LINE_RE.search(line)
+            ]
+            if hits:
+                matches[path] = hits
+        if not matches:
+            return
+
+        original_decision = decision["decision"]
+        named_file = next(iter(matches))
+        # Rule 12 of the 2026-09-06 spec, verbatim, with the real file and
+        # the real migrations directory.
+        description = (
+            f"`{named_file}` adds or changes a database column, but no Alembic "
+            f"migration was added under `{versions_prefix}`. A freshly created "
+            "database would not have this column, so the deployed app would "
+            "fail on it. Add the migration in this task."
+        )
+
+        decision["decision"] = "feedback"
+        decision["rationale"] = description
+        override_issue = {
+            "severity": "must_fix",
+            "category": "schema_change_without_migration",
+            "description": description,
+            "details": {
+                "file": named_file,
+                "files": list(matches),
+                "matching_lines": matches,
+                "migrations_dir": migrations_dir,
+                "versions_dir": versions_prefix.rstrip("/"),
+                "overridden_decision": original_decision,
+            },
+        }
+        decision["issues"] = [override_issue, *decision.get("issues", [])]
+
+        logger.warning(
+            "schema change without migration: overriding Coach verdict "
+            "%r->'feedback' for %s turn %s — %s adds or changes a column or "
+            "table and nothing was added under %s (matching files: %s)",
+            original_decision,
+            task_id,
+            turn,
+            named_file,
+            versions_prefix,
+            ", ".join(matches),
+        )
+
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="schema-change-without-migration"
+        )
+
+    @staticmethod
+    def _alembic_migrations_dir(worktree: Path) -> Optional[str]:
+        """The Alembic migrations directory, relative to the worktree, or
+        ``None`` when the worktree has no Alembic tree.
+
+        ``alembic/env.py`` names ``alembic``; ``migrations/env.py`` names
+        ``migrations``; otherwise an ``alembic.ini`` at the root names it by
+        its ``script_location`` (Alembic's own default, ``alembic``, when the
+        value is absent, unreadable, absolute, or a package reference). An
+        ``alembic.ini`` that cannot be parsed is still an Alembic tree.
+        """
+        if (worktree / "alembic" / "env.py").is_file():
+            return "alembic"
+        if (worktree / "migrations" / "env.py").is_file():
+            return "migrations"
+        ini = worktree / "alembic.ini"
+        if not ini.is_file():
+            return None
+        location = "alembic"
+        try:
+            import configparser
+
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read(ini, encoding="utf-8")
+            value = parser.get("alembic", "script_location", fallback="")
+            value = value.replace("%(here)s", "").strip().strip("/")
+            if value and not value.startswith("/") and ":" not in value:
+                location = value
+        except Exception:  # noqa: BLE001 — an unreadable ini still means Alembic
+            pass
+        return location.rstrip("/") or "alembic"
+
+    @staticmethod
+    def _is_schema_source_file(path: str, migrations_dir: str) -> bool:
+        """True for a Python file outside ``tests/`` (at any depth) and
+        outside the migrations tree — the files whose added column or table
+        lines this guard reads."""
+        if not path.endswith(".py"):
+            return False
+        parts = path.split("/")
+        if "tests" in parts[:-1]:
+            return False
+        if path == migrations_dir or path.startswith(migrations_dir + "/"):
+            return False
+        return True
+
+    @staticmethod
+    def _added_lines_from_unified_diff(text: str) -> Dict[str, List[str]]:
+        """The added lines of a ``git diff`` (unified, ``-U0`` or not), keyed
+        by the post-image path. A deleted file (``+++ /dev/null``) contributes
+        nothing. A ``+++`` line is a file header only when it follows a
+        ``---`` header, so an added content line beginning ``++`` is not
+        mistaken for one."""
+        added: Dict[str, List[str]] = {}
+        current: Optional[str] = None
+        previous_was_minus_header = False
+        for line in text.splitlines():
+            if line.startswith("+++ ") and previous_was_minus_header:
+                target = line[4:].strip()
+                if target == "/dev/null":
+                    current = None
+                else:
+                    if target.startswith('"') and target.endswith('"'):
+                        target = target[1:-1]
+                    if target.startswith("b/"):
+                        target = target[2:]
+                    current = target
+                    added.setdefault(current, [])
+                previous_was_minus_header = False
+                continue
+            previous_was_minus_header = line.startswith("--- ")
+            if line.startswith("diff --git") or line.startswith("@@"):
+                continue
+            if current is not None and line.startswith("+"):
+                added[current].append(line[1:])
+        return added
+
+    def _turn_changes_for_schema_guard(
+        self, worktree: Path
+    ) -> Optional[Tuple[List[str], Dict[str, List[str]]]]:
+        """This turn's changes as git sees them, or ``None`` when git could
+        not run in the worktree (the reason is logged at WARNING).
+
+        Returns ``(paths, added_lines_by_file)``: every changed or untracked
+        path, and the added lines per file — from ``git diff HEAD -U0`` for
+        tracked files, and the whole file for an untracked Python file. Runs
+        ``git diff HEAD --name-only``, ``git diff HEAD -U0`` and
+        ``git status --porcelain --untracked-files=all`` under the class git
+        lock, like :meth:`_detect_git_changes`. ``--untracked-files=all`` so a
+        new file inside a new directory — the first migration in an empty
+        ``versions/`` — is named rather than folded into its directory.
+        """
+        import subprocess
+
+        def run(args: List[str]) -> "subprocess.CompletedProcess[str]":
+            return subprocess.run(
+                ["git", *args],
+                cwd=str(worktree),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        with self._git_lock:
+            try:
+                name_only = run(["diff", "HEAD", "--name-only"])
+                diff = run(["diff", "HEAD", "-U0", "--no-color", "--no-ext-diff"])
+                status = run(["status", "--porcelain", "--untracked-files=all"])
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "schema change without migration: git timed out in %s; "
+                    "the turn is judged without this guard",
+                    worktree,
+                )
+                return None
+            except Exception as exc:  # noqa: BLE001 — no git is not a defect
+                logger.warning(
+                    "schema change without migration: git could not run in "
+                    "%s (%s: %s); the turn is judged without this guard",
+                    worktree,
+                    exc.__class__.__name__,
+                    exc,
+                )
+                return None
+
+        for label, proc in (
+            ("diff HEAD --name-only", name_only),
+            ("diff HEAD -U0", diff),
+            ("status --porcelain", status),
+        ):
+            if proc.returncode != 0:
+                logger.warning(
+                    "schema change without migration: `git %s` failed in %s "
+                    "(exit %s: %s); the turn is judged without this guard",
+                    label,
+                    worktree,
+                    proc.returncode,
+                    (proc.stderr or "").strip()[:300],
+                )
+                return None
+
+        paths = [line.strip() for line in name_only.stdout.splitlines() if line.strip()]
+        added = self._added_lines_from_unified_diff(diff.stdout)
+
+        untracked: List[str] = []
+        for line in status.stdout.splitlines():
+            if not line.startswith("?? "):
+                continue
+            path = line[3:].strip()
+            if path.startswith('"') and path.endswith('"'):
+                path = path[1:-1]
+            untracked.append(path)
+        paths.extend(untracked)
+
+        for path in untracked:
+            if not path.endswith(".py"):
+                continue
+            try:
+                added[path] = (worktree / path).read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+            except OSError:
+                continue
+
+        return paths, added
 
     def _record_zero_test_observation(
         self,
