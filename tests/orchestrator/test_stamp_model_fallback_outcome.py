@@ -127,6 +127,14 @@ def _lines(caplog) -> List[str]:
     return [r.getMessage() for r in caplog.records if r.name == LOGGER]
 
 
+class Broken(Exception):
+    """An exception that cannot even be turned into words: describing it must
+    not be a second failure (the 2026-09-06 repair)."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("str broke")
+
+
 STEPS = (
     "Given the service is running\n"
     "    When several clients act at the same moment\n"
@@ -391,11 +399,40 @@ def test_decide_refused_titles_keeps_its_old_contract():
 
 
 def test_the_pair_never_raises_whatever_the_call_does():
-    for boom in (TimeoutError("t"), RuntimeError("r"), KeyError("k"), _http_error(500, "boom")):
+    for boom in (
+        TimeoutError("t"),
+        RuntimeError("r"),
+        KeyError("k"),
+        _http_error(500, "boom"),
+        Broken(),
+    ):
         decided, outcome = decide_refused_titles_with_outcome(["a title"], ask_model=FakeAsker(raises=boom))
         assert decided == {}
         assert outcome.status == OUTCOME_ASKED_AND_FAILED
         assert outcome.detail.startswith(type(boom).__name__)
+        assert decide_refused_titles(["a title"], ask_model=FakeAsker(raises=boom)) == {}
+
+
+def test_an_exception_that_cannot_be_described_still_gives_the_refusal_and_one_line(caplog):
+    """``str(exc)`` raising must not escape: the outcome is asked_and_failed
+    with the type alone as its detail, ``{}`` comes back, and exactly one line
+    is logged — no traceback, no logging error."""
+    asker = FakeAsker(raises=Broken(), endpoint="localhost:4000", model="workhorse")
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        decided, outcome = decide_refused_titles_with_outcome(TITLES, ask_model=asker, feature_id="FEAT-X")
+    assert decided == {}
+    assert outcome.status == OUTCOME_ASKED_AND_FAILED
+    assert outcome.detail == "Broken"
+    assert outcome.endpoint == "localhost:4000"
+    assert outcome.model == "workhorse"
+    assert _lines(caplog) == [
+        "STAMP NORMALIZER: feature FEAT-X — the model fallback was asked about "
+        "2 title(s) and could not answer: Broken. The titles stay refused and "
+        "nothing was stamped."
+    ]
+    assert "str broke" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert decide_refused_titles(TITLES, ask_model=asker) == {}
 
 
 # ---------------------------------------------------------------------------

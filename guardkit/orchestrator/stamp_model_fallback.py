@@ -713,9 +713,14 @@ def decide_refused_titles_with_outcome(
         prompt = build_prompt(wanted)
         raw = asker(prompt)
     except Exception as exc:  # noqa: BLE001 — every failure is the old behaviour
-        outcome = ModelOutcome(
-            OUTCOME_ASKED_AND_FAILED, failure_detail(exc, endpoint), endpoint, model
-        )
+        # Describing the failure must never itself fail (2026-09-06: an
+        # exception whose ``__str__`` raises would otherwise escape here and
+        # turn a refusal-with-a-reason into a traceback); the type alone then.
+        try:
+            detail = failure_detail(exc, endpoint)
+        except Exception:  # noqa: BLE001 — the detail is best effort, the {} is not
+            detail = type(exc).__name__
+        outcome = ModelOutcome(OUTCOME_ASKED_AND_FAILED, detail, endpoint, model)
         logger.warning("%s", outcome_line(outcome, len(wanted), feature_id))
         return {}, outcome
 
