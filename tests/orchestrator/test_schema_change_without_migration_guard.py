@@ -4,8 +4,8 @@ The case, in plain words. On 6 September 2026 the build ``build-FEAT-8388``
 ran on api_test, a repository whose database schema lives in Alembic
 migrations. On ``TASK-8388-001`` turn 1 the Player added a ``domain`` column
 to ``src/users/models.py`` and no migration. The coach sent that turn back
-for an unrelated reason (the independent test run could not collect any
-tests), the turn was checkpointed anyway, and every verdict after it
+for an unrelated reason (the verification run could not collect any tests),
+the turn was checkpointed anyway (``fcb67c59``), and every verdict after it
 approved a tree with no changes in it — ``TASK-8388-001`` turn 2 and
 ``TASK-8388-002`` turn 1. The unit tests passed (they build the schema from
 the model), and the behavioural oracle passed (it was testing a Docker image
@@ -14,29 +14,36 @@ running the migrations on a fresh database, found the users table had no
 ``domain`` column — 44 checks passed, 6 failed, the candidate was refused.
 
 ``AgentInvoker._apply_schema_change_without_migration_guard`` now catches
-this at the coach, on the turn that makes the change. It reads the
-worktree's difference from ``HEAD`` (a changed model is a diff; a new
-migration is an untracked file) and flips an ``approve`` to ``feedback``
-when a Python file outside ``tests/`` and outside the migrations tree gains
-a column or table line and nothing was added or changed under the
-migrations' ``versions/``. Because the build checkpoints every completed
-turn, a change committed by an earlier turn's checkpoint is not in that
-difference; the guard's docstring records this as a known limit awaiting
-the spec author's decision.
+this at the coach. It reads the worktree's difference from the FEATURE'S
+BASE COMMIT — the commit the feature's worktree was created from, resolved
+the way guardkit's seam checks resolve it (``seam_checks.resolve_feature_base``:
+the recorded ``.guardkit/autobuild/<feature>/feature_base.json``, else
+``git merge-base HEAD main``) — and flips an ``approve`` to ``feedback`` when
+a Python file outside ``tests/`` and outside the migrations tree has gained
+a column or table line since that base and nothing has been added or
+changed under the migrations' ``versions/`` since that base. Not ``HEAD``:
+the build checkpoints every completed turn, so on the real path the model
+change was already committed by the time either approval was given, and a
+diff against ``HEAD`` would have been silent on the very build the guard
+exists for. Against the base, a checkpointed model change is still seen,
+and so is a migration added by an earlier turn or task of the same feature.
 
-The two files in ``tests/fixtures/schema-change-2026-09-06/`` are
-byte-for-byte copies of ``TASK-8388-002``'s real turn-1 records (see the
-PROVENANCE.txt beside them): a real approval from the build that got
-through, and its evidence bundle. The worktree shape — an uncommitted model
-change, no migration — is built by the tests, because on the real build the
-change was already committed by the time that approval was given.
+The four files in ``tests/fixtures/schema-change-2026-09-06/`` are
+byte-for-byte copies of ``TASK-8388-001``'s real records for both turns
+(see the PROVENANCE.txt beside them): turn 1's feedback verdict and its
+evidence (the turn that added the column), and turn 2's approval and its
+evidence (the turn that changed nothing and let it through). The worktree
+shape is built by the tests in a temporary git repository — as an
+uncommitted change, and as a committed "checkpoint" behind a recorded
+feature base, which is the build's real sequence.
 
 Every test builds a real temporary git repository with an Alembic tree and a
-model file, so the guard's three git commands run for real. The real
-``invoke_coach`` synthesis path is driven once each way (a mocked harness
-emits the verdict; the parser, loader, validator and every deterministic
-guard run for real), matching ``test_coach_contradicted_absent_test_claim_guard.py``.
-Async tests use ``asyncio.run`` to stay free of a pytest-asyncio dependency.
+model file, so the base resolver and the guard's git commands run for real.
+The real ``invoke_coach`` synthesis path is driven once each way (a mocked
+harness emits the verdict; the parser, loader, validator and every
+deterministic guard run for real), matching
+``test_coach_contradicted_absent_test_claim_guard.py``. Async tests use
+``asyncio.run`` to stay free of a pytest-asyncio dependency.
 """
 
 from __future__ import annotations
@@ -63,6 +70,11 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
 from guardkit.orchestrator.quality_gates.coach_validator import (
     IndependentTestResult,
 )
+from guardkit.orchestrator.seam_checks import (
+    feature_base_path,
+    record_feature_base,
+    resolve_feature_base,
+)
 
 
 FIXTURE_DIR = (
@@ -72,6 +84,8 @@ FIXTURE_DIR = (
 )
 
 CATEGORY = "schema_change_without_migration"
+
+FEATURE_ID = "FEAT-T"
 
 # Rule 12 of the 2026-09-06 spec, verbatim, for the fixture's file and tree.
 RULE_12_SENTENCE = (
@@ -83,7 +97,7 @@ RULE_12_SENTENCE = (
 
 
 # ---------------------------------------------------------------------------
-# fixture loading — the real build-FEAT-8388 / TASK-8388-002 turn-1 records
+# fixture loading — the real build-FEAT-8388 / TASK-8388-001 records
 # ---------------------------------------------------------------------------
 
 
@@ -91,27 +105,41 @@ def _load_receipt(name: str) -> Dict[str, Any]:
     return json.loads((FIXTURE_DIR / name).read_text())
 
 
-def _real_evidence() -> Dict[str, Any]:
-    return _load_receipt("coach_evidence_turn_1.json")
+def _real_evidence(turn: int) -> Dict[str, Any]:
+    return _load_receipt(f"coach_evidence_turn_{turn}.json")
 
 
-def _real_verdict() -> Dict[str, Any]:
-    return _load_receipt("coach_turn_1.json")
+def _real_verdict(turn: int) -> Dict[str, Any]:
+    return _load_receipt(f"coach_turn_{turn}.json")
 
 
-def _bundle_from_receipt() -> CoachEvidenceBundle:
-    """Rebuild the evidence bundle from the saved record.
+def _bundle_from_receipt(turn: int = 2) -> CoachEvidenceBundle:
+    """Rebuild the evidence bundle from the saved record of the given turn.
 
     Only the legs the override chain reads are rehydrated
-    (``independent_tests`` as the real dataclass, ``behavioural_oracle`` /
-    ``tests`` / ``task_type`` / ``profile_name`` as saved). ``honesty`` is
-    rebuilt from the saved values: not verified, four should_fix notes about
-    files the Player listed but had not touched — not a rejection trigger on
-    its own, and the real build approved over it.
+    (``independent_tests`` as the real dataclass when the record has one,
+    ``behavioural_oracle`` / ``tests`` / ``task_type`` / ``profile_name`` as
+    saved). ``honesty`` is rebuilt from the saved values. Turn 2 (the
+    approval): not verified, three should_fix notes about files the Player
+    listed but had not touched — not a rejection trigger on its own, and the
+    real build approved over it. Turn 1 (the feedback): gathering aborted,
+    no independent-test result at all.
     """
-    evidence = _real_evidence()
+    evidence = _real_evidence(turn)
     ind = evidence["independent_tests"]
     honesty = evidence["honesty"]
+    independent_tests = None
+    if ind is not None:
+        independent_tests = IndependentTestResult(
+            tests_passed=ind["tests_passed"],
+            test_command=ind["test_command"],
+            test_output_summary=ind["test_output_summary"],
+            duration_seconds=ind["duration_seconds"],
+            raw_output=ind["raw_output"],
+            signal_absent=ind["signal_absent"],
+            tests_skipped=ind["tests_skipped"],
+            resolved_interpreter=ind["resolved_interpreter"],
+        )
     return CoachEvidenceBundle(
         honesty=HonestyVerification(
             verified=honesty["verified"],
@@ -123,16 +151,7 @@ def _bundle_from_receipt() -> CoachEvidenceBundle:
         gathering_status=evidence["gathering_status"],
         tests=evidence["tests"],
         behavioural_oracle=evidence["behavioural_oracle"],
-        independent_tests=IndependentTestResult(
-            tests_passed=ind["tests_passed"],
-            test_command=ind["test_command"],
-            test_output_summary=ind["test_output_summary"],
-            duration_seconds=ind["duration_seconds"],
-            raw_output=ind["raw_output"],
-            signal_absent=ind["signal_absent"],
-            tests_skipped=ind["tests_skipped"],
-            resolved_interpreter=ind["resolved_interpreter"],
-        ),
+        independent_tests=independent_tests,
         task_type=evidence["task_type"],
         profile_name=evidence["profile_name"],
     )
@@ -179,6 +198,11 @@ def downgrade() -> None:
     op.drop_column("users", "domain")
 '''
 
+# A migration whose name has characters outside ASCII. Without
+# ``-c core.quotePath=false`` git prints it as
+# ``"alembic/versions/0002_a\\303\\261adir_dominio.py"``.
+ACCENTED_MIGRATION = "alembic/versions/0002_añadir_dominio.py"
+
 
 def _git(repo: Path, *args: str) -> str:
     proc = subprocess.run(
@@ -191,7 +215,7 @@ def _git(repo: Path, *args: str) -> str:
         ],
         cwd=str(repo),
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         check=True,
     )
     return proc.stdout
@@ -200,7 +224,7 @@ def _git(repo: Path, *args: str) -> str:
 def _write(repo: Path, rel: str, text: str) -> Path:
     path = repo / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -209,13 +233,20 @@ def _make_repo(
     *,
     alembic_tree: str = "alembic/env.py",
     with_first_migration: bool = True,
+    extra_files: Optional[Dict[str, str]] = None,
+    base_branch: str = "main",
+    feature_branch: Optional[str] = "feature/FEAT-T",
 ) -> Path:
-    """A committed repository: a SQLAlchemy model, a test file, and an
-    Alembic tree of the requested shape (``alembic/env.py``,
-    ``migrations/env.py``, ``alembic.ini`` alone, or ``""`` for none)."""
+    """A committed repository shaped like a feature worktree: a SQLAlchemy
+    model, a test file and an Alembic tree of the requested shape
+    (``alembic/env.py``, ``migrations/env.py``, ``alembic.ini`` alone, or
+    ``""`` for none), committed on ``base_branch`` (``main`` unless told
+    otherwise), with ``feature_branch`` checked out from it — the way a
+    feature's worktree is branched from main. ``git merge-base HEAD main``,
+    the base resolver's fallback, therefore names the initial commit."""
     repo = tmp_path / "worktree"
     repo.mkdir()
-    _git(repo, "init", "-q")
+    _git(repo, "init", "-q", "-b", base_branch)
     _write(repo, MODEL_FILE, MODEL_SOURCE)
     _write(repo, "src/db.py", "from sqlalchemy.orm import DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n")
     _write(repo, "tests/users/test_models.py", "def test_nothing():\n    assert True\n")
@@ -237,14 +268,50 @@ def _make_repo(
             _write(repo, f"{plain}/versions/0001_initial.py", '"""initial"""\nrevision = "0001"\n')
     elif alembic_tree:
         raise ValueError(alembic_tree)
+    for rel, text in (extra_files or {}).items():
+        _write(repo, rel, text)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "initial")
+    if feature_branch:
+        _git(repo, "checkout", "-q", "-b", feature_branch)
     return repo
+
+
+def _head(repo: Path) -> str:
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def _record_base(repo: Path, feature_id: str = FEATURE_ID) -> str:
+    """Record the feature base the way the orchestrator does at worktree
+    creation — the real ``record_feature_base``, which writes
+    ``.guardkit/autobuild/<feature>/feature_base.json`` with
+    ``feature_base_commit`` = the current HEAD."""
+    sha = record_feature_base(state_root=repo, feature_id=feature_id, worktree_path=repo)
+    assert sha == _head(repo)
+    recorded = json.loads(feature_base_path(repo, feature_id).read_text())
+    assert recorded["feature_base_commit"] == sha
+    return sha
+
+
+def _checkpoint(repo: Path, message: str) -> str:
+    """Commit everything in the tree, the way the build's checkpoint does
+    after every completed turn (feedback turns included)."""
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", message)
+    return _head(repo)
 
 
 def _add_domain_column(repo: Path, rel: str = MODEL_FILE) -> None:
     path = repo / rel
-    path.write_text(path.read_text() + DOMAIN_COLUMN_LINE)
+    path.write_text(path.read_text(encoding="utf-8") + DOMAIN_COLUMN_LINE, encoding="utf-8")
+
+
+def _assert_clean(repo: Path) -> None:
+    """The tree carries nothing but the orchestrator's own ``.guardkit/``
+    files — the shape of an approved turn that changed no files."""
+    status = _git(repo, "status", "--porcelain", "--untracked-files=all")
+    stray = [line for line in status.splitlines() if not line[3:].startswith(".guardkit/")]
+    assert stray == [], stray
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +376,14 @@ def _run_guard(
     return output_path
 
 
+def _changes(repo: Path) -> Any:
+    """The guard's own reading of the feature's changes: ``(paths,
+    added_lines_by_file)`` against the resolved base."""
+    base = resolve_feature_base(repo)
+    assert base
+    return _make_invoker(repo)._feature_changes_for_schema_guard(repo, base)
+
+
 def _v4_approve_events() -> list:
     """Harness events carrying the Coach v4 wire shape the real build used
     for its approval: ``{"verdict": "approve", "findings": []}``."""
@@ -322,7 +397,8 @@ def _v4_approve_events() -> list:
 def _run_real_coach_path(invoker: AgentInvoker, *, task_id: str, turn: int):
     """Invoke the Coach with ``_invoke_with_role`` mocked to return an
     approval. Everything else — the parser, the loader, the validator and the
-    whole deterministic override chain — runs for real."""
+    whole deterministic override chain — runs for real, with turn 2's real
+    evidence bundle."""
     iwr = AsyncMock(return_value=(None, _v4_approve_events()))
     with patch.object(invoker, "_invoke_with_role", iwr):
         return asyncio.run(
@@ -331,7 +407,7 @@ def _run_real_coach_path(invoker: AgentInvoker, *, task_id: str, turn: int):
                 turn=turn,
                 requirements="Add a domain column to the users model.",
                 player_report={"files_modified": [MODEL_FILE], "tests_passed": True},
-                evidence_bundle=_bundle_from_receipt(),
+                evidence_bundle=_bundle_from_receipt(2),
             )
         )
 
@@ -346,7 +422,8 @@ def _coach_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (a) fires on the fixture shape: Alembic tree, model line added, no versions file
+# (a) fires on the fixture shape: Alembic tree, model line added since the
+#     feature base, no versions file since the base
 # ---------------------------------------------------------------------------
 
 
@@ -367,10 +444,11 @@ class TestFiresOnTheFixtureShape:
         assert issue["description"] == RULE_12_SENTENCE
         assert decision["rationale"] == RULE_12_SENTENCE
 
-    def test_details_carry_the_file_the_lines_and_the_directory_looked_in(
+    def test_details_carry_the_file_the_lines_the_directory_and_the_base(
         self, tmp_path: Path
     ) -> None:
         repo = _make_repo(tmp_path)
+        base = _git(repo, "rev-parse", "main").strip()
         _add_domain_column(repo)
         decision = _approve()
 
@@ -382,6 +460,7 @@ class TestFiresOnTheFixtureShape:
         assert details["matching_lines"][MODEL_FILE] == [DOMAIN_COLUMN_LINE.rstrip("\n")]
         assert details["migrations_dir"] == "alembic"
         assert details["versions_dir"] == "alembic/versions"
+        assert details["feature_base"] == base
         assert details["overridden_decision"] == "approve"
 
     def test_override_rewrites_coach_turn_file_on_disk(self, tmp_path: Path) -> None:
@@ -433,10 +512,10 @@ class TestFiresOnTheFixtureShape:
         assert issue["details"]["matching_lines"]["src/orders/models.py"] == ['    __tablename__ = "orders"']
 
     def test_the_issue_text_names_the_real_file(self, tmp_path: Path) -> None:
-        repo = _make_repo(tmp_path)
-        _write(repo, "src/billing/tables.py", MODEL_SOURCE.replace('"users"', '"invoices"'))
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "invoices")
+        repo = _make_repo(
+            tmp_path,
+            extra_files={"src/billing/tables.py": MODEL_SOURCE.replace('"users"', '"invoices"')},
+        )
         _add_domain_column(repo, "src/billing/tables.py")
         decision = _approve()
 
@@ -464,22 +543,22 @@ class TestFiresOnTheFixtureShape:
     def test_fixture_approval_is_flipped_with_the_rule_12_sentence(
         self, tmp_path: Path
     ) -> None:
-        """The real turn-1 verdict from build-FEAT-8388 / TASK-8388-002 (an
-        approval carrying four should_fix honesty notes), over a worktree
-        shaped like the defect that build shipped: ``src/users/models.py``
-        gained ``domain``, uncommitted, nothing under ``alembic/versions/``.
-        (On the real build that change had been committed by an earlier
-        turn's checkpoint; see the fixture's PROVENANCE.txt.) The guard
+        """The real turn-2 verdict from build-FEAT-8388 / TASK-8388-001 — the
+        approval that let the unmigrated model through, carrying three
+        should_fix honesty notes — over a worktree whose difference from the
+        feature base is the defect that build shipped: ``src/users/models.py``
+        gained ``domain``, nothing under ``alembic/versions/``. The guard
         flips it to feedback with the spec's sentence in front, and the
         coach's own notes survive behind it."""
         repo = _make_repo(tmp_path)
         _add_domain_column(repo)
-        decision = _real_verdict()
+        decision = _real_verdict(2)
         assert decision["decision"] == "approve"
         original_issues = list(decision["issues"])
-        assert len(original_issues) == 4
+        assert len(original_issues) == 3
+        assert all(i["category"] == "honesty" for i in original_issues)
 
-        _run_guard(repo, decision, task_id="TASK-8388-002", bundle=_bundle_from_receipt())
+        _run_guard(repo, decision, task_id="TASK-8388-001", turn=2, bundle=_bundle_from_receipt(2))
 
         assert decision["decision"] == "feedback"
         assert decision["issues"][0]["severity"] == "must_fix"
@@ -488,7 +567,7 @@ class TestFiresOnTheFixtureShape:
         assert decision["issues"][1:] == original_issues
 
     def test_the_real_coach_path_flips_the_approval(self, tmp_path: Path) -> None:
-        """Through ``invoke_coach`` itself with the fixture's evidence bundle:
+        """Through ``invoke_coach`` itself with turn 2's real evidence bundle:
         the harness emits the approval the real seat gave, and the override
         chain ends in feedback. Pins that the guard is wired into the chain,
         not just defined."""
@@ -496,19 +575,20 @@ class TestFiresOnTheFixtureShape:
         _add_domain_column(repo)
         invoker = _make_invoker(repo)
 
-        result = _run_real_coach_path(invoker, task_id="TASK-8388-002", turn=1)
+        result = _run_real_coach_path(invoker, task_id="TASK-8388-001", turn=2)
 
         assert result.success is True
         assert result.report["decision"] == "feedback"
         assert result.report["issues"][0]["category"] == CATEGORY
         assert result.report["issues"][0]["description"] == RULE_12_SENTENCE
         on_disk = json.loads(
-            invoker._get_report_path("TASK-8388-002", 1, "coach").read_text()
+            invoker._get_report_path("TASK-8388-001", 2, "coach").read_text()
         )
         assert on_disk["decision"] == "feedback"
 
     def test_a_warning_is_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         repo = _make_repo(tmp_path)
+        base = _git(repo, "rev-parse", "main").strip()
         _add_domain_column(repo)
         with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker"):
             _run_guard(repo, _approve(), task_id="TASK-TEST-009", turn=3)
@@ -517,12 +597,143 @@ class TestFiresOnTheFixtureShape:
             "schema change without migration" in m
             and "TASK-TEST-009 turn 3" in m
             and MODEL_FILE in m
+            and base[:8] in m
             for m in messages
         )
 
 
 # ---------------------------------------------------------------------------
-# (b) no-ops: a migration was added or changed
+# (a2) fires on build-FEAT-8388's real sequence: the model change committed
+#      by a checkpoint, then an approved turn that changed nothing
+# ---------------------------------------------------------------------------
+
+
+class TestFiresOnTheFeat8388Sequence:
+    def test_recorded_base_then_checkpointed_model_change_then_empty_turn_fires(
+        self, tmp_path: Path
+    ) -> None:
+        """The real path. The feature base is recorded at worktree creation
+        (the real ``record_feature_base``); turn 1 adds the column and is
+        checkpointed (the build commits feedback turns too); turn 2 changes
+        nothing and the tree is clean. Against ``HEAD`` there is nothing to
+        see; against the base there is the column and no migration, so the
+        real turn-2 approval is flipped."""
+        repo = _make_repo(tmp_path)
+        base = _record_base(repo)
+        _add_domain_column(repo)
+        checkpoint = _checkpoint(repo, "checkpoint: TASK-T-001 turn 1 (feedback)")
+        assert checkpoint != base
+        _assert_clean(repo)
+        assert _git(repo, "diff", "HEAD", "--name-only").strip() == ""
+        decision = _real_verdict(2)
+
+        _run_guard(repo, decision, task_id="TASK-8388-001", turn=2, bundle=_bundle_from_receipt(2))
+
+        assert decision["decision"] == "feedback"
+        issue = decision["issues"][0]
+        assert issue["category"] == CATEGORY
+        assert issue["description"] == RULE_12_SENTENCE
+        assert issue["details"]["feature_base"] == base
+        assert issue["details"]["matching_lines"][MODEL_FILE] == [DOMAIN_COLUMN_LINE.rstrip("\n")]
+
+    def test_the_mirror_a_later_checkpoint_adds_the_migration_and_the_guard_is_quiet(
+        self, tmp_path: Path
+    ) -> None:
+        """Same sequence, then a later turn adds ``alembic/versions/0002_x.py``
+        and is checkpointed. The tree is clean again; against the base the
+        feature has both the column and the migration, so the approval
+        stands."""
+        repo = _make_repo(tmp_path)
+        _record_base(repo)
+        _add_domain_column(repo)
+        _checkpoint(repo, "checkpoint: turn 1")
+        _write(repo, "alembic/versions/0002_x.py", MIGRATION_SOURCE)
+        _checkpoint(repo, "checkpoint: turn 2")
+        _assert_clean(repo)
+        decision = _real_verdict(2)
+        original_issues = list(decision["issues"])
+
+        _run_guard(repo, decision, task_id="TASK-8388-001", turn=3, bundle=_bundle_from_receipt(2))
+
+        assert decision["decision"] == "approve"
+        assert decision["issues"] == original_issues
+
+    def test_a_migration_added_by_an_earlier_task_of_the_feature_is_seen(
+        self, tmp_path: Path
+    ) -> None:
+        """Task 1 of the feature adds the migration (checkpointed); task 2
+        then adds a second column with no migration of its own. The migration
+        is in the feature's changes since the base, so the guard stays quiet
+        — it reads the feature as a whole, not the turn."""
+        repo = _make_repo(tmp_path)
+        _record_base(repo)
+        _write(repo, "alembic/versions/0002_x.py", MIGRATION_SOURCE)
+        _checkpoint(repo, "checkpoint: TASK-T-001 turn 1")
+        _add_domain_column(repo)
+        decision = _approve()
+
+        _run_guard(repo, decision, task_id="TASK-T-002")
+
+        assert decision["decision"] == "approve"
+
+    def test_without_a_record_the_merge_base_with_main_is_the_baseline(
+        self, tmp_path: Path
+    ) -> None:
+        """An older worktree with no ``feature_base.json``: the resolver
+        falls back to ``git merge-base HEAD main``, the commit the feature
+        branch left main at. A checkpointed model change on the feature
+        branch is still seen."""
+        repo = _make_repo(tmp_path)
+        assert not (repo / ".guardkit").exists()
+        base = _git(repo, "rev-parse", "main").strip()
+        _add_domain_column(repo)
+        _checkpoint(repo, "checkpoint: turn 1")
+        _assert_clean(repo)
+        decision = _approve()
+
+        _run_guard(repo, decision)
+
+        assert decision["decision"] == "feedback"
+        assert decision["issues"][0]["details"]["feature_base"] == base
+
+    def test_the_recorded_base_wins_over_the_merge_base(self, tmp_path: Path) -> None:
+        """The record is the authority. When the recorded base is a commit
+        that already contains the model change (the feature was created
+        from it), the change is not the feature's and the guard is quiet —
+        even though a merge-base with main would show it."""
+        repo = _make_repo(tmp_path)
+        _add_domain_column(repo)
+        _checkpoint(repo, "a commit that is part of the base")
+        _record_base(repo)  # HEAD, which already carries the column
+        _assert_clean(repo)
+        decision = _approve()
+
+        _run_guard(repo, decision)
+
+        assert decision["decision"] == "approve"
+
+    def test_the_real_coach_path_on_the_sequence_flips_the_approval(
+        self, tmp_path: Path
+    ) -> None:
+        """Through ``invoke_coach`` on the checkpointed shape: an empty turn
+        over a feature that committed a model change and no migration ends
+        in feedback."""
+        repo = _make_repo(tmp_path)
+        _record_base(repo)
+        _add_domain_column(repo)
+        _checkpoint(repo, "checkpoint: turn 1")
+        _assert_clean(repo)
+        invoker = _make_invoker(repo)
+
+        result = _run_real_coach_path(invoker, task_id="TASK-8388-001", turn=2)
+
+        assert result.success is True
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"][0]["category"] == CATEGORY
+
+
+# ---------------------------------------------------------------------------
+# (b) no-ops: a migration was added or changed since the base
 # ---------------------------------------------------------------------------
 
 
@@ -551,12 +762,51 @@ class TestMigrationPresentIsANoOp:
 
         assert decision["decision"] == "approve"
 
+    def test_a_changed_tracked_migration_with_a_non_ascii_name_satisfies_the_guard(
+        self, tmp_path: Path
+    ) -> None:
+        """A tracked migration whose filename has an accented character is
+        changed alongside the model. The guard runs git with
+        ``-c core.quotePath=false``, so the name is read as it is — not as
+        ``"alembic/versions/0002_a\\303\\261adir_dominio.py"`` — and the
+        approval stands."""
+        repo = _make_repo(tmp_path, extra_files={ACCENTED_MIGRATION: '"""añadir dominio"""\nrevision = "0002"\n'})
+        _add_domain_column(repo)
+        path = repo / ACCENTED_MIGRATION
+        path.write_text(path.read_text(encoding="utf-8") + "\n# add the column\n", encoding="utf-8")
+        decision = _approve()
+
+        _run_guard(repo, decision)
+
+        assert decision["decision"] == "approve"
+        paths, _added = _changes(repo)
+        assert ACCENTED_MIGRATION in paths
+        assert not any("\\303" in p or p.startswith('"') for p in paths)
+
+    def test_an_untracked_migration_with_a_non_ascii_name_satisfies_the_guard(
+        self, tmp_path: Path
+    ) -> None:
+        """The same for a new, untracked migration: ``git status --porcelain``
+        prints the accented name as it is under ``core.quotePath=false``."""
+        repo = _make_repo(tmp_path)
+        _add_domain_column(repo)
+        untracked = "alembic/versions/0002_colonne_dédiée.py"
+        _write(repo, untracked, MIGRATION_SOURCE)
+        decision = _approve()
+
+        _run_guard(repo, decision)
+
+        assert decision["decision"] == "approve"
+        paths, _added = _changes(repo)
+        assert untracked in paths
+        assert not any("\\303" in p or p.startswith('"') for p in paths)
+
     def test_a_first_migration_in_a_brand_new_versions_directory_counts(
         self, tmp_path: Path
     ) -> None:
-        """``versions/`` did not exist at HEAD. Plain ``git status --porcelain``
-        would fold the new file into ``?? alembic/versions/``; the guard asks
-        for every untracked file so the migration is seen."""
+        """``versions/`` did not exist at the base. Plain ``git status
+        --porcelain`` would fold the new file into ``?? alembic/versions/``;
+        the guard asks for every untracked file so the migration is seen."""
         repo = _make_repo(tmp_path, with_first_migration=False)
         assert not (repo / "alembic/versions").exists()
         _add_domain_column(repo)
@@ -578,7 +828,7 @@ class TestMigrationPresentIsANoOp:
         _write(repo, "alembic/versions/0002_add_domain.py", MIGRATION_SOURCE)
         invoker = _make_invoker(repo)
 
-        result = _run_real_coach_path(invoker, task_id="TASK-8388-002", turn=1)
+        result = _run_real_coach_path(invoker, task_id="TASK-8388-001", turn=2)
 
         assert result.success is True
         assert result.report["decision"] == "approve"
@@ -670,7 +920,7 @@ class TestOutOfScopeIsANoOp:
 
         assert decision["decision"] == "approve"
 
-    def test_a_clean_worktree_is_a_no_op(self, tmp_path: Path) -> None:
+    def test_a_worktree_with_no_changes_since_the_base_is_a_no_op(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path)
         decision = _approve()
 
@@ -680,16 +930,39 @@ class TestOutOfScopeIsANoOp:
 
 
 # ---------------------------------------------------------------------------
-# (d) git cannot run: no-op, and the reason is logged
+# (d) the base cannot be resolved, or git cannot run: no-op, reason logged
 # ---------------------------------------------------------------------------
 
 
-class TestGitCannotRunIsANoOp:
+class TestBaseUnresolvableOrGitCannotRunIsANoOp:
+    def test_no_recorded_base_and_no_main_branch(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """No ``feature_base.json`` and no ``main`` to take a merge-base
+        against: the base cannot be resolved, the guard stays out of the
+        verdict and says why."""
+        repo = _make_repo(tmp_path, base_branch="trunk", feature_branch=None)
+        assert resolve_feature_base(repo) is None
+        _add_domain_column(repo)
+        decision = _approve()
+
+        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker"):
+            _run_guard(repo, decision)
+
+        assert decision["decision"] == "approve"
+        assert decision["issues"] == []
+        assert any(
+            "schema change without migration" in r.getMessage()
+            and "base commit could not be resolved" in r.getMessage()
+            and "judged without this guard" in r.getMessage()
+            for r in caplog.records
+        )
+
     def test_worktree_that_is_not_a_git_repository(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """An Alembic tree and a model change, but no ``.git``: ``git diff
-        HEAD`` fails, the guard stays out of the verdict and says why."""
+        """An Alembic tree and a model change, but no ``.git``: there is no
+        base to resolve, the guard stays out of the verdict and says why."""
         repo = tmp_path / "plain"
         _write(repo, "alembic/env.py", "# env\n")
         _write(repo, MODEL_FILE, MODEL_SOURCE + DOMAIN_COLUMN_LINE)
@@ -701,7 +974,32 @@ class TestGitCannotRunIsANoOp:
         assert decision["decision"] == "approve"
         assert decision["issues"] == []
         assert any(
-            "schema change without migration" in r.getMessage()
+            "base commit could not be resolved" in r.getMessage()
+            and "judged without this guard" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_a_recorded_base_git_cannot_diff_against(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The record names a commit the repository does not have (a
+        rewritten history, a record copied from elsewhere): ``git diff``
+        fails, the guard no-ops and logs the failing command."""
+        repo = _make_repo(tmp_path)
+        bogus = "0123456789abcdef0123456789abcdef01234567"
+        path = feature_base_path(repo, FEATURE_ID)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"feature_id": FEATURE_ID, "feature_base_commit": bogus, "base_branch": "main"}))
+        assert resolve_feature_base(repo) == bogus
+        _add_domain_column(repo)
+        decision = _approve()
+
+        with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker"):
+            _run_guard(repo, decision)
+
+        assert decision["decision"] == "approve"
+        assert any(
+            f"`git diff {bogus[:8]} --name-only` failed" in r.getMessage()
             and "judged without this guard" in r.getMessage()
             for r in caplog.records
         )
@@ -709,7 +1007,10 @@ class TestGitCannotRunIsANoOp:
     def test_git_binary_missing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """The base is recorded (so resolving it needs no git); reading the
+        changes does, and git is not there."""
         repo = _make_repo(tmp_path)
+        _record_base(repo)
         _add_domain_column(repo)
         decision = _approve()
 
@@ -727,6 +1028,7 @@ class TestGitCannotRunIsANoOp:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         repo = _make_repo(tmp_path)
+        _record_base(repo)
         _add_domain_column(repo)
         decision = _approve()
 
@@ -756,6 +1058,24 @@ class TestFeedbackIsNeverTouched:
         before = json.loads(json.dumps(decision))
 
         output_path = _run_guard(repo, decision)
+
+        assert decision == before
+        assert json.loads(output_path.read_text()) == before
+
+    def test_the_real_turn_1_feedback_that_added_the_column_is_left_alone(
+        self, tmp_path: Path
+    ) -> None:
+        """The real turn-1 verdict from TASK-8388-001 — the feedback on the
+        turn that added the column, with its evidence recording an aborted
+        gathering and no independent-test result. The guard only overrides
+        an approval; this record is not touched, byte for byte."""
+        repo = _make_repo(tmp_path)
+        _add_domain_column(repo)
+        decision = _real_verdict(1)
+        assert decision["decision"] == "feedback"
+        before = json.loads(json.dumps(decision))
+
+        output_path = _run_guard(repo, decision, task_id="TASK-8388-001", turn=1, bundle=_bundle_from_receipt(1))
 
         assert decision == before
         assert json.loads(output_path.read_text()) == before
@@ -839,7 +1159,8 @@ class TestAlembicTreeDetection:
 
 
 # ---------------------------------------------------------------------------
-# (g) the helpers: what counts as a source file, and reading the diff
+# (g) the helpers: what counts as a source file, reading the diff, and
+#     reading the feature's changes
 # ---------------------------------------------------------------------------
 
 
@@ -900,6 +1221,28 @@ class TestHelpers:
                 "y = 1",
             ],
         }
+
+    def test_feature_changes_name_committed_uncommitted_and_untracked_files(
+        self, tmp_path: Path
+    ) -> None:
+        """The reading is against the base: a file changed by a checkpoint,
+        a file changed in the working tree, and an untracked file all appear,
+        and the added lines of each are read."""
+        repo = _make_repo(tmp_path)
+        _record_base(repo)
+        _add_domain_column(repo)
+        _checkpoint(repo, "checkpoint: turn 1")
+        _write(repo, "src/db.py", "from sqlalchemy.orm import DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n\nNAMING = {}\n")
+        _write(repo, "src/orders/models.py", 'class Order:\n    __tablename__ = "orders"\n')
+
+        paths, added = _changes(repo)
+
+        assert MODEL_FILE in paths
+        assert "src/db.py" in paths
+        assert "src/orders/models.py" in paths
+        assert added[MODEL_FILE] == [DOMAIN_COLUMN_LINE.rstrip("\n")]
+        assert added["src/db.py"] == ["", "NAMING = {}"]  # the blank line is added too
+        assert added["src/orders/models.py"] == ["class Order:", '    __tablename__ = "orders"']
 
     def test_a_second_call_changes_nothing(self, tmp_path: Path) -> None:
         """Idempotent: re-running the guard over an already-flipped decision

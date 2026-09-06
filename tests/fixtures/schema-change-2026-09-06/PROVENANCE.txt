@@ -1,87 +1,101 @@
 PROVENANCE — real coach records from a real build; DO NOT hand-edit.
 
-What these two files are
-  A copy, byte for byte, of two records the coach wrote during a real build on
-  6 September 2026. The build is build-FEAT-8388 and the task is
-  TASK-8388-002, a feature task on the api_test repository, which keeps its
-  database schema in Alembic migrations (alembic/env.py, alembic/versions/).
+What these four files are
+  Byte-for-byte copies of the four records the coach wrote on TASK-8388-001,
+  a feature task of build-FEAT-8388 on the api_test repository, on
+  6 September 2026. api_test keeps its database schema in Alembic migrations
+  (alembic/env.py, alembic/versions/). TASK-8388-001 is the task that added
+  the "domain" column to the users model. These are the records of its two
+  turns: the turn that added the column and was sent back, and the turn that
+  changed nothing and was approved.
 
 Where they came from (read-only copy, taken 2026-09-06)
   /home/richardwoollcott/forge-state/receipts/build-FEAT-8388-20260906180545/
-    .guardkit/autobuild-private/TASK-8388-002/coach_evidence_turn_1.json
-    .guardkit/autobuild-private/TASK-8388-002/coach_turn_1.json
+    .guardkit/autobuild-private/TASK-8388-001/coach_turn_1.json
+    .guardkit/autobuild-private/TASK-8388-001/coach_evidence_turn_1.json
+    .guardkit/autobuild-private/TASK-8388-001/coach_turn_2.json
+    .guardkit/autobuild-private/TASK-8388-001/coach_evidence_turn_2.json
 
 Checksums of the copies (sha256), identical to the source files
-  15ae16fb64e12723e40745eb0e758c0f8601d8cec268f3597e302714ad13e1e7  coach_evidence_turn_1.json
-  8d1d57c6a4695671e4fadcde8dc6a942de4ef7ef20f7c0f1975ac72de6055558  coach_turn_1.json
+  79b6d9a6ceb302b7c3955c415b50daf5450a9b6dee38acf5001c3c48de4979a0  coach_turn_1.json
+  06921bf9353705014415e43f17c1eff7913ba9bcc3f7cf397976288baf1ef2e7  coach_evidence_turn_1.json
+  e74c640bc5208d6bd39db2f2e6af5a22f8885bb4da7160ad771446a30313352a  coach_turn_2.json
+  05448cdfebc97150ed80802b171b0bcfb8d529769cff723213527ed56a0922f7  coach_evidence_turn_2.json
 
-Why they are kept here
-  coach_turn_1.json is what the coach said on this task's only turn: an
-  approval. Its only findings are four should_fix honesty notes about files
-  the Player listed but had not touched. Nothing in it mentions the database.
+What happened on the build
+  (From autobuild-stdout.log in the receipts directory above; the line
+  numbers are that file's.)
 
-  coach_evidence_turn_1.json is the record of what was checked for that
-  verdict. The independent test run passed (50 tests), and the behavioural
-  oracle says it ran and passed — but that oracle was testing a Docker image
-  built on 25 July, not this build's code.
+  Turn 1. The Player changed three files (line 210: "turn 1 changed 3
+  file(s) in the worktree (git-measured)"): src/users/models.py (the
+  "domain" column), src/users/schemas.py, and a new
+  tests/users/test_user_domain.py. No Alembic migration. The coach sent the
+  turn back (line 250: "Coach provided feedback on turn 1") for a reason
+  that had nothing to do with the database: the verification run could not
+  collect or run any tests, which the coach reads as absent evidence, not a
+  pass. That is what coach_turn_1.json says (a major finding that the
+  evidence gathering aborted, and a should_fix note that the missing test
+  signal is not a signal about the code), and coach_evidence_turn_1.json
+  records the gathering as "partial_gate_abort" with no independent-test
+  result at all. The build checkpoints every completed turn, feedback turns
+  included, so the three files were committed anyway, as fcb67c59 (line
+  249: "Checkpoint created: fcb67c59 for turn 1"). From then on the
+  unmigrated model change was in HEAD.
 
-What the build had actually done (from the build's own log,
-autobuild-stdout.log in the receipts directory above, and the Player reports
-under its worktrees/FEAT-8388/.guardkit/autobuild/ copy)
-  The "domain" column was not added on this task. TASK-8388-002's one turn
-  changed nothing: its Player report lists no files, and the log says
-  "turn 1 changed 0 file(s) in the worktree (git-measured)" (line 713). The
-  four honesty notes are about that.
+  Turn 2. The Player changed nothing (line 342: "turn 2 changed 0 file(s)
+  in the worktree (git-measured)"). The independent test run now collected
+  and passed 15 tests, and the behavioural oracle ran and passed — but the
+  oracle was testing a Docker image built on 25 July, not this build's code
+  (coach_evidence_turn_2.json records both results). The coach approved
+  (line 510: "Coach approved on turn 2") with three should_fix honesty
+  notes, one for each file the Player listed but had not touched on this
+  turn — those files were already in the turn-1 checkpoint. The turn was
+  checkpointed as 197d3a5b (line 513).
 
-  The column came in two tasks earlier, on TASK-8388-001 turn 1. The Player
-  changed src/users/models.py (the "domain" column) and src/users/schemas.py
-  and created tests/users/test_user_domain.py — three files (log line 210) —
-  with no Alembic migration. The coach sent that turn back for an unrelated
-  reason: the independent test run could not collect any tests (the
-  worktree's conftest failed to import), which the coach reads as absent
-  evidence, not a pass. The build checkpoints every completed turn, so that
-  feedback turn was committed anyway, as fcb67c59 (log lines 247-249), and
-  from then on the unmigrated model change was in HEAD. On TASK-8388-001
-  turn 2 the Player changed nothing (log line 342) and the coach approved,
-  with three advisory notes that the files the Player listed showed no
-  change — they had been committed by the turn-1 checkpoint. TASK-8388-002
-  then approved as described above, and the build went through.
-
+  TASK-8388-002 then ran one turn that also changed nothing (line 713:
+  "turn 1 changed 0 file(s)") and was approved, and the build went through.
   The unit tests could not see the gap at any point: they build the schema
   from the model.
 
   The deploy into the Docker Sandbox then found it: on a freshly created
-  database, built by running the migrations, the users table had no "domain"
-  column. 44 checks passed and 6 failed, and the candidate was refused.
+  database, built by running the migrations, the users table had no
+  "domain" column. 44 checks passed and 6 failed, and the candidate was
+  refused.
 
-  A note on the choice of records. The lane's spec (ai-transition,
-  docs/rewrite-on-refusal-spec-2026-09-06.md, the provenance-fixture rule)
-  names this task's two records and says of them that the model file gained
-  "domain". The receipts say the column was added and committed under
-  TASK-8388-001. The records kept here are the ones the spec names; this
-  note records the difference rather than swapping in other records without
-  the spec author's word. TASK-8388-001's turn-1 feedback and turn-2 approval
-  are the records that actually carried the unmigrated model through.
+Why the guard reads the feature's base commit, not HEAD
+  On this path a check that reads the worktree's difference from HEAD sees
+  the three files on turn 1 (a verdict already sent back; the guard only
+  overrides an approval) and nothing on turn 2, whose tree was clean. So
+  AgentInvoker._apply_schema_change_without_migration_guard reads the
+  worktree's difference from the feature's base commit — the commit the
+  feature's worktree was created from — resolved the way guardkit's own
+  seam checks resolve it (seam_checks.resolve_feature_base: the recorded
+  .guardkit/autobuild/<feature>/feature_base.json, else git merge-base
+  HEAD main). Against that base, the column committed by the turn-1
+  checkpoint is still an added line on turn 2, and a migration added by an
+  earlier turn or an earlier task of the same feature is still seen.
 
 How the tests use them
-  coach_turn_1.json is a real approval from the build that got through: the
-  verdict shape the deterministic check
-  AgentInvoker._apply_schema_change_without_migration_guard flips.
-  coach_evidence_turn_1.json is the real evidence bundle threaded through the
-  real invoke_coach path. The worktree shape the guard reads — an uncommitted
-  change to src/users/models.py adding a column, nothing added under
-  alembic/versions/ — is built by the tests themselves, because on the real
-  build the change was already in a committed checkpoint by the time either
-  approval was given.
+  coach_turn_2.json is the real approval that let the unmigrated model
+  through: the verdict the guard flips to feedback, with the coach's three
+  notes kept behind the guard's one must_fix issue.
 
-  The guard reads the worktree's difference from HEAD, which is how the
-  lane's spec defines "this turn's changes". Because every completed turn is
-  checkpointed, on this build's actual path the guard would have seen the
-  three uncommitted files on TASK-8388-001 turn 1 (a verdict already sent
-  back, which the guard leaves alone: it only overrides an approval) and
-  nothing on the two approved turns, whose trees were clean. Whether it
-  should read further back than HEAD is a decision for the spec's author; it
-  is recorded in the guard's docstring, not taken here.
+  coach_evidence_turn_2.json is that turn's real evidence bundle, threaded
+  through the real invoke_coach path so the whole override chain runs.
 
-No secrets: both files were scanned for API keys and message-broker URLs
-before they were copied (zero matches).
+  coach_turn_1.json is the real feedback verdict from the turn that added
+  the column. The guard never touches a feedback verdict; the test says so
+  with this record.
+
+  coach_evidence_turn_1.json is that turn's evidence — gathering aborted,
+  no independent-test result — the shape of absent evidence, which is
+  never read as a defect.
+
+  The worktree shape the guard reads — the model line added since the
+  feature's base commit and nothing added under alembic/versions/ — is
+  built by the tests in a temporary git repository, both as an uncommitted
+  change and as a committed "checkpoint" behind a recorded feature base,
+  which is this build's real sequence.
+
+No secrets: all four files were scanned for API keys, passwords, tokens and
+message-broker URLs before they were copied (zero matches).
