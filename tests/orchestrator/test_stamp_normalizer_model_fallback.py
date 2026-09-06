@@ -329,7 +329,7 @@ def test_a_bogus_answer_leaves_every_title_refused(tmp_path: Path, caplog, answe
     assert result.refused == REFUSED_THIS_WEEK, why
     assert result.stamped == {} and result.model_stamped == []
     assert result.written is False
-    assert "the model's answer was rejected" in caplog.text
+    assert "the model fallback was asked about 4 title(s) and its answer was rejected:" in caplog.text
     assert "UNDECIDABLE" in caplog.text  # the law's own loud refusal, unchanged
     assert "scenarios" not in (yaml.safe_load(_yaml_path(repo).read_text()) or {})
 
@@ -389,7 +389,11 @@ def test_a_model_that_cannot_answer_leaves_the_refusal_exactly_as_it_was(
     assert result.refused == REFUSED_THIS_WEEK
     assert result.stamped == {} and result.model_stamped == []
     assert result.written is False
-    assert "the model could not be asked" in caplog.text
+    # Since 2026-09-06 the line says WHICH failure it was (see
+    # test_stamp_model_fallback_outcome.py for each shape), not the one
+    # sentence "the model could not be asked" that every failure used to get.
+    assert "the model fallback was asked about 4 title(s) and could not answer:" in caplog.text
+    assert "the model could not be asked" not in caplog.text
     assert "nothing was stamped" in caplog.text
     for title in REFUSED_THIS_WEEK:
         assert title in caplog.text  # the law still names every refused title
