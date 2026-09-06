@@ -29,22 +29,58 @@ THE PROPERTY THAT MATTERS MOST — failure is the old behaviour, never a guess.
 No model configured, an endpoint that cannot be reached, a timeout, an HTTP
 error, a malformed reply, an answer with the wrong number of lines, a word
 outside the closed list: every one of these leaves the titles refused and
-writes one plain line saying the model could not be asked (or that its answer
-was rejected). A stamp is never invented. A silent default would let unproved
-scenarios through the routing law, which is the exact thing the law exists to
-prevent.
+writes one plain line saying exactly what happened (the next section). A stamp
+is never invented. A silent default would let unproved scenarios through the
+routing law, which is the exact thing the law exists to prevent.
+
+What the fallback reports (added 2026-09-06)
+--------------------------------------------
+Until 2026-09-06 every failure was logged with the same words, "the model
+could not be asked", and the plan-stop card Rich reads said nothing about the
+model at all — so a router answering 500 and a box with no endpoint set read
+the same, and two of his weekend sentences stopped without anyone knowing which
+it was. Now every call ends in ONE outcome, :class:`ModelOutcome`, whose
+``status`` is one of exactly four words:
+
+``not_configured``    no endpoint is set; the model was never asked.
+``asked_and_failed``  the call was made and raised. The detail is one clause
+                      with the exception type and message, the HTTP status
+                      when there is one, and the endpoint's host and port —
+                      never the key, never a URL that could carry one.
+``answer_rejected``   the model answered and the parser refused the answer;
+                      the detail is the parser's reason.
+``decided``           the model answered one allowed word per title; the
+                      detail carries the count and the words.
+
+:func:`decide_refused_titles_with_outcome` returns ``(decided, outcome)``;
+:func:`decide_refused_titles` keeps its old contract (the dict alone) for
+callers that do not need the outcome. Each call also logs exactly ONE line,
+built by :func:`outcome_line`, that begins ``STAMP NORMALIZER:`` and says the
+same thing in plain words. The normalizer records the outcome under
+``NormalizeResult.model_outcome`` (the CLI's JSON carries it as
+``"model_outcome"``) and the line reaches the CLI's stderr, so forge's
+plan-stop card can read it either way. The line shapes are pinned in
+``outcome_line``'s docstring and its tests.
 
 Configuration (environment variables)
 -------------------------------------
 ``GUARDKIT_STAMP_MODEL_URL`` — the OpenAI-compatible endpoint, the ``/v1``
-root. When it is not set, ``OPENAI_BASE_URL`` is used instead; on this estate
-that is llama-swap at ``http://localhost:9000/v1``. There is deliberately NO
+root. When it is not set, ``OPENAI_BASE_URL`` is used instead. On this estate
+the factory's model calls go through the LiteLLM router at
+``http://localhost:4000/v1``, and since 2026-09-06 that is where this fallback
+is pointed too, so its calls are counted with everyone else's (before that the
+example here was llama-swap itself on port 9000). There is deliberately NO
 built-in default: with neither set (or either set to an empty value) the model
 is NOT configured, it is never called, and the behaviour is exactly today's —
 refuse loud.
 
-``GUARDKIT_STAMP_MODEL`` — the model name to ask. Default
-``qwen36-workhorse`` (the estate's general workhorse seat).
+``GUARDKIT_STAMP_MODEL`` — the model name to ask. Through the router the name
+is an alias, ``workhorse``, which LiteLLM maps to the coder. The built-in
+default stays ``qwen36-workhorse`` (llama-swap's own name for that seat) so a
+box with nothing set behaves as it always did; the live value is set by the
+environment — forge-prod sets ``GUARDKIT_STAMP_MODEL=workhorse`` at the
+go-live of the 2026-09-06 lane, through its settings of record, never a
+plaintext file.
 
 ``GUARDKIT_STAMP_MODEL_TIMEOUT_S`` — seconds to wait for the answer. Default
 15, clamped to 1–60 so a hung endpoint can never stall a planning run. An
@@ -53,7 +89,9 @@ unreadable value falls back to the default with a warning.
 ``OPENAI_API_KEY`` — the key sent with the call. When it is set and not blank
 that value is sent; otherwise the placeholder ``not-needed`` the estate's
 llama-swap has always ignored, so a box without the variable behaves exactly as
-before. The key is never logged or printed. Address and key are both resolved
+before; the router checks the key, so through LiteLLM the variable must be set.
+The key is never logged or printed, and no outcome, detail or error message may
+carry it or a URL with it in. Address and key are both resolved
 by the one shared rule in ``guardkit/lib/client_env.py``, whose precedence for
 this client is: ``GUARDKIT_STAMP_MODEL_URL``, then ``OPENAI_BASE_URL``, then
 nothing (not configured — the model is never asked).
@@ -69,11 +107,13 @@ import json
 import logging
 import os
 import re
+import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from guardkit.lib.client_env import resolve_api_key, resolve_base_url
+from guardkit.lib.client_env import PLACEHOLDER_API_KEY, resolve_api_key, resolve_base_url
 from guardkit.orchestrator.verifier_stamp import VERIFIER_HOMES
 
 logger = logging.getLogger(__name__)
@@ -86,15 +126,21 @@ logger = logging.getLogger(__name__)
 #: The endpoint, preferred name (the ``/v1`` root of an OpenAI-compatible API).
 MODEL_URL_ENV = "GUARDKIT_STAMP_MODEL_URL"
 
-#: The endpoint, fallback name — the estate's usual one (llama-swap).
+#: The endpoint, fallback name — the shared one every OpenAI-compatible client
+#: here reads after its own (``guardkit/lib/client_env.py``).
 MODEL_URL_FALLBACK_ENV = "OPENAI_BASE_URL"
 
-#: What the estate serves on, quoted in the "not configured" line so the
-#: reader knows what to set. NOT a default: nothing is assumed.
-EXAMPLE_ENDPOINT = "http://localhost:9000/v1"
+#: Quoted in the "not configured" line so the reader knows what to set: the
+#: LiteLLM router, which counts the call (moved from llama-swap's port 9000 on
+#: 2026-09-06). NOT a default: nothing is assumed.
+EXAMPLE_ENDPOINT = "http://localhost:4000/v1"
 
 #: The model name to ask.
 MODEL_NAME_ENV = "GUARDKIT_STAMP_MODEL"
+#: The built-in default is llama-swap's own name for the workhorse seat, kept so
+#: a box with nothing set behaves as it always did. The live value is set by the
+#: environment: forge-prod sets GUARDKIT_STAMP_MODEL=workhorse (the router's
+#: alias for the coder) at the go-live of the 2026-09-06 lane.
 DEFAULT_MODEL_NAME = "qwen36-workhorse"
 
 #: How long to wait for the answer (seconds).
@@ -141,6 +187,189 @@ class ModelAnswerRejected(ValueError):
     """The model answered, but the answer is not usable — the wrong number of
     lines, an empty line, or a word outside the closed list. The titles stay
     refused; nothing is stamped."""
+
+
+# ---------------------------------------------------------------------------
+# The outcome — what one call ended in, said once and said plainly (2026-09-06)
+# ---------------------------------------------------------------------------
+
+#: The four things a call can end in — the ``status`` of a :class:`ModelOutcome`.
+#: Exactly these words: forge's card and its parser match on them.
+OUTCOME_NOT_CONFIGURED = "not_configured"
+OUTCOME_ASKED_AND_FAILED = "asked_and_failed"
+OUTCOME_ANSWER_REJECTED = "answer_rejected"
+OUTCOME_DECIDED = "decided"
+OUTCOME_STATUSES = (
+    OUTCOME_NOT_CONFIGURED,
+    OUTCOME_ASKED_AND_FAILED,
+    OUTCOME_ANSWER_REJECTED,
+    OUTCOME_DECIDED,
+)
+
+#: The tail every failure line ends with — the old behaviour, said out loud.
+OUTCOME_REFUSED_TAIL = "The titles stay refused and nothing was stamped."
+
+#: A detail has to fit on one line and go on a card; an upstream's error body
+#: can be a page. Cut past this many characters.
+MAX_DETAIL_CHARS = 400
+
+
+@dataclass(frozen=True)
+class ModelOutcome:
+    """What one call to the model fallback ended in: one of the four statuses
+    above, one plain clause of detail, and the address and model that were (or
+    would have been) asked.
+
+    ``endpoint`` is host and port only (``localhost:4000``) — never the path,
+    never the user-info part a URL can carry a key in. Both it and ``model``
+    are empty when nothing is configured, or when an injected asker does not
+    say (a test's fake, say)."""
+
+    status: str
+    detail: str
+    endpoint: str = ""
+    model: str = ""
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "status": self.status,
+            "detail": self.detail,
+            "endpoint": self.endpoint,
+            "model": self.model,
+        }
+
+
+def endpoint_label(url: str) -> str:
+    """``http://localhost:4000/v1`` -> ``localhost:4000``: how an outcome names
+    an address. Host and port only — never the path, never the user-info part a
+    URL can carry a key in. An address with no explicit port takes the scheme's
+    usual one; an address that cannot be read gives ``""``."""
+    try:
+        parts = urllib.parse.urlsplit((url or "").strip())
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        return ""
+    if not host:
+        return ""
+    if port is None:
+        port = {"http": 80, "https": 443}.get(parts.scheme)
+    return f"{host}:{port}" if port else host
+
+
+_URL_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]+@")
+
+
+def _one_line(text: object) -> str:
+    """Whitespace collapsed to single spaces, cut at :data:`MAX_DETAIL_CHARS`."""
+    flat = " ".join(str(text).split())
+    if len(flat) > MAX_DETAIL_CHARS:
+        flat = flat[: MAX_DETAIL_CHARS - 1].rstrip() + "…"
+    return flat
+
+
+def _without_secrets(text: str) -> str:
+    """The text with the user-info part of any URL removed and the configured
+    key, if it somehow appears, replaced by ``[key]``. A detail goes on the
+    card and into the receipts, and neither may carry the key."""
+    out = _URL_USERINFO_RE.sub("", text)
+    key = resolve_api_key()
+    if key and key != PLACEHOLDER_API_KEY and key in out:
+        out = out.replace(key, "[key]")
+    return out
+
+
+def _http_error_message(exc: urllib.error.HTTPError) -> str:
+    """The most useful words an HTTP error carries: the body's own message when
+    the body is a JSON error envelope (LiteLLM's and llama-swap's shape,
+    ``{"error": {"message": ...}}``), else the body text, else the status
+    reason. Reading the body can itself fail; then the reason it is."""
+    reason = str(getattr(exc, "reason", "") or "")
+    body = ""
+    try:
+        if getattr(exc, "fp", None) is not None:
+            body = exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:  # noqa: BLE001 — a detail must never raise
+        body = ""
+    if not body:
+        return reason
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return body
+    if isinstance(data, dict):
+        err = data.get("error", data.get("message"))
+        if isinstance(err, dict):
+            err = err.get("message") or err.get("detail") or ""
+        if isinstance(err, str) and err.strip():
+            return err.strip()
+    return body
+
+
+def failure_detail(exc: BaseException, endpoint: str = "") -> str:
+    """One clause saying why the call failed, for ``asked_and_failed``: the
+    exception type and message, the HTTP status when there is one, and the
+    endpoint's host and port when known —
+    ``HTTPError 500 from 127.0.0.1:4000 (upstream command exited prematurely)``,
+    ``TimeoutError from localhost:4000 (timed out)``. Never the key, never a
+    full URL. ``endpoint`` is the asker's own label, used when the error does
+    not say where it came from."""
+    kind = type(exc).__name__
+    where = endpoint
+    if isinstance(exc, urllib.error.HTTPError):
+        # ``filename`` is the URL the error was raised for; ``url`` only exists
+        # when the error carries a body. Neither is printed — only host:port.
+        where = endpoint_label(str(getattr(exc, "filename", "") or "")) or endpoint
+        head = f"{kind} {exc.code}"
+        message = _http_error_message(exc)
+    elif isinstance(exc, urllib.error.URLError):
+        # ``str(URLError)`` is "<urlopen error …>"; the reason is the words.
+        head = kind
+        message = str(getattr(exc, "reason", "") or exc)
+    else:
+        head = kind
+        message = str(exc)
+    text = head + (f" from {where}" if where else "")
+    message = _one_line(_without_secrets(message))
+    if message:
+        text += f" ({message})"
+    return text
+
+
+def outcome_line(outcome: ModelOutcome, count: int, feature_id: str = "") -> str:
+    """The ONE line a call logs: plain words, one line, beginning
+    ``STAMP NORMALIZER:`` so forge can find it in the CLI's stderr echo. One
+    shape per status, ``count`` being how many titles were (or would have been)
+    asked about; with a feature id the shapes are exactly these::
+
+        STAMP NORMALIZER: feature X — the model fallback was not asked about 2 title(s) no rule could decide: <detail>. The titles stay refused and nothing was stamped.
+        STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and could not answer: <detail>. The titles stay refused and nothing was stamped.
+        STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and its answer was rejected: <detail>. The titles stay refused and nothing was stamped.
+        STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and <detail>.
+
+    The last is ``decided``, whose detail begins "decided all 2 of them: …".
+    Without a feature id the "feature X — " part is absent. Under the CLI's
+    default logging the line lands on stderr behind a ``WARNING:<logger>:``
+    (or ``INFO:``) prefix, so a reader should look for the marker within the
+    line rather than at its start.
+    """
+    where = f"feature {feature_id} — " if feature_id else ""
+    detail = outcome.detail.rstrip(".")
+    if outcome.status == OUTCOME_NOT_CONFIGURED:
+        body = (
+            f"was not asked about {count} title(s) no rule could decide: "
+            f"{detail}. {OUTCOME_REFUSED_TAIL}"
+        )
+    elif outcome.status == OUTCOME_ASKED_AND_FAILED:
+        body = f"was asked about {count} title(s) and could not answer: {detail}. {OUTCOME_REFUSED_TAIL}"
+    elif outcome.status == OUTCOME_ANSWER_REJECTED:
+        body = (
+            f"was asked about {count} title(s) and its answer was rejected: "
+            f"{detail}. {OUTCOME_REFUSED_TAIL}"
+        )
+    else:
+        body = f"was asked about {count} title(s) and {detail}."
+    return f"STAMP NORMALIZER: {where}the model fallback {body}"
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +587,7 @@ def _timeout_seconds() -> float:
 
 
 def completions_url(base_url: str) -> str:
-    """``http://host:9000/v1`` -> ``http://host:9000/v1/chat/completions``
+    """``http://host:4000/v1`` -> ``http://host:4000/v1/chat/completions``
     (an endpoint already spelled out to the completions path is left alone)."""
     root = base_url.strip().rstrip("/")
     if root.endswith("/chat/completions"):
@@ -366,28 +595,30 @@ def completions_url(base_url: str) -> str:
     return root + "/chat/completions"
 
 
-def build_default_asker(model_name: Optional[str] = None) -> Optional[ModelAsker]:
-    """The environment's model call, or ``None`` when no endpoint is
-    configured (in which case the model is never asked and the titles stay
-    refused)."""
-    base = _endpoint()
-    if not base:
-        return None
-    model = (model_name or os.environ.get(MODEL_NAME_ENV, "") or DEFAULT_MODEL_NAME).strip()
-    url = completions_url(base)
-    timeout = _timeout_seconds()
+class ConfiguredAsker:
+    """The environment's model call. Callable ``(prompt) -> answer text`` like
+    any asker, and it also says where it will call (``endpoint`` — host and
+    port only, never the key) and which model it will ask (``model``), so the
+    outcome of the call can name them (2026-09-06). The error messages it
+    raises name the endpoint the same way, never the full URL."""
 
-    def _ask(prompt: str) -> str:
+    def __init__(self, base_url: str, model: str, timeout: float) -> None:
+        self._url = completions_url(base_url)
+        self.endpoint = endpoint_label(base_url)
+        self.model = model
+        self.timeout = timeout
+
+    def __call__(self, prompt: str) -> str:
         body = json.dumps(
             {
-                "model": model,
+                "model": self.model,
                 "temperature": 0.0,
                 "max_tokens": int(os.environ.get(MODEL_MAX_TOKENS_ENV, "") or MAX_ANSWER_TOKENS),
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode("utf-8")
         request = urllib.request.Request(
-            url,
+            self._url,
             data=body,
             headers={
                 "Content-Type": "application/json",
@@ -398,34 +629,116 @@ def build_default_asker(model_name: Optional[str] = None) -> Optional[ModelAsker
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
+        where = self.endpoint or "the endpoint"
         choices = payload.get("choices") if isinstance(payload, dict) else None
         if not isinstance(choices, list) or not choices:
-            raise ValueError(f"the reply from {url} carried no answer: {payload!r}")
+            raise ValueError(f"the reply from {where} carried no answer: {payload!r}")
         message = choices[0].get("message") if isinstance(choices[0], dict) else None
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str):
-            raise ValueError(f"the reply from {url} carried no answer text: {payload!r}")
+            raise ValueError(f"the reply from {where} carried no answer text: {payload!r}")
         if not content.strip():
             # A reasoning model that ran out of budget mid-thought answers with an
             # empty string. Say so, rather than letting it look like a refusal to
             # answer: the two need different fixes.
             reason = message.get("reasoning_content") if isinstance(message, dict) else None
             raise ValueError(
-                f"the reply from {url} was empty"
+                f"the reply from {where} was empty"
                 + (f" — the model was still thinking when it ran out of room "
                    f"(raise {MODEL_MAX_TOKENS_ENV} above {MAX_ANSWER_TOKENS})"
                    if isinstance(reason, str) and reason.strip() else "")
             )
         return content
 
-    return _ask
+
+def build_default_asker(model_name: Optional[str] = None) -> Optional[ConfiguredAsker]:
+    """The environment's model call (a :class:`ConfiguredAsker`, which also
+    names its endpoint and model), or ``None`` when no endpoint is configured
+    (in which case the model is never asked and the titles stay refused)."""
+    base = _endpoint()
+    if not base:
+        return None
+    model = (model_name or os.environ.get(MODEL_NAME_ENV, "") or DEFAULT_MODEL_NAME).strip()
+    return ConfiguredAsker(base, model, _timeout_seconds())
 
 
 # ---------------------------------------------------------------------------
 # The one entry point the normalizer calls
 # ---------------------------------------------------------------------------
+
+
+def decide_refused_titles_with_outcome(
+    titles: Sequence[str],
+    *,
+    ask_model: Optional[ModelAsker] = None,
+    feature_id: str = "",
+) -> Tuple[Dict[str, str], ModelOutcome]:
+    """Ask the model about titles NO RULE COULD DECIDE, and return
+    ``({title: word} for every one it decided, what the call ended in)``.
+
+    Never raises. An empty dict means "keep the refusal exactly as it was" —
+    which is what happens for every failure: no endpoint configured, an
+    endpoint that cannot be reached, a timeout, an HTTP error, a malformed
+    reply, or an answer that is not one allowed word per title. The outcome
+    says WHICH of those it was (``not_configured`` / ``asked_and_failed`` /
+    ``answer_rejected``, else ``decided``), in one plain clause that never
+    carries the key, and the same thing is logged as ONE line built by
+    :func:`outcome_line`. A stamp is never invented.
+
+    All or nothing: a single bad word rejects the whole answer, so a model can
+    only ever turn a refusal into a word from the closed list.
+    """
+    wanted = list(dict.fromkeys(titles))
+    if not wanted:
+        # Nothing was refused, so nothing was asked; no line either.
+        return {}, ModelOutcome(OUTCOME_DECIDED, "nothing to decide: no title was refused")
+
+    asker = ask_model or build_default_asker()
+    if asker is None:
+        outcome = ModelOutcome(
+            OUTCOME_NOT_CONFIGURED,
+            f"no model endpoint is configured (set {MODEL_URL_ENV}, or "
+            f"{MODEL_URL_FALLBACK_ENV}, to something like {EXAMPLE_ENDPOINT})",
+        )
+        logger.warning("%s", outcome_line(outcome, len(wanted), feature_id))
+        return {}, outcome
+
+    # A ConfiguredAsker names them; an injected fake need not.
+    endpoint = str(getattr(asker, "endpoint", "") or "")
+    model = str(getattr(asker, "model", "") or "")
+
+    try:
+        prompt = build_prompt(wanted)
+        raw = asker(prompt)
+    except Exception as exc:  # noqa: BLE001 — every failure is the old behaviour
+        outcome = ModelOutcome(
+            OUTCOME_ASKED_AND_FAILED, failure_detail(exc, endpoint), endpoint, model
+        )
+        logger.warning("%s", outcome_line(outcome, len(wanted), feature_id))
+        return {}, outcome
+
+    try:
+        decided = parse_answer(raw, wanted)
+    except ModelAnswerRejected as exc:
+        outcome = ModelOutcome(
+            OUTCOME_ANSWER_REJECTED, _one_line(_without_secrets(str(exc))), endpoint, model
+        )
+        logger.warning("%s", outcome_line(outcome, len(wanted), feature_id))
+        return {}, outcome
+
+    outcome = ModelOutcome(
+        OUTCOME_DECIDED,
+        _one_line(
+            f"decided all {len(decided)} of them: "
+            + "; ".join(f"{title!r} -> {home}" for title, home in decided.items())
+        ),
+        endpoint,
+        model,
+    )
+    logger.info("%s", outcome_line(outcome, len(wanted), feature_id))
+    return decided, outcome
 
 
 def decide_refused_titles(
@@ -435,70 +748,13 @@ def decide_refused_titles(
     feature_id: str = "",
 ) -> Dict[str, str]:
     """Ask the model about titles NO RULE COULD DECIDE, and return
-    ``{title: word}`` for every one it decided.
-
-    Never raises. An empty result means "keep the refusal exactly as it was" —
-    which is what happens for every failure: no endpoint configured, an
-    endpoint that cannot be reached, a timeout, an HTTP error, a malformed
-    reply, or an answer that is not one allowed word per title. Each of those
-    writes ONE plain line saying the model could not be asked, or that its
-    answer was rejected. A stamp is never invented.
-
-    All or nothing: a single bad word rejects the whole answer, so a model can
-    only ever turn a refusal into a word from the closed list.
+    ``{title: word}`` for every one it decided — the contract every caller has
+    had since 2026-08-31, kept as it was. Never raises; ``{}`` on every
+    failure, with the one plain line logged. Callers that need to know WHICH
+    failure it was use :func:`decide_refused_titles_with_outcome`.
     """
-    wanted = list(dict.fromkeys(titles))
-    if not wanted:
-        return {}
-    where = f"feature {feature_id}: " if feature_id else ""
-
-    asker = ask_model or build_default_asker()
-    if asker is None:
-        logger.warning(
-            "STAMP NORMALIZER: %sthe model could not be asked about %d title(s) "
-            "no rule could decide — no model endpoint is configured (set %s, or "
-            "%s, to something like %s). The titles stay refused and nothing was "
-            "stamped.",
-            where,
-            len(wanted),
-            MODEL_URL_FALLBACK_ENV,
-            MODEL_URL_ENV,
-            EXAMPLE_ENDPOINT,
-        )
-        return {}
-
-    try:
-        prompt = build_prompt(wanted)
-        raw = asker(prompt)
-    except Exception as exc:  # noqa: BLE001 — every failure is the old behaviour
-        logger.warning(
-            "STAMP NORMALIZER: %sthe model could not be asked about %d title(s) "
-            "no rule could decide (%s: %s). The titles stay refused and nothing "
-            "was stamped.",
-            where,
-            len(wanted),
-            type(exc).__name__,
-            exc,
-        )
-        return {}
-
-    try:
-        decided = parse_answer(raw, wanted)
-    except ModelAnswerRejected as exc:
-        logger.warning(
-            "STAMP NORMALIZER: %sthe model's answer was rejected — %s. The %d "
-            "title(s) stay refused and nothing was stamped.",
-            where,
-            exc,
-            len(wanted),
-        )
-        return {}
-
-    logger.info(
-        "STAMP NORMALIZER: %sthe model decided %d title(s) no rule could decide: %s",
-        where,
-        len(decided),
-        "; ".join(f"{title!r} -> {home}" for title, home in decided.items()),
+    decided, _outcome = decide_refused_titles_with_outcome(
+        titles, ask_model=ask_model, feature_id=feature_id
     )
     return decided
 
@@ -514,13 +770,25 @@ __all__ = [
     "MAX_ANSWER_TOKENS",
     "MODEL_RULE",
     "MODEL_STAMP_COMMENT",
+    "OUTCOME_NOT_CONFIGURED",
+    "OUTCOME_ASKED_AND_FAILED",
+    "OUTCOME_ANSWER_REJECTED",
+    "OUTCOME_DECIDED",
+    "OUTCOME_STATUSES",
+    "OUTCOME_REFUSED_TAIL",
     "ModelAsker",
     "ModelAnswerRejected",
+    "ModelOutcome",
+    "ConfiguredAsker",
     "RuleSummary",
     "rule_table",
     "build_prompt",
     "parse_answer",
     "completions_url",
+    "endpoint_label",
+    "failure_detail",
+    "outcome_line",
     "build_default_asker",
     "decide_refused_titles",
+    "decide_refused_titles_with_outcome",
 ]

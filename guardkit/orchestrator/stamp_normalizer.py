@@ -28,7 +28,12 @@ summary — to answer one word each; the answer is checked against the closed
 list and a single bad word rejects the whole answer. Everything else is
 unchanged, and every failure (no model configured, unreachable endpoint,
 timeout, HTTP error, malformed reply, bogus answer) leaves the titles refused
-exactly as before, plus one plain line saying the model could not be asked. A
+exactly as before, plus one plain line saying which it was. Since 2026-09-06
+the call's outcome is also recorded under ``NormalizeResult.model_outcome``
+(``not_configured`` / ``asked_and_failed`` with the reason / ``answer_rejected``
+/ ``decided``), rides the CLI's JSON as ``"model_outcome"``, and is what
+forge's plan-stop card prints — before that the card said nothing about the
+model, so a router answering 500 and a box with no endpoint read the same. A
 stamp is never invented. A model-decided stamp is marked as model-decided
 everywhere it is recorded (``NormalizeResult.model_stamped``, ``rules[title]
 = "model"``, and a comment line above the stamp in the feature YAML) so
@@ -216,6 +221,7 @@ from guardkit.orchestrator.stamp_model_fallback import (
     MODEL_STAMP_COMMENT,
     ModelAsker,
     decide_refused_titles,
+    decide_refused_titles_with_outcome,
 )
 from guardkit.orchestrator.verifier_stamp import (
     VERIFIER_HOMES,
@@ -1573,6 +1579,14 @@ class NormalizeResult:
     # is "model", never an R-number, and the YAML carries a comment above
     # the stamp saying the same thing.
     model_stamped: List[str] = field(default_factory=list)
+    # What the model fallback's call ENDED IN (2026-09-06): ``{"status",
+    # "detail", "endpoint", "model"}`` — status one of not_configured /
+    # asked_and_failed / answer_rejected / decided, detail one plain clause
+    # (never the key), endpoint host:port only. ``None`` when no title was
+    # refused, so the model was never in the picture. forge's plan-stop card
+    # prints it; before this the card could not tell "no endpoint set" from
+    # "the router answered 500".
+    model_outcome: Optional[Dict[str, str]] = None
     # (2) RULED 2026-08-18: ADVISORY disagreements — already-stamped titles
     # the rules would home DIFFERENTLY. Each entry: {title, stamped,
     # rule_home, rule, evidence}. Recorded, warned, echoed — NEVER written
@@ -1596,6 +1610,7 @@ class NormalizeResult:
             "already_stamped": list(self.already_stamped),
             "operator_stamped": list(self.operator_stamped),
             "model_stamped": list(self.model_stamped),
+            "model_outcome": dict(self.model_outcome) if self.model_outcome else None,
             "disagreements": [dict(d) for d in self.disagreements],
             "written": self.written,
             "dry_run": self.dry_run,
@@ -1654,7 +1669,8 @@ def normalize_feature(
         ``None`` builds it from the environment (``GUARDKIT_STAMP_MODEL_URL``
         / ``OPENAI_BASE_URL``; see ``stamp_model_fallback``), and with no
         endpoint configured the model is never asked and the refusal stands.
-        Tests inject a fake so nothing reaches the network.
+        Tests inject a fake so nothing reaches the network. Whatever the call
+        ends in is recorded on the result as ``model_outcome``.
 
     Raises
     ------
@@ -1816,12 +1832,14 @@ def normalize_feature(
     # list, all or nothing. Every failure — no model configured, unreachable,
     # timed out, an HTTP error, a malformed reply, a bogus answer — returns
     # nothing here, which leaves the refusal exactly as the rules left it,
-    # plus one plain line saying the model could not be asked. A stamp is
-    # never invented.
+    # plus one plain line saying which failure it was. A stamp is never
+    # invented. The outcome itself is kept on the result (2026-09-06) so the
+    # JSON and forge's card can say the same thing the line says.
     if result.refused:
-        decided_by_model = decide_refused_titles(
+        decided_by_model, model_outcome = decide_refused_titles_with_outcome(
             result.refused, ask_model=ask_model, feature_id=feature_id
         )
+        result.model_outcome = model_outcome.to_dict()
         for title in list(result.refused):
             verifier = decided_by_model.get(title)
             if verifier is None:
@@ -2093,6 +2111,7 @@ __all__ = [
     "MODEL_STAMP_COMMENT",
     "ModelAsker",
     "decide_refused_titles",
+    "decide_refused_titles_with_outcome",
     "Home",
     "NormalizeContext",
     "NormalizeResult",
