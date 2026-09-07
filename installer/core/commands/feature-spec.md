@@ -118,7 +118,7 @@ GROUP C: Negative Cases — invalid inputs, unauthorised access
 GROUP D: Edge Cases — concurrency, failure recovery, unusual sequences
 ```
 
-For a repository under the routing law (the `verifier:` stamp section below), a GROUP D concurrency or race case is written as the behaviour one caller sees in one request and its reply — "creating a user whose email already exists answers 409 and says the user already exists" — never as "simultaneously" or "at the same time"; a case that cannot be written that way is left out.
+For a repository under the routing law (the `verifier:` stamp section below), a GROUP D concurrency or race case is not added unless the request asks for concurrent behaviour. When the request does ask for it, keep it as the concurrent behaviour required — two overlapping requests, the reply each must get, and the persisted state afterwards — and expect it to be proven by a repository-owned test the plan names (the `toolchain` home), never restated as one sequential request, which proves something weaker. A duplicate-rejection case that is really about one caller ("creating a user whose email already exists answers 409 and says the user already exists") is written as that one request and its reply.
 
 **Annotation format** — add a brief reasoning comment above each scenario:
 
@@ -261,7 +261,7 @@ AI adds a `@key-example` scenario matching the description.
 After curation, AI generates a SEPARATE set of scenarios covering:
 
 - **Security**: authorisation bypass attempts, injection via filename or content, privilege escalation
-- **Concurrency**: simultaneous uploads of the same resource, race conditions on limits. For a repository under the routing law, each of these is written as the behaviour one caller sees in one request and its reply — "creating a user whose email already exists answers 409 and says the user already exists" — never as "simultaneously" or "at the same time"; a case that cannot be written that way is left out
+- **Concurrency**: simultaneous uploads of the same resource, race conditions on limits. For a repository under the routing law, add such a case only when the request asks for concurrent behaviour; then keep it as the concurrent behaviour required (two overlapping requests, the reply each must get, the persisted state afterwards), proven by a repository-owned test the plan names — never restated as one sequential request, which proves something weaker.
 - **Data integrity**: partial failure mid-operation, retry after timeout, duplicate detection
 - **Integration boundaries**: behaviour when a downstream service is unavailable, response when storage is full
 
@@ -524,15 +524,16 @@ unstamped scenario. The proposal is advisory; `/feature-plan` writes the
 **authoritative** per-scenario map into the feature YAML (`scenarios:`),
 where guardkit validates it.
 
-**What cannot be proven:** simultaneity, timing and internal state are not
-things a request and its reply can show — two requests arriving at once, a
-race between them, or a row in a table are not what one caller sees. So
-for a repository under the routing law a concurrency or race case is
-written as the behaviour one caller sees in one request and its reply
-("creating a user whose email already exists answers 409 and says the user already exists"),
-never as "simultaneously" or "at the same time", and a case that cannot be
-written that way is left out. A worked example the factory cannot prove is
-not a specification.
+**What a request and its reply cannot prove:** simultaneity, timing and
+internal state — two requests arriving at once, a race between them, or a
+row in a table — are not what one caller sees, so the `hurl` home cannot
+prove them. Such a case is kept only when the request asks for it, and it
+is then proven by a repository-owned test the plan names (the `toolchain`
+home): a test that starts the overlapping requests, checks the reply each
+must get, and checks the persisted state afterwards. It is never restated
+as one sequential request, which proves something weaker; and it is never
+invented for an endpoint that did not ask for it. A worked example with no
+home that can prove it is not a specification.
 
 **Enforcement is opt-in per repo — and `routing_law:` is REPO/HUMAN
 POLICY.** A human sets `routing_law: enforced` in the target repo's
