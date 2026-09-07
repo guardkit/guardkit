@@ -1,7 +1,7 @@
 """DF-011 seam guard: the packaged template BYTES must not change.
 
 The specialist-agent Session C loader pins the two planning-command templates by
-sha256 content hash (feature-spec.md 3d956e1f…, feature-plan.md 20a30611… — bumped 2026-08-18 with the home-choosing rule, IN the same commit) and
+sha256 content hash (feature-spec.md 3c758966… — bumped 2026-09-07 with the concurrency-as-one-caller rule, IN the same commit; feature-plan.md 20a30611… — bumped 2026-08-18 with the home-choosing rule, IN the same commit) and
 refuses any unpinned version. DF-011's packaging change (hatch force-include
 installer/core -> guardkit/_installer_core + importlib.resources resolution) is a
 DISTRIBUTION change only — it must not alter a single byte of those files, or the
@@ -25,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # (repo-relative path, expected sha256) — the specialist-seam pins.
 PINNED_TEMPLATES = {
     "installer/core/commands/feature-spec.md": (
-        "3d956e1ffce2ba85f1aa7ddf3074b7d28af8f6094ae97c9443bc0c4d34347591"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)
+        "3c758966db647c673455caf53804e6b0bdd895d4bd99742834d9f5a3706e9f2a"  # 2026-09-07: concurrency is written as what one caller sees, or left out (956 lines; lane/spec-template-routing-law)
     ),
     "installer/core/commands/feature-plan.md": (
         "20a3061159b6a3324c0bdeea230989e81dd823a2d220db5410a46144932678e3"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)

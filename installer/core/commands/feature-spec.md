@@ -118,6 +118,8 @@ GROUP C: Negative Cases — invalid inputs, unauthorised access
 GROUP D: Edge Cases — concurrency, failure recovery, unusual sequences
 ```
 
+For a repository under the routing law (the `verifier:` stamp section below), a GROUP D concurrency or race case is written as the behaviour one caller sees in one request and its reply — "creating a user whose email already exists answers 409 and says the user already exists" — never as "simultaneously" or "at the same time"; a case that cannot be written that way is left out.
+
 **Annotation format** — add a brief reasoning comment above each scenario:
 
 ```gherkin
@@ -259,7 +261,7 @@ AI adds a `@key-example` scenario matching the description.
 After curation, AI generates a SEPARATE set of scenarios covering:
 
 - **Security**: authorisation bypass attempts, injection via filename or content, privilege escalation
-- **Concurrency**: simultaneous uploads of the same resource, race conditions on limits
+- **Concurrency**: simultaneous uploads of the same resource, race conditions on limits. For a repository under the routing law, each of these is written as the behaviour one caller sees in one request and its reply — "creating a user whose email already exists answers 409 and says the user already exists" — never as "simultaneously" or "at the same time"; a case that cannot be written that way is left out
 - **Data integrity**: partial failure mid-operation, retry after timeout, duplicate detection
 - **Integration boundaries**: behaviour when a downstream service is unavailable, response when storage is full
 
@@ -521,6 +523,16 @@ titles into the authoritative `scenarios:` map and a paraphrased key is an
 unstamped scenario. The proposal is advisory; `/feature-plan` writes the
 **authoritative** per-scenario map into the feature YAML (`scenarios:`),
 where guardkit validates it.
+
+**What cannot be proven:** simultaneity, timing and internal state are not
+things a request and its reply can show — two requests arriving at once, a
+race between them, or a row in a table are not what one caller sees. So
+for a repository under the routing law a concurrency or race case is
+written as the behaviour one caller sees in one request and its reply
+("creating a user whose email already exists answers 409 and says the user already exists"),
+never as "simultaneously" or "at the same time", and a case that cannot be
+written that way is left out. A worked example the factory cannot prove is
+not a specification.
 
 **Enforcement is opt-in per repo — and `routing_law:` is REPO/HUMAN
 POLICY.** A human sets `routing_law: enforced` in the target repo's
