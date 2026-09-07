@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import List, Optional
 
@@ -179,10 +180,17 @@ def _yaml_path(repo: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_four_statuses_are_exactly_these_words():
+def test_the_five_statuses_are_exactly_these_words():
     """forge's card and parser match on these words; nothing else is ever
-    reported."""
-    assert OUTCOME_STATUSES == ("not_configured", "asked_and_failed", "answer_rejected", "decided")
+    reported. The fifth, ``switched_off``, was added 2026-09-07 for the
+    rewrite-on-refusal lane's first stamping."""
+    assert OUTCOME_STATUSES == (
+        "not_configured",
+        "asked_and_failed",
+        "answer_rejected",
+        "decided",
+        "switched_off",
+    )
     assert OUTCOME_REFUSED_TAIL == "The titles stay refused and nothing was stamped."
 
 
@@ -619,3 +627,152 @@ def test_the_real_cli_prints_the_outcome_line_on_stderr_and_the_json_on_stdout(t
         "model": "",
     }
     assert payload["refused"] == TITLES
+
+
+# ---------------------------------------------------------------------------
+# 6. The fifth status (2026-09-07): the caller switched the model off
+# ---------------------------------------------------------------------------
+#
+# Rule 1a of the rewrite-on-refusal lane: on a run's FIRST stamping the
+# normalizer runs by rule only, so a refusal reaches the machine's rewrite
+# round instead of being decided by a model that cannot see the schema. The
+# switch is the caller's word (``use_model=False``; the CLI's ``--no-model``),
+# distinct from "no asker given" — a configured endpoint makes no difference,
+# because the environment is never read. The outcome and its line are pinned
+# here word for word: forge's card prints the detail and its stderr reader
+# tells the line apart from ``not_configured`` by the words "switched off for
+# this stamping by the caller".
+
+SWITCHED_OFF_LINE = (
+    "STAMP NORMALIZER: feature FEAT-CONC — the model fallback was not asked about "
+    "2 title(s) no rule could decide: switched off for this stamping by the caller "
+    "(the first stamping of a run runs by rule only so a refusal can go back to the "
+    "spec writer). The titles stay refused and nothing was stamped."
+)
+SWITCHED_OFF_OUTCOME = {
+    "status": "switched_off",
+    "detail": (
+        "the caller switched the model fallback off for this stamping (the first "
+        "stamping of a run runs by rule only so a refusal can go back to the spec writer)"
+    ),
+    "endpoint": "",
+    "model": "",
+}
+
+
+def _never(*_args, **_kwargs):
+    raise AssertionError("the model or the environment was reached while the model was switched off")
+
+
+def test_the_switched_off_words_are_exactly_these():
+    assert smf.OUTCOME_SWITCHED_OFF == "switched_off"
+    assert smf.SWITCHED_OFF_DETAIL == SWITCHED_OFF_OUTCOME["detail"]
+    assert smf.SWITCHED_OFF_REASON in smf.SWITCHED_OFF_DETAIL
+    assert "switched_off" in smf.__all__ or "OUTCOME_SWITCHED_OFF" in smf.__all__
+
+
+def test_the_switched_off_line_has_its_own_shape_and_the_marker_forge_reads():
+    outcome = ModelOutcome(smf.OUTCOME_SWITCHED_OFF, smf.SWITCHED_OFF_DETAIL)
+    line = outcome_line(outcome, 2, "FEAT-CONC")
+    assert line == SWITCHED_OFF_LINE
+    assert "\n" not in line and line.count("STAMP NORMALIZER:") == 1
+    assert "switched off for this stamping by the caller" in line
+    assert smf.SWITCHED_OFF_REASON in line
+    assert line.endswith(OUTCOME_REFUSED_TAIL)
+    # It says what the detail says without saying "switched off" twice and
+    # without a bracket inside a bracket — one pass to read.
+    assert line.lower().count("switched") == 1
+    assert "((" not in line and "))" not in line
+    # Without a feature id the "feature X — " part is absent, as for the others.
+    assert outcome_line(outcome, 2).startswith("STAMP NORMALIZER: the model fallback was not asked")
+
+
+def test_a_switched_off_outcome_with_other_words_puts_those_words_in_the_bracket():
+    line = outcome_line(ModelOutcome(smf.OUTCOME_SWITCHED_OFF, "a reason of its own."), 1)
+    assert line == (
+        "STAMP NORMALIZER: the model fallback was not asked about 1 title(s) no rule "
+        "could decide: switched off for this stamping by the caller (a reason of its own). "
+        + OUTCOME_REFUSED_TAIL
+    )
+
+
+def test_switched_off_asks_nothing_reads_no_environment_and_logs_at_info(caplog, monkeypatch):
+    """The fake WOULD decide both titles, and an endpoint IS configured; with
+    the switch off neither is looked at, and the one line is INFO, not a
+    warning — nothing failed."""
+    monkeypatch.setenv(MODEL_URL_ENV, "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(smf, "build_default_asker", _never)
+    monkeypatch.setattr(urllib.request, "urlopen", _never)
+    fake = FakeAsker("hurl\nhurl\n", endpoint="localhost:4000", model="workhorse")
+
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        decided, outcome = smf.decide_refused_titles_with_outcome(
+            TITLES, ask_model=fake, feature_id="FEAT-CONC", use_model=False
+        )
+
+    assert decided == {} and fake.calls == 0
+    assert outcome == ModelOutcome(smf.OUTCOME_SWITCHED_OFF, smf.SWITCHED_OFF_DETAIL)
+    assert outcome.to_dict() == SWITCHED_OFF_OUTCOME
+    records = [r for r in caplog.records if r.name == LOGGER]
+    assert [(r.levelno, r.getMessage()) for r in records] == [(logging.INFO, SWITCHED_OFF_LINE)]
+
+
+def test_switched_off_with_nothing_refused_is_no_call_and_no_line(caplog):
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        decided, outcome = smf.decide_refused_titles_with_outcome([], use_model=False)
+    assert decided == {} and outcome.status == OUTCOME_DECIDED
+    assert _lines(caplog) == []
+
+
+def test_the_old_contract_takes_the_switch_too():
+    fake = FakeAsker("hurl\nhurl\n")
+    assert smf.decide_refused_titles(TITLES, ask_model=fake, use_model=False) == {}
+    assert fake.calls == 0
+
+
+def test_the_normalizer_with_the_model_off_keeps_the_refusal_a_fake_would_have_decided(
+    tmp_path: Path, caplog
+):
+    """The switch, not the asker, is the difference: the same fake that decides
+    both titles with the model on decides nothing with it off, and the result
+    and its JSON say ``switched_off``."""
+    repo = _repo(tmp_path, TITLES)
+
+    off = FakeAsker("hurl\nhurl\n", endpoint="localhost:4000", model="workhorse")
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        result = normalize_feature(
+            _yaml_path(repo), None, repo, dry_run=True, ask_model=off, use_model=False
+        )
+    assert off.calls == 0
+    assert result.refused == TITLES
+    assert result.stamped == {} and result.model_stamped == []
+    assert result.model_outcome == SWITCHED_OFF_OUTCOME
+    assert result.to_dict()["model_outcome"] == SWITCHED_OFF_OUTCOME
+    assert _lines(caplog) == [SWITCHED_OFF_LINE]
+
+    on = FakeAsker("hurl\nhurl\n", endpoint="localhost:4000", model="workhorse")
+    result = normalize_feature(_yaml_path(repo), None, repo, dry_run=True, ask_model=on)
+    assert on.calls == 1
+    assert result.refused == [] and result.model_stamped == TITLES
+    assert result.model_outcome["status"] == OUTCOME_DECIDED
+
+
+def test_the_normalizer_with_the_model_off_ignores_a_configured_endpoint(tmp_path: Path, monkeypatch):
+    """No fake given, an endpoint set: the default path would build an asker
+    from the environment and call it. Off, it does neither."""
+    monkeypatch.setenv(MODEL_URL_ENV, "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(smf, "build_default_asker", _never)
+    monkeypatch.setattr(urllib.request, "urlopen", _never)
+    repo = _repo(tmp_path, TITLES)
+    result = normalize_feature(_yaml_path(repo), None, repo, dry_run=True, use_model=False)
+    assert result.refused == TITLES
+    assert result.model_outcome == SWITCHED_OFF_OUTCOME
+
+
+def test_the_normalizer_with_the_model_off_and_nothing_refused_has_no_outcome(tmp_path: Path):
+    """Every title decided by rule: the switch changes nothing — no outcome,
+    no line, exactly as today."""
+    repo = _repo(tmp_path, [], include_rule_decided=True)
+    result = normalize_feature(_yaml_path(repo), None, repo, dry_run=True, use_model=False)
+    assert result.refused == [] and result.model_outcome is None
+    assert DECIDED_BY_A_RULE in result.stamped
