@@ -1857,6 +1857,18 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     help="Branch to merge the feature branch into.",
 )
 @click.option(
+    "--branch",
+    "branch",
+    default=None,
+    help=(
+        "The branch to merge. Without it the feature's own branch, "
+        "autobuild/FEATURE_ID, is merged exactly as before. A repair "
+        "build's commits live on the branch that build made, so its merge "
+        "names that branch here. The report's branch field says which "
+        "branch was merged."
+    ),
+)
+@click.option(
     "--expect-main-sha",
     "expect_main_sha",
     default=None,
@@ -1916,6 +1928,7 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
 def merge(
     feature_id: str,
     target: str,
+    branch: Optional[str],
     expect_main_sha: Optional[str],
     baseline_json: Optional[Path],
     verify: bool,
@@ -1924,8 +1937,9 @@ def merge(
     as_json: bool,
 ):
     """
-    Merge branch autobuild/FEATURE_ID into the target branch — the merge word
-    as a mechanism.
+    Merge the build's branch into the target branch — the merge word as a
+    mechanism. Without --branch that is autobuild/FEATURE_ID, exactly as it
+    has always been; a repair build names the branch it made.
 
     Run from the repository root. The branch is ALWAYS kept after merging
     (it is the rollback path). A dirty tree, a missing branch, or a target
@@ -1942,6 +1956,7 @@ def merge(
     Examples:
         guardkit autobuild merge FEAT-E613
         guardkit autobuild merge FEAT-E613 --expect-main-sha 3f2c1a9
+        guardkit autobuild merge FEAT-E613 --branch fix/TASK-E613-FIX1-1a2b3c4d
         guardkit autobuild merge FEAT-E613 --baseline-json baseline.json
         guardkit autobuild merge FEAT-E613 --no-measure-baseline
         guardkit autobuild merge FEAT-E613 --no-verify --json
@@ -1977,6 +1992,7 @@ def merge(
             baseline_failing=baseline_failing,
             verify_timeout=verify_timeout,
             measure_baseline=measure_baseline,
+            branch=branch,
         )
     except Exception as e:  # noqa: BLE001 — the CLI boundary reports plainly
         console.print(f"[red]Unexpected error: {e}[/red]")
