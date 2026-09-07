@@ -9,6 +9,9 @@ v1 surface (scope-design §3 CLI table — ``walk`` is B5):
     guardkit qa mutate --task <id> ...            # ST-05 mutation stage (B6)
     guardkit qa probe-boundaries --seam <id> ...  # ST-06 boundary probes (B6)
     guardkit qa review [range selectors]          # R-b advisory code review (S5)
+    guardkit qa classify-scenarios --feature-file F --repo R [--json]
+                                                  # the routing law by rule alone over one
+                                                  # .feature; writes nothing, never asks the model
 
 ``validate``/``schema``/``kinds`` are on-demand format tools (no enforcement —
 that is B2). ``live-gate`` runs the repo's registered F4 gates and emits the
@@ -386,6 +389,169 @@ def normalize_stamps(
         click.echo(json.dumps(result.to_dict(), indent=2))
         sys.exit(3)
     click.echo(json.dumps(result.to_dict(), indent=2))
+    sys.exit(0)
+
+
+def _find_feature_file(feature_file: Path, repo_root: Path) -> Path | None:
+    """Where ``--feature-file`` points. An absolute path is taken as it is; a
+    relative one is looked for under ``--repo`` first (the way feature paths
+    are written everywhere else in guardkit), then under the current
+    directory. ``None`` = nowhere."""
+    if feature_file.is_absolute():
+        return feature_file if feature_file.exists() else None
+    for base in (repo_root, Path.cwd()):
+        candidate = base / feature_file
+        if candidate.exists():
+            return candidate
+    return None
+
+
+@qa.command(name="classify-scenarios")
+@click.option(
+    "--feature-file",
+    "feature_file",
+    required=True,
+    type=click.Path(path_type=Path),
+    help=(
+        "The Gherkin .feature file to classify. A relative path is looked for "
+        "under --repo first, then under the current directory."
+    ),
+)
+@click.option(
+    "--repo",
+    "repo_root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("."),
+    help="Target repo root (default: cwd). Its manifests decide whether the wire rule (hurl) is armed.",
+)
+@click.option(
+    "--http-surface/--no-http-surface",
+    "http_surface",
+    default=None,
+    help=(
+        "Override the repo HTTP-surface detection that gates R9 (hurl). Without "
+        "it the surface is STRUCTURAL: a hurl gate in qa/gates/registry.yaml, "
+        "`surface: http` in .guardkit/config.yaml, or an exact web-framework "
+        "dependency in pyproject/package.json — never free text."
+    ),
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Print the result as exactly one JSON object on stdout (forge's spec leg parses it).",
+)
+def classify_scenarios(
+    feature_file: Path,
+    repo_root: Path,
+    http_surface: bool | None,
+    as_json: bool,
+) -> None:
+    """Say, by rule alone, which worked examples in one .feature file can be proven.
+
+    The routing law's dry run for a spec that has no plan yet (2026-09-07, the
+    rewrite-on-refusal lane): forge runs it on the committed draft before the
+    spec card opens, so an example no rule can prove goes back to the spec
+    writer before Rich is asked anything. For every scenario in the file it
+    prints the home the rules would mint (the rule R1-R10 and the verifier
+    word) or that the scenario is refused. Same rules, same order and same
+    HTTP-surface detection as ``normalize-stamps``; the model fallback is
+    never asked. It reads the .feature and the repo's manifests and writes
+    nothing anywhere — no feature YAML is read or touched.
+
+    Exit 0 whether or not anything is refused (the output says which:
+    ``refused_titles``). Exit 2 only when it cannot run (the file is missing
+    or cannot be read); with ``--json`` that is one ``{"error": "..."}``
+    object on stdout.
+    """
+    from guardkit.orchestrator.stamp_normalizer import (
+        NormalizeContext,
+        StampNormalizerError,
+        classify_scenario,
+        detect_repo_http_surface,
+        extract_scenario_blocks,
+    )
+
+    given = str(feature_file)
+
+    def _cannot_run(message: str) -> None:
+        if as_json:
+            click.echo(json.dumps({"error": message}, indent=2))
+        click.echo(f"classify-scenarios: {message}", err=True)
+        sys.exit(2)
+
+    path = _find_feature_file(feature_file, repo_root)
+    if path is None:
+        where = "" if feature_file.is_absolute() else f" (looked under {repo_root} and the current directory)"
+        _cannot_run(f"feature file not found: {given}{where}")
+        return  # pragma: no cover — _cannot_run exits
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        _cannot_run(f"feature file cannot be read: {path} ({exc})")
+        return  # pragma: no cover — _cannot_run exits
+
+    if http_surface is None:
+        has_http, evidence = detect_repo_http_surface(repo_root)
+    else:
+        has_http = bool(http_surface)
+        evidence = (
+            "overridden by the caller (--http-surface)"
+            if has_http
+            else "overridden by the caller (--no-http-surface)"
+        )
+    ctx = NormalizeContext(repo_has_http_surface=has_http, http_surface_evidence=evidence)
+
+    try:
+        blocks = extract_scenario_blocks(text)
+    except StampNormalizerError as exc:
+        _cannot_run(f"feature file could not be parsed: {path} ({exc})")
+        return  # pragma: no cover — _cannot_run exits
+
+    rows = []
+    homes = []
+    refused_titles: list[str] = []
+    for block in blocks:
+        home = classify_scenario(block.title, block.steps_text, ctx, annotations=block.annotations)
+        homes.append(home)
+        rows.append(
+            {
+                "title": block.title,
+                "home": home.verifier if home is not None else None,
+                "rule": home.rule if home is not None else None,
+                "refused": home is None,
+            }
+        )
+        if home is None and block.title not in refused_titles:
+            refused_titles.append(block.title)
+
+    payload = {
+        "feature_file": given,
+        "repo_has_http_surface": has_http,
+        "http_surface_evidence": evidence,
+        "scenarios": rows,
+        "refused_titles": refused_titles,
+    }
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+    else:
+        surface_word = "yes" if has_http else "no"
+        click.echo(f"{len(rows)} scenario(s) in {given}; HTTP surface: {surface_word} ({evidence})")
+        for row, home in zip(rows, homes):
+            if home is None:
+                click.echo(f"  - {row['title']} -> refused: no rule decides it")
+            else:
+                click.echo(f"  - {row['title']} -> {home.verifier} ({home.rule}: {home.evidence})")
+    if refused_titles:
+        # One plain line on stderr so a person reading a log sees the refusal
+        # without parsing the JSON; stdout stays exactly one object.
+        click.echo(
+            f"classify-scenarios: {len(refused_titles)} of {len(rows)} scenario(s) cannot be "
+            f"proven by rule: " + "; ".join(refused_titles),
+            err=True,
+        )
     sys.exit(0)
 
 
