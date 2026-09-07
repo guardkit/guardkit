@@ -1642,6 +1642,7 @@ def normalize_feature(
     ignore_existing: bool = False,
     repo_has_http_surface: Optional[bool] = None,
     ask_model: Optional[ModelAsker] = None,
+    use_model: bool = True,
 ) -> NormalizeResult:
     """Stamp every unstamped scenario of one feature by rule, and WRITE.
 
@@ -1671,6 +1672,14 @@ def normalize_feature(
         endpoint configured the model is never asked and the refusal stands.
         Tests inject a fake so nothing reaches the network. Whatever the call
         ends in is recorded on the result as ``model_outcome``.
+    use_model
+        ``False`` (2026-09-07; the CLI's ``--no-model``) switches the model
+        fallback off for this stamping: refused titles stay refused, nothing
+        is asked — not the fake, not the environment — and ``model_outcome``
+        says ``switched_off`` with the reason in plain words. Distinct from
+        ``ask_model=None``, which still builds the environment's asker. forge
+        passes it on a run's first stamping so a refusal reaches the machine's
+        rewrite round; the model is asked on the second stamping.
 
     Raises
     ------
@@ -1837,7 +1846,7 @@ def normalize_feature(
     # JSON and forge's card can say the same thing the line says.
     if result.refused:
         decided_by_model, model_outcome = decide_refused_titles_with_outcome(
-            result.refused, ask_model=ask_model, feature_id=feature_id
+            result.refused, ask_model=ask_model, feature_id=feature_id, use_model=use_model
         )
         result.model_outcome = model_outcome.to_dict()
         for title in list(result.refused):

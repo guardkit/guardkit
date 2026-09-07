@@ -238,12 +238,24 @@ def live_gate(
         "dependency in pyproject/package.json — never free text."
     ),
 )
+@click.option(
+    "--no-model",
+    "no_model",
+    is_flag=True,
+    default=False,
+    help=(
+        "Classify by rule only; never ask the model fallback about refused titles. "
+        "forge passes this on a run's first stamping so a refusal reaches the "
+        "machine's rewrite round; the model is asked on the second stamping."
+    ),
+)
 def normalize_stamps(
     feature_id: str,
     repo_root: Path,
     dry_run: bool,
     ignore_existing: bool,
     http_surface: bool | None,
+    no_model: bool,
 ) -> None:
     """THE STAMP NORMALIZER — mint ``verifier:`` stamps by rule (R1–R10) and WRITE them.
 
@@ -252,7 +264,9 @@ def normalize_stamps(
     lacking a stamp — never overwrites). Titles no rule can decide are handed to a
     model (ruled 2026-08-31; only those titles, answer checked against the closed
     list, listed under `model_stamped`); anything still undecided REFUSES LOUD by
-    name and nothing is stamped for it. Prints the result as JSON on stdout (forge's hook
+    name and nothing is stamped for it. With ``--no-model`` the model is never
+    asked (the JSON's `model_outcome.status` is `switched_off`) and the refused
+    titles are simply named — the same exit codes as when no model is set. Prints the result as JSON on stdout (forge's hook
     parses it); exit 0 = all decided (stamped/nothing to do), 3 = PARTIAL (decided stamps written, `refused` names the rest), 2 = cannot run.
     Already-stamped titles the rules would home DIFFERENTLY are listed under
     `disagreements` (advisory: echoed on stderr, never overwritten, exit unchanged).
@@ -287,6 +301,7 @@ def normalize_stamps(
             dry_run=dry_run,
             ignore_existing=ignore_existing,
             repo_has_http_surface=http_surface,
+            use_model=not no_model,
         )
     except StampNormalizerRefusal as exc:
         payload = {

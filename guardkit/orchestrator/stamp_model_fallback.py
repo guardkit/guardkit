@@ -40,7 +40,7 @@ could not be asked", and the plan-stop card Rich reads said nothing about the
 model at all — so a router answering 500 and a box with no endpoint set read
 the same, and two of his weekend sentences stopped without anyone knowing which
 it was. Now every call ends in ONE outcome, :class:`ModelOutcome`, whose
-``status`` is one of exactly four words:
+``status`` is one of exactly five words:
 
 ``not_configured``    no endpoint is set; the model was never asked.
 ``asked_and_failed``  the call was made and raised. The detail is one clause
@@ -51,6 +51,13 @@ it was. Now every call ends in ONE outcome, :class:`ModelOutcome`, whose
                       the detail is the parser's reason.
 ``decided``           the model answered one allowed word per title; the
                       detail carries the count and the words.
+``switched_off``      the caller said "do not ask" for this stamping
+                      (``use_model=False``; the CLI's ``--no-model``, added
+                      2026-09-07). Not a failure — logged at INFO — but the
+                      titles stay refused as if no model existed, and the
+                      environment is never read. forge uses it on a run's
+                      first stamping so a refusal reaches the machine's
+                      rewrite round; the second stamping asks the model.
 
 :func:`decide_refused_titles_with_outcome` returns ``(decided, outcome)``;
 :func:`decide_refused_titles` keeps its old contract (the dict alone) for
@@ -193,17 +200,36 @@ class ModelAnswerRejected(ValueError):
 # The outcome — what one call ended in, said once and said plainly (2026-09-06)
 # ---------------------------------------------------------------------------
 
-#: The four things a call can end in — the ``status`` of a :class:`ModelOutcome`.
+#: The five things a call can end in — the ``status`` of a :class:`ModelOutcome`.
 #: Exactly these words: forge's card and its parser match on them.
 OUTCOME_NOT_CONFIGURED = "not_configured"
 OUTCOME_ASKED_AND_FAILED = "asked_and_failed"
 OUTCOME_ANSWER_REJECTED = "answer_rejected"
 OUTCOME_DECIDED = "decided"
+#: The caller said "do not ask" for this stamping (2026-09-07): the first
+#: stamping of a run runs by rule only, so a refusal reaches the machine's
+#: rewrite round instead of being decided by a model that cannot see the
+#: schema. Not a failure — logged at INFO — but the titles stay refused
+#: exactly as they would with no model at all. The environment is never read.
+OUTCOME_SWITCHED_OFF = "switched_off"
 OUTCOME_STATUSES = (
     OUTCOME_NOT_CONFIGURED,
     OUTCOME_ASKED_AND_FAILED,
     OUTCOME_ANSWER_REJECTED,
     OUTCOME_DECIDED,
+    OUTCOME_SWITCHED_OFF,
+)
+
+#: Why the model is switched off on a run's first stamping — the clause in
+#: brackets in both the outcome's detail and its line, so they cannot drift.
+SWITCHED_OFF_REASON = (
+    "the first stamping of a run runs by rule only so a refusal can go back to "
+    "the spec writer"
+)
+#: The ``detail`` of every ``switched_off`` outcome: one plain sentence, the
+#: same words on the card and in the receipts.
+SWITCHED_OFF_DETAIL = (
+    f"the caller switched the model fallback off for this stamping ({SWITCHED_OFF_REASON})"
 )
 
 #: The tail every failure line ends with — the old behaviour, said out loud.
@@ -346,8 +372,15 @@ def outcome_line(outcome: ModelOutcome, count: int, feature_id: str = "") -> str
         STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and could not answer: <detail>. The titles stay refused and nothing was stamped.
         STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and its answer was rejected: <detail>. The titles stay refused and nothing was stamped.
         STAMP NORMALIZER: feature X — the model fallback was asked about 2 title(s) and <detail>.
+        STAMP NORMALIZER: feature X — the model fallback was not asked about 2 title(s) no rule could decide: switched off for this stamping by the caller (<why>). The titles stay refused and nothing was stamped.
 
-    The last is ``decided``, whose detail begins "decided all 2 of them: …".
+    The fourth is ``decided``, whose detail begins "decided all 2 of them: …".
+    The fifth is ``switched_off`` (2026-09-07); its ``<why>`` is the reason
+    inside the outcome's detail (:data:`SWITCHED_OFF_REASON` for the standard
+    detail, else the detail as given), so the line says the same thing as the
+    JSON without saying "switched off … by the caller" twice. The words
+    "switched off for this stamping by the caller" are the marker forge's
+    stderr reader tells it apart from ``not_configured`` by.
     Without a feature id the "feature X — " part is absent. Under the CLI's
     default logging the line lands on stderr behind a ``WARNING:<logger>:``
     (or ``INFO:``) prefix, so a reader should look for the marker within the
@@ -366,6 +399,12 @@ def outcome_line(outcome: ModelOutcome, count: int, feature_id: str = "") -> str
         body = (
             f"was asked about {count} title(s) and its answer was rejected: "
             f"{detail}. {OUTCOME_REFUSED_TAIL}"
+        )
+    elif outcome.status == OUTCOME_SWITCHED_OFF:
+        why = SWITCHED_OFF_REASON if outcome.detail == SWITCHED_OFF_DETAIL else detail
+        body = (
+            f"was not asked about {count} title(s) no rule could decide: "
+            f"switched off for this stamping by the caller ({why}). {OUTCOME_REFUSED_TAIL}"
         )
     else:
         body = f"was asked about {count} title(s) and {detail}."
@@ -674,6 +713,7 @@ def decide_refused_titles_with_outcome(
     *,
     ask_model: Optional[ModelAsker] = None,
     feature_id: str = "",
+    use_model: bool = True,
 ) -> Tuple[Dict[str, str], ModelOutcome]:
     """Ask the model about titles NO RULE COULD DECIDE, and return
     ``({title: word} for every one it decided, what the call ended in)``.
@@ -687,6 +727,14 @@ def decide_refused_titles_with_outcome(
     carries the key, and the same thing is logged as ONE line built by
     :func:`outcome_line`. A stamp is never invented.
 
+    ``use_model=False`` (2026-09-07) is the caller saying "do not ask": the
+    refusal is kept as the rules left it, the outcome is ``switched_off``
+    with :data:`SWITCHED_OFF_DETAIL`, its line is logged at INFO (it is not a
+    failure), and neither ``ask_model`` nor the environment is looked at —
+    a configured endpoint makes no difference. forge uses this on a run's
+    first stamping so a refusal reaches the machine's rewrite round; the
+    model is asked on the second stamping, about what is still refused.
+
     All or nothing: a single bad word rejects the whole answer, so a model can
     only ever turn a refusal into a word from the closed list.
     """
@@ -694,6 +742,13 @@ def decide_refused_titles_with_outcome(
     if not wanted:
         # Nothing was refused, so nothing was asked; no line either.
         return {}, ModelOutcome(OUTCOME_DECIDED, "nothing to decide: no title was refused")
+
+    if not use_model:
+        # Before the environment is read: the switch, not the endpoint, is
+        # why the model is not asked, and the line says so.
+        outcome = ModelOutcome(OUTCOME_SWITCHED_OFF, SWITCHED_OFF_DETAIL)
+        logger.info("%s", outcome_line(outcome, len(wanted), feature_id))
+        return {}, outcome
 
     asker = ask_model or build_default_asker()
     if asker is None:
@@ -751,15 +806,17 @@ def decide_refused_titles(
     *,
     ask_model: Optional[ModelAsker] = None,
     feature_id: str = "",
+    use_model: bool = True,
 ) -> Dict[str, str]:
     """Ask the model about titles NO RULE COULD DECIDE, and return
     ``{title: word}`` for every one it decided — the contract every caller has
     had since 2026-08-31, kept as it was. Never raises; ``{}`` on every
     failure, with the one plain line logged. Callers that need to know WHICH
     failure it was use :func:`decide_refused_titles_with_outcome`.
+    ``use_model=False`` keeps the refusal without asking (see there).
     """
     decided, _outcome = decide_refused_titles_with_outcome(
-        titles, ask_model=ask_model, feature_id=feature_id
+        titles, ask_model=ask_model, feature_id=feature_id, use_model=use_model
     )
     return decided
 
@@ -779,8 +836,11 @@ __all__ = [
     "OUTCOME_ASKED_AND_FAILED",
     "OUTCOME_ANSWER_REJECTED",
     "OUTCOME_DECIDED",
+    "OUTCOME_SWITCHED_OFF",
     "OUTCOME_STATUSES",
     "OUTCOME_REFUSED_TAIL",
+    "SWITCHED_OFF_REASON",
+    "SWITCHED_OFF_DETAIL",
     "ModelAsker",
     "ModelAnswerRejected",
     "ModelOutcome",
