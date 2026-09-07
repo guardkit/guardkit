@@ -6,6 +6,14 @@ but nothing listens. This module is the mechanism: code — never an AI session 
 merges ``autobuild/<FEATURE_ID>`` into the target branch, refuses loudly when
 anything is off, and re-checks the merged result.
 
+Since 2026-09-07 (Part M of the rewrite-on-refusal lane, rule 53) the merge
+takes the branch to merge: a repair build's commits live on the branch that
+build made, not on ``autobuild/<FEATURE_ID>``. When no branch is named, the
+feature's own ``autobuild/<FEATURE_ID>`` is merged exactly as before; either
+way the report's ``branch`` field names the branch that was merged. The
+branch is the ONLY thing that changes with it — the pre-merge baseline, the
+target pin, the verify run and the exit codes are untouched.
+
 House pattern: ``machine_verify.py`` — pure functions, explicit inputs, one
 frozen dataclass report with ``to_dict()`` and ``receipt_lines()``.
 
@@ -14,8 +22,9 @@ The three laws this module enforces:
 * **Refuse, never half-do.** A dirty tree, a missing branch, or a target that
   has moved since the checks ran each refuse the merge before anything is
   touched.
-* **The branch survives EVERY path.** ``autobuild/<FEATURE_ID>`` is the
-  rollback path. This module never calls ``manager.cleanup()``, never deletes
+* **The branch survives EVERY path.** The branch merged
+  (``autobuild/<FEATURE_ID>`` for a feature build) is the rollback path.
+  This module never calls ``manager.cleanup()``, never deletes
   a branch, and on conflict aborts the merge and leaves the tree exactly as it
   found it.
 * **Never invent a clean.** Post-merge verification only ever reports what it
@@ -167,7 +176,9 @@ class MergeReport:
     outcome: str  # OUTCOME_MERGED | OUTCOME_REFUSED | OUTCOME_CONFLICT
     feature_id: str
     target_branch: str
-    branch: str  # autobuild/<FEATURE_ID> — retained on every path
+    # The branch that was merged: autobuild/<FEATURE_ID> unless one was named.
+    # Retained on every path.
+    branch: str
     refusal_reason: Optional[str] = None
     pre_sha: Optional[str] = None
     post_sha: Optional[str] = None
@@ -439,6 +450,24 @@ def passed_count_from_output(output: Optional[str]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Which branch
+# ---------------------------------------------------------------------------
+
+
+def branch_to_merge(feature_id: str, branch: Optional[str] = None) -> str:
+    """The branch the merge word merges.
+
+    ``branch`` when one was named (a repair build's own branch, say);
+    otherwise the feature's own ``autobuild/<FEATURE_ID>``, exactly as every
+    feature build has always been merged. An empty name counts as none.
+    This is the ONE place the default is written down.
+    """
+    if branch is not None and branch.strip():
+        return branch.strip()
+    return f"autobuild/{feature_id}"
+
+
+# ---------------------------------------------------------------------------
 # Refusal preflight
 # ---------------------------------------------------------------------------
 
@@ -448,6 +477,7 @@ def preflight_refusal(
     feature_id: str,
     target_branch: str = "main",
     expect_target_sha: Optional[str] = None,
+    branch: Optional[str] = None,
 ) -> Optional[str]:
     """Return the refusal reason, or None when the merge may proceed.
 
@@ -455,7 +485,8 @@ def preflight_refusal(
 
     * ``repo_root`` is not a git repository;
     * the working tree is dirty (``git status --porcelain`` non-empty);
-    * branch ``autobuild/<FEATURE_ID>`` does not exist;
+    * the branch to merge (``branch``, else ``autobuild/<FEATURE_ID>``)
+      does not exist — the reason names it;
     * ``expect_target_sha`` is given and the target branch no longer resolves
       to it — the checks were run against a target that has since moved.
     """
@@ -475,7 +506,7 @@ def preflight_refusal(
             f"changes: {shown}{more}"
         )
 
-    branch = f"autobuild/{feature_id}"
+    branch = branch_to_merge(feature_id, branch)
     if _rev_parse(repo_root, f"refs/heads/{branch}") is None:
         return f"branch {branch} does not exist"
 
@@ -502,18 +533,23 @@ def preflight_refusal(
 
 
 def merge_commit_message(
-    feature_id: str, pre_sha: str, branch_sha: str
+    feature_id: str,
+    pre_sha: str,
+    branch_sha: str,
+    branch: Optional[str] = None,
 ) -> str:
     """The template message, filled ONLY from the build's own records.
 
     ``pre_sha`` is the target branch head before the merge; ``branch_sha`` is
-    the tip of ``autobuild/<FEATURE_ID>`` being merged (the merge commit
-    cannot carry its own sha, so the range in the message is
-    target-before..branch-tip). No model writes this.
+    the tip of the branch being merged (``branch``, else
+    ``autobuild/<FEATURE_ID>``; the merge commit cannot carry its own sha, so
+    the range in the message is target-before..branch-tip). No model writes
+    this.
     """
+    branch = branch_to_merge(feature_id, branch)
     return (
         f"merge({feature_id}): merged on the merge word\n\n"
-        f"{pre_sha[:12]}..{branch_sha[:12]} — branch autobuild/{feature_id} "
+        f"{pre_sha[:12]}..{branch_sha[:12]} — branch {branch} "
         f"retained as the rollback path"
     )
 
@@ -523,8 +559,12 @@ def perform_merge(
     feature_id: str,
     target_branch: str = "main",
     manager: Optional[WorktreeManager] = None,
+    branch: Optional[str] = None,
 ) -> MergeReport:
-    """Merge ``autobuild/<FEATURE_ID>`` into ``target_branch``.
+    """Merge the build's branch into ``target_branch``.
+
+    The branch is ``branch`` when one was named, else
+    ``autobuild/<FEATURE_ID>`` (:func:`branch_to_merge`).
 
     On :class:`WorktreeMergeError`: capture the conflicted files, run
     ``git merge --abort`` (its own failure is ignored), re-verify the tree is
@@ -532,7 +572,7 @@ def perform_merge(
     path — no ``cleanup()``, no ``auto_merge_if_graduated``, no
     preserve-then-delete.
     """
-    branch = f"autobuild/{feature_id}"
+    branch = branch_to_merge(feature_id, branch)
     notes: List[str] = []
 
     pre_sha = _rev_parse(repo_root, target_branch)
@@ -562,7 +602,9 @@ def perform_merge(
         base_branch=target_branch,
     )
 
-    message = merge_commit_message(feature_id, pre_sha, branch_sha)
+    message = merge_commit_message(
+        feature_id, pre_sha, branch_sha, branch=branch
+    )
 
     try:
         manager.merge(worktree, target_branch=target_branch, message=message)
@@ -962,11 +1004,14 @@ def execute_merge(
     manager: Optional[WorktreeManager] = None,
     validate_command: Optional[Sequence[str]] = None,
     measure_baseline: bool = True,
+    branch: Optional[str] = None,
 ) -> MergeReport:
     """Refusal preflight, the pre-merge baseline, the merge, the checks.
 
-    Every outcome is a :class:`MergeReport`. The ``autobuild/<FEATURE_ID>``
-    branch survives every path.
+    Every outcome is a :class:`MergeReport`. The branch merged is ``branch``
+    when one is named, else ``autobuild/<FEATURE_ID>`` (the default every
+    feature build has always had); it survives every path, and the report's
+    ``branch`` field names it. Naming a branch changes nothing else here.
 
     With verification on, the test command is resolved on the TARGET branch
     before the merge on EVERY path — a baseline measured, a baseline handed
@@ -998,10 +1043,10 @@ def execute_merge(
     a good one, and a conflict already needs a person.
     """
     repo_root = Path(repo_root)
-    branch = f"autobuild/{feature_id}"
+    branch = branch_to_merge(feature_id, branch)
 
     reason = preflight_refusal(
-        repo_root, feature_id, target_branch, expect_target_sha
+        repo_root, feature_id, target_branch, expect_target_sha, branch=branch
     )
     if reason is not None:
         return MergeReport(
@@ -1077,7 +1122,7 @@ def execute_merge(
             )
 
     report = perform_merge(
-        repo_root, feature_id, target_branch, manager=manager
+        repo_root, feature_id, target_branch, manager=manager, branch=branch
     )
     if report.outcome != OUTCOME_MERGED or not verify:
         return replace(
@@ -1199,6 +1244,7 @@ __all__ = [
     "passed_count_from_output",
     "reported_failure_count",
     "named_failures_are_complete",
+    "branch_to_merge",
     "preflight_refusal",
     "merge_commit_message",
     "perform_merge",

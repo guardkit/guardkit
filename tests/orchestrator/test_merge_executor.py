@@ -8,6 +8,9 @@ The load-bearing assertions:
 
 * the branch ``autobuild/<FEATURE_ID>`` survives EVERY path (it is the
   rollback path);
+* the merge takes a branch (Part M of the rewrite-on-refusal lane, rule 53,
+  2026-09-07): a named branch lands its own commits and the report names
+  it; without one the default path is unchanged;
 * the merge commit message is the exact template, filled only from records;
 * refusals happen before anything is touched;
 * a conflict aborts and leaves the tree clean;
@@ -28,6 +31,7 @@ from guardkit.orchestrator.merge_executor import (
     OUTCOME_MERGED,
     OUTCOME_REFUSED,
     MergeReport,
+    branch_to_merge,
     charged_failures_from_output,
     conflicted_files_from_status,
     execute_merge,
@@ -92,6 +96,25 @@ def conflict_repo(tmp_path: Path) -> Path:
     return repo
 
 
+REPAIR_BRANCH = "fix/TASK-X-FIX1-1a2b3c4d"
+
+
+@pytest.fixture
+def repair_repo(merge_repo: Path) -> Path:
+    """``merge_repo`` plus a repair branch that is NOT autobuild/FEAT-X.
+
+    Both branches exist and carry different files, so a merge that lands
+    ``repair.txt`` without ``feature.txt`` can only have merged the named
+    branch. HEAD is back on main.
+    """
+    _git(merge_repo, "checkout", "-q", "-b", REPAIR_BRANCH, "main")
+    (merge_repo / "repair.txt").write_text("the repair\n", encoding="utf-8")
+    _git(merge_repo, "add", "repair.txt")
+    _git(merge_repo, "commit", "-q", "-m", "repair work")
+    _git(merge_repo, "checkout", "-q", "main")
+    return merge_repo
+
+
 def _branch_exists(repo: Path, branch: str) -> bool:
     proc = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -124,6 +147,10 @@ class TestHappyMerge:
         assert (merge_repo / "feature.txt").exists()
         # THE branch-survival law: the rollback path is kept.
         assert _branch_exists(merge_repo, "autobuild/FEAT-X")
+        # With no branch named, the branch merged is the feature's own and
+        # the report says so (rule 53: the default path is unchanged).
+        assert report.branch == "autobuild/FEAT-X"
+        assert report.to_dict()["branch"] == "autobuild/FEAT-X"
 
     def test_merge_commit_message_is_the_exact_template(self, merge_repo: Path):
         pre = _git(merge_repo, "rev-parse", "main")
@@ -138,6 +165,13 @@ class TestHappyMerge:
             f"retained as the rollback path"
         )
         assert merge_commit_message("FEAT-X", pre, branch_sha) == expected
+        # Naming the default branch explicitly changes not one byte.
+        assert (
+            merge_commit_message(
+                "FEAT-X", pre, branch_sha, branch="autobuild/FEAT-X"
+            )
+            == expected
+        )
         actual = _git(merge_repo, "log", "-1", "--format=%B", "main").strip()
         assert actual == expected
 
@@ -195,6 +229,7 @@ class TestRefusals:
         report = execute_merge(merge_repo, "FEAT-NONE", verify=False)
         assert report.outcome == OUTCOME_REFUSED
         assert "autobuild/FEAT-NONE does not exist" in report.refusal_reason
+        assert report.branch == "autobuild/FEAT-NONE"
 
     def test_not_a_git_repo_refuses(self, tmp_path: Path):
         plain = tmp_path / "not-a-repo"
@@ -206,6 +241,100 @@ class TestRefusals:
     def test_preflight_is_pure_reason_or_none(self, merge_repo: Path):
         assert preflight_refusal(merge_repo, "FEAT-X") is None
         assert preflight_refusal(merge_repo, "FEAT-NONE") is not None
+        # A named branch is looked for instead of the default, and the
+        # reason names it.
+        assert (
+            preflight_refusal(merge_repo, "FEAT-NONE", branch="autobuild/FEAT-X")
+            is None
+        )
+        reason = preflight_refusal(merge_repo, "FEAT-X", branch="fix/nowhere")
+        assert reason == "branch fix/nowhere does not exist"
+
+
+# ---------------------------------------------------------------------------
+# a named branch — the merge word merges the branch the build made (rule 53)
+# ---------------------------------------------------------------------------
+
+
+class TestNamedBranch:
+    def test_branch_to_merge_default_and_named(self):
+        assert branch_to_merge("FEAT-X") == "autobuild/FEAT-X"
+        assert branch_to_merge("FEAT-X", None) == "autobuild/FEAT-X"
+        # An empty name is no name.
+        assert branch_to_merge("FEAT-X", "") == "autobuild/FEAT-X"
+        assert branch_to_merge("FEAT-X", "   ") == "autobuild/FEAT-X"
+        assert branch_to_merge("FEAT-X", REPAIR_BRANCH) == REPAIR_BRANCH
+
+    def test_named_branch_lands_its_commits_and_the_report_names_it(
+        self, repair_repo: Path
+    ):
+        pre = _git(repair_repo, "rev-parse", "main")
+        repair_sha = _git(repair_repo, "rev-parse", REPAIR_BRANCH)
+
+        report = execute_merge(
+            repair_repo, "FEAT-X", verify=False, branch=REPAIR_BRANCH
+        )
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.pre_sha == pre
+        assert report.post_sha == _git(repair_repo, "rev-parse", "main")
+        # The NAMED branch's work arrived on main; the feature branch's did
+        # not — so it was the named branch that was merged, not the default.
+        assert (repair_repo / "repair.txt").exists()
+        assert not (repair_repo / "feature.txt").exists()
+        parents = _git(
+            repair_repo, "rev-list", "--parents", "-1", "main"
+        ).split()
+        assert parents[1:] == [pre, repair_sha]
+        # The report names the branch it merged, in the object and the JSON.
+        assert report.branch == REPAIR_BRANCH
+        assert report.to_dict()["branch"] == REPAIR_BRANCH
+        # So do the merge commit and the receipt.
+        message = _git(repair_repo, "log", "-1", "--format=%B", "main").strip()
+        assert message == merge_commit_message(
+            "FEAT-X", pre, repair_sha, branch=REPAIR_BRANCH
+        )
+        assert f"branch {REPAIR_BRANCH} retained as the rollback path" in message
+        assert "autobuild/FEAT-X" not in message
+        receipt = "\n".join(report.receipt_lines())
+        assert f"Branch {REPAIR_BRANCH} is kept as the rollback path." in receipt
+        # Both branches survive: the merged one is the rollback path and the
+        # feature's own is simply not this merge's business.
+        assert _branch_exists(repair_repo, REPAIR_BRANCH)
+        assert _branch_exists(repair_repo, "autobuild/FEAT-X")
+
+    def test_missing_named_branch_refuses_naming_it(self, repair_repo: Path):
+        pre = _git(repair_repo, "rev-parse", "main")
+
+        report = execute_merge(
+            repair_repo, "FEAT-X", verify=False, branch="fix/nowhere"
+        )
+
+        assert report.outcome == OUTCOME_REFUSED
+        assert report.refusal_reason == "branch fix/nowhere does not exist"
+        assert report.branch == "fix/nowhere"
+        assert report.to_dict()["branch"] == "fix/nowhere"
+        # The default branch existing does not rescue a named one that is
+        # missing: nothing was merged and nothing moved.
+        assert _git(repair_repo, "rev-parse", "main") == pre
+        assert not (repair_repo / "feature.txt").exists()
+        assert _git(repair_repo, "status", "--porcelain") == ""
+
+    def test_named_branch_still_pinned_to_the_target(self, repair_repo: Path):
+        """--expect-main-sha refuses exactly as before when a branch is named."""
+        stale = _git(repair_repo, "rev-parse", REPAIR_BRANCH)
+        pre = _git(repair_repo, "rev-parse", "main")
+        report = execute_merge(
+            repair_repo,
+            "FEAT-X",
+            expect_target_sha=stale,
+            verify=False,
+            branch=REPAIR_BRANCH,
+        )
+        assert report.outcome == OUTCOME_REFUSED
+        assert "has moved since the checks ran" in report.refusal_reason
+        assert report.branch == REPAIR_BRANCH
+        assert _git(repair_repo, "rev-parse", "main") == pre
 
 
 # ---------------------------------------------------------------------------
