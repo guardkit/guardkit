@@ -1865,3 +1865,86 @@ class TestSpecialistPromptBudget:
 
         # Should fit within the backstop budget
         assert len(prompt) <= budget, f"prompt {len(prompt)} chars exceeds backstop {budget}"
+
+
+# ===========================================================================
+# What the specialist said — the optional capture (review-leg second ask)
+# ===========================================================================
+#
+# The review leg needs the words a specialist used when it finished without
+# writing its report: an empty directory says nothing about what it did with
+# its minutes. The capture is opt-in, so every other caller is untouched.
+
+
+@pytest.mark.asyncio
+async def test_final_message_is_none_and_unasked_for_by_default(tmp_path: Path) -> None:
+    """No capture requested: no extra kwarg, and ``final_message`` stays None."""
+    invoker = _make_fake_agent_invoker()
+
+    result = await run_specialist(
+        specialist_name="code-reviewer",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=42,
+        prompt="review the diff",
+        allowed_tools=["Read", "Grep"],
+        agent_invoker=invoker,
+    )
+
+    assert result.final_message is None
+    assert "return_events" not in invoker._invoke_with_role.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_capture_keeps_the_last_thing_the_specialist_said(
+    tmp_path: Path,
+) -> None:
+    """With the capture on, the last assistant message comes back on the result."""
+    from guardkit.orchestrator.harness.adapter import AssistantMessageEvent
+
+    invoker = _make_fake_agent_invoker()
+    invoker._invoke_with_role = AsyncMock(
+        return_value=(
+            None,
+            [
+                AssistantMessageEvent(text="I am reading the files."),
+                AssistantMessageEvent(text="I have finished my review."),
+            ],
+        )
+    )
+
+    result = await run_specialist(
+        specialist_name="code-reviewer",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=42,
+        prompt="review the diff",
+        allowed_tools=["Read", "Grep"],
+        agent_invoker=invoker,
+        capture_final_message=True,
+    )
+
+    assert result.final_message == "I have finished my review."
+    assert invoker._invoke_with_role.await_args.kwargs["return_events"] is True
+
+
+@pytest.mark.asyncio
+async def test_capture_stays_none_when_there_is_nothing_to_read(
+    tmp_path: Path,
+) -> None:
+    """A runner that hands nothing back leaves ``final_message`` empty, not guessed."""
+    invoker = _make_fake_agent_invoker()
+    invoker._invoke_with_role = AsyncMock(return_value=None)
+
+    result = await run_specialist(
+        specialist_name="code-reviewer",
+        worktree_path=tmp_path,
+        task_id="TASK-OSI-001",
+        sdk_timeout=42,
+        prompt="review the diff",
+        allowed_tools=["Read", "Grep"],
+        agent_invoker=invoker,
+        capture_final_message=True,
+    )
+
+    assert result.final_message is None

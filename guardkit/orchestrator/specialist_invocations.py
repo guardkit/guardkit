@@ -221,6 +221,13 @@ class SpecialistInvocationResult:
     (TASK-OSI-002). ``result_file`` points at the conventional
     ``specialist_results.json`` location when known; callers may overwrite
     it after they confirm the file actually landed on disk.
+
+    ``final_message`` is the last thing the specialist said in words. It is
+    filled in only when the caller asks for it (``run_specialist(...,
+    capture_final_message=True)``) and stays ``None`` otherwise, so every
+    existing caller and every existing result is exactly what it was. The
+    review leg asks for it: when a specialist finishes without writing its
+    report, the only record of what it did with its minutes is what it said.
     """
 
     specialist_name: str
@@ -229,6 +236,31 @@ class SpecialistInvocationResult:
     duration_seconds: float
     result_file: Optional[Path]
     error: Optional[str]
+    final_message: Optional[str] = None
+
+
+def _final_assistant_text(invoke_result: Any) -> Optional[str]:
+    """The last thing the model said, out of a ``return_events`` invocation.
+
+    ``_invoke_with_role(return_events=True)`` returns ``(None, events)``. The
+    events are read by duck-typing (``type`` / ``text``) rather than by
+    importing the harness event classes, so this helper cannot break on a
+    harness that grows a new event shape. Returns ``None`` when there is
+    nothing to read — the caller then says so plainly rather than inventing
+    text.
+    """
+    if not isinstance(invoke_result, tuple) or len(invoke_result) != 2:
+        return None
+    events = invoke_result[1]
+    if not isinstance(events, (list, tuple)):
+        return None
+    for event in reversed(events):
+        if getattr(event, "type", None) != "assistant_message":
+            continue
+        text = getattr(event, "text", "")
+        if isinstance(text, str) and text.strip():
+            return text
+    return None
 
 
 def _reap_specialist_processes(
@@ -402,6 +434,7 @@ async def run_specialist(
     cancellation_event: Optional[threading.Event] = None,
     turn: Optional[int] = None,
     no_activity_watchdog_seconds: Optional[float] = None,
+    capture_final_message: bool = False,
 ) -> SpecialistInvocationResult:
     """Run a specialist agent under the orchestrator's control.
 
@@ -441,6 +474,14 @@ async def run_specialist(
             for Ns)`` failure, before the blunt duration cap fires
             (TASK-FIX-SPECHANG2). ``None`` / ``0`` disables the watchdog and
             preserves the legacy direct-await behaviour.
+        capture_final_message: When ``True``, keep the last thing the
+            specialist said in words on the result's ``final_message``.
+            Costs one extra kwarg to ``_invoke_with_role``
+            (``return_events=True``), which changes what that call *returns*
+            and nothing else. Defaults to ``False``, so every existing caller
+            behaves exactly as before. Not available under the no-activity
+            watchdog, which does not hand its invocation's return value back;
+            there ``final_message`` stays ``None`` and the caller says so.
 
     Returns:
         :class:`SpecialistInvocationResult` with ``status="passed"`` on
@@ -501,6 +542,7 @@ async def run_specialist(
 
     started_at = time.monotonic()
     error_message: Optional[str] = None
+    final_message: Optional[str] = None
     status: Literal["passed", "failed", "skipped"] = "passed"
 
     # TASK-ABSR-DIAG: Surface orchestrator-invoked specialists in heartbeat
@@ -520,6 +562,13 @@ async def run_specialist(
         "turn": turn,
         "heartbeat_label_override": heartbeat_label_override,
     }
+
+    # Only the direct path can hand back what the model said: the watchdog
+    # path returns its own (status, error) pair and drops the invocation's
+    # return value. So the extra kwarg is added only where it can be read.
+    capturing = capture_final_message and not watchdog_enabled
+    if capturing:
+        invoke_kwargs["return_events"] = True
 
     try:
         if watchdog_enabled:
@@ -545,7 +594,9 @@ async def run_specialist(
                 )
         else:
             try:
-                await agent_invoker._invoke_with_role(**invoke_kwargs)
+                invoke_result = await agent_invoker._invoke_with_role(**invoke_kwargs)
+                if capturing:
+                    final_message = _final_assistant_text(invoke_result)
             except Exception as exc:  # noqa: BLE001 — runner must never raise
                 status = "failed"
                 error_message = f"{type(exc).__name__}: {exc}"
@@ -570,6 +621,7 @@ async def run_specialist(
         duration_seconds=duration_seconds,
         result_file=conventional_result_file if status == "passed" else None,
         error=error_message,
+        final_message=final_message,
     )
 
 
