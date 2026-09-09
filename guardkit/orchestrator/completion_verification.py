@@ -136,6 +136,16 @@ def declared_toolchain_test_command(repo_root: Path) -> Optional[str]:
 
     Never raises: a missing file, a malformed block, or a missing dependency
     all mean "no declaration", and resolution carries on down the list.
+
+    THE WORK LEG ASKS THE SAME QUESTION. Since Rich's ruling of 2026-09-09 a
+    build's own test phase runs the declared command too, so the fork where a
+    database test failed in the leg and passed here is closed. It reaches the
+    declaration by the same parser (``load_toolchain_declaration``) but
+    through the task's pre-turn-1 snapshot
+    (``CoachValidator._declared_test_command``), because the copy in a
+    worktree is inside the tree the model edits and this one is not. One rule,
+    one parser, two copies of the file — if the rule changes, change it in the
+    parser and both follow.
     """
     try:
         from guardkit.orchestrator.toolchain_declaration import (

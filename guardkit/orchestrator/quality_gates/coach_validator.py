@@ -1028,6 +1028,69 @@ class IndependentTestResult:
         )
 
 
+# The words ``_test_command_source`` carries when the command came from the
+# repository's own ``.guardkit/config.yaml`` rather than from a guess. One
+# spelling, set in one place and read in one place, so nothing downstream has
+# to match a string it invented.
+DECLARED_COMMAND_SOURCE = "repository toolchain declaration"
+
+
+@dataclass(frozen=True)
+class SuiteComparedToBase:
+    """A whole-suite run read against what the base branch was ALREADY failing.
+
+    RICH'S SECOND RULING, 2026-09-09: "zero net-new", never "all green". No
+    real repository is all green — forge's suite carries about thirty base
+    failures, guardkit's eleven to fourteen, all triaged and stable — so a
+    leg that demanded a green suite would fail on every red repository for
+    ever, and a leg that cannot tell new red from old red teaches everybody
+    to ignore red.
+
+    Nothing here is a new mechanism. The base's failing set comes from the
+    two places the estate already keeps it (``guardkit.orchestrator.baseline``
+    reads both, and the Coach's own gate already subtracts them):
+
+    * the build's MEASURED baseline — the wave-0 probe ran the suite once on
+      this branch's base, before any task touched it, and cached the result
+      in ``.guardkit/autobuild/<feature>/baseline.json``;
+    * the repository's own KNOWN-FAILURE LEDGER, ``qa/known-failures.yaml``,
+      whose own words are "every suite run is compared against THIS ledger,
+      not against 'all green'".
+
+    Fields
+    ------
+    failures_total
+        How many tests failed in this run.
+    inherited
+        How many of those the base was already failing (forgiven).
+    new_failures
+        The ones this leg is charged for — named, and ONLY these, because a
+        red leg naming twenty failures of which nineteen are inherited is a
+        leg nobody reads.
+    stale_base_entries
+        Tests the base was failing that did NOT fail here. Never a failure:
+        one plain line saying the record has gone stale in the good
+        direction.
+    base_known
+        Whether the base's failing set could be established at all.
+    base_source
+        Where it came from, in ordinary words, for the record.
+    passes
+        The leg's verdict: no new failures, and the run visibly did work.
+    note
+        One plain sentence a person can read in the leg's record.
+    """
+
+    failures_total: int
+    inherited: int
+    new_failures: List[str]
+    stale_base_entries: List[str]
+    base_known: bool
+    base_source: str
+    passes: bool
+    note: str
+
+
 @dataclass
 class CriterionResult:
     """
@@ -1563,6 +1626,12 @@ class CoachValidator:
         # ``run_independent_tests`` turns it into a LOUD ABSENT signal
         # (UNKNOWN), never a silent guess and never a pass.
         self._detection_absence: Optional[str] = None
+        # Where the command about to run came from, in ordinary words
+        # ("repository toolchain declaration", "task-specific test files
+        # detected in the worktree", ...). Set by ``_detect_test_command``;
+        # read by the work leg so a red leg can say WHICH command ran and why
+        # that one. Never read by any verdict rule.
+        self._test_command_source: Optional[str] = None
         # TASK-AB-COACHSUBPROC01: None -> resolve env > default (subprocess);
         # resolve_coach_test_execution logs the active mode + provenance once
         # per init. An explicit value is authoritative (validated with safe
@@ -4254,6 +4323,214 @@ class CoachValidator:
             logger.debug("baseline diff: apply skipped (%s); verdict unchanged", exc)
             return test_result
 
+    # ------------------------------------------------------------------
+    # The work leg's verdict on a whole declared suite: ZERO NET-NEW
+    # ------------------------------------------------------------------
+
+    def base_failing_tests(self) -> Tuple[bool, List[str], str]:
+        """What the branch's BASE was already failing, and how we know.
+
+        Returns ``(base_known, failing_ids, source_in_plain_words)``.
+
+        Two sources, both of which already existed and are already read
+        together by :meth:`_baseline_context` — this method only says, out
+        loud, WHICH of them answered, because a leg that forgives a failure
+        must be able to say on whose word it forgave it:
+
+        1. **The build's measured baseline.** The wave-0 probe ran the suite
+           once on this branch's base, before wave 1, and wrote
+           ``.guardkit/autobuild/<feature>/baseline.json``. This is the
+           "establish the base's failing set by running the command once and
+           cache it for the build" answer — already built, so this lane did
+           not build a second one.
+        2. **The repository's known-failure ledger**, ``qa/known-failures.yaml``
+           — the human-triaged list. A ledger that EXISTS and is empty is
+           knowledge too: it says the base is green.
+
+        The merge door asks the same question at the other end of the
+        journey and takes its answer as ``--baseline-json``, "the list of
+        tests the target branch was already failing". It reads exactly the
+        ``baseline.json`` shape source 1 writes, so the two doors are
+        reading one record, not two.
+
+        ``base_known`` is ``False`` only when neither is present. The caller
+        then says so and falls back to the leg's old task-scoped behaviour
+        rather than charging this task for somebody else's defect.
+        """
+        measured, ledger = self._baseline_context()
+        sources: List[str] = []
+        ids: List[str] = []
+        if measured is not None:
+            ids.extend(measured.failing_node_ids)
+            sources.append(
+                "the build's measured baseline (the wave-0 run on this "
+                "branch's base, before any task touched it)"
+            )
+        ledger_exists = False
+        try:
+            ledger_exists = (
+                Path(self.worktree_path) / "qa" / "known-failures.yaml"
+            ).exists()
+        except OSError:  # pragma: no cover - defensive
+            ledger_exists = bool(ledger)
+        if ledger_exists:
+            ids.extend(sorted(ledger))
+            sources.append(
+                "the repository's known-failure ledger "
+                "(qa/known-failures.yaml)"
+            )
+        if not sources:
+            return (
+                False,
+                [],
+                "nothing on record: no measured baseline and no "
+                "qa/known-failures.yaml",
+            )
+        # De-duplicate, first-seen order.
+        seen: set = set()
+        unique: List[str] = []
+        for node in ids:
+            if node not in seen:
+                seen.add(node)
+                unique.append(node)
+        return True, unique, " and ".join(sources)
+
+    def compare_suite_against_base(
+        self,
+        test_result: "IndependentTestResult",
+        task_work_results: Optional[Dict[str, Any]] = None,
+    ) -> Optional[SuiteComparedToBase]:
+        """Read a whole-suite result as "what is NEW", not "is it all green".
+
+        Rich's ruling of 2026-09-09, second half. The bar is ZERO NET-NEW: a
+        failure the base already had is not this leg's failure, and the leg
+        passes when every failure it saw is one of those. Only the failures
+        OUTSIDE that set are named.
+
+        Returns ``None`` when the question does not arise — an absent signal
+        (never forgiven, never a pass), or output whose failing test names
+        could not be read at all (a non-pytest stack: the plain exit-code
+        rule stands and the failure stands with it).
+
+        THE ENTIRELY-RED CASE, deliberately not forgiven. If a run collapses
+        — the database never came up, a conftest failed to import, every test
+        errored — then "every failure is in the base's list" can be true by
+        accident and would forgive a suite that proved nothing. So
+        forgiveness also requires that the run VISIBLY DID WORK: at least one
+        test passed. A run where nothing passed is reported red with that
+        said in words.
+
+        THE BASE-UNKNOWN CASE. When neither the measured baseline nor the
+        ledger exists, this leg cannot tell new red from old red. It says so,
+        and charges only failures in test files this task itself wrote or
+        changed — which is exactly what the leg saw before this lane existed,
+        when it ran the task's own test files and nothing else. It is no
+        blinder than yesterday, and the merge-ready checkpoint still reads
+        the whole suite.
+        """
+        if not baseline_diff_enabled():
+            # The operator's existing kill switch
+            # (``GUARDKIT_AUTOBUILD_BASELINE_DIFF=0``) turns off every
+            # subtraction in a build, this one included: every failure is
+            # then charged, as it was before any of this existed.
+            logger.info(
+                "zero-net-new: skipped, the baseline diff is turned off "
+                "(GUARDKIT_AUTOBUILD_BASELINE_DIFF)"
+            )
+            return None
+        if test_result.signal_absent or test_result.tests_passed is not False:
+            return None
+        observed = failing_node_ids(test_result.raw_output)
+        if not observed:
+            return None
+
+        base_known, base_ids, base_source = self.base_failing_tests()
+        authored = self._authored_test_files(task_work_results or {})
+
+        if base_known:
+            # The estate's own subtraction, unchanged:
+            # observed - (measured baseline union ledger), plus anything in a
+            # test file this task itself authored (a task cannot hide behind
+            # the base for a test it was meant to fix).
+            measured, ledger = self._baseline_context()
+            new_failures = compute_charged_failures(
+                observed_node_ids=observed,
+                baseline_node_ids=measured.failing_node_ids if measured else [],
+                ledger_ids=ledger,
+                authored_test_files=authored,
+            )
+            stale = [node for node in base_ids if node not in set(observed)]
+        else:
+            authored_set = set(authored)
+            new_failures = [
+                node
+                for node in observed
+                if node.split("::", 1)[0] in authored_set
+            ]
+            stale = []
+
+        # Forgiveness needs POSITIVE evidence that the run did work: at
+        # least one test actually passed. No such evidence (nothing passed,
+        # or no counts readable at all) means no forgiveness — fail closed.
+        summary = parse_pytest_summary(test_result.raw_output)
+        something_passed = bool(summary.parsed and (summary.passed or 0) > 0)
+
+        failures_total = len(observed)
+        inherited = failures_total - len(new_failures)
+        passes = not new_failures and something_passed
+
+        if not something_passed and not new_failures:
+            note = (
+                f"{failures_total} test(s) failed and nothing passed (no "
+                f"test is on record as having passed in this run). Every "
+                f"failure may be on the base's list, but a run in which "
+                f"nothing passed proves nothing, so it is not forgiven: "
+                f"this leg is red. Check that the suite could actually run."
+            )
+        elif not base_known:
+            note = (
+                f"{failures_total} test(s) failed. What the base was already "
+                f"failing is not on record ({base_source}), so this leg "
+                f"cannot tell new red from old red; it judges only the test "
+                f"files this task wrote or changed, exactly as it did before. "
+                f"{len(new_failures)} of the failures are in those files."
+            )
+        elif passes:
+            note = (
+                f"{failures_total} test(s) failed, all {inherited} of them "
+                f"already failing on the base — nothing new. Forgiven on the "
+                f"word of {base_source}."
+            )
+        else:
+            note = (
+                f"{failures_total} test(s) failed: {inherited} the base "
+                f"already had, {len(new_failures)} newly failing."
+            )
+        if stale:
+            note += (
+                f" {len(stale)} test(s) recorded as failing on the base did "
+                f"not fail here — the record has gone stale in the good "
+                f"direction (or this command did not select them)."
+            )
+
+        logger.info(
+            "zero-net-new: %d failed, %d inherited, %d new (base from %s)",
+            failures_total,
+            inherited,
+            len(new_failures),
+            base_source,
+        )
+        return SuiteComparedToBase(
+            failures_total=failures_total,
+            inherited=inherited,
+            new_failures=list(new_failures),
+            stale_base_entries=list(stale),
+            base_known=base_known,
+            base_source=base_source,
+            passes=passes,
+            note=note,
+        )
+
     def verify_quality_gates(
         self,
         task_work_results: Dict[str, Any],
@@ -5475,9 +5752,22 @@ class CoachValidator:
         )
 
         # Determine test command (pass task_id and results for task-specific filtering)
-        test_cmd = self.test_command or self._detect_test_command(
-            self.task_id, task_work_results=task_work_results, turn=turn
-        )
+        #
+        # ONE COMMAND, TWO CALLERS. This method is the single place a test
+        # command is chosen inside a build. The work leg's deterministic
+        # Phase-4 runner
+        # (``specialist_invocations._run_deterministic_phase_4``) calls it, and
+        # so does the Coach's own independent verification. They therefore run
+        # the SAME command by construction — which is the whole reason the
+        # deterministic phase exists, and why a repository's declared command
+        # cannot be honoured on one side of that pair and guessed on the other.
+        if self.test_command:
+            test_cmd = self.test_command
+            self._test_command_source = "caller-supplied test command"
+        else:
+            test_cmd = self._detect_test_command(
+                self.task_id, task_work_results=task_work_results, turn=turn
+            )
 
         # If test_cmd is None, it means task-specific filtering was requested
         # but no matching tests were found. Skip verification in this case.
@@ -7434,6 +7724,56 @@ class CoachValidator:
         task_work_results: Optional[Dict[str, Any]] = None,
         turn: Optional[int] = None,
     ) -> Optional[str]:
+        """Choose the test command, and record where the choice came from.
+
+        The choosing itself is :meth:`_detect_test_command_ladder`, unchanged.
+        This wrapper exists only so every caller gets
+        :attr:`_test_command_source` filled in alongside the command — the
+        work leg puts it in the Phase-4 record so a person reading a red leg
+        can see which command ran and why that one.
+        """
+        self._test_command_source = None
+        command = self._detect_test_command_ladder(
+            task_id, task_work_results=task_work_results, turn=turn
+        )
+        if command is not None and self._test_command_source is None:
+            # A rung that did not name itself: everything below the
+            # declaration is a detection from the files in the worktree.
+            self._test_command_source = (
+                "detected from the worktree (task-specific test files or "
+                "stack markers)"
+            )
+        return command
+
+    def ran_the_repository_declaration(self) -> bool:
+        """Whether the last chosen test command came from the repository's own
+        declaration rather than from a guess.
+
+        The work leg asks this before it judges a run by ZERO NET-NEW: a
+        declared command is normally the repository's WHOLE suite, and only a
+        whole-suite run can be red for somebody else's defect. A run of the
+        task's own test files is judged exactly as it always was — every
+        failure in it belongs to this task.
+        """
+        return bool(
+            self._test_command_source
+            and self._test_command_source.startswith(DECLARED_COMMAND_SOURCE)
+        )
+
+    def test_command_source(self) -> Optional[str]:
+        """Where the last chosen test command came from, in plain words.
+
+        ``None`` before any command has been chosen, or when no command could
+        be found at all.
+        """
+        return self._test_command_source
+
+    def _detect_test_command_ladder(
+        self,
+        task_id: Optional[str] = None,
+        task_work_results: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
+    ) -> Optional[str]:
         """
         Auto-detect the test command based on project files.
 
@@ -7500,6 +7840,9 @@ class CoachValidator:
                 logger.error(self._detection_absence)
                 return None
             self._active_stack_profile = self._declared_stack_profile(declared)
+            self._test_command_source = (
+                f"{DECLARED_COMMAND_SOURCE} (component {self._component!r})"
+            )
             logger.info(
                 "Test command for %s from the DECLARED component %r "
                 "(.guardkit/config.yaml `toolchain.components.%s.test`, pinned "
@@ -7509,6 +7852,54 @@ class CoachValidator:
                 self._component,
                 declared,
                 self._component_toolchain.cwd,
+            )
+            return declared
+
+        # ---- THE REPOSITORY'S OWN DECLARATION — above every guess --------
+        #
+        # RICH'S RULING, 2026-09-09: a leg runs what the repository declares.
+        #
+        # This rung used to sit BELOW the task-specific ladder, so a task that
+        # had written a test file of its own was judged by a bare
+        # ``pytest <that file>`` even in a repository that had said, in
+        # ``.guardkit/config.yaml``, exactly how its tests are to be run. On
+        # api_test that declaration is ``qa/run-suite.sh``, which stands up a
+        # throwaway PostgreSQL, runs the suite against it and takes it down.
+        # The consequence was a fork: a database test failed inside the work
+        # leg and passed at the merge-ready checkpoint, which has always
+        # honoured the declaration. Twenty-six attempts at one fix journey
+        # died in that fork.
+        #
+        # WHAT IT COSTS, said plainly: a declared command is usually the
+        # repository's WHOLE suite, where the old guess ran only the task's
+        # own tests. So a leg can now go red for a defect somebody else left
+        # behind, and in a parallel wave a sibling task's failure lands on
+        # this task's leg. That is the price of running what the repository
+        # declared, and it is the same price the merge-ready checkpoint has
+        # always charged. The declaration is not a guess; the ladder below it
+        # is. A repository that declares nothing reaches the next line with
+        # everything exactly as it was.
+        #
+        # ONE RULE, ONE READER: the command comes from the pre-turn-1 snapshot
+        # of the repository's ``toolchain:`` block, parsed by
+        # ``toolchain_declaration.load_toolchain_declaration`` — the same
+        # parse the merge check reads through
+        # ``completion_verification.declared_toolchain_test_command``. The
+        # snapshot, not the live file, because the live file sits inside the
+        # tree the model edits (design §B.4): a model that could rewrite its
+        # own test command could green itself.
+        declared = self._declared_test_command()
+        if declared is not None:
+            self._active_stack_profile = self._declared_stack_profile(declared)
+            self._test_command_source = DECLARED_COMMAND_SOURCE
+            logger.info(
+                "Test command%s from the repo's DECLARED toolchain "
+                "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): "
+                "%s%s",
+                f" for {task_id}" if task_id else "",
+                declared,
+                " [parallel wave: declaration honoured, no specialist "
+                "hand-off]" if self.is_parallel else "",
             )
             return declared
 
@@ -7658,28 +8049,12 @@ class CoachValidator:
             # historic non-Python path, which can hang on a tool-call-shy model),
             # try a deterministic non-Python whole-suite command (dotnet/npm/go).
             #
-            # TS-lane D.1b: THE DECLARATION WINS — over the marker guess below,
-            # and in PARALLEL WAVES TOO. The ``not self.is_parallel`` guard
-            # below exists because marker detection is a GUESS about a repo we
-            # were never told about; a declaration is not a guess. When the
-            # repo has told us the answer, a parallel wave must not fall
-            # through to the LLM ``test-orchestrator`` specialist — which is
-            # also why this branch is M0-POSITIVE: it removes the one frontier
-            # hop on the non-Python verdict path (design §G).
-            declared = self._declared_test_command()
-            if declared is not None:
-                self._active_stack_profile = self._declared_stack_profile(declared)
-                logger.info(
-                    "Test command for %s from the repo's DECLARED toolchain "
-                    "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): "
-                    "%s%s",
-                    task_id,
-                    declared,
-                    " [parallel wave: declaration honoured, no specialist "
-                    "hand-off]" if self.is_parallel else "",
-                )
-                return declared
-
+            # TS-lane D.1b: THE DECLARATION WINS — over the marker guess
+            # below, and in PARALLEL WAVES TOO. It is now settled one rung
+            # higher still (above the task-specific ladder, at the top of this
+            # method, on Rich's 2026-09-09 ruling), so anything reaching here
+            # has no declaration at all and the marker guess is all there is.
+            #
             # GUARD: a whole-suite command runs SIBLING tasks' tests too, so in a
             # parallel wave it would attribute their failures to this task
             # (false-red). Only take over when this is a SINGLE-task wave
@@ -7708,16 +8083,10 @@ class CoachValidator:
 
             return None
 
-        # TS-lane D.1b: the DECLARATION outranks every marker guess below it.
-        declared = self._declared_test_command()
-        if declared is not None:
-            self._active_stack_profile = self._declared_stack_profile(declared)
-            logger.info(
-                "Test command from the repo's DECLARED toolchain "
-                "(.guardkit/config.yaml `toolchain.test`, pinned pre-turn-1): %s",
-                declared,
-            )
-            return declared
+        # TS-lane D.1b: the DECLARATION outranks every marker guess below
+        # it — and is now read at the top of this method, above the
+        # task-specific ladder too, so a repository reaching this line has
+        # declared nothing and the marker guesses are all there is.
 
         # Fallback to original detection logic
         # Check for Python projects
@@ -7769,6 +8138,16 @@ class CoachValidator:
         gets that component's ``test:`` and nothing else; a task that named
         none gets the root block, exactly as before the components field
         existed.
+
+        THE MERGE CHECK'S TWIN. ``completion_verification`` asks the same
+        question of a merge target through
+        ``declared_toolchain_test_command`` / ``resolve_verify_command``, and
+        both roads end at the one parser,
+        ``toolchain_declaration.load_toolchain_declaration``. They differ in
+        WHICH copy of the file they read, and deliberately: the merge check
+        reads the merged repository, while this reads the pre-turn-1 snapshot,
+        because the worktree copy is inside the tree the model edits. If the
+        rule ever needs changing, change it in the parser — never twice.
         """
         if self._component_toolchain is not None:
             return self._component_toolchain.test or None
