@@ -1430,6 +1430,23 @@ def _run_deterministic_phase_4(
         else None
     )
 
+    # When the leg ran the whole declared suite and NOTHING is on record
+    # about the base, no comparison is made at all and the run's own red
+    # stands, whole — the fail-closed direction, and the same verdict the
+    # Coach's own gate reaches in that state. Say so in the record: "why was
+    # I charged for failures I did not cause?" deserves an answer a person
+    # can read, and the answer is "record a baseline or a ledger".
+    base_unknown_note: Optional[str] = None
+    if declared_run and not base_known and comparison is None:
+        base_unknown_note = (
+            "What the branch's base was already failing is not on record "
+            f"({base_source or 'no baseline could be read'}), so nothing "
+            "could be forgiven and every failure this run reported is "
+            "charged. To have the base's own failures subtracted here, "
+            "record them: the wave-0 baseline, or the repository's "
+            "qa/known-failures.yaml ledger."
+        )
+
     stale_note: Optional[str] = None
     if result.tests_passed and base_known and base_failing_ids:
         stale_note = (
@@ -1529,6 +1546,12 @@ def _run_deterministic_phase_4(
             f"already failing on the base, {len(comparison.new_failures)} "
             f"newly failing: {named}"
         )
+    elif base_unknown_note:
+        error = (
+            f"tests failed (deterministic Phase 4): {summary[:160]} "
+            f"[whole suite: nothing on record about the base, so every "
+            f"failure is charged]"
+        )
     else:
         error = f"tests failed (deterministic Phase 4): {summary[:160]}"
 
@@ -1565,7 +1588,7 @@ def _run_deterministic_phase_4(
             list(comparison.stale_base_entries) if comparison else []
         ),
         "baseline_source": comparison.base_source if comparison else base_source,
-        "baseline_note": comparison.note if comparison else None,
+        "baseline_note": comparison.note if comparison else base_unknown_note,
         "coverage_pct": 0.0,
         "output_summary": summary,
         "quality_gates_passed": False,

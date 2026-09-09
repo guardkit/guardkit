@@ -363,33 +363,11 @@ class TestZeroNetNew:
         assert block["quality_gates_passed"] is False
         assert "nothing passed" in block["baseline_note"]
 
-    def test_with_no_base_on_record_only_this_task_s_own_tests_are_charged(
-        self, tmp_path: Path
-    ):
-        """No measured baseline and no ledger: the leg cannot tell new red
-        from old red, says so, and charges only the test files this task
-        wrote — exactly what it saw before this lane existed."""
-        root, worktree = _worktree(tmp_path)
-        _declare(root, worktree)
-        _suite_script(worktree, _TWO_RED, 1)
-        _task_work_results(worktree, ["tests/test_users.py"])
-
-        block = _leg(worktree)
-
-        assert block is not None
-        assert block["status"] == "failed"
-        assert block["failures_total"] == 2
-        assert block["new_failing_tests"] == [
-            "tests/test_users.py::test_delete_twice"
-        ]
-        assert "not on record" in block["baseline_note"]
-
-    def test_with_no_base_on_record_a_stranger_s_defect_is_not_this_leg_s(
-        self, tmp_path: Path
-    ):
-        """The other half of the fallback: with nothing on record and no
-        failure in a file this task touched, the leg does not go red for
-        somebody else's defect — it says what it could not compare."""
+    def test_with_no_base_on_record_nothing_is_forgiven(self, tmp_path: Path):
+        """FAIL CLOSED. No measured baseline and no ledger means nothing is
+        known about the base — and not knowing is not the same as knowing
+        the failures are somebody else's. Nothing is subtracted, the run's
+        own red stands whole, and the record says why in plain words."""
         root, worktree = _worktree(tmp_path)
         _declare(root, worktree)
         _suite_script(worktree, _TWO_RED, 1)
@@ -398,10 +376,66 @@ class TestZeroNetNew:
         block = _leg(worktree)
 
         assert block is not None
-        assert block["status"] == "passed"
-        assert block["failures_total"] == 2
-        assert block["failures_new"] == 0
+        assert block["status"] == "failed"
+        assert block["quality_gates_passed"] is False
+        # Every failure is charged: two failed, and none of them was called
+        # inherited, because nothing vouched for the base.
+        assert block["tests_failed"] == 2
+        assert block["failures_total"] is None
+        assert block["failures_inherited"] is None
+        assert block["failures_new"] is None
+        assert "nothing on record" in block["baseline_source"]
         assert "not on record" in block["baseline_note"]
+        assert "every failure this run reported is charged" in (
+            block["baseline_note"]
+        )
+
+    def test_with_no_base_on_record_a_test_this_task_wrote_is_not_forgiven(
+        self, tmp_path: Path
+    ):
+        """The case that made the old fallback unsafe: the leg learned which
+        files a task had touched from ``task_work_results.json``, so when
+        that file was missing — or simply did not list the test — a failing
+        test THIS TASK WROTE was forgiven along with everything else, and the
+        leg went green on a run the Coach then failed. It goes red now."""
+        root, worktree = _worktree(tmp_path)
+        _declare(root, worktree)
+        _suite_script(worktree, _TWO_RED, 1)
+        # No task_work_results.json at all — nothing names the task's files.
+
+        block = _leg(worktree)
+
+        assert block is not None
+        assert block["status"] == "failed"
+        assert block["quality_gates_passed"] is False
+        assert block["tests_failed"] == 2
+
+    def test_with_no_base_on_record_the_leg_and_the_coach_agree(
+        self, tmp_path: Path
+    ):
+        """(b) The reason this phase exists is that the leg and the Coach
+        reach ONE verdict. With nothing on record about the base they both
+        charge every failure: the leg is red here, and the Coach's own
+        baseline diff leaves its red standing too."""
+        root, worktree = _worktree(tmp_path)
+        _declare(root, worktree)
+        _suite_script(worktree, _TWO_RED, 1)
+
+        block = _leg(worktree)
+        assert block is not None
+        assert block["status"] == "failed"
+
+        coach = CoachValidator(
+            worktree_path=str(worktree),
+            task_id=_TASK_ID,
+            coach_test_execution="subprocess",
+            test_timeout=120,
+        )
+        coach_result = coach.run_independent_tests(
+            task_work_results={"files_modified": []}, turn=1
+        )
+        assert coach_result.test_command == block["test_command"]
+        assert coach_result.tests_passed is False
 
     def test_the_operator_can_turn_every_subtraction_off(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

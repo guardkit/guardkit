@@ -1072,7 +1072,11 @@ class SuiteComparedToBase:
         one plain line saying the record has gone stale in the good
         direction.
     base_known
-        Whether the base's failing set could be established at all.
+        Always ``True``. A comparison exists ONLY when the base's failing set
+        could be established; when it could not, there is no comparison at
+        all and the run's own red stands, whole. The field is kept because a
+        record that forgives a failure should say on the face of it that the
+        base was known.
     base_source
         Where it came from, in ordinary words, for the record.
     passes
@@ -4353,9 +4357,12 @@ class CoachValidator:
         ``baseline.json`` shape source 1 writes, so the two doors are
         reading one record, not two.
 
-        ``base_known`` is ``False`` only when neither is present. The caller
-        then says so and falls back to the leg's old task-scoped behaviour
-        rather than charging this task for somebody else's defect.
+        ``base_known`` is ``False`` only when neither is present. Nothing is
+        then forgiven: :meth:`compare_suite_against_base` makes no comparison
+        at all, the run's own red stands in full, and the record says in
+        plain words that nothing was on record. That is the fail-closed
+        direction, and it is the same verdict the Coach's own gate reaches in
+        the same state, so the leg and the Coach still agree.
         """
         measured, ledger = self._baseline_context()
         sources: List[str] = []
@@ -4420,13 +4427,20 @@ class CoachValidator:
         test passed. A run where nothing passed is reported red with that
         said in words.
 
-        THE BASE-UNKNOWN CASE. When neither the measured baseline nor the
-        ledger exists, this leg cannot tell new red from old red. It says so,
-        and charges only failures in test files this task itself wrote or
-        changed — which is exactly what the leg saw before this lane existed,
-        when it ran the task's own test files and nothing else. It is no
-        blinder than yesterday, and the merge-ready checkpoint still reads
-        the whole suite.
+        THE BASE-UNKNOWN CASE, also not forgiven. When neither the measured
+        baseline nor the ledger exists, nothing is known about the base, and
+        an absence of knowledge is not evidence of innocence: forgiving on
+        the strength of "we do not know" would forgive every failure of a red
+        suite — including a test this very task wrote, because the only thing
+        naming the task's own files is ``task_work_results.json``, which is
+        itself often missing or incomplete. So no comparison is made at all
+        (``None``), the plain exit-code rule stands, and the run's red stands
+        with it. The Coach's own gate reaches the same verdict in the same
+        state — it charges every failure when neither source answered — so
+        the leg and the Coach still agree, which is the whole reason this
+        deterministic phase exists. A repository that wants its base's
+        failures subtracted here records them: the wave-0 baseline, or its
+        own ``qa/known-failures.yaml`` ledger.
         """
         if not baseline_diff_enabled():
             # The operator's existing kill switch
@@ -4445,29 +4459,33 @@ class CoachValidator:
             return None
 
         base_known, base_ids, base_source = self.base_failing_tests()
-        authored = self._authored_test_files(task_work_results or {})
 
-        if base_known:
-            # The estate's own subtraction, unchanged:
-            # observed - (measured baseline union ledger), plus anything in a
-            # test file this task itself authored (a task cannot hide behind
-            # the base for a test it was meant to fix).
-            measured, ledger = self._baseline_context()
-            new_failures = compute_charged_failures(
-                observed_node_ids=observed,
-                baseline_node_ids=measured.failing_node_ids if measured else [],
-                ledger_ids=ledger,
-                authored_test_files=authored,
+        if not base_known:
+            # FAIL CLOSED. Nothing is on record about the base, so there is
+            # nothing to subtract and no comparison to make: this method
+            # returns None and the run's own red stands, whole. A verdict
+            # needs positive evidence, which is the same reason the
+            # entirely-red run below is not forgiven either.
+            logger.info(
+                "zero-net-new: no comparison made — %s. Every failure in "
+                "this run is charged (fail closed).",
+                base_source,
             )
-            stale = [node for node in base_ids if node not in set(observed)]
-        else:
-            authored_set = set(authored)
-            new_failures = [
-                node
-                for node in observed
-                if node.split("::", 1)[0] in authored_set
-            ]
-            stale = []
+            return None
+
+        # The estate's own subtraction, unchanged:
+        # observed - (measured baseline union ledger), plus anything in a
+        # test file this task itself authored (a task cannot hide behind
+        # the base for a test it was meant to fix).
+        authored = self._authored_test_files(task_work_results or {})
+        measured, ledger = self._baseline_context()
+        new_failures = compute_charged_failures(
+            observed_node_ids=observed,
+            baseline_node_ids=measured.failing_node_ids if measured else [],
+            ledger_ids=ledger,
+            authored_test_files=authored,
+        )
+        stale = [node for node in base_ids if node not in set(observed)]
 
         # Forgiveness needs POSITIVE evidence that the run did work: at
         # least one test actually passed. No such evidence (nothing passed,
@@ -4486,14 +4504,6 @@ class CoachValidator:
                 f"failure may be on the base's list, but a run in which "
                 f"nothing passed proves nothing, so it is not forgiven: "
                 f"this leg is red. Check that the suite could actually run."
-            )
-        elif not base_known:
-            note = (
-                f"{failures_total} test(s) failed. What the base was already "
-                f"failing is not on record ({base_source}), so this leg "
-                f"cannot tell new red from old red; it judges only the test "
-                f"files this task wrote or changed, exactly as it did before. "
-                f"{len(new_failures)} of the failures are in those files."
             )
         elif passes:
             note = (
