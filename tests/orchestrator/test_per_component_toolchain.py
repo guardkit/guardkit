@@ -122,15 +122,22 @@ class TestComponentCommandResolution:
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE, component="app")
         assert v._detect_test_command(_TASK_ID) == "flutter test"
 
-    def test_the_control_without_a_component_still_takes_that_rung(self, repo):
+    def test_the_control_without_a_component_takes_the_root_declaration(
+        self, repo
+    ):
+        """No component named means the ROOT block — never the component's.
+
+        Since Rich's ruling of 2026-09-09 the root block also outranks the
+        task-specific pytest guess, so this control now resolves the root's
+        declared command rather than a bare pytest on the task's own file.
+        The thing being pinned is unchanged: a task that named no component
+        gets the root's command, not ``flutter test``."""
         root, worktree = repo
         tests_dir = worktree / "tests"
         tests_dir.mkdir()
         (tests_dir / "test_task_pc_042_thing.py").touch()
         v = _validator(root, worktree, STUDY_TUTOR_SHAPE)
-        cmd = v._detect_test_command(_TASK_ID)
-        assert cmd.startswith("pytest ")
-        assert "test_task_pc_042_thing.py" in cmd
+        assert v._detect_test_command(_TASK_ID) == STUDY_TUTOR_SHAPE["test"]
 
     def test_the_component_is_honoured_in_a_parallel_wave(self, repo):
         root, worktree = repo

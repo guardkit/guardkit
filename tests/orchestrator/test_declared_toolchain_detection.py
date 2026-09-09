@@ -2,11 +2,13 @@
 
 Four things are pinned here, in the order the design argues them:
 
-1. **The declaration wins over ``detect_stack_profile``** — and fires in
-   PARALLEL WAVES too. The ``not self.is_parallel`` guard exists because
-   marker detection is a guess; a declaration is not a guess. Removing the
-   parallel-wave fall-through to the LLM ``test-orchestrator`` specialist is
-   the lane's M0-POSITIVE change: it deletes a frontier hop.
+1. **The declaration wins over every guess** — over ``detect_stack_profile``
+   and, since Rich's ruling of 2026-09-09, over the task-specific ladder
+   above it as well; and it fires in PARALLEL WAVES too. The
+   ``not self.is_parallel`` guard exists because marker detection is a guess;
+   a declaration is not a guess. Removing the parallel-wave fall-through to
+   the LLM ``test-orchestrator`` specialist is the lane's M0-POSITIVE change:
+   it deletes a frontier hop.
 2. **THE PYTEST DEMOTION PROOF** — with ``toolchain.test:
    "pytest tests/ -v --tb=short"`` declared, the chosen command is
    BYTE-IDENTICAL to today's, resolved through the same interpreter-pinned
@@ -137,15 +139,37 @@ class TestDeclaredWinsOverDetection:
         v = CoachValidator(str(worktree), task_id=_TASK_ID, wave_size=4)
         assert v._detect_test_command(_TASK_ID) is None
 
-    def test_declaration_does_not_preempt_task_specific_python_tests(self, repo):
-        """Precedence is pinned at the marker-detection rung, NOT above the
-        task-specific ladder: a narrow per-task command still wins, so a
-        parallel wave cannot start running siblings' tests."""
+    def test_declaration_preempts_task_specific_python_tests(self, repo):
+        """RICH'S RULING, 2026-09-09: the leg runs what the repository
+        declares — above the task-specific ladder, not merely above the
+        marker guesses below it.
+
+        This test used to assert the opposite, and that older precedence is
+        what killed a fix journey twenty-six times: the coder wrote a
+        PostgreSQL test, the leg ran a bare pytest against a repository with
+        no database standing, and the merge-ready checkpoint — which has
+        always honoured the declaration — passed the very same code.
+
+        The cost is real and is accepted: the declared command is usually the
+        whole suite, so a leg can go red for somebody else's defect, and in a
+        parallel wave a sibling's failure lands here. A declaration is not a
+        guess; the ladder below it is."""
         root, worktree = repo
         tests_dir = worktree / "tests"
         tests_dir.mkdir()
         (tests_dir / "test_task_ts_042_thing.py").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npx vitest run"})
+        assert v._detect_test_command(_TASK_ID) == "npx vitest run"
+        assert v.test_command_source() == "repository toolchain declaration"
+
+    def test_control_no_declaration_still_runs_the_task_specific_tests(self, repo):
+        """The other half of the same law: with NOTHING declared, the
+        task-specific ladder is exactly what it always was."""
+        root, worktree = repo
+        tests_dir = worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_ts_042_thing.py").touch()
+        v = CoachValidator(str(worktree), task_id=_TASK_ID)
         cmd = v._detect_test_command(_TASK_ID)
         assert cmd.startswith("pytest ")
         assert "test_task_ts_042_thing.py" in cmd
