@@ -1131,6 +1131,77 @@ def _load_task_work_results(
         return None
 
 
+def _test_command_source(validator: Any) -> Optional[str]:
+    """Where the validator's chosen test command came from, in plain words.
+
+    Best-effort and defensive: a stand-in validator (tests, an older build)
+    need not carry the accessor, and whatever it returns must be a plain
+    string before it goes into a JSON record. ``None`` when unknown.
+    """
+    getter = getattr(validator, "test_command_source", None)
+    if not callable(getter):
+        return None
+    try:
+        source = getter()
+    except Exception:  # noqa: BLE001 — forensic metadata never breaks a run
+        return None
+    return source if isinstance(source, str) and source else None
+
+
+def _ran_the_declaration(validator: Any) -> bool:
+    """Whether the validator ran the repository's DECLARED command.
+
+    Best-effort and defensive, like :func:`_test_command_source`: a stand-in
+    validator need not carry the accessor. ``False`` when unknown — which
+    leaves the leg's verdict exactly what it has always been.
+    """
+    getter = getattr(validator, "ran_the_repository_declaration", None)
+    if not callable(getter):
+        return False
+    try:
+        return bool(getter())
+    except Exception:  # noqa: BLE001 — a verdict never depends on metadata
+        return False
+
+
+def _base_failing(validator: Any) -> tuple[bool, list, Optional[str]]:
+    """What the base was already failing, and where that was learned.
+
+    ``(base_known, failing_ids, source_in_plain_words)``; ``(False, [], None)``
+    when the validator cannot answer.
+    """
+    getter = getattr(validator, "base_failing_tests", None)
+    if not callable(getter):
+        return False, [], None
+    try:
+        known, ids, source = getter()
+        return bool(known), list(ids), str(source)
+    except Exception:  # noqa: BLE001 — forensic metadata never breaks a run
+        return False, [], None
+
+
+def _compare_against_base(
+    validator: Any,
+    result: Any,
+    task_work_results: Optional[dict[str, Any]],
+) -> Optional[Any]:
+    """The zero-net-new reading of a red whole-suite run, or ``None``.
+
+    ``None`` means "no reading available" — an older validator, a stack whose
+    failing test names cannot be parsed, or an exception — and the leg then
+    reports the red exactly as it does today. Never turns a red leg green by
+    accident: only a positive comparison saying ``passes`` does that.
+    """
+    getter = getattr(validator, "compare_suite_against_base", None)
+    if not callable(getter):
+        return None
+    try:
+        return getter(result, task_work_results)
+    except Exception as exc:  # noqa: BLE001 — fail closed to the real verdict
+        logger.debug("zero-net-new comparison skipped (%s)", exc)
+        return None
+
+
 def _run_deterministic_phase_4(
     worktree_path: Path,
     task_id: str,
@@ -1143,11 +1214,31 @@ def _run_deterministic_phase_4(
 ) -> Optional[dict[str, Any]]:
     """Execute Phase-4 tests deterministically and return a phase_4 block.
 
-    TASK-AB-PERTASKFG01 AC-004. Reuses the Coach's venv-pinned
+    TASK-AB-PERTASKFG01 AC-004. Reuses the Coach's
     ``CoachValidator(coach_test_execution="subprocess").run_independent_tests``
     so Player Phase-4 execution and Coach independent verification run the
-    IDENTICAL ``<venv_python> -m pytest`` command — no LLM in the loop, so it
-    cannot hang.
+    IDENTICAL command — no LLM in the loop, so it cannot hang. That identity
+    is the point of this function, and it survives the change below because
+    both sides ask the SAME method for the command.
+
+    WHAT COMMAND. Since Rich's ruling of 2026-09-09, a repository that has
+    declared how its tests are run (``.guardkit/config.yaml``,
+    ``toolchain.test``) has that command run here — the same declaration the
+    merge-ready checkpoint has always honoured. A repository that declares
+    nothing is exactly what it was: the venv-pinned ``<venv python> -m
+    pytest`` on the task's own test files, same argv, same parsing, same
+    fallbacks.
+
+    WHAT IT COSTS, said plainly: a declared command is usually the whole
+    suite, where the old guess ran only the task's own tests, so a leg can now
+    go red for a defect somebody else left behind. That is the repository's
+    own declaration and the estate's law. Because a red leg is only useful if
+    a person can see what ran, the record below carries the command and where
+    it came from ("repository toolchain declaration") beside the interpreter
+    that was already there. The declared command may also be a script rather
+    than a pytest run, and slower; it stays inside the same phase timeout, and
+    a timeout is reported exactly as one is today (an absent signal, never a
+    pass).
 
     Returns
     -------
@@ -1254,6 +1345,13 @@ def _run_deterministic_phase_4(
 
     duration = time.monotonic() - start
     summary = (result.test_output_summary or "")[:200]
+    command_source = _test_command_source(validator)
+    logger.info(
+        "[%s] deterministic Phase-4 test command: %s (source: %s)",
+        task_id,
+        result.test_command,
+        command_source or "unknown",
+    )
 
     # No pytest test command detected (``run_independent_tests`` returns the
     # "skipped" sentinel when ``_detect_test_command`` finds nothing). This is
@@ -1293,12 +1391,71 @@ def _run_deterministic_phase_4(
             "verifier_infrastructure": True,
             "resolved_interpreter": result.resolved_interpreter,
             "test_command": result.test_command,
+            "test_command_source": command_source,
             **{**_PHASE_4_AGENT_FIELD_DEFAULTS, "output_summary": summary},
         }
 
     tests_run, tests_failed, tests_skipped = _parse_pytest_counts(
         result.raw_output
     )
+
+    # ZERO NET-NEW, NOT ALL-GREEN (Rich's second ruling, 2026-09-09).
+    #
+    # No real repository is all green — forge's suite carries about thirty
+    # base failures, guardkit's eleven to fourteen, all triaged — so a leg
+    # that demanded a green suite would fail on every red repository for
+    # ever. The bar is instead: nothing NEWLY red. A failure the branch's
+    # base already had is not this leg's failure.
+    #
+    # It applies ONLY when the command came from the repository's own
+    # declaration, because only then is the leg running the whole suite and
+    # therefore exposed to somebody else's defect. A run of the task's own
+    # test files is judged exactly as it always was: every failure in it is
+    # this task's. That is why a repository declaring nothing keeps today's
+    # verdict, byte for byte, as well as today's argv.
+    #
+    # The base's failing set is not a new mechanism: it is the build's
+    # measured wave-0 baseline and the repository's own known-failure
+    # ledger, the two the estate already keeps and the Coach's own gate
+    # already subtracts. See
+    # ``CoachValidator.compare_suite_against_base`` for what happens when
+    # neither is on record.
+    declared_run = _ran_the_declaration(validator)
+    base_known, base_failing_ids, base_source = (
+        _base_failing(validator) if declared_run else (False, [], None)
+    )
+    comparison = (
+        _compare_against_base(validator, result, task_work_results)
+        if declared_run
+        else None
+    )
+
+    # When the leg ran the whole declared suite and NOTHING is on record
+    # about the base, no comparison is made at all and the run's own red
+    # stands, whole — the fail-closed direction, and the same verdict the
+    # Coach's own gate reaches in that state. Say so in the record: "why was
+    # I charged for failures I did not cause?" deserves an answer a person
+    # can read, and the answer is "record a baseline or a ledger".
+    base_unknown_note: Optional[str] = None
+    if declared_run and not base_known and comparison is None:
+        base_unknown_note = (
+            "What the branch's base was already failing is not on record "
+            f"({base_source or 'no baseline could be read'}), so nothing "
+            "could be forgiven and every failure this run reported is "
+            "charged. To have the base's own failures subtracted here, "
+            "record them: the wave-0 baseline, or the repository's "
+            "qa/known-failures.yaml ledger."
+        )
+
+    stale_note: Optional[str] = None
+    if result.tests_passed and base_known and base_failing_ids:
+        stale_note = (
+            f"{len(base_failing_ids)} test(s) recorded as failing on the base "
+            f"did not fail here — the record has gone stale in the good "
+            f"direction (or this command did not select them). The base's "
+            f"failing set came from {base_source}."
+        )
+        logger.info("[%s] %s", task_id, stale_note)
 
     if result.tests_passed:
         # returncode 0 (and not signal_absent, so not the returncode-5
@@ -1317,16 +1474,91 @@ def _run_deterministic_phase_4(
             "tests_skipped": tests_skipped,
             # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only.
             "resolved_interpreter": result.resolved_interpreter,
+            # Which command ran, and why that one. Forensic only — no verdict
+            # rule reads either — but a person reading this record should not
+            # have to guess whether the repository's declaration or the venv
+            # default produced it.
+            "test_command": result.test_command,
+            "test_command_source": command_source,
+            # Where the base's failing set came from, so the forensic
+            # question "what did the verifier forgive, and on whose word?"
+            # is one grep. ``None`` when the leg ran the task's own tests
+            # and nothing was forgiven or could be.
+            "baseline_source": base_source,
+            # A3: a test the base was failing that PASSES now is never a
+            # failure — it is one plain line saying the record has gone
+            # stale in the good direction.
+            "stale_base_entries": list(base_failing_ids) if base_known else [],
+            "baseline_note": stale_note,
             "coverage_pct": 0.0,
             "output_summary": summary,
             "quality_gates_passed": True,
         }
 
-    # ran-and-failed: a genuine pytest failure verdict.
+    # ran-and-failed. Before this is a verdict, ask the zero-net-new
+    # question — but only for a declared whole-suite run, and only when the
+    # comparison could be made at all.
+    if comparison is not None and comparison.passes:
+        # Every failure was already failing on the base, and the run visibly
+        # did work (at least one test passed). Nothing NEW is red, so the leg
+        # passes and says in words how many failures it forgave and on whose
+        # word. The failing tests themselves are somebody's to fix — the
+        # merge door and the ledger's own review date are where that happens,
+        # not here.
+        logger.info(
+            "[%s] deterministic Phase-4 PASSES on zero net-new: %s",
+            task_id,
+            comparison.note,
+        )
+        return {
+            "status": "passed",
+            "duration_seconds": duration,
+            "error": None,
+            "tests_run": tests_run,
+            # Nothing is charged to this leg; the three real numbers are
+            # carried beside it rather than hidden behind a zero.
+            "tests_failed": 0,
+            "tests_skipped": tests_skipped,
+            "resolved_interpreter": result.resolved_interpreter,
+            "test_command": result.test_command,
+            "test_command_source": command_source,
+            "failures_total": comparison.failures_total,
+            "failures_inherited": comparison.inherited,
+            "failures_new": 0,
+            "new_failing_tests": [],
+            "stale_base_entries": list(comparison.stale_base_entries),
+            "baseline_source": comparison.base_source,
+            "baseline_note": comparison.note,
+            "coverage_pct": 0.0,
+            "output_summary": f"{comparison.note} {summary}"[:400],
+            "quality_gates_passed": True,
+        }
+
+    # A genuine failure verdict. When the comparison could be made, the leg
+    # names ONLY what is newly red: a red leg naming twenty failures of which
+    # nineteen are inherited is a leg nobody reads; "one test is newly
+    # failing: <id>" is one that gets fixed.
+    if comparison is not None:
+        named = ", ".join(comparison.new_failures[:10]) or "(none named)"
+        error = (
+            f"tests failed (deterministic Phase 4): "
+            f"{comparison.failures_total} failed, {comparison.inherited} "
+            f"already failing on the base, {len(comparison.new_failures)} "
+            f"newly failing: {named}"
+        )
+    elif base_unknown_note:
+        error = (
+            f"tests failed (deterministic Phase 4): {summary[:160]} "
+            f"[whole suite: nothing on record about the base, so every "
+            f"failure is charged]"
+        )
+    else:
+        error = f"tests failed (deterministic Phase 4): {summary[:160]}"
+
     return {
         "status": "failed",
         "duration_seconds": duration,
-        "error": f"tests failed (deterministic Phase 4): {summary[:160]}",
+        "error": error[:400],
         "tests_run": tests_run,
         "tests_failed": tests_failed or max(1, tests_run),
         # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
@@ -1335,6 +1567,28 @@ def _run_deterministic_phase_4(
         # ``verifier_infrastructure`` marker here — a ran-and-failed verdict
         # is a genuine Player signal (TASK-AB-ZEROTESTLOUD01 AC-005).
         "resolved_interpreter": result.resolved_interpreter,
+        # A red leg must say WHICH command went red and where it came from:
+        # a whole declared suite can fail on somebody else's defect, and that
+        # reads very differently from the task's own tests failing.
+        "test_command": result.test_command,
+        "test_command_source": command_source,
+        # THE THREE NUMBERS a person needs from a red whole-suite leg: how
+        # many failed, how many the base already had, how many are new — and
+        # the new ones by name. Absent (``None``/empty) when the leg ran the
+        # task's own tests, where every failure is this task's by definition.
+        "failures_total": comparison.failures_total if comparison else None,
+        "failures_inherited": comparison.inherited if comparison else None,
+        "failures_new": (
+            len(comparison.new_failures) if comparison else None
+        ),
+        "new_failing_tests": (
+            list(comparison.new_failures) if comparison else []
+        ),
+        "stale_base_entries": (
+            list(comparison.stale_base_entries) if comparison else []
+        ),
+        "baseline_source": comparison.base_source if comparison else base_source,
+        "baseline_note": comparison.note if comparison else base_unknown_note,
         "coverage_pct": 0.0,
         "output_summary": summary,
         "quality_gates_passed": False,
