@@ -1168,3 +1168,299 @@ class TestRealProducer:
             findings=[SAMPLE_FINDING], fix_task_paths=admitted
         )
         assert verdict == "PASSED"
+
+
+# ===========================================================================
+# 14. When the reviewer writes nothing, ask once more
+# ===========================================================================
+#
+# Observed twice on the production fix journey inside the api_test sandbox
+# (builds build-FEAT-39F6-20260908214550 and build-FEAT-39F6-20260909060521):
+# every model call came back 200, the review specialist ran for minutes, and
+# it then finished having written no file at all. The leg asked once and gave
+# up, which costs the owner a whole queue-and-tap. It now asks once more.
+
+
+class _ScriptedSpecialistResult:
+    def __init__(self, status="passed", error=None, final_message=None):
+        self.specialist_name = "code-reviewer"
+        self.phase = "5"
+        self.status = status
+        self.duration_seconds = 1.0
+        self.result_file = None
+        self.error = error
+        self.final_message = final_message
+
+
+def install_scripted_specialist(monkeypatch, repo_root: Path, *, script, calls):
+    """Fake the model call at the ``run_specialist`` seam, one entry per ask.
+
+    Each ``script`` entry says what that ask does: ``report`` / ``findings``
+    write those files, ``status`` / ``error`` fail it, ``said`` is the text it
+    finished with. An ask past the end of the script is a test failure — that
+    is how "no second ask happened" is proved.
+    """
+
+    async def _fake_run_specialist(
+        specialist_name,
+        worktree_path,
+        task_id,
+        sdk_timeout,
+        prompt,
+        allowed_tools,
+        agent_invoker,
+        **kwargs,
+    ):
+        assert len(calls) < len(script), (
+            f"the leg made ask {len(calls) + 1}; the script allows {len(script)}"
+        )
+        step = script[len(calls)]
+        calls.append({"prompt": prompt, "sdk_timeout": sdk_timeout})
+
+        if step.get("report") is not None:
+            report = repo_root / ".claude" / "reviews" / f"{task_id}-review-report.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text(step["report"], encoding="utf-8")
+        if step.get("findings") is not None:
+            findings = (
+                repo_root / ".guardkit" / "autobuild" / task_id / "review_findings.json"
+            )
+            findings.parent.mkdir(parents=True, exist_ok=True)
+            findings.write_text(json.dumps(step["findings"]), encoding="utf-8")
+
+        return _ScriptedSpecialistResult(
+            status=step.get("status", "passed"),
+            error=step.get("error"),
+            final_message=step.get("said"),
+        )
+
+    monkeypatch.setattr(review_runner, "run_specialist", _fake_run_specialist)
+    monkeypatch.setattr(
+        review_runner, "_build_agent_invoker", lambda **kwargs: object()
+    )
+
+
+class TestSecondAsk:
+    def _receipt(self, repo: Path) -> dict:
+        return json.loads(
+            review_runner.receipt_path_for(repo, TASK_ID).read_text(encoding="utf-8")
+        )
+
+    def test_a_first_ask_that_writes_both_files_is_asked_only_once(
+        self, runner, repo, monkeypatch
+    ):
+        """The ordinary run: one ask, and the receipt gains nothing at all."""
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[{"report": clean_report(), "findings": {"findings": []}}],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 0, result.stderr
+        assert len(calls) == 1
+        receipt = self._receipt(repo)
+        assert "specialist_asks" not in receipt
+        assert "specialist_message" not in receipt
+
+    def test_a_silent_first_ask_is_rescued_by_the_second(
+        self, runner, repo, monkeypatch
+    ):
+        """Nothing written, then both files written: the leg passes normally."""
+        calls: list = []
+        install_fake_producer(monkeypatch, repo, ["TASK-HPR-001-fix.md"])
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[
+                {},
+                {"report": findings_report(), "findings": {"findings": [SAMPLE_FINDING]}},
+            ],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 0, result.stderr
+        assert len(calls) == 2
+        receipt = self._receipt(repo)
+        assert receipt["specialist_asks"] == 2
+        assert receipt["findings_count"] == 1
+        assert forge_extract_findings(result.stdout)[0]["id"] == "F1"
+
+    def test_two_silent_asks_exit_2_and_say_it_was_asked_twice(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch, repo, script=[{}, {}], calls=calls
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 2
+        assert len(calls) == 2
+        assert "wrote no report" in result.stderr
+        assert "asked twice" in result.stderr
+        receipt = self._receipt(repo)
+        assert receipt["status"] == "failed"
+        assert receipt["specialist_asks"] == 2
+
+    def test_a_report_without_a_findings_file_fires_the_second_ask(
+        self, runner, repo, monkeypatch
+    ):
+        """The report alone is not enough; the findings error still stands."""
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[{"report": clean_report()}, {"report": clean_report()}],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 2
+        assert len(calls) == 2
+        assert "findings file not written" in result.stderr
+        assert "asked twice" in result.stderr
+
+    def test_a_findings_file_alone_also_fires_the_second_ask(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[
+                {"findings": {"findings": []}},
+                {"report": clean_report(), "findings": {"findings": []}},
+            ],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 0, result.stderr
+        assert len(calls) == 2
+
+    def test_a_failed_specialist_is_never_asked_again(
+        self, runner, repo, monkeypatch
+    ):
+        """A failure keeps today's words and today's single ask."""
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[{"status": "failed", "error": "AgentInvocationError: boom"}],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 2
+        assert len(calls) == 1
+        assert "review specialist failed" in result.stderr
+        assert "asked twice" not in result.stderr
+
+    def test_a_timed_out_specialist_is_never_asked_again(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[
+                {"status": "failed", "error": "SDKTimeoutError: SDK invocation exceeded 480s"}
+            ],
+            calls=calls,
+        )
+        result = runner.invoke(task_review, ["--task-id", TASK_ID])
+        assert result.exit_code == 2
+        assert len(calls) == 1
+        assert "internal 480s budget" in result.stderr
+        assert "asked twice" not in result.stderr
+
+    def test_the_second_ask_names_both_absolute_paths_and_the_write_tool(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch, repo, script=[{}, {}], calls=calls
+        )
+        runner.invoke(task_review, ["--task-id", TASK_ID])
+        second = calls[1]["prompt"]
+        report_path = repo / ".claude" / "reviews" / f"{TASK_ID}-review-report.md"
+        findings_path = (
+            repo / ".guardkit" / "autobuild" / TASK_ID / "review_findings.json"
+        )
+        assert report_path.is_absolute() and findings_path.is_absolute()
+        assert str(report_path) in second
+        assert str(findings_path) in second
+        assert "Write tool" in second
+
+    def test_the_second_ask_stays_inside_the_budget_the_caller_gave(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch, repo, script=[{}, {}], calls=calls
+        )
+        runner.invoke(task_review, ["--task-id", TASK_ID, "--sdk-timeout", "300"])
+        assert calls[0]["sdk_timeout"] == 300
+        assert 0 < calls[1]["sdk_timeout"] <= 300
+
+    def test_no_second_ask_when_too_little_budget_is_left(
+        self, runner, repo, monkeypatch
+    ):
+        """A call that cannot finish is not started; the failure says so."""
+        calls: list = []
+        install_scripted_specialist(monkeypatch, repo, script=[{}], calls=calls)
+        result = runner.invoke(
+            task_review, ["--task-id", TASK_ID, "--sdk-timeout", "1"]
+        )
+        assert result.exit_code == 2
+        assert len(calls) == 1
+        assert "wrote no report" in result.stderr
+        assert "not asked again" in result.stderr
+
+    def test_what_the_specialist_said_instead_is_kept(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch,
+            repo,
+            script=[{"said": "I read src/parser.py and it looks fine to me."}, {}],
+            calls=calls,
+        )
+        runner.invoke(task_review, ["--task-id", TASK_ID])
+        receipt = self._receipt(repo)
+        assert "I read src/parser.py" in receipt["specialist_message"]
+
+    def test_the_kept_text_is_cut_short_at_the_constant(
+        self, runner, repo, monkeypatch
+    ):
+        limit = review_runner.SPECIALIST_MESSAGE_LIMIT
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch, repo, script=[{"said": "z" * (limit + 500)}, {}], calls=calls
+        )
+        runner.invoke(task_review, ["--task-id", TASK_ID])
+        kept = self._receipt(repo)["specialist_message"]
+        assert kept.startswith("z" * 100)
+        assert kept.endswith(review_runner.SPECIALIST_MESSAGE_TRUNCATION_MARKER)
+        assert len(kept) == limit + len(
+            review_runner.SPECIALIST_MESSAGE_TRUNCATION_MARKER
+        )
+
+    def test_text_that_the_runner_cannot_supply_is_said_plainly(
+        self, runner, repo, monkeypatch
+    ):
+        calls: list = []
+        install_scripted_specialist(
+            monkeypatch, repo, script=[{}, {}], calls=calls
+        )
+        runner.invoke(task_review, ["--task-id", TASK_ID])
+        receipt = self._receipt(repo)
+        assert receipt["specialist_message"] == (
+            review_runner.SPECIALIST_MESSAGE_UNAVAILABLE
+        )
+
+    def test_truncation_helper_keeps_short_text_whole(self):
+        assert review_runner.truncate_specialist_message("a short reply") == (
+            "a short reply"
+        )
+        assert review_runner.truncate_specialist_message("   ") is None
+        assert review_runner.truncate_specialist_message(None) is None

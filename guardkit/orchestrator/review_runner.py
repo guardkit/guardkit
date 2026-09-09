@@ -81,6 +81,32 @@ REVIEW_SPECIALIST_NAME = "code-reviewer"
 #: why the review leg crosses to non-Python repos free (design §g).
 REVIEW_ALLOWED_TOOLS: Tuple[str, ...] = ("Read", "Grep", "Glob", "Write")
 
+#: How much of the leg's own budget must still be left before a second ask is
+#: worth starting. Observed twice on the production fix journey (2026-09-08
+#: 22:01:51Z, 232 seconds; 2026-09-09 06:39:14Z, 721 seconds): the specialist
+#: ran for minutes, every model call came back 200, and it then finished having
+#: written no file at all. The cure is to ask once more; below this many
+#: seconds there is no point starting a call that cannot finish, and the leg
+#: says so in its failure instead.
+MIN_SECOND_ASK_SECONDS = 30
+
+#: How much of what the specialist said is kept on the leg's results when it
+#: wrote nothing. Long enough to read what it did with its minutes, short
+#: enough that a receipt stays a receipt.
+SPECIALIST_MESSAGE_LIMIT = 4000
+
+#: What replaces the rest when the kept message is longer than the limit.
+SPECIALIST_MESSAGE_TRUNCATION_MARKER = (
+    f"\n[cut short — only the first {SPECIALIST_MESSAGE_LIMIT} characters of "
+    "what the specialist said are kept]"
+)
+
+#: What the results say when the specialist was asked again but the runner
+#: could not hand back the words it used. Honest silence, not a guess.
+SPECIALIST_MESSAGE_UNAVAILABLE = (
+    "The runner did not supply the text of what the specialist said."
+)
+
 #: MIRROR of the pipeline's fix-task identifier shape,
 #: ``forge/src/forge/cli/_serve_deps_stage_log.py:398``
 #: (``default_fix_tasks_extractor``). A printed artefact whose *stem* does not
@@ -182,6 +208,19 @@ def _clean_line_present(report_text: str) -> bool:
     return " ".join(CLEAN_REVIEW_LINE.split()).lower() in flat
 
 
+def truncate_specialist_message(text: Any) -> Optional[str]:
+    """Bound what the specialist said to :data:`SPECIALIST_MESSAGE_LIMIT`.
+
+    Returns ``None`` for anything that is not text worth keeping, so the
+    caller can say plainly that there was nothing to keep.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    if len(text) <= SPECIALIST_MESSAGE_LIMIT:
+        return text
+    return text[:SPECIALIST_MESSAGE_LIMIT] + SPECIALIST_MESSAGE_TRUNCATION_MARKER
+
+
 # ---------------------------------------------------------------------------
 # Typed results
 # ---------------------------------------------------------------------------
@@ -232,6 +271,12 @@ class ReviewLegOutcome:
     #: (Rich's ruling, 2026-08-02). Empty dict = the producer never ran; an
     #: ``enforcement: "off"`` block = it ran and minted nothing on purpose.
     pass_bars: Dict[str, Any] = field(default_factory=dict)
+    #: How many times the review specialist was asked. One on every ordinary
+    #: run; two only when the first ask finished having written no file.
+    specialist_asks: int = 1
+    #: What the specialist said instead of writing, kept only when it had to
+    #: be asked again (bounded by :data:`SPECIALIST_MESSAGE_LIMIT`).
+    specialist_message: Optional[str] = None
 
     @property
     def emits_markers(self) -> bool:
@@ -444,6 +489,53 @@ def render_review_prompt(
         ]
     )
     return "\n".join(parts)
+
+
+def render_second_ask_prompt(
+    *,
+    first_prompt: str,
+    report_path: Path,
+    findings_path: Path,
+    report_written: bool,
+    findings_written: bool,
+) -> str:
+    """The corrective ask, used when the first ask wrote no file.
+
+    It carries the original ask — that is what the specialist was asked to do,
+    and the second run starts a fresh session, so without it the specialist
+    would have nothing to write a report *about* and might invent one. Around
+    it sits the correction: what did not happen last time, the two exact
+    absolute paths, and the instruction to write them now and do nothing else.
+    """
+    if not report_written and not findings_written:
+        missing = "neither of its two files"
+    elif not report_written:
+        missing = "the review report"
+    else:
+        missing = "the findings file"
+
+    def _state(written: bool) -> str:
+        return "already written, leave it alone" if written else "MISSING — write it now"
+
+    return "\n".join(
+        [
+            f"Your last run finished without writing {missing}.",
+            "",
+            "You were asked to do the review set out below. Finish it now by "
+            "writing the file marked MISSING, with the Write tool, and do "
+            "nothing else.",
+            "",
+            f"- review report: {report_path} ({_state(report_written)})",
+            f"- findings file: {findings_path} ({_state(findings_written)})",
+            "",
+            "A review that is not written down does not count: nothing you "
+            "say in this reply is read, only the files.",
+            "",
+            "--- what you were asked to do ---",
+            "",
+            first_prompt,
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -931,6 +1023,7 @@ def _invoke_review_specialist(
             prompt,
             list(REVIEW_ALLOWED_TOOLS),
             agent_invoker,
+            capture_final_message=True,
         )
     )
 
@@ -1019,8 +1112,12 @@ def _m0_fence_receipt_line(outcome: "ReviewLegOutcome") -> str:
 def build_receipt(
     outcome: ReviewLegOutcome, *, build_id: Optional[str], correlation_id: Optional[str]
 ) -> Dict[str, Any]:
-    """Assemble the per-leg receipt payload."""
-    return {
+    """Assemble the per-leg receipt payload.
+
+    The two second-ask keys appear ONLY when the specialist had to be asked
+    twice. An ordinary run's receipt is byte for byte what it always was.
+    """
+    receipt: Dict[str, Any] = {
         "leg": "task-review",
         "task_id": outcome.task_id,
         "build_id": build_id,
@@ -1060,6 +1157,12 @@ def build_receipt(
         or {"enforcement": "not-evaluated", "provenance": PASS_BAR_PROVENANCE_NOTE, "bars": []},
         "error": outcome.error,
     }
+    if outcome.specialist_asks > 1:
+        receipt["specialist_asks"] = outcome.specialist_asks
+        receipt["specialist_message"] = (
+            outcome.specialist_message or SPECIALIST_MESSAGE_UNAVAILABLE
+        )
+    return receipt
 
 
 def write_receipt(
@@ -1112,8 +1215,18 @@ def run_review_leg(
     findings_path = (
         repo_root / ".guardkit" / "autobuild" / task_id / "review_findings.json"
     )
+    # How many times the specialist was asked, and the last thing it said.
+    # Both are recorded on the outcome only when it had to be asked twice, so
+    # an ordinary one-ask run's results are exactly what they always were.
+    specialist_asks = 1
+    specialist_said: Optional[str] = None
 
     def _outcome(status: str, exit_code: int, **kwargs: Any) -> ReviewLegOutcome:
+        if specialist_asks > 1:
+            kwargs.setdefault("specialist_asks", specialist_asks)
+            kwargs.setdefault(
+                "specialist_message", specialist_said or SPECIALIST_MESSAGE_UNAVAILABLE
+            )
         return ReviewLegOutcome(
             task_id=task_id,
             status=status,
@@ -1164,20 +1277,29 @@ def run_review_leg(
         except OSError as exc:  # pragma: no cover — defensive
             logger.warning("could not create %s: %s", directory, exc)
 
+    def _ask(ask_prompt: str, budget: int) -> Tuple[str, Optional[str], Optional[str]]:
+        """One ask. Returns ``(status, error, what the specialist said)``."""
+        try:
+            result = _invoke_review_specialist(
+                prompt=ask_prompt,
+                repo_root=repo_root,
+                task_id=task_id,
+                sdk_timeout=budget,
+                model=model,
+            )
+            return (
+                getattr(result, "status", "failed"),
+                getattr(result, "error", None),
+                truncate_specialist_message(getattr(result, "final_message", None)),
+            )
+        except Exception as exc:  # noqa: BLE001 — the leg must never traceback out
+            return "failed", f"{type(exc).__name__}: {exc}", None
+
     invoke_started = time.monotonic()
-    try:
-        result = _invoke_review_specialist(
-            prompt=prompt,
-            repo_root=repo_root,
-            task_id=task_id,
-            sdk_timeout=sdk_timeout,
-            model=model,
-        )
-        status = getattr(result, "status", "failed")
-        error = getattr(result, "error", None)
-    except Exception as exc:  # noqa: BLE001 — the leg must never traceback out
-        status, error = "failed", f"{type(exc).__name__}: {exc}"
+    status, error, specialist_said = _ask(prompt, sdk_timeout)
     elapsed = time.monotonic() - invoke_started
+    # Appended to a failure sentence so nobody reads one empty run as a flake.
+    second_ask_note: Optional[str] = None
 
     if status != "passed":
         if _looks_like_timeout(error, elapsed, sdk_timeout):
@@ -1202,6 +1324,41 @@ def run_review_leg(
             context_payloads=payloads,
         )
 
+    # --- The specialist finished and wrote nothing: ask once more. ----------
+    # Seen twice on the production fix journey (builds
+    # build-FEAT-39F6-20260908214550 and build-FEAT-39F6-20260909060521): every
+    # model call returned 200, the specialist ran for minutes, and then it
+    # narrated instead of writing. Asking once more costs a few minutes of the
+    # leg's own budget; not asking costs the owner another queue-and-tap.
+    report_written = report_path.is_file()
+    findings_written = findings_path.is_file()
+    if not (report_written and findings_written):
+        remaining = int(sdk_timeout - elapsed)
+        if remaining < MIN_SECOND_ASK_SECONDS:
+            second_ask_note = (
+                f"It was not asked again: only {max(remaining, 0)}s of the "
+                f"leg's {sdk_timeout}s budget were left, which is too little "
+                "to be worth an ask."
+            )
+        else:
+            second_prompt = render_second_ask_prompt(
+                first_prompt=prompt,
+                report_path=report_path,
+                findings_path=findings_path,
+                report_written=report_written,
+                findings_written=findings_written,
+            )
+            second_status, second_error, second_said = _ask(second_prompt, remaining)
+            specialist_asks = 2
+            specialist_said = second_said or specialist_said
+            second_ask_note = (
+                "The specialist was asked twice: the first ask finished "
+                "without writing, and it was asked again with the "
+                f"{remaining}s left of the leg's {sdk_timeout}s budget."
+            )
+            if second_status != "passed":
+                second_ask_note += f" The second ask itself failed: {second_error}"
+
     if not report_path.is_file():
         return _outcome(
             "failed",
@@ -1210,6 +1367,7 @@ def run_review_leg(
                 f"the review specialist finished but wrote no report at "
                 f"{report_path} — refusing to report a review that produced "
                 "nothing"
+                + (f". {second_ask_note}" if second_ask_note else "")
             ),
             fleet_memory_cli=memory,
             context_payloads=payloads,
@@ -1223,6 +1381,7 @@ def run_review_leg(
             error=(
                 f"{findings_error} — without a findings file the leg cannot "
                 "tell a clean review from an unreported one"
+                + (f". {second_ask_note}" if second_ask_note else "")
             ),
             fleet_memory_cli=memory,
             context_payloads=payloads,
@@ -1323,8 +1482,12 @@ __all__ = [
     "EMPTY_ARTEFACTS_NOTE_REVIEW",
     "FIX_TASK_STEM_RE",
     "FRONTIER_PROVIDER_PREFIXES",
+    "MIN_SECOND_ASK_SECONDS",
     "PHASES_NOT_RUN",
     "REVIEW_ALLOWED_TOOLS",
+    "SPECIALIST_MESSAGE_LIMIT",
+    "SPECIALIST_MESSAGE_TRUNCATION_MARKER",
+    "SPECIALIST_MESSAGE_UNAVAILABLE",
     "ANCHOR_NO_FILE",
     "ANCHOR_NO_SEVERITY",
     "REVIEW_SPECIALIST_NAME",
@@ -1345,6 +1508,8 @@ __all__ = [
     "render_marker_block",
     "render_phases_not_run_table",
     "render_review_prompt",
+    "render_second_ask_prompt",
     "run_review_leg",
+    "truncate_specialist_message",
     "write_receipt",
 ]
