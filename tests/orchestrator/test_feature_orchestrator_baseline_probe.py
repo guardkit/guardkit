@@ -815,3 +815,357 @@ def test_a_first_build_still_measures_its_base(tmp_path):
     assert baseline is not None
     assert baseline.passed is False
     assert any("test_refund" in nid for nid in baseline.failing_node_ids)
+
+
+# ---------------------------------------------------------------------------
+# A record this build did NOT measure is never taken as this build's base.
+#
+# A baseline.json arrives in a worktree two ways: this build's probe writes
+# one, or one is checked out with the code because somebody committed it.
+# Repositories commit them by themselves — guardkit's own checkpoint commit
+# stages untracked files, so any repository that does not ignore
+# .guardkit/autobuild banks the record of every build it runs. forge's main
+# tracks FEAT-UBS1C's from July; study-tutor's main tracks two more.
+#
+# Left unchecked, "measure a worktree once" reads such a file as this build's
+# measured base: the probe goes permanently quiet in that repository, and the
+# Coach and finalize subtract a July list of failures from today's run. An
+# empty baseline forgives nothing; a wrong one forgives everything.
+# ---------------------------------------------------------------------------
+
+
+def _committed_record(path: Path, **overrides) -> dict:
+    """Write a baseline.json the way a ``git checkout`` delivers one.
+
+    Plain JSON at the feature's own path, exactly as a committed record sits in
+    a fresh worktree: written by another build, on another day, with another
+    command, and carrying no claim that anybody measured THIS directory.
+    """
+    record = {
+        "command": "pytest -q tests/ # the July command, on July's code",
+        "expected_exit": 0,
+        "passed": True,
+        "exit_code": 0,
+        "failing_node_ids": [],
+        "failing_count": 0,
+        "timestamp": "2026-07-26T09:00:00",
+        "source": SOURCE_REPOSITORY_TEST,
+        "note": "session-scoped observation",
+    }
+    record.update(overrides)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
+
+
+def test_a_committed_record_does_not_make_the_probe_inert(tmp_path, caplog):
+    """The dangerous one: a checked-in baseline.json must not silence the probe.
+
+    Real files, real pytest. The repository's main tracks a green record from
+    July at this feature's own path, and the base is red today. Before this
+    rule the probe found that file, kept it, measured nothing, and handed the
+    Coach a green base — so today's genuine failure was charged to a task, and
+    the pre-existing one it did have was forgiven.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_slice.py").write_text(
+        "def test_home():\n    assert 'english' == 'maths'\n"
+    )
+    declared = _pytest_command("test_slice.py")
+    _declare_test_command(tmp_path, declared)
+    _committed_record(feature_baseline_path(wt, "FEAT-X"))
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    # It measured, and what it measured is what it holds.
+    measured = orch._measured_baseline
+    assert measured is not None
+    assert measured.command == declared
+    assert any("test_home" in nid for nid in measured.failing_node_ids)
+
+    # The stale record on disk has been replaced by the real measurement, so
+    # the Coach and finalize read today's base, not July's.
+    loaded = read_baseline_from_worktree(wt)
+    assert loaded is not None
+    assert loaded.passed is False
+    assert loaded.command == declared
+    assert loaded.timestamp != "2026-07-26T09:00:00"
+
+    # And a person is told, in one line, that a record was lying about.
+    assert any(
+        "THIS build did not measure" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_a_record_measured_in_another_worktree_is_not_ours(tmp_path):
+    """The record travels with the code; its claim to be measured does not.
+
+    Build A measures its base in worktree A and the record is committed.
+    Build B checks that commit out into worktree B — same repository, same
+    feature id, same path inside the tree. It is still not build B's
+    measurement, and build B measures its own.
+    """
+    wt_a = tmp_path / "wt-a"
+    wt_a.mkdir()
+    (wt_a / "test_pay.py").write_text("def test_refund():\n    assert True\n")
+    declared = _pytest_command("test_pay.py")
+    _declare_test_command(tmp_path, declared)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    _orchestrator(tmp_path)._run_baseline_probe(feature, _worktree(wt_a))
+    record_a = feature_baseline_path(wt_a, "FEAT-X")
+    assert json.loads(record_a.read_text())["passed"] is True
+
+    # The commit: every byte of A's record, delivered into B's worktree, where
+    # the test is now failing.
+    wt_b = tmp_path / "wt-b"
+    wt_b.mkdir()
+    (wt_b / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    target = feature_baseline_path(wt_b, "FEAT-X")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(record_a.read_text(encoding="utf-8"), encoding="utf-8")
+
+    orch_b = _orchestrator(tmp_path)
+    orch_b._run_baseline_probe(feature, _worktree(wt_b))
+
+    base_b = orch_b._measured_baseline
+    assert base_b is not None
+    assert base_b.passed is False
+    assert any("test_refund" in nid for nid in base_b.failing_node_ids)
+    # A's green record has not survived as B's base.
+    assert json.loads(target.read_text())["passed"] is False
+
+
+def test_a_committed_record_is_left_alone_when_nothing_can_be_measured(
+    tmp_path, caplog
+):
+    """No command to measure with: record nothing, and take nothing either.
+
+    The repository declares no test command and the feature declares no smoke
+    command, so this build has no way to measure its base. It carries none —
+    which fails closed and makes a person look — and the committed file is
+    left exactly as it was found, because deleting a repository's tracked file
+    is not this probe's business.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    path = feature_baseline_path(wt, "FEAT-X")
+    _committed_record(path)
+    before = path.read_bytes()
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert path.read_bytes() == before
+    assert any(
+        "THIS build did not measure" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_a_resumed_build_never_adopts_a_committed_record(
+    tmp_path, monkeypatch, caplog
+):
+    """Resumed, with somebody else's record in the tree: measure nothing, take nothing.
+
+    The worktree has already had turns in it, so there is no honest base left
+    to measure — and the file lying there was never this build's base either.
+    Both doors are shut, and the build carries on with none.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    _declare_test_command(tmp_path, _pytest_command("test_pay.py"))
+    path = feature_baseline_path(wt, "FEAT-X")
+    _committed_record(path)
+    before = path.read_bytes()
+
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    calls = _recording_runner(monkeypatch, _smoke_result("never-run"))
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []
+    assert orch._measured_baseline is None
+    assert path.read_bytes() == before
+    assert any(
+        "THIS build did not measure" in r.getMessage() for r in caplog.records
+    )
+    assert any("resumed build" in r.getMessage() for r in caplog.records)
+
+
+def test_this_builds_measurement_beats_a_committed_one_under_another_feature(
+    tmp_path,
+):
+    """forge's own case: the tracked record sits under a different feature id.
+
+    forge's main tracks .guardkit/autobuild/FEAT-UBS1C/baseline.json, and the
+    Coach and finalize find a record by looking through every feature folder in
+    the worktree. This build's own measurement must be the one they get.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_slice.py").write_text(
+        "def test_home():\n    assert 'english' == 'maths'\n"
+    )
+    declared = _pytest_command("test_slice.py")
+    _declare_test_command(tmp_path, declared)
+    # Sorts before FEAT-X, so first-found would be July's.
+    _committed_record(feature_baseline_path(wt, "FEAT-AUTH-002"))
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    handed_on = read_baseline_from_worktree(wt)
+    assert handed_on is not None
+    assert handed_on.command == declared
+    assert handed_on.passed is False
+    assert any("test_home" in nid for nid in handed_on.failing_node_ids)
+
+
+def test_a_record_this_run_wrote_is_still_kept_on_a_genuine_re_entry(
+    tmp_path, monkeypatch
+):
+    """The case the measure-once rule was built for is untouched.
+
+    Same worktree, same build, a second entry into the probe: the record this
+    run measured is kept exactly as written, and nothing is measured twice —
+    even though the code in the worktree has been broken since.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert True\n")
+    declared = _pytest_command("test_pay.py")
+    _declare_test_command(tmp_path, declared)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    first = _orchestrator(tmp_path)
+    first._run_baseline_probe(feature, _worktree(wt))
+    measured = read_baseline_from_worktree(wt)
+    assert measured is not None and measured.passed is True
+
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    resumed = _orchestrator(tmp_path)
+    resumed.resume = True
+    calls = _recording_runner(
+        monkeypatch, _smoke_result(declared, passed=False, exit_code=1)
+    )
+    resumed._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []
+    kept = read_baseline_from_worktree(wt)
+    assert kept is not None
+    assert kept.passed is True
+    assert kept.timestamp == measured.timestamp
+    assert resumed._measured_baseline is not None
+    assert resumed._measured_baseline.passed is True
+
+
+# ---------------------------------------------------------------------------
+# A record nobody can read costs a warning, never a build.
+#
+# The probe is report-only: it must never block a wave and never end a run.
+# A baseline.json whose top-level JSON is not an object used to reach
+# BaselineResult.from_dict, which asked a list (or a string, or a number, or
+# None) for .get — an AttributeError, before wave 1, with nothing catching it.
+# ---------------------------------------------------------------------------
+
+
+MALFORMED_RECORDS = [
+    ("a JSON list", "[]"),
+    ("a bare JSON string", '"nope"'),
+    ("a JSON number", "3"),
+    ("JSON null", "null"),
+    ("not JSON at all", "this file is not JSON {{{"),
+]
+
+
+@pytest.mark.parametrize(
+    "shape,content", MALFORMED_RECORDS, ids=[s for s, _ in MALFORMED_RECORDS]
+)
+def test_a_record_nobody_can_read_is_one_warning_and_the_run_carries_on(
+    tmp_path, caplog, shape, content
+):
+    """Each malformed shape: one warning, no crash, and the base still measured.
+
+    Proved by construction, one file per shape, through the probe's own call
+    site — the place where the crash happened.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_slice.py").write_text(
+        "def test_home():\n    assert 'english' == 'maths'\n"
+    )
+    declared = _pytest_command("test_slice.py")
+    _declare_test_command(tmp_path, declared)
+    path = feature_baseline_path(wt, "FEAT-X")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))  # must not raise
+
+    unreadable = [
+        r for r in caplog.records if "could not be read" in r.getMessage()
+    ]
+    assert len(unreadable) == 1, f"{shape}: expected one warning line"
+
+    # The run carried on and measured its base for real.
+    measured = orch._measured_baseline
+    assert measured is not None
+    assert measured.command == declared
+    assert any("test_home" in nid for nid in measured.failing_node_ids)
+
+
+@pytest.mark.parametrize(
+    "shape,content", MALFORMED_RECORDS, ids=[s for s, _ in MALFORMED_RECORDS]
+)
+def test_a_malformed_record_never_ends_a_resumed_run_either(
+    tmp_path, caplog, shape, content
+):
+    """The same shapes on the path that measures nothing: still one warning.
+
+    A resumed build reads the record and then decides to measure nothing. The
+    reading must not be the thing that kills it.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "python -m pytest -q")
+    path = feature_baseline_path(wt, "FEAT-X")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))  # must not raise
+
+    assert orch._measured_baseline is None
+    assert len(
+        [r for r in caplog.records if "could not be read" in r.getMessage()]
+    ) == 1
