@@ -81,11 +81,13 @@ from guardkit.orchestrator.baseline import (
     SOURCE_FEATURE_SMOKE,
     SOURCE_REPOSITORY_TEST,
     BaselineResult,
+    baseline_measured_here,
     feature_baseline_path,
+    load_baseline_file,
     now_isoformat,
     probe_baseline_result,
-    read_baseline_from_worktree,
     wave0_baseline_warning,
+    worktree_identity,
     write_baseline,
 )
 from guardkit.orchestrator.completion_verification import (
@@ -4131,8 +4133,8 @@ The detailed specifications are in the task markdown file.
         BUILD'S OWN breakage and files it as pre-existing, which is worse than
         a planted command because nothing about it looks wrong. That half is
         closed in :meth:`_run_baseline_probe`, which never measures a worktree
-        twice: an existing record is kept, and a resumed build with no record
-        gets no measurement at all.
+        twice: a record THIS build measured in this worktree is kept, and a
+        resumed build with no record of its own gets no measurement at all.
 
         It is handed back as a :class:`SmokeGates` because that is the shape
         the one runner takes. Nothing here fires as a between-wave gate — the
@@ -4193,18 +4195,34 @@ The detailed specifications are in the task markdown file.
         repository's own declared test command. See
         :meth:`_resolve_baseline_probe`.
 
-        MEASURED ONCE PER WORKTREE, NEVER TWICE. Before anything runs, this
-        looks for a base already recorded in the worktree — through the same
-        reader the Coach and finalize use — and when one is there it is kept
-        untouched and nothing is measured. The reason is ``--resume``: the
-        setup phase hands back the existing worktree, which the model has
-        already been editing, so a second measurement would record the
-        build's own breakage as pre-existing, and the Coach and finalize would
-        then subtract the very regression this build introduced. A resumed
-        build whose earlier attempt recorded nothing gets nothing now either:
-        there is no safe base left to measure, so it carries on with none,
-        exactly as every repair did before this ruling — which fails closed
-        and makes a person look.
+        MEASURED ONCE PER WORKTREE, NEVER TWICE — BUT ONLY WHAT THIS BUILD
+        MEASURED COUNTS. Before anything runs, this looks at the feature's own
+        record in the worktree, and there are three answers:
+
+        * **This run measured it.** The record carries this run's stamp for
+          this very directory, so it is kept untouched and nothing is measured
+          again. That is the ``--resume`` case the rule was built for: the
+          setup phase hands back the worktree the model has already been
+          editing, and a second measurement would file the build's own
+          breakage as pre-existing, which the Coach and finalize then subtract
+          — forgiving the regression this build introduced.
+        * **Somebody else's record was lying about in the tree.** A committed
+          ``baseline.json`` (forge's main tracks one from July; study-tutor's
+          tracks two) is NOT this build's measurement, whatever feature id it
+          sits under, and it is never taken as one. On a first run the base
+          is measured afresh — wherever there is a command to measure it with
+          — and that fresh record replaces it. On a resume there is nothing
+          safe to measure, so nothing is recorded and the file is left exactly
+          as it was found: deleting a repository's own tracked file is not
+          this probe's business. How the two are told apart, and why that test is the honest
+          one, is written out under "HOW WE TELL" in ``baseline.py``.
+        * **No record at all.** A first run measures; a resumed build measures
+          nothing, because there is no safe base left to take — it carries on
+          with none, exactly as every repair did before this ruling, which
+          fails closed and makes a person look.
+
+        An unreadable record — not JSON, or JSON that is not an object — reads
+        as no record at all, in one warning line, and can never end the run.
 
         WHAT IT COSTS, PLAINLY — and it is TWO suite runs, not one. The first
         is this probe: one full run of the declared suite before wave 1, about
@@ -4236,19 +4254,24 @@ The detailed specifications are in the task markdown file.
         """
         self._measured_baseline = None
 
-        # A worktree is measured ONCE. On --resume the setup phase hands back
-        # the worktree the model has already been editing, and measuring it
-        # again would file this build's own breakage as pre-existing — which
-        # the Coach and finalize then subtract, forgiving the regression this
-        # build introduced. Same reader the Coach and finalize use, so "what
-        # already exists" means exactly what they will read.
-        existing = read_baseline_from_worktree(worktree.path)
-        if existing is not None:
+        # A worktree is measured ONCE — and the record that counts is one THIS
+        # build measured. The feature's own record is read directly (not by
+        # globbing the whole worktree) so this decision is about our own file
+        # and nobody else's, and an unreadable one reads as no record at all.
+        existing = load_baseline_file(
+            feature_baseline_path(worktree.path, feature.id)
+        )
+        if existing is not None and baseline_measured_here(existing, worktree.path):
+            # Ours: this run's stamp names this very directory. On --resume the
+            # setup phase hands back the worktree the model has already been
+            # editing, and measuring it again would file this build's own
+            # breakage as pre-existing — which the Coach and finalize then
+            # subtract, forgiving the regression this build introduced.
             self._measured_baseline = existing
             logger.info(
-                "Baseline probe: %s already carries a measured base (%s; "
-                "command: %s, from %s). Keeping it and measuring nothing — "
-                "this worktree may already have been edited, and anything "
+                "Baseline probe: %s already carries a base this build "
+                "measured (%s; command: %s, from %s). Keeping it and measuring "
+                "nothing — this worktree has already been edited, and anything "
                 "measured now would record this build's own breakage as "
                 "pre-existing.",
                 worktree.path,
@@ -4258,14 +4281,36 @@ The detailed specifications are in the task markdown file.
                 existing.source or "an earlier run",
             )
             return
+        if existing is not None:
+            # NOT ours. It came in with the code — somebody committed a
+            # baseline.json, which happens by itself in any repository that
+            # does not ignore .guardkit/autobuild, because the checkpoint
+            # commit stages untracked files. A record measured elsewhere, on
+            # another day, with another command, forgives today's failures, so
+            # it is never adopted: it is either replaced by a real measurement
+            # below, or nothing is recorded at all.
+            logger.warning(
+                "Baseline probe: %s already holds a baseline record that THIS "
+                "build did not measure (command: %s, written %s). A record "
+                "that arrived with the code is not this build's base — it is "
+                "not used as one. %s",
+                worktree.path,
+                existing.command or "not stated",
+                existing.timestamp or "at an unknown time",
+                "This is a resumed build, so nothing is measured and nothing "
+                "is written: the build carries on with no measured base."
+                if self.resume
+                else "The base is measured afresh wherever there is a command "
+                "to measure it with, and that fresh measurement replaces it.",
+            )
         if self.resume:
             logger.warning(
                 "Baseline probe: this is a resumed build of %s and no base "
-                "was recorded earlier, so there is nothing to keep and "
-                "nothing safe to measure — the worktree has already had "
-                "turns in it. No record is written, so nothing downstream "
-                "treats this build as having a measured base. The build "
-                "carries on.",
+                "THIS build measured was recorded earlier, so there is "
+                "nothing to keep and nothing safe to measure — the worktree "
+                "has already had turns in it. No record is written, so "
+                "nothing downstream treats this build as having a measured "
+                "base. The build carries on.",
                 worktree.path,
             )
             return
@@ -4298,6 +4343,11 @@ The detailed specifications are in the task markdown file.
             output=combined,
             timestamp=now_isoformat(),
             source=source,
+            # The stamp that makes this record claimable later: it says which
+            # directory was measured, in facts a commit cannot carry. Without
+            # it a resumed build cannot tell its own measurement from one that
+            # was checked out with the code.
+            measured_in=worktree_identity(worktree.path),
         )
 
         # A run that measured NOTHING must not be written down as a measured
