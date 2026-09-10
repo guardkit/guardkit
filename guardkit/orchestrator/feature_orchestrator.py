@@ -49,6 +49,7 @@ from guardkit.orchestrator.feature_loader import (
     FeatureTask,
     FeatureNotFoundError,
     FeatureValidationError,
+    SmokeGates,
     derive_bootstrap_extras,
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
@@ -77,12 +78,18 @@ from guardkit.orchestrator.twin_coverage import (
     write_twin_coverage_receipt,
 )
 from guardkit.orchestrator.baseline import (
+    SOURCE_FEATURE_SMOKE,
+    SOURCE_REPOSITORY_TEST,
     BaselineResult,
     feature_baseline_path,
     now_isoformat,
     probe_baseline_result,
     wave0_baseline_warning,
     write_baseline,
+)
+from guardkit.orchestrator.completion_verification import (
+    DEFAULT_VERIFY_TIMEOUT,
+    declared_toolchain_test_command,
 )
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
@@ -129,6 +136,15 @@ from guardkit.orchestrator.instrumentation.schemas import WaveCompletedEvent
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+# How long the wave-0 baseline probe gives a repository's whole declared test
+# suite. A between-wave smoke gate defaults to two minutes, which is right for
+# a slice and far too short for a whole suite, so this matches the headroom the
+# merge check already gives one (``DEFAULT_VERIFY_TIMEOUT``), held down to the
+# most the runner's own configuration will accept (600 seconds) so a change to
+# that number can never turn the probe into a crash.
+_BASELINE_DECLARED_SUITE_TIMEOUT = min(DEFAULT_VERIFY_TIMEOUT, 600)
 
 
 # TASK-FIX-DEFD: terminal task statuses that satisfy a dependency edge in
@@ -4027,6 +4043,75 @@ The detailed specifications are in the task markdown file.
             * self.timeout_multiplier
         )
 
+    def _resolve_baseline_probe(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> Optional[Tuple[SmokeGates, str]]:
+        """What the wave-0 probe should run, and where that command came from.
+
+        Two answers, in this order:
+
+        1. **The feature's own smoke command**, when it declares one. This is
+           first because it always was, and a feature that has said how to
+           smoke itself has said it for a reason.
+        2. **The repository's declared test command** otherwise — Rich's
+           ruling of 2026-09-10. A fix journey's feature declares no smoke
+           command, so until now a repair never measured its base at all, and
+           the work leg's "zero net-new failures" verdict had nothing to
+           subtract against.
+
+        With neither, this returns ``None`` and the probe is skipped exactly
+        as it always was — a repository that declares nothing behaves byte for
+        byte as before.
+
+        The declared command is read through the SAME reader the merge check
+        uses (``declared_toolchain_test_command``), never a second copy of the
+        resolution rule: one parser, one place to change it.
+
+        It reads the copy in the worktree, and safely: this runs after the
+        bootstrap and before wave 1, so no model has had a turn yet and the
+        file is still exactly what the base branch carries. The work leg reads
+        a snapshot instead, for the opposite reason — by the time it runs, the
+        model has been editing the tree.
+
+        It is handed back as a :class:`SmokeGates` because that is the shape
+        the one runner takes. Nothing here fires as a between-wave gate — the
+        wave field is inert on this path — but reusing the runner is how the
+        probe stays one execution path instead of two.
+
+        Never raises: any failure to work out a command is "no command", and
+        the caller simply skips.
+        """
+        smoke = getattr(feature, "smoke_gates", None)
+        if smoke is not None:
+            return smoke, SOURCE_FEATURE_SMOKE
+        try:
+            declared = declared_toolchain_test_command(Path(worktree.path))
+            if not declared:
+                return None
+            return (
+                SmokeGates(
+                    # Inert on this path: the probe runs once before wave 1,
+                    # not after a wave. The runner takes the wave number as
+                    # its own argument.
+                    after_wave="all",
+                    command=declared,
+                    # The declaration's own law: exit code is the verdict, and
+                    # zero is the pass.
+                    expected_exit=0,
+                    timeout=_BASELINE_DECLARED_SUITE_TIMEOUT,
+                ),
+                SOURCE_REPOSITORY_TEST,
+            )
+        except Exception as exc:  # noqa: BLE001 — the probe never blocks a build
+            logger.warning(
+                "Baseline probe: could not work out a command to measure the "
+                "base in %s: %s (continuing; the probe is report-only).",
+                worktree.path, exc,
+            )
+            return None
+
     def _run_baseline_probe(
         self,
         feature: Feature,
@@ -4034,25 +4119,48 @@ The detailed specifications are in the task markdown file.
     ) -> None:
         """Wave-0 baseline-green probe (red-baseline retro, L12 item 1).
 
-        After bootstrap, before wave 1, run the feature's smoke/test command
-        once and record the result to
-        ``<worktree>/.guardkit/autobuild/<feature>/baseline.json`` (failing
-        test IDs + counts + command + timestamp). When red, emit a wave-0
+        After bootstrap, before wave 1, run the suite ONCE and record what it
+        did to ``<worktree>/.guardkit/autobuild/<feature>/baseline.json``
+        (failing test IDs, counts, the command, which command it was and where
+        that command came from, and a timestamp). When red, emit a wave-0
         WARNING naming the pre-existing failures — "not attributable to any
-        task". **Report-only**: never blocks the run. Activates by artefact —
-        skipped when the feature declares no ``smoke_gates`` command.
+        task". **Report-only**: it never blocks a wave and never fails a
+        build, and a probe that cannot run at all is one warning line and
+        nothing else, because a build that cannot measure its base must still
+        be able to run.
+
+        WHICH COMMAND. The feature's smoke command when it declares one
+        (today's behaviour, unchanged, and still first); otherwise the
+        repository's own declared test command. See
+        :meth:`_resolve_baseline_probe`.
+
+        WHAT IT COSTS, PLAINLY. On a build whose repository declares a test
+        command this adds one full run of that suite before wave 1 — about
+        forty seconds for the estate's own api_test, and longer for a bigger
+        repository. That is the whole price, paid once per build.
+
+        WHY IT IS WORTH IT. The work leg's verdict is now "zero net-new
+        failures against what the base was already failing". With nothing on
+        record about the base it fails closed, so every failure is charged to
+        the leg, including one a stranger left behind weeks ago. The only
+        other record of the base is a hand-maintained known-failure ledger,
+        and a hand-maintained list drifts — api_test's own ledger header calls
+        an entry that has started passing a "stale-ledger finding". A measured
+        baseline cannot drift: it is what this repository's tests did, on this
+        base, minutes ago.
 
         Stores the result on ``self._measured_baseline`` so the Coach
         test-gate baseline diff (item 2) can suppress mid-build
         mis-attribution of these pre-existing failures.
         """
         self._measured_baseline = None
-        smoke = getattr(feature, "smoke_gates", None)
-        if smoke is None:
+        resolved = self._resolve_baseline_probe(feature, worktree)
+        if resolved is None:
             return
+        probe_config, source = resolved
         try:
             smoke_result = run_smoke_gate(
-                smoke,
+                probe_config,
                 cwd=worktree.path,
                 wave_number=0,
                 venv_python=self._bootstrap_venv_python,
@@ -4061,18 +4169,19 @@ The detailed specifications are in the task markdown file.
             logger.warning(
                 "Baseline probe could not run '%s' in %s: %s "
                 "(continuing; probe is report-only).",
-                smoke.command, worktree.path, exc,
+                probe_config.command, worktree.path, exc,
             )
             return
 
         combined = f"{smoke_result.stdout or ''}\n{smoke_result.stderr or ''}"
         result = probe_baseline_result(
             command=smoke_result.command,
-            expected_exit=smoke.expected_exit,
+            expected_exit=probe_config.expected_exit,
             passed=smoke_result.passed,
             exit_code=smoke_result.exit_code,
             output=combined,
             timestamp=now_isoformat(),
+            source=source,
         )
         self._measured_baseline = result
 
@@ -4090,7 +4199,7 @@ The detailed specifications are in the task markdown file.
         else:
             logger.info(
                 "Baseline probe: feature suite GREEN before wave 1 "
-                "(command: %s).", result.command
+                "(command: %s, from %s).", result.command, source
             )
 
     def _resolve_wave_task_timeouts(self, feature: Feature) -> Dict[str, int]:
