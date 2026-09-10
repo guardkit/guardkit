@@ -24,6 +24,7 @@ from guardkit.orchestrator.baseline import (
     load_baseline_file,
     probe_baseline_result,
     read_baseline_from_worktree,
+    unclaimed_baseline_file,
     worktree_identity,
     to_node_id,
     wave0_baseline_warning,
@@ -321,3 +322,78 @@ class TestWhichRecordThisBuildMeasured:
         found = read_baseline_from_worktree(tmp_path)
         assert found is not None
         assert found.command == "first"
+
+
+class TestWhichFileDownstreamWillRead:
+    """``unclaimed_baseline_file`` — the file a warning line is allowed to name.
+
+    A build that measures nothing writes nothing, and it is tempting to end
+    that sentence with "so there is no measured base". That is only true when
+    the worktree really holds no record. The Coach and finalize do not ask the
+    probe what it measured — they read whatever baseline.json the worktree
+    holds — so when one arrived with the code it is still what they will read.
+    This function is how the warning tells those two situations apart, and it
+    must name the very file the reader returns, or it points a person chasing a
+    forgiving verdict at the wrong place.
+    """
+
+    def _committed(self, worktree: Path, feature: str, command: str) -> Path:
+        path = feature_baseline_path(worktree, feature)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "command": command,
+                    "expected_exit": 0,
+                    "passed": True,
+                    "exit_code": 0,
+                    "failing_node_ids": [],
+                    "failing_count": 0,
+                    "timestamp": "2026-07-26T09:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_an_empty_worktree_has_nothing_to_name(self, tmp_path):
+        assert unclaimed_baseline_file(tmp_path) is None
+
+    def test_a_worktree_that_is_not_there_has_nothing_to_name(self, tmp_path):
+        assert unclaimed_baseline_file(tmp_path / "gone") is None
+
+    def test_a_committed_record_is_named(self, tmp_path):
+        path = self._committed(tmp_path, "FEAT-X", "the July command")
+        assert unclaimed_baseline_file(tmp_path) == path
+
+    def test_a_record_this_worktree_measured_is_not_named(self, tmp_path):
+        write_baseline(
+            feature_baseline_path(tmp_path, "FEAT-X"),
+            probe_baseline_result(
+                command="pytest -q",
+                expected_exit=0,
+                passed=True,
+                exit_code=0,
+                output="1 passed",
+                timestamp="2026-09-10T10:00:00",
+                measured_in=worktree_identity(tmp_path),
+            ),
+        )
+        assert unclaimed_baseline_file(tmp_path) is None
+
+    def test_the_file_named_is_the_file_the_shared_reader_returns(
+        self, tmp_path
+    ):
+        """forge's own shape: the stale record sits under another feature id."""
+        path = self._committed(tmp_path, "FEAT-UBS1C", "the July command")
+        named = unclaimed_baseline_file(tmp_path)
+        read = read_baseline_from_worktree(tmp_path)
+        assert named == path
+        assert read is not None
+        assert read.command == json.loads(path.read_text())["command"]
+
+    def test_a_malformed_record_is_not_named_and_raises_nothing(self, tmp_path):
+        path = feature_baseline_path(tmp_path, "FEAT-X")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[]", encoding="utf-8")
+        assert unclaimed_baseline_file(tmp_path) is None

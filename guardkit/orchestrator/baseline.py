@@ -69,7 +69,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Sequence, Set
+from typing import List, Optional, Sequence, Set, Tuple
 
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
@@ -129,11 +129,27 @@ SOURCE_REPOSITORY_TEST = "the repository's declared test command"
 #   * neither can one left behind by an earlier build at the same path, because
 #     removing and re-adding a worktree makes a brand new directory.
 #
-# The honest limit: an inode number can be reused after a directory is deleted,
-# so a freak match is possible. It would need the same repository, the same
-# feature, the same path and that reused number, and the worst it could do is
-# what this file did for everyone before the stamp existed — trust the previous
-# build's record.
+# The honest limit, and there are two of them.
+#
+# First, an inode number can be reused after a directory is deleted, so a freak
+# match is possible. It would need the same repository, the same feature, the
+# same path and that reused number, and the worst it could do is what this file
+# did for everyone before the stamp existed — trust the previous build's
+# record.
+#
+# Second, and the one to know if you are reasoning about what this guards
+# against: the stamp is written into a file INSIDE the worktree, and the device
+# and inode number it holds can be read from inside that same worktree, so a
+# model that gets a turn in the tree could write a record carrying a matching
+# stamp. That is not the hole it looks like. This stamp is a guard against a
+# record that ARRIVED WITH THE CODE — a commit is made on another day in
+# another directory and cannot know this one's inode — and it is not, and
+# cannot be, a guard against a model writing in the worktree. Against that,
+# nothing changes either way: a model could already edit the contents of a
+# record the probe itself wrote, because baseline.json has always lived in the
+# worktree and has always been what the Coach subtracts. Compared with the code
+# before this stamp, which adopted any baseline.json lying about, the bar is
+# raised against the case the stamp is for and lowered nowhere.
 _MEASURED_IN_DIRECTORY = "directory_id"
 
 
@@ -296,7 +312,7 @@ def write_baseline(path: Path, result: BaselineResult) -> None:
     tmp.replace(path)
 
 
-def load_baseline_file(path: Path) -> Optional[BaselineResult]:
+def load_baseline_file(path: Path, warn: bool = True) -> Optional[BaselineResult]:
     """Read ONE ``baseline.json``, or ``None`` when it cannot be read.
 
     Anything at all wrong with the file reads as "there is no record": it is
@@ -310,6 +326,10 @@ def load_baseline_file(path: Path) -> Optional[BaselineResult]:
     baseline.json holding ``[]`` reached ``BaselineResult.from_dict``, which
     asked a list for ``.get`` and killed the build before wave 1. A record
     nobody can read must cost a warning, not a build.
+
+    ``warn=False`` is for a SECOND read of a file this run has already read and
+    already warned about — one unreadable record should cost one warning line,
+    not one per reader.
     """
     candidate = Path(path)
     if not candidate.is_file():
@@ -323,12 +343,13 @@ def load_baseline_file(path: Path) -> Optional[BaselineResult]:
             )
         return BaselineResult.from_dict(data)
     except Exception as exc:  # noqa: BLE001 — a record nobody can read is "no record"
-        logger.warning(
-            "Baseline record at %s could not be read (%s). Carrying on as if "
-            "there were no record at all — nothing is treated as this build's "
-            "measured base.",
-            candidate, exc,
-        )
+        if warn:
+            logger.warning(
+                "Baseline record at %s could not be read (%s). Carrying on as "
+                "if there were no record at all — nothing is treated as this "
+                "build's measured base.",
+                candidate, exc,
+            )
         return None
 
 
@@ -349,6 +370,18 @@ def read_baseline_from_worktree(worktree_path: Path) -> Optional[BaselineResult]
     finalize. This build's own measurement wins. With nothing stamped, the
     first readable record is returned exactly as it always was.
     """
+    chosen = _choose_baseline_in_worktree(worktree_path)
+    return None if chosen is None else chosen[1]
+
+
+def _choose_baseline_in_worktree(
+    worktree_path: Path, warn: bool = True
+) -> Optional[Tuple[Path, "BaselineResult"]]:
+    """The record :func:`read_baseline_from_worktree` returns, and its file.
+
+    One place picks the record, so the file a warning names is always the file
+    the Coach and finalize will actually read. Never raises.
+    """
     root = Path(worktree_path) / ".guardkit" / "autobuild"
     if not root.is_dir():
         return None
@@ -356,16 +389,42 @@ def read_baseline_from_worktree(worktree_path: Path) -> Optional[BaselineResult]
         matches = sorted(root.glob(f"*/{_BASELINE_FILENAME}"))
     except OSError:
         return None
-    unstamped: Optional[BaselineResult] = None
+    unstamped: Optional[Tuple[Path, "BaselineResult"]] = None
     for candidate in matches:
-        record = load_baseline_file(candidate)
+        record = load_baseline_file(candidate, warn=warn)
         if record is None:
             continue
         if baseline_measured_here(record, worktree_path):
-            return record
+            return (candidate, record)
         if unstamped is None:
-            unstamped = record
+            unstamped = (candidate, record)
     return unstamped
+
+
+def unclaimed_baseline_file(worktree_path: Path) -> Optional[Path]:
+    """The baseline record downstream will read that THIS worktree did NOT measure.
+
+    The point of this function is honesty in a warning line. When a build
+    measures nothing and writes nothing, it is tempting to say "so there is no
+    measured base" — but the Coach (its test-gate baseline diff) and finalize
+    (its machine-verify re-run) do not ask the build what it measured; they
+    read whatever ``baseline.json`` the worktree holds, through
+    :func:`read_baseline_from_worktree`. A record that came in with the code is
+    still sitting there and is still what they will read.
+
+    Returns that file's path so the warning can name it, or ``None`` when
+    either there is no readable record at all or the record is one this
+    worktree measured. Never raises.
+    """
+    # Quietly: this runs while a warning line is being composed, and whatever
+    # was unreadable here has already been read — and warned about — once.
+    chosen = _choose_baseline_in_worktree(worktree_path, warn=False)
+    if chosen is None:
+        return None
+    path, record = chosen
+    if baseline_measured_here(record, worktree_path):
+        return None
+    return path
 
 
 def load_known_failure_ids(worktree_root: Path) -> Set[str]:
