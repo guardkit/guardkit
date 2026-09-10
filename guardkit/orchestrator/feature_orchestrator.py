@@ -49,6 +49,7 @@ from guardkit.orchestrator.feature_loader import (
     FeatureTask,
     FeatureNotFoundError,
     FeatureValidationError,
+    SmokeGates,
     derive_bootstrap_extras,
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
@@ -77,12 +78,26 @@ from guardkit.orchestrator.twin_coverage import (
     write_twin_coverage_receipt,
 )
 from guardkit.orchestrator.baseline import (
+    SOURCE_FEATURE_SMOKE,
+    SOURCE_REPOSITORY_TEST,
     BaselineResult,
+    baseline_measured_here,
     feature_baseline_path,
+    load_baseline_file,
     now_isoformat,
     probe_baseline_result,
+    unclaimed_baseline_file,
     wave0_baseline_warning,
+    worktree_identity,
     write_baseline,
+)
+from guardkit.orchestrator.completion_verification import (
+    DEFAULT_VERIFY_TIMEOUT,
+    # The merge check's own "N passed" summary matcher. Imported, not written
+    # out again here, because "a clean exit with no evidence any test ran is
+    # unverified, never a pass" is ONE estate rule and belongs in one place.
+    _PYTEST_PASSED_RE,
+    declared_toolchain_test_command,
 )
 from guardkit.orchestrator.feature_validator import (
     validate_feature_preflight,
@@ -129,6 +144,98 @@ from guardkit.orchestrator.instrumentation.schemas import WaveCompletedEvent
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+# How long the wave-0 baseline probe gives a repository's whole declared test
+# suite. A between-wave smoke gate defaults to two minutes, which is right for
+# a slice and far too short for a whole suite, so this matches the headroom the
+# merge check already gives one (``DEFAULT_VERIFY_TIMEOUT``), held down to the
+# most the runner's own configuration will accept (600 seconds) so a change to
+# that number can never turn the probe into a crash.
+_BASELINE_DECLARED_SUITE_TIMEOUT = min(DEFAULT_VERIFY_TIMEOUT, 600)
+
+
+def _record_left_behind(worktree_path: Path) -> Optional[Path]:
+    """The baseline record downstream will read that this build did NOT measure.
+
+    ``None`` when there is none — either the worktree holds no readable record
+    at all, or the one it holds is this build's own. Never raises: this is only
+    ever called to work out what a warning line should say, and a warning line
+    must not be able to end a build.
+    """
+    try:
+        return unclaimed_baseline_file(worktree_path)
+    except Exception:  # noqa: BLE001 — a warning line can never end a build
+        return None
+
+
+def _what_downstream_will_read(worktree_path: Path) -> str:
+    """The true tail of any "nothing was written" warning this probe prints.
+
+    Whenever the probe writes no record, it is tempting — and wrong — to end
+    the sentence with "so nothing downstream treats this build as having a
+    measured base". Nothing downstream asks this probe what it measured. The
+    Coach's test-gate baseline diff and finalize's machine-verify re-run both
+    read whatever ``baseline.json`` the worktree holds. If one arrived with the
+    code, it is still there, and it is still what they will read.
+
+    So this says which of the two actually happened, and names the file when
+    there is one to name. Never raises: a warning line must not be able to end
+    a build.
+    """
+    leftover = _record_left_behind(worktree_path)
+    if leftover is None:
+        return (
+            " The worktree holds no baseline record at all, so the Coach and "
+            "finalize have none to read and this build really does run with "
+            "no measured base."
+        )
+    return (
+        " But a record THIS build did not measure is still sitting in the "
+        f"worktree at {leftover}, and it is NOT inert: the Coach and finalize "
+        "read whatever baseline.json the worktree holds, so that is the record "
+        "they will use — its failing tests will be subtracted from this "
+        "build's, and finalize will re-run the command it names. If a verdict "
+        "later forgives a failure that is real, look at that file first."
+    )
+
+
+def _declared_probe_measured(
+    result: SmokeGateResult, measured: BaselineResult, output: str
+) -> bool:
+    """Did the declared command actually measure this repository's base?
+
+    Deliberately NOT a list of exit codes to distrust. The commonest "the test
+    runner never started" shape in Python exits 1, not 127: a declared command
+    of the form ``"<python>" -m pytest -q tests/`` where that interpreter has
+    no pytest prints "No module named pytest" and exits 1, which is
+    indistinguishable by exit code from a suite that ran and failed. So the
+    question this asks is what the run actually PRODUCED, and there are only
+    two answers a later reader can use:
+
+    * it named at least one failing test — that list is exactly what the Coach
+      and the work leg subtract before charging a task with a failure; or
+    * it passed AND the output shows tests really ran, which is pytest's own
+      "N passed" summary — the same positive evidence the merge check demands
+      before it will call a run a pass.
+
+    Everything else measured nothing: a timeout, a command the shell could not
+    run at all, a suite that collected no tests, an interpreter with no pytest
+    in it, a command that exits 0 without running a thing, and every stack
+    whose output this module cannot read test names out of (the failing-test
+    parser is pytest-shaped). The caller then writes NOTHING — see
+    :meth:`FeatureOrchestrator._run_baseline_probe` for why a record of a run
+    that measured nothing is worse than no record at all.
+    """
+    if getattr(result, "timed_out", False):
+        return False
+    if measured.failing_node_ids:
+        return True
+    return bool(
+        measured.passed
+        and result.exit_code == 0
+        and _PYTEST_PASSED_RE.search(output or "")
+    )
 
 
 # TASK-FIX-DEFD: terminal task statuses that satisfy a dependency edge in
@@ -4027,6 +4134,91 @@ The detailed specifications are in the task markdown file.
             * self.timeout_multiplier
         )
 
+    def _resolve_baseline_probe(
+        self,
+        feature: Feature,
+    ) -> Optional[Tuple[SmokeGates, str]]:
+        """What the wave-0 probe should run, and where that command came from.
+
+        Two answers, in this order:
+
+        1. **The feature's own smoke command**, when it declares one. This is
+           first because it always was, and a feature that has said how to
+           smoke itself has said it for a reason.
+        2. **The repository's declared test command** otherwise — Rich's
+           ruling of 2026-09-10. A fix journey's feature declares no smoke
+           command, so until now a repair never measured its base at all, and
+           the work leg's "zero net-new failures" verdict had nothing to
+           subtract against.
+
+        With neither, this returns ``None`` and the probe is skipped exactly
+        as it always was — a repository that declares nothing behaves byte for
+        byte as before.
+
+        The declared command is read through the SAME reader the merge check
+        uses (``declared_toolchain_test_command``), never a second copy of the
+        resolution rule: one parser, one place to change it.
+
+        It reads the declaration from the REPOSITORY ROOT, never from the
+        copy inside the worktree. The worktree copy sits in the tree the model
+        edits, and "no model has had a turn yet" is only true of a FIRST run:
+        ``--resume`` is a real flag, and on it the setup phase hands back the
+        existing, already-edited worktree before this probe runs over it
+        again. A planted ``toolchain.test`` of ``echo "FAILED
+        tests/payments.py::test_refund"; exit 1`` would write a base naming a
+        test as already failing — and that list is exactly what the Coach and
+        the work leg subtract before charging a task with a failure. The
+        repository root is the copy the model cannot reach, it is what
+        ``snapshot_task_toolchain`` already reads, and it is the root every
+        other caller of this same reader passes.
+
+        THE HONEST LIMIT, because reading from the root closes only half of
+        the resume risk. It stops the model choosing the command; it does not
+        stop the model deciding the answer. An honest command run a second
+        time over a worktree the model has already been editing measures the
+        BUILD'S OWN breakage and files it as pre-existing, which is worse than
+        a planted command because nothing about it looks wrong. That half is
+        closed in :meth:`_run_baseline_probe`, which never measures a worktree
+        twice: a record THIS build measured in this worktree is kept, and a
+        resumed build with no record of its own gets no measurement at all.
+
+        It is handed back as a :class:`SmokeGates` because that is the shape
+        the one runner takes. Nothing here fires as a between-wave gate — the
+        wave field is inert on this path — but reusing the runner is how the
+        probe stays one execution path instead of two.
+
+        Never raises: any failure to work out a command is "no command", and
+        the caller simply skips.
+        """
+        smoke = getattr(feature, "smoke_gates", None)
+        if smoke is not None:
+            return smoke, SOURCE_FEATURE_SMOKE
+        try:
+            declared = declared_toolchain_test_command(self.repo_root)
+            if not declared:
+                return None
+            return (
+                SmokeGates(
+                    # Inert on this path: the probe runs once before wave 1,
+                    # not after a wave. The runner takes the wave number as
+                    # its own argument.
+                    after_wave="all",
+                    command=declared,
+                    # The declaration's own law: exit code is the verdict, and
+                    # zero is the pass.
+                    expected_exit=0,
+                    timeout=_BASELINE_DECLARED_SUITE_TIMEOUT,
+                ),
+                SOURCE_REPOSITORY_TEST,
+            )
+        except Exception as exc:  # noqa: BLE001 — the probe never blocks a build
+            logger.warning(
+                "Baseline probe: could not work out a command to measure the "
+                "base of %s: %s (continuing; the probe is report-only).",
+                self.repo_root, exc,
+            )
+            return None
+
     def _run_baseline_probe(
         self,
         feature: Feature,
@@ -4034,25 +4226,182 @@ The detailed specifications are in the task markdown file.
     ) -> None:
         """Wave-0 baseline-green probe (red-baseline retro, L12 item 1).
 
-        After bootstrap, before wave 1, run the feature's smoke/test command
-        once and record the result to
-        ``<worktree>/.guardkit/autobuild/<feature>/baseline.json`` (failing
-        test IDs + counts + command + timestamp). When red, emit a wave-0
+        After bootstrap, before wave 1, run the suite ONCE and record what it
+        did to ``<worktree>/.guardkit/autobuild/<feature>/baseline.json``
+        (failing test IDs, counts, the command, which command it was and where
+        that command came from, and a timestamp). When red, emit a wave-0
         WARNING naming the pre-existing failures — "not attributable to any
-        task". **Report-only**: never blocks the run. Activates by artefact —
-        skipped when the feature declares no ``smoke_gates`` command.
+        task". **Report-only**: it never blocks a wave and never fails a
+        build, and a probe that cannot run at all is one warning line and
+        nothing else, because a build that cannot measure its base must still
+        be able to run.
+
+        WHICH COMMAND. The feature's smoke command when it declares one
+        (today's behaviour, unchanged, and still first); otherwise the
+        repository's own declared test command. See
+        :meth:`_resolve_baseline_probe`.
+
+        MEASURED ONCE PER WORKTREE, NEVER TWICE — BUT ONLY WHAT THIS BUILD
+        MEASURED COUNTS. Before anything runs, this looks at the feature's own
+        record in the worktree, and there are three answers:
+
+        * **This run measured it.** The record carries this run's stamp for
+          this very directory, so it is kept untouched and nothing is measured
+          again. That is the ``--resume`` case the rule was built for: the
+          setup phase hands back the worktree the model has already been
+          editing, and a second measurement would file the build's own
+          breakage as pre-existing, which the Coach and finalize then subtract
+          — forgiving the regression this build introduced.
+        * **Somebody else's record was lying about in the tree.** A committed
+          ``baseline.json`` (forge's main tracks one from July; study-tutor's
+          tracks two) is NOT this build's measurement, whatever feature id it
+          sits under, and it is never taken as one. On a first run the base
+          is measured afresh — wherever there is a command to measure it with
+          — and that fresh record replaces it. On a resume there is nothing
+          safe to measure, so nothing is recorded and the file is left exactly
+          as it was found: deleting a repository's own tracked file is not
+          this probe's business. LEFT AS FOUND IS NOT THE SAME AS IGNORED, and
+          this is the sharp edge of the whole design. This probe refuses the
+          stale record for its own purposes, but the Coach and finalize do not
+          ask this probe what it measured — they read whatever
+          ``baseline.json`` the worktree holds, through
+          ``read_baseline_from_worktree``. So whenever nothing is written over
+          it, that stale record is still what they will read: its failing
+          tests are still subtracted, and finalize still re-runs the command it
+          names. The warning line says exactly that and names the file, so a
+          person chasing a verdict that forgave a real failure is pointed at
+          it. Making the shared reader refuse every unstamped record would
+          close that too, but it changes the meaning of every record written
+          before this lane, builds in flight included, so it is Rich's call and
+          not a silent edit. How the two are told apart, and why that test is
+          the honest one, is written out under "HOW WE TELL" in
+          ``baseline.py``.
+        * **No record at all.** A first run measures; a resumed build measures
+          nothing, because there is no safe base left to take. With the
+          worktree genuinely holding no record, the build carries on with no
+          measured base at all, exactly as every repair did before this ruling,
+          which fails closed and makes a person look. With a record lying about
+          under some other feature's id, it does not: the reader above globs
+          every feature folder, so downstream still reads that one. The warning
+          line tells the two apart and names the file when there is one.
+
+        An unreadable record — not JSON, or JSON that is not an object — reads
+        as no record at all, in one warning line, and can never end the run.
+
+        WHAT IT COSTS, PLAINLY — and it is TWO suite runs, not one. The first
+        is this probe: one full run of the declared suite before wave 1, about
+        forty seconds for the estate's own api_test and longer for a bigger
+        repository. The second is the consequence of writing a record at all.
+        Finalize's machine-verify stage (on by default) re-runs whatever
+        command baseline.json names, in the preserved worktree, with a
+        thirty-minute limit — see ``autobuild._observed_reds_in_worktree``. A
+        build that had no baseline before this ruling skipped that re-run
+        entirely; one that has a baseline now pays it. So a repair in a
+        repository that declares a test command runs its whole suite twice,
+        and its finalize verdict — clean, or a human must look — depends on
+        the second run. That is the honest number, and better said here than
+        discovered the hard way.
+
+        WHY IT IS WORTH IT. The work leg's verdict is now "zero net-new
+        failures against what the base was already failing". With nothing on
+        record about the base it fails closed, so every failure is charged to
+        the leg, including one a stranger left behind weeks ago. The only
+        other record of the base is a hand-maintained known-failure ledger,
+        and a hand-maintained list drifts — api_test's own ledger header calls
+        an entry that has started passing a "stale-ledger finding". A measured
+        baseline cannot drift: it is what this repository's tests did, on this
+        base, minutes ago.
 
         Stores the result on ``self._measured_baseline`` so the Coach
         test-gate baseline diff (item 2) can suppress mid-build
         mis-attribution of these pre-existing failures.
         """
         self._measured_baseline = None
-        smoke = getattr(feature, "smoke_gates", None)
-        if smoke is None:
+
+        # A worktree is measured ONCE — and the record that counts is one THIS
+        # build measured. The feature's own record is read directly (not by
+        # globbing the whole worktree) so this decision is about our own file
+        # and nobody else's, and an unreadable one reads as no record at all.
+        existing = load_baseline_file(
+            feature_baseline_path(worktree.path, feature.id)
+        )
+        if existing is not None and baseline_measured_here(existing, worktree.path):
+            # Ours: this run's stamp names this very directory. On --resume the
+            # setup phase hands back the worktree the model has already been
+            # editing, and measuring it again would file this build's own
+            # breakage as pre-existing — which the Coach and finalize then
+            # subtract, forgiving the regression this build introduced.
+            self._measured_baseline = existing
+            logger.info(
+                "Baseline probe: %s already carries a base this build "
+                "measured (%s; command: %s, from %s). Keeping it and measuring "
+                "nothing — this worktree has already been edited, and anything "
+                "measured now would record this build's own breakage as "
+                "pre-existing.",
+                worktree.path,
+                "green" if existing.passed
+                else f"{existing.failing_count} pre-existing failure(s)",
+                existing.command,
+                existing.source or "an earlier run",
+            )
             return
+        if existing is not None:
+            # NOT ours. It came in with the code — somebody committed a
+            # baseline.json, which happens by itself in any repository that
+            # does not ignore .guardkit/autobuild, because the checkpoint
+            # commit stages untracked files. A record measured elsewhere, on
+            # another day, with another command, forgives today's failures, so
+            # it is never adopted: it is either replaced by a real measurement
+            # below, or nothing is recorded at all.
+            logger.warning(
+                "Baseline probe: %s already holds a baseline record that THIS "
+                "build did not measure (command: %s, written %s). A record "
+                "that arrived with the code is not this build's base — it is "
+                "not used as one. %s",
+                worktree.path,
+                existing.command or "not stated",
+                existing.timestamp or "at an unknown time",
+                # What happens to it downstream is said once, in the resume
+                # warning immediately below, rather than twice here.
+                "This is a resumed build, so nothing is measured and nothing "
+                "is written, and the file is left exactly as it was found."
+                if self.resume
+                else "The base is measured afresh wherever there is a command "
+                "to measure it with, and that fresh measurement replaces it.",
+            )
+        if self.resume:
+            logger.warning(
+                "Baseline probe: this is a resumed build of %s and no base "
+                "THIS build measured was recorded earlier, so there is "
+                "nothing to keep and nothing safe to measure — the worktree "
+                "has already had turns in it. No record is written by this "
+                "probe.%s The build carries on.",
+                worktree.path,
+                _what_downstream_will_read(worktree.path),
+            )
+            return
+
+        resolved = self._resolve_baseline_probe(feature)
+        if resolved is None:
+            # Nothing declared to measure the base with, so nothing is
+            # measured and nothing is written — which is harmless only while
+            # the worktree holds no record either. When one is lying about,
+            # the Coach and finalize still read it, and the person watching
+            # this build has to be told which file, or the next forgiving
+            # verdict has no explanation.
+            if _record_left_behind(worktree.path) is not None:
+                logger.warning(
+                    "Baseline probe: nothing is declared to measure the base "
+                    "of %s with, so this build measures nothing and writes "
+                    "nothing.%s",
+                    worktree.path,
+                    _what_downstream_will_read(worktree.path),
+                )
+            return
+        probe_config, source = resolved
         try:
             smoke_result = run_smoke_gate(
-                smoke,
+                probe_config,
                 cwd=worktree.path,
                 wave_number=0,
                 venv_python=self._bootstrap_venv_python,
@@ -4061,19 +4410,61 @@ The detailed specifications are in the task markdown file.
             logger.warning(
                 "Baseline probe could not run '%s' in %s: %s "
                 "(continuing; probe is report-only).",
-                smoke.command, worktree.path, exc,
+                probe_config.command, worktree.path, exc,
             )
             return
 
         combined = f"{smoke_result.stdout or ''}\n{smoke_result.stderr or ''}"
         result = probe_baseline_result(
             command=smoke_result.command,
-            expected_exit=smoke.expected_exit,
+            expected_exit=probe_config.expected_exit,
             passed=smoke_result.passed,
             exit_code=smoke_result.exit_code,
             output=combined,
             timestamp=now_isoformat(),
+            source=source,
+            # The stamp that makes this record claimable later: it says which
+            # directory was measured, in facts a commit cannot carry. Without
+            # it a resumed build cannot tell its own measurement from one that
+            # was checked out with the code.
+            measured_in=worktree_identity(worktree.path),
         )
+
+        # A run that measured NOTHING must not be written down as a measured
+        # base, because a record here is what the Coach subtracts and what
+        # finalize re-runs. The test is what the run produced, not its exit
+        # code: see :func:`_declared_probe_measured`, which lists the shapes
+        # that produce nothing usable — among them the one that reads most
+        # like a real red, an interpreter with no pytest in it exiting 1 with
+        # no test names anywhere. Written down, that becomes a red base naming
+        # nothing; finalize then re-runs the same command, reads no failing
+        # ids out of it, and reports the branch clean — turning "a person must
+        # look" into "nothing to see" on a build that measured nothing. One
+        # warning line, no record, and the rest of the build carries on as it
+        # did before any baseline existed. The feature's own smoke path is
+        # deliberately left exactly as it was.
+        if source == SOURCE_REPOSITORY_TEST and not _declared_probe_measured(
+            smoke_result, result, combined
+        ):
+            if smoke_result.timed_out:
+                why = f"it ran out of its {probe_config.timeout} seconds"
+            else:
+                why = (
+                    f"it exited {smoke_result.exit_code} and named no failing "
+                    "test — so either it never ran the tests, or its output "
+                    "is not one this probe can read test names out of"
+                )
+            logger.warning(
+                "Baseline probe: '%s' did not measure the base of %s (%s). "
+                "Nothing is recorded by this probe.%s The probe is "
+                "report-only; the build carries on.",
+                probe_config.command,
+                worktree.path,
+                why,
+                _what_downstream_will_read(worktree.path),
+            )
+            return
+
         self._measured_baseline = result
 
         try:
@@ -4089,8 +4480,8 @@ The detailed specifications are in the task markdown file.
             console.print(f"[yellow]⚠[/yellow] {warning}")
         else:
             logger.info(
-                "Baseline probe: feature suite GREEN before wave 1 "
-                "(command: %s).", result.command
+                "Baseline probe: the base is GREEN before wave 1 "
+                "(command: %s, from %s).", result.command, source
             )
 
     def _resolve_wave_task_timeouts(self, feature: Feature) -> Dict[str, int]:

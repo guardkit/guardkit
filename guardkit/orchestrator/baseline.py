@@ -10,10 +10,33 @@ This module implements the incident's cure — a *session-scoped OBSERVATION*,
 never a substitute for the human-curated F2 ledger (WS3 §3 composition rule,
 pre-decided with B2):
 
-* **Item 1 — baseline-green probe.** Run the feature's smoke/test command once
-  at worktree setup (after bootstrap, before wave 1). Record the result to
+* **Item 1 — baseline-green probe.** Run the suite once at worktree setup
+  (after bootstrap, before wave 1) — the feature's own smoke command when it
+  declares one, otherwise the repository's declared test command (Rich's
+  ruling, 2026-09-10, so a repair with no smoke command still gets a measured
+  base). That declaration is read from the repository root, never from the
+  copy inside the worktree, because the worktree copy is a file the model can
+  rewrite. Record the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
   red. Report-only — it NEVER blocks the run.
+
+  Two rules keep the record honest, because a record here is what the Coach
+  subtracts and what finalize re-runs, so an invented one is worse than none.
+  First, a run that measured nothing writes NO record at all: on the declared
+  path a record is written only when the run named at least one failing test,
+  or passed with pytest's own "N passed" as evidence tests really ran.
+  Everything else — a timeout, a command the shell could not run, a suite that
+  collected nothing, an interpreter with no pytest in it (which exits 1, not
+  127, and reads exactly like a failing suite) — is one warning line and
+  nothing on disk. Second, a worktree is measured ONCE, and the record it
+  keeps is one THIS build measured: a record this run wrote in this worktree is
+  kept untouched (the ``--resume`` case, where measuring again would file the
+  build's own breakage as pre-existing), while a record that was already lying
+  about in the tree — a ``baseline.json`` somebody committed — is never taken
+  as this build's base. See "HOW WE TELL" below for how the two are told
+  apart. Third, a record that cannot be read — missing, not JSON, or JSON that
+  is not an object — is one warning line and "no record", never an error that
+  ends a run.
 * **Item 2 — Coach test-gate baseline diff.** When the Coach's ``tests_passed``
   gate would charge a failure, charge the Player ONLY for failures that are NOT
   in ``measured baseline ∪ qa/known-failures.yaml`` (the B2 F2 ledger). A test
@@ -46,7 +69,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Sequence, Set
+from typing import List, Optional, Sequence, Set, Tuple
 
 from guardkit.orchestrator.stale_test_attribution import (
     extract_failing_test_lines,
@@ -57,6 +80,121 @@ logger = logging.getLogger(__name__)
 
 _BASELINE_DIFF_ENV = "GUARDKIT_AUTOBUILD_BASELINE_DIFF"
 _BASELINE_FILENAME = "baseline.json"
+
+# WHERE THE PROBE'S COMMAND CAME FROM, in the words a person reads.
+#
+# Two, and only two, so anyone opening baseline.json months later knows what
+# the numbers mean: the feature said how to smoke itself, or the repository
+# said how its tests are run. The probe records one of these strings verbatim;
+# nothing parses them, so they are free to stay plain English.
+SOURCE_FEATURE_SMOKE = "the feature's smoke command"
+SOURCE_REPOSITORY_TEST = "the repository's declared test command"
+
+
+# HOW WE TELL "WE MEASURED THIS" FROM "THIS WAS LYING ABOUT IN THE TREE".
+#
+# A baseline.json can arrive in a worktree two ways. This build's probe can
+# write it, and then it says what this repository's tests did minutes ago on
+# this build's own base. Or it can arrive WITH THE CODE, because somebody
+# committed one: forge's main tracks .guardkit/autobuild/FEAT-UBS1C/baseline.json
+# from July, and study-tutor's main tracks two more. They keep arriving because
+# guardkit's own checkpoint commit stages untracked files, so any repository
+# that does not ignore .guardkit/autobuild commits the record of every build it
+# runs, and the trap then plants itself in the next build. (Stopping them being
+# committed at all is a repository's own business — a line in .gitignore — and
+# not something this module can do from here. This is the guard that holds
+# whether or not that ever happens.)
+#
+# Telling the two apart matters more than anything else in this module. The
+# Coach subtracts this list before charging a task with a failure, and finalize
+# re-runs the command it names. An empty baseline forgives nothing. A record
+# from July, measured with a different command on different code, forgives
+# everything — including the regression this build has just introduced.
+#
+# The file's PATH cannot tell them apart: a committed record sits under the
+# feature's own id whenever the feature id matches, which is exactly what
+# happens when a feature is built again. Its CONTENT cannot either: a commit
+# copies every word of it faithfully, this marker included.
+#
+# So the probe stamps every record it writes with the identity of the DIRECTORY
+# it measured — the device and inode number the filesystem gives that directory
+# when it is created, which no commit can carry. A record is this build's own
+# only when that stamp names the very directory we are about to measure:
+#
+#   * the same worktree on a resumed build MATCHES (``git worktree add`` made
+#     that directory once and a resume hands the same one back) — which is the
+#     case the measure-once rule was built for;
+#   * a record that came in with the code CANNOT match, because it was written
+#     in some other directory, on some other day; and
+#   * neither can one left behind by an earlier build at the same path, because
+#     removing and re-adding a worktree makes a brand new directory.
+#
+# The honest limit, and there are two of them.
+#
+# First, an inode number can be reused after a directory is deleted, so a freak
+# match is possible. It would need the same repository, the same feature, the
+# same path and that reused number, and the worst it could do is what this file
+# did for everyone before the stamp existed — trust the previous build's
+# record.
+#
+# Second, and the one to know if you are reasoning about what this guards
+# against: the stamp is written into a file INSIDE the worktree, and the device
+# and inode number it holds can be read from inside that same worktree, so a
+# model that gets a turn in the tree could write a record carrying a matching
+# stamp. That is not the hole it looks like. This stamp is a guard against a
+# record that ARRIVED WITH THE CODE — a commit is made on another day in
+# another directory and cannot know this one's inode — and it is not, and
+# cannot be, a guard against a model writing in the worktree. Against that,
+# nothing changes either way: a model could already edit the contents of a
+# record the probe itself wrote, because baseline.json has always lived in the
+# worktree and has always been what the Coach subtracts. Compared with the code
+# before this stamp, which adopted any baseline.json lying about, the bar is
+# raised against the case the stamp is for and lowered nowhere.
+_MEASURED_IN_DIRECTORY = "directory_id"
+
+
+def worktree_identity(worktree_path: Path) -> dict:
+    """Who this directory is, in facts a commit cannot carry.
+
+    ``{"worktree": "<path>", "directory_id": "<device>:<inode>"}``. The path is
+    there so a person opening baseline.json can see where it was measured;
+    the device and inode are the filesystem's own name for that directory, and
+    they are what the comparison actually uses — two directories never share
+    them at the same time, and a fresh worktree always gets a new pair.
+
+    Never raises. When the directory cannot be looked at, the identity comes
+    back with no ``directory_id`` at all, and an identity with no
+    ``directory_id`` matches nothing — the honest direction, because "we could
+    not tell" is not evidence that a record is ours.
+    """
+    path = Path(worktree_path)
+    identity = {"worktree": str(path)}
+    try:
+        stat = path.stat()
+    except OSError:
+        return identity
+    identity[_MEASURED_IN_DIRECTORY] = f"{stat.st_dev}:{stat.st_ino}"
+    return identity
+
+
+def baseline_measured_here(
+    result: "BaselineResult", worktree_path: Path
+) -> bool:
+    """Did a run in THIS worktree directory measure ``result``?
+
+    True only when the record carries a directory stamp and it names the
+    directory being asked about. Everything else is False: a record with no
+    stamp (written before the stamp existed, or by hand), a record stamped in
+    another directory (the committed one), or a directory we cannot look at.
+    False is the safe answer — it means "measure the base yourself", never
+    "trust this".
+    """
+    stamped = getattr(result, "measured_in", None)
+    if not isinstance(stamped, dict):
+        return False
+    theirs = str(stamped.get(_MEASURED_IN_DIRECTORY) or "")
+    ours = str(worktree_identity(worktree_path).get(_MEASURED_IN_DIRECTORY) or "")
+    return bool(theirs) and theirs == ours
 
 
 def baseline_diff_enabled() -> bool:
@@ -108,6 +246,15 @@ class BaselineResult:
     failing_node_ids: List[str] = field(default_factory=list)
     failing_count: int = 0
     timestamp: str = ""
+    # Where the command came from, in plain words (one of the SOURCE_*
+    # constants above). Empty on a record written before this field existed,
+    # or one built by hand in a test — never a reason to fail.
+    source: str = ""
+    # Which directory this record was measured in — the probe's stamp, and the
+    # only thing that separates "we measured this" from "this was committed
+    # into the repository months ago". See "HOW WE TELL" above. Empty on any
+    # record this probe did not write, which is exactly how it should read.
+    measured_in: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -118,6 +265,8 @@ class BaselineResult:
             "failing_node_ids": list(self.failing_node_ids),
             "failing_count": self.failing_count,
             "timestamp": self.timestamp,
+            "source": self.source,
+            "measured_in": dict(self.measured_in),
             # A loud marker that this is NOT the F2 ledger (LPA-09).
             "note": (
                 "session-scoped observation; NOT the qa/known-failures.yaml "
@@ -135,6 +284,12 @@ class BaselineResult:
             failing_node_ids=[str(x) for x in (data.get("failing_node_ids") or [])],
             failing_count=int(data.get("failing_count", 0)),
             timestamp=str(data.get("timestamp", "")),
+            source=str(data.get("source", "")),
+            measured_in=(
+                dict(data.get("measured_in"))
+                if isinstance(data.get("measured_in"), dict)
+                else {}
+            ),
         )
 
 
@@ -157,12 +312,75 @@ def write_baseline(path: Path, result: BaselineResult) -> None:
     tmp.replace(path)
 
 
+def load_baseline_file(path: Path, warn: bool = True) -> Optional[BaselineResult]:
+    """Read ONE ``baseline.json``, or ``None`` when it cannot be read.
+
+    Anything at all wrong with the file reads as "there is no record": it is
+    not there, it cannot be opened, it is not JSON, it is JSON but not an
+    object (``[]``, ``"nope"``, ``3``, ``null``), or a field in it is the wrong
+    shape. Every one of those is ONE warning line and ``None``. A file that is
+    simply absent is not even that — the ordinary case says nothing.
+
+    This function can never raise, and that is the whole point of it. The probe
+    is report-only and must never end a run, but until this guard existed a
+    baseline.json holding ``[]`` reached ``BaselineResult.from_dict``, which
+    asked a list for ``.get`` and killed the build before wave 1. A record
+    nobody can read must cost a warning, not a build.
+
+    ``warn=False`` is for a SECOND read of a file this run has already read and
+    already warned about — one unreadable record should cost one warning line,
+    not one per reader.
+    """
+    candidate = Path(path)
+    if not candidate.is_file():
+        return None
+    try:
+        data = json.loads(candidate.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(
+                "a baseline record must be a JSON object, and this one is "
+                f"a {type(data).__name__}"
+            )
+        return BaselineResult.from_dict(data)
+    except Exception as exc:  # noqa: BLE001 — a record nobody can read is "no record"
+        if warn:
+            logger.warning(
+                "Baseline record at %s could not be read (%s). Carrying on as "
+                "if there were no record at all — nothing is treated as this "
+                "build's measured base.",
+                candidate, exc,
+            )
+        return None
+
+
 def read_baseline_from_worktree(worktree_path: Path) -> Optional[BaselineResult]:
     """Find and load the feature ``baseline.json`` under a worktree, if any.
 
     Globs ``.guardkit/autobuild/*/baseline.json`` (only the feature dir carries
     a ``baseline.json``; task dirs carry ``task_work_results.json``). Returns
-    ``None`` when absent / unreadable (fail open — the diff is simply inert).
+    ``None`` when absent / unreadable (fail open — the diff is simply inert),
+    and an unreadable one costs a warning, never an exception.
+
+    When the worktree holds MORE THAN ONE record, a record stamped as measured
+    in this very worktree beats one that is not (see ``baseline_measured_here``).
+    That is not a nicety: a repository that tracks an old build's baseline.json
+    — forge tracks FEAT-UBS1C's from July, study-tutor tracks two — hands every
+    later build a stale record filed under some other feature's id, and this
+    glob would otherwise hand whichever sorts first to the Coach and to
+    finalize. This build's own measurement wins. With nothing stamped, the
+    first readable record is returned exactly as it always was.
+    """
+    chosen = _choose_baseline_in_worktree(worktree_path)
+    return None if chosen is None else chosen[1]
+
+
+def _choose_baseline_in_worktree(
+    worktree_path: Path, warn: bool = True
+) -> Optional[Tuple[Path, "BaselineResult"]]:
+    """The record :func:`read_baseline_from_worktree` returns, and its file.
+
+    One place picks the record, so the file a warning names is always the file
+    the Coach and finalize will actually read. Never raises.
     """
     root = Path(worktree_path) / ".guardkit" / "autobuild"
     if not root.is_dir():
@@ -171,14 +389,42 @@ def read_baseline_from_worktree(worktree_path: Path) -> Optional[BaselineResult]
         matches = sorted(root.glob(f"*/{_BASELINE_FILENAME}"))
     except OSError:
         return None
+    unstamped: Optional[Tuple[Path, "BaselineResult"]] = None
     for candidate in matches:
-        try:
-            return BaselineResult.from_dict(
-                json.loads(candidate.read_text(encoding="utf-8"))
-            )
-        except (OSError, ValueError):
+        record = load_baseline_file(candidate, warn=warn)
+        if record is None:
             continue
-    return None
+        if baseline_measured_here(record, worktree_path):
+            return (candidate, record)
+        if unstamped is None:
+            unstamped = (candidate, record)
+    return unstamped
+
+
+def unclaimed_baseline_file(worktree_path: Path) -> Optional[Path]:
+    """The baseline record downstream will read that THIS worktree did NOT measure.
+
+    The point of this function is honesty in a warning line. When a build
+    measures nothing and writes nothing, it is tempting to say "so there is no
+    measured base" — but the Coach (its test-gate baseline diff) and finalize
+    (its machine-verify re-run) do not ask the build what it measured; they
+    read whatever ``baseline.json`` the worktree holds, through
+    :func:`read_baseline_from_worktree`. A record that came in with the code is
+    still sitting there and is still what they will read.
+
+    Returns that file's path so the warning can name it, or ``None`` when
+    either there is no readable record at all or the record is one this
+    worktree measured. Never raises.
+    """
+    # Quietly: this runs while a warning line is being composed, and whatever
+    # was unreadable here has already been read — and warned about — once.
+    chosen = _choose_baseline_in_worktree(worktree_path, warn=False)
+    if chosen is None:
+        return None
+    path, record = chosen
+    if baseline_measured_here(record, worktree_path):
+        return None
+    return path
 
 
 def load_known_failure_ids(worktree_root: Path) -> Set[str]:
@@ -254,12 +500,23 @@ def probe_baseline_result(
     exit_code: Optional[int],
     output: Optional[str],
     timestamp: str,
+    source: str = "",
+    measured_in: Optional[dict] = None,
 ) -> BaselineResult:
     """Assemble a :class:`BaselineResult` from an executed smoke/test run.
 
     ``output`` is the combined stdout/stderr of the run; failing node IDs are
     pytest-parsed from it (empty for non-pytest stacks — the pass/fail signal
     still drives the wave-0 warning).
+
+    ``source`` says where the command came from, in the words a person reads
+    (one of the ``SOURCE_*`` constants). It defaults to empty so a caller that
+    does not know stays exactly as it was.
+
+    ``measured_in`` is the stamp that says which directory this run measured —
+    ``worktree_identity(<worktree>)``. It defaults to empty, and an empty stamp
+    reads as "this is not a record anybody can claim to have measured", which
+    is the right answer for a record built by hand.
     """
     ids = failing_node_ids(output)
     return BaselineResult(
@@ -270,6 +527,8 @@ def probe_baseline_result(
         failing_node_ids=ids,
         failing_count=len(ids),
         timestamp=timestamp,
+        source=source,
+        measured_in=dict(measured_in or {}),
     )
 
 
