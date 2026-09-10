@@ -10,8 +10,11 @@ This module implements the incident's cure — a *session-scoped OBSERVATION*,
 never a substitute for the human-curated F2 ledger (WS3 §3 composition rule,
 pre-decided with B2):
 
-* **Item 1 — baseline-green probe.** Run the feature's smoke/test command once
-  at worktree setup (after bootstrap, before wave 1). Record the result to
+* **Item 1 — baseline-green probe.** Run the suite once at worktree setup
+  (after bootstrap, before wave 1) — the feature's own smoke command when it
+  declares one, otherwise the repository's declared test command (Rich's
+  ruling, 2026-09-10, so a repair with no smoke command still gets a measured
+  base). Record the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
   red. Report-only — it NEVER blocks the run.
 * **Item 2 — Coach test-gate baseline diff.** When the Coach's ``tests_passed``
@@ -57,6 +60,15 @@ logger = logging.getLogger(__name__)
 
 _BASELINE_DIFF_ENV = "GUARDKIT_AUTOBUILD_BASELINE_DIFF"
 _BASELINE_FILENAME = "baseline.json"
+
+# WHERE THE PROBE'S COMMAND CAME FROM, in the words a person reads.
+#
+# Two, and only two, so anyone opening baseline.json months later knows what
+# the numbers mean: the feature said how to smoke itself, or the repository
+# said how its tests are run. The probe records one of these strings verbatim;
+# nothing parses them, so they are free to stay plain English.
+SOURCE_FEATURE_SMOKE = "the feature's smoke command"
+SOURCE_REPOSITORY_TEST = "the repository's declared test command"
 
 
 def baseline_diff_enabled() -> bool:
@@ -108,6 +120,10 @@ class BaselineResult:
     failing_node_ids: List[str] = field(default_factory=list)
     failing_count: int = 0
     timestamp: str = ""
+    # Where the command came from, in plain words (one of the SOURCE_*
+    # constants above). Empty on a record written before this field existed,
+    # or one built by hand in a test — never a reason to fail.
+    source: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -118,6 +134,7 @@ class BaselineResult:
             "failing_node_ids": list(self.failing_node_ids),
             "failing_count": self.failing_count,
             "timestamp": self.timestamp,
+            "source": self.source,
             # A loud marker that this is NOT the F2 ledger (LPA-09).
             "note": (
                 "session-scoped observation; NOT the qa/known-failures.yaml "
@@ -135,6 +152,7 @@ class BaselineResult:
             failing_node_ids=[str(x) for x in (data.get("failing_node_ids") or [])],
             failing_count=int(data.get("failing_count", 0)),
             timestamp=str(data.get("timestamp", "")),
+            source=str(data.get("source", "")),
         )
 
 
@@ -254,12 +272,17 @@ def probe_baseline_result(
     exit_code: Optional[int],
     output: Optional[str],
     timestamp: str,
+    source: str = "",
 ) -> BaselineResult:
     """Assemble a :class:`BaselineResult` from an executed smoke/test run.
 
     ``output`` is the combined stdout/stderr of the run; failing node IDs are
     pytest-parsed from it (empty for non-pytest stacks — the pass/fail signal
     still drives the wave-0 warning).
+
+    ``source`` says where the command came from, in the words a person reads
+    (one of the ``SOURCE_*`` constants). It defaults to empty so a caller that
+    does not know stays exactly as it was.
     """
     ids = failing_node_ids(output)
     return BaselineResult(
@@ -270,6 +293,7 @@ def probe_baseline_result(
         failing_node_ids=ids,
         failing_count=len(ids),
         timestamp=timestamp,
+        source=source,
     )
 
 
