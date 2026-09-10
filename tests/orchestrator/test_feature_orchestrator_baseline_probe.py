@@ -9,6 +9,14 @@ Which suite it runs is Rich's ruling of 2026-09-10: the feature's own smoke
 command when it declares one, and otherwise the repository's declared test
 command, so a repair — which declares no smoke command — measures its base
 too. With neither, nothing runs and nothing is written, exactly as before.
+
+Two rules these tests pin, because both decide what the Coach and the work leg
+subtract before charging a task with a failure:
+
+* the declaration is read from the REPOSITORY ROOT, never from the copy inside
+  the worktree the model edits; and
+* a run that measured nothing — timed out, could not start, collected no tests
+  — writes no record at all.
 """
 
 from __future__ import annotations
@@ -162,11 +170,15 @@ def test_no_smoke_gates_skips_probe(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _declare_test_command(worktree_path: Path, command: str) -> None:
-    """Write the repository's own toolchain declaration into the worktree."""
+def _declare_test_command(root: Path, command: str) -> None:
+    """Write a repository's toolchain declaration under ``root``.
+
+    Tests pass the REPOSITORY ROOT for the real declaration, and the worktree
+    path only when they are deliberately planting one the probe must ignore.
+    """
     import yaml
 
-    config_dir = worktree_path / ".guardkit"
+    config_dir = root / ".guardkit"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.yaml").write_text(
         yaml.safe_dump({"toolchain": {"test": command}}), encoding="utf-8"
@@ -222,7 +234,7 @@ def test_feature_smoke_command_still_runs_exactly_as_today(tmp_path, monkeypatch
     """
     wt = tmp_path / "wt"
     wt.mkdir()
-    _declare_test_command(wt, "the-repository-command-that-must-not-run")
+    _declare_test_command(tmp_path, "the-repository-command-that-must-not-run")
     orch = _orchestrator(tmp_path)
     smoke_command = _pytest_command("test_slice.py")
     feature = _feature(smoke_command)
@@ -252,7 +264,7 @@ def test_no_smoke_command_runs_the_repository_declaration(tmp_path, caplog):
         "def test_home():\n    assert 'english' == 'maths'\n"
     )
     declared = _pytest_command("test_slice.py")
-    _declare_test_command(wt, declared)
+    _declare_test_command(tmp_path, declared)
     orch = _orchestrator(tmp_path)
     feature = _feature("unused")
     feature.smoke_gates = None
@@ -284,7 +296,7 @@ def test_declared_suite_gets_whole_suite_headroom(tmp_path, monkeypatch):
     """The declared command is a whole suite, so it gets a whole suite's time."""
     wt = tmp_path / "wt"
     wt.mkdir()
-    _declare_test_command(wt, "python -m pytest -q")
+    _declare_test_command(tmp_path, "python -m pytest -q")
     orch = _orchestrator(tmp_path)
     feature = _feature("unused")
     feature.smoke_gates = None
@@ -324,7 +336,7 @@ def test_empty_declaration_is_the_same_as_none(tmp_path, monkeypatch):
     """A repository whose declaration carries no test command changes nothing."""
     wt = tmp_path / "wt"
     wt.mkdir()
-    config_dir = wt / ".guardkit"
+    config_dir = tmp_path / ".guardkit"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yaml").write_text(
         'toolchain:\n  lint: "ruff check ."\n', encoding="utf-8"
@@ -341,13 +353,17 @@ def test_empty_declaration_is_the_same_as_none(tmp_path, monkeypatch):
     assert read_baseline_from_worktree(wt) is None
 
 
-def test_probe_command_that_cannot_start_warns_and_does_not_block(
-    tmp_path, caplog
-):
-    """A command that is not there is one warning line — never a stopped build."""
+def test_probe_command_that_cannot_start_records_nothing(tmp_path, caplog):
+    """A command that is not there measured nothing, so nothing is written.
+
+    Before this rule it was written down as "BASELINE RED — pre-existing test
+    failures" with no test names at all, and finalize then re-ran the same
+    missing command, found no failing ids in "command not found", and called
+    the branch clean. One warning line, no record, no stopped build.
+    """
     wt = tmp_path / "wt"
     wt.mkdir()
-    _declare_test_command(wt, "guardkit-no-such-command-exists-here --run")
+    _declare_test_command(tmp_path, "guardkit-no-such-command-exists-here --run")
     orch = _orchestrator(tmp_path)
     feature = _feature("unused")
     feature.smoke_gates = None
@@ -355,8 +371,149 @@ def test_probe_command_that_cannot_start_warns_and_does_not_block(
     with caplog.at_level(logging.WARNING):
         orch._run_baseline_probe(feature, _worktree(wt))  # must not raise
 
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert not (wt / ".guardkit" / "autobuild").exists()
     assert any(
-        "not attributable to any task" in r.getMessage() for r in caplog.records
+        "did not measure the base" in r.getMessage() for r in caplog.records
+    )
+    # And it is NOT dressed up as a measured red base.
+    assert not any(
+        "BASELINE RED" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_probe_that_collected_no_tests_records_nothing(tmp_path, caplog):
+    """A declared suite that collected nothing is not a green base.
+
+    Real pytest, real subprocess, exit 5. The runner soft-passes that code, so
+    without this rule the build was told "the base is GREEN" on the strength
+    of a suite that never ran a test.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "nothing_here").mkdir()
+    _declare_test_command(tmp_path, _pytest_command("nothing_here"))
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert any(
+        "did not measure the base" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_probe_that_timed_out_records_nothing(tmp_path, caplog, monkeypatch):
+    """A suite that ran out of time measured nothing either.
+
+    The declared command gets ten minutes; a repository whose own suite takes
+    longer will hit this on every build, so it must be ordinary and quiet
+    rather than a red base nobody can explain.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "python -m pytest -q")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    timed_out = SmokeGateResult(
+        passed=False, exit_code=-1, stdout="", stderr="",
+        timed_out=True, command="python -m pytest -q",
+        timeout=_BASELINE_DECLARED_SUITE_TIMEOUT, after_wave=0,
+    )
+    _recording_runner(monkeypatch, timed_out)
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert any(
+        "ran out of its" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_feature_smoke_path_is_untouched_by_the_did_not_measure_rule(
+    tmp_path, monkeypatch
+):
+    """The rule is scoped to the declared path; the smoke path is as it was.
+
+    A feature smoke gate that collects no tests is soft-passed by the runner
+    today and recorded as a green base. That is existing behaviour for every
+    feature that declares a smoke command, and this lane does not change it.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    feature = _feature("pytest -q features/FEAT-X.feature")
+    orch = _orchestrator(tmp_path)
+
+    _recording_runner(
+        monkeypatch,
+        _smoke_result("pytest -q features/FEAT-X.feature", passed=True, exit_code=5),
+    )
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is not None
+    assert orch._measured_baseline.passed is True
+    assert orch._measured_baseline.source == SOURCE_FEATURE_SMOKE
+
+
+def test_a_declaration_planted_in_the_worktree_is_ignored(tmp_path, caplog):
+    """The model's own copy of the declaration cannot decide the base.
+
+    The worktree is the tree the model edits, and on a resumed build the probe
+    runs over a worktree that has already had turns in it. A planted command
+    that prints a failing test id and exits 1 would otherwise write a base
+    naming that test as already broken — and the Coach and the work leg
+    subtract exactly that list before charging a task.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(
+        wt, 'echo "FAILED tests/payments.py::test_refund"; exit 1'
+    )
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    # The repository root declares nothing, so nothing ran and nothing is held.
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+
+
+def test_the_repository_root_declaration_wins_over_the_worktree_copy(tmp_path):
+    """Both copies exist and disagree: the root's command is the one that runs."""
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_slice.py").write_text(
+        "def test_home():\n    assert 'english' == 'maths'\n"
+    )
+    honest = _pytest_command("test_slice.py")
+    _declare_test_command(tmp_path, honest)
+    _declare_test_command(
+        wt, 'echo "FAILED tests/payments.py::test_refund"; exit 1'
+    )
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    baseline = orch._measured_baseline
+    assert baseline is not None
+    assert baseline.command == honest
+    assert any("test_home" in nid for nid in baseline.failing_node_ids)
+    assert not any(
+        "test_refund" in nid for nid in baseline.failing_node_ids
     )
 
 
@@ -366,7 +523,7 @@ def test_probe_runner_blowing_up_is_one_warning_and_nothing_else(
     """If the runner itself raises, the probe is silent about everything else."""
     wt = tmp_path / "wt"
     wt.mkdir()
-    _declare_test_command(wt, "python -m pytest -q")
+    _declare_test_command(tmp_path, "python -m pytest -q")
     orch = _orchestrator(tmp_path)
     feature = _feature("unused")
     feature.smoke_gates = None
@@ -400,7 +557,7 @@ def test_the_coach_still_receives_what_it_received_before(tmp_path):
     (wt / "test_slice.py").write_text(
         "def test_home():\n    assert 'english' == 'maths'\n"
     )
-    _declare_test_command(wt, _pytest_command("test_slice.py"))
+    _declare_test_command(tmp_path, _pytest_command("test_slice.py"))
     orch = _orchestrator(tmp_path)
     feature = _feature("unused")
     feature.smoke_gates = None
