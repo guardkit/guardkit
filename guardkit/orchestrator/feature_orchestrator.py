@@ -86,6 +86,7 @@ from guardkit.orchestrator.baseline import (
     load_baseline_file,
     now_isoformat,
     probe_baseline_result,
+    unclaimed_baseline_file,
     wave0_baseline_warning,
     worktree_identity,
     write_baseline,
@@ -152,6 +153,51 @@ console = Console()
 # most the runner's own configuration will accept (600 seconds) so a change to
 # that number can never turn the probe into a crash.
 _BASELINE_DECLARED_SUITE_TIMEOUT = min(DEFAULT_VERIFY_TIMEOUT, 600)
+
+
+def _record_left_behind(worktree_path: Path) -> Optional[Path]:
+    """The baseline record downstream will read that this build did NOT measure.
+
+    ``None`` when there is none — either the worktree holds no readable record
+    at all, or the one it holds is this build's own. Never raises: this is only
+    ever called to work out what a warning line should say, and a warning line
+    must not be able to end a build.
+    """
+    try:
+        return unclaimed_baseline_file(worktree_path)
+    except Exception:  # noqa: BLE001 — a warning line can never end a build
+        return None
+
+
+def _what_downstream_will_read(worktree_path: Path) -> str:
+    """The true tail of any "nothing was written" warning this probe prints.
+
+    Whenever the probe writes no record, it is tempting — and wrong — to end
+    the sentence with "so nothing downstream treats this build as having a
+    measured base". Nothing downstream asks this probe what it measured. The
+    Coach's test-gate baseline diff and finalize's machine-verify re-run both
+    read whatever ``baseline.json`` the worktree holds. If one arrived with the
+    code, it is still there, and it is still what they will read.
+
+    So this says which of the two actually happened, and names the file when
+    there is one to name. Never raises: a warning line must not be able to end
+    a build.
+    """
+    leftover = _record_left_behind(worktree_path)
+    if leftover is None:
+        return (
+            " The worktree holds no baseline record at all, so the Coach and "
+            "finalize have none to read and this build really does run with "
+            "no measured base."
+        )
+    return (
+        " But a record THIS build did not measure is still sitting in the "
+        f"worktree at {leftover}, and it is NOT inert: the Coach and finalize "
+        "read whatever baseline.json the worktree holds, so that is the record "
+        "they will use — its failing tests will be subtracted from this "
+        "build's, and finalize will re-run the command it names. If a verdict "
+        "later forgives a failure that is real, look at that file first."
+    )
 
 
 def _declared_probe_measured(
@@ -4214,12 +4260,30 @@ The detailed specifications are in the task markdown file.
           — and that fresh record replaces it. On a resume there is nothing
           safe to measure, so nothing is recorded and the file is left exactly
           as it was found: deleting a repository's own tracked file is not
-          this probe's business. How the two are told apart, and why that test is the honest
-          one, is written out under "HOW WE TELL" in ``baseline.py``.
+          this probe's business. LEFT AS FOUND IS NOT THE SAME AS IGNORED, and
+          this is the sharp edge of the whole design. This probe refuses the
+          stale record for its own purposes, but the Coach and finalize do not
+          ask this probe what it measured — they read whatever
+          ``baseline.json`` the worktree holds, through
+          ``read_baseline_from_worktree``. So whenever nothing is written over
+          it, that stale record is still what they will read: its failing
+          tests are still subtracted, and finalize still re-runs the command it
+          names. The warning line says exactly that and names the file, so a
+          person chasing a verdict that forgave a real failure is pointed at
+          it. Making the shared reader refuse every unstamped record would
+          close that too, but it changes the meaning of every record written
+          before this lane, builds in flight included, so it is Rich's call and
+          not a silent edit. How the two are told apart, and why that test is
+          the honest one, is written out under "HOW WE TELL" in
+          ``baseline.py``.
         * **No record at all.** A first run measures; a resumed build measures
-          nothing, because there is no safe base left to take — it carries on
-          with none, exactly as every repair did before this ruling, which
-          fails closed and makes a person look.
+          nothing, because there is no safe base left to take. With the
+          worktree genuinely holding no record, the build carries on with no
+          measured base at all, exactly as every repair did before this ruling,
+          which fails closed and makes a person look. With a record lying about
+          under some other feature's id, it does not: the reader above globs
+          every feature folder, so downstream still reads that one. The warning
+          line tells the two apart and names the file when there is one.
 
         An unreadable record — not JSON, or JSON that is not an object — reads
         as no record at all, in one warning line, and can never end the run.
@@ -4297,8 +4361,10 @@ The detailed specifications are in the task markdown file.
                 worktree.path,
                 existing.command or "not stated",
                 existing.timestamp or "at an unknown time",
+                # What happens to it downstream is said once, in the resume
+                # warning immediately below, rather than twice here.
                 "This is a resumed build, so nothing is measured and nothing "
-                "is written: the build carries on with no measured base."
+                "is written, and the file is left exactly as it was found."
                 if self.resume
                 else "The base is measured afresh wherever there is a command "
                 "to measure it with, and that fresh measurement replaces it.",
@@ -4308,15 +4374,29 @@ The detailed specifications are in the task markdown file.
                 "Baseline probe: this is a resumed build of %s and no base "
                 "THIS build measured was recorded earlier, so there is "
                 "nothing to keep and nothing safe to measure — the worktree "
-                "has already had turns in it. No record is written, so "
-                "nothing downstream treats this build as having a measured "
-                "base. The build carries on.",
+                "has already had turns in it. No record is written by this "
+                "probe.%s The build carries on.",
                 worktree.path,
+                _what_downstream_will_read(worktree.path),
             )
             return
 
         resolved = self._resolve_baseline_probe(feature)
         if resolved is None:
+            # Nothing declared to measure the base with, so nothing is
+            # measured and nothing is written — which is harmless only while
+            # the worktree holds no record either. When one is lying about,
+            # the Coach and finalize still read it, and the person watching
+            # this build has to be told which file, or the next forgiving
+            # verdict has no explanation.
+            if _record_left_behind(worktree.path) is not None:
+                logger.warning(
+                    "Baseline probe: nothing is declared to measure the base "
+                    "of %s with, so this build measures nothing and writes "
+                    "nothing.%s",
+                    worktree.path,
+                    _what_downstream_will_read(worktree.path),
+                )
             return
         probe_config, source = resolved
         try:
@@ -4376,10 +4456,12 @@ The detailed specifications are in the task markdown file.
                 )
             logger.warning(
                 "Baseline probe: '%s' did not measure the base of %s (%s). "
-                "Nothing is recorded, so nothing downstream treats this build "
-                "as having a measured base. The probe is report-only; the "
-                "build carries on.",
-                probe_config.command, worktree.path, why,
+                "Nothing is recorded by this probe.%s The probe is "
+                "report-only; the build carries on.",
+                probe_config.command,
+                worktree.path,
+                why,
+                _what_downstream_will_read(worktree.path),
             )
             return
 

@@ -1169,3 +1169,192 @@ def test_a_malformed_record_never_ends_a_resumed_run_either(
     assert len(
         [r for r in caplog.records if "could not be read" in r.getMessage()]
     ) == 1
+
+
+# ---------------------------------------------------------------------------
+# The warning lines must say what actually happens next.
+#
+# When the probe writes no record, "nothing downstream treats this build as
+# having a measured base" is only true if the worktree really holds no record.
+# The Coach's test-gate baseline diff and finalize's machine-verify re-run do
+# not ask the probe what it measured — both read whatever baseline.json the
+# worktree holds, through read_baseline_from_worktree. So a record that came in
+# with the code is still the one they read, and a person chasing a verdict that
+# forgave a real failure must be pointed AT that file, not away from it.
+#
+# These tests read the warning text, because the warning text is the thing
+# under repair.
+# ---------------------------------------------------------------------------
+
+
+def _warnings(caplog) -> str:
+    return "\n".join(r.getMessage() for r in caplog.records)
+
+
+def test_the_warning_names_the_record_the_coach_will_actually_read(
+    tmp_path, caplog
+):
+    """The coach's own case: no way to measure, and a July record still there.
+
+    Nothing is measured and nothing is written — and the committed record is
+    still exactly what the shared reader hands the Coach and finalize. The
+    warning has to say so and name the file.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    path = feature_baseline_path(wt, "FEAT-X")
+    _committed_record(path, command="make test-fast")
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    # What the Coach and finalize will really get.
+    downstream = read_baseline_from_worktree(wt)
+    assert downstream is not None
+    assert downstream.command == "make test-fast"
+
+    text = _warnings(caplog)
+    assert str(path) in text
+    assert "still sitting in the worktree" in text
+    assert "the Coach and finalize" in text
+    # And the sentence that was false is gone.
+    assert "nothing downstream treats this build" not in text
+    assert "carries on with no measured base" not in text
+
+
+def test_with_no_record_at_all_the_warning_says_exactly_that(tmp_path, caplog):
+    """The other half of the same sentence, and this one is true.
+
+    An empty worktree really does leave the Coach and finalize with nothing to
+    read, so the warning is allowed to say so — and must not name a file that
+    is not there.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert read_baseline_from_worktree(wt) is None
+    text = _warnings(caplog)
+    assert "holds no baseline record at all" in text
+    assert "still sitting in the worktree" not in text
+
+
+def test_a_resumed_build_warning_names_the_record_it_left_alone(
+    tmp_path, monkeypatch, caplog
+):
+    """Resumed, with somebody else's record in the tree.
+
+    The probe refuses it for its own purposes and measures nothing — but the
+    file stays, and the reader downstream still returns it.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    _declare_test_command(tmp_path, _pytest_command("test_pay.py"))
+    path = feature_baseline_path(wt, "FEAT-X")
+    _committed_record(path)
+
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    calls = _recording_runner(monkeypatch, _smoke_result("never-run"))
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []
+    text = _warnings(caplog)
+    assert str(path) in text
+    assert "the Coach and finalize" in text
+
+
+def test_a_run_that_measured_nothing_names_the_record_left_behind(
+    tmp_path, caplog
+):
+    """The third claim: the declared command ran and measured nothing.
+
+    A first run, a declared command that never started the tests, and a
+    committed record already in the tree. No record is written by the probe —
+    and the stale one is what downstream reads.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    path = feature_baseline_path(wt, "FEAT-X")
+    _committed_record(path)
+    # An interpreter with no pytest in it: exits non-zero, names no test.
+    _declare_test_command(
+        tmp_path, f'"{sys.executable}" -c "import no_such_module_at_all"'
+    )
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    text = _warnings(caplog)
+    assert "did not measure the base" in text
+    assert str(path) in text
+    assert "nothing downstream treats this build" not in text
+
+
+def test_a_named_file_is_always_the_one_the_reader_returns(tmp_path, caplog):
+    """forge's exact shape: the stale record sits under ANOTHER feature's id.
+
+    The probe reads its own feature's path and finds nothing there, so it is
+    the shared reader — which globs every feature folder — that decides what
+    the Coach gets. The warning must name that file, not the one the probe
+    looked at.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    other = _committed_record(
+        feature_baseline_path(wt, "FEAT-UBS1C"), command="make test-fast"
+    )
+    assert other  # the record as written
+
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    downstream = read_baseline_from_worktree(wt)
+    assert downstream is not None and downstream.command == "make test-fast"
+    text = _warnings(caplog)
+    assert str(feature_baseline_path(wt, "FEAT-UBS1C")) in text
+
+
+def test_a_repository_with_neither_declaration_writes_nothing_still(tmp_path):
+    """Byte for byte as before: no declarations, no record, no directory.
+
+    The repair only changed words. A repository that declares neither a smoke
+    command nor a test command must still leave the worktree untouched.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert list(wt.iterdir()) == []
