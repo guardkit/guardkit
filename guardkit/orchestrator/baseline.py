@@ -14,9 +14,14 @@ pre-decided with B2):
   (after bootstrap, before wave 1) — the feature's own smoke command when it
   declares one, otherwise the repository's declared test command (Rich's
   ruling, 2026-09-10, so a repair with no smoke command still gets a measured
-  base). Record the result, and which command measured it, to
+  base). That declaration is read from the repository root, never from the
+  copy inside the worktree, because the worktree copy is a file the model can
+  rewrite. Record the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
-  red. Report-only — it NEVER blocks the run.
+  red. Report-only — it NEVER blocks the run. A run that measured nothing —
+  it timed out, or the command could not start, or it collected no tests —
+  writes NO record at all: a record here is what the Coach subtracts and what
+  finalize re-runs, so an invented one is worse than none.
 * **Item 2 — Coach test-gate baseline diff.** When the Coach's ``tests_passed``
   gate would charge a failure, charge the Player ONLY for failures that are NOT
   in ``measured baseline ∪ qa/known-failures.yaml`` (the B2 F2 ledger). A test

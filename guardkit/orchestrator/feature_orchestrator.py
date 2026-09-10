@@ -147,6 +147,27 @@ console = Console()
 _BASELINE_DECLARED_SUITE_TIMEOUT = min(DEFAULT_VERIFY_TIMEOUT, 600)
 
 
+# Exit codes from a declared command that mean nothing was measured: the shell
+# could not run it at all (126 "found but not executable", 127 "not found"), or
+# pytest collected no tests whatsoever (5). None of these is a passing suite and
+# none is a failing one. The estate's own classifier already calls both shapes
+# "unverified" — never a pass, never a fail — and the probe now agrees with it.
+_BASELINE_DID_NOT_MEASURE_EXITS = (5, 126, 127)
+
+
+def _declared_probe_measured(result: SmokeGateResult) -> bool:
+    """Did the declared command actually measure this repository's base?
+
+    ``False`` when the run timed out, or came back with an exit code that means
+    the tests never ran. The caller then writes NOTHING — see
+    :meth:`FeatureOrchestrator._run_baseline_probe` for why a record of a run
+    that measured nothing is worse than no record at all.
+    """
+    if getattr(result, "timed_out", False):
+        return False
+    return result.exit_code not in _BASELINE_DID_NOT_MEASURE_EXITS
+
+
 # TASK-FIX-DEFD: terminal task statuses that satisfy a dependency edge in
 # ``_dependencies_satisfied``. ``deferred`` is terminal-but-not-failed
 # (TASK-FPTC-003 contract for ``operator_handoff`` skips); dependents may
@@ -4046,7 +4067,6 @@ The detailed specifications are in the task markdown file.
     def _resolve_baseline_probe(
         self,
         feature: Feature,
-        worktree: Worktree,
     ) -> Optional[Tuple[SmokeGates, str]]:
         """What the wave-0 probe should run, and where that command came from.
 
@@ -4069,11 +4089,18 @@ The detailed specifications are in the task markdown file.
         uses (``declared_toolchain_test_command``), never a second copy of the
         resolution rule: one parser, one place to change it.
 
-        It reads the copy in the worktree, and safely: this runs after the
-        bootstrap and before wave 1, so no model has had a turn yet and the
-        file is still exactly what the base branch carries. The work leg reads
-        a snapshot instead, for the opposite reason — by the time it runs, the
-        model has been editing the tree.
+        It reads the declaration from the REPOSITORY ROOT, never from the
+        copy inside the worktree. The worktree copy sits in the tree the model
+        edits, and "no model has had a turn yet" is only true of a FIRST run:
+        ``--resume`` is a real flag, and on it the setup phase hands back the
+        existing, already-edited worktree before this probe runs over it
+        again. A planted ``toolchain.test`` of ``echo "FAILED
+        tests/payments.py::test_refund"; exit 1`` would write a base naming a
+        test as already failing — and that list is exactly what the Coach and
+        the work leg subtract before charging a task with a failure. The
+        repository root is the copy the model cannot reach, it is what
+        ``snapshot_task_toolchain`` already reads, and it is the root every
+        other caller of this same reader passes.
 
         It is handed back as a :class:`SmokeGates` because that is the shape
         the one runner takes. Nothing here fires as a between-wave gate — the
@@ -4087,7 +4114,7 @@ The detailed specifications are in the task markdown file.
         if smoke is not None:
             return smoke, SOURCE_FEATURE_SMOKE
         try:
-            declared = declared_toolchain_test_command(Path(worktree.path))
+            declared = declared_toolchain_test_command(self.repo_root)
             if not declared:
                 return None
             return (
@@ -4107,8 +4134,8 @@ The detailed specifications are in the task markdown file.
         except Exception as exc:  # noqa: BLE001 — the probe never blocks a build
             logger.warning(
                 "Baseline probe: could not work out a command to measure the "
-                "base in %s: %s (continuing; the probe is report-only).",
-                worktree.path, exc,
+                "base of %s: %s (continuing; the probe is report-only).",
+                self.repo_root, exc,
             )
             return None
 
@@ -4134,10 +4161,19 @@ The detailed specifications are in the task markdown file.
         repository's own declared test command. See
         :meth:`_resolve_baseline_probe`.
 
-        WHAT IT COSTS, PLAINLY. On a build whose repository declares a test
-        command this adds one full run of that suite before wave 1 — about
-        forty seconds for the estate's own api_test, and longer for a bigger
-        repository. That is the whole price, paid once per build.
+        WHAT IT COSTS, PLAINLY — and it is TWO suite runs, not one. The first
+        is this probe: one full run of the declared suite before wave 1, about
+        forty seconds for the estate's own api_test and longer for a bigger
+        repository. The second is the consequence of writing a record at all.
+        Finalize's machine-verify stage (on by default) re-runs whatever
+        command baseline.json names, in the preserved worktree, with a
+        thirty-minute limit — see ``autobuild._observed_reds_in_worktree``. A
+        build that had no baseline before this ruling skipped that re-run
+        entirely; one that has a baseline now pays it. So a repair in a
+        repository that declares a test command runs its whole suite twice,
+        and its finalize verdict — clean, or a human must look — depends on
+        the second run. That is the honest number, and better said here than
+        discovered the hard way.
 
         WHY IT IS WORTH IT. The work leg's verdict is now "zero net-new
         failures against what the base was already failing". With nothing on
@@ -4154,7 +4190,7 @@ The detailed specifications are in the task markdown file.
         mis-attribution of these pre-existing failures.
         """
         self._measured_baseline = None
-        resolved = self._resolve_baseline_probe(feature, worktree)
+        resolved = self._resolve_baseline_probe(feature)
         if resolved is None:
             return
         probe_config, source = resolved
@@ -4170,6 +4206,37 @@ The detailed specifications are in the task markdown file.
                 "Baseline probe could not run '%s' in %s: %s "
                 "(continuing; probe is report-only).",
                 probe_config.command, worktree.path, exc,
+            )
+            return
+
+        # A run that measured NOTHING must not be written down as a measured
+        # base. Two real shapes on the declared path: a command that cannot
+        # start (exit 127 "not found", 126 "not executable") would be recorded
+        # as "BASELINE RED — pre-existing failures" with no test names at all,
+        # and a suite that collected no tests (exit 5) would be recorded as a
+        # GREEN base, because the runner soft-passes that code. Both would then
+        # be re-run by finalize, which would read no failing ids out of
+        # "command not found" and call the branch clean — turning "a person
+        # must look" into "nothing to see" on a build that measured nothing.
+        # One warning line, no record, and the rest of the build carries on as
+        # it did before any baseline existed. The feature's own smoke path is
+        # deliberately left exactly as it was.
+        if source == SOURCE_REPOSITORY_TEST and not _declared_probe_measured(
+            smoke_result
+        ):
+            if smoke_result.timed_out:
+                why = f"it ran out of its {probe_config.timeout} seconds"
+            else:
+                why = (
+                    f"it exited {smoke_result.exit_code} — the command could "
+                    "not run, or it collected no tests"
+                )
+            logger.warning(
+                "Baseline probe: '%s' did not measure the base of %s (%s). "
+                "Nothing is recorded, so nothing downstream treats this build "
+                "as having a measured base. The probe is report-only; the "
+                "build carries on.",
+                probe_config.command, worktree.path, why,
             )
             return
 
@@ -4198,7 +4265,7 @@ The detailed specifications are in the task markdown file.
             console.print(f"[yellow]⚠[/yellow] {warning}")
         else:
             logger.info(
-                "Baseline probe: feature suite GREEN before wave 1 "
+                "Baseline probe: the base is GREEN before wave 1 "
                 "(command: %s, from %s).", result.command, source
             )
 
