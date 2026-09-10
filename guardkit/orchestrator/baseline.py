@@ -18,10 +18,20 @@ pre-decided with B2):
   copy inside the worktree, because the worktree copy is a file the model can
   rewrite. Record the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
-  red. Report-only — it NEVER blocks the run. A run that measured nothing —
-  it timed out, or the command could not start, or it collected no tests —
-  writes NO record at all: a record here is what the Coach subtracts and what
-  finalize re-runs, so an invented one is worse than none.
+  red. Report-only — it NEVER blocks the run.
+
+  Two rules keep the record honest, because a record here is what the Coach
+  subtracts and what finalize re-runs, so an invented one is worse than none.
+  First, a run that measured nothing writes NO record at all: on the declared
+  path a record is written only when the run named at least one failing test,
+  or passed with pytest's own "N passed" as evidence tests really ran.
+  Everything else — a timeout, a command the shell could not run, a suite that
+  collected nothing, an interpreter with no pytest in it (which exits 1, not
+  127, and reads exactly like a failing suite) — is one warning line and
+  nothing on disk. Second, a worktree is measured ONCE: when a base is already
+  recorded there it is kept and nothing is re-measured, because on ``--resume``
+  the probe would otherwise run over a worktree the model has already edited
+  and file the build's own breakage as pre-existing.
 * **Item 2 — Coach test-gate baseline diff.** When the Coach's ``tests_passed``
   gate would charge a failure, charge the Player ONLY for failures that are NOT
   in ``measured baseline ∪ qa/known-failures.yaml`` (the B2 F2 ledger). A test

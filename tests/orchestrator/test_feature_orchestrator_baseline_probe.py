@@ -10,13 +10,16 @@ command when it declares one, and otherwise the repository's declared test
 command, so a repair — which declares no smoke command — measures its base
 too. With neither, nothing runs and nothing is written, exactly as before.
 
-Two rules these tests pin, because both decide what the Coach and the work leg
-subtract before charging a task with a failure:
+Three rules these tests pin, because all three decide what the Coach and the
+work leg subtract before charging a task with a failure:
 
 * the declaration is read from the REPOSITORY ROOT, never from the copy inside
-  the worktree the model edits; and
-* a run that measured nothing — timed out, could not start, collected no tests
-  — writes no record at all.
+  the worktree the model edits;
+* a worktree is measured ONCE — a base already recorded there is kept, never
+  re-measured, because on a resumed build the probe would otherwise file this
+  build's own breakage as pre-existing; and
+* a run that measured nothing writes no record at all — a record is written
+  only when the run named a failing test, or passed with evidence tests ran.
 """
 
 from __future__ import annotations
@@ -585,3 +588,230 @@ def test_the_coach_still_receives_what_it_received_before(tmp_path):
     assert reread is not None
     assert reread.source == ""
     assert reread.failing_node_ids == loaded.failing_node_ids
+
+
+# ---------------------------------------------------------------------------
+# What "measured nothing" really covers. Not a list of exit codes to distrust:
+# the shapes below all look like ordinary runs by their exit code alone, and
+# every one of them would otherwise be written down as a base the Coach
+# subtracts and finalize re-runs.
+# ---------------------------------------------------------------------------
+
+
+def test_a_declared_command_that_cannot_import_pytest_records_nothing(
+    tmp_path, caplog
+):
+    """Exit 1 with no test named is nothing measured, not a red base.
+
+    The commonest "the test runner never started" shape in Python: a declared
+    command whose interpreter has no pytest in it prints "No module named
+    pytest" and exits 1 — indistinguishable by exit code from a suite that ran
+    and failed. Written down, that is a red base naming nothing; finalize then
+    re-runs the same command, reads no failing ids out of it and reports the
+    branch clean, turning "a person must look" into "nothing to see".
+
+    Real subprocess, real interpreter: ``-S -E`` starts the project's own
+    python without its site-packages, so the import genuinely fails.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_slice.py").write_text("def test_ok():\n    assert True\n")
+    _declare_test_command(tmp_path, f'"{sys.executable}" -S -E -m pytest -q')
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert not (wt / ".guardkit" / "autobuild").exists()
+    assert any(
+        "did not measure the base" in r.getMessage() for r in caplog.records
+    )
+    assert not any("BASELINE RED" in r.getMessage() for r in caplog.records)
+
+
+def test_a_declared_command_that_exits_clean_without_testing_records_nothing(
+    tmp_path, caplog
+):
+    """Exit 0 with no evidence a test ran is not a green base.
+
+    The estate's own rule for a clean exit with nothing to show for it:
+    unverified, never a pass. A green base invented this way is the quiet
+    version of the same damage — finalize re-runs the same do-nothing command,
+    finds no reds, and calls the branch clean.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, 'echo "nothing to do here"')
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert any(
+        "did not measure the base" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_a_real_green_suite_is_still_recorded(tmp_path):
+    """The rule must not swallow an honest pass: real pytest, real "1 passed"."""
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    _declare_test_command(tmp_path, _pytest_command("test_ok.py"))
+    orch = _orchestrator(tmp_path)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    baseline = orch._measured_baseline
+    assert baseline is not None
+    assert baseline.passed is True
+    assert baseline.source == SOURCE_REPOSITORY_TEST
+    assert read_baseline_from_worktree(wt) is not None
+
+
+# ---------------------------------------------------------------------------
+# A worktree is measured ONCE. On --resume the setup phase hands back the
+# worktree the model has already been editing, so a second measurement would
+# record this build's own breakage as pre-existing — and the Coach and
+# finalize subtract exactly that.
+# ---------------------------------------------------------------------------
+
+
+def test_a_base_already_recorded_in_the_worktree_is_kept_not_re_measured(
+    tmp_path, monkeypatch
+):
+    """The resumed build: the true base survives and nothing runs again.
+
+    Wave 0 measures a green base. Wave 1 breaks a test. The operator resumes,
+    and the probe must NOT overwrite the record with the damage the build did
+    to itself — otherwise the regression this build introduced is subtracted
+    by the Coach and by finalize, and the branch reports clean.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert True\n")
+    declared = _pytest_command("test_pay.py")
+    _declare_test_command(tmp_path, declared)
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    first = _orchestrator(tmp_path)
+    first._run_baseline_probe(feature, _worktree(wt))
+    measured = read_baseline_from_worktree(wt)
+    assert measured is not None
+    assert measured.passed is True
+    assert measured.failing_node_ids == []
+
+    # Wave 1 breaks the test, then the build is resumed over the same worktree.
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    resumed = _orchestrator(tmp_path)
+    resumed.resume = True
+    calls = _recording_runner(
+        monkeypatch, _smoke_result(declared, passed=False, exit_code=1)
+    )
+
+    resumed._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []  # nothing was measured a second time
+    kept = read_baseline_from_worktree(wt)
+    assert kept is not None
+    assert kept.passed is True
+    assert kept.failing_node_ids == []
+    assert kept.timestamp == measured.timestamp
+    # And the Coach is handed the base that was true before the build began.
+    assert resumed._measured_baseline is not None
+    assert resumed._measured_baseline.passed is True
+
+
+def test_the_keep_rule_covers_the_feature_smoke_path_too(tmp_path, monkeypatch):
+    """An existing record is kept whichever command would have measured it.
+
+    A feature with a smoke command is resumed the same way and can do the same
+    damage, so the keep rule is not scoped to the declared path. Nothing about
+    a FIRST run changes: a fresh worktree carries no record.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    smoke_command = _pytest_command("test_ok.py")
+    feature = _feature(smoke_command)
+
+    first = _orchestrator(tmp_path)
+    first._run_baseline_probe(feature, _worktree(wt))
+    measured = read_baseline_from_worktree(wt)
+    assert measured is not None
+    assert measured.source == SOURCE_FEATURE_SMOKE
+
+    calls = _recording_runner(
+        monkeypatch, _smoke_result(smoke_command, passed=False, exit_code=1)
+    )
+    second = _orchestrator(tmp_path)
+    second._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []
+    kept = read_baseline_from_worktree(wt)
+    assert kept is not None
+    assert kept.passed is True
+    assert kept.timestamp == measured.timestamp
+
+
+def test_a_resumed_build_with_no_recorded_base_measures_nothing(
+    tmp_path, monkeypatch, caplog
+):
+    """Nothing to keep, and nothing safe to measure — so it measures nothing.
+
+    A repair whose first attempt could not measure its base resumes into a
+    worktree the model has already had turns in. There is no honest base left
+    to take, so none is taken: the build carries on with no measured base,
+    which is where every repair stood before this ruling, and it fails closed —
+    finalize makes a person look.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    _declare_test_command(tmp_path, _pytest_command("test_pay.py"))
+    orch = _orchestrator(tmp_path)
+    orch.resume = True
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    calls = _recording_runner(monkeypatch, _smoke_result("never-run"))
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == []
+    assert orch._measured_baseline is None
+    assert read_baseline_from_worktree(wt) is None
+    assert not (wt / ".guardkit" / "autobuild").exists()
+    assert any(
+        "resumed build" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_a_first_build_still_measures_its_base(tmp_path):
+    """The keep rule must not stop a first build measuring: fresh worktree, no record."""
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "test_pay.py").write_text("def test_refund():\n    assert False\n")
+    _declare_test_command(tmp_path, _pytest_command("test_pay.py"))
+    orch = _orchestrator(tmp_path)
+    assert orch.resume is False
+    feature = _feature("unused")
+    feature.smoke_gates = None
+
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    baseline = orch._measured_baseline
+    assert baseline is not None
+    assert baseline.passed is False
+    assert any("test_refund" in nid for nid in baseline.failing_node_ids)
