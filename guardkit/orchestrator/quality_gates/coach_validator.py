@@ -5926,8 +5926,65 @@ class CoachValidator:
             honesty_verification=honesty_verification,
         )
 
+    def _worktree_run_said_nothing(
+        self,
+        result: "IndependentTestResult",
+        worktree_returncode: Optional[int],
+    ) -> bool:
+        """Did the worktree run really fail to say anything about the code?
+
+        Only asked after an isolated attempt could not start, because only
+        there does the answer END THE TURN with nothing for the builder. That
+        is why the question is asked again here rather than taken from the
+        worktree run's own inline reading.
+
+        THE INLINE READING IS NOT SAFE TO END A TURN ON. The worktree run
+        classifies absence with its own copy of the pytest vocabulary
+        whenever no stack profile is declared: exit code 5 as "collected no
+        tests", the words "errors during collection" as "the suite could not
+        load". Those are true of pytest and of nothing else. A repository
+        that declares a shell wrapper — ``qa/run-suite.sh`` — gets that
+        vocabulary applied to a script that has no opinion about Python, and
+        exit 5 there usually means the checks FAILED. Honouring it would
+        erase a genuine red, clear the builder's real must-fixes and tell the
+        operator that nothing ran while quoting the five things that failed.
+        The same wrong answer would come back for ``go test`` and for
+        ``npm test``.
+
+        So the absence is re-asked through ``_absence_from_run``, the shared
+        fence the isolated path uses, which separates the stack-agnostic
+        readings (the command could not be STARTED at all) from the
+        pytest-shaped ones (asked only of a command that really invokes
+        pytest). Anything the fence does not recognise is a verdict: the red
+        stays the builder's, and the receipt simply records that the check
+        fell back.
+
+        ``worktree_returncode`` is ``None`` when the command never completed
+        at all — a timeout, or a failure before any exit code existed. There
+        is no exit code to misread there and nothing was verified either way,
+        so it stays what it is: the check could not run.
+        """
+        if result.check_could_not_run:
+            return True
+        if not result.signal_absent:
+            return False
+        if worktree_returncode is None:
+            return True
+        return (
+            self._absence_from_run(
+                worktree_returncode,
+                result.raw_output or "",
+                result.tests_passed,
+                result.test_command,
+            )
+            is not None
+        )
+
     def _after_isolation_fallback(
-        self, result: "IndependentTestResult"
+        self,
+        result: "IndependentTestResult",
+        *,
+        worktree_returncode: Optional[int],
     ) -> "IndependentTestResult":
         """Close out a check that fell back from the isolated copy.
 
@@ -5935,10 +5992,16 @@ class CoachValidator:
         did:
 
         * the worktree run produced a verdict — keep it, and record on the
-          receipt that it fell back and why;
+          receipt that it fell back and why. A red is a red: it reaches the
+          builder exactly as a wave of one would have delivered it;
         * the worktree run could not produce one either — the turn ends as an
           estate fault, naming the command, both directories and what was
           missing, in the operator's log and on the receipt.
+
+        Which of the two it is comes from ``_worktree_run_said_nothing``, not
+        from the worktree run's own inline reading. ``worktree_returncode``
+        is required, not defaulted, so a future caller cannot silently lose
+        the fence and start ending turns on a misread exit code again.
         """
         isolated = self._isolation_fallback
         self._isolation_fallback = None
@@ -5948,7 +6011,7 @@ class CoachValidator:
         reason = isolated.check_could_not_run_detail or (
             "the isolated copy could not start the check"
         )
-        if result.check_could_not_run or result.signal_absent:
+        if self._worktree_run_said_nothing(result, worktree_returncode):
             detail = (
                 f"The check could not run anywhere. Command: "
                 f"{result.test_command}. In an isolated copy of the worktree: "
@@ -5964,10 +6027,16 @@ class CoachValidator:
                 resolved_interpreter=result.resolved_interpreter,
             )
 
+        if result.signal_absent:
+            outcome = "an absent signal, exactly as a wave of one would report"
+        elif result.tests_passed:
+            outcome = "passed"
+        else:
+            outcome = "failed"
         logger.info(
             "The check ran in the worktree after the isolated copy could not "
-            "start it, and produced a verdict (%s).",
-            "passed" if result.tests_passed else "failed",
+            "start it, and the result is the builder's to read (%s).",
+            outcome,
         )
         return dataclass_replace(result, isolation_fallback_reason=reason)
 
@@ -6588,7 +6657,12 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
-                    )
+                    ),
+                    # The command completed and has an exit code, so a
+                    # fallback close-out can re-ask what that exit code
+                    # really means for THIS command before ending a turn on
+                    # it.
+                    worktree_returncode=result.returncode,
                 )
 
             except subprocess.TimeoutExpired:
@@ -6606,7 +6680,9 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
-                    )
+                    ),
+                    # No exit code exists: the command never finished.
+                    worktree_returncode=None,
                 )
             except Exception as e:
                 duration = time.time() - start_time
@@ -6620,7 +6696,9 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
-                    )
+                    ),
+                    # No exit code exists: the command never ran to an end.
+                    worktree_returncode=None,
                 )
 
         finally:
