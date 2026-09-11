@@ -919,18 +919,14 @@ def _turn_claimed_unmodified_files(turn_record: "TurnRecord") -> bool:
     return False
 
 
-def _criteria_the_reviewer_did_not_verify(
+def _reviewer_criteria_entries(
     turn_record: "TurnRecord",
-) -> List[str]:
-    """Names of the acceptance criteria the reviewer did NOT mark verified.
+) -> List[Any]:
+    """The reviewer's own per-criterion verdict list, or an empty list.
 
-    Reads the reviewer's own per-criterion verdicts —
-    ``criteria_verification`` first, and the older
+    Reads ``criteria_verification`` first and the older
     ``acceptance_criteria_verification.criteria_results`` shape as a fallback.
-    An entry counts as verified only when it says so; anything else
-    ("rejected", "pending", "fail", missing, unreadable) counts as not
-    verified. An empty or absent list yields an empty result: there is nothing
-    to read, so this check says nothing either way.
+    Any shape mismatch (Mock records, partial reports) reads as "no list".
     """
     if turn_record.coach_result is None:
         return []
@@ -945,18 +941,41 @@ def _criteria_the_reviewer_did_not_verify(
             entries = legacy.get("criteria_results")
     if not isinstance(entries, list):
         return []
+    return entries
+
+
+def _entry_says_verified(entry: Any) -> bool:
+    """True when one of the reviewer's verdict entries says "verified"."""
+    if not isinstance(entry, dict):
+        return False
+    verdict = entry.get("result")
+    if not isinstance(verdict, str) or not verdict.strip():
+        verdict = entry.get("status")
+    return isinstance(verdict, str) and verdict.strip().lower() == "verified"
+
+
+def _criteria_the_reviewer_did_not_verify(
+    turn_record: "TurnRecord",
+) -> List[str]:
+    """Names of the acceptance criteria the reviewer did NOT mark verified.
+
+    Reads the reviewer's own per-criterion verdicts —
+    ``criteria_verification`` first, and the older
+    ``acceptance_criteria_verification.criteria_results`` shape as a fallback.
+    An entry counts as verified only when it says so; anything else
+    ("rejected", "pending", "fail", missing, unreadable) counts as not
+    verified. An empty or absent list yields an empty result: there is nothing
+    to read, so this check says nothing either way.
+    """
+    entries = _reviewer_criteria_entries(turn_record)
+    if not entries:
+        return []
 
     unverified: List[str] = []
     for index, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            unverified.append(f"criterion {index + 1}")
+        if _entry_says_verified(entry):
             continue
-        verdict = entry.get("result")
-        if not isinstance(verdict, str) or not verdict.strip():
-            verdict = entry.get("status")
-        if isinstance(verdict, str) and verdict.strip().lower() == "verified":
-            continue
-        name = entry.get("criterion_id")
+        name = entry.get("criterion_id") if isinstance(entry, dict) else None
         unverified.append(
             name if isinstance(name, str) and name.strip()
             else f"criterion {index + 1}"
@@ -1022,6 +1041,291 @@ def _already_implemented_veto(turn_record: "TurnRecord") -> Optional[str]:
             "criteria are met"
         )
     return None
+
+
+# ============================================================================
+# The third outcome: the tree already satisfies the task
+# ============================================================================
+
+DECISION_ALREADY_SATISFIED = "already_satisfied"
+"""A task can end in three ways, not two.
+
+``approved`` — the builder did the work and the reviewer accepted it.
+``already_satisfied`` — the builder found the work already in the tree, said
+so, cited where it is, and the reviewer checked that claim against the tree
+and agreed. Nothing was written, and there is nothing to merge.
+Anything else is a failure.
+
+Written after the build of 2026-09-11 (``build-FEAT-3EF3-20260911171802``),
+where the plan split one job into three tasks. Task one did the whole job in a
+single turn; tasks two and three then had nothing left to do. The loop had no
+way to say "already done", so it read the silence as no progress, spent five
+turns on each of them, and on the last of those turns one of them deleted two
+working functions its task never mentioned — 79 tests of shipped behaviour.
+"""
+
+TASK_COMPLETE_DECISIONS: frozenset = frozenset(
+    {"approved", DECISION_ALREADY_SATISFIED}
+)
+"""The outcomes that mean this task is DONE.
+
+Everything that decides a final status, or counts how many tasks finished,
+reads this set: a feature whose tasks are all approved or already-satisfied is
+a COMPLETE feature, not a partial one.
+"""
+
+_ALREADY_SATISFIED_FIELD = "already_satisfied"
+"""The one field the builder writes into its own report to make the claim."""
+
+#: Where a citation's file may be named, in the order the readers try.
+_CITATION_FILE_KEYS = ("file", "path", "file_path")
+#: Where a citation's place inside that file may be named.
+_CITATION_PLACE_KEYS = ("location", "lines", "line", "place", "where", "symbol")
+#: Where a citation says which acceptance criterion it answers.
+_CITATION_CRITERION_KEYS = ("criterion_id", "criterion", "criterion_text", "id")
+
+
+def _already_satisfied_claim(turn_record: "TurnRecord") -> Optional[Any]:
+    """The builder's claim that the tree already satisfies this task, or None.
+
+    STACK-AGNOSTIC BY CONSTRUCTION. This reads ONE field out of the builder's
+    own report. It never opens a source file, never parses one, and has no
+    idea what language the repository is written in — so it behaves the same
+    in a Python, TypeScript, Go or any other repository. The claim is prose
+    citing files and places; the reviewer verifies it the way it verifies
+    every other claim the builder makes.
+
+    Defensive against Mock records and partial reports: any shape mismatch
+    reads as "no claim was made", which simply leaves today's behaviour
+    untouched.
+    """
+    player = getattr(turn_record, "player_result", None)
+    if player is None:
+        return None
+    report = getattr(player, "report", None)
+    if not isinstance(report, dict):
+        return None
+    claim = report.get(_ALREADY_SATISFIED_FIELD)
+    if claim is None or claim is False:
+        return None
+    if isinstance(claim, dict) and claim.get("claimed") is False:
+        return None
+    return claim
+
+
+def _first_text(entry: Dict[str, Any], keys: Tuple[str, ...]) -> Optional[str]:
+    """The first of ``keys`` in ``entry`` that carries readable text."""
+    for key in keys:
+        value = entry.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, (str, int)):
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+def _already_satisfied_citations(claim: Any) -> List[Dict[str, str]]:
+    """The usable citations in a claim, normalised.
+
+    A citation is usable only when it says all three things: which acceptance
+    criterion it answers, which file satisfies it, and where in that file. An
+    entry missing any of the three is not a citation and is dropped, so a
+    claim made of empty gestures arrives here as an empty list and is refused.
+
+    Nothing is checked about the *content* of a file name or a place — they
+    are text, in whatever form the repository's language uses ("lines 42-58",
+    "the createUser handler", "func CountUsers"). That is the stack-agnostic
+    rule: no parsing, no language, no package manager.
+    """
+    entries: List[Any]
+    if isinstance(claim, dict):
+        raw = claim.get("citations")
+        entries = raw if isinstance(raw, list) else []
+    elif isinstance(claim, list):
+        entries = claim
+    else:
+        entries = []
+
+    citations: List[Dict[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        criterion = _first_text(entry, _CITATION_CRITERION_KEYS)
+        file_named = _first_text(entry, _CITATION_FILE_KEYS)
+        place = _first_text(entry, _CITATION_PLACE_KEYS)
+        if criterion and file_named and place:
+            citations.append(
+                {"criterion": criterion, "file": file_named, "place": place}
+            )
+    return citations
+
+
+def _reviewer_verified_every_criterion(
+    turn_record: "TurnRecord", expected: int
+) -> bool:
+    """True only when the reviewer's own report SAYS it checked every one.
+
+    Positive evidence is required. An absent, unreadable or partial verdict
+    reads as "not verified" — never as "nothing objected". Unknown is not a
+    pass; that is exactly the rule the 2026-09-11 checkpoint commits broke
+    when they recorded "tests: pass, count: 0".
+    """
+    needed = max(expected, 1)
+
+    entries = _reviewer_criteria_entries(turn_record)
+    verified = sum(1 for entry in entries if _entry_says_verified(entry))
+    if entries and verified >= needed and verified == len(entries):
+        return True
+
+    # The older shape: a count instead of a list.
+    if turn_record.coach_result is None:
+        return False
+    report = getattr(turn_record.coach_result, "report", None)
+    if not isinstance(report, dict):
+        return False
+    validation = report.get("validation_results")
+    if not isinstance(validation, dict):
+        return False
+    requirements = validation.get("requirements")
+    if not isinstance(requirements, dict):
+        return False
+    if requirements.get("all_criteria_met") is not True:
+        return False
+    total = requirements.get("criteria_total")
+    met = requirements.get("criteria_met")
+    for number in (total, met):
+        if not isinstance(number, int) or isinstance(number, bool):
+            return False
+    return total >= needed and met >= needed
+
+
+def _reviewer_must_fix_objection(turn_record: "TurnRecord") -> Optional[str]:
+    """The first thing the reviewer says MUST be fixed, or None.
+
+    A must-fix issue is the reviewer saying "this is not acceptable as it
+    stands". Nothing can close as already-satisfied over one of those, whatever
+    the per-criterion verdicts say — that is the trap the withdrawn 2026-09-01
+    version fell into, where a completion that never read the reviewer's
+    objection could finish a task the reviewer had just refused.
+    """
+    for issue in _coach_report_issues(turn_record):
+        severity = issue.get("severity")
+        if isinstance(severity, str) and severity.strip().lower() == "must_fix":
+            description = issue.get("description")
+            if isinstance(description, str) and description.strip():
+                return " ".join(description.split())[:300]
+            return "an unnamed must-fix issue"
+    return None
+
+
+def _already_satisfied_refusal(
+    turn_record: "TurnRecord",
+    acceptance_criteria: Optional[List[Any]] = None,
+) -> Optional[str]:
+    """Why the claim is refused — one plain sentence — or None when it stands.
+
+    A claim on its own is never enough: a builder that could close a task by
+    asserting it was done would face no bar at all. So every check here is
+    made from something the builder does not control — the citations counted
+    rather than believed, the orchestrator's own git measurement of what this
+    turn changed, and the reviewer's verdict on the acceptance criteria.
+
+    A refused claim is simply a failed turn: the loop carries on exactly as it
+    does today, including the stall rule.
+    """
+    claim = _already_satisfied_claim(turn_record)
+    if claim is None:
+        return "The builder made no claim that the work was already there."
+
+    expected = len(
+        [c for c in (acceptance_criteria or []) if str(c).strip()]
+    )
+
+    citations = _already_satisfied_citations(claim)
+    if not citations:
+        return (
+            "The builder said this task's work was already in the tree but "
+            "cited nothing. A claim has to name, for each acceptance "
+            "criterion, the file and the place in it that satisfies that "
+            "criterion. Refused, and this counts as a failed turn."
+        )
+
+    cited = {citation["criterion"] for citation in citations}
+    if expected and len(cited) < expected:
+        return (
+            f"The builder said this task's work was already in the tree but "
+            f"cited only {len(cited)} of its {expected} acceptance criteria. "
+            f"A claim has to cite every one. Refused."
+        )
+
+    changed = turn_record.files_changed_this_turn
+    if not isinstance(changed, int) or isinstance(changed, bool):
+        return (
+            "The builder said this task's work was already in the tree, but "
+            "the build could not measure whether this turn changed any "
+            "files, and an unmeasured turn cannot close a task. Refused."
+        )
+    if changed > 0:
+        return (
+            f"The builder said this task's work was already in the tree, but "
+            f"it changed {changed} file(s) on this turn, so this was work "
+            f"being done, not work that was already there. Refused."
+        )
+
+    veto = _already_implemented_veto(turn_record)
+    if veto is not None:
+        return (
+            f"The builder said this task's work was already in the tree, but "
+            f"{veto}. Refused."
+        )
+
+    objection = _reviewer_must_fix_objection(turn_record)
+    if objection is not None:
+        return (
+            f"The builder said this task's work was already in the tree, but "
+            f"the reviewer still has something it says must be fixed: "
+            f"\"{objection}\". Refused."
+        )
+
+    if not _reviewer_verified_every_criterion(turn_record, expected):
+        return (
+            "The builder said this task's work was already in the tree, but "
+            "the reviewer did not confirm every acceptance criterion against "
+            "the tree, so the claim is unverified. Refused."
+        )
+
+    return None
+
+
+def _already_satisfied_message(
+    task_id: str, turn_record: "TurnRecord", turns_taken: int
+) -> str:
+    """The lines a person reads when a task closes as already satisfied."""
+    citations = _already_satisfied_citations(
+        _already_satisfied_claim(turn_record)
+    )
+    lines = [
+        f"{task_id} was already satisfied by the code in the tree, so nothing "
+        f"was written.",
+        f"The builder said so on turn {turn_record.turn}, after "
+        f"{turns_taken} turn(s) in all, named where each acceptance "
+        f"criterion is already met, and the reviewer checked that against "
+        f"the tree and agreed.",
+    ]
+    if citations:
+        lines.append("Where the work already is:")
+        for citation in citations:
+            lines.append(
+                f"  - {citation['criterion']}: {citation['file']} "
+                f"({citation['place']})"
+            )
+    lines.append(
+        "This task is COMPLETE. There is no diff to review and nothing to "
+        "merge for it."
+    )
+    return "\n".join(lines)
 
 
 def _test_verification_issues(
@@ -1797,7 +2101,9 @@ class OrchestrationResult:
     task_id : str
         Task identifier (e.g., "TASK-XXX-YYYY")
     success : bool
-        True if Coach approved, False if max_turns or error
+        True when the task is DONE — the Coach approved, or the Coach verified
+        the builder's claim that the tree already satisfied it. False for
+        max_turns, a stall, or an error.
     total_turns : int
         Total number of turns executed
     final_decision : Literal["approved", "max_turns_exceeded", "error"]
@@ -1824,7 +2130,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"]
+    final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "pre_loop_blocked", "rate_limited", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -2682,13 +2988,20 @@ class AutoBuildOrchestrator:
                 turn_history=turn_history,
             )
 
-            # Save final state
+            # Save final state. A task the tree already satisfied is finished
+            # the same way an approved one is — there is simply no diff.
             if task_file_path:
-                status = "in_review" if final_decision == "approved" else "blocked"
+                status = (
+                    "in_review"
+                    if final_decision in TASK_COMPLETE_DECISIONS
+                    else "blocked"
+                )
                 self._save_state(task_file_path, worktree, status)
 
-            # Build result
-            success = final_decision == "approved"
+            # Build result. Both complete outcomes count as done, so a feature
+            # whose tasks are approved or already-satisfied finishes as
+            # complete and its completed count includes them.
+            success = final_decision in TASK_COMPLETE_DECISIONS
             # TASK-FIX-7A07: Compute stall sub-classification for the result
             # so downstream consumers (review-summary, memory seeding) can
             # surface the per-task decision_subtype without re-walking the
@@ -3705,7 +4018,7 @@ class AutoBuildOrchestrator:
         time_budget_seconds: Optional[float] = None,
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "configuration_error", "design_extraction_failed", "timeout_budget_exhausted", "honesty_collapse"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -3714,9 +4027,11 @@ class AutoBuildOrchestrator:
 
         Loop Structure
         --------------
-        - Turn 1: Player implements from scratch
+        - Turn 1: Player implements from scratch — or, when the tree already
+          satisfies every acceptance criterion, says so and cites where
         - Turn 2+: Player addresses Coach feedback
-        - Exit: Coach approves OR max_turns exceeded OR critical error OR cancelled
+        - Exit: Coach approves OR the Coach verifies an "already there" claim
+          OR max_turns exceeded OR critical error OR cancelled
 
         Parameters
         ----------
@@ -3804,6 +4119,12 @@ class AutoBuildOrchestrator:
 
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
+                # A refused "the work is already there" claim is told back to
+                # the builder on the next turn, so it stops repeating it.
+                # Reset every turn: only the turn that made the claim carries
+                # its refusal.
+                refusal_to_carry: Optional[str] = None
+
                 # Cooperative cancellation check at TOP of loop (TASK-ASF-007)
                 # Check timeout_event first — feature-level timeout takes priority (TASK-ABFIX-006)
                 if self._timeout_event and self._timeout_event.is_set():
@@ -3971,6 +4292,44 @@ class AutoBuildOrchestrator:
                 # Persist state after each turn
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
+
+                # THE THIRD OUTCOME: a task the tree already satisfies is
+                # CLOSED, not stalled. Checked here, on every turn, so the
+                # usual case — the builder looks first, finds the work
+                # already present on TURN ONE and says so — costs one turn
+                # instead of five wasted ones ending in a stall.
+                #
+                # Two things have to be true and neither is the builder's to
+                # decide alone: the builder must CLAIM it, citing for each
+                # acceptance criterion the file and the place that satisfies
+                # it, and the reviewer must have VERIFIED those criteria
+                # against the tree. A claim nobody verified is just an
+                # assertion, and a builder that can close a task by asserting
+                # it is done has no bar at all — so a refused claim is a
+                # failed turn and the loop carries on exactly as it does
+                # today, stall rule included.
+                #
+                # STACK-AGNOSTIC: nothing in this path reads, parses or knows
+                # anything about source code, a language, an interpreter or a
+                # package manager. The claim is prose citing files and places;
+                # the reviewer verifies it the way it verifies any other
+                # claim. It behaves identically in a Python, TypeScript or Go
+                # repository.
+                if _already_satisfied_claim(turn_record) is not None:
+                    refusal = _already_satisfied_refusal(
+                        turn_record, acceptance_criteria
+                    )
+                    if refusal is None:
+                        logger.info(
+                            "[%s] %s",
+                            task_id,
+                            _already_satisfied_message(
+                                task_id, turn_record, len(turn_history)
+                            ),
+                        )
+                        return turn_history, DECISION_ALREADY_SATISFIED
+                    logger.warning("[%s] %s", task_id, refusal)
+                    refusal_to_carry = refusal
 
                 # Check approval BEFORE cancellation (TASK-ABFIX-004)
                 # Coach approval during grace period must propagate even if cancellation is set
@@ -4157,6 +4516,14 @@ class AutoBuildOrchestrator:
                 if turn_record.decision == "feedback":
                     logger.info(f"Coach provided feedback on turn {turn}")
                     previous_feedback = turn_record.feedback
+                    if refusal_to_carry:
+                        # Say plainly why the claim was not accepted, so the
+                        # next turn either cites properly or does the work.
+                        previous_feedback = (
+                            f"{refusal_to_carry}\n\n{previous_feedback}"
+                            if previous_feedback
+                            else refusal_to_carry
+                        )
                     # Continue to next turn
 
                 else:
@@ -5237,7 +5604,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"],
+        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse", "qa_precondition_blocked"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -5292,6 +5659,8 @@ class AutoBuildOrchestrator:
         # AND the master GUARDKIT_AUTO_MERGE switch is ON (default OFF in-window —
         # nothing auto-merges until the streak matures through real use). Fully
         # fail-open: it never disturbs the preserve-for-review contract above.
+        # Only an approved build reaches these two: an already-satisfied task
+        # wrote nothing, so there is no diff to verify and nothing to merge.
         if final_decision == "approved":
             report = self._run_machine_verify_stage(worktree)
             self._maybe_auto_merge(worktree, report)
@@ -9415,7 +9784,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -9432,6 +9801,29 @@ class AutoBuildOrchestrator:
         str
             Formatted summary details
         """
+        if final_decision == DECISION_ALREADY_SATISFIED:
+            # The third outcome, said in plain words: this task is finished
+            # and nothing was written for it.
+            last_turn = turn_history[-1] if turn_history else None
+            if last_turn is None:
+                return (
+                    "This task was already satisfied by the code in the "
+                    "tree. Nothing was written, and there is nothing to "
+                    "merge for it. The task is COMPLETE."
+                )
+            task_name = "This task"
+            if last_turn.player_result is not None:
+                task_name = getattr(
+                    last_turn.player_result, "task_id", None
+                ) or "This task"
+            return (
+                _already_satisfied_message(
+                    task_name, last_turn, len(turn_history)
+                )
+                + f"\nWorktree preserved at: "
+                f"{self._worktree_manager.worktrees_dir}"
+            )
+
         if final_decision == "approved":
             # Check if this was a conditional approval (infrastructure-dependent)
             last_coach = turn_history[-1] if turn_history else None
@@ -9859,7 +10251,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
+        final_decision: Literal["approved", "already_satisfied", "max_turns_exceeded", "unrecoverable_stall", "player_invocation_stall", "error", "cancelled", "timeout", "timeout_budget_exhausted", "configuration_error", "pre_loop_blocked", "design_extraction_failed", "honesty_collapse"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -10457,8 +10849,10 @@ def finalize_autobuild(
     >>> print(result["next_steps"])
     ['Review changes: cd .guardkit/worktrees/TASK-XXX-YYYY', ...]
     """
-    # Map final_decision to task status
-    if loop_result.final_decision == "approved":
+    # Map final_decision to task status. Both complete outcomes — the Coach
+    # approved, or the Coach verified that the tree already satisfied the task
+    # — leave the task finished, never blocked.
+    if loop_result.final_decision in TASK_COMPLETE_DECISIONS:
         status = "in_review"
     else:
         status = "blocked"
@@ -10475,6 +10869,13 @@ def finalize_autobuild(
             "Review turn history: cat .guardkit/autobuild/{task_id}/player_turn_*.json",
             "Merge if approved: git checkout main && git merge autobuild/{task_id}",
             f"Cleanup worktree: guardkit worktree cleanup {task_id}",
+        ]
+    elif loop_result.final_decision == DECISION_ALREADY_SATISFIED:
+        next_steps = [
+            "Nothing was written: the code in the tree already satisfied "
+            "this task, and the reviewer confirmed it.",
+            f"Read the reviewer's citations: cat .guardkit/autobuild/{task_id}/coach_turn_{loop_result.total_turns}.json",
+            "Close the task. There is no diff to review and nothing to merge.",
         ]
     elif loop_result.final_decision == "max_turns_exceeded":
         next_steps = [
@@ -10518,6 +10919,8 @@ def finalize_autobuild(
 
 __all__ = [
     "AutoBuildOrchestrator",
+    "DECISION_ALREADY_SATISFIED",
+    "TASK_COMPLETE_DECISIONS",
     "ContextStatus",
     "OrchestrationResult",
     "TurnRecord",
