@@ -983,3 +983,63 @@ class TestSelectHarnessBackendKwargCompat:
         assert [
             r for r in caplog.records if r.levelno == logging.WARNING
         ] == []
+
+
+# ----------------------------------------------------------------------
+# resolve_harness_name — the one place that answers "which harness?"
+# (2026-09-11)
+# ----------------------------------------------------------------------
+
+
+class TestResolveHarnessName:
+    """The helper the CLI's pre-flight check asks before requiring the SDK.
+
+    It exists so the default lives in exactly one place: guardkit's autobuild
+    CLI has to know which harness a run will use, and re-reading the
+    environment variable there would be a second copy of the default, free to
+    drift from this module's.
+    """
+
+    def test_unset_returns_the_module_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(_TEST_ENV_VAR, raising=False)
+
+        assert (
+            selector_module.resolve_harness_name(_TEST_ENV_VAR)
+            == selector_module.DEFAULT_HARNESS
+        )
+
+    def test_default_is_the_factory_harness(self) -> None:
+        """The default is the guardkit factory, not the Claude Agents SDK."""
+        assert selector_module.DEFAULT_HARNESS == "langgraph"
+
+    def test_set_value_wins_and_is_lowercased(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "SDK")
+
+        assert selector_module.resolve_harness_name(_TEST_ENV_VAR) == "sdk"
+
+    def test_unknown_value_is_returned_not_corrected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A typo comes back as itself, so a caller can name it in a refusal."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "banana")
+
+        name = selector_module.resolve_harness_name(_TEST_ENV_VAR)
+
+        assert name == "banana"
+        assert name not in selector_module.SUPPORTED_HARNESSES
+
+    def test_select_harness_refuses_the_same_unknown_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The refusal the CLI pre-empts still reads the same here."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "banana")
+
+        with pytest.raises(AgentInvocationError) as exc:
+            select_harness(env_var=_TEST_ENV_VAR, **_sdk_kwargs())
+
+        assert "Unknown GUARDKIT_HARNESS value: 'banana'" in str(exc.value)
+        assert "Expected 'sdk' or 'langgraph'." in str(exc.value)

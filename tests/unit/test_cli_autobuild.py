@@ -710,10 +710,18 @@ def test_require_sdk_surfaces_underlying_error(mock_check, capsys):
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
 def test_task_command_exits_early_without_sdk(mock_check, cli_runner):
-    """Test task command exits with code 1 when SDK unavailable."""
+    """Test task command exits with code 1 when the SDK is asked for and missing.
+
+    Updated 2026-09-11: the SDK is required only when the run will use it, so
+    this test now asks for it by name (``GUARDKIT_HARNESS=sdk``). The
+    unconditional behaviour it used to pin refused every build in a sandbox
+    that does not install the SDK.
+    """
     mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
-    result = cli_runner.invoke(task, ["TASK-AB-001"])
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
 
     assert result.exit_code == 1
     assert "Claude Agent SDK" in result.output
@@ -722,10 +730,15 @@ def test_task_command_exits_early_without_sdk(mock_check, cli_runner):
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
 def test_task_command_prints_installation_instructions_without_sdk(mock_check, cli_runner):
-    """Test task command shows installation instructions when SDK unavailable."""
+    """Test task command shows installation instructions when SDK unavailable.
+
+    Updated 2026-09-11: asks for the SDK by name, as above.
+    """
     mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
-    result = cli_runner.invoke(task, ["TASK-AB-001"])
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
 
     assert result.exit_code == 1
     assert "claude-agent-sdk" in result.output
@@ -738,14 +751,20 @@ def test_task_command_prints_installation_instructions_without_sdk(mock_check, c
 def test_task_command_calls_require_sdk_first(
     mock_orchestrator_class, mock_load_task, mock_require_sdk, cli_runner, mock_task_data, mock_success_result
 ):
-    """Test task command calls _require_sdk before loading task."""
+    """Test task command calls _require_sdk before loading task.
+
+    Updated 2026-09-11: the check happens only when the SDK is the harness, so
+    the test names it.
+    """
     mock_load_task.return_value = mock_task_data
 
     mock_orchestrator = MagicMock()
     mock_orchestrator.orchestrate.return_value = mock_success_result
     mock_orchestrator_class.return_value = mock_orchestrator
 
-    result = cli_runner.invoke(task, ["TASK-AB-001"])
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
 
     # Verify _require_sdk was called
     mock_require_sdk.assert_called_once()
@@ -753,12 +772,17 @@ def test_task_command_calls_require_sdk_first(
 
 @patch("guardkit.cli.autobuild._check_sdk_available")
 def test_feature_command_exits_early_without_sdk(mock_check, cli_runner):
-    """Test feature command exits with code 1 when SDK unavailable."""
+    """Test feature command exits with code 1 when the SDK is asked for and missing.
+
+    Updated 2026-09-11: asks for the SDK by name, as above.
+    """
     from guardkit.cli.autobuild import feature
 
     mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
 
-    result = cli_runner.invoke(feature, ["FEAT-A1B2"])
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
 
     assert result.exit_code == 1
     assert "Claude Agent SDK" in result.output
@@ -770,7 +794,11 @@ def test_feature_command_exits_early_without_sdk(mock_check, cli_runner):
 def test_feature_command_calls_require_sdk_first(
     mock_orchestrator_class, mock_require_sdk, cli_runner
 ):
-    """Test feature command calls _require_sdk before processing."""
+    """Test feature command calls _require_sdk before processing.
+
+    Updated 2026-09-11: the check happens only when the SDK is the harness, so
+    the test names it.
+    """
     from guardkit.cli.autobuild import feature
 
     mock_orchestrator = MagicMock()
@@ -780,10 +808,280 @@ def test_feature_command_calls_require_sdk_first(
     mock_orchestrator_class.return_value = mock_orchestrator
 
     # This will fail at feature loading but after SDK check
-    result = cli_runner.invoke(feature, ["FEAT-A1B2"])
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
 
     # Verify _require_sdk was called
     mock_require_sdk.assert_called_once()
+
+
+# ============================================================================
+# Test: the SDK is required only when the SDK is the harness (2026-09-11)
+# ============================================================================
+#
+# The build system's default harness is guardkit's own DeepAgents/LangGraph
+# factory, which never imports claude_agent_sdk. Before this change both
+# autobuild commands demanded the SDK before choosing a harness, so inside a
+# repository's sandbox — which installs the factory and not the SDK — every
+# build exited 1 in under a second having done nothing.
+
+
+def _flat(output: str) -> str:
+    """Return the console output with its line wrapping removed.
+
+    The banner and the refusal are printed through rich, which wraps at the
+    console width, so a sentence assertion must not depend on where the wrap
+    fell.
+    """
+    return " ".join(output.split())
+
+
+SDK_BANNER_FIRST_LINE = "Error: Claude Agent SDK import failed"
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+def test_task_command_does_not_require_sdk_on_the_default_harness(
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_check,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
+):
+    """With no harness named, the task command runs with the SDK unimportable."""
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": None}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_load_task.assert_called_once()  # the command got past the check
+    mock_check.assert_not_called()  # and never looked for the SDK at all
+    assert result.exit_code == 0
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_feature_command_does_not_require_sdk_on_the_default_harness(
+    mock_orchestrator_class, mock_check, cli_runner
+):
+    """With no harness named, the feature command runs with the SDK unimportable."""
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2"], env={"GUARDKIT_HARNESS": None}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_orchestrator_class.assert_called_once()
+    mock_check.assert_not_called()
+    assert result.exit_code == 0
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+def test_task_command_does_not_require_sdk_on_explicit_langgraph(
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_check,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
+):
+    """GUARDKIT_HARNESS=langgraph runs with the SDK unimportable."""
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": "langgraph"}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_load_task.assert_called_once()
+    assert result.exit_code == 0
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_feature_command_does_not_require_sdk_on_explicit_langgraph(
+    mock_orchestrator_class, mock_check, cli_runner
+):
+    """GUARDKIT_HARNESS=langgraph runs the feature command with no SDK."""
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2"], env={"GUARDKIT_HARNESS": "langgraph"}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_orchestrator_class.assert_called_once()
+    assert result.exit_code == 0
+
+
+@pytest.mark.parametrize("command,args", [(task, ["TASK-AB-001"]), (feature, ["FEAT-A1B2"])])
+@patch("guardkit.cli.autobuild._check_sdk_available")
+def test_sdk_harness_with_missing_sdk_keeps_todays_banner(
+    mock_check, cli_runner, command, args
+):
+    """Asking for the SDK without it installed reads exactly as it did before."""
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+
+    result = cli_runner.invoke(command, args, env={"GUARDKIT_HARNESS": "sdk"})
+
+    flat = _flat(result.output)
+    assert result.exit_code == 1
+    assert SDK_BANNER_FIRST_LINE in flat
+    assert "Underlying error: No module named 'claude_agent_sdk'" in flat
+    assert "pip install claude-agent-sdk" in flat
+    assert "For more diagnostics: guardkit doctor" in flat
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.AutoBuildOrchestrator")
+def test_task_command_proceeds_when_sdk_asked_for_and_present(
+    mock_orchestrator_class,
+    mock_load_task,
+    mock_check,
+    cli_runner,
+    mock_task_data,
+    mock_success_result,
+):
+    """GUARDKIT_HARNESS=sdk with the SDK installed proceeds as before."""
+    mock_check.return_value = (True, None)
+    mock_load_task.return_value = mock_task_data
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.orchestrate.return_value = mock_success_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        task, ["TASK-AB-001"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_check.assert_called_once()
+    mock_load_task.assert_called_once()
+    assert result.exit_code == 0
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_feature_command_proceeds_when_sdk_asked_for_and_present(
+    mock_orchestrator_class, mock_check, cli_runner
+):
+    """GUARDKIT_HARNESS=sdk with the SDK installed proceeds as before."""
+    mock_check.return_value = (True, None)
+    mock_orchestrator = MagicMock()
+    mock_result = MagicMock()
+    mock_result.success = True
+    mock_orchestrator.orchestrate.return_value = mock_result
+    mock_orchestrator_class.return_value = mock_orchestrator
+
+    result = cli_runner.invoke(
+        feature, ["FEAT-A1B2"], env={"GUARDKIT_HARNESS": "sdk"}
+    )
+
+    assert SDK_BANNER_FIRST_LINE not in _flat(result.output)
+    mock_check.assert_called_once()
+    mock_orchestrator_class.assert_called_once()
+    assert result.exit_code == 0
+
+
+@pytest.mark.parametrize("command,args", [(task, ["TASK-AB-001"]), (feature, ["FEAT-A1B2"])])
+@pytest.mark.parametrize("bad_name", ["banana", ""])
+@patch("guardkit.cli.autobuild._check_sdk_available")
+@patch("guardkit.cli.autobuild.TaskLoader.load_task")
+@patch("guardkit.cli.autobuild.FeatureOrchestrator")
+def test_unknown_harness_name_is_refused_naming_the_value(
+    mock_feature_orchestrator,
+    mock_load_task,
+    mock_check,
+    cli_runner,
+    bad_name,
+    command,
+    args,
+):
+    """A harness name nobody has is refused up front, in one plain sentence."""
+    mock_check.return_value = (True, None)
+
+    result = cli_runner.invoke(command, args, env={"GUARDKIT_HARNESS": bad_name})
+
+    flat = _flat(result.output)
+    assert result.exit_code == 3
+    assert (
+        f"Error: GUARDKIT_HARNESS is set to {bad_name!r}, which is not a "
+        f"harness this build system has. Expected 'sdk' or 'langgraph'." in flat
+    )
+    # Refused before any work, and without blaming the SDK.
+    assert SDK_BANNER_FIRST_LINE not in flat
+    mock_load_task.assert_not_called()
+    mock_feature_orchestrator.assert_not_called()
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+def test_gate_asks_the_selector_for_the_default(mock_check, monkeypatch):
+    """The pre-flight check reads the selector's own default, not a copy of it.
+
+    Moving ``DEFAULT_HARNESS`` moves the CLI's behaviour with it, which is the
+    property that keeps the default from being written down in two places.
+    """
+    from guardkit.cli.autobuild import _require_sdk_for_selected_harness
+    from guardkit.orchestrator.harness import selector as selector_module
+
+    monkeypatch.delenv("GUARDKIT_HARNESS", raising=False)
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+
+    # The real default (langgraph): no SDK needed.
+    _require_sdk_for_selected_harness()
+    mock_check.assert_not_called()
+
+    # Flip the selector's default to the SDK: the same call now requires it.
+    monkeypatch.setattr(selector_module, "DEFAULT_HARNESS", "sdk")
+    with pytest.raises(SystemExit) as exc_info:
+        _require_sdk_for_selected_harness()
+    assert exc_info.value.code == 1
+    mock_check.assert_called_once()
+
+
+@patch("guardkit.cli.autobuild._check_sdk_available")
+def test_gate_accepts_a_harness_name_in_any_case(mock_check, monkeypatch):
+    """``GUARDKIT_HARNESS=SDK`` is the SDK, as the selector reads it."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "SDK")
+    mock_check.return_value = (False, "No module named 'claude_agent_sdk'")
+
+    from guardkit.cli.autobuild import _require_sdk_for_selected_harness
+
+    with pytest.raises(SystemExit) as exc_info:
+        _require_sdk_for_selected_harness()
+
+    assert exc_info.value.code == 1
+
+    monkeypatch.setenv("GUARDKIT_HARNESS", "LangGraph")
+    mock_check.reset_mock()
+    _require_sdk_for_selected_harness()
+    mock_check.assert_not_called()
 
 
 # ============================================================================
