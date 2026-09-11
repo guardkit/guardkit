@@ -128,6 +128,7 @@ from guardkit.orchestrator.parallel_strategy import (
     ParallelConfig,
     apply_feature_recommended_parallel,
     bound_concurrency,
+    collect_wave_task_paths,
     resolve_max_parallel,
 )
 from guardkit.worktrees import (
@@ -2446,6 +2447,11 @@ The detailed specifications are in the task markdown file.
                     wave_number=wave_number,
                     wave_size=len(task_ids),
                     log=False,
+                    # Same mapping the dispatcher resolves with (cached), so
+                    # the banner never says two while one runs.
+                    wave_task_paths=self._wave_task_paths(
+                        wave_number, task_ids, feature, worktree
+                    ),
                 )
                 self._wave_display.start_wave(
                     wave_number, task_ids, max_parallel=display_max_parallel
@@ -3588,6 +3594,12 @@ The detailed specifications are in the task markdown file.
                 self._parallel_config,
                 wave_number=wave_number,
                 wave_size=len(task_ids),
+                # Two tasks that would work on the same area of the
+                # repository do not run at the same time. Same mapping the
+                # display banner above resolved with.
+                wave_task_paths=self._wave_task_paths(
+                    wave_number, task_ids, feature, worktree
+                ),
             )
 
             # Apply concurrency bound if max_parallel is set.
@@ -4483,6 +4495,59 @@ The detailed specifications are in the task markdown file.
                 "Baseline probe: the base is GREEN before wave 1 "
                 "(command: %s, from %s).", result.command, source
             )
+
+    def _wave_task_paths(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        feature: Feature,
+        worktree: Worktree,
+    ) -> Dict[str, Optional[List[str]]]:
+        """The paths every task in this wave says it will touch.
+
+        One entry per task, in wave order, mapping the task's id to the
+        repository-relative paths it declares, or ``None`` when it declares
+        none. ``resolve_max_parallel`` uses this to run a wave one task at a
+        time when two of its tasks would work on the same area.
+
+        Read once per wave and remembered, so the read-only display banner
+        and the dispatcher's authoritative decision are made from the same
+        answer and can never disagree. Never raises: anything unreadable
+        leaves a task as "did not say", which is the safe side.
+        """
+        cache = getattr(self, "_wave_task_paths_cache", None)
+        if cache is None:
+            cache = {}
+            self._wave_task_paths_cache = cache
+
+        key = (wave_number, tuple(task_ids))
+        if key in cache:
+            return cache[key]
+
+        task_files: Dict[str, Path] = {}
+        for task_id in task_ids:
+            task = FeatureLoader.find_task(feature, task_id)
+            file_path = getattr(task, "file_path", None) if task else None
+            if file_path:
+                task_files[task_id] = Path(file_path)
+
+        try:
+            paths = collect_wave_task_paths(
+                task_ids,
+                Path(worktree.path),
+                task_files=task_files,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Wave %d: could not read what its tasks will touch (%s); "
+                "treating every task as having declared nothing.",
+                wave_number,
+                exc,
+            )
+            paths = {task_id: None for task_id in task_ids}
+
+        cache[key] = paths
+        return paths
 
     def _resolve_wave_task_timeouts(self, feature: Feature) -> Dict[str, int]:
         """Resolve the EFFECTIVE per-task timeout for every queued task.
