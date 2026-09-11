@@ -605,6 +605,49 @@ MAX_SDK_STREAM_RETRIES = 1
 SDK_STREAM_RETRY_BACKOFF = 30  # seconds
 
 
+#: The field a builder writes into its own report to say the tree already
+#: satisfies the task. Carried verbatim to the orchestrator, which asks the
+#: reviewer to verify it; nothing on this side reads or judges the claim.
+ALREADY_SATISFIED_FIELD = "already_satisfied"
+
+#: What the builder is told, on its FIRST turn only, about the third way a
+#: task can end. Asking on turn one is the whole point: a task the tree
+#: already satisfies then costs one turn instead of five wasted ones.
+#:
+#: STACK-AGNOSTIC: it asks for prose citing files and places — never for a
+#: language, a symbol kind, a test runner or a package manager — so it reads
+#: the same in a Python, TypeScript, Go or any other repository.
+ALREADY_SATISFIED_PROMPT_SECTION = """
+## Before you write anything
+
+First read the code this task names and decide one thing: does the repository
+ALREADY satisfy every one of the acceptance criteria above?
+
+If it does, DO NOT write, change or delete anything. Say so instead, by adding
+this field to your report and stopping:
+
+  "already_satisfied": {
+    "claimed": true,
+    "citations": [
+      {
+        "criterion_id": "AC-001",
+        "file": "the file that already satisfies this criterion",
+        "location": "where in that file - lines, or the name of the thing",
+        "evidence": "one sentence saying how it satisfies the criterion"
+      }
+    ]
+  }
+
+Cite EVERY acceptance criterion: one entry each, naming the file and the place
+in it. A claim that cites nothing is refused, and so is one that cites only
+some of the criteria. The reviewer then checks your claim against the tree; if
+it cannot confirm it, the turn counts as failed and you carry on as normal.
+
+If ANY criterion is not already satisfied, do not use this field at all —
+implement the task in the usual way.
+"""
+
+
 def turn_pressure(turn: int, max_turns: int) -> Tuple[bool, bool]:
     """The ONE rule for "is the Player running out of turns?".
 
@@ -3119,6 +3162,13 @@ Please address all feedback points in this turn.
 {",".join(example_promises)}
   ],'''
 
+        # The third outcome, offered once, on the first turn only (see
+        # ALREADY_SATISFIED_PROMPT_SECTION). From turn two on the builder is
+        # answering the reviewer, not deciding whether to start.
+        already_satisfied_section = (
+            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 else ""
+        )
+
         # TASK-AB-INVARIANTTEST01: responsibility 2 carries the
         # invariant-not-snapshot constraint (location 1 of the three
         # Player-prompt locations; locations 2-3 live in
@@ -3133,7 +3183,7 @@ Turn: {turn}
 ## Requirements
 
 {requirements}
-{criteria_section}{feedback_section}
+{criteria_section}{already_satisfied_section}{feedback_section}
 
 ## Your Responsibilities
 
@@ -5723,6 +5773,37 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     logger.debug(
                         f"Could not recover player report from {candidate}: {e}"
                     )
+
+        # Carry the builder's "this task is already satisfied" claim through.
+        # The report this method builds is assembled from task_work_results,
+        # which keeps only the fields it knows, so the claim would otherwise
+        # be dropped between the builder writing it and the orchestrator
+        # asking the reviewer to verify it. Copied verbatim and never read
+        # here: nothing on this side judges the claim, and nothing here knows
+        # what language the repository is written in.
+        if ALREADY_SATISFIED_FIELD not in report:
+            for candidate in candidate_paths:
+                if not candidate.exists():
+                    continue
+                try:
+                    with open(candidate, "r") as f:
+                        agent_written = json.load(f)
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.debug(
+                        f"Could not read player report at {candidate}: {e}"
+                    )
+                    continue
+                if isinstance(agent_written, dict) and (
+                    ALREADY_SATISFIED_FIELD in agent_written
+                ):
+                    report[ALREADY_SATISFIED_FIELD] = agent_written[
+                        ALREADY_SATISFIED_FIELD
+                    ]
+                    logger.info(
+                        f"Carried the builder's already-satisfied claim "
+                        f"through for {task_id} turn {turn}"
+                    )
+                    break
 
         # TASK-FIX-PIPELINE: File-existence verification fallback (Fix 5)
         # When no completion_promises exist after Fix 2 recovery, generate
@@ -9904,6 +9985,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"{requirements}\n"
             )
 
+        # --- Section 3b: the third outcome, on the first turn only ---
+        # A task the tree already satisfies should cost one turn, not five.
+        # See ALREADY_SATISFIED_PROMPT_SECTION.
+        already_satisfied_section = (
+            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 else ""
+        )
+
         # --- Section 4: Coach feedback (inline when available) ---
         feedback_section = ""
         if feedback and turn > 1:
@@ -9958,6 +10046,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             header
             + turn_section
             + requirements_section
+            + already_satisfied_section
             + feedback_section
             + context_section
             + "\n---\n\n"
