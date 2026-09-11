@@ -25,6 +25,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
 )
 
 from guardkit.orchestrator.gpu_monitor import (
@@ -278,6 +279,15 @@ def _normalise_declared_path(raw: Any) -> Optional[str]:
     Accepts the shapes task documents actually carry: a plain string, or a
     string wrapped in backticks or quotes, with either slash. Returns
     ``None`` for anything that is not a usable path.
+
+    A trailing slash is KEPT, because it is the one unambiguous signal that
+    the entry names a whole directory rather than a single file — a task
+    that writes ``files_to_modify: - src/users/`` is claiming the directory.
+    Dropping the slash would turn that claim into a file called
+    ``src/users``, whose area would then read as ``src``, and a second task
+    naming ``src/users/crud.ts`` would look like no overlap at all. Nothing
+    here guesses from the end of a name: no extension is ever inspected, so
+    this behaves the same whatever language the repository is written in.
     """
     if not isinstance(raw, str):
         return None
@@ -285,16 +295,63 @@ def _normalise_declared_path(raw: Any) -> Optional[str]:
     text = text.replace("\\", "/")
     if not text:
         return None
+    names_a_directory = text.endswith("/")
     parts = [part for part in text.split("/") if part not in ("", ".")]
     if not parts or ".." in parts:
         return None
-    return "/".join(parts)
+    cleaned = "/".join(parts)
+    return cleaned + "/" if names_a_directory else cleaned
 
 
-def _area_of(path: str) -> str:
-    """The immediate parent directory of a path — the area it belongs to."""
-    head, _, _tail = path.rpartition("/")
+def _names_a_directory(entry: str) -> bool:
+    """True when this declared entry is a whole directory, not one file."""
+    return entry.endswith("/")
+
+
+def _area_of(entry: str) -> str:
+    """The area a declared entry belongs to.
+
+    For a file, that is its immediate parent directory. For an entry that
+    names a directory, the directory itself IS the area.
+    """
+    if _names_a_directory(entry):
+        return entry[:-1]
+    head, _, _tail = entry.rpartition("/")
     return head
+
+
+def _files_among(entries: Sequence[str]) -> Set[str]:
+    """Just the entries that name a single file."""
+    return {entry for entry in entries if not _names_a_directory(entry)}
+
+
+def _shared_area(
+    first_paths: Sequence[str], second_paths: Sequence[str]
+) -> Optional[str]:
+    """The area two tasks both work in, or ``None`` if there is not one.
+
+    Two tasks share an area when they name files in the same immediate
+    parent directory, or when one of them claims a directory and the other
+    names anything inside it, however deep.
+    """
+    both = sorted({_area_of(p) for p in first_paths} & {_area_of(p) for p in second_paths})
+    if both:
+        return both[0]
+
+    for claimed, other_paths in (
+        (first_paths, second_paths),
+        (second_paths, first_paths),
+    ):
+        for entry in claimed:
+            if not _names_a_directory(entry):
+                continue
+            area = entry[:-1]
+            inside = area + "/"
+            for other in other_paths:
+                other_path = other[:-1] if _names_a_directory(other) else other
+                if other_path.startswith(inside):
+                    return area
+    return None
 
 
 def _format_area(area: str) -> str:
@@ -324,9 +381,14 @@ def find_same_area_conflict(
     wave_task_paths :
         One entry per task in the wave, in wave order: the task's id mapped
         to the repository-relative paths it says it will touch, or ``None``
-        when the task says nothing. ``None`` for the whole mapping means
-        nothing was collected, which is treated like a wave of tasks that
-        all said nothing.
+        when the task says nothing. That one-entry-per-task mapping is how
+        a wave is described here, and both live call sites always pass one.
+        A caller who passes ``None`` for the whole mapping has described no
+        tasks at all, so there is nothing to compare and the answer is "do
+        not sequence" — today's behaviour, unchanged. If you are writing a
+        new call site, do not pass ``None`` on a failure path expecting the
+        wave to fail safe: pass one entry per task, with ``None`` against
+        each task whose files you could not read.
     policy :
         One of ``SAME_AREA_POLICIES``.
 
@@ -363,7 +425,9 @@ def find_same_area_conflict(
     known = [(task_id, paths) for task_id, paths in declared if paths]
     for index, (first_id, first_paths) in enumerate(known):
         for second_id, second_paths in known[index + 1 :]:
-            shared_files = sorted(set(first_paths) & set(second_paths))
+            shared_files = sorted(
+                _files_among(first_paths) & _files_among(second_paths)
+            )
             if shared_files:
                 return SameAreaDecision(
                     True,
@@ -371,14 +435,12 @@ def find_same_area_conflict(
                     f"{shared_files[0]}, so this wave runs one task at a "
                     f"time.",
                 )
-            shared_areas = sorted(
-                {_area_of(p) for p in first_paths} & {_area_of(p) for p in second_paths}
-            )
-            if shared_areas:
+            shared_area = _shared_area(first_paths, second_paths)
+            if shared_area is not None:
                 return SameAreaDecision(
                     True,
                     f"{first_id} and {second_id} both work on files in "
-                    f"{_format_area(shared_areas[0])}, so this wave runs one "
+                    f"{_format_area(shared_area)}, so this wave runs one "
                     f"task at a time.",
                 )
 

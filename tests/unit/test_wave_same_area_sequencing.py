@@ -248,6 +248,90 @@ class TestDifferentAreasRunTogether:
         )
 
 
+class TestADeclaredDirectoryIsAnArea:
+    """A task may name a whole directory instead of a file — a plan that says
+    ``files_to_modify: - src/users/`` is an ordinary thing for a model to
+    write. The trailing slash is the only signal that the entry means a
+    directory, so it is kept and the directory is treated as the area. No
+    extension is ever inspected, so this is language-free like the rest."""
+
+    def test_typescript_directory_and_a_file_inside_it_sequence(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src/users/"], "TASK-B": ["src/users/crud.ts"]}
+        )
+        assert decision.sequence is True
+        assert "src/users" in decision.reason
+
+    def test_go_directory_and_a_file_inside_it_sequence(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["internal/users/"], "TASK-B": ["internal/users/handler.go"]}
+        )
+        assert decision.sequence is True
+        assert "internal/users" in decision.reason
+
+    def test_a_file_deeper_inside_the_claimed_directory_sequences(self):
+        """A directory claim covers everything beneath it, however deep — the
+        task said it would work in there."""
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src/users/"], "TASK-B": ["src/users/admin/handler.ts"]}
+        )
+        assert decision.sequence is True
+        assert "src/users" in decision.reason
+
+    def test_the_same_directory_twice_sequences_and_reads_as_an_area(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["internal/users/"], "TASK-B": ["internal/users/"]}
+        )
+        assert decision.sequence is True
+        assert "both work on files in internal/users" in decision.reason
+
+    def test_a_directory_inside_another_claimed_directory_sequences(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src/"], "TASK-B": ["src/users/"]}
+        )
+        assert decision.sequence is True
+        assert "both work on files in src" in decision.reason
+
+    def test_sibling_directories_run_together(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src/users/"], "TASK-B": ["src/billing/"]}
+        )
+        assert decision.sequence is False
+
+    def test_a_directory_and_a_file_outside_it_run_together(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src/users/"], "TASK-B": ["internal/billing/crud.go"]}
+        )
+        assert decision.sequence is False
+
+    def test_a_directory_written_with_backslashes_is_still_a_directory(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["src\\users\\"], "TASK-B": ["src/users/crud.ts"]}
+        )
+        assert decision.sequence is True
+        assert "src/users" in decision.reason
+
+    def test_resolver_returns_one_for_a_claimed_directory(self):
+        assert (
+            resolve_max_parallel(
+                _config(static_value=4),
+                wave_size=2,
+                wave_task_paths={
+                    "TASK-A": ["src/users/"],
+                    "TASK-B": ["src/users/crud.ts"],
+                },
+            )
+            == 1
+        )
+
+    def test_the_relaxed_setting_still_sequences_a_claimed_directory(self):
+        decision = find_same_area_conflict(
+            {"TASK-A": ["internal/users/"], "TASK-B": ["internal/users/crud.go"]},
+            policy=SAME_AREA_SEQUENCE_ON_DECLARED_OVERLAP,
+        )
+        assert decision.sequence is True
+
+
 class TestPathShapesAreNormalisedBeforeComparing:
     def test_leading_dot_slash_and_backslashes_still_match(self):
         decision = find_same_area_conflict(
@@ -331,7 +415,7 @@ class TestNothingDeclaredFailsSafe:
             == 4
         )
 
-    def test_no_mapping_at_all_is_treated_as_nothing_declared(self):
+    def test_no_mapping_at_all_leaves_todays_behaviour_unchanged(self):
         """A caller that passes nothing gets today's behaviour, because a
         one-entry-per-task mapping is how the wave is described."""
         assert (
