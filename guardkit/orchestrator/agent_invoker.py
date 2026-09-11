@@ -4442,6 +4442,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
    independent_tests.test_output_summary {verbatim_rationale} so
    operators can see whether it timed out or errored. Rule:
    .claude/rules/absence-of-failure-is-not-success.md.
+   ONE EXCEPTION TO THE WORDING, NOT TO THE VERDICT: if
+   independent_tests.check_could_not_run == true the command never STARTED —
+   the estate is broken, not the code. Still do NOT approve, but write NO
+   issue asking the Player to fix it: the Player did not cause it and cannot
+   fix it. Say plainly in the rationale that the check could not run and name
+   what was missing.
 
 7. WIRING-EVIDENCE ADVISORY GUARD.
    If evidence_bundle.wiring, evidence_bundle.mocked_seam, or
@@ -6954,6 +6960,35 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         if independent is None or not getattr(independent, "signal_absent", False):
             return
 
+        # THE CHECK COULD NOT RUN — AND THAT IS NEVER THE BUILDER'S TO FIX.
+        #
+        # 2026-09-11: the Coach's parallel-wave copy of the worktree could
+        # not start the repository's declared test command, so nothing about
+        # the builder's work was measured. That non-result was handed to the
+        # builder as a must-fix five turns running, and on turn five it
+        # deleted two working functions from a module its task never
+        # mentioned. The estate broke; the builder was blamed.
+        #
+        # "The check ran and the result is bad" and "the check could not run"
+        # are different outcomes and must not share this code path. The Coach
+        # marks the second one on its own result
+        # (``IndependentTestResult.check_could_not_run``), and here is where
+        # the live path must honour it: the verdict becomes feedback, NO issue
+        # is written for the builder, and the turn is marked as one the
+        # builder cannot fix so the loop stops instead of spending more turns
+        # on something outside the repository. The operator keeps the whole
+        # story — the plain sentence naming the command, the directory and
+        # what was missing goes to the rationale, the log and the receipt.
+        if getattr(independent, "check_could_not_run", False):
+            self._end_turn_as_estate_fault(
+                decision=decision,
+                independent=independent,
+                task_id=task_id,
+                turn=turn,
+                coach_output_path=coach_output_path,
+            )
+            return
+
         original_decision = decision["decision"]
         summary = (getattr(independent, "test_output_summary", "") or "").strip()
         # TASK-AB-ZEROTESTLOUD01 (AC-001/AC-002): name the interpreter and
@@ -7065,6 +7100,70 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # override (returned in the result) already rejects it.
         self._persist_coach_decision(
             decision, coach_output_path, tag="TASK-FIX-COACHFG01"
+        )
+
+    def _end_turn_as_estate_fault(
+        self,
+        *,
+        decision: Dict[str, Any],
+        independent: Any,
+        task_id: str,
+        turn: int,
+        coach_output_path: Path,
+    ) -> None:
+        """End a turn whose check could not run, blaming nobody.
+
+        Called only when the Coach's own result says the declared test
+        command never started. Three things happen, and they mirror exactly
+        what the rule-based Coach does on the same outcome:
+
+        * the verdict becomes ``feedback`` — nothing was verified, so nothing
+          may be approved;
+        * the builder's channel is emptied. The issue list is cleared and
+          nothing is appended. An estate fault that is merely de-emphasised
+          in the feedback still teaches the builder to chase it, and the
+          prompt separately asks the Coach to quote the failed check, so its
+          own findings on a turn where NOTHING RAN are set aside here — named
+          in the operator's log first, so nothing disappears quietly;
+        * ``is_configuration_error`` marks the turn as one the builder cannot
+          fix, so the loop stops rather than burning the remaining turns.
+
+        The operator's rationale is the Coach's plain sentence: the command,
+        the directory it tried to run in, and what was missing.
+        """
+        detail = (
+            getattr(independent, "check_could_not_run_detail", None)
+            or getattr(independent, "test_output_summary", None)
+            or "The check could not run, and nothing about the work was measured."
+        )
+        set_aside = [
+            str(issue.get("description", ""))
+            for issue in decision.get("issues", []) or []
+            if isinstance(issue, dict)
+        ]
+        if set_aside:
+            logger.warning(
+                "The check could not run for %s turn %s, so nothing was "
+                "verified; the reviewer's own findings for this turn are set "
+                "aside rather than sent to the builder: %s",
+                task_id,
+                turn,
+                " | ".join(set_aside),
+            )
+        logger.error(
+            "ESTATE FAULT for %s turn %s — the check could not run, so "
+            "nothing was verified and the builder is told nothing to fix: %s",
+            task_id,
+            turn,
+            detail,
+        )
+        decision["decision"] = "feedback"
+        decision["rationale"] = detail
+        decision["issues"] = []
+        decision["is_configuration_error"] = True
+        self._persist_coach_decision(
+            decision, coach_output_path, tag="check-could-not-run",
+            kind="estate fault",
         )
 
     # TASK-FIX-COACHMISREAD01: the two halves of "this finding claims the

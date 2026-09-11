@@ -5744,11 +5744,37 @@ class CoachValidator:
                 )
         return linked
 
+    @staticmethod
+    def _command_runs_pytest(test_cmd: str) -> bool:
+        """True when the declared command actually invokes pytest.
+
+        NOTHING HERE MAY ASSUME PYTHON. Exit code 5 means "collected no
+        tests" to pytest and nothing at all to anybody else: to ``go test``
+        or to a shell wrapper it is simply a non-zero exit, which usually
+        means the checks FAILED. Reading a Go wrapper's exit 5 as "the check
+        could not run" would hide a genuine red behind an estate fault and
+        tell the operator something untrue about a command that has no
+        opinion about Python. So the pytest-shaped readings below are asked
+        only of a pytest-shaped command.
+
+        Matches pytest as a word in the command — ``pytest -q``,
+        ``python -m pytest``, ``uv run pytest``, ``/path/to/pytest`` — and
+        nothing else. ``make test``, ``./scripts/test.sh``, ``go test ./...``
+        and ``npm test`` are all not pytest-shaped, whatever they run
+        underneath, because from here they are opaque.
+        """
+        for token in (test_cmd or "").replace(";", " ").replace("&", " ").split():
+            stripped = token.strip("\"'")
+            if stripped == "pytest" or stripped.endswith("/pytest"):
+                return True
+        return False
+
     def _absence_from_run(
         self,
         returncode: Optional[int],
         combined_output: str,
         tests_passed: bool,
+        test_cmd: str,
     ) -> Optional[str]:
         """Why this run produced NO verdict, or ``None`` when it produced one.
 
@@ -5763,6 +5789,21 @@ class CoachValidator:
         calling its own inline copy: a single-task wave must stay exactly what
         it is today, proved by its existing tests, and this lane changes only
         the parallel-wave path.
+
+        Two kinds of reading live here and they are kept apart, because on
+        this path a "could not run" ends the turn with nothing for the
+        builder:
+
+        * the stack-agnostic ones — the command could not be STARTED at all
+          (exit 126 or 127, or one of the shell's own missing-tool
+          sentences). True of any command in any language, so they are asked
+          of every command;
+        * the pytest-shaped ones — exit code 5, a conftest import error, a
+          collection error, a rejected ``--timeout``. These are readings of
+          pytest's own vocabulary, so they are asked only when the command
+          really invokes pytest (see ``_command_runs_pytest``). A declared
+          shell wrapper or a ``go test`` line keeps its own meaning for the
+          same exit codes, and a genuine red stays the builder's to fix.
         """
         if self._active_stack_profile is not None:
             if classify_absent_for_stack(
@@ -5778,24 +5819,28 @@ class CoachValidator:
             return None
         if tests_passed:
             return None
-        if "No module named pytest" in combined_output:
-            return "the test runner itself was not installed where the command ran"
-        if returncode == 5:
-            return "the command collected no tests at all"
-        if (
-            "ImportError while loading conftest" in combined_output
-            or "errors during collection" in combined_output
-            or "error collecting" in combined_output
-        ):
-            return (
-                "the suite could not be loaded, so no test ran (a missing "
-                "dependency where the command ran)"
-            )
-        if self._is_pytest_timeout_usage_error(returncode, combined_output):
-            return (
-                "the per-test timeout option was rejected, so no test ran "
-                "(the timeout plugin was missing where the command ran)"
-            )
+        if self._command_runs_pytest(test_cmd):
+            if "No module named pytest" in combined_output:
+                return (
+                    "the test runner itself was not installed where the "
+                    "command ran"
+                )
+            if returncode == 5:
+                return "the command collected no tests at all"
+            if (
+                "ImportError while loading conftest" in combined_output
+                or "errors during collection" in combined_output
+                or "error collecting" in combined_output
+            ):
+                return (
+                    "the suite could not be loaded, so no test ran (a missing "
+                    "dependency where the command ran)"
+                )
+            if self._is_pytest_timeout_usage_error(returncode, combined_output):
+                return (
+                    "the per-test timeout option was rejected, so no test ran "
+                    "(the timeout plugin was missing where the command ran)"
+                )
         if self._is_host_substrate_gap(returncode, combined_output):
             return (
                 f"the command could not be executed where it was asked to run "
@@ -6053,16 +6098,20 @@ class CoachValidator:
                 summary = self._summarize_test_output(output)
 
                 # DID THIS RUN SAY ANYTHING AT ALL? ``_absence_from_run``
-                # states the conditions once: a missing runner, a suite that
-                # could not load, a rejected timeout option, a command that
-                # could not be executed. None of them is a verdict on the
-                # builder's code, and in the isolated copy every one of them
-                # means the copy could not start the check. The turn then falls
-                # back to the real worktree (see ``run_independent_tests``),
-                # which is the run a wave of one already uses.
+                # states the conditions once: a command that could not be
+                # executed at all (asked of every command, in any language),
+                # and — only when the command really invokes pytest — a
+                # missing runner, a suite that could not load, a rejected
+                # timeout option. None of them is a verdict on the builder's
+                # code, and in the isolated copy every one of them means the
+                # copy could not start the check. The turn then falls back to
+                # the real worktree (see ``run_independent_tests``), which is
+                # the run a wave of one already uses. Anything else — a
+                # wrapper script exiting 5 because five checks failed, say —
+                # is a verdict, and stays the builder's to fix.
                 combined = (result.stdout or "") + (result.stderr or "")
                 could_not_start = self._absence_from_run(
-                    result.returncode, combined, tests_passed
+                    result.returncode, combined, tests_passed, test_cmd
                 )
                 if could_not_start is not None:
                     detail = (

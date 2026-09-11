@@ -36,14 +36,25 @@ temporary directories; no network, no broker, no estate service.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import stat
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
 
+from guardkit.orchestrator.agent_invoker import AgentInvoker
+from guardkit.orchestrator.coach_verification import HonestyVerification
+from guardkit.orchestrator.harness import (
+    AssistantMessageEvent,
+    ResultMessageEvent,
+)
+from guardkit.orchestrator.quality_gates.coach_evidence import (
+    CoachEvidenceBundle,
+)
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
@@ -438,3 +449,277 @@ def test_unknown_is_not_a_pass(tmp_path: Path) -> None:
     # The other gates are untouched.
     assert unknown.coverage_met is True
     assert unknown.arch_review_passed is True
+
+
+# ---------------------------------------------------------------------------
+# 5. A COMMAND THAT IS NOT PYTEST KEEPS ITS OWN MEANING
+# ---------------------------------------------------------------------------
+# Rich's binding constraint for this work: nothing here may assume Python.
+# Exit code 5 means "collected no tests" to pytest and nothing whatever to
+# anybody else — to a shell wrapper or to ``go test`` it is an ordinary
+# non-zero exit, which usually means the checks FAILED. Reading it as "the
+# check could not run" would hide a genuine red behind an estate fault and
+# tell the operator something untrue about a command that has no opinion
+# about Python.
+
+
+class TestANonPytestCommandIsNotReadWithPytestsVocabulary:
+    def test_a_shell_suite_exiting_five_is_a_red_the_builder_must_fix(
+        self, tmp_path: Path
+    ) -> None:
+        """Five checks failed. That is a verdict, not an estate fault."""
+        _root, worktree = _make_repo(tmp_path)
+        _executable(
+            worktree / "qa" / "run-suite.sh",
+            "#!/bin/sh\necho '5 of 20 checks failed' >&2\nexit 5\n",
+        )
+
+        result = _validator(worktree, wave_size=2).run_independent_tests()
+
+        assert result.tests_passed is False
+        assert result.check_could_not_run is False
+        assert result.signal_absent is False
+        assert result.isolation_fallback_reason is None
+
+    def test_a_shell_suite_saying_pytest_words_is_still_a_red(
+        self, tmp_path: Path
+    ) -> None:
+        """The words belong to whatever the wrapper printed, not to us: a
+        declared command that never invokes pytest is never read through
+        pytest's vocabulary."""
+        _root, worktree = _make_repo(tmp_path)
+        _executable(
+            worktree / "qa" / "run-suite.sh",
+            "#!/bin/sh\necho 'errors during collection' >&2\nexit 1\n",
+        )
+
+        result = _validator(worktree, wave_size=2).run_independent_tests()
+
+        assert result.tests_passed is False
+        assert result.check_could_not_run is False
+        assert result.signal_absent is False
+
+    def test_a_command_that_could_not_start_is_still_an_estate_fault(
+        self, tmp_path: Path
+    ) -> None:
+        """The other half: "could not be started at all" is true of any
+        command in any language, so it is still read for every command."""
+        _root, worktree = _make_repo(tmp_path)
+        _executable(
+            worktree / "qa" / "run-suite.sh", _suite_needing("dist/toolbox/runner")
+        )
+
+        result = _validator(worktree, wave_size=2).run_independent_tests()
+
+        assert result.check_could_not_run is True
+
+    def test_which_commands_count_as_pytest(self, tmp_path: Path) -> None:
+        validator = CoachValidator(str(tmp_path))
+        for pytest_shaped in (
+            "pytest -q tests/",
+            "python -m pytest tests/unit",
+            "uv run pytest",
+            "/wt/.venv/bin/pytest tests",
+        ):
+            assert validator._command_runs_pytest(pytest_shaped) is True
+        for not_pytest in (
+            "qa/run-suite.sh",
+            "make test",
+            "./scripts/test.sh",
+            "go test ./...",
+            "npm test",
+            "flutter test",
+        ):
+            assert validator._command_runs_pytest(not_pytest) is False
+
+    def test_the_reading_is_asked_only_of_a_pytest_shaped_command(
+        self, tmp_path: Path
+    ) -> None:
+        """The unit underneath both behaviours, stated once."""
+        validator = CoachValidator(str(tmp_path))
+        assert (
+            validator._absence_from_run(5, "", False, "pytest tests/") is not None
+        )
+        assert validator._absence_from_run(5, "", False, "qa/run-suite.sh") is None
+        # And the stack-agnostic reading is asked of both.
+        assert (
+            validator._absence_from_run(127, "", False, "qa/run-suite.sh")
+            is not None
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. THE RULE ON THE PATH PRODUCTION ACTUALLY TAKES
+# ---------------------------------------------------------------------------
+# The rule-based coach above (``validate``) is the fallback kept behind
+# GUARDKIT_COACH_LEGACY. What runs in a real build is the evidence bundle plus
+# the reviewing model, whose verdict is then reconciled deterministically. On
+# 2026-09-11 THAT is the path that handed the estate fault to the builder as a
+# must-fix, five turns running. So the rule is pinned here too, against the
+# real ``invoke_coach``, with the reviewing model answering exactly as it did
+# that day.
+
+
+_ESTATE_DETAIL = (
+    f"The check could not run. Command: {_DECLARED_COMMAND}. Directory: "
+    "/tmp/guardkit-coach-iso-6aez_ws6 (an isolated copy of the worktree). "
+    "What was missing: no runner at /tmp/guardkit-coach-iso-6aez_ws6/"
+    "dist/toolbox/runner."
+)
+
+
+def _invoker(worktree: Path) -> AgentInvoker:
+    invoker = AgentInvoker.__new__(AgentInvoker)
+    invoker.worktree_path = worktree
+    invoker.sdk_timeout_seconds = 600
+    invoker._calculate_sdk_timeout = MagicMock(return_value=600)
+    invoker._venv_python = None
+    return invoker
+
+
+def _bundle_whose_check_could_not_run() -> CoachEvidenceBundle:
+    return CoachEvidenceBundle(
+        honesty=HonestyVerification(
+            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
+        ),
+        gathering_status="complete",
+        independent_tests=IndependentTestResult.could_not_run(
+            test_command=_DECLARED_COMMAND,
+            detail=_ESTATE_DETAIL,
+            duration_seconds=0.1,
+        ),
+    )
+
+
+def _the_reviewer_answers(task_id: str, turn: int, verdict: Dict[str, Any]) -> list:
+    text = "```json\n" + json.dumps(verdict) + "\n```"
+    return [AssistantMessageEvent(text=text), ResultMessageEvent(session_id=None)]
+
+
+def _ask_the_coach(
+    invoker: AgentInvoker, *, task_id: str, turn: int, verdict: Dict[str, Any],
+    bundle: CoachEvidenceBundle,
+):
+    events = AsyncMock(
+        return_value=(None, _the_reviewer_answers(task_id, turn, verdict))
+    )
+    with patch.object(invoker, "_invoke_with_role", events):
+        return asyncio.run(
+            invoker.invoke_coach(
+                task_id=task_id,
+                turn=turn,
+                requirements="The endpoint answers",
+                player_report={"files_modified": ["src/x.py"], "tests_passed": True},
+                evidence_bundle=bundle,
+            )
+        )
+
+
+def _the_reviewer_blames_the_builder(task_id: str, turn: int) -> Dict[str, Any]:
+    """Exactly what happened on 2026-09-11: the model was told to quote the
+    oracle's output, so it handed the estate fault to the builder."""
+    return {
+        "task_id": task_id,
+        "turn": turn,
+        "decision": "feedback",
+        "rationale": "Independent test verification did not complete.",
+        "criteria_verification": [],
+        "issues": [
+            {
+                "severity": "must_fix",
+                "category": "absence_of_failure",
+                "description": (
+                    "Independent test verification did not complete (signal "
+                    f"absent). Independent-test oracle output: {_ESTATE_DETAIL}"
+                ),
+            }
+        ],
+    }
+
+
+class TestTheRuleOnTheLivePath:
+    def test_the_builder_is_told_nothing_and_the_loop_stops(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert the ABSENCE on the path a real build takes. Not a must-fix,
+        not an observation, not an honesty record — nothing at all — and the
+        turn is marked as one the builder cannot fix, so the loop stops
+        instead of spending five more turns on a broken estate."""
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _invoker(tmp_path)
+
+        result = _ask_the_coach(
+            invoker,
+            task_id=_TASK_ID,
+            turn=1,
+            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 1),
+            bundle=_bundle_whose_check_could_not_run(),
+        )
+
+        assert result.success is True
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"] == []
+        blob = json.dumps(result.report["issues"])
+        for word in ("could not run", _DECLARED_COMMAND, "runner", "missing"):
+            assert word not in blob
+        assert result.report["is_configuration_error"] is True
+
+    def test_the_operator_is_told_in_plain_words(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _invoker(tmp_path)
+
+        with caplog.at_level("WARNING"):
+            result = _ask_the_coach(
+                invoker,
+                task_id=_TASK_ID,
+                turn=2,
+                verdict=_the_reviewer_blames_the_builder(_TASK_ID, 2),
+                bundle=_bundle_whose_check_could_not_run(),
+            )
+
+        assert _DECLARED_COMMAND in result.report["rationale"]
+        assert "no runner at" in result.report["rationale"]
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("ESTATE FAULT" in message for message in messages)
+        # Nothing disappears quietly: the reviewer's own findings for a turn
+        # in which nothing ran are named in the operator's log as set aside.
+        assert any("set aside" in message for message in messages)
+
+    def test_an_absent_signal_that_did_start_is_untouched(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other outcomes are unchanged: a run that STARTED and then said
+        nothing (a timeout) still carries the existing marker to the builder,
+        and still does not end the turn."""
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _invoker(tmp_path)
+        bundle = CoachEvidenceBundle(
+            honesty=HonestyVerification(
+                verified=True, discrepancies=[], honesty_score=1.0,
+                resolved_paths=[],
+            ),
+            gathering_status="complete",
+            independent_tests=IndependentTestResult.absent(
+                test_command=_DECLARED_COMMAND,
+                test_output_summary="timed out after 300s",
+                duration_seconds=300.0,
+            ),
+        )
+
+        result = _ask_the_coach(
+            invoker,
+            task_id=_TASK_ID,
+            turn=3,
+            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 3),
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"] != []
+        assert result.report.get("is_configuration_error", False) is False
