@@ -862,3 +862,259 @@ class TestBannerAgreesWithTheDecision:
             )
             == 1
         )
+
+
+# ============================================================================
+# 6. A RE-ENTERED wave's banner tells the same truth as the first pass
+# ============================================================================
+#
+# Two gates can send a wave round again after its tasks have passed: the
+# post-wave smoke gate and the post-wave wiring gate. Both re-print the wave
+# banner before re-running it. Both used to print the wave size, which was
+# harmless only while parallelism was unlimited; under this rule it would be a
+# lie — "Wave 2/1: TASK-STAT-002, TASK-STAT-003 (parallel: 2)" above a wave
+# the dispatcher runs one task at a time.
+
+
+def _real_feature_and_worktree(tmp_path, mock_worktree_manager, task_frontmatter):
+    """A loaded feature and a worktree pointing at the repository itself."""
+    from guardkit.orchestrator.feature_loader import FeatureLoader
+
+    _write_feature_repo(tmp_path, task_frontmatter)
+    feature = FeatureLoader.load_feature("FEAT-AREA", repo_root=tmp_path)
+    template = mock_worktree_manager.create.return_value
+    worktree = type(template)(
+        task_id=template.task_id,
+        branch_name=template.branch_name,
+        path=tmp_path,
+        base_branch=template.base_branch,
+    )
+    return feature, worktree
+
+
+def _wave_result(task_ids):
+    from guardkit.orchestrator.feature_orchestrator import (
+        TaskExecutionResult,
+        WaveExecutionResult,
+    )
+
+    return WaveExecutionResult(
+        wave_number=1,
+        task_ids=list(task_ids),
+        results=[
+            TaskExecutionResult(
+                task_id=task_id,
+                success=True,
+                total_turns=1,
+                final_decision="approved",
+            )
+            for task_id in task_ids
+        ],
+        all_succeeded=True,
+    )
+
+
+def _smoke_result(passed: bool):
+    from guardkit.orchestrator.smoke_gates import SmokeGateResult
+
+    return SmokeGateResult(
+        passed=passed,
+        exit_code=0 if passed else 1,
+        stdout="",
+        stderr="" if passed else "TypeError: users_created_per_day() missing 1 argument",
+        timed_out=False,
+        command="npm run smoke",
+        timeout=5,
+        after_wave=1,
+        gate_not_wired=False,
+    )
+
+
+def _banner_numbers(output: StringIO):
+    """Every "(parallel: K)" the display has printed, in order."""
+    return [int(n) for n in re.findall(r"parallel: (\d+)", strip_ansi(output.getvalue()))]
+
+
+def _display_on(orch):
+    output = StringIO()
+    orch._wave_display = WaveProgressDisplay(
+        total_waves=1,
+        console=Console(file=output, force_terminal=True, width=100),
+    )
+    return output
+
+
+def _authoritative(orch, task_ids, feature, worktree):
+    """The number the dispatcher will enforce for this wave."""
+    return resolve_max_parallel(
+        orch._parallel_config,
+        wave_number=1,
+        wave_size=len(task_ids),
+        wave_task_paths=orch._wave_task_paths(1, task_ids, feature, worktree),
+    )
+
+
+_OVERLAPPING = {
+    "TASK-STAT-002": "files_to_modify:\n  - src/users/schemas.ts\n",
+    "TASK-STAT-003": "files_to_modify:\n  - src/users/crud.ts\n",
+}
+_INDEPENDENT = {
+    "TASK-GO-001": "files_to_modify:\n  - internal/users/crud.go\n",
+    "TASK-GO-002": "files_to_modify:\n  - internal/billing/crud.go\n",
+}
+
+
+@patch(
+    "guardkit.orchestrator.agent_invoker.detect_timeout_multiplier",
+    return_value=1.0,
+)
+class TestTheSmokeGateRetryBannerAgrees:
+    """The smoke gate re-enters the wave; its banner must not say two."""
+
+    def _drive(self, tmp_path, mock_worktree_manager, frontmatter):
+        from guardkit.orchestrator.feature_loader import SmokeGates
+
+        feature, worktree = _real_feature_and_worktree(
+            tmp_path, mock_worktree_manager, frontmatter
+        )
+        feature.smoke_gates = SmokeGates(
+            after_wave=1, command="npm run smoke", expected_exit=0, timeout=5
+        )
+        task_ids = list(frontmatter)
+        orch = _orchestrator(tmp_path, mock_worktree_manager)
+        orch._smoke_gate_max_retries = 1
+        output = _display_on(orch)
+        wave_result = _wave_result(task_ids)
+
+        with patch(
+            "guardkit.orchestrator.feature_orchestrator.run_smoke_gate",
+            side_effect=[_smoke_result(False), _smoke_result(True)],
+        ), patch.object(
+            orch, "_execute_wave", return_value=_wave_result(task_ids)
+        ) as executed:
+            outcome = orch._run_post_wave_smoke_gate(
+                1, task_ids, feature, worktree, wave_result
+            )
+
+        assert executed.call_count == 1, "the wave must actually have been re-entered"
+        assert outcome.terminate is False
+        return orch, task_ids, feature, worktree, output
+
+    def test_overlapping_wave_is_re_entered_one_at_a_time(
+        self, mock_detect, tmp_path, mock_worktree_manager
+    ):
+        orch, task_ids, feature, worktree, output = self._drive(
+            tmp_path, mock_worktree_manager, _OVERLAPPING
+        )
+        printed = _banner_numbers(output)
+        assert printed == [1], printed
+        assert printed[0] == _authoritative(orch, task_ids, feature, worktree)
+        # The wave size is 2; printing it is exactly the old defect.
+        assert printed[0] != len(task_ids)
+
+    def test_independent_wave_still_runs_both_tasks_together(
+        self, mock_detect, tmp_path, mock_worktree_manager
+    ):
+        """Not hard-wired to one: an independent wave is re-entered with both
+        tasks running together, and the banner says so.
+
+        The allowance here is 4 and the wave holds 2 tasks, so the honest
+        number is 2 — the display shows the smaller of the allowance and the
+        wave size, because that is the concurrency actually reached."""
+        orch, task_ids, feature, worktree, output = self._drive(
+            tmp_path, mock_worktree_manager, _INDEPENDENT
+        )
+        printed = _banner_numbers(output)
+        assert printed == [2], printed
+        allowance = _authoritative(orch, task_ids, feature, worktree)
+        assert allowance == 4
+        assert printed[0] == min(allowance, len(task_ids))
+
+
+@patch(
+    "guardkit.orchestrator.agent_invoker.detect_timeout_multiplier",
+    return_value=1.0,
+)
+class TestTheWiringGateRetryBannerAgrees:
+    """The wiring gate re-enters the wave; its banner must not say two either."""
+
+    def _drive(self, tmp_path, mock_worktree_manager, frontmatter):
+        import sys
+        import types
+
+        feature, worktree = _real_feature_and_worktree(
+            tmp_path, mock_worktree_manager, frontmatter
+        )
+        task_ids = list(frontmatter)
+        orch = _orchestrator(tmp_path, mock_worktree_manager)
+        orch._wiring_gate_max_retries = 1
+        output = _display_on(orch)
+        wave_result = _wave_result(task_ids)
+
+        finding = {
+            "file": "tests/users/router.test.ts",
+            "lineno": 7,
+            "symbol": "UserService",
+            "pattern": "MOCKED_SEAM",
+            "authored_this_turn": True,
+        }
+
+        def _wiring(findings):
+            return {
+                "status": "complete",
+                "mocked_seam": {
+                    "status": "ran",
+                    "findings": findings,
+                    "external_mocks_ignored": [],
+                },
+                "ctor_arity": {"status": "ran", "findings": []},
+            }
+
+        answers = iter([_wiring([finding]), _wiring([])])
+
+        # guardkitfactory is an optional extra and is absent here, so the gate
+        # would skip itself. Stand a module in its place carrying the one
+        # function the gate calls, so the RETRY PATH itself really runs.
+        package = types.ModuleType("guardkitfactory")
+        wiring_module = types.ModuleType("guardkitfactory.wiring")
+        wiring_module.analyze_wiring = lambda **kwargs: next(answers)
+        package.wiring = wiring_module
+
+        with patch.dict(
+            sys.modules,
+            {"guardkitfactory": package, "guardkitfactory.wiring": wiring_module},
+        ), patch.object(
+            orch, "_wave_authored_files", return_value=["src/users/schemas.ts"]
+        ), patch.object(
+            orch, "_execute_wave", return_value=_wave_result(task_ids)
+        ) as executed:
+            outcome = orch._run_post_wave_wiring_gate(
+                1, task_ids, feature, worktree, wave_result
+            )
+
+        assert executed.call_count == 1, "the wave must actually have been re-entered"
+        assert outcome.terminate is False
+        return orch, task_ids, feature, worktree, output
+
+    def test_overlapping_wave_is_re_entered_one_at_a_time(
+        self, mock_detect, tmp_path, mock_worktree_manager
+    ):
+        orch, task_ids, feature, worktree, output = self._drive(
+            tmp_path, mock_worktree_manager, _OVERLAPPING
+        )
+        printed = _banner_numbers(output)
+        assert printed == [1], printed
+        assert printed[0] == _authoritative(orch, task_ids, feature, worktree)
+        assert printed[0] != len(task_ids)
+
+    def test_independent_wave_still_runs_both_tasks_together(
+        self, mock_detect, tmp_path, mock_worktree_manager
+    ):
+        orch, task_ids, feature, worktree, output = self._drive(
+            tmp_path, mock_worktree_manager, _INDEPENDENT
+        )
+        printed = _banner_numbers(output)
+        assert printed == [2], printed
+        allowance = _authoritative(orch, task_ids, feature, worktree)
+        assert allowance == 4
+        assert printed[0] == min(allowance, len(task_ids))
