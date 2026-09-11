@@ -1053,7 +1053,10 @@ DECISION_ALREADY_SATISFIED = "already_satisfied"
 ``approved`` — the builder did the work and the reviewer accepted it.
 ``already_satisfied`` — the builder found the work already in the tree, said
 so, cited where it is, and the reviewer checked that claim against the tree
-and agreed. Nothing was written, and there is nothing to merge.
+and agreed. Nothing was written, and there is nothing to merge — and
+"nothing was written" is measured across EVERY turn the task took, not just
+the turn the claim was made on, because a task that wrote code on an earlier
+turn has a diff that still needs reviewing and merging.
 Anything else is a failure.
 
 Written after the build of 2026-09-11 (``build-FEAT-3EF3-20260911171802``),
@@ -1223,14 +1226,25 @@ def _reviewer_must_fix_objection(turn_record: "TurnRecord") -> Optional[str]:
 def _already_satisfied_refusal(
     turn_record: "TurnRecord",
     acceptance_criteria: Optional[List[Any]] = None,
+    turn_history: Optional[List["TurnRecord"]] = None,
 ) -> Optional[str]:
     """Why the claim is refused — one plain sentence — or None when it stands.
 
     A claim on its own is never enough: a builder that could close a task by
     asserting it was done would face no bar at all. So every check here is
     made from something the builder does not control — the citations counted
-    rather than believed, the orchestrator's own git measurement of what this
-    turn changed, and the reviewer's verdict on the acceptance criteria.
+    rather than believed, the orchestrator's own git measurement of what the
+    task has written, and the reviewer's verdict on the acceptance criteria.
+
+    "Already satisfied" says two things at once: nothing was written, and
+    there is nothing to merge. That is a claim about the WHOLE TASK, not about
+    one turn of it, so the git measurement is read for EVERY turn this task
+    has taken — not just the turn the claim was made on. A task whose first
+    turn wrote six files and whose second turn wrote none has a real diff
+    waiting: closing it as already-satisfied would abandon that diff unchecked
+    and unmerged, because the verify and merge steps only run for an approved
+    task. An unmeasured turn is refused for the same reason it is refused on
+    the current turn: unknown is not a pass.
 
     A refused claim is simply a failed turn: the loop carries on exactly as it
     does today, including the stall rule.
@@ -1260,19 +1274,45 @@ def _already_satisfied_refusal(
             f"A claim has to cite every one. Refused."
         )
 
-    changed = turn_record.files_changed_this_turn
-    if not isinstance(changed, int) or isinstance(changed, bool):
-        return (
-            "The builder said this task's work was already in the tree, but "
-            "the build could not measure whether this turn changed any "
-            "files, and an unmeasured turn cannot close a task. Refused."
-        )
-    if changed > 0:
-        return (
-            f"The builder said this task's work was already in the tree, but "
-            f"it changed {changed} file(s) on this turn, so this was work "
-            f"being done, not work that was already there. Refused."
-        )
+    # Every turn this task has taken, not just this one. See the docstring:
+    # "already satisfied" promises there is nothing to merge, and a turn
+    # earlier in the same task may have written a real diff.
+    records: List["TurnRecord"] = list(turn_history) if turn_history else []
+    if not any(record is turn_record for record in records):
+        records.append(turn_record)
+
+    for record in records:
+        changed = record.files_changed_this_turn
+        this_turn = record is turn_record
+        if not isinstance(changed, int) or isinstance(changed, bool):
+            if this_turn:
+                return (
+                    "The builder said this task's work was already in the "
+                    "tree, but the build could not measure whether this turn "
+                    "changed any files, and an unmeasured turn cannot close a "
+                    "task. Refused."
+                )
+            return (
+                f"The builder said this task's work was already in the tree, "
+                f"but the build could not measure whether turn {record.turn} "
+                f"of this task changed any files, and a task cannot close as "
+                f"already satisfied while any of its turns is unmeasured. "
+                f"Refused."
+            )
+        if changed > 0:
+            if this_turn:
+                return (
+                    f"The builder said this task's work was already in the "
+                    f"tree, but it changed {changed} file(s) on this turn, so "
+                    f"this was work being done, not work that was already "
+                    f"there. Refused."
+                )
+            return (
+                f"The builder said this task's work was already in the tree, "
+                f"but turn {record.turn} of this task wrote {changed} "
+                f"file(s), so work was done here and there is a diff to "
+                f"review and merge. Refused."
+            )
 
     veto = _already_implemented_veto(turn_record)
     if veto is not None:
@@ -4309,6 +4349,12 @@ class AutoBuildOrchestrator:
                 # failed turn and the loop carries on exactly as it does
                 # today, stall rule included.
                 #
+                # The whole turn history goes in, not just this turn: the
+                # outcome promises there is nothing to merge, so a task that
+                # wrote files on ANY earlier turn cannot take it. Otherwise a
+                # claim made on turn two would close a task whose turn one
+                # left a real diff behind, unverified and unmerged.
+                #
                 # STACK-AGNOSTIC: nothing in this path reads, parses or knows
                 # anything about source code, a language, an interpreter or a
                 # package manager. The claim is prose citing files and places;
@@ -4317,7 +4363,7 @@ class AutoBuildOrchestrator:
                 # repository.
                 if _already_satisfied_claim(turn_record) is not None:
                     refusal = _already_satisfied_refusal(
-                        turn_record, acceptance_criteria
+                        turn_record, acceptance_criteria, turn_history
                     )
                     if refusal is None:
                         logger.info(

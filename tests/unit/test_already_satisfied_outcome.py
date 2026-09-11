@@ -558,6 +558,127 @@ class TestTheReviewerHasToVerifyIt:
         assert "cited nothing" in seen[1]
 
 
+class TestNothingWasWrittenMeansTheWholeTask:
+    """"Nothing was written" is a promise about the task, not about one turn.
+
+    The outcome tells the operator there is no diff to review and nothing to
+    merge, and the verify and merge steps only run for an APPROVED task. So a
+    task that wrote real code on an earlier turn must never take this outcome,
+    however quiet a later turn is: doing so would abandon a real diff
+    unverified and unmerged while counting the task as done.
+    """
+
+    def test_a_quiet_second_turn_cannot_close_a_task_that_wrote_code(
+        self, tmp_path, caplog
+    ):
+        """The build that proves the point, driven through the real loop.
+
+        Turn one writes six files and the reviewer objects. Turn two writes
+        nothing and repeats the claim, and the reviewer is happy. The task
+        must NOT close as already satisfied: turn one's six files are a diff
+        somebody has to look at.
+        """
+        orchestrator = _orchestrator(tmp_path, max_turns=3)
+        turns = [
+            _turn(
+                1,
+                coach=_reviewer(
+                    1,
+                    "feedback",
+                    _verified(*STATS_CRITERIA),
+                    issues=[{
+                        "severity": "must_fix",
+                        "category": "test_verification",
+                        "description": "the new test file has no assertions",
+                    }],
+                ),
+                decision="feedback",
+                files_changed=6,
+            ),
+            _turn(2, files_changed=0),
+            _turn(3, files_changed=0),
+        ]
+        with caplog.at_level(logging.WARNING, logger=AUTOBUILD_LOGGER):
+            result = _drive(orchestrator, turns)
+
+        assert result.final_decision != DECISION_ALREADY_SATISFIED
+        messages = " ".join(r.getMessage() for r in caplog.records)
+        assert "turn 1 of this task wrote 6 file(s)" in messages
+        assert "there is a diff to review and merge" in messages
+
+    def test_the_same_turn_still_closes_when_no_turn_wrote_anything(
+        self, tmp_path
+    ):
+        """The honest case is untouched: quiet from the first turn onward."""
+        orchestrator = _orchestrator(tmp_path, max_turns=3)
+        result = _drive(
+            orchestrator,
+            [
+                _turn(
+                    1,
+                    player=_builder_with_no_claim(1),
+                    coach=_reviewer(1, "feedback", _verified(*STATS_CRITERIA)),
+                    decision="feedback",
+                    files_changed=0,
+                ),
+                _turn(2, files_changed=0),
+            ],
+        )
+
+        assert result.final_decision == DECISION_ALREADY_SATISFIED
+        assert result.success is True
+
+    def test_an_earlier_turn_that_was_never_measured_is_refused(self):
+        """Unknown is not a pass, on an earlier turn as on this one."""
+        wrote = _turn(1, files_changed=None)
+        quiet = _turn(2, files_changed=0)
+        refusal = _already_satisfied_refusal(
+            quiet, STATS_CRITERIA, [wrote, quiet]
+        )
+        assert refusal is not None
+        assert "could not measure whether turn 1" in refusal
+
+    def test_an_earlier_turn_that_wrote_files_is_refused(self):
+        wrote = _turn(1, files_changed=6)
+        quiet = _turn(2, files_changed=0)
+        refusal = _already_satisfied_refusal(
+            quiet, STATS_CRITERIA, [wrote, quiet]
+        )
+        assert refusal is not None
+        assert "turn 1 of this task wrote 6 file(s)" in refusal
+
+    def test_a_history_of_quiet_turns_still_stands(self):
+        first = _turn(1, files_changed=0)
+        second = _turn(2, files_changed=0)
+        assert _already_satisfied_refusal(
+            second, STATS_CRITERIA, [first, second]
+        ) is None
+
+    def test_the_refusal_sentences_here_name_no_language(self):
+        """Stack-agnostic, like every other sentence in this lane."""
+        forbidden = [
+            "python", "pytest", "venv", "pip", "npm", "node_modules",
+            "go.mod", "cargo", "gradle", "interpreter", ".py",
+        ]
+        sentences = [
+            _already_satisfied_refusal(
+                _turn(2, files_changed=0),
+                STATS_CRITERIA,
+                [_turn(1, files_changed=6), _turn(2, files_changed=0)],
+            ),
+            _already_satisfied_refusal(
+                _turn(2, files_changed=0),
+                STATS_CRITERIA,
+                [_turn(1, files_changed=None), _turn(2, files_changed=0)],
+            ),
+        ]
+        for sentence in sentences:
+            assert sentence is not None
+            lowered = sentence.lower()
+            for word in forbidden:
+                assert word not in lowered, sentence
+
+
 # ---------------------------------------------------------------------------
 # 3. A task with real work outstanding behaves exactly as it does today
 # ---------------------------------------------------------------------------
