@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import json
 import stat
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -277,6 +278,123 @@ class TestTheFallback:
         assert result.isolation_fallback_reason is None
         assert result.signal_absent is True
         assert result.tests_passed is False
+
+
+# ---------------------------------------------------------------------------
+# 2b. THE FALLBACK MUST NOT ERASE A GENUINE RED
+# ---------------------------------------------------------------------------
+# The close-out that ends a turn as an estate fault must not take the worktree
+# run's word for "nothing ran". The worktree run classifies absence with its
+# own copy of the pytest vocabulary whenever no stack profile is declared, and
+# a repository that declares a shell wrapper has no stack profile — so exit
+# code 5, which to this script means FIVE CHECKS FAILED, would be read as
+# "collected no tests", the builder's real must-fixes cleared and the operator
+# told nothing ran while the sentence quotes the five things that failed. The
+# same wrong answer would come back for ``go test`` and for ``npm test``.
+
+
+def _suite_that_fails_at_home_and_cannot_start_away() -> str:
+    """In a copy it cannot start at all (127). At home it RUNS and the checks
+    fail — exiting 5, which means nothing to a shell script but "collected no
+    tests" to pytest."""
+    return (
+        "#!/bin/sh\n"
+        'here=$(cd "$(dirname "$0")/.." && pwd)\n'
+        'if [ "$here" != "$(cat "$here/qa/home.txt")" ]; then\n'
+        '  echo "run-suite: this runner cannot start outside its checkout" >&2\n'
+        "  exit 127\n"
+        "fi\n"
+        "echo '5 of 20 checks failed'\n"
+        "exit 5\n"
+    )
+
+
+def _repo_whose_checks_fail_at_home(tmp_path: Path) -> Path:
+    _root, worktree = _make_repo(tmp_path)
+    _executable(
+        worktree / "qa" / "run-suite.sh",
+        _suite_that_fails_at_home_and_cannot_start_away(),
+    )
+    (worktree / "qa" / "home.txt").write_text(str(worktree), encoding="utf-8")
+    return worktree
+
+
+class TestAFallbackNeverErasesARed:
+    def test_a_red_in_the_worktree_stays_the_builders_to_fix(
+        self, tmp_path: Path
+    ) -> None:
+        """The isolated copy could not start; the worktree ran and the checks
+        failed. That is a verdict, not an estate fault."""
+        worktree = _repo_whose_checks_fail_at_home(tmp_path)
+
+        result = _validator(worktree, wave_size=2).run_independent_tests()
+
+        assert result.check_could_not_run is False
+        assert result.check_could_not_run_detail is None
+        assert result.tests_passed is False
+        # The five failures are still in front of whoever reads the turn.
+        assert "5 of 20 checks failed" in (result.raw_output or "")
+        # And the receipt records plainly that it fell back, and why.
+        assert result.isolation_fallback_reason is not None
+        assert _DECLARED_COMMAND in result.isolation_fallback_reason
+
+    def test_a_wave_of_two_is_no_worse_than_a_wave_of_one(
+        self, tmp_path: Path
+    ) -> None:
+        """Requirement (b), as a direct comparison on the identical
+        repository: the two waves reach the same outcome shape."""
+        one = _validator(
+            _repo_whose_checks_fail_at_home(tmp_path / "alone"), wave_size=1
+        ).run_independent_tests()
+        two = _validator(
+            _repo_whose_checks_fail_at_home(tmp_path / "together"), wave_size=2
+        ).run_independent_tests()
+
+        assert one.check_could_not_run is False
+        assert two.check_could_not_run == one.check_could_not_run
+        assert two.tests_passed == one.tests_passed
+        assert two.signal_absent == one.signal_absent
+
+    def test_the_close_out_asks_the_same_fence_the_isolated_path_asks(
+        self, tmp_path: Path
+    ) -> None:
+        """The reading itself, asked straight. A shell wrapper keeps its own
+        meaning for exit 5; a pytest command keeps pytest's; a command that
+        could not START at all is an estate fault in any language; and a
+        command that never finished has no exit code to misread."""
+        _root, worktree = _make_repo(tmp_path)
+        validator = _validator(worktree, wave_size=2)
+
+        def _absent(command: str) -> IndependentTestResult:
+            return IndependentTestResult.absent(
+                test_command=command,
+                test_output_summary="5 of 20 checks failed",
+                duration_seconds=0.2,
+            )
+
+        shell = _absent("qa/run-suite.sh")
+        assert validator._worktree_run_said_nothing(shell, 5) is False
+        assert validator._worktree_run_said_nothing(shell, 127) is True
+        assert validator._worktree_run_said_nothing(shell, None) is True
+
+        for command in ("go test ./...", "npm test", "make test"):
+            opaque = _absent(command)
+            assert validator._worktree_run_said_nothing(opaque, 5) is False
+
+        for command in ("pytest -q", "python -m pytest", "uv run pytest"):
+            shaped = _absent(command)
+            assert validator._worktree_run_said_nothing(shaped, 5) is True
+
+        # A run that produced a verdict is never an estate fault.
+        ran_and_failed = IndependentTestResult.from_run(
+            tests_passed=False,
+            test_command="pytest -q",
+            test_output_summary="5 failed",
+            duration_seconds=1.0,
+            output="5 failed, 15 passed",
+            resolved_interpreter=None,
+        )
+        assert validator._worktree_run_said_nothing(ran_and_failed, 1) is False
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +835,48 @@ class TestTheRuleOnTheLivePath:
             task_id=_TASK_ID,
             turn=3,
             verdict=_the_reviewer_blames_the_builder(_TASK_ID, 3),
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"] != []
+        assert result.report.get("is_configuration_error", False) is False
+
+    def test_a_fallback_red_still_reaches_the_builder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other half of requirement (b), on the live path. When the
+        isolated copy could not start and the worktree run DID produce a
+        result, the turn is an ordinary one: the reviewer's findings reach the
+        builder and the loop keeps going. Only a check that could not run
+        anywhere empties the builder's channel and stops the loop."""
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _invoker(tmp_path)
+        fell_back = dataclass_replace(
+            IndependentTestResult.absent(
+                test_command=_DECLARED_COMMAND,
+                test_output_summary="5 of 20 checks failed",
+                duration_seconds=0.2,
+            ),
+            isolation_fallback_reason=(
+                "the isolated copy could not start the check"
+            ),
+        )
+        bundle = CoachEvidenceBundle(
+            honesty=HonestyVerification(
+                verified=True, discrepancies=[], honesty_score=1.0,
+                resolved_paths=[],
+            ),
+            gathering_status="complete",
+            independent_tests=fell_back,
+        )
+
+        result = _ask_the_coach(
+            invoker,
+            task_id=_TASK_ID,
+            turn=4,
+            verdict=_the_reviewer_blames_the_builder(_TASK_ID, 4),
             bundle=bundle,
         )
 
