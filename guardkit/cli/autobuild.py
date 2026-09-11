@@ -86,11 +86,11 @@ def _require_sdk() -> None:
     """
     Require SDK availability or exit with helpful message.
 
-    This function should be called at the start of commands that
-    require the Claude Agent SDK. If the SDK is not available,
-    it prints the underlying ``ImportError`` message and installation
-    guidance before exiting with code 1. Surfacing the real error
-    avoids the opaque "SDK not available" banner that hid the
+    Commands reach this through :func:`_require_sdk_for_selected_harness`,
+    which calls it only when the run will use the SDK. If the SDK is not
+    available, it prints the underlying ``ImportError`` message and
+    installation guidance before exiting with code 1. Surfacing the real
+    error avoids the opaque "SDK not available" banner that hid the
     ``No module named 'mcp.types'`` symptom in TASK-REV-MCPS.
 
     Raises
@@ -122,6 +122,52 @@ def _require_sdk() -> None:
         console.print()
         console.print("For more diagnostics: [dim]guardkit doctor[/dim]")
         sys.exit(1)
+
+
+def _require_sdk_for_selected_harness() -> None:
+    """Require the Claude Agent SDK only when this run will actually use it.
+
+    Why this is conditional (2026-09-11): a command must not demand a
+    dependency the work it is about to do will never use. The build system's
+    default harness is guardkit's own DeepAgents/LangGraph factory, which never
+    imports ``claude_agent_sdk``; the SDK is used only when it is asked for by
+    name with ``GUARDKIT_HARNESS=sdk``. The unconditional check had never
+    bitten because the SDK happens to be installed in the operator's own
+    environment — a repository's sandbox, which installs the factory and not
+    the SDK, is the first place the harness default has ever actually
+    mattered, and there the check refused every build in under a second.
+
+    Which harness this run will use is answered by the selector's own
+    :func:`~guardkit.orchestrator.harness.selector.resolve_harness_name`, the
+    same function :func:`select_harness` asks when it builds the harness, so
+    the default is never re-implemented here.
+
+    Raises
+    ------
+    SystemExit
+        Exit code 1 when the SDK was asked for by name and cannot be imported
+        (the banner and wording of :func:`_require_sdk`, unchanged). Exit code
+        3 when ``GUARDKIT_HARNESS`` names a harness that does not exist, so a
+        typo is refused here in one sentence instead of failing later and
+        deeper inside the orchestrator.
+    """
+    from guardkit.orchestrator.harness.selector import (
+        SUPPORTED_HARNESSES,
+        resolve_harness_name,
+    )
+
+    harness = resolve_harness_name()
+
+    if harness not in SUPPORTED_HARNESSES:
+        expected = " or ".join(repr(h) for h in SUPPORTED_HARNESSES)
+        console.print(
+            f"[red]Error: GUARDKIT_HARNESS is set to {harness!r}, which is not "
+            f"a harness this build system has. Expected {expected}.[/red]"
+        )
+        sys.exit(3)
+
+    if harness == "sdk":
+        _require_sdk()
 
 
 # ============================================================================
@@ -415,12 +461,14 @@ def task(
     \b
     Exit Codes:
         0: Success (Coach approved)
-        1: Task file not found or SDK not available
+        1: Task file not found, or GUARDKIT_HARNESS=sdk with the SDK missing
         2: Orchestration error
-        3: Invalid arguments
+        3: Invalid arguments (including an unknown GUARDKIT_HARNESS value)
     """
-    # Pre-flight check: Ensure SDK is available before any work
-    _require_sdk()
+    # Pre-flight check: require the Claude Agent SDK before any work, but only
+    # when this run is the one that uses it (2026-09-11 — see
+    # _require_sdk_for_selected_harness).
+    _require_sdk_for_selected_harness()
 
     # Inherit verbose from parent if set (ctx.obj can be None in testing)
     ctx_obj = ctx.obj or {}
@@ -960,12 +1008,14 @@ def feature(
     \b
     Exit Codes:
         0: Success (all tasks completed)
-        1: Feature file not found or SDK not available
+        1: Feature file not found, or GUARDKIT_HARNESS=sdk with the SDK missing
         2: Orchestration error
-        3: Validation error
+        3: Validation error, or an unknown GUARDKIT_HARNESS value
     """
-    # Pre-flight check: Ensure SDK is available before any work
-    _require_sdk()
+    # Pre-flight check: require the Claude Agent SDK before any work, but only
+    # when this run is the one that uses it (2026-09-11 — see
+    # _require_sdk_for_selected_harness).
+    _require_sdk_for_selected_harness()
 
     # Inherit verbose from parent if set (ctx.obj can be None in testing)
     ctx_obj = ctx.obj or {}

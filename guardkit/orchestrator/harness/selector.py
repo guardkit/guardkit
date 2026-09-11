@@ -49,6 +49,35 @@ logger = logging.getLogger(__name__)
 # change this one line back to "sdk".
 DEFAULT_HARNESS = "langgraph"
 
+# The harness names this selector knows how to build. Kept beside the default
+# so the CLI can ask "is this a name we know?" without writing a second list
+# that could drift from the branches below.
+SUPPORTED_HARNESSES: tuple[str, ...] = ("sdk", "langgraph")
+
+
+def resolve_harness_name(env_var: str = "GUARDKIT_HARNESS") -> str:
+    """Return the harness name this process would run on, lowercased.
+
+    This is the ONE place that reads ``GUARDKIT_HARNESS`` and applies
+    :data:`DEFAULT_HARNESS`. :func:`select_harness` asks it, and so does
+    guardkit's autobuild CLI pre-flight check, so a caller that needs to know
+    which harness a run will use cannot answer the question differently from
+    the run itself (2026-09-11).
+
+    The name is returned as given (lowercased) and is NOT validated here: an
+    unknown name still reaches :func:`select_harness`'s refusal below, and a
+    caller that wants to refuse earlier compares against
+    :data:`SUPPORTED_HARNESSES`.
+
+    Parameters
+    ----------
+    env_var:
+        Name of the environment variable to consult. Defaults to
+        ``"GUARDKIT_HARNESS"``; exposed so tests can use an isolated
+        variable name instead of the process-wide one.
+    """
+    return os.environ.get(env_var, DEFAULT_HARNESS).lower()
+
 
 def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str, Any]:
     """Map orchestrator-side SDK-shaped kwargs onto :class:`LangGraphHarness`'s signature.
@@ -332,7 +361,7 @@ def select_harness(
     # TASK-HMIG-011 (cutover ceremony, parent review §7.4): the default is now
     # DEFAULT_HARNESS ("langgraph" since 2026-06-16). The SDK path stays an
     # opt-in fallback via GUARDKIT_HARNESS=sdk. No SDK code removed (Phase 3).
-    name = os.environ.get(env_var, DEFAULT_HARNESS).lower()
+    name = resolve_harness_name(env_var)
 
     # TASK-FIX-002R-CONSUME: ``cwd`` is consumed by the langgraph branch
     # below to build the LocalShellBackend; ``ClaudeSDKHarness.__init__``
@@ -477,8 +506,13 @@ def select_harness(
 
     raise AgentInvocationError(
         f"Unknown GUARDKIT_HARNESS value: {name!r}. "
-        f"Expected 'sdk' or 'langgraph'."
+        f"Expected {' or '.join(repr(h) for h in SUPPORTED_HARNESSES)}."
     )
 
 
-__all__ = ["select_harness", "DEFAULT_HARNESS"]
+__all__ = [
+    "select_harness",
+    "resolve_harness_name",
+    "DEFAULT_HARNESS",
+    "SUPPORTED_HARNESSES",
+]
