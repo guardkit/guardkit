@@ -945,6 +945,24 @@ class IndependentTestResult:
     # TASK-AB-RESUMEVENV01: forensic interpreter evidence. None = no pinned
     # run; never read by any verdict / gate / stall logic.
     resolved_interpreter: Optional[str] = None
+    # THE CHECK COULD NOT RUN (2026-09-11). "The check ran and the result is
+    # bad" and "the check could not run" are different outcomes and must never
+    # share a code path. ``True`` means nothing was verified because the check
+    # could not START — the command was not runnable where it was asked to
+    # run. It is an ESTATE fault, never the builder's: it is never put in the
+    # builder's feedback as something to fix, it can never let a quality gate
+    # report a pass, and it is reported to the operator's log and the turn's
+    # receipt in plain words. ``signal_absent`` stays ``True`` alongside it so
+    # every existing "absence is never a pass" guard still holds.
+    check_could_not_run: bool = False
+    # One plain sentence for the operator: the command, the directory it was
+    # asked to run in, and what was missing. Never shown to the builder.
+    check_could_not_run_detail: Optional[str] = None
+    # Set when an isolated (parallel-wave) attempt could not start and the
+    # check was run in the real worktree instead — the same run a wave of one
+    # uses. Records THAT it fell back and WHY. Receipt evidence only: no gate,
+    # verdict or feedback branch reads it.
+    isolation_fallback_reason: Optional[str] = None
 
     # ------------------------------------------------------------------
     # TASK-AB-REVIEWCLEAN01 (item 3): outcome-shape factories. The advisory
@@ -1008,6 +1026,40 @@ class IndependentTestResult:
             signal_absent=True,
             tests_skipped=None,
             resolved_interpreter=resolved_interpreter,
+        )
+
+    @classmethod
+    def could_not_run(
+        cls,
+        *,
+        test_command: str,
+        detail: str,
+        duration_seconds: float,
+        raw_output: Optional[str] = None,
+        resolved_interpreter: Optional[str] = None,
+    ) -> "IndependentTestResult":
+        """THE CHECK COULD NOT RUN — nothing about the builder's work was
+        measured, because the command could not start where it was asked to
+        start.
+
+        A different outcome from "ran and failed", and from a run that started
+        and then produced nothing (a timeout): this one is an estate fault.
+        ``detail`` is the operator's plain sentence — the command, the
+        directory, and what was missing. ``signal_absent`` is ``True`` as
+        well, so every existing guard that refuses to read an absent signal as
+        a pass keeps working unchanged.
+        """
+        return cls(
+            tests_passed=False,
+            test_command=test_command,
+            test_output_summary=detail,
+            duration_seconds=duration_seconds,
+            raw_output=raw_output,
+            signal_absent=True,
+            tests_skipped=None,
+            resolved_interpreter=resolved_interpreter,
+            check_could_not_run=True,
+            check_could_not_run_detail=detail,
         )
 
     @classmethod
@@ -1257,6 +1309,20 @@ class CoachValidationResult:
                     # lesson — an omitted key makes downstream reads dead).
                     "resolved_interpreter": (
                         self.independent_tests.resolved_interpreter
+                    ),
+                    # THE CHECK COULD NOT RUN (2026-09-11): the turn's receipt
+                    # says so in plain words, and says when a check fell back
+                    # from an isolated copy to the real worktree and why.
+                    # Serialised even when empty — the ABFIX-010 lesson: a key
+                    # omitted from to_dict makes every downstream read dead.
+                    "check_could_not_run": (
+                        self.independent_tests.check_could_not_run
+                    ),
+                    "check_could_not_run_detail": (
+                        self.independent_tests.check_could_not_run_detail
+                    ),
+                    "isolation_fallback_reason": (
+                        self.independent_tests.isolation_fallback_reason
                     ),
                 } if self.independent_tests else None,
                 "requirements": {
@@ -1733,6 +1799,11 @@ class CoachValidator:
         # pytest --basetemp; None -> per-path defaults (see _basetemp_context).
         self._basetemp_context: Optional[str] = basetemp_context
         self.wave_size = max(1, int(wave_size))
+        # Set for the length of one check when an isolated (parallel-wave)
+        # attempt could not START and the check is being run in the real
+        # worktree instead. Read and cleared by
+        # ``_after_isolation_fallback``; ``None`` at every other moment.
+        self._isolation_fallback: Optional[IndependentTestResult] = None
         # TASK-AB-NPDET01: the non-Python stack test-execution profile resolved
         # by ``_detect_test_command`` for THIS run (None for Python / no match /
         # parallel-wave deferral). ``run_independent_tests`` reads it to classify
@@ -2365,6 +2436,20 @@ class CoachValidator:
             # F2 ledger) and not in a file this task authored. Inert unless a
             # red baseline exists; only removes false charges.
             test_result = self._apply_baseline_diff(test_result, task_work_results)
+
+        # THE CHECK COULD NOT RUN. Nothing below this line may treat it as a
+        # verdict: it is not a failure to feed back and not a pass to approve.
+        # The turn ends here, named for what it is.
+        if test_result.check_could_not_run:
+            return self._estate_fault_result(
+                task_id=task_id,
+                turn=turn,
+                gates_status=gates_status,
+                test_result=test_result,
+                requirements=requirements,
+                context=context,
+                honesty_verification=honesty_verification,
+            )
 
         conditional_approval = False
         environment_conditional_approval = False
@@ -3232,6 +3317,24 @@ class CoachValidator:
                     task_type=task_type.value,
                     profile_name=profile_name,
                 )
+
+        # THE CHECK COULD NOT RUN. The gate may not go on saying the tests
+        # passed when nothing was measured: the test gate becomes UNKNOWN on
+        # the bundle the Coach reads and on the receipt, and the estate fault
+        # is named in the operator's log. Nothing is added to
+        # ``advisory_issues`` — the builder is told nothing to fix, because
+        # there is nothing here it could fix.
+        if test_result.check_could_not_run:
+            logger.error(
+                "ESTATE FAULT for %s turn %s — nothing was verified, so the "
+                "test gate is UNKNOWN, not passed: %s",
+                task_id,
+                turn,
+                test_result.check_could_not_run_detail
+                or test_result.test_output_summary,
+            )
+            gates = self._gates_with_unknown_tests(gates)
+            tests_dict["tests_passed"] = None
 
         # ------------------------------------------------------------------
         # 5. Wiring analysis (Wave-1, TASK-QAWE-002).
@@ -5293,6 +5396,15 @@ class CoachValidator:
         ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", "*.egg-info",
     }
 
+    # Of the entries the copy does not carry, these two are never linked to
+    # either: version control, and guardkit's own state for this build (which
+    # contains the worktrees themselves). Everything else the copy skipped is
+    # linked back to the real thing, so a command that needs it can reach it.
+    # A bootstrap-created environment that lives INSIDE guardkit's own state
+    # directory is reached individually — see
+    # ``_paths_the_snapshot_must_reach``.
+    _ISOLATION_NEVER_LINK: set = {".git", ".guardkit"}
+
     def _pytest_interpreter(self) -> str:
         """Return the interpreter Coach should run pytest under.
 
@@ -5531,6 +5643,403 @@ class CoachValidator:
             return f"{self.task_id}-{label}"
         return label
 
+    def _paths_the_snapshot_must_reach(self) -> List[Path]:
+        """What the declared test command needs that a file copy does not carry.
+
+        ASK WHAT BUILT IT, NEVER GUESS THE DIRECTORY. There is no directory
+        name that is right for every repository: guess ``.venv`` and the same
+        build in a TypeScript repository is missing ``node_modules``; guess
+        both and a Go repository is missing its module cache. So nothing here
+        is guessed. Two things are asked, and both already know the answer for
+        THIS repository:
+
+        * guardkit's environment bootstrap, which created this build's
+          environment and records where it put it
+          (``environment_bootstrap.bootstrap_created_paths``);
+        * the copy itself — an entry it did not carry is, by definition, an
+          entry the command cannot reach in the copy.
+
+        A repository whose bootstrap created nothing (a stack that needs no
+        per-build environment) yields nothing from the first ask, and behaves
+        exactly as it did before this existed.
+
+        Returns
+        -------
+        List[Path]
+            Existing paths in the real worktree, each to be linked into the
+            snapshot at the same relative position.
+        """
+        reach: List[Path] = []
+
+        def _add(path: Path) -> None:
+            if path not in reach and path != self.worktree_path:
+                reach.append(path)
+
+        # Ask #1: the bootstrap that built this build's environment.
+        try:
+            from guardkit.orchestrator.environment_bootstrap import (
+                bootstrap_created_paths,
+            )
+
+            for created in bootstrap_created_paths(self.worktree_path):
+                _add(created)
+        except Exception as exc:  # noqa: BLE001 — asking must never break a run
+            logger.warning(
+                "Could not ask the environment bootstrap what it created for "
+                "%s (%s); the copy carries only what it copied.",
+                self.worktree_path,
+                exc,
+            )
+
+        # Ask #2: what the copy left behind. Version control and guardkit's
+        # own state stay behind deliberately.
+        try:
+            for item in self.worktree_path.iterdir():
+                if item.name in self._ISOLATION_NEVER_LINK:
+                    continue
+                if item.name in self._ISOLATION_SKIP_DIRS or item.name.endswith(
+                    ".egg-info"
+                ):
+                    _add(item)
+        except OSError as exc:
+            logger.warning(
+                "Could not list %s while working out what the isolated copy "
+                "must reach: %s",
+                self.worktree_path,
+                exc,
+            )
+
+        return reach
+
+    def _reach_into_snapshot(
+        self, snapshot_root: Path, paths: List[Path]
+    ) -> List[str]:
+        """Link *paths* into *snapshot_root* at the same relative positions.
+
+        Linking rather than copying: an environment can be gigabytes, and
+        nothing in a parallel wave edits it — the contention this snapshot
+        exists to defend against is peers editing SOURCE files, which are
+        copied.
+
+        Returns the relative paths that were linked, for the operator's log.
+        """
+        linked: List[str] = []
+        for real in paths:
+            try:
+                relative = real.relative_to(self.worktree_path)
+            except ValueError:
+                continue
+            destination = snapshot_root / relative
+            if destination.exists() or destination.is_symlink():
+                continue
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.symlink_to(real, target_is_directory=real.is_dir())
+                linked.append(str(relative))
+            except OSError as exc:
+                logger.warning(
+                    "Could not carry %s into the isolated copy: %s",
+                    relative,
+                    exc,
+                )
+        return linked
+
+    @staticmethod
+    def _command_runs_pytest(test_cmd: str) -> bool:
+        """True when the declared command actually invokes pytest.
+
+        NOTHING HERE MAY ASSUME PYTHON. Exit code 5 means "collected no
+        tests" to pytest and nothing at all to anybody else: to ``go test``
+        or to a shell wrapper it is simply a non-zero exit, which usually
+        means the checks FAILED. Reading a Go wrapper's exit 5 as "the check
+        could not run" would hide a genuine red behind an estate fault and
+        tell the operator something untrue about a command that has no
+        opinion about Python. So the pytest-shaped readings below are asked
+        only of a pytest-shaped command.
+
+        Matches pytest as a word in the command — ``pytest -q``,
+        ``python -m pytest``, ``uv run pytest``, ``/path/to/pytest`` — and
+        nothing else. ``make test``, ``./scripts/test.sh``, ``go test ./...``
+        and ``npm test`` are all not pytest-shaped, whatever they run
+        underneath, because from here they are opaque.
+        """
+        for token in (test_cmd or "").replace(";", " ").replace("&", " ").split():
+            stripped = token.strip("\"'")
+            if stripped == "pytest" or stripped.endswith("/pytest"):
+                return True
+        return False
+
+    def _absence_from_run(
+        self,
+        returncode: Optional[int],
+        combined_output: str,
+        tests_passed: bool,
+        test_cmd: str,
+    ) -> Optional[str]:
+        """Why this run produced NO verdict, or ``None`` when it produced one.
+
+        Every branch here is a run that never told us anything about the
+        builder's code. A run that exits cleanly having executed nothing is
+        one of them: unknown is not a pass.
+
+        These are the same conditions the worktree run applies inline, in the
+        same order, stated once so the isolated copy cannot drift away from
+        them — the recurring "Nth-injection-site" lesson of the
+        absence-of-failure rule family. The worktree run is deliberately left
+        calling its own inline copy: a single-task wave must stay exactly what
+        it is today, proved by its existing tests, and this lane changes only
+        the parallel-wave path.
+
+        Two kinds of reading live here and they are kept apart, because on
+        this path a "could not run" ends the turn with nothing for the
+        builder:
+
+        * the stack-agnostic ones — the command could not be STARTED at all
+          (exit 126 or 127, or one of the shell's own missing-tool
+          sentences). True of any command in any language, so they are asked
+          of every command;
+        * the pytest-shaped ones — exit code 5, a conftest import error, a
+          collection error, a rejected ``--timeout``. These are readings of
+          pytest's own vocabulary, so they are asked only when the command
+          really invokes pytest (see ``_command_runs_pytest``). A declared
+          shell wrapper or a ``go test`` line keeps its own meaning for the
+          same exit codes, and a genuine red stays the builder's to fix.
+        """
+        if self._active_stack_profile is not None:
+            if classify_absent_for_stack(
+                self._active_stack_profile,
+                returncode,
+                combined_output,
+            ):
+                return (
+                    f"the run reported no tests for the declared stack "
+                    f"({self._active_stack_profile.stack}), exit code "
+                    f"{returncode}"
+                )
+            return None
+        if tests_passed:
+            return None
+        if self._command_runs_pytest(test_cmd):
+            if "No module named pytest" in combined_output:
+                return (
+                    "the test runner itself was not installed where the "
+                    "command ran"
+                )
+            if returncode == 5:
+                return "the command collected no tests at all"
+            if (
+                "ImportError while loading conftest" in combined_output
+                or "errors during collection" in combined_output
+                or "error collecting" in combined_output
+            ):
+                return (
+                    "the suite could not be loaded, so no test ran (a missing "
+                    "dependency where the command ran)"
+                )
+            if self._is_pytest_timeout_usage_error(returncode, combined_output):
+                return (
+                    "the per-test timeout option was rejected, so no test ran "
+                    "(the timeout plugin was missing where the command ran)"
+                )
+        if self._is_host_substrate_gap(returncode, combined_output):
+            return (
+                f"the command could not be executed where it was asked to run "
+                f"(exit code {returncode}) — something it needs was not there"
+            )
+        return None
+
+    # ------------------------------------------------------------------
+    # THE RULE: a check that could not run is not a check that failed
+    # ------------------------------------------------------------------
+    # "The check ran and the result is bad" and "the check could not run" are
+    # different outcomes, and they never share a code path. A check that could
+    # not run is an ESTATE fault:
+    #
+    #   1. it is NEVER put in the builder's feedback as something to fix —
+    #      not as a must-fix, not as an observation, not as a record of
+    #      honesty. The builder did not cause it and cannot fix it, and on
+    #      2026-09-11 a build handed one to the coder five turns running until
+    #      the coder deleted two working functions trying to satisfy it;
+    #   2. it can NEVER let a quality gate report the check as passed. The
+    #      gate says UNKNOWN, which is not a pass — the same false receipt as
+    #      an image that verifies green carrying yesterday's code;
+    #   3. it IS reported, in plain words, naming the command, the directory
+    #      it ran in and what was missing, to the operator's log and the
+    #      turn's receipt.
+    # ------------------------------------------------------------------
+
+    def _gates_with_unknown_tests(
+        self, gates: Optional[QualityGateStatus]
+    ) -> Optional[QualityGateStatus]:
+        """Return *gates* with the test gate set to UNKNOWN, not passed.
+
+        Used when the Coach's own check could not run. ``tests_passed=None``
+        is UNKNOWN: ``all_gates_passed`` becomes ``False``, so nothing
+        approves on it, and the checkpoint tally reads ``None`` as absent
+        rather than as a counted failure.
+        """
+        if gates is None or gates.tests_passed is None:
+            return gates
+        return dataclass_replace(gates, tests_passed=None)
+
+    def _estate_fault_result(
+        self,
+        *,
+        task_id: str,
+        turn: int,
+        gates_status: Optional[QualityGateStatus],
+        test_result: "IndependentTestResult",
+        requirements: Optional[RequirementsValidation] = None,
+        context: Optional[str] = None,
+        honesty_verification: Optional[HonestyVerification] = None,
+    ) -> CoachValidationResult:
+        """End the turn as an estate fault: the check could not run.
+
+        Carries NO issue for the builder — an empty issue list is the whole
+        point, because a feedback blob that merely de-emphasises the failed
+        check still teaches the builder to chase it. The quality gate is
+        re-read as UNKNOWN, the detail goes to the operator's log and onto
+        the receipt, and ``is_configuration_error`` stops the loop rather
+        than spending the builder's turns on something outside the
+        repository.
+        """
+        detail = test_result.check_could_not_run_detail or (
+            test_result.test_output_summary
+        )
+        logger.error(
+            "ESTATE FAULT for %s turn %s — nothing was verified: %s",
+            task_id,
+            turn,
+            detail,
+        )
+        return CoachValidationResult(
+            task_id=task_id,
+            turn=turn,
+            decision="feedback",
+            quality_gates=self._gates_with_unknown_tests(gates_status),
+            independent_tests=test_result,
+            requirements=requirements,
+            issues=[],
+            rationale=detail,
+            context_used=context,
+            is_configuration_error=True,
+            honesty_verification=honesty_verification,
+        )
+
+    def _worktree_run_said_nothing(
+        self,
+        result: "IndependentTestResult",
+        worktree_returncode: Optional[int],
+    ) -> bool:
+        """Did the worktree run really fail to say anything about the code?
+
+        Only asked after an isolated attempt could not start, because only
+        there does the answer END THE TURN with nothing for the builder. That
+        is why the question is asked again here rather than taken from the
+        worktree run's own inline reading.
+
+        THE INLINE READING IS NOT SAFE TO END A TURN ON. The worktree run
+        classifies absence with its own copy of the pytest vocabulary
+        whenever no stack profile is declared: exit code 5 as "collected no
+        tests", the words "errors during collection" as "the suite could not
+        load". Those are true of pytest and of nothing else. A repository
+        that declares a shell wrapper — ``qa/run-suite.sh`` — gets that
+        vocabulary applied to a script that has no opinion about Python, and
+        exit 5 there usually means the checks FAILED. Honouring it would
+        erase a genuine red, clear the builder's real must-fixes and tell the
+        operator that nothing ran while quoting the five things that failed.
+        The same wrong answer would come back for ``go test`` and for
+        ``npm test``.
+
+        So the absence is re-asked through ``_absence_from_run``, the shared
+        fence the isolated path uses, which separates the stack-agnostic
+        readings (the command could not be STARTED at all) from the
+        pytest-shaped ones (asked only of a command that really invokes
+        pytest). Anything the fence does not recognise is a verdict: the red
+        stays the builder's, and the receipt simply records that the check
+        fell back.
+
+        ``worktree_returncode`` is ``None`` when the command never completed
+        at all — a timeout, or a failure before any exit code existed. There
+        is no exit code to misread there and nothing was verified either way,
+        so it stays what it is: the check could not run.
+        """
+        if result.check_could_not_run:
+            return True
+        if not result.signal_absent:
+            return False
+        if worktree_returncode is None:
+            return True
+        return (
+            self._absence_from_run(
+                worktree_returncode,
+                result.raw_output or "",
+                result.tests_passed,
+                result.test_command,
+            )
+            is not None
+        )
+
+    def _after_isolation_fallback(
+        self,
+        result: "IndependentTestResult",
+        *,
+        worktree_returncode: Optional[int],
+    ) -> "IndependentTestResult":
+        """Close out a check that fell back from the isolated copy.
+
+        No-op unless an isolated attempt could not start this turn. When one
+        did:
+
+        * the worktree run produced a verdict — keep it, and record on the
+          receipt that it fell back and why. A red is a red: it reaches the
+          builder exactly as a wave of one would have delivered it;
+        * the worktree run could not produce one either — the turn ends as an
+          estate fault, naming the command, both directories and what was
+          missing, in the operator's log and on the receipt.
+
+        Which of the two it is comes from ``_worktree_run_said_nothing``, not
+        from the worktree run's own inline reading. ``worktree_returncode``
+        is required, not defaulted, so a future caller cannot silently lose
+        the fence and start ending turns on a misread exit code again.
+        """
+        isolated = self._isolation_fallback
+        self._isolation_fallback = None
+        if isolated is None:
+            return result
+
+        reason = isolated.check_could_not_run_detail or (
+            "the isolated copy could not start the check"
+        )
+        if self._worktree_run_said_nothing(result, worktree_returncode):
+            detail = (
+                f"The check could not run anywhere. Command: "
+                f"{result.test_command}. In an isolated copy of the worktree: "
+                f"{reason} In the worktree itself ({self.worktree_path}): "
+                f"{result.test_output_summary}"
+            )
+            logger.error("%s", detail)
+            return IndependentTestResult.could_not_run(
+                test_command=result.test_command,
+                detail=detail,
+                duration_seconds=result.duration_seconds,
+                raw_output=result.raw_output,
+                resolved_interpreter=result.resolved_interpreter,
+            )
+
+        if result.signal_absent:
+            outcome = "an absent signal, exactly as a wave of one would report"
+        elif result.tests_passed:
+            outcome = "passed"
+        else:
+            outcome = "failed"
+        logger.info(
+            "The check ran in the worktree after the isolated copy could not "
+            "start it, and the result is the builder's to read (%s).",
+            outcome,
+        )
+        return dataclass_replace(result, isolation_fallback_reason=reason)
+
     def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
         """
         Run tests in an isolated temporary directory (Option B: tempdir copy).
@@ -5588,6 +6097,21 @@ class CoachValidator:
                     f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
                 )
 
+                # THE COPY IS NOT ENOUGH. The copy carries the source files;
+                # the declared test command also needs whatever guardkit's
+                # bootstrap built for this build, which the copy deliberately
+                # does not duplicate. Ask what built it, never guess the
+                # directory — see ``_paths_the_snapshot_must_reach``.
+                linked = self._reach_into_snapshot(
+                    tmpdir_path, self._paths_the_snapshot_must_reach()
+                )
+                if linked:
+                    logger.info(
+                        "The isolated copy can reach what the test command "
+                        "needs: %s",
+                        ", ".join(linked),
+                    )
+
                 # Run tests in the isolated copy
                 if test_cmd.startswith("pytest"):
                     parts = test_cmd.split()
@@ -5634,6 +6158,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
+                        env=self._declared_command_env(),
                     )
 
                 duration = time.time() - start_time
@@ -5641,44 +6166,43 @@ class CoachValidator:
                 output = result.stdout or result.stderr or "No output"
                 summary = self._summarize_test_output(output)
 
-                # TASK-ABFIX-011 (constraint 3): a mis-fired --timeout injection
-                # (plugin vanished post-probe) exits rc-4 'unrecognized arguments:
-                # --timeout' — an ABSENT signal (ABFIX-010 carries it as None, fed
-                # back), never a Player test failure. Parity with the standard
-                # subprocess path so the parallel-wave isolated oracle classifies
-                # this absence identically.
-                signal_absent = False
+                # DID THIS RUN SAY ANYTHING AT ALL? ``_absence_from_run``
+                # states the conditions once: a command that could not be
+                # executed at all (asked of every command, in any language),
+                # and — only when the command really invokes pytest — a
+                # missing runner, a suite that could not load, a rejected
+                # timeout option. None of them is a verdict on the builder's
+                # code, and in the isolated copy every one of them means the
+                # copy could not start the check. The turn then falls back to
+                # the real worktree (see ``run_independent_tests``), which is
+                # the run a wave of one already uses. Anything else — a
+                # wrapper script exiting 5 because five checks failed, say —
+                # is a verdict, and stays the builder's to fix.
                 combined = (result.stdout or "") + (result.stderr or "")
-                if not tests_passed and self._is_pytest_timeout_usage_error(
-                    result.returncode, combined
-                ):
-                    signal_absent = True
-                    logger.warning(
-                        "[TASK-ABFIX-005/011] Isolated pytest rejected --timeout "
-                        "(returncode=%s, 'unrecognized arguments') — absent signal, "
-                        "not a test failure. cmd=%s",
-                        result.returncode,
-                        test_cmd,
+                could_not_start = self._absence_from_run(
+                    result.returncode, combined, tests_passed, test_cmd
+                )
+                if could_not_start is not None:
+                    detail = (
+                        f"The check could not run. Command: {test_cmd}. "
+                        f"Directory: {self._component_run_cwd(tmpdir_path)} "
+                        f"(an isolated copy of the worktree). What was missing: "
+                        f"{could_not_start}."
                     )
-                # TASK-ABFIX-012: parity with the standard subprocess path — a
-                # missing host tool (rc 126/127 or "command not found") is an
-                # ABSENT signal, never a Player test failure, in the isolated
-                # parallel-wave oracle too.
-                elif not tests_passed and self._is_host_substrate_gap(
-                    result.returncode, combined
-                ):
-                    signal_absent = True
-                    logger.warning(
-                        "[TASK-ABFIX-012] Isolated test oracle hit a host-substrate "
-                        "gap (returncode=%s, missing host tool) — absent signal, "
-                        "not a test failure. cmd=%s",
-                        result.returncode,
-                        test_cmd,
+                    logger.error("%s", detail)
+                    return IndependentTestResult.could_not_run(
+                        test_command=test_cmd,
+                        detail=detail,
+                        duration_seconds=duration,
+                        raw_output=combined,
+                        resolved_interpreter=self._resolved_interpreter_for(
+                            test_cmd
+                        ),
                     )
 
                 logger.info(
                     f"[TASK-ABFIX-005] Isolated tests "
-                    f"{'passed' if tests_passed else ('absent' if signal_absent else 'failed')} "
+                    f"{'passed' if tests_passed else 'failed'} "
                     f"in {duration:.1f}s"
                 )
 
@@ -5690,7 +6214,7 @@ class CoachValidator:
                     test_output_summary=summary,
                     duration_seconds=duration,
                     output=(result.stdout or "") + (result.stderr or ""),
-                    signal_absent=signal_absent,
+                    signal_absent=False,
                     resolved_interpreter=self._resolved_interpreter_for(test_cmd),
                 )
 
@@ -5706,11 +6230,19 @@ class CoachValidator:
             )
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"[TASK-ABFIX-005] Isolated test execution failed: {e}")
-            # TASK-FIX-COACHTESTTO: execution error before any verdict.
-            return IndependentTestResult.absent(
+            # The copy, or the command's own start, went wrong before any
+            # verdict existed: the check COULD NOT RUN in the isolated copy,
+            # so the turn falls back to the real worktree.
+            detail = (
+                f"The check could not run. Command: {test_cmd}. Directory: an "
+                f"isolated copy of {self.worktree_path}. What was missing: "
+                f"the copy could not be prepared or the command could not be "
+                f"started ({e})."
+            )
+            logger.error("%s", detail)
+            return IndependentTestResult.could_not_run(
                 test_command=test_cmd,
-                test_output_summary=f"Isolated test execution failed: {e}",
+                detail=detail,
                 duration_seconds=duration,
                 resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
@@ -5913,7 +6445,23 @@ class CoachValidator:
                     f"[TASK-ABFIX-005] Parallel wave detected (wave_size={self.wave_size}), "
                     f"running tests in isolated temp directory"
                 )
-                return self._run_isolated_tests(test_cmd)
+                isolated = self._run_isolated_tests(test_cmd)
+                if not isolated.check_could_not_run:
+                    return isolated
+                # THE FALLBACK. A wave of one already runs this check in the
+                # real worktree and it works; a wave of two must not be worse
+                # than a wave of one. The isolated copy could not start the
+                # check, so run it where a wave of one runs it, and record
+                # plainly that it fell back and why. Only if THAT cannot run
+                # either does the turn end as an estate fault
+                # (``_after_isolation_fallback``).
+                logger.warning(
+                    "The isolated copy could not start the check, so it will "
+                    "run in the worktree instead — the same run a single-task "
+                    "wave uses. %s",
+                    isolated.check_could_not_run_detail,
+                )
+                self._isolation_fallback = isolated
 
             # Subprocess path (default for coach_test_execution="subprocess", SDK fallback,
             # or infrastructure-dependent tasks forced to subprocess by TASK-REV-CB30 R5)
@@ -6098,41 +6646,59 @@ class CoachValidator:
                     f"in {duration:.1f}s"
                 )
 
-                return IndependentTestResult.from_run(
-                    tests_passed=tests_passed,
-                    test_command=test_cmd,
-                    test_output_summary=summary,
-                    duration_seconds=duration,
-                    output=(result.stdout or "") + (result.stderr or ""),
-                    signal_absent=signal_absent,
-                    resolved_interpreter=self._resolved_interpreter_for(
-                        test_cmd
+                return self._after_isolation_fallback(
+                    IndependentTestResult.from_run(
+                        tests_passed=tests_passed,
+                        test_command=test_cmd,
+                        test_output_summary=summary,
+                        duration_seconds=duration,
+                        output=(result.stdout or "") + (result.stderr or ""),
+                        signal_absent=signal_absent,
+                        resolved_interpreter=self._resolved_interpreter_for(
+                            test_cmd
+                        ),
                     ),
+                    # The command completed and has an exit code, so a
+                    # fallback close-out can re-ask what that exit code
+                    # really means for THIS command before ending a turn on
+                    # it.
+                    worktree_returncode=result.returncode,
                 )
 
             except subprocess.TimeoutExpired:
                 duration = time.time() - start_time
                 logger.error(f"Test execution timed out after {self.test_timeout}s")
                 # TASK-FIX-COACHTESTTO: timeout — oracle did not complete.
-                return IndependentTestResult.absent(
-                    test_command=test_cmd,
-                    test_output_summary=f"Test execution timed out after {self.test_timeout}s",
-                    duration_seconds=duration,
-                    resolved_interpreter=self._resolved_interpreter_for(
-                        test_cmd
+                return self._after_isolation_fallback(
+                    IndependentTestResult.absent(
+                        test_command=test_cmd,
+                        test_output_summary=(
+                            f"Test execution timed out after "
+                            f"{self.test_timeout}s"
+                        ),
+                        duration_seconds=duration,
+                        resolved_interpreter=self._resolved_interpreter_for(
+                            test_cmd
+                        ),
                     ),
+                    # No exit code exists: the command never finished.
+                    worktree_returncode=None,
                 )
             except Exception as e:
                 duration = time.time() - start_time
                 logger.error(f"Test execution failed: {e}")
                 # TASK-FIX-COACHTESTTO: execution error before any verdict.
-                return IndependentTestResult.absent(
-                    test_command=test_cmd,
-                    test_output_summary=f"Test execution failed: {e}",
-                    duration_seconds=duration,
-                    resolved_interpreter=self._resolved_interpreter_for(
-                        test_cmd
+                return self._after_isolation_fallback(
+                    IndependentTestResult.absent(
+                        test_command=test_cmd,
+                        test_output_summary=f"Test execution failed: {e}",
+                        duration_seconds=duration,
+                        resolved_interpreter=self._resolved_interpreter_for(
+                            test_cmd
+                        ),
                     ),
+                    # No exit code exists: the command never ran to an end.
+                    worktree_returncode=None,
                 )
 
         finally:

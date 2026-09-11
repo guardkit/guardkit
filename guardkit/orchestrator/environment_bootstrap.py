@@ -131,6 +131,74 @@ def probe_worktree_venv(root: Path) -> Optional[Path]:
     return None
 
 
+def bootstrap_created_paths(root: Path) -> List[Path]:
+    """Say, read-only, where this build's environment was put inside *root*.
+
+    ASK WHAT BUILT IT. The bootstrap is the one thing that knows where a
+    build's environment lives, because it is the thing that created it: it
+    writes the entry point it made into its own state file
+    (``<root>/.guardkit/bootstrap_state.json``), and the on-disk layouts it
+    produces are listed once in :func:`probe_worktree_venv`. Anything that
+    has to carry a build's environment somewhere else — the Coach's isolated
+    copy of a worktree, for instance — asks here instead of guessing a
+    directory name, because every guess is shaped like one language's
+    conventions and is wrong for the next one.
+
+    READ-ONLY. This creates nothing, installs nothing and changes no state.
+    A root whose bootstrap created nothing (a project whose stack needs no
+    per-build environment) gets an empty list back, and callers must then
+    behave exactly as they did before this function existed.
+
+    Parameters
+    ----------
+    root : Path
+        The worktree the bootstrap ran against.
+
+    Returns
+    -------
+    List[Path]
+        Existing paths inside *root*, in a stable order, with no repeats.
+        Empty when nothing was recorded and nothing is on disk.
+    """
+    entries: List[Path] = []
+
+    state_file = root / ".guardkit" / "bootstrap_state.json"
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        state = None
+    if isinstance(state, dict):
+        for value in state.values():
+            # Every path the bootstrap wrote into its own record counts. The
+            # values are read as data, so a future bootstrap that records a
+            # second location needs no change here.
+            if isinstance(value, str) and value.startswith("/"):
+                entries.append(Path(value))
+
+    probed = probe_worktree_venv(root)
+    if probed is not None:
+        entries.append(probed)
+
+    created: List[Path] = []
+    for entry in entries:
+        if not entry.exists():
+            continue
+        # The recorded entry point sits inside the directory the bootstrap
+        # made; carrying that directory is what makes the entry usable.
+        home = entry.parent.parent if entry.is_file() else entry
+        for candidate in (home, entry):
+            try:
+                inside = candidate.resolve().is_relative_to(root.resolve())
+            except (OSError, ValueError):
+                inside = False
+            if inside and candidate.is_dir() and candidate != root:
+                if candidate not in created:
+                    created.append(candidate)
+                break
+
+    return created
+
+
 # ============================================================================
 # Data Models
 # ============================================================================
