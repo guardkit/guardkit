@@ -2869,8 +2869,22 @@ The detailed specifications are in the task markdown file.
                 f"feedback (retry {attempt}/{self._smoke_gate_max_retries})."
             )
             if self._wave_display:
+                # The re-entered wave runs under the same rule as the first
+                # pass, so the banner asks the resolver rather than printing
+                # the wave size (read only, log=False — the dispatcher emits
+                # the authoritative log). The answer is the cached one, so it
+                # cannot differ from what the executor enforces.
+                retry_max_parallel = resolve_max_parallel(
+                    self._parallel_config,
+                    wave_number=wave_number,
+                    wave_size=len(task_ids),
+                    log=False,
+                    wave_task_paths=self._wave_task_paths(
+                        wave_number, task_ids, feature, worktree
+                    ),
+                )
                 self._wave_display.start_wave(
-                    wave_number, task_ids, max_parallel=len(task_ids)
+                    wave_number, task_ids, max_parallel=retry_max_parallel
                 )
             wave_result = self._execute_wave(
                 wave_number, task_ids, feature, worktree,
@@ -3377,8 +3391,22 @@ The detailed specifications are in the task markdown file.
                 f"(retry {attempt}/{self._wiring_gate_max_retries})."
             )
             if self._wave_display:
+                # The re-entered wave runs under the same rule as the first
+                # pass, so the banner asks the resolver rather than printing
+                # the wave size (read only, log=False — the dispatcher emits
+                # the authoritative log). The answer is the cached one, so it
+                # cannot differ from what the executor enforces.
+                retry_max_parallel = resolve_max_parallel(
+                    self._parallel_config,
+                    wave_number=wave_number,
+                    wave_size=len(task_ids),
+                    log=False,
+                    wave_task_paths=self._wave_task_paths(
+                        wave_number, task_ids, feature, worktree
+                    ),
+                )
                 self._wave_display.start_wave(
-                    wave_number, task_ids, max_parallel=len(task_ids)
+                    wave_number, task_ids, max_parallel=retry_max_parallel
                 )
             wave_result = self._execute_wave(
                 wave_number, task_ids, feature, worktree,
