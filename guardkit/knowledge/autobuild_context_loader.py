@@ -395,6 +395,25 @@ class AutoBuildContextLoader:
                 result.budget_used,
                 result.budget_total,
             )
+            if not result.categories_populated:
+                # SILENCE IS NOT AN EMPTY MEMORY (2026-09-13). A retrieval that
+                # failed inside the client is caught down there and comes back
+                # here as a successful result with nothing in it, so the line
+                # above reads "0 categories" and a build runs with the builder
+                # and the reviewer having no memory at all. FEAT-19C4 did that
+                # for all five of its turns while 22 event-loop errors went by
+                # in the log unattached to any consequence. So the consequence
+                # is said out loud, once, where the operator is already reading.
+                logger.warning(
+                    "[Memory] the builder is working with NO memory this turn "
+                    "(%s, turn %s): nothing was retrieved. Either there is "
+                    "genuinely nothing on record for this task, or retrieval "
+                    "failed inside the memory client — check the log above for "
+                    "an error from fleet-memory before reading this as an "
+                    "empty memory.",
+                    task_id,
+                    turn_number,
+                )
             return result
 
         except Exception as e:
@@ -507,6 +526,19 @@ class AutoBuildContextLoader:
                 result.budget_used,
                 result.budget_total,
             )
+            if not result.categories_populated:
+                # See the same guard on the Player path above: a retrieval that
+                # failed inside the client reads here as an empty memory.
+                logger.warning(
+                    "[Memory] the reviewer is working with NO memory this turn "
+                    "(%s, turn %s): nothing was retrieved. Either there is "
+                    "genuinely nothing on record for this task, or retrieval "
+                    "failed inside the memory client — check the log above for "
+                    "an error from fleet-memory before reading this as an "
+                    "empty memory.",
+                    task_id,
+                    turn_number,
+                )
             return result
 
         except Exception as e:
