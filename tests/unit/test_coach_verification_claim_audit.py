@@ -1062,3 +1062,102 @@ class TestCheckIgnoreNegationHelper:
 
     def test_unparseable_line_is_not_negation(self):
         assert _check_ignore_match_is_negation("garbage-no-colons\n") is False
+
+
+# ---------------------------------------------------------------------------
+# The checkpoint is why porcelain is quiet (2026-09-13)
+#
+# FEAT-19C4: the builder wrote the fix on turn 2, the loop committed a
+# checkpoint at the end of that turn, and turns 3, 4 and 5 each reported the
+# same two files — truthfully, they are this task's work. The audit asks
+# ``git status --porcelain``, which reports only UNCOMMITTED change, so it
+# recorded the builder as claiming files it had not modified. Three turns of
+# should_fix warnings, no must-fix issue anywhere, and the build ended in a
+# no-file-changes stall with the fix stranded on its branch.
+# ---------------------------------------------------------------------------
+
+
+def _checkpoint(worktree: Path, task_id: str, commit: str) -> None:
+    """Write the task's checkpoints file the way the loop does."""
+    import json
+
+    d = worktree / ".guardkit" / "autobuild" / task_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "checkpoints.json").write_text(
+        json.dumps({"task_id": task_id, "checkpoints": [{"turn": 1, "commit_hash": commit}]})
+    )
+
+
+def test_a_file_committed_by_an_earlier_turn_is_not_an_honesty_record(
+    git_worktree: Path,
+) -> None:
+    """The FEAT-19C4 shape: claimed, committed by an earlier turn, still true."""
+    src = git_worktree / "src"
+    src.mkdir()
+    (src / "crud.py").write_text("def count(): return 0\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "[guardkit-checkpoint] Turn 1 complete", cwd=git_worktree)
+    turn_1 = _git("rev-parse", "HEAD", cwd=git_worktree).stdout.strip()
+
+    # Turn 2 does the work and the loop checkpoints it.
+    (src / "crud.py").write_text("def count(): return 1  # fixed\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "[guardkit-checkpoint] Turn 2 complete", cwd=git_worktree)
+
+    _checkpoint(git_worktree, "TASK-UCNT-001", turn_1)
+    verifier = CoachVerifier(git_worktree, task_id="TASK-UCNT-001")
+
+    # Turn 3 reports the work it did for this task. Porcelain is silent.
+    discrepancies = verifier._verify_claims_were_staged(
+        {"files_modified": ["src/crud.py"]}
+    )
+
+    assert discrepancies == [], (
+        "a file that differs from the task's base is the task's own work; "
+        "reporting it is honest, whatever this turn did"
+    )
+
+
+def test_a_file_this_task_never_touched_is_still_an_honesty_record(
+    git_worktree: Path,
+) -> None:
+    """The guard it must not remove: a file the task never wrote."""
+    src = git_worktree / "src"
+    src.mkdir()
+    # Already in the tree BEFORE this task started.
+    (src / "untouched.py").write_text("original\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "pre-existing", cwd=git_worktree)
+
+    # The task's first turn touches something else entirely.
+    (src / "elsewhere.py").write_text("this task's actual work\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "[guardkit-checkpoint] Turn 1 complete", cwd=git_worktree)
+    turn_1 = _git("rev-parse", "HEAD", cwd=git_worktree).stdout.strip()
+
+    _checkpoint(git_worktree, "TASK-UCNT-001", turn_1)
+    verifier = CoachVerifier(git_worktree, task_id="TASK-UCNT-001")
+
+    discrepancies = verifier._verify_claims_were_staged(
+        {"files_modified": ["src/untouched.py"]}
+    )
+
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit_unmodified"
+
+
+def test_with_no_checkpoints_file_the_warning_stands(git_worktree: Path) -> None:
+    """Fail closed: no base on record leaves today's behaviour untouched."""
+    src = git_worktree / "src"
+    src.mkdir()
+    (src / "crud.py").write_text("x\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "base", cwd=git_worktree)
+
+    verifier = CoachVerifier(git_worktree, task_id="TASK-NO-CHECKPOINTS")
+    discrepancies = verifier._verify_claims_were_staged(
+        {"files_modified": ["src/crud.py"]}
+    )
+
+    assert len(discrepancies) == 1
+    assert discrepancies[0].claim_type == "claim_audit_unmodified"

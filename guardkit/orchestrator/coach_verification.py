@@ -12,6 +12,7 @@ This pattern is inspired by the "intellectual honesty" design principle,
 ensuring the Coach can trust Player reports.
 """
 
+import json
 import logging
 import re
 import subprocess
@@ -856,6 +857,20 @@ class CoachVerifier:
                     # *expected* outcome of running a test — zero signal,
                     # not a Player-honesty observation. Emit nothing.
                     continue
+                if self._differs_from_task_base(path):
+                    # The file IS this task's work: it differs from where the
+                    # task started, and porcelain is quiet only because an
+                    # earlier turn's checkpoint committed it. Reporting it is
+                    # honest, so there is nothing to say. Same reasoning as
+                    # the run-claim case above: the expected outcome carries
+                    # zero signal. See _differs_from_task_base.
+                    logger.debug(
+                        "claim audit: %s is unchanged since the last commit "
+                        "but differs from this task's base — the builder's "
+                        "claim is true for the task, so no honesty record",
+                        path,
+                    )
+                    continue
                 discrepancies.append(
                     Discrepancy(
                         claim_type="claim_audit_unmodified",
@@ -1170,6 +1185,80 @@ class CoachVerifier:
                 continue
             return repo.name
         return None
+
+    def _task_base_commit(self) -> Optional[str]:
+        """The commit this task started from, or ``None`` when unknowable.
+
+        The loop commits a checkpoint at the END of every turn, so the first
+        checkpoint's PARENT is where this task's work began. Read from the
+        task's own ``checkpoints.json``; any shape or read problem returns
+        ``None`` and the caller keeps today's behaviour.
+        """
+        if not self.task_id:
+            return None
+        path = (
+            self.worktree_path
+            / ".guardkit"
+            / "autobuild"
+            / self.task_id
+            / "checkpoints.json"
+        )
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        entries = data.get("checkpoints")
+        if not isinstance(entries, list) or not entries:
+            return None
+        first = entries[0]
+        if not isinstance(first, dict):
+            return None
+        commit = first.get("commit_hash")
+        if not isinstance(commit, str) or not commit.strip():
+            return None
+        return f"{commit.strip()}^"
+
+    def _differs_from_task_base(self, path: str) -> bool:
+        """Whether ``path`` differs from where this task started.
+
+        THE CHECKPOINT IS WHY PORCELAIN IS QUIET (2026-09-13). The claim audit
+        asks ``git status --porcelain``, which reports UNCOMMITTED change. The
+        loop commits a checkpoint at the end of every turn, so from turn two
+        onward every file the task legitimately wrote reads as "no change" —
+        and the builder, truthfully reporting the work it did for this task,
+        is recorded as claiming a file it did not modify. FEAT-19C4 died of
+        exactly that: the fix landed on turn 2, and turns 3, 4 and 5 were each
+        refused over should_fix warnings about the two files holding it, with
+        no must-fix issue anywhere, until the no-file-changes stall ended the
+        build and the fix was left on its branch.
+
+        So the question is asked against the task's own starting point rather
+        than against the last commit. A file that differs from it IS this
+        task's work, whatever this particular turn did, and there is nothing
+        dishonest to report.
+
+        Fail CLOSED: no base, no git, or any error returns ``False`` and the
+        warning stands exactly as it does today.
+        """
+        base = self._task_base_commit()
+        if base is None:
+            return False
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--quiet", base, "--", path],
+                cwd=self.worktree_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+        # git diff --quiet: 0 = no difference, 1 = differs, anything else is
+        # an error and is treated as "cannot say".
+        return result.returncode == 1
 
     def _git_check_ignore_rule(self, path: str) -> str:
         """Return the matched ``<source>:<line>:<pattern>`` for ``path``.
