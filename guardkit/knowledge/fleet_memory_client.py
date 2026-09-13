@@ -61,6 +61,19 @@ class FleetMemoryConfig:
     fixture_id: Optional[str] = None
 
 
+def _running_loop() -> "asyncio.AbstractEventLoop | None":
+    """The event loop this call is running on, or None outside one.
+
+    Used to keep the fleet-memory store with the loop it was opened on: the
+    store is loop-affine and a cross-loop use fails in a way the search
+    swallows, which reads downstream as an empty memory.
+    """
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
 class FleetMemoryClient:
     """Fleet-memory client with graphiti-client-shaped interface.
 
@@ -87,6 +100,7 @@ class FleetMemoryClient:
         # Read path reuses fleet_memory.retrieval directly (the exact functions
         # the memory_search MCP tool wraps — single source of truth, no drift).
         # Installed via the guardkit `memory` extra. TASK-MEM08-011.
+        self._store_loop = None  # the loop the store was opened on
         self._read_available = self._check_read_backend_available()
         self._mcp_available = self._read_available  # back-compat alias
         self._nats_available = self._check_nats_available()
@@ -157,7 +171,27 @@ class FleetMemoryClient:
         if not self.config.enabled:
             return False
         if self._store is not None:
-            return True
+            # THE STORE IS AFFINE TO THE LOOP IT WAS OPENED ON (2026-09-13).
+            # The line further down says so already — and until today nothing
+            # checked it again. A store opened on one event loop and used from
+            # another raises inside the batched store ("got Future attached to
+            # a different loop", or "Event loop is closed" once the first loop
+            # has gone), the search swallows it and returns [], and the build
+            # reads that as an empty memory. Every build on 2026-09-12 and
+            # 2026-09-13 ran with the builder and the reviewer having NO
+            # memory for exactly this reason, while the store was reachable
+            # and full the whole time.
+            if self._store_loop is _running_loop():
+                return True
+            logger.info(
+                "memory: the store was opened on a different event loop; "
+                "opening it again for this one (the store is loop-affine)"
+            )
+            # The old context manager belongs to a loop that may be closed, so
+            # it cannot be exited from here. Dropping the reference is the
+            # honest thing available; the connection goes with its loop.
+            self._store = None
+            self._store_cm = None
         if not self._read_available:
             logger.warning(
                 "fleet_memory.retrieval not importable; install the guardkit "
@@ -177,6 +211,7 @@ class FleetMemoryClient:
             )
             self._store_cm = async_store_context(settings)
             self._store = await self._store_cm.__aenter__()
+            self._store_loop = _running_loop()  # remembered, and checked above
             self._initialized = True
             self._pending_init = False  # store now affine to the calling loop
             return True
@@ -184,6 +219,7 @@ class FleetMemoryClient:
             logger.warning(f"Fleet-memory initialize failed: {e}", exc_info=True)
             self._store = None
             self._store_cm = None
+            self._store_loop = None
             return False
 
     async def health_check(self) -> bool:
@@ -192,7 +228,12 @@ class FleetMemoryClient:
         Returns:
             True if a store read completes (connection healthy), False otherwise.
         """
-        if self._store is None and not await self.initialize():
+        # Not just "is there a store" but "is it THIS loop's store" — a
+        # stale one from another loop never reaches initialize() otherwise,
+        # and every read through it comes back empty (2026-09-13).
+        if (
+            self._store is None or self._store_loop is not _running_loop()
+        ) and not await self.initialize():
             return False
         try:
             await self._store.aget(
@@ -271,7 +312,12 @@ class FleetMemoryClient:
             return []
 
         # Lazy-open the store on first read (GROI readers do not call initialize()).
-        if self._store is None and not await self.initialize():
+        # Not just "is there a store" but "is it THIS loop's store" — a
+        # stale one from another loop never reaches initialize() otherwise,
+        # and every read through it comes back empty (2026-09-13).
+        if (
+            self._store is None or self._store_loop is not _running_loop()
+        ) and not await self.initialize():
             return []
 
         try:
@@ -361,7 +407,17 @@ class FleetMemoryClient:
             ]
 
         except Exception as e:
-            logger.error(f"Fleet-memory search failed: {e}", exc_info=True)
+            # Loud, and named for what it costs: a swallowed search reads
+            # downstream as "the memory is empty", which is how every build
+            # this week ran blind without anybody being told.
+            logger.error(
+                "memory: the search FAILED and this turn will therefore see no "
+                "memory at all — this is not an empty memory, it is a broken "
+                "read (%s: %s)",
+                type(e).__name__,
+                e,
+                exc_info=True,
+            )
             return []
 
     async def add_episode(
