@@ -3317,6 +3317,20 @@ class CoachValidator:
                     task_type=task_type.value,
                     profile_name=profile_name,
                 )
+            # THE SAME SUPPRESSION THE OTHER PATH HAS (2026-09-13).
+            # validate_task_work applies the red-baseline diff immediately
+            # after its own run_independent_tests; gather_evidence never did —
+            # and gather_evidence is the path an autobuild turn actually takes.
+            # So a repository with triaged known failures had EVERY turn told
+            # "tests failed" for failures its ledger already forgives, and the
+            # builder was handed a complaint it could not act on. FEAT-19C4
+            # died of exactly that on 2026-09-12: five turns, no must-fix issue
+            # anywhere, and the fix left stranded on its branch. The diff only
+            # ever removes false charges and fails closed, so the two paths
+            # agreeing is strictly the honest direction.
+            test_result = self._apply_baseline_diff(
+                test_result, task_work_results
+            )
 
         # THE CHECK COULD NOT RUN. The gate may not go on saying the tests
         # passed when nothing was measured: the test gate becomes UNKNOWN on
