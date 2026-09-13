@@ -4388,15 +4388,52 @@ class CoachValidator:
         Fail CLOSED: an absent signal is never flipped; if no failing node IDs
         parse (non-pytest stack output) the charge stands; any exception leaves
         the original verdict intact.
+
+        IT SAYS WHY IT DID NOT ACT (2026-09-13). Every path out of here used to
+        be silent except the one that suppressed something, so a build where
+        this never fired looked identical to a build where it was never
+        reached. FEAT-19C4 stalled for five turns on six failures the ledger
+        already forgave, and the whole question — which of the four early
+        returns was taken — could not be answered from the receipt at all; the
+        only record was inside a sandbox that could not be opened. A check that
+        cannot say what it did is not a check anybody can trust, so each exit
+        now names itself once per turn at INFO, beside the one that already
+        spoke.
         """
         try:
             if test_result.signal_absent or test_result.tests_passed is not False:
+                # Nothing to forgive: either the run never produced a verdict
+                # (never flipped, by design) or it already passed.
+                logger.info(
+                    "baseline diff: not applicable (signal_absent=%s, "
+                    "tests_passed=%s) — nothing to forgive",
+                    test_result.signal_absent,
+                    test_result.tests_passed,
+                )
                 return test_result
             if not self._baseline_diff_active():
+                baseline, ledger = self._baseline_context()
+                logger.info(
+                    "baseline diff: INERT — no red base on record, so every "
+                    "failure stands (measured baseline: %s; ledger entries: "
+                    "%d; kill-switch GUARDKIT_AUTOBUILD_BASELINE_DIFF: %s)",
+                    "absent"
+                    if baseline is None
+                    else ("green" if baseline.passed else "red"),
+                    len(ledger),
+                    "on" if baseline_diff_enabled() else "OFF",
+                )
                 return test_result
             observed = failing_node_ids(test_result.raw_output)
             if not observed:
                 # Could not identify the failures → cannot safely attribute.
+                logger.info(
+                    "baseline diff: could not read a single failing test id "
+                    "out of the run's output (%d characters of it), so no "
+                    "failure can be attributed to the base and every one of "
+                    "them stands",
+                    len(test_result.raw_output or ""),
+                )
                 return test_result
             baseline, ledger = self._baseline_context()
             baseline_ids = baseline.failing_node_ids if baseline else []
@@ -4408,6 +4445,25 @@ class CoachValidator:
             )
             if charged:
                 # At least one genuine regression → leave the failure standing.
+                # WHICH ones, and whether they are charged because the base
+                # never had them or because this task touched their test file
+                # (the re-charge rule above) — without that distinction a
+                # forgiven-looking build and a re-charged one read the same.
+                authored = self._authored_test_files(task_work_results)
+                known = set(baseline_ids) | set(ledger)
+                recharged = [n for n in charged if n in known]
+                genuinely_new = [n for n in charged if n not in known]
+                logger.info(
+                    "baseline diff: NOT applied — %d failure(s) charged to "
+                    "this task (%d newly failing; %d the base already had but "
+                    "re-charged because this task touched their test file). "
+                    "Charged: %s. Files this task is recorded as touching: %s",
+                    len(charged),
+                    len(genuinely_new),
+                    len(recharged),
+                    ", ".join(charged[:20]),
+                    ", ".join(authored[:20]) or "(none recorded)",
+                )
                 return test_result
             attributed = sorted(set(observed))
             summary = (
@@ -4427,7 +4483,14 @@ class CoachValidator:
                 test_output_summary=summary,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed to the real verdict
-            logger.debug("baseline diff: apply skipped (%s); verdict unchanged", exc)
+            # At INFO, not DEBUG: a build runs at INFO, so at DEBUG this said
+            # nothing where it mattered and the failure looked like a decision.
+            logger.info(
+                "baseline diff: could not run (%s: %s) — the verdict is left "
+                "exactly as the test run reported it",
+                type(exc).__name__,
+                exc,
+            )
             return test_result
 
     # ------------------------------------------------------------------
