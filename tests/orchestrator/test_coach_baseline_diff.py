@@ -216,3 +216,42 @@ class TestTheBaselineDiffSaysWhyItDidNotAct:
 
         assert out.tests_passed is False
         assert "baseline diff: not applicable" in caplog.text
+
+
+class TestTheSuppressedRunExplainsItself:
+    """A pass beside a red output must say why both are true.
+
+    FEAT-C2BA, 2026-09-13: the diff flipped the verdict and left the run's
+    output untouched, so the bundle carried "tests_passed=true" next to
+    "12 failed" with nothing joining them. The reviewer refused on exactly
+    that wording, twice, on turns where the builder had done everything asked
+    of it — and 0 of 4 acceptance criteria were verified either time.
+    """
+
+    def test_the_output_keeps_every_byte_and_gains_an_explanation(self, tmp_path):
+        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
+        cv = CoachValidator(str(tmp_path))
+        original = "FAILED tests/slice.py::test_home - stale\n1 failed, 99 passed\n"
+        result = _failed_result(original)
+
+        out = cv._apply_baseline_diff(result, {"files_modified": ["src/other.py"]})
+
+        assert out.tests_passed is True
+        assert original in out.raw_output, "the forensic output must survive intact"
+        assert "NOTE FOR THE REVIEWER" in out.raw_output
+        assert "ALREADY failing on this branch's base" in out.raw_output
+        assert "nothing in them for the builder to fix" in out.raw_output
+
+    def test_a_run_that_is_not_suppressed_is_untouched(self, tmp_path):
+        """A genuine regression's output gains nothing — no note, no edit."""
+        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
+        cv = CoachValidator(str(tmp_path))
+        original = (
+            "FAILED tests/slice.py::test_home - stale\n"
+            "FAILED tests/new.py::test_regression - real\n"
+        )
+        out = cv._apply_baseline_diff(_failed_result(original), {"files_modified": []})
+
+        assert out.tests_passed is False
+        assert out.raw_output == original
+        assert "NOTE FOR THE REVIEWER" not in out.raw_output
