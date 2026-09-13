@@ -24,6 +24,42 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PUBLISH_TEARDOWN_TIMEOUT_SECONDS = 5.0
+
+#: How long the dial may take. Bounded for the same reason the hang-up is: the
+#: caller is a build's last line, and nats-py retries a refused connection for
+#: about two minutes before giving up. Measured on 2026-09-13: a build's outcome
+#: write spent 120s failing against a caller ceiling of 20s, so every outcome
+#: was reported as "the memory writer did not complete (TimeoutError)" — which
+#: reads as slowness and was really a refused connection to the wrong host.
+PUBLISH_CONNECT_TIMEOUT_SECONDS = 8.0
+
+#: Where the broker is, when nobody says otherwise. This module ran with the
+#: loopback address WRITTEN IN for the life of the repository, which was true
+#: while everything ran on the host. Since the factory moved inside each
+#: repository's sandbox (2026-09-07) loopback there has no broker, so every
+#: build outcome was published into a closed port and the memory corpus stopped
+#: growing without one line saying so.
+DEFAULT_NATS_URL = "nats://127.0.0.1:4222"
+
+def address_without_secrets(url: str) -> str:
+    """``host:port`` from a broker URL, with any credentials removed.
+
+    A NATS URL may carry ``user:password@`` and this module puts the address
+    into log lines and error messages. Printing it whole would write a password
+    into every build log — which is exactly what the first cut of this change
+    did on 2026-09-13 before it ever shipped.
+    """
+    scheme, separator, rest = url.partition("://")
+    if not separator:
+        scheme, rest = "", url
+    host_and_port = rest.rsplit("@", 1)[-1]
+    return f"{scheme}://{host_and_port}" if scheme else host_and_port
+
+
+#: The variable the rest of the memory subsystem already reads
+#: (``fleet_memory_client``), so the publisher and the reader agree on where
+#: the bus is rather than each keeping its own opinion.
+NATS_URL_ENV = "FLEET_MEMORY_NATS_URL"
 """How long a publish run may spend hanging up before it walks away.
 
 Closing the connection is not free. ``NATSClient.disconnect`` calls
@@ -85,6 +121,17 @@ def read_nats_password() -> str:
     return password
 
 
+def broker_address() -> str:
+    """Where the bus is, as a URL carrying no credentials.
+
+    Takes host and port from the shared setting and drops anything before the
+    ``@``: that variable holds the fleet-memory user's DSN, and this publisher
+    connects as ``guardkit`` with its own password.
+    """
+    configured = os.getenv(NATS_URL_ENV, "").strip()
+    return address_without_secrets(configured) if configured else DEFAULT_NATS_URL
+
+
 def build_nats_client(password: str) -> NATSClient:
     """Build NATSClient with guardkit harvest configuration.
 
@@ -95,7 +142,10 @@ def build_nats_client(password: str) -> NATSClient:
         Configured NATSClient instance ready for connection.
     """
     config = NATSConfig(
-        url="nats://127.0.0.1:4222",
+        # Only WHERE the broker is comes from the environment. The identity
+        # stays guardkit's own: the variable holds fleet-memory's DSN, whose
+        # embedded credentials are a different user's and must not be borrowed.
+        url=broker_address(),
         user="guardkit",
         password=SecretStr(password),
         name="guardkit-harvest",
@@ -171,7 +221,23 @@ async def publish_episodes(
     type_counts: Counter[str] = Counter()
 
     try:
-        await client.connect()
+        try:
+            await asyncio.wait_for(
+                client.connect(), timeout=PUBLISH_CONNECT_TIMEOUT_SECONDS
+            )
+        except Exception as exc:
+            # NAME THE ADDRESS. "the memory writer did not complete" reads as
+            # slowness; the real fault was a refused connection to a host with
+            # no broker on it, and that detail was thrown away for six days.
+            # CancelledError is not an Exception, so the caller's own deadline
+            # still passes straight through here untouched.
+            where = broker_address()
+            raise RuntimeError(
+                f"could not reach the bus at {where} within "
+                f"{PUBLISH_CONNECT_TIMEOUT_SECONDS:.0f}s "
+                f"({type(exc).__name__}). Nothing was published. Set "
+                f"{NATS_URL_ENV} if the broker is somewhere else."
+            ) from exc
 
         for episode in episodes:
             try:
