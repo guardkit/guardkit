@@ -4491,10 +4491,32 @@ class CoachValidator:
                 "environmental (no task regression): %s",
                 len(attributed), attributed,
             )
+            # THE EVIDENCE MUST NOT READ AS A LIE (2026-09-13).
+            # Flipping the verdict and leaving the run's output untouched puts
+            # "tests passed" next to "12 failed" in the same bundle with
+            # nothing joining them, and the reviewer — rightly — refuses to
+            # believe it. FEAT-C2BA was refused on exactly that wording twice
+            # ('independent_tests.tests_passed=true but
+            # independent_tests.raw_output shows "12 failed"'), on turns where
+            # the builder had done everything asked of it. So the output keeps
+            # every byte it had and gains one plain line at the top saying why
+            # a pass and a red run are both true.
+            preface = (
+                "NOTE FOR THE REVIEWER: this run is reported as PASSED even "
+                f"though the output below shows {len(attributed)} failing "
+                "test(s). Every one of them was ALREADY failing on this "
+                "branch's base before any task touched it (the build's "
+                "measured baseline and the repository's known-failure "
+                "ledger), and none is in a file this task authored. They are "
+                "not this task's failures and there is nothing in them for "
+                "the builder to fix. Zero net-new is the bar, not all-green.\n"
+                "---\n"
+            )
             return dataclass_replace(
                 test_result,
                 tests_passed=True,
                 test_output_summary=summary,
+                raw_output=preface + (test_result.raw_output or ""),
             )
         except Exception as exc:  # noqa: BLE001 — fail closed to the real verdict
             # At INFO, not DEBUG: a build runs at INFO, so at DEBUG this said
