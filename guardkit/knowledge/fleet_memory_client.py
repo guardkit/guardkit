@@ -22,6 +22,7 @@ See: TASK-MEM08-002
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -72,6 +73,100 @@ def _running_loop() -> "asyncio.AbstractEventLoop | None":
         return asyncio.get_running_loop()
     except RuntimeError:
         return None
+
+
+#: The memory door: FastMCP over streamable HTTP, the same surface the seats
+#: use when their native backend is missing. Named by the variable they already
+#: read, so nobody has to learn a second one.
+DOOR_URL_ENV = "FLEET_MEMORY_MCP_URL"
+DEFAULT_DOOR_URL = "http://host.docker.internal:8005/mcp"
+
+#: How long the door may take before the write is given up on. Well inside the
+#: caller's own ceiling: a build's last line must not be held open.
+DOOR_WRITE_TIMEOUT_SECONDS = 10.0
+
+
+async def write_through_the_door(payload: dict, *, url: str | None = None) -> bool:
+    """Write one typed payload to fleet-memory over HTTP. True when it landed.
+
+    WHY THIS EXISTS (2026-09-13). Builds run inside each repository's sandbox,
+    and that sandbox enforces its network policy through an HTTP proxy: HTTP
+    reaches the host, raw TCP does not. NATS is raw TCP, so the episode
+    publisher's socket reaches the proxy and the broker's greeting never
+    arrives — every build outcome since the sandbox-first move on 2026-09-07
+    was published into a closed port, which is why the corpus stopped growing
+    and why builders found nothing to read.
+
+    The door is HTTP, is already allow-listed, and is already how the seats
+    reach memory when their native backend is absent. So a write that cannot
+    take the bus takes the door instead, and the payload is the SAME typed
+    payload the relay would have written — this maps nothing and invents
+    nothing.
+
+    Never raises: a memory write must not be able to fail a build.
+    """
+    where = url or (os.getenv(DOOR_URL_ENV, "").strip() or DEFAULT_DOOR_URL)
+    try:
+        # Imported lazily, exactly as the seats do it, so this module still
+        # loads where `mcp` is absent.
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        async def _send() -> bool:
+            async with streamable_http_client(where) as streams:
+                read, write = streams[0], streams[1]
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    # The tool's argument is ``payload``. Sending
+                    # ``payload_dict`` (the underlying function's parameter
+                    # name) returns a pydantic validation error as PLAIN TEXT
+                    # with isError unset — which the first cut of this read as
+                    # a successful write. Proven against the live door.
+                    result = await session.call_tool(
+                        "memory_write_payload", {"payload": payload}
+                    )
+            # POSITIVE EVIDENCE ONLY. A write is claimed when the door says
+            # so, never when it says nothing or says something this cannot
+            # read: the door reports an argument mismatch as plain text with
+            # isError unset, and the first cut of this treated that as a
+            # success and reported a write that never happened.
+            if getattr(result, "isError", False):
+                logger.warning("memory: the door refused the write")
+                return False
+            text = "".join(getattr(c, "text", "") for c in (result.content or []))
+            if not text.strip():
+                logger.warning(
+                    "memory: the door answered the write with nothing at all, "
+                    "so there is no evidence it landed; not claiming a write"
+                )
+                return False
+            try:
+                envelope = json.loads(text)
+            except ValueError:
+                logger.warning(
+                    "memory: the door's answer could not be read as JSON, so "
+                    "there is no evidence the write landed: %s",
+                    text[:200],
+                )
+                return False
+            if envelope.get("is_error") or envelope.get("error"):
+                logger.warning(
+                    "memory: the door refused the write: %s",
+                    str(envelope.get("message") or envelope.get("error"))[:200],
+                )
+                return False
+            return True
+
+        return await asyncio.wait_for(_send(), timeout=DOOR_WRITE_TIMEOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 — a write never costs a build
+        logger.warning(
+            "memory: could not write through the door at %s (%s: %s); this "
+            "build teaches future builds nothing",
+            where,
+            type(exc).__name__,
+            str(exc)[:160],
+        )
+        return False
 
 
 class FleetMemoryClient:
@@ -533,7 +628,28 @@ class FleetMemoryClient:
             natural_key = episode.episode_id
             published_episode = with_broker_dedup_scope(episode, dedup_token or "")
 
-            summary = await publish_episodes([published_episode])
+            try:
+                summary = await publish_episodes([published_episode])
+            except Exception as bus_refused:  # noqa: BLE001
+                # THE BUS IS NOT ALWAYS REACHABLE (2026-09-13). Inside a
+                # repository's sandbox the network policy is an HTTP proxy, and
+                # NATS is raw TCP, so this is the ordinary case there rather
+                # than an exceptional one. Say so once and take the door.
+                logger.info(
+                    "memory: the bus did not carry episode %s (%s) — trying "
+                    "the door",
+                    natural_key,
+                    type(bus_refused).__name__,
+                )
+                if await write_through_the_door(json.loads(episode.body)):
+                    logger.info(
+                        "[Memory] Wrote %s episode %s through the door",
+                        mapping.payload_type,
+                        natural_key,
+                    )
+                    return natural_key
+                return None
+
             if summary.published >= 1:
                 logger.info(
                     "[Memory] Published %s episode %s to fleet-memory",
@@ -544,11 +660,18 @@ class FleetMemoryClient:
 
             logger.warning(
                 "[Memory] Episode %s not published "
-                "(published=%d, skipped_oversized=%d)",
+                "(published=%d, skipped_oversized=%d) — trying the door",
                 natural_key,
                 summary.published,
                 summary.skipped_oversized,
             )
+            if await write_through_the_door(json.loads(episode.body)):
+                logger.info(
+                    "[Memory] Wrote %s episode %s through the door",
+                    mapping.payload_type,
+                    natural_key,
+                )
+                return natural_key
             return None
 
         except Exception as e:
