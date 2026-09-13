@@ -160,13 +160,41 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
         return await asyncio.wait_for(_send(), timeout=DOOR_WRITE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001 — a write never costs a build
         logger.warning(
-            "memory: could not write through the door at %s (%s: %s); this "
+            "memory: could not write through the door at %s (%s); this "
             "build teaches future builds nothing",
             where,
-            type(exc).__name__,
-            str(exc)[:160],
+            _what_actually_failed(exc),
         )
         return False
+
+
+def _what_actually_failed(exc: BaseException) -> str:
+    """The innermost reason, in words a person can act on.
+
+    The MCP client runs inside an anyio task group, so every failure reaches
+    the caller as ``ExceptionGroup: unhandled errors in a TaskGroup (1
+    sub-exception)`` — which is true and says nothing. On 2026-09-13 the real
+    reason was an HTTP 403 from the sandbox's network proxy, visible only in
+    an httpx INFO line nobody reads. This walks to the leaves and names them,
+    with the HTTP status when there is one.
+    """
+    leaves: list[str] = []
+
+    def walk(e: BaseException) -> None:
+        subs = getattr(e, "exceptions", None)
+        if subs:
+            for sub in subs:
+                walk(sub)
+            return
+        text = f"{type(e).__name__}: {str(e)[:160]}"
+        response = getattr(e, "response", None)
+        status = getattr(response, "status_code", None)
+        if status is not None:
+            text = f"HTTP {status} — {text}"
+        leaves.append(text)
+
+    walk(exc)
+    return "; ".join(leaves) if leaves else f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
 class FleetMemoryClient:
