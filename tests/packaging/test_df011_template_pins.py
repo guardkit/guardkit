@@ -25,7 +25,23 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # (repo-relative path, expected sha256) — the specialist-seam pins.
 PINNED_TEMPLATES = {
     "installer/core/commands/feature-spec.md": (
-        "3c758966db647c673455caf53804e6b0bdd895d4bd99742834d9f5a3706e9f2a"  # 2026-09-07: concurrency is written as what one caller sees, or left out (956 lines; lane/spec-template-routing-law)
+        # 2026-09-14: corrected to the bytes the SEAM actually pins. The
+        # template was edited on 2026-09-07 (d78e7ae1, "a requested
+        # concurrency case is kept and proven by a repository test the plan
+        # names") and specialist-agent's own pin was moved with it — but THIS
+        # mirror of that pin was not, so it named bytes that no longer existed
+        # and the packaging workflow went red that day and stayed red.
+        #
+        # THE AUTHORITY IS specialist-agent src/specialist_agent/templates/
+        # pins.py. This file cannot import it (separate repo, and guardkit
+        # must not depend on the specialist), so it is a MIRROR — and a second
+        # statement of a rule is a future lie unless it says where the truth
+        # lives and how to re-derive it. Re-derive with:
+        #     sha256sum installer/core/commands/feature-spec.md
+        # and check it against that pins.py before changing this line. If the
+        # two DISAGREE the seam is genuinely broken and a pin bump here is the
+        # wrong fix — re-pin the specialist first.
+        "ef5ec5bb8b50cdd663236a4115f1778ab5542750fad13ceabc6bb54ca847ed65"
     ),
     "installer/core/commands/feature-plan.md": (
         "20a3061159b6a3324c0bdeea230989e81dd823a2d220db5410a46144932678e3"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)
