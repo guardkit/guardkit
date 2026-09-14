@@ -355,7 +355,19 @@ class FleetMemoryClient:
         # stale one from another loop never reaches initialize() otherwise,
         # and every read through it comes back empty (2026-09-13).
         if (
-            self._store is None or self._store_loop is not _running_loop()
+            self._store is None
+            # A store whose loop was never recorded is one we cannot JUDGE,
+            # and re-opening on that would churn the connection on every
+            # call. The defect this guard exists for always records the loop
+            # — initialize() sets both together — so "unknown" is left alone
+            # and only a KNOWN foreign loop forces a re-open (2026-09-14:
+            # the first form failed eleven tests that hand the client a
+            # store directly, and would have re-opened on every call in any
+            # code that did the same).
+            or (
+                self._store_loop is not None
+                and self._store_loop is not _running_loop()
+            )
         ) and not await self.initialize():
             return False
         try:
@@ -439,7 +451,19 @@ class FleetMemoryClient:
         # stale one from another loop never reaches initialize() otherwise,
         # and every read through it comes back empty (2026-09-13).
         if (
-            self._store is None or self._store_loop is not _running_loop()
+            self._store is None
+            # A store whose loop was never recorded is one we cannot JUDGE,
+            # and re-opening on that would churn the connection on every
+            # call. The defect this guard exists for always records the loop
+            # — initialize() sets both together — so "unknown" is left alone
+            # and only a KNOWN foreign loop forces a re-open (2026-09-14:
+            # the first form failed eleven tests that hand the client a
+            # store directly, and would have re-opened on every call in any
+            # code that did the same).
+            or (
+                self._store_loop is not None
+                and self._store_loop is not _running_loop()
+            )
         ) and not await self.initialize():
             return []
 

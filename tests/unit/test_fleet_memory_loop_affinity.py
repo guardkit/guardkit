@@ -68,3 +68,30 @@ def test_the_same_loop_keeps_its_store() -> None:
 def test_outside_a_loop_the_helper_says_so() -> None:
     """No running loop is None, never an exception."""
     assert _running_loop() is None
+
+
+def test_a_store_whose_loop_was_never_recorded_is_left_alone() -> None:
+    """The narrowing of 2026-09-14, pinned.
+
+    The first form of the guard asked ``self._store_loop is not
+    _running_loop()``, which is TRUE when the loop was never recorded — so a
+    client handed a store directly was re-initialised on every call. That broke
+    eleven tests in tests/unit/knowledge/ and shipped, and in any code that set
+    a store without recording its loop it would have churned the connection on
+    every read. A store we cannot judge is left alone; only a KNOWN foreign
+    loop forces a re-open, and initialize() always records the loop beside the
+    store, so the defect the guard exists for is still caught.
+    """
+    client = _client()
+    client._store = _Store(None)  # handed in, provenance unrecorded
+
+    async def would_reopen() -> bool:
+        known_foreign = (
+            client._store_loop is not None
+            and client._store_loop is not _running_loop()
+        )
+        return client._store is None or known_foreign
+
+    assert asyncio.run(would_reopen()) is False, (
+        "a store whose loop was never recorded must not force a re-open"
+    )
