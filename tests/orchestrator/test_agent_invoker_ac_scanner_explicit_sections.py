@@ -500,6 +500,145 @@ class TestEmptySectionSemantics:
         assert explicit == set()
 
 
+# ==================== The reader that keeps the two sections apart ============
+
+
+class TestReadDeclaredFileSections:
+    """The new reader answers two questions instead of one, and tells a
+    section that says "nothing" from a section that is not there.
+
+    ``_extract_explicit_planned_files`` merges the two sections into one set
+    and treats ``- _none_`` as though the section were absent. That is the
+    right answer for the question it is asked - which declared files are
+    missing from disk - and the wrong answer for the blast-radius comparison,
+    which has to know that a task said it would create nothing.
+    """
+
+    def test_the_two_sections_are_kept_apart(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "- `src/users/router.py`\n\n"
+            "## Files to Modify\n\n"
+            "- `src/users/crud.py`\n"
+            "- `src/users/schemas.py`\n"
+        )
+        _write_task(worktree, "TASK-READ-001", body)
+
+        declared = invoker._read_declared_file_sections("TASK-READ-001")
+
+        assert declared["create"] == ["src/users/router.py"]
+        assert declared["modify"] == [
+            "src/users/crud.py",
+            "src/users/schemas.py",
+        ]
+
+    def test_creates_nothing_and_changes_two_files_can_be_said(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "- _none_\n\n"
+            "## Files to Modify\n\n"
+            "- `src/a.py`\n"
+            "- `src/b.py`\n"
+        )
+        _write_task(worktree, "TASK-READ-002", body)
+
+        declared = invoker._read_declared_file_sections("TASK-READ-002")
+
+        assert declared["create"] == [], (
+            "the section is there and says nothing: that is a claim, not a "
+            "missing section"
+        )
+        assert declared["modify"] == ["src/a.py", "src/b.py"]
+
+    def test_a_section_that_is_not_there_is_not_a_claim(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "- `src/a.py`\n"
+        )
+        _write_task(worktree, "TASK-READ-003", body)
+
+        declared = invoker._read_declared_file_sections("TASK-READ-003")
+
+        assert declared["create"] == ["src/a.py"]
+        assert declared["modify"] is None
+
+    def test_a_heading_with_nothing_under_it_is_not_a_claim(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """An unfinished task document is not a declaration of nothing."""
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "## Implementation notes\n\n"
+            "- some prose.\n"
+        )
+        _write_task(worktree, "TASK-READ-004", body)
+
+        declared = invoker._read_declared_file_sections("TASK-READ-004")
+
+        assert declared["create"] is None
+        assert declared["modify"] is None
+
+    def test_descriptions_and_subsections_are_handled(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "### The endpoint\n\n"
+            "- `src/users/router.py` \u2014 the route itself\n"
+            "- `src/users/schemas.py` - the shape of the answer\n\n"
+            "## Acceptance Criteria\n\n"
+            "- [ ] AC-1: it answers.\n"
+        )
+        _write_task(worktree, "TASK-READ-005", body)
+
+        declared = invoker._read_declared_file_sections("TASK-READ-005")
+
+        assert declared["create"] == [
+            "src/users/router.py",
+            "src/users/schemas.py",
+        ], "a subsection is part of the section, and a description is not a path"
+        assert declared["modify"] is None
+
+    def test_an_unknown_task_makes_no_claim(
+        self, invoker: AgentInvoker
+    ) -> None:
+        declared = invoker._read_declared_file_sections("TASK-DOES-NOT-EXIST")
+
+        assert declared == {"create": None, "modify": None}
+
+    def test_the_older_reader_is_unchanged_by_all_of_this(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        """Same task document, two readers, two different right answers."""
+        body = (
+            "# Task: Demo\n\n"
+            "## Files to Create\n\n"
+            "- _none_\n\n"
+            "## Files to Modify\n\n"
+            "- `src/a.py`\n"
+        )
+        _write_task(worktree, "TASK-READ-006", body)
+
+        assert invoker._extract_explicit_planned_files("TASK-READ-006") == {
+            "src/a.py"
+        }
+        assert invoker._read_declared_file_sections("TASK-READ-006") == {
+            "create": [],
+            "modify": ["src/a.py"],
+        }
+
+
 # ==================== Missing-task-file resilience ====================
 
 

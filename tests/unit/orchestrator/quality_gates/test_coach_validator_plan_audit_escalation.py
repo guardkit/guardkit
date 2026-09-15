@@ -288,3 +288,82 @@ def test_taskgkpa001_modify_axis_does_not_collide_with_extra_files(
 
     assert verdict["extra_modifications"] == ["modified_unexpectedly.py"]
     assert verdict["extra_files"] == ["e1.py", "e2.py", "e3.py"]
+
+
+# ============================================================================
+# The task document is the plan of record, so the player's own note no longer
+# decides anything. These two pin the seam: the note-reading entry point is
+# not even reached when the task document has declared its files.
+# ============================================================================
+
+
+def _write_task_file_declaring(
+    worktree: Path, task_id: str, creates: list
+) -> Path:
+    task_dir = worktree / "tasks" / "in_progress"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    task_file = task_dir / f"{task_id}.md"
+    declared = "".join(f"- `{path}`\n" for path in creates) or "- _none_\n"
+    task_file.write_text(
+        "---\n"
+        f"id: {task_id}\n"
+        "title: dummy\n"
+        "status: in_progress\n"
+        "task_type: feature\n"
+        "---\n\n"
+        "## Files to Create\n\n"
+        f"{declared}\n"
+        "## Acceptance criteria\n"
+        "- [ ] AC-001: ship it\n"
+    )
+    return task_file
+
+
+@patch("guardkit.orchestrator.agent_invoker.execute_phase_5_5_plan_audit")
+def test_the_note_reading_path_is_not_consulted_when_the_task_declares_files(
+    mock_audit, tmp_worktree: Path
+):
+    """A declared file that was never written is a violation, and the
+    player's own note is never asked about it."""
+    _write_task_file_declaring(tmp_worktree, "TASK-001", ["src/never_written.py"])
+
+    invoker = AgentInvoker(worktree_path=tmp_worktree)
+    verdict = invoker._compute_plan_audit_verdict("TASK-001")
+
+    assert verdict["status"] == "violation"
+    assert verdict["missing_files"] == ["src/never_written.py"]
+    assert verdict["planned_files_source"] == "the task document"
+    mock_audit.assert_not_called()
+
+
+@patch("guardkit.orchestrator.agent_invoker.execute_phase_5_5_plan_audit")
+def test_a_note_claiming_a_violation_cannot_overrule_the_task_document(
+    mock_audit, tmp_worktree: Path
+):
+    """The note used to be the only plan there was. It is not any more."""
+    from installer.core.commands.lib.plan_audit import Discrepancy
+
+    mock_audit.return_value = _make_audit_result(
+        [
+            Discrepancy(
+                category="files",
+                severity="high",
+                message="3 extra file(s) not in plan",
+                planned=[],
+                actual=["a.py", "b.py", "c.py"],
+                variance=300.0,
+            )
+        ],
+        severity="high",
+    )
+    target = tmp_worktree / "src" / "real.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# real")
+    _write_task_file_declaring(tmp_worktree, "TASK-001", ["src/real.py"])
+
+    invoker = AgentInvoker(worktree_path=tmp_worktree)
+    verdict = invoker._compute_plan_audit_verdict("TASK-001")
+
+    assert verdict["status"] == "passed"
+    assert verdict["extra_files"] == []
+    mock_audit.assert_not_called()

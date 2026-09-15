@@ -26,6 +26,8 @@ Finding #5 and the TASK-FIX-3C9D producer-runs-gate reference.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -38,9 +40,59 @@ from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
 TASK_ID = "TASK-RWOP132-TEST"
 
 
+def _init_git_repo(root: Path) -> None:
+    """Make ``root`` a real repository with an identity of its own.
+
+    The audit asks git which files this task made and changed, so a fixture
+    without a repository is not a fixture of anything. The identity is set
+    here so the test does not depend on the host's git configuration.
+    """
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+    def run(*args: str) -> None:
+        subprocess.run(args, cwd=root, check=True, capture_output=True, env=env)
+
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "test@example.com")
+    run("git", "config", "user.name", "Test")
+    run("git", "config", "commit.gpgsign", "false")
+
+
+def _commit_everything(root: Path, message: str) -> str:
+    """Commit the whole worktree and return the commit it made."""
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", message], cwd=root, check=True,
+        capture_output=True,
+    )
+    done = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True,
+        capture_output=True, text=True,
+    )
+    return done.stdout.strip()
+
+
+def _write_checkpoint(root: Path, task_id: str, commit: str) -> None:
+    """Write the end-of-turn checkpoint record the build loop writes."""
+    path = root / ".guardkit" / "autobuild" / task_id / "checkpoints.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "task_id": task_id,
+                "checkpoints": [{"turn": 1, "commit_hash": commit}],
+                "last_updated": "2026-09-15T00:00:00Z",
+            }
+        )
+    )
+
+
 @pytest.fixture
 def worktree(tmp_path: Path) -> Path:
-    """Isolated worktree root for producer-side writes."""
+    """Isolated worktree root, a real repository with one commit behind it."""
+    _init_git_repo(tmp_path)
+    (tmp_path / "README.md").write_text("the repository before this task\n")
+    _commit_everything(tmp_path, "before this task")
     return tmp_path
 
 
@@ -254,6 +306,259 @@ class TestProducerWritesPlanAuditBlock:
         plan_audit = json.loads(results_path.read_text())["plan_audit"]
         assert plan_audit["status"] == "auditor_error"
         assert "simulated auditor crash" in plan_audit["message"]
+
+
+DECLARING_TASK_ID = "TASK-DECLARES-FILES"
+
+
+def _write_task_document(
+    worktree: Path,
+    task_id: str,
+    creates: list[str],
+    modifies: list[str],
+) -> Path:
+    """Write a task document that declares the files it will touch."""
+    def _section(paths: list[str]) -> str:
+        if not paths:
+            return "- _none_\n"
+        return "".join(f"- `{path}`\n" for path in paths)
+
+    task_dir = worktree / "tasks" / "in_progress"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    task_file = task_dir / f"{task_id}.md"
+    task_file.write_text(
+        "---\n"
+        f"id: {task_id}\n"
+        "title: Add the daily counts endpoint\n"
+        "status: in_progress\n"
+        "task_type: feature\n"
+        "---\n\n"
+        "Add the endpoint the request asks for.\n\n"
+        "## Files to Create\n\n"
+        f"{_section(creates)}\n"
+        "## Files to Modify\n\n"
+        f"{_section(modifies)}\n"
+        "## Acceptance Criteria\n\n"
+        "- [ ] AC-1: the endpoint answers.\n"
+    )
+    return task_file
+
+
+def _minimal_result_data() -> dict:
+    """The player's own report, with its plan-audit claim of innocence."""
+    return {
+        "phases": {
+            "phase_3": {"detected": True, "completed": True, "text": "Phase 3"},
+            "phase_4": {"detected": True, "completed": True, "text": "Phase 4"},
+            "phase_5": {"detected": True, "completed": True, "text": "Phase 5"},
+        },
+        "tests_passed": 5,
+        "tests_failed": 0,
+        "coverage": 85.0,
+        "quality_gates_passed": True,
+        "plan_audit": {"violations": 0, "file_count_match": True},
+    }
+
+
+class TestAuditComparesAgainstTheTaskDocument:
+    """The plan of record is the task document, on every path.
+
+    Before this, the audit compared the build against the player's own note of
+    what it meant to touch - which is a build marking its own homework - and
+    it consulted the task document only when no note existed at all.
+    """
+
+    def test_the_task_document_grades_even_when_the_player_wrote_a_note(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        # The task document declares two files.
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=["src/users/crud.py"],
+        )
+        # The player's own note says all five were the plan all along.
+        sprawl = [
+            "src/analytics/service.py",
+            "tests/test_analytics.py",
+            "migrations/0001_add_users_index.py",
+        ]
+        state_dir = worktree / "docs" / "state" / DECLARING_TASK_ID
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "implementation_plan.json").write_text(
+            json.dumps(
+                {
+                    "task_id": DECLARING_TASK_ID,
+                    "plan": {
+                        "files_to_create": ["src/users/router.py"] + sprawl,
+                        "files_to_modify": ["src/users/crud.py"],
+                        "external_dependencies": [],
+                        "estimated_loc": 100,
+                        "estimated_duration": "1 hour",
+                    },
+                },
+                indent=2,
+            )
+        )
+        # A pre-existing file the task legitimately changes.
+        _create_src_files(worktree, ["src/users/crud.py"])
+        _commit_everything(worktree, "the file this task will change")
+
+        # The build: the declared file, the declared change, and three files
+        # nobody declared - one of them a test, one of them a migration.
+        _create_src_files(worktree, ["src/users/router.py"] + sprawl)
+        (worktree / "src" / "users" / "crud.py").write_text("# changed\npass\n")
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["planned_files_source"] == "the task document"
+        assert block["status"] == "violation"
+        assert block["severity"] == "high"
+        assert sorted(block["extra_files"]) == sorted(sprawl), (
+            "the three files the task document never named are the sprawl, "
+            "whatever the player's own note claims"
+        )
+        assert "tests/test_analytics.py" in block["extra_files"], (
+            "a file under tests/ used to be dropped before anything was "
+            "compared"
+        )
+        assert "migrations/0001_add_users_index.py" in block["extra_files"], (
+            "a migration used to be dropped before anything was compared"
+        )
+        # The note is still read and reported - it just does not grade.
+        assert block["player_note_files"]["present"] is True
+        assert "src/analytics/service.py" in (
+            block["player_note_files"]["files_to_create"]
+        )
+        assert "player_claim" not in block
+        # And the Coach acts on it.
+        validator = CoachValidator(worktree_path=str(worktree))
+        result = validator.validate(
+            task_id=DECLARING_TASK_ID,
+            turn=1,
+            task={"id": DECLARING_TASK_ID, "acceptance_criteria": ["trivial AC"]},
+        )
+        assert result.decision == "feedback"
+        plan_audit_issues = [
+            i for i in (result.issues or []) if i.get("category") == "plan_audit"
+        ]
+        assert plan_audit_issues
+        assert plan_audit_issues[0]["severity"] == "must_fix"
+
+    def test_a_checkpoint_commit_no_longer_hides_the_blast_radius(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        """Turn two must still see the sprawl turn one committed."""
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=[],
+        )
+        _commit_everything(worktree, "the task document")
+
+        # Turn one writes the declared file and three nobody declared, and
+        # the loop commits its checkpoint.
+        turn_one_sprawl = [
+            "src/analytics/one.py",
+            "src/analytics/two.py",
+            "src/analytics/three.py",
+        ]
+        _create_src_files(worktree, ["src/users/router.py"] + turn_one_sprawl)
+        first_checkpoint = _commit_everything(worktree, "turn one checkpoint")
+        _write_checkpoint(worktree, DECLARING_TASK_ID, first_checkpoint)
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert sorted(block["extra_files"]) == sorted(turn_one_sprawl), (
+            "turn one's files are committed, and they are still this task's "
+            "work - asking what differs from the newest commit answered "
+            "nothing from turn two onward"
+        )
+        assert block["status"] == "violation"
+
+    def test_a_clean_build_says_so_plainly(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=["src/users/crud.py"],
+        )
+        _create_src_files(worktree, ["src/users/crud.py"])
+        _commit_everything(worktree, "the file this task will change")
+
+        _create_src_files(worktree, ["src/users/router.py"])
+        (worktree / "src" / "users" / "crud.py").write_text("# changed\npass\n")
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "passed"
+        assert block["extra_files"] == []
+        assert block["missing_files"] == []
+        assert block["message"] == (
+            "every file this build changed was named in the task document, "
+            "and all 2 declared file(s) are on disk"
+        )
+
+    def test_a_declared_file_that_was_never_written_is_still_caught(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py", "src/users/schemas.py"],
+            modifies=[],
+        )
+        _create_src_files(worktree, ["src/users/router.py"])
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "violation"
+        assert block["severity"] == "high"
+        assert block["missing_files"] == ["src/users/schemas.py"]
+        assert block["violations"] == 1
+
+    def test_a_section_that_says_none_is_a_claim(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        """"Creates nothing" is something a task must be able to say."""
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=[],
+            modifies=["src/users/crud.py"],
+        )
+        _create_src_files(worktree, ["src/users/crud.py"])
+        _commit_everything(worktree, "the file this task will change")
+
+        (worktree / "src" / "users" / "crud.py").write_text("# changed\npass\n")
+        _create_src_files(worktree, ["src/users/brand_new.py"])
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["extra_files"] == ["src/users/brand_new.py"]
+        assert block["message"] == (
+            "this build touched 1 file(s) the task document did not name: "
+            "src/users/brand_new.py"
+        )
 
 
 class TestCoachRejectsOnPlanAuditViolation:
