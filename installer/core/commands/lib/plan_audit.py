@@ -40,6 +40,22 @@ class Discrepancy:
 
 
 @dataclass
+class DeclaredFiles:
+    """What a task document itself says it will create and change.
+
+    Two answers, kept apart, because "creates nothing and changes two files"
+    is a thing a task must be able to say.
+
+    ``None`` means the task document has no such section at all: it made no
+    claim, so the audit makes none either. An empty list is a real claim -
+    the section is there and says it creates (or changes) nothing - and
+    anything found beyond it is sprawl. Empty is not the same as absent.
+    """
+    to_create: Optional[List[str]] = None
+    to_modify: Optional[List[str]] = None
+
+
+@dataclass
 class PlanAuditReport:
     """Complete audit report with all discrepancies and recommendations."""
     task_id: str
@@ -51,6 +67,35 @@ class PlanAuditReport:
     timestamp: str
     plan_path: str
     audit_duration_seconds: float
+
+
+# The only files this audit never counts: caches, installed packages and
+# compiled leftovers. Nobody writes them by hand and nobody reviews them.
+#
+# Test files and database migrations used to be on this list. They are not any
+# more, and that is the point of the change: a task whose sprawl lands in a
+# test file or in a migration is exactly the sprawl this audit exists to see,
+# and hiding those trees is how a whole invented database migration went
+# unnoticed on one build and broke the next one.
+#
+# Nothing here names a programming language. The audit asks git what changed,
+# and git does not care what a file contains - a Kotlin file, a SQL migration
+# and a Markdown page all count the same.
+_NEVER_COUNTED_DIRECTORY_NAMES = frozenset({
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    "coverage",
+    ".git",
+})
+_NEVER_COUNTED_SUFFIXES = frozenset({".pyc", ".pyo"})
+
+# The factory's own paperwork, which the machinery writes into the worktree
+# while a task runs: the turn-by-turn checkpoints and the player's own note of
+# what it meant to touch. Nobody chose to write these and no reviewer reads
+# them, so reporting them as files the task added would bury the real answer
+# in noise on every single build.
+_NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 
 
 class PlanAuditor:
@@ -65,21 +110,38 @@ class PlanAuditor:
         """
         self.workspace_root = workspace_root
 
-    def audit_implementation(self, task_id: str) -> PlanAuditReport:
+    def audit_implementation(
+        self,
+        task_id: str,
+        declared: Optional[DeclaredFiles] = None,
+    ) -> PlanAuditReport:
         """
-        Main entry point: Audit implementation against saved plan.
+        Main entry point: audit what was built against what was planned.
 
-        Compares actual implementation (files, LOC, dependencies, duration) against
-        the original implementation plan saved during Phase 2.7.
+        Two ways to say what was planned:
+
+        * ``declared`` given - the task document's own declaration of the
+          files it will create and change is the plan, on every path. The
+          player's own note of what it meant to touch is still read and
+          reported alongside, but it no longer decides anything: a build
+          graded against its own note is not graded.
+        * ``declared`` omitted - the player's note is the plan, which is how
+          this worked before task documents declared their files.
+
+        When the task document is the plan, only files are judged. A task
+        document declares files; it says nothing about dependencies, line
+        counts or hours, so this comparison says nothing about them either.
 
         Args:
             task_id: Task identifier (e.g., "TASK-025")
+            declared: The task document's declaration, or None.
 
         Returns:
             Complete audit report with discrepancies and severity
 
         Raises:
-            PlanAuditError: If plan doesn't exist or audit fails
+            PlanAuditError: If there is nothing to compare against - no
+                declaration and no plan on disk.
 
         Example:
             >>> auditor = PlanAuditor()
@@ -89,16 +151,24 @@ class PlanAuditor:
         """
         start_time = datetime.now()
 
-        # Load implementation plan
-        plan = self._load_plan(task_id)
-        if not plan:
-            raise PlanAuditError(f"No implementation plan found for {task_id}")
+        # The player's own note of what it intended to touch. Optional now:
+        # it is the plan only when the task document declared nothing.
+        player_note = self._load_plan(task_id)
+
+        if declared is None:
+            if not player_note:
+                raise PlanAuditError(f"No implementation plan found for {task_id}")
+            plan = player_note
+        else:
+            plan = {"plan": self._planned_from_declaration(declared)}
 
         # Analyze actual implementation
-        actual = self._analyze_implementation(task_id, plan)
+        actual = self._analyze_implementation(
+            task_id, plan, scan_dependencies=declared is None
+        )
 
         # Compare and detect discrepancies
-        discrepancies = self._compare(plan, actual)
+        discrepancies = self._compare(plan, actual, files_only=declared is not None)
 
         # Calculate overall severity
         severity = self._calculate_severity(discrepancies)
@@ -109,9 +179,18 @@ class PlanAuditor:
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
+        plan_summary = self._extract_plan_summary(plan)
+        if declared is None:
+            plan_summary["planned_files_source"] = "the player's own note"
+        else:
+            plan_summary["planned_files_source"] = "the task document"
+            # Reported, never graded: what the player said it would touch,
+            # kept beside the verdict so a person can see both.
+            plan_summary["player_note_files"] = self._player_note_files(player_note)
+
         return PlanAuditReport(
             task_id=task_id,
-            plan_summary=self._extract_plan_summary(plan),
+            plan_summary=plan_summary,
             actual_summary=actual,
             discrepancies=discrepancies,
             severity=severity,
@@ -120,6 +199,38 @@ class PlanAuditor:
             plan_path=f"docs/state/{task_id}/implementation_plan.md",
             audit_duration_seconds=duration
         )
+
+    @staticmethod
+    def _planned_from_declaration(declared: DeclaredFiles) -> Dict[str, Any]:
+        """Turn the task document's declaration into the plan being compared.
+
+        The two ``declares_...`` flags carry the difference between a section
+        that is there and says "nothing" and a section that is not there at
+        all. Without them an absent section would read as a claim that the
+        task touches no files, and every file found would be reported as
+        sprawl.
+        """
+        return {
+            "files_to_create": list(declared.to_create or []),
+            "files_to_modify": list(declared.to_modify or []),
+            "declares_files_to_create": declared.to_create is not None,
+            "declares_files_to_modify": declared.to_modify is not None,
+            "external_dependencies": [],
+            "estimated_loc": 0,
+            "estimated_duration": "N/A",
+        }
+
+    @staticmethod
+    def _player_note_files(player_note: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """The files the player's own note named, for reporting only."""
+        if not player_note:
+            return {"present": False, "files_to_create": [], "files_to_modify": []}
+        note = player_note.get("plan", {}) or {}
+        return {
+            "present": True,
+            "files_to_create": list(note.get("files_to_create", []) or []),
+            "files_to_modify": list(note.get("files_to_modify", []) or []),
+        }
 
     def _load_plan(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Load saved implementation plan from disk.
@@ -155,81 +266,77 @@ class PlanAuditor:
     def _analyze_implementation(
         self,
         task_id: str,
-        plan: Dict[str, Any]
+        plan: Dict[str, Any],
+        scan_dependencies: bool = True,
     ) -> Dict[str, Any]:
         """
-        Analyze actual implementation: files created, LOC, dependencies, duration.
+        Work out what this task actually did: files made, files edited, lines,
+        dependencies, hours.
 
         Args:
             task_id: Task identifier
-            plan: Loaded implementation plan
+            plan: The plan being compared against
+            scan_dependencies: Whether to read the project's dependency files.
+                Off when the task document is the plan, because a task
+                document declares files and says nothing about dependencies.
 
         Returns:
-            Dictionary with actual implementation metrics
+            Dictionary with actual implementation metrics. ``files_read`` says
+            whether git could answer at all: when it is False nobody counted,
+            and a count nobody took is never published as a count of nothing.
         """
+        changed = self._files_this_task_changed(task_id)
         return {
-            "files_created": self._scan_created_files(plan),
-            "files_modified": self._scan_modified_files(plan),
+            "files_created": self._scan_created_files(plan, task_id, changed),
+            "files_modified": self._scan_modified_files(plan, task_id, changed),
+            "files_read": changed is not None,
             "total_loc": self._count_lines_of_code(plan),
-            "dependencies": self._extract_dependencies(),
+            "dependencies": self._extract_dependencies() if scan_dependencies else [],
             "duration_hours": self._calculate_duration(task_id)
         }
 
-    def _scan_created_files(self, plan: Dict[str, Any]) -> List[str]:
+    def _task_start_commit(self, task_id: Optional[str]) -> str:
+        """Where this task's work began, named in a way git understands.
+
+        The build loop commits a checkpoint at the end of every turn, so from
+        the second turn onward "what differs from the latest commit" answers
+        almost nothing - which is how a task could rewrite half an application
+        and the audit see none of it. The task's own checkpoint file records
+        the first checkpoint's commit, and the commit before that one is where
+        this task started.
+
+        When there is no checkpoint file, nothing has been committed for this
+        task yet, so the latest commit is the right place to measure from.
         """
-        Scan for files created (compare against planned files).
+        if task_id:
+            checkpoints = (
+                self.workspace_root
+                / ".guardkit"
+                / "autobuild"
+                / str(task_id)
+                / "checkpoints.json"
+            )
+            try:
+                data = json.loads(checkpoints.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = None
+            if isinstance(data, dict):
+                entries = data.get("checkpoints")
+                if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+                    commit = entries[0].get("commit_hash")
+                    if isinstance(commit, str) and commit.strip():
+                        return f"{commit.strip()}^"
+        return "HEAD"
 
-        Args:
-            plan: Implementation plan
+    def _paths_at_commit(self, commit: str) -> Optional[Set[str]]:
+        """Every file the repository held at ``commit``.
 
-        Returns:
-            List of actual file paths created
-        """
-        planned_files = set(plan.get("plan", {}).get("files_to_create", []))
-        actual_files = []
-
-        # Scan common source directories
-        patterns = [
-            "src/**/*.py",
-            "src/**/*.ts",
-            "src/**/*.tsx",
-            "src/**/*.js",
-            "src/**/*.jsx",
-            "src/**/*.cs",
-            "lib/**/*.py",
-            "installer/**/*.py"
-        ]
-
-        for pattern in patterns:
-            for file_path in self.workspace_root.glob(pattern):
-                if file_path.is_file() and not self._is_excluded(file_path):
-                    rel_path = str(file_path.relative_to(self.workspace_root))
-                    actual_files.append(rel_path)
-
-        return actual_files
-
-    def _scan_modified_files(self, plan: Dict[str, Any]) -> List[str]:
-        """
-        Scan for files modified (compare against planned modifications).
-
-        Uses ``git diff --name-only HEAD`` against the workspace root to
-        enumerate modified-but-not-deleted files. Returns ``[]`` on any
-        failure path (missing git, non-git workspace, subprocess error,
-        non-zero return code) so callers treat the modify-axis as
-        unavailable rather than empty-and-therefore-everything-extra.
-
-        Excluded paths (test files, caches, etc.) are filtered out via
-        ``self._is_excluded`` to mirror ``_scan_created_files``.
-
-        Args:
-            plan: Implementation plan (unused; kept for signature parity)
-
-        Returns:
-            List of modified file paths relative to ``workspace_root``.
+        ``None`` when git could not say - no repository, no such commit, no
+        git. Used only to tell a file this task made from a file it edited.
         """
         try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
+            done = subprocess.run(
+                ["git", "ls-tree", "-r", "--name-only", commit],
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
@@ -237,21 +344,116 @@ class PlanAuditor:
                 timeout=30,
             )
         except (subprocess.SubprocessError, FileNotFoundError, OSError):
-            return []
+            return None
+        if done.returncode != 0:
+            return None
+        return {line.strip() for line in done.stdout.splitlines() if line.strip()}
 
-        if result.returncode != 0:
-            return []
+    def _files_this_task_changed(
+        self, task_id: Optional[str]
+    ) -> Optional[Dict[str, List[str]]]:
+        """What this task changed, split into files it made and files it edited.
 
-        modified_files: List[str] = []
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line:
+        Asked of git and of nothing else, so it holds whatever the project is
+        written in. The list covers everything that differs from the commit
+        this task started from, committed or not, plus files git has never
+        been told about - a brand new file is exactly where new code goes.
+
+        ``None`` when git could not answer at all, which the caller must treat
+        as "nobody counted" rather than as "nothing changed".
+        """
+        try:
+            from guardkit.orchestrator.arch_conformance import files_changed_since
+        except ImportError:
+            return None
+
+        start = self._task_start_commit(task_id)
+        try:
+            changed = files_changed_since(self.workspace_root, start)
+        except (ValueError, OSError):
+            return None
+
+        existed_before = self._paths_at_commit(start)
+        if existed_before is None:
+            return None
+
+        created: List[str] = []
+        modified: List[str] = []
+        for rel_path in changed:
+            if self._is_excluded(Path(rel_path)):
                 continue
-            if self._is_excluded(Path(line)):
-                continue
-            modified_files.append(line)
+            if rel_path in existed_before:
+                modified.append(rel_path)
+            else:
+                created.append(rel_path)
+        return {"created": sorted(created), "modified": sorted(modified)}
 
-        return modified_files
+    def _scan_created_files(
+        self,
+        plan: Dict[str, Any],
+        task_id: Optional[str] = None,
+        changed: Optional[Dict[str, List[str]]] = None,
+    ) -> List[str]:
+        """
+        The files this task made, read from git.
+
+        This used to walk the whole worktree for a fixed list of file
+        endings - .py, .ts, .cs and a few more - which counted every source
+        file in the repository whether this task had touched it or not, and
+        knew nothing about any language that was not on the list. Git knows
+        exactly which files this task made, and knows it for every language.
+
+        A planned file that is on disk counts as made whatever git says: an
+        earlier turn may already have committed it, and "did you write the
+        file you said you would" is answered by the file being there.
+
+        Args:
+            plan: The plan being compared against
+            task_id: Task identifier, used to find where this task started
+            changed: The already-read change set, when the caller has one
+
+        Returns:
+            List of file paths this task made, repository-relative
+        """
+        if changed is None:
+            changed = self._files_this_task_changed(task_id)
+
+        made = list(changed["created"]) if changed else []
+        planned_to_create = plan.get("plan", {}).get("files_to_create", []) or []
+        for rel_path in planned_to_create:
+            if rel_path not in made and (self.workspace_root / rel_path).exists():
+                made.append(rel_path)
+        return sorted(set(made))
+
+    def _scan_modified_files(
+        self,
+        plan: Dict[str, Any],
+        task_id: Optional[str] = None,
+        changed: Optional[Dict[str, List[str]]] = None,
+    ) -> List[str]:
+        """
+        The files this task edited, read from git.
+
+        This used to ask what differs from the latest commit, which answers
+        nothing from the second turn onward because the build loop commits a
+        checkpoint at the end of every turn. It now asks what differs from the
+        commit this task started from, which is the blast radius the audit
+        exists to report.
+
+        Returns ``[]`` when git could not answer, and the caller reads
+        ``files_read`` to tell that apart from "this task edited nothing".
+
+        Args:
+            plan: The plan being compared against (kept for signature parity)
+            task_id: Task identifier, used to find where this task started
+            changed: The already-read change set, when the caller has one
+
+        Returns:
+            List of file paths this task edited, repository-relative
+        """
+        if changed is None:
+            changed = self._files_this_task_changed(task_id)
+        return list(changed["modified"]) if changed else []
 
     def _count_lines_of_code(self, plan: Dict[str, Any]) -> int:
         """
@@ -418,7 +620,8 @@ class PlanAuditor:
     def _compare(
         self,
         plan: Dict[str, Any],
-        actual: Dict[str, Any]
+        actual: Dict[str, Any],
+        files_only: bool = False,
     ) -> List[Discrepancy]:
         """
         Compare planned vs actual, return list of discrepancies.
@@ -426,6 +629,10 @@ class PlanAuditor:
         Args:
             plan: Implementation plan
             actual: Actual implementation metrics
+            files_only: Judge files and nothing else. Set when the task
+                document is the plan: it declares files, and says nothing
+                about dependencies, line counts or hours, so neither does
+                this comparison.
 
         Returns:
             List of discrepancies found
@@ -435,6 +642,9 @@ class PlanAuditor:
 
         # Compare files
         discrepancies.extend(self._compare_files(plan_data, actual))
+
+        if files_only:
+            return discrepancies
 
         # Compare dependencies
         discrepancies.extend(self._compare_dependencies(plan_data, actual))
@@ -458,7 +668,23 @@ class PlanAuditor:
         planned_files = set(plan_data.get("files_to_create", []))
         actual_files = set(actual.get("files_created", []))
 
-        extra_files = actual_files - planned_files
+        # Whether the list of files this task changed could be read from git
+        # at all. When it could not, no claim is made about files that were
+        # not planned: a count nobody took must never be published as a count
+        # of nothing. Callers that hand in their own numbers say nothing, and
+        # are taken at their word.
+        files_read = actual.get("files_read", True)
+        # Whether the plan says anything about files to create. A task
+        # document with no such section made no claim, so nothing found is
+        # called sprawl. A section that is there and says "nothing" is a
+        # claim, and then everything found is sprawl.
+        create_axis_claimed = plan_data.get("declares_files_to_create", True)
+
+        extra_files = (
+            actual_files - planned_files
+            if (files_read and create_axis_claimed)
+            else set()
+        )
         missing_files = planned_files - actual_files
 
         if extra_files:
@@ -493,7 +719,15 @@ class PlanAuditor:
         planned_modify = set(plan_data.get("files_to_modify", []))
         actual_modify = set(actual.get("files_modified", []))
 
-        if planned_modify:
+        # A task document that has a "files to modify" section has made a
+        # claim even when the section says "nothing", so the comparison runs.
+        # Without such a section the old rule holds: say nothing unless the
+        # plan named something.
+        modify_axis_claimed = plan_data.get(
+            "declares_files_to_modify", bool(planned_modify)
+        )
+
+        if modify_axis_claimed and files_read:
             missing_modify = planned_modify - actual_modify
             extra_modify = actual_modify - planned_modify
 
@@ -765,44 +999,35 @@ class PlanAuditor:
 
     def _is_excluded(self, file_path: Path) -> bool:
         """
-        Check if file should be excluded from audit.
+        Whether this file is never counted by the audit.
 
-        Excludes:
-        - Test files
-        - Migration files
-        - Generated files
-        - Cache directories
+        Only caches, installed packages, compiled leftovers and the factory's
+        own paperwork - see the lists at the top of this file. Test files and
+        database migrations used to be excluded here and are counted now,
+        because sprawl that lands in a test or in a migration is still sprawl,
+        and it was invisible.
+
+        Directory names are matched against the path's own parts rather than
+        with a glob, because a glob of the ``**/node_modules/**`` shape does
+        not reliably match on every version of Python and quietly let whole
+        trees back in.
 
         Args:
-            file_path: Path to check
+            file_path: Path to check, repository-relative
 
         Returns:
             True if should be excluded
         """
-        excluded_patterns = [
-            "**/test_*.py",
-            "**/*_test.py",
-            "**/*.test.ts",
-            "**/*.test.tsx",
-            "**/*.spec.ts",
-            "**/*.spec.tsx",
-            "**/tests/**",
-            "**/migrations/**",
-            "**/__pycache__/**",
-            "**/node_modules/**",
-            "**/.pytest_cache/**",
-            "**/coverage/**",
-            "**/*.pyc",
-            "**/*.pyo"
-        ]
-
-        file_str = str(file_path)
-
-        for pattern in excluded_patterns:
-            if file_path.match(pattern):
-                return True
-
-        return False
+        if file_path.suffix in _NEVER_COUNTED_SUFFIXES:
+            return True
+        as_written = "/".join(file_path.parts)
+        if as_written.startswith(_NEVER_COUNTED_PATH_PREFIXES):
+            return True
+        # Every part except the file's own name: a file called "coverage" is
+        # a file, a directory called "coverage" is a cache.
+        return any(
+            part in _NEVER_COUNTED_DIRECTORY_NAMES for part in file_path.parts[:-1]
+        )
 
 
 class PlanAuditError(Exception):
@@ -893,6 +1118,7 @@ def format_audit_report(report: PlanAuditReport) -> str:
 __all__ = [
     "PlanAuditor",
     "PlanAuditReport",
+    "DeclaredFiles",
     "Discrepancy",
     "PlanAuditError",
     "format_audit_report"

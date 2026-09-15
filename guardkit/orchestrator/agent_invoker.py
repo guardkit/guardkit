@@ -11814,6 +11814,129 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 paths.add(candidate)
         return paths
 
+    def _read_declared_file_sections(
+        self,
+        task_id: str,
+    ) -> Dict[str, Optional[List[str]]]:
+        """What the task document itself says it will create and change.
+
+        Two answers, kept apart under the keys ``create`` and ``modify``,
+        because "creates nothing and changes two files" is a thing a task must
+        be able to say. For each of the two:
+
+        * ``None`` - the task document has no such heading at all. It made no
+          claim, so nothing is compared on that side.
+        * ``[]`` - the heading is there and declares nothing, written as the
+          single line ``- _none_``. That is a claim: this task creates (or
+          changes) nothing, and anything found beyond it is sprawl.
+
+        Empty is not the same as absent, and that is where this reader differs
+        from :meth:`_extract_explicit_planned_files`. That one merges the two
+        sections into a single set and treats a section holding only
+        ``- _none_`` as though it were not there; it keeps that job, and the
+        caller that wants a merged set still calls it.
+
+        The two section names are not new: they are the convention already in
+        this estate, added by hand to fourteen task documents in May.
+
+        Args:
+            task_id: Task ID whose body should be read.
+
+        Returns:
+            ``{"create": ..., "modify": ...}`` as described above. Both are
+            ``None`` when the task file cannot be found or read at all.
+        """
+        import re as _re
+
+        absent: Dict[str, Optional[List[str]]] = {"create": None, "modify": None}
+
+        task_file = self._find_task_file(task_id)
+        if task_file is None:
+            return absent
+        try:
+            content = task_file.read_text(errors="replace")
+        except OSError:
+            return absent
+
+        # Strip the frontmatter the same way the other readers here do, so
+        # all of them see the same shape of body.
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            body = parts[2] if len(parts) >= 3 else content
+        else:
+            body = content
+
+        # Stop at the next top-level heading but not at a "### Subsection",
+        # which is a legitimate child of these sections.
+        section_pattern = r"^##\s+Files\s+to\s+{action}\s*\n(.*?)(?=^##(?!#)|\Z)"
+
+        declared: Dict[str, Optional[List[str]]] = {"create": None, "modify": None}
+        for key, action in (("create", "Create"), ("modify", "Modify")):
+            match = _re.search(
+                section_pattern.format(action=action),
+                body,
+                _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+            )
+            if match is None:
+                continue
+            has_bullets, paths = self._paths_in_declared_section(match.group(1))
+            if not has_bullets:
+                # A heading with nothing at all under it is not a claim, it is
+                # an unfinished task document. The way to say "this task
+                # creates nothing" is to write the line ``- _none_``.
+                continue
+            declared[key] = paths
+        return declared
+
+    @staticmethod
+    def _paths_in_declared_section(
+        section_text: str,
+    ) -> Tuple[bool, List[str]]:
+        """Read one declared section: was anything listed, and which paths.
+
+        The first answer is whether the section has any bullet at all. A
+        bullet that says ``_none_`` (or ``n/a``, ``none``, ``tbd``) declares
+        no path, but it is still a bullet and still a claim: this task creates
+        (or changes) nothing. Bullets carrying a trailing description after an
+        em dash or a spaced hyphen keep only the path. Wildcards are skipped:
+        a declaration is a list of real files.
+        """
+        import re as _re
+
+        has_bullets = False
+        paths: List[str] = []
+        for line in section_text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not (stripped.startswith("- ") or stripped.startswith("* ")):
+                continue
+            has_bullets = True
+            item = stripped[2:].strip()
+            for separator in ("—", " - "):
+                found_at = item.find(separator)
+                if found_at != -1:
+                    item = item[:found_at].strip()
+                    break
+            backticked = _re.match(r"`([^`]+)`", item)
+            if backticked:
+                candidate = backticked.group(1).strip()
+            else:
+                candidate = item.split()[0] if item else ""
+            if not candidate:
+                continue
+            if candidate.startswith("_") or candidate.lower() in {
+                "n/a",
+                "none",
+                "tbd",
+            }:
+                continue
+            if "*" in candidate:
+                continue
+            if candidate not in paths:
+                paths.append(candidate)
+        return has_bullets, paths
+
     def _scan_ac_for_missing_paths(
         self,
         task_id: str,
@@ -12133,7 +12256,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         Never raises: auditor exceptions become ``auditor_error`` so the
         producer always writes the artefact (same invariant as the
         agent_invocations gate).
+
+        When the task document declares the files it will create or change,
+        that declaration is the plan, and it is the plan on **every** path -
+        whether or not the player also wrote its own note of what it intended
+        to touch. A build graded against its own note is not graded.
         """
+        declared = self._read_declared_file_sections(task_id)
+        if declared["create"] is not None or declared["modify"] is not None:
+            return self._plan_audit_against_task_document(task_id, declared)
+
         try:
             result = execute_phase_5_5_plan_audit(
                 task_id=task_id,
@@ -12162,57 +12294,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             }
 
         if result.get("skipped"):
-            # TASK-GK-PA-002 AC-1: when the task body declares explicit
-            # ``## Files to Create`` / ``## Files to Modify`` sections
-            # (FM-001 convention, commit ``02aac9c``), those lists are
-            # the authoritative ``planned_files`` set. Compare against
-            # the worktree directly and skip the prose regex scan —
-            # FEAT-PEBR run-2 surfaced that prose typos in
-            # ``## Implementation notes`` were tripping the AC scanner
-            # even when every declared file was on disk.
-            explicit = self._extract_explicit_planned_files(task_id)
-            if explicit:
-                missing = sorted(
-                    p for p in explicit
-                    if not (self.worktree_path / p).exists()
-                )
-                if missing:
-                    return {
-                        "status": "violation",
-                        "severity": "high",
-                        "violations": len(missing),
-                        "extra_files": [],
-                        "missing_files": missing,
-                        "extra_modifications": [],
-                        "missing_modifications": [],
-                        "extra_dependencies": [],
-                        "missing_dependencies": [],
-                        "loc_variance_pct": None,
-                        "discrepancies_count": len(missing),
-                        "message": (
-                            f"task body declares {len(explicit)} planned "
-                            f"file(s); {len(missing)} not on disk: "
-                            f"{', '.join(missing[:3])}"
-                            f"{', ...' if len(missing) > 3 else ''}"
-                        ),
-                    }
-                return {
-                    "status": "passed",
-                    "severity": "low",
-                    "violations": 0,
-                    "extra_files": [],
-                    "missing_files": [],
-                    "extra_modifications": [],
-                    "missing_modifications": [],
-                    "extra_dependencies": [],
-                    "missing_dependencies": [],
-                    "loc_variance_pct": None,
-                    "discrepancies_count": 0,
-                    "message": (
-                        f"no plan on disk; all {len(explicit)} task-body-"
-                        "declared file(s) present"
-                    ),
-                }
+            # The task document declared no files at all - if it had, the
+            # branch at the top of this method would have taken over. All
+            # that is left is the check that the acceptance criteria do not
+            # name a file nobody wrote.
 
             # TASK-AB-FIX-INVAB1 AC-005: a "no plan on disk" outcome is
             # not a free pass. When AC text names a file path that
@@ -12288,7 +12373,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "message": "auditor returned no report",
             }
 
-        # Extract deterministic fields from the report's discrepancy list.
+        return self._plan_audit_block_from_report(report)
+
+    @staticmethod
+    def _plan_audit_block_from_report(report: Any) -> Dict[str, Any]:
+        """Turn an audit report into the block the Coach gate reads.
+
+        Pure shaping: it reads the report's own discrepancy list and names
+        each kind of difference in its own field, so the Coach can tell the
+        player what to put right instead of handing it a number.
+        """
         extra_files: List[str] = []
         missing_files: List[str] = []
         extra_modifications: List[str] = []
@@ -12369,6 +12463,121 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 )
             ),
         }
+
+    def _plan_audit_against_task_document(
+        self,
+        task_id: str,
+        declared: Dict[str, Optional[List[str]]],
+    ) -> Dict[str, Any]:
+        """Compare what the build changed with what the task document declared.
+
+        This is the blast-radius question item 3 exists to ask: the plan of
+        record says which files a task will touch, and the audit compares the
+        build against that. It runs whether or not the player wrote its own
+        note; the note is read and reported beside the verdict, and it no
+        longer decides anything.
+
+        Only files are judged. A task document declares files; it says nothing
+        about dependencies, line counts or hours, so neither does this.
+
+        Never raises: an auditor that falls over records ``auditor_error`` and
+        the artefact is still written.
+        """
+        from installer.core.commands.lib.plan_audit import (
+            DeclaredFiles,
+            PlanAuditor,
+        )
+
+        every_declared_path = list(declared["create"] or []) + list(
+            declared["modify"] or []
+        )
+        try:
+            auditor = PlanAuditor(workspace_root=self.worktree_path)
+            report = auditor.audit_implementation(
+                task_id,
+                declared=DeclaredFiles(
+                    to_create=declared["create"],
+                    to_modify=declared["modify"],
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
+            logger.warning(
+                "plan_audit auditor raised %s while reading the task "
+                "document's declared files; recording auditor_error.",
+                exc.__class__.__name__,
+            )
+            return {
+                "status": "auditor_error",
+                "severity": None,
+                "violations": 0,
+                "extra_files": [],
+                "missing_files": [],
+                "extra_modifications": [],
+                "missing_modifications": [],
+                "extra_dependencies": [],
+                "missing_dependencies": [],
+                "loc_variance_pct": None,
+                "discrepancies_count": 0,
+                "message": f"{exc.__class__.__name__}: {exc}",
+            }
+
+        block = self._plan_audit_block_from_report(report)
+
+        # The one question that needs no git at all: a file the task said it
+        # would touch, which is not there. Asked of every declared path, and
+        # folded in beside whatever the comparison found.
+        not_on_disk = sorted(
+            path
+            for path in every_declared_path
+            if not (self.worktree_path / path).exists()
+        )
+        missing_files = sorted(set(block["missing_files"]) | set(not_on_disk))
+        block["missing_files"] = missing_files
+
+        # One violation per file that is missing, plus one for each other
+        # serious difference, so the count says how much there is to put right.
+        other_high = sum(
+            1
+            for d in report.discrepancies
+            if d.severity == "high"
+            and not (d.category == "files" and "not created" in d.message)
+        )
+        block["violations"] = len(missing_files) + other_high
+        if missing_files:
+            block["status"] = "violation"
+            block["severity"] = "high"
+        block["planned_files_source"] = "the task document"
+        block["player_note_files"] = report.plan_summary.get("player_note_files", {})
+        block["files_read"] = bool(report.actual_summary.get("files_read"))
+
+        declared_count = len(every_declared_path)
+        if missing_files:
+            block["message"] = (
+                f"the task document declares {declared_count} file(s); "
+                f"{len(missing_files)} of them are not on disk: "
+                + ", ".join(missing_files[:3])
+                + (", and more" if len(missing_files) > 3 else "")
+            )
+        elif block["extra_files"] or block["extra_modifications"]:
+            beyond = list(block["extra_files"]) + list(block["extra_modifications"])
+            block["message"] = (
+                f"this build touched {len(beyond)} file(s) the task document "
+                "did not name: "
+                + ", ".join(sorted(beyond)[:3])
+                + (", and more" if len(beyond) > 3 else "")
+            )
+        elif not block["files_read"]:
+            block["message"] = (
+                "which files this build changed could not be read here, so "
+                "nothing is claimed about them; every file the task document "
+                "declares is on disk"
+            )
+        else:
+            block["message"] = (
+                f"every file this build changed was named in the task "
+                f"document, and all {declared_count} declared file(s) are on disk"
+            )
+        return block
 
     def _write_task_work_results(
         self,

@@ -5,6 +5,7 @@ Tests core audit logic for comparing planned vs actual implementation.
 Part of TASK-025: Implement Phase 5.5 Plan Audit.
 """
 
+import json
 import pytest
 import subprocess
 from pathlib import Path
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/core/com
 from plan_audit import (
     PlanAuditor,
     PlanAuditReport,
+    DeclaredFiles,
     Discrepancy,
     PlanAuditError,
     format_audit_report
@@ -318,19 +320,29 @@ class TestPlanAuditor:
         loc = auditor._count_file_loc(nonexistent)
         assert loc == 0
 
-    def test_is_excluded_test_files(self, auditor):
-        """Test that test files are excluded."""
-        assert auditor._is_excluded(Path("tests/test_feature.py"))
-        assert auditor._is_excluded(Path("src/feature_test.py"))
-        assert auditor._is_excluded(Path("src/feature.test.ts"))
-        assert auditor._is_excluded(Path("src/feature.spec.ts"))
+    def test_test_files_and_migrations_are_counted_now(self, auditor):
+        """Sprawl that lands in a test or a migration is still sprawl.
+
+        These four used to be dropped before anything was compared, which is
+        how a whole invented database migration went unseen.
+        """
+        assert not auditor._is_excluded(Path("tests/test_feature.py"))
+        assert not auditor._is_excluded(Path("src/feature_test.py"))
+        assert not auditor._is_excluded(Path("src/feature.test.ts"))
+        assert not auditor._is_excluded(Path("alembic/versions/0001_add_table.py"))
+        assert not auditor._is_excluded(Path("app/migrations/0002_users.py"))
 
     def test_is_excluded_cache_files(self, auditor):
-        """Test that cache files are excluded."""
+        """Test that cache files and installed packages are excluded."""
         assert auditor._is_excluded(Path("src/__pycache__/feature.pyc"))
         assert auditor._is_excluded(Path("src/tests/.pytest_cache/data.json"))
-        # Note: node_modules pattern may not match due to Path.match() limitations with **
-        # This is acceptable as the pattern will work for glob operations
+        assert auditor._is_excluded(Path("web/node_modules/left-pad/index.js"))
+        assert auditor._is_excluded(Path("src/feature.pyc"))
+
+    def test_a_file_named_coverage_is_not_a_cache_directory(self, auditor):
+        """Only directories called ``coverage`` are dropped, not files."""
+        assert not auditor._is_excluded(Path("docs/coverage"))
+        assert auditor._is_excluded(Path("coverage/report.html"))
 
     def test_is_excluded_normal_files(self, auditor):
         """Test that normal files are not excluded."""
@@ -388,35 +400,37 @@ class TestPlanAuditor:
 
         assert modified == []
 
-    def test_scan_modified_files_filters_excluded(self, tmp_path):
-        """AC-1: _scan_modified_files filters paths through _is_excluded."""
+    def test_scan_modified_files_counts_tests_and_drops_caches(self, tmp_path):
+        """A changed test file is counted; a cache file never is."""
         self._init_git_repo(tmp_path)
-        # Create a file in `tests/` (excluded by `**/tests/**` pattern)
-        excluded = tmp_path / "tests" / "test_thing.py"
-        excluded.parent.mkdir(parents=True)
-        excluded.write_text("def test_a():\n    pass\n")
-        # And a non-excluded production file
+        a_test = tmp_path / "tests" / "test_thing.py"
+        a_test.parent.mkdir(parents=True)
+        a_test.write_text("def test_a():\n    pass\n")
+        cached = tmp_path / "src" / "__pycache__" / "feature.cpython-312.pyc"
+        cached.parent.mkdir(parents=True)
+        cached.write_text("not really bytecode\n")
         kept = tmp_path / "src" / "feature.py"
-        kept.parent.mkdir(parents=True)
         kept.write_text("def foo():\n    return 1\n")
 
         subprocess.run(
-            ["git", "add", "."], cwd=tmp_path, check=True, capture_output=True,
+            ["git", "add", "-f", "."], cwd=tmp_path, check=True, capture_output=True,
         )
         subprocess.run(
             ["git", "commit", "-q", "-m", "initial"], cwd=tmp_path, check=True,
             capture_output=True,
         )
 
-        # Modify both files
-        excluded.write_text("def test_a():\n    assert True\n")
+        # Change all three
+        a_test.write_text("def test_a():\n    assert True\n")
+        cached.write_text("still not bytecode\n")
         kept.write_text("def foo():\n    return 2\n")
 
         auditor = PlanAuditor(workspace_root=tmp_path)
         modified = auditor._scan_modified_files({"plan": {}})
 
         assert "src/feature.py" in modified
-        assert "tests/test_thing.py" not in modified
+        assert "tests/test_thing.py" in modified
+        assert "src/__pycache__/feature.cpython-312.pyc" not in modified
 
     def test_compare_files_missing_modify(self, auditor):
         """AC-2: missing-modify produces medium-severity discrepancy."""
@@ -463,6 +477,252 @@ class TestPlanAuditor:
         discrepancies = auditor._compare_files(plan_data, actual)
 
         assert discrepancies == []
+
+
+class TestAuditAgainstARealGitHistory:
+    """Drive the auditor over a real repository with real turns of commits.
+
+    The older tests never did this, which is exactly why the audit could walk
+    the whole worktree for source files, ask the wrong question about what had
+    changed, and still look green.
+    """
+
+    @staticmethod
+    def _repo(root: Path) -> None:
+        """A repository with an identity of its own, so no host config is needed."""
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        run = lambda *args: subprocess.run(  # noqa: E731
+            args, cwd=root, check=True, capture_output=True, env=env
+        )
+        run("git", "init", "-q")
+        run("git", "config", "user.email", "test@example.com")
+        run("git", "config", "user.name", "Test")
+        run("git", "config", "commit.gpgsign", "false")
+
+    @staticmethod
+    def _write(root: Path, rel: str, text: str) -> None:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    @classmethod
+    def _commit(cls, root: Path, message: str) -> str:
+        subprocess.run(
+            ["git", "add", "-A"], cwd=root, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", message], cwd=root, check=True,
+            capture_output=True,
+        )
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=root, check=True,
+            capture_output=True, text=True,
+        )
+        return done.stdout.strip()
+
+    @staticmethod
+    def _checkpoint_file(root: Path, task_id: str, commit: str) -> None:
+        """Write the checkpoint record the build loop writes at end of turn."""
+        path = root / ".guardkit" / "autobuild" / task_id / "checkpoints.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "checkpoints": [{"turn": 1, "commit_hash": commit}],
+                    "last_updated": "2026-09-15T00:00:00Z",
+                }
+            )
+        )
+
+    def test_files_made_come_from_git_and_not_from_a_list_of_languages(
+        self, tmp_path
+    ):
+        """A file in a language nobody listed is still a file this task made."""
+        self._repo(tmp_path)
+        self._write(tmp_path, "src/existing.py", "x = 1\n")
+        self._commit(tmp_path, "base")
+
+        self._write(tmp_path, "src/router.kt", "fun main() {}\n")
+        self._write(tmp_path, "db/0001_add_table.sql", "CREATE TABLE t (id int);\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        made = auditor._scan_created_files({"plan": {}})
+
+        assert made == ["db/0001_add_table.sql", "src/router.kt"]
+        assert "src/existing.py" not in made, (
+            "a file this task never touched must not be counted as made"
+        )
+
+    def test_a_checkpoint_commit_no_longer_hides_what_changed(self, tmp_path):
+        """Turn two must still see what turn one did.
+
+        The loop commits at the end of every turn, so asking what differs from
+        the newest commit answered nothing from turn two onward.
+        """
+        task_id = "TASK-TURNS-001"
+        self._repo(tmp_path)
+        self._write(tmp_path, "src/a.py", "a = 1\n")
+        self._write(tmp_path, "src/b.py", "b = 1\n")
+        self._commit(tmp_path, "base")
+
+        # Turn one: change a.py and commit the checkpoint.
+        self._write(tmp_path, "src/a.py", "a = 2\n")
+        first_checkpoint = self._commit(tmp_path, "turn one checkpoint")
+        self._checkpoint_file(tmp_path, task_id, first_checkpoint)
+
+        # Turn two: change b.py, not yet committed.
+        self._write(tmp_path, "src/b.py", "b = 2\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        edited = auditor._scan_modified_files({"plan": {}}, task_id)
+
+        assert edited == ["src/a.py", "src/b.py"], (
+            "turn one's work is committed, and it is still this task's work"
+        )
+
+    def test_when_git_cannot_answer_nobody_counted(self, tmp_path):
+        """No repository at all: say nothing rather than say nothing changed."""
+        self._write(tmp_path, "src/sprawl.py", "x = 1\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        actual = auditor._analyze_implementation("TASK-NOGIT-001", {"plan": {}})
+
+        assert actual["files_read"] is False
+        assert actual["files_created"] == []
+        discrepancies = auditor._compare_files(
+            {"files_to_create": [], "declares_files_to_create": True}, actual
+        )
+        assert discrepancies == [], (
+            "a count nobody took must never be published as a count of nothing"
+        )
+
+    def test_the_task_document_declaration_is_the_planned_set(self, tmp_path):
+        """What the task document declared is what the build is judged against."""
+        task_id = "TASK-DECL-001"
+        self._repo(tmp_path)
+        self._write(tmp_path, "src/users/crud.py", "def read(): ...\n")
+        self._commit(tmp_path, "base")
+
+        # The build: the declared file, plus three nobody declared - one of
+        # them a test, one of them a migration, both of which used to be
+        # invisible to this audit.
+        self._write(tmp_path, "src/users/router.py", "router = 1\n")
+        self._write(tmp_path, "src/users/crud.py", "def read(): return []\n")
+        self._write(tmp_path, "src/analytics/service.py", "service = 1\n")
+        self._write(tmp_path, "tests/test_analytics.py", "def test_x(): ...\n")
+        self._write(tmp_path, "migrations/0001_add.py", "up = 1\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        report = auditor.audit_implementation(
+            task_id,
+            declared=DeclaredFiles(
+                to_create=["src/users/router.py"],
+                to_modify=["src/users/crud.py"],
+            ),
+        )
+
+        extra = [
+            d for d in report.discrepancies
+            if d.category == "files" and "extra" in d.message
+        ]
+        assert len(extra) == 1
+        assert extra[0].actual == [
+            "migrations/0001_add.py",
+            "src/analytics/service.py",
+            "tests/test_analytics.py",
+        ]
+        assert report.severity == "high", "three files nobody planned is high"
+        assert report.plan_summary["planned_files_source"] == "the task document"
+        assert not [
+            d for d in report.discrepancies if d.category == "dependencies"
+        ], "a task document declares files, so the audit says nothing about deps"
+
+    def test_a_section_that_says_none_is_a_claim_and_an_absent_one_is_not(
+        self, tmp_path
+    ):
+        """Empty is not the same as absent."""
+        task_id = "TASK-DECL-002"
+        self._repo(tmp_path)
+        self._write(tmp_path, "src/a.py", "a = 1\n")
+        self._commit(tmp_path, "base")
+        self._write(tmp_path, "src/a.py", "a = 2\n")
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+
+        says_nothing = auditor.audit_implementation(
+            task_id, declared=DeclaredFiles(to_create=[], to_modify=[])
+        )
+        unplanned = [
+            d for d in says_nothing.discrepancies
+            if "unplanned modification" in d.message
+        ]
+        assert len(unplanned) == 1
+        assert unplanned[0].actual == ["src/a.py"]
+
+        has_no_section = auditor.audit_implementation(
+            task_id, declared=DeclaredFiles(to_create=[], to_modify=None)
+        )
+        assert not [
+            d for d in has_no_section.discrepancies
+            if "unplanned modification" in d.message
+        ], "a task that made no claim about changes is not judged on changes"
+
+    def test_the_players_own_note_is_reported_and_does_not_grade(self, tmp_path):
+        """The note that used to grade the build is now only reported."""
+        task_id = "TASK-DECL-003"
+        self._repo(tmp_path)
+        self._write(tmp_path, "src/a.py", "a = 1\n")
+        self._commit(tmp_path, "base")
+        self._write(tmp_path, "src/sprawl_one.py", "one = 1\n")
+        self._write(tmp_path, "src/sprawl_two.py", "two = 1\n")
+        self._write(tmp_path, "src/sprawl_three.py", "three = 1\n")
+
+        # The player says it meant to write all three. Under the old rule that
+        # was the plan, so nothing was out of scope and nothing was reported.
+        self._write(
+            tmp_path,
+            f"docs/state/{task_id}/implementation_plan.json",
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "plan": {
+                        "files_to_create": [
+                            "src/sprawl_one.py",
+                            "src/sprawl_two.py",
+                            "src/sprawl_three.py",
+                        ],
+                        "files_to_modify": [],
+                        "external_dependencies": [],
+                        "estimated_loc": 10,
+                        "estimated_duration": "1 hour",
+                    },
+                }
+            ),
+        )
+
+        auditor = PlanAuditor(workspace_root=tmp_path)
+        report = auditor.audit_implementation(
+            task_id, declared=DeclaredFiles(to_create=[], to_modify=[])
+        )
+
+        extra = [
+            d for d in report.discrepancies
+            if d.category == "files" and "extra" in d.message
+        ]
+        assert len(extra) == 1
+        assert extra[0].actual == [
+            "src/sprawl_one.py",
+            "src/sprawl_three.py",
+            "src/sprawl_two.py",
+        ]
+        note = report.plan_summary["player_note_files"]
+        assert note["present"] is True
+        assert note["files_to_create"] == [
+            "src/sprawl_one.py",
+            "src/sprawl_two.py",
+            "src/sprawl_three.py",
+        ]
 
 
 class TestPlanAuditReport:
