@@ -12526,11 +12526,30 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # The one question that needs no git at all: a file the task said it
         # would touch, which is not there. Asked of every declared path, and
         # folded in beside whatever the comparison found.
-        not_on_disk = sorted(
+        declared_not_on_disk = sorted(
             path
             for path in every_declared_path
             if not (self.worktree_path / path).exists()
         )
+
+        # The same question, asked of the acceptance criteria: a criterion that
+        # names a file nobody wrote. This guard has been here since before task
+        # documents declared their files, and it has to keep working now that
+        # they do - every task will declare both sections, so the path above
+        # takes over on every task, and without this line the guard would be
+        # dead. Nothing here assumes a language: the only question asked is
+        # whether a path the task document names is on disk.
+        try:
+            criteria_not_on_disk = self._scan_ac_for_missing_paths(task_id)
+        except Exception as exc:  # noqa: BLE001 — gate must never block artefacts
+            logger.warning(
+                "reading the acceptance criteria for files raised %s; "
+                "nothing is claimed about them.",
+                exc.__class__.__name__,
+            )
+            criteria_not_on_disk = []
+
+        not_on_disk = sorted(set(declared_not_on_disk) | set(criteria_not_on_disk))
         missing_files = sorted(set(block["missing_files"]) | set(not_on_disk))
         block["missing_files"] = missing_files
 
@@ -12551,13 +12570,43 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         block["files_read"] = bool(report.actual_summary.get("files_read"))
 
         declared_count = len(every_declared_path)
+        # A file the acceptance criteria named and the two file sections did
+        # not is said in its own words, so the message names the file the
+        # criteria named rather than blaming a declaration that never made it.
+        named_only_by_the_criteria = sorted(
+            set(criteria_not_on_disk) - set(declared_not_on_disk)
+        )
         if missing_files:
-            block["message"] = (
-                f"the task document declares {declared_count} file(s); "
-                f"{len(missing_files)} of them are not on disk: "
-                + ", ".join(missing_files[:3])
-                + (", and more" if len(missing_files) > 3 else "")
-            )
+            said: List[str] = []
+            if declared_not_on_disk:
+                said.append(
+                    f"the task document declares {declared_count} file(s); "
+                    f"{len(declared_not_on_disk)} of them are not on disk: "
+                    + ", ".join(declared_not_on_disk[:3])
+                    + (", and more" if len(declared_not_on_disk) > 3 else "")
+                )
+            if named_only_by_the_criteria:
+                said.append(
+                    "the acceptance criteria name "
+                    f"{len(named_only_by_the_criteria)} file(s) that are not "
+                    "on disk: "
+                    + ", ".join(named_only_by_the_criteria[:3])
+                    + (
+                        ", and more"
+                        if len(named_only_by_the_criteria) > 3
+                        else ""
+                    )
+                )
+            if not said:
+                # The comparison found a missing file neither of the two
+                # questions above did. Say it plainly rather than say nothing.
+                said.append(
+                    f"the task document declares {declared_count} file(s); "
+                    f"{len(missing_files)} of them are not on disk: "
+                    + ", ".join(missing_files[:3])
+                    + (", and more" if len(missing_files) > 3 else "")
+                )
+            block["message"] = "; ".join(said)
         elif block["extra_files"] or block["extra_modifications"]:
             beyond = list(block["extra_files"]) + list(block["extra_modifications"])
             block["message"] = (
