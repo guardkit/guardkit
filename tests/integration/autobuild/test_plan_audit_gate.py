@@ -316,8 +316,13 @@ def _write_task_document(
     task_id: str,
     creates: list[str],
     modifies: list[str],
+    acceptance: str = "- [ ] AC-1: the endpoint answers.\n",
 ) -> Path:
-    """Write a task document that declares the files it will touch."""
+    """Write a task document that declares the files it will touch.
+
+    ``acceptance`` is the body of the ``## Acceptance Criteria`` section, so a
+    test can put a file path in a criterion and see what the audit makes of it.
+    """
     def _section(paths: list[str]) -> str:
         if not paths:
             return "- _none_\n"
@@ -339,7 +344,7 @@ def _write_task_document(
         "## Files to Modify\n\n"
         f"{_section(modifies)}\n"
         "## Acceptance Criteria\n\n"
-        "- [ ] AC-1: the endpoint answers.\n"
+        f"{acceptance}"
     )
     return task_file
 
@@ -558,6 +563,123 @@ class TestAuditComparesAgainstTheTaskDocument:
         assert block["message"] == (
             "this build touched 1 file(s) the task document did not name: "
             "src/users/brand_new.py"
+        )
+
+
+class TestTheAcceptanceCriteriaAreStillRead:
+    """A criterion that names a file nobody wrote is still caught.
+
+    The check that reads the acceptance criteria for file paths used to run
+    only when no plan was on disk. Once every task declares its two file
+    sections, that path is never taken, so the check has to run on the
+    task-document path too or it is dead.
+    """
+
+    def test_a_criterion_naming_a_file_nobody_wrote_is_a_violation(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=[],
+            modifies=[],
+            acceptance=(
+                "- [ ] AC-1: the counting lives in `src/never_written.py`.\n"
+            ),
+        )
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "violation"
+        assert block["severity"] == "high"
+        assert block["missing_files"] == ["src/never_written.py"]
+        assert block["violations"] == 1
+        assert block["message"] == (
+            "the acceptance criteria name 1 file(s) that are not on disk: "
+            "src/never_written.py"
+        )
+
+    def test_the_same_criterion_passes_once_the_file_is_there(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=[],
+            modifies=[],
+            acceptance=(
+                "- [ ] AC-1: the counting lives in `src/never_written.py`.\n"
+            ),
+        )
+        _create_src_files(worktree, ["src/never_written.py"])
+        _commit_everything(worktree, "the file the criterion names")
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "passed"
+        assert block["missing_files"] == []
+        assert block["violations"] == 0
+
+    def test_both_kinds_of_missing_file_are_named_in_their_own_words(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        """A declared file and a criterion's file are two different claims."""
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=[],
+            acceptance=(
+                "- [ ] AC-1: the counting lives in `src/never_written.py`.\n"
+            ),
+        )
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "violation"
+        assert block["missing_files"] == [
+            "src/never_written.py",
+            "src/users/router.py",
+        ]
+        assert block["violations"] == 2
+        assert block["message"] == (
+            "the task document declares 1 file(s); 1 of them are not on "
+            "disk: src/users/router.py; the acceptance criteria name 1 "
+            "file(s) that are not on disk: src/never_written.py"
+        )
+
+    def test_a_file_named_in_both_places_is_counted_once(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/never_written.py"],
+            modifies=[],
+            acceptance=(
+                "- [ ] AC-1: the counting lives in `src/never_written.py`.\n"
+            ),
+        )
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["missing_files"] == ["src/never_written.py"]
+        assert block["violations"] == 1
+        assert block["message"] == (
+            "the task document declares 1 file(s); 1 of them are not on "
+            "disk: src/never_written.py"
         )
 
 
