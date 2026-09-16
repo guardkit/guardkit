@@ -31,7 +31,7 @@ from tests.orchestrator.test_agent_invoker_langgraph import (
 @pytest.mark.parametrize("route", ["role", "direct"])
 @pytest.mark.parametrize("engine", ["native", "dcode"])
 @pytest.mark.parametrize("text,reason", [("", "stop"), ("", "length"), ("partial", "length")])
-async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, engine, text, reason, route):
+async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, engine, text, reason, route, credential_case=None):
     if engine == "dcode" and (sys.version_info < (3, 12) or importlib.util.find_spec("deepagents_code") is None):
         pytest.skip("optional dcode extra requires Python 3.12+")
 
@@ -44,6 +44,9 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     emitter = NullEmitter(capture=True)
     invoker = _make_invoker(tmp_path, emitter=emitter)
     skill = _enable_native_experiment(monkeypatch, invoker.worktree_path)
+    if credential_case is not None:
+        with skill.open("a") as out:
+            out.write("\n" + credential_case[0] + "\nSAFE_AFTER_CREDENTIAL\n")
     if engine == "dcode":
         (invoker.worktree_path / ".agents").mkdir()
         (invoker.worktree_path / ".agents/skills").symlink_to("../skills", target_is_directory=True)
@@ -116,6 +119,10 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     expected = raw["messages"][2].content
     for planted in ("opaque-header-secret", "opaque-password-secret"):
         expected = expected.replace(planted, "[REDACTED]")
+    if credential_case is not None:
+        credential, safe_prefix = credential_case
+        assert credential in expected
+        expected = expected.split(credential, 1)[0] + safe_prefix + "[REDACTED]"
     assert result["content"] == expected
     assert "ACTUAL_CWD_SKILL_MARKER" in result["content"]
     assert terminal["content"] == text
@@ -187,3 +194,15 @@ async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_p
     for marker in ("KEEP_JSON", "KEEP_SUFFIX", "KEEP_JSONL"):
         if marker in embedded:
             assert marker in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["native", "dcode"])
+@pytest.mark.parametrize("credential_case", [
+    ("password: 'can''t-opaque-actual-value'", "password: "),
+    ('password = """opaque-actual-value"""', "password = "),
+])
+async def test_failed_skill_read_discards_uncertain_quoted_value(monkeypatch, tmp_path, engine, credential_case):
+    await test_failed_graph_retains_actual_skill_read(
+        monkeypatch, tmp_path, engine, "", "length", "role", credential_case,
+    )
