@@ -34,7 +34,7 @@ import logging
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -56,6 +56,7 @@ from langchain_core.language_models.fake_chat_models import (
 )
 from langchain_core.messages import AIMessage
 
+from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import (
     AssistantMessageEvent,
     ResultMessageEvent,
@@ -71,6 +72,9 @@ from tests.conftest import M0_FLEET_SEAT
 
 
 _TEST_ENV_VAR = "GUARDKIT_HARNESS_TEST_ONLY_LG"
+_EXPERIMENT_ENV_VAR = "GUARDKIT_PLAYER_EXPERIMENT"
+_INSTRUCTION_MARKER = "ACTUAL_CWD_INSTRUCTION_MARKER"
+_SKILL_MARKER = "ACTUAL_CWD_SKILL_MARKER"
 
 
 def _make_invoker(
@@ -151,6 +155,174 @@ def _make_stub_langgraph_harness(response_text: str = "stub langgraph response")
             )
 
     return _StubLangGraphHarness(model=_make_stub_model(response_text))
+
+
+def _install_factory_owned_mock_transport(
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> tuple[list[httpx.Client], list[httpx.AsyncClient]]:
+    """Give factory-owned clients a deterministic transport and track cleanup.
+
+    The accepted factory constructs one sync and one async HTTP client per
+    invocation and closes both before delivering buffered harness events. Patch
+    only the provider transport builders: do not pass caller-owned clients to
+    ``ChatOpenAI`` or replace the factory's ownership context.
+    """
+    from langchain_openai.chat_models import _client_utils
+
+    sync_clients: list[httpx.Client] = []
+    async_clients: list[httpx.AsyncClient] = []
+
+    def build_sync_client(*args: Any, **kwargs: Any) -> httpx.Client:
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        sync_clients.append(client)
+        return client
+
+    def build_async_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async_clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        _client_utils, "_build_sync_httpx_client", build_sync_client
+    )
+    monkeypatch.setattr(
+        _client_utils, "_build_async_httpx_client", build_async_client
+    )
+    return sync_clients, async_clients
+
+
+def _write_native_experiment_sources(worktree: Path) -> Path:
+    """Write strict native experiment inputs beneath the actual invocation cwd."""
+    skill_file = worktree / "skills" / "planning" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text(
+        "---\n"
+        "name: planning\n"
+        "description: Read the selected planning workflow before implementation.\n"
+        "---\n\n"
+        "# Planning\n\n"
+        f"{_SKILL_MARKER}\n",
+        encoding="utf-8",
+    )
+    (worktree / "AGENTS.md").write_text(
+        f"# Repository instructions\n\n{_INSTRUCTION_MARKER}\n",
+        encoding="utf-8",
+    )
+    return skill_file
+
+
+def _enable_native_experiment(
+    monkeypatch: pytest.MonkeyPatch, worktree: Path
+) -> Path:
+    """Enable native skills/memory using paths relative to the real worktree."""
+    skill_file = _write_native_experiment_sources(worktree)
+    monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+    monkeypatch.setenv(
+        _EXPERIMENT_ENV_VAR,
+        json.dumps(
+            {
+                "engine": "native",
+                "skills": ["skills"],
+                "memory": ["AGENTS.md"],
+            }
+        ),
+    )
+    return skill_file
+
+
+class _NativeExperimentChat:
+    """Two-turn ChatCompletions script: read the skill, then finish."""
+
+    def __init__(
+        self,
+        skill_file: Path,
+        *,
+        final_text: str,
+        finish_reason: str = "stop",
+    ) -> None:
+        self.skill_file = skill_file
+        self.final_text = final_text
+        self.finish_reason = finish_reason
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.requests.append((request.url.path, body))
+        messages = json.dumps(body["messages"])
+
+        if len(self.requests) == 1:
+            assert _INSTRUCTION_MARKER in messages
+            tool_names = {
+                tool["function"]["name"] for tool in body.get("tools", [])
+            }
+            assert "read_file" in tool_names
+            message = {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-read-selected-skill",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"file_path": str(self.skill_file)}
+                            ),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        elif len(self.requests) == 2:
+            assert _SKILL_MARKER in messages
+            message = {"role": "assistant", "content": self.final_text}
+            finish_reason = self.finish_reason
+        else:
+            pytest.fail(
+                f"Unexpected model request {len(self.requests)}; graph did not "
+                "stop after the selected skill was read"
+            )
+
+        return httpx.Response(
+            200,
+            json={
+                "id": f"chatcmpl-native-{len(self.requests)}",
+                "object": "chat.completion",
+                "created": len(self.requests),
+                "model": body["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 3,
+                    "total_tokens": 10,
+                },
+            },
+        )
+
+
+def _assert_native_http_evidence(script: _NativeExperimentChat) -> None:
+    """Pin ChatCompletions routing and the nonempty selected-skill tool result."""
+    assert len(script.requests) == 2
+    assert all(path == "/v1/chat/completions" for path, _ in script.requests)
+    assert all(body["model"] == "qwen36-workhorse" for _, body in script.requests)
+    assert _SKILL_MARKER in json.dumps(script.requests[1][1]["messages"])
+
+
+def _assert_owned_clients_closed(
+    clients: tuple[list[httpx.Client], list[httpx.AsyncClient]],
+) -> None:
+    """The invocation owner must close every client before returning/failing."""
+    sync_clients, async_clients = clients
+    assert sync_clients and async_clients
+    assert all(client.is_closed for client in sync_clients)
+    assert all(client.is_closed for client in async_clients)
 
 
 def _build_mock_sdk() -> ModuleType:
@@ -638,8 +810,6 @@ class TestInstalledCandidateIntegration:
         tmp_path: Path,
     ) -> None:
         """The selected 0.7.14 graph keeps the local alias, tools, and events."""
-        import langchain_openai
-
         from guardkit.orchestrator.harness.adapter import ToolUseEvent
         from guardkit.orchestrator.harness.selector import select_harness
         from guardkitfactory.harness import LangGraphHarness
@@ -674,38 +844,27 @@ class TestInstalledCandidateIntegration:
                 },
             )
 
-        transport = httpx.MockTransport(handler)
-        real_constructor = langchain_openai.ChatOpenAI
-
-        def fake_client(**kwargs: Any) -> Any:
-            return real_constructor(
-                **kwargs,
-                http_client=httpx.Client(transport=transport),
-                http_async_client=httpx.AsyncClient(transport=transport),
-                http_socket_options=(),
-                max_retries=0,
-            )
+        owned_clients = _install_factory_owned_mock_transport(monkeypatch, handler)
 
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        with patch("langchain_openai.ChatOpenAI", side_effect=fake_client):
-            harness = select_harness(
-                env_var=_TEST_ENV_VAR,
-                model="qwen36-workhorse",
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            model="qwen36-workhorse",
+            cwd=tmp_path,
+            recursion_limit=20,
+            max_tool_result_chars=8000,
+        )
+        assert isinstance(harness, LangGraphHarness)
+        events = [
+            event
+            async for event in harness.invoke(
+                prompt="Return the deterministic response.",
+                role="player",
+                tools=[],
                 cwd=tmp_path,
-                recursion_limit=20,
-                max_tool_result_chars=8000,
+                timeout_seconds=10,
             )
-            assert isinstance(harness, LangGraphHarness)
-            events = [
-                event
-                async for event in harness.invoke(
-                    prompt="Return the deterministic response.",
-                    role="player",
-                    tools=[],
-                    cwd=tmp_path,
-                    timeout_seconds=10,
-                )
-            ]
+        ]
 
         assert len(requests) == 1
         path, body = requests[0]
@@ -728,6 +887,7 @@ class TestInstalledCandidateIntegration:
         assert isinstance(events[-2], AssistantMessageEvent)
         assert events[-2].text == "selector candidate response"
         assert isinstance(events[-1], ResultMessageEvent)
+        _assert_owned_clients_closed(owned_clients)
 
     @pytest.mark.asyncio
     async def test_installed_sdk_selector_invoker_uses_fake_client(
@@ -903,3 +1063,133 @@ class TestPlayerExperimentCallRoutes:
 
         assert selection["harness_role"] == "coach"
         assert selection["allowed_tools"] == []
+
+
+class TestNativePlayerExperimentRealRoutes:
+    """Enabled native configuration runs through both production consumers."""
+
+    @staticmethod
+    def _record_activity(activity: list[str]) -> Callable[[], None]:
+        def callback() -> None:
+            activity.append("model")
+
+        return callback
+
+    @pytest.mark.asyncio
+    async def test_direct_player_route_reads_selected_sources_with_real_graph(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        skill_file = _enable_native_experiment(
+            monkeypatch, invoker.worktree_path
+        )
+        activity: list[str] = []
+        monkeypatch.setattr(
+            invoker, "_bump_activity", self._record_activity(activity)
+        )
+        script = _NativeExperimentChat(
+            skill_file, final_text="direct native player completed"
+        )
+        clients = _install_factory_owned_mock_transport(monkeypatch, script)
+
+        await invoker._invoke_with_role(
+            prompt="TASK-NATIVE-DIRECT read the selected workflow",
+            agent_type="player",
+            allowed_tools=["Read"],
+            permission_mode="acceptEdits",
+        )
+
+        _assert_native_http_evidence(script)
+        assert activity
+        _assert_owned_clients_closed(clients)
+
+    @pytest.mark.asyncio
+    async def test_task_work_route_reads_selected_sources_with_real_graph(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        skill_file = _enable_native_experiment(
+            monkeypatch, invoker.worktree_path
+        )
+        activity: list[str] = []
+        monkeypatch.setattr(
+            invoker, "_bump_activity", self._record_activity(activity)
+        )
+        script = _NativeExperimentChat(
+            skill_file,
+            final_text=(
+                "10 tests passed, 0 tests failed\n"
+                "Coverage: 85.2%\n"
+                "All quality gates passed"
+            ),
+        )
+        clients = _install_factory_owned_mock_transport(monkeypatch, script)
+
+        result = await invoker._invoke_task_work_implement(
+            task_id="TASK-NATIVE-TASK-WORK",
+            mode="standard",
+        )
+
+        assert result.success is True
+        _assert_native_http_evidence(script)
+        assert activity
+        _assert_owned_clients_closed(clients)
+
+    @pytest.mark.asyncio
+    async def test_direct_route_rejects_empty_length_after_nonempty_tool_result(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        skill_file = _enable_native_experiment(
+            monkeypatch, invoker.worktree_path
+        )
+        activity: list[str] = []
+        monkeypatch.setattr(
+            invoker, "_bump_activity", self._record_activity(activity)
+        )
+        script = _NativeExperimentChat(
+            skill_file, final_text="", finish_reason="length"
+        )
+        clients = _install_factory_owned_mock_transport(monkeypatch, script)
+
+        with pytest.raises(AgentInvocationError) as exc_info:
+            await invoker._invoke_with_role(
+                prompt="TASK-NATIVE-DIRECT-TRUNCATED read then fail",
+                agent_type="player",
+                allowed_tools=["Read"],
+                permission_mode="acceptEdits",
+            )
+
+        assert "empty terminal assistant" in str(exc_info.value).lower()
+        _assert_native_http_evidence(script)
+        assert activity
+        _assert_owned_clients_closed(clients)
+
+    @pytest.mark.asyncio
+    async def test_task_work_rejects_empty_length_after_nonempty_tool_result(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        skill_file = _enable_native_experiment(
+            monkeypatch, invoker.worktree_path
+        )
+        activity: list[str] = []
+        monkeypatch.setattr(
+            invoker, "_bump_activity", self._record_activity(activity)
+        )
+        script = _NativeExperimentChat(
+            skill_file, final_text="", finish_reason="length"
+        )
+        clients = _install_factory_owned_mock_transport(monkeypatch, script)
+
+        result = await invoker._invoke_task_work_implement(
+            task_id="TASK-NATIVE-TASK-WORK-TRUNCATED",
+            mode="standard",
+        )
+
+        assert result.success is False
+        assert result.error is not None
+        assert "empty terminal assistant" in result.error.lower()
+        _assert_native_http_evidence(script)
+        assert activity
+        _assert_owned_clients_closed(clients)
