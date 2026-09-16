@@ -645,3 +645,169 @@ def test_failure_whitespace_is_extracted_as_empty(tmp_path, content):
     assert summary["text_length"] == 0
     assert summary["text_empty"] is True
     assert summary["finish_reason"] == "length"
+
+
+def test_failure_terminal_metadata_summarizes_provider_fields(monkeypatch, tmp_path):
+    messages = pytest.importorskip("langchain_core.messages")
+    secret = "opaque-terminal-credential-9381"
+    monkeypatch.setenv("MALICIOUS_API_KEY", secret)
+    invalid_args = f'{{"password":"{secret}","body":"é"}}'
+    raw_args = f'{{"authorization":"{secret}","body":"é"'
+    reasoning_block = f"private block {secret}"
+    reasoning_kwarg = f"private kwarg {secret}"
+    error_text = f"provider parse error {secret}"
+    message = messages.AIMessage(
+        content=[
+            {"type": "reasoning", "text": reasoning_block},
+            {"type": "text", "text": "short visible result"},
+        ],
+        invalid_tool_calls=[{
+            "id": "invalid-1",
+            "name": f"write_{secret}",
+            "args": invalid_args,
+            "error": error_text,
+            "type": "invalid_tool_call",
+        }],
+        additional_kwargs={
+            "tool_calls": [{
+                "id": "raw-1",
+                "type": "function",
+                "function": {"name": "write_file", "arguments": raw_args},
+            }],
+            "reasoning_content": reasoning_kwarg,
+        },
+        usage_metadata={
+            "input_tokens": 5,
+            "output_tokens": 8192,
+            "total_tokens": 8197,
+            "output_token_details": {"reasoning": 8000},
+        },
+        response_metadata={
+            "finish_reason": "length",
+            "headers": {"authorization": secret},
+            "token_usage": {
+                "prompt_tokens": True,
+                "completion_tokens": 8192,
+                "total_tokens": float("nan"),
+                "completion_tokens_details": {"reasoning_tokens": 8000},
+                "credential": secret,
+            },
+        },
+    )
+
+    sdk_debug.preserve_failure(tmp_path, _failed_result([message]))
+    records = _failure_lines(tmp_path)
+    persisted = (tmp_path / "messages.jsonl").read_text()
+    assert secret not in persisted
+    assert invalid_args not in persisted
+    assert raw_args not in persisted
+    assert reasoning_block not in persisted
+    assert reasoning_kwarg not in persisted
+    assert error_text not in persisted
+
+    for record in records[:2]:
+        assert record["finish_reason"] == "length"
+        assert record["usage"] == {
+            "input_tokens": 5,
+            "output_tokens": 8192,
+            "total_tokens": 8197,
+            "output_token_details": {"reasoning": 8000},
+        }
+        assert record["provider_usage"] == {
+            "completion_tokens": 8192,
+            "completion_tokens_details": {"reasoning_tokens": 8000},
+        }
+        invalid = record["invalid_tool_calls"]
+        assert invalid["count"] == 1
+        assert invalid["recorded_count"] == 1
+        assert invalid["truncated"] is False
+        assert invalid["calls"][0]["name"] == "write_[REDACTED]"
+        assert invalid["calls"][0]["arguments"] == {
+            "present": True,
+            "type": "string",
+            "empty": False,
+            "characters": len(invalid_args),
+            "bytes": len(invalid_args.encode()),
+        }
+        assert invalid["calls"][0]["error"] == {
+            "present": True,
+            "type": "string",
+        }
+        raw = record["raw_tool_calls"]
+        assert raw["count"] == 1
+        assert raw["recorded_count"] == 1
+        assert raw["truncated"] is False
+        assert raw["calls"][0]["name"] == "write_file"
+        assert raw["calls"][0]["arguments"] == {
+            "present": True,
+            "type": "string",
+            "empty": False,
+            "characters": len(raw_args),
+            "bytes": len(raw_args.encode()),
+        }
+        reasoning = record["reasoning_text"]
+        assert reasoning == {
+            "present": True,
+            "carrier_count": 2,
+            "text_count": 2,
+            "nonempty_text_count": 2,
+            "characters": len(reasoning_block) + len(reasoning_kwarg),
+            "bytes": len(reasoning_block.encode()) + len(reasoning_kwarg.encode()),
+            "truncated": False,
+            "empty": False,
+        }
+
+
+def test_failure_terminal_metadata_distinguishes_absent_empty_and_truncated(tmp_path):
+    messages = pytest.importorskip("langchain_core.messages")
+    absent = tmp_path / "absent"
+    absent.mkdir()
+    sdk_debug.preserve_failure(absent, _failed_result([
+        messages.AIMessage(content="visible"),
+    ]))
+    absent_summary = _failure_lines(absent)[0]
+    assert absent_summary["invalid_tool_calls"] == {
+        "present": True, "count": 0, "recorded_count": 0,
+        "truncated": False, "calls": [],
+    }
+    for metadata_field in ("raw_tool_calls", "reasoning_text", "provider_usage"):
+        assert metadata_field not in absent_summary
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    sdk_debug.preserve_failure(empty, _failed_result([
+        messages.AIMessage(
+            content="visible",
+            additional_kwargs={"tool_calls": [], "reasoning_content": ""},
+        ),
+    ]))
+    empty_summary = _failure_lines(empty)[0]
+    assert empty_summary["raw_tool_calls"] == {
+        "present": True, "count": 0, "recorded_count": 0,
+        "truncated": False, "calls": [],
+    }
+    assert empty_summary["reasoning_text"] == {
+        "present": True, "carrier_count": 1, "text_count": 1,
+        "nonempty_text_count": 0, "characters": 0, "bytes": 0,
+        "truncated": False, "empty": True,
+    }
+
+    bounded = tmp_path / "bounded"
+    bounded.mkdir()
+    too_many = [{
+        "id": f"invalid-{index}", "name": "", "args": "", "error": None,
+        "type": "invalid_tool_call",
+    } for index in range(sdk_debug._FAILURE_SUMMARY_ITEMS + 1)]
+    sdk_debug.preserve_failure(bounded, _failed_result([
+        messages.AIMessage(content="visible", invalid_tool_calls=too_many),
+    ]))
+    bounded_summary = _failure_lines(bounded)[0]
+    invalid = bounded_summary["invalid_tool_calls"]
+    assert invalid["count"] == len(too_many)
+    assert invalid["recorded_count"] == sdk_debug._FAILURE_SUMMARY_ITEMS
+    assert invalid["truncated"] is True
+    assert invalid["calls"][0]["name_empty"] is True
+    assert invalid["calls"][0]["arguments"]["empty"] is True
+    assert invalid["calls"][0]["error"] == {
+        "present": True, "type": "null",
+    }

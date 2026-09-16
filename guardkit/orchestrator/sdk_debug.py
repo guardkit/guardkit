@@ -786,6 +786,7 @@ def preserve_event(debug_dir: Optional[Path], event: Any) -> None:
 # Failure snapshots deliberately do not use the repr-based SDK serializer.
 _FAILURE_FIELD_BYTES = 4096
 _FAILURE_ITEMS = 128
+_FAILURE_SUMMARY_ITEMS = 16
 _USAGE_FIELDS = frozenset({
     "input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
     "completion_tokens", "reasoning_tokens", "cache_read", "cache_creation",
@@ -934,9 +935,137 @@ def _failure_usage(value: Any) -> Optional[dict]:
     return result
 
 
+def _failure_json_type(value: Any) -> str:
+    """Return a fixed JSON type label without consulting an arbitrary object."""
+    if value is None:
+        return "null"
+    if type(value) is str:
+        return "string"
+    if type(value) is bool:
+        return "boolean"
+    if type(value) is int:
+        return "integer"
+    if type(value) is float:
+        return "number"
+    if type(value) is dict:
+        return "object"
+    if type(value) in (list, tuple):
+        return "array"
+    return "unknown"
+
+
+def _failure_argument_summary(call: dict, key: str) -> dict | None:
+    """Describe a raw argument field without retaining or stringifying it."""
+    if key not in call:
+        return None
+    value = call[key]
+    summary = {"present": True, "type": _failure_json_type(value)}
+    if type(value) is str:
+        summary.update(
+            empty=value == "",
+            characters=len(value),
+            bytes=len(value.encode("utf-8")),
+        )
+    return summary
+
+
+def _failure_call_summary(call: Any, *, raw: bool) -> dict | None:
+    """Summarize one invalid/raw provider tool call using metadata only."""
+    if type(call) is not dict:
+        return None
+    function = call.get("function") if raw else call
+    if type(function) is not dict:
+        function = {}
+    result = {"name_present": "name" in function}
+    name = function.get("name")
+    if type(name) is str:
+        result.update(name=name, name_empty=name == "")
+    elif "name" in function:
+        result["name_type"] = _failure_json_type(name)
+    argument = _failure_argument_summary(function, "arguments" if raw else "args")
+    if argument is not None:
+        result["arguments"] = argument
+    if not raw and "error" in call:
+        result["error"] = {
+            "present": True,
+            "type": _failure_json_type(call["error"]),
+        }
+    return result
+
+
+def _failure_calls_summary(value: Any, *, raw: bool) -> dict | None:
+    """Build a bounded list of tool names and non-content call metadata."""
+    if type(value) not in (list, tuple):
+        return None
+    calls = []
+    unrecognized = 0
+    for call in value[:_FAILURE_SUMMARY_ITEMS]:
+        summary = _failure_call_summary(call, raw=raw)
+        if summary is None:
+            unrecognized += 1
+        else:
+            calls.append(summary)
+    result = {
+        "present": True,
+        "count": len(value),
+        "recorded_count": len(calls),
+        "truncated": len(value) > _FAILURE_SUMMARY_ITEMS,
+        "calls": calls,
+    }
+    if unrecognized:
+        result["unrecognized_count"] = unrecognized
+    return result
+
+
+def _failure_reasoning_summary(message: dict) -> dict | None:
+    """Measure reasoning text without retaining the reasoning itself."""
+    carrier_count = 0
+    texts = []
+    content = message.get("content")
+    if type(content) is list:
+        for block in content:
+            if (
+                type(block) is not dict
+                or block.get("type") not in {"reasoning", "thinking"}
+            ):
+                continue
+            carrier_count += 1
+            for key in ("text", "reasoning", "content", "thinking"):
+                if key in block and type(block[key]) is str:
+                    texts.append(block[key])
+
+    additional = message.get("additional_kwargs")
+    if type(additional) is dict:
+        for key in ("reasoning_content", "reasoning_text", "reasoning"):
+            if key not in additional:
+                continue
+            carrier_count += 1
+            if type(additional[key]) is str:
+                texts.append(additional[key])
+
+    if carrier_count == 0:
+        return None
+    characters = sum(len(text) for text in texts)
+    byte_length = sum(len(text.encode("utf-8")) for text in texts)
+    result = {
+        "present": True,
+        "carrier_count": carrier_count,
+        "text_count": len(texts),
+        "nonempty_text_count": sum(bool(text) for text in texts),
+        "characters": characters,
+        "bytes": byte_length,
+        "truncated": False,
+    }
+    if len(texts) == carrier_count:
+        result["empty"] = characters == 0
+    return result
+
+
 def _failure_metadata(message: dict) -> dict:
-    response = message.get("response_metadata") or {}
-    additional = message.get("additional_kwargs") or {}
+    response_value = message.get("response_metadata")
+    response = response_value if type(response_value) is dict else {}
+    additional_value = message.get("additional_kwargs")
+    additional = additional_value if type(additional_value) is dict else {}
     usage = message.get("usage_metadata")
     if type(usage) is not dict:
         usage = response.get("token_usage")
@@ -944,11 +1073,25 @@ def _failure_metadata(message: dict) -> dict:
     stop = response.get("stop_reason")
     if finish is None and not stop:
         finish = additional.get("finish_reason")
-    return {
+    result = {
         "finish_reason": finish if type(finish) is str else None,
         "stop_reason": stop if type(stop) is str else None,
         "usage": _failure_usage(usage),
     }
+    if "token_usage" in response:
+        result["provider_usage"] = _failure_usage(response["token_usage"])
+    if "invalid_tool_calls" in message:
+        invalid = _failure_calls_summary(message["invalid_tool_calls"], raw=False)
+        if invalid is not None:
+            result["invalid_tool_calls"] = invalid
+    if "tool_calls" in additional:
+        raw_calls = _failure_calls_summary(additional["tool_calls"], raw=True)
+        if raw_calls is not None:
+            result["raw_tool_calls"] = raw_calls
+    reasoning = _failure_reasoning_summary(message)
+    if reasoning is not None:
+        result["reasoning_text"] = reasoning
+    return result
 
 
 def _failure_skill_entry(entry: Any) -> dict:
@@ -1074,10 +1217,14 @@ def preserve_failure(debug_dir: Optional[Path], exc: Exception) -> None:
                 scrubber.nodes = 0
                 scrubber.truncated = False
                 # Metadata has its own numeric allowlist: token counts are not credentials.
+                provider_usage_present = "provider_usage" in record
+                provider_usage = record.pop("provider_usage", None)
                 usage = record.pop("usage", None)
                 safe = scrubber.walk(record)
                 if "usage" not in safe and record["type"] in ("GraphFailure", "AIMessage"):
                     safe["usage"] = usage
+                if provider_usage_present and "provider_usage" not in safe:
+                    safe["provider_usage"] = provider_usage
                 safe["truncated"] = scrubber.truncated
                 line = (json.dumps(safe, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
                 if len(line) + len(marker) > room:
