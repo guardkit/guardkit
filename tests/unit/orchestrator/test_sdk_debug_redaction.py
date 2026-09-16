@@ -33,12 +33,14 @@ class TestPromptRedaction:
         monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
 
         # Plant secrets in prompt
-        prompt_with_secrets = """
-        You are a helpful assistant.
-        Use this API key: sk-abc123456789012345
-        And this token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
-        Password: PASSWORD=secret123
-        """
+        prompt_with_secrets = (
+            '\n'
+            '        You are a helpful assistant.\n'
+            '        Use this API key: sk-abc123456789012345\n'
+            '        And this token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\n'
+            '        Password: PASSWORD=secret123\n'
+            '        '
+        )
 
         debug_dir = preserve_prompt(
             workspace_root=tmp_path,
@@ -530,3 +532,39 @@ class TestRedactionPerformance:
 
         # SecretRedactor should only be constructed once
         assert mock_constructor.call_count == 1
+
+
+def test_failure_nested_credentials_exact_env_values_and_metadata(monkeypatch, tmp_path):
+    from langchain_core.messages import AIMessage, ToolMessage
+    from guardkit.orchestrator import sdk_debug
+    import json
+
+    opaque = "opaque-local-value-rare-123"
+    monkeypatch.setenv("WORKHORSE_API_KEY", opaque)
+    error = RuntimeError("never retain free-form failure text")
+    error.raw_result = {"messages": [
+        AIMessage(content="", tool_calls=[{
+            "id": "skill-read", "name": "read_file",
+            "args": {"file_path": "/skills/planning/SKILL.md", "nested": {
+                "Authorization": "short-secret", "client_secret": "another-secret",
+                "innocent": opaque,
+            }},
+        }]),
+        ToolMessage(content=json.dumps({"body": opaque, "headers": {"x-api-key": "header-secret"}}),
+                    tool_call_id="skill-read", name="read_file"),
+        AIMessage(content=f"partial {opaque}", response_metadata={
+            "finish_reason": "length", "headers": {"X-Extra": "response-secret"},
+            "token_usage": {"completion_tokens": 3, "completion_tokens_details": {"reasoning_tokens": 2},
+                            "arbitrary": "usage-secret"},
+        }),
+    ]}
+    sdk_debug.preserve_failure(tmp_path, error)
+    text = (tmp_path / "messages.jsonl").read_text()
+    for secret in (opaque, "short-secret", "another-secret", "header-secret", "response-secret", "usage-secret"):
+        assert secret not in text
+    records = [json.loads(line) for line in text.splitlines()]
+    assert records[0]["usage"] == {"completion_tokens": 3, "completion_tokens_details": {"reasoning_tokens": 2}}
+    assert records[0]["finish_reason"] == "length"
+    assert records[1]["tool_calls"][0]["args"]["file_path"] == "/skills/planning/SKILL.md"
+    assert records[2]["tool_call_id"] == "skill-read"
+    assert json.loads(records[2]["content"])["headers"]["x-api-key"] == "[REDACTED]"

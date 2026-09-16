@@ -26,6 +26,9 @@ failures are logged as warnings and swallowed.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import math
+import re
 import json
 import logging
 import os
@@ -780,6 +783,273 @@ def preserve_event(debug_dir: Optional[Path], event: Any) -> None:
         logger.warning("sdk_debug: failed to preserve event: %s", exc)
 
 
+# Failure snapshots deliberately do not use the repr-based SDK serializer.
+_FAILURE_FIELD_BYTES = 4096
+_FAILURE_ITEMS = 128
+_USAGE_FIELDS = frozenset({
+    "input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
+    "completion_tokens", "reasoning_tokens", "cache_read", "cache_creation",
+    "audio", "reasoning", "accepted_prediction_tokens", "rejected_prediction_tokens",
+})
+_USAGE_DETAILS = frozenset({
+    "input_token_details", "output_token_details", "prompt_tokens_details",
+    "completion_tokens_details",
+})
+
+
+def _credential_field(name: str) -> bool:
+    compact = re.sub(r"[^a-z0-9]", "", name.casefold())
+    return any(word in compact for word in (
+        "password", "passwd", "secret", "token", "apikey", "accesskey",
+        "privatekey", "authorization", "credential", "cookie",
+    )) or compact in {"auth", "key", "pass"} or name.casefold().endswith("_key")
+
+
+class _FailureScrubber:
+    """Bounded JSON-only walk; scrub before truncation, never stringify objects."""
+
+    def __init__(self) -> None:
+        self.secrets = sorted({
+            value for key, value in os.environ.items()
+            if value and _credential_field(key)
+        }, key=len, reverse=True)
+        self.truncated = False
+        self.nodes = 0
+
+    def text(self, value: str) -> str:
+        for secret in self.secrets:
+            value = value.replace(secret, "[REDACTED]")
+        value = _get_redactor().redact(value)
+        encoded = value.encode("utf-8")
+        if len(encoded) > _FAILURE_FIELD_BYTES:
+            self.truncated = True
+            value = encoded[:_FAILURE_FIELD_BYTES - len("[TRUNCATED]")].decode("utf-8", errors="ignore")
+            value += "[TRUNCATED]"
+        return value
+
+    def walk(self, value: Any, depth: int = 0) -> Any:
+        self.nodes += 1
+        if depth > 8 or self.nodes > _FAILURE_ITEMS:
+            self.truncated = True
+            return "[TRUNCATED]"
+        if type(value) is str:
+            # Tool output can itself be a JSON document with credential fields.
+            if value.lstrip().startswith(("{", "[")):
+                try:
+                    parsed = json.loads(value)
+                except (ValueError, RecursionError):
+                    pass
+                else:
+                    return self.text(json.dumps(self.walk(parsed, depth + 1), ensure_ascii=False))
+            return self.text(value)
+        if value is None or type(value) in (bool, int):
+            return value
+        if type(value) is float:
+            return value if math.isfinite(value) else None
+        if type(value) is dict:
+            result = {}
+            for index, (key, item) in enumerate(value.items()):
+                if index >= _FAILURE_ITEMS or self.nodes > _FAILURE_ITEMS:
+                    self.truncated = True
+                    result["__truncated__"] = True
+                    break
+                if type(key) is str:
+                    result[self.text(key)] = (
+                        "[REDACTED]" if _credential_field(key)
+                        else self.walk(item, depth + 1)
+                    )
+            return result
+        if type(value) in (list, tuple):
+            result = []
+            for item in value:
+                if len(result) >= _FAILURE_ITEMS or self.nodes > _FAILURE_ITEMS:
+                    self.truncated = True
+                    result.append("[TRUNCATED]")
+                    break
+                result.append(self.walk(item, depth + 1))
+            return result
+        return {"status": "not_recorded"}
+
+
+def _failure_usage(value: Any) -> Optional[dict]:
+    if type(value) is not dict:
+        return None
+    result = {}
+    for key, item in value.items():
+        if key in _USAGE_FIELDS and type(item) in (int, float) and math.isfinite(item):
+            result[key] = item
+        elif key in _USAGE_DETAILS and type(item) is dict:
+            result[key] = _failure_usage(item)
+    return result
+
+
+def _failure_metadata(message: dict) -> dict:
+    response = message.get("response_metadata") or {}
+    additional = message.get("additional_kwargs") or {}
+    usage = message.get("usage_metadata")
+    if type(usage) is not dict:
+        usage = response.get("token_usage")
+    finish = response.get("finish_reason")
+    stop = response.get("stop_reason")
+    if finish is None and not stop:
+        finish = additional.get("finish_reason")
+    return {
+        "finish_reason": finish if type(finish) is str else None,
+        "stop_reason": stop if type(stop) is str else None,
+        "usage": _failure_usage(usage),
+    }
+
+
+def _failure_skill_entry(entry: Any) -> dict:
+    if type(entry) is dict:
+        return {key: entry[key] for key in ("name", "path") if key in entry}
+    # Deep Agents 0.7.14 stores source errors as strings, not metadata maps.
+    # Retain only the source path; never retain the free-form backend error.
+    if type(entry) is str:
+        match = re.match(r"^Cannot load skills from '([^'\r\n]*)':", entry)
+        if match:
+            return {"path": match.group(1)}
+    return {"path": None, "status": "not_recorded"}
+
+
+def _failure_records(exc: Exception):
+    raw = getattr(exc, "raw_result", None)
+    available = type(raw) is dict
+    # An SDK-only installation can still record an absent graph result.
+    ai_types = tool_types = ()
+    if available:
+        from langchain_core.messages import AIMessage, ToolMessage
+        ai_types, tool_types = (AIMessage,), (ToolMessage,)
+    messages = raw.get("messages", []) if available else []
+    if type(messages) not in (list, tuple):
+        messages = []
+    terminal_index = next((
+        i for i in range(len(messages) - 1, -1, -1)
+        if isinstance(messages[i], ai_types)
+    ), None)
+    terminal = messages[terminal_index].model_dump() if terminal_index is not None else {}
+    content = terminal.get("content")
+    text = (content if content.strip() else "") if type(content) is str else None
+    if type(content) is list:
+        # Match the harness's visible-text extraction: output/text blocks and
+        # bare strings, separated by newlines, excluding reasoning and blanks.
+        parts = []
+        for block in content:
+            part = block if type(block) is str else (
+                block.get("text") if type(block) is dict
+                and block.get("type") in {"text", "output_text"} else None
+            )
+            if type(part) is str and part.strip():
+                parts.append(part)
+        text = "\n".join(parts)
+    metadata = _failure_metadata(terminal)
+    reason = metadata["finish_reason"] or metadata["stop_reason"]
+    category = "graph_failure"
+    if text is not None and not text.strip():
+        category = "empty_terminal"
+    elif type(reason) is str and reason.casefold() == "length":
+        category = "truncated_terminal"
+    yield {
+        "type": "GraphFailure", "version": 1, "outcome": "failed",
+        "exception_class": type(exc).__name__, "failure_category": category,
+        "graph_result_available": available, "terminal_graph_index": terminal_index,
+        "text_length": len(text) if text is not None else None,
+        "text_empty": not text.strip() if text is not None else None,
+        **metadata,
+    }
+    for index, message in enumerate(messages):
+        if not isinstance(message, ai_types + tool_types):
+            continue
+        data = message.model_dump()
+        record = {
+            "type": "AIMessage" if isinstance(message, ai_types) else "ToolMessage",
+            "graph_index": index, "id": data.get("id"), "name": data.get("name"),
+            "content": data.get("content"),
+        }
+        if isinstance(message, ai_types):
+            record["tool_calls"] = [
+                {key: call.get(key) for key in ("id", "name", "args")}
+                for call in data.get("tool_calls", [])
+            ]
+            record.update(_failure_metadata(data))
+        else:
+            record.update(tool_call_id=data.get("tool_call_id"), status=data.get("status"))
+        yield record
+    state = {"type": "GraphFailureState", "state_truncated": False}
+    for field in ("skills_metadata", "skills_load_errors"):
+        entries = raw.get(field) if available else None
+        if type(entries) is list and len(entries) > _FAILURE_ITEMS:
+            state["state_truncated"] = True
+        state[field] = [
+            _failure_skill_entry(entry) for entry in entries[:_FAILURE_ITEMS]
+        ] if type(entries) is list else "not_recorded"
+    memory = raw.get("memory_contents") if available else None
+    if type(memory) is dict and len(memory) > _FAILURE_ITEMS:
+        state["state_truncated"] = True
+    state["memory"] = [
+        {"path": path, "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+         "bytes": len(content.encode("utf-8"))}
+        for path, content in list(memory.items())[:_FAILURE_ITEMS]
+        if type(path) is str and type(content) is str
+    ] if type(memory) is dict else "not_recorded"
+    yield state
+
+
+def preserve_failure(debug_dir: Optional[Path], exc: Exception) -> None:
+    """Save returned failed graph evidence without influencing invocation outcome.
+
+    A None directory carries preserve_prompt's enable/disable decision. This
+    narrow serializer leaves ordinary SDK capture unchanged. Each append checks
+    prospective UTF-8 turn and task bytes, reserving a JSON truncation marker.
+    Missing mid-graph state is explicitly unknown; exception text is never saved.
+    """
+    if debug_dir is None:
+        return
+    try:
+        path = debug_dir / "messages.jsonl"
+        if path.exists() and "[TRUNCATED at" in path.read_text(encoding="utf-8"):
+            return
+        task_dir = next((p for p in debug_dir.parents if p.name == "sdk_debug"), debug_dir)
+        current = path.stat().st_size if path.exists() else 0
+        total = sum(p.stat().st_size for p in task_dir.rglob("*") if p.is_file())
+        room = min(PER_TURN_CAP_BYTES - current, PER_TASK_CAP_BYTES - total)
+        marker = b'{"type":"GraphFailureTruncated","message":"[TRUNCATED at byte cap]"}\n'
+        if room < len(marker):
+            return  # Existing bytes leave no room even for an honest marker.
+        try:
+            scrubber = _FailureScrubber()
+            records = _failure_records(exc)
+            for record in records:
+                scrubber.nodes = 0
+                scrubber.truncated = False
+                # Metadata has its own numeric allowlist: token counts are not credentials.
+                usage = record.pop("usage", None)
+                safe = scrubber.walk(record)
+                if "usage" not in safe and record["type"] in ("GraphFailure", "AIMessage"):
+                    safe["usage"] = usage
+                safe["truncated"] = scrubber.truncated
+                line = (json.dumps(safe, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+                if len(line) + len(marker) > room:
+                    with path.open("ab") as stream:
+                        stream.write(marker)
+                    return
+                with path.open("ab") as stream:
+                    stream.write(line)
+                room -= len(line)
+        except Exception:  # Fail closed; never log a payload-bearing exception.
+            marker = b'{"type":"GraphFailureRedactionError","message":"[REDACTION-FAILED]"}\n'
+            # A failed write may already have appended bytes. Recheck the
+            # actual sizes before attempting the fail-closed marker.
+            current = path.stat().st_size if path.exists() else 0
+            total = sum(p.stat().st_size for p in task_dir.rglob("*") if p.is_file())
+            room = min(PER_TURN_CAP_BYTES - current, PER_TASK_CAP_BYTES - total)
+            if len(marker) <= room:
+                with path.open("ab") as stream:
+                    stream.write(marker)
+    except Exception:
+        logger.warning("sdk_debug: failed to preserve graph failure")
+
+
 def prune_old_turns_if_needed(task_sdk_debug_dir: Path) -> None:
     """Prune oldest turns if per-task total exceeds PER_TASK_CAP_BYTES.
 
@@ -854,6 +1124,7 @@ __all__ = [
     "compute_debug_dir",
     "preserve_prompt",
     "preserve_event",
+    "preserve_failure",
     "prune_old_turns_if_needed",
     "DEFAULT_ON_REPOS",
     "PER_TURN_CAP_BYTES",

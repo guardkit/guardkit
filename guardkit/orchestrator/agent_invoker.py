@@ -5110,6 +5110,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                             self._last_session_id = event.session_id
                                             break
                     except (Exception, asyncio.CancelledError) as exc:
+                        if not isinstance(exc, asyncio.CancelledError):
+                            # Retain a returned failed graph before the outer
+                            # handler wraps it. Diagnostics never feed events
+                            # or recovery reports and cannot mask this error.
+                            try:
+                                from guardkit.orchestrator.sdk_debug import preserve_failure
+                                preserve_failure(_sdk_debug_dir, exc)
+                            except Exception:
+                                logger.warning("Failed graph debug preservation unavailable")
                         if isinstance(exc, asyncio.CancelledError):
                             logger.debug(f"CancelledError caught at _invoke_with_role: {exc}")
                             # TASK-CRV-1540 + TASK-HMIG-006.2: extract partial

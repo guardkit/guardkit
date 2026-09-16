@@ -487,3 +487,161 @@ def test_default_off_no_sdk_debug_directory(tmp_path, _non_allowlisted_repo):
     sdk_debug.preserve_event(None, FakeAssistantMessage())
     sdk_debug_root = tmp_path / ".guardkit" / "autobuild" / "TASK-X" / "sdk_debug"
     assert not sdk_debug_root.exists()
+
+
+# Failed graph capture is deliberately independent of the SDK repr serializer.
+def _failed_result(messages=None, **state):
+    error = RuntimeError("exception text must never be retained")
+    error.raw_result = {"messages": messages or [], **state}
+    return error
+
+
+def _failure_lines(path):
+    return [json.loads(line) for line in (path / "messages.jsonl").read_text().splitlines()]
+
+
+def test_failure_disabled_and_unsupported_repr(tmp_path):
+    class Poison:
+        def __repr__(self):
+            raise AssertionError("repr must not be called")
+
+    sdk_debug.preserve_failure(None, Poison())
+    sdk_debug.preserve_failure(tmp_path, _failed_result([Poison()]))
+    records = _failure_lines(tmp_path)
+    assert records[0]["terminal_graph_index"] is None
+    assert records[0]["text_empty"] is None
+    assert records[0]["usage"] is None
+    assert records[-1]["skills_metadata"] == "not_recorded"
+    assert "exception text" not in (tmp_path / "messages.jsonl").read_text()
+
+
+def test_failure_state_metadata_excludes_memory_content(tmp_path):
+    import hashlib
+    content = "private instruction text"
+    sdk_debug.preserve_failure(tmp_path, _failed_result(
+        skills_metadata=[{"name": "planning", "path": "/skills/planning/SKILL.md", "description": "excluded"}],
+        skills_load_errors=[
+            {"path": "/bad/SKILL.md", "error": "excluded"},
+            "Cannot load skills from '/missing/skills': excluded backend error",
+            "unknown error format: excluded",
+        ],
+        memory_contents={"/AGENTS.md": content},
+    ))
+    state = _failure_lines(tmp_path)[-1]
+    assert state["skills_metadata"] == [{"name": "planning", "path": "/skills/planning/SKILL.md"}]
+    assert state["skills_load_errors"] == [
+        {"path": "/bad/SKILL.md"}, {"path": "/missing/skills"},
+        {"path": None, "status": "not_recorded"},
+    ]
+    assert "excluded" not in (tmp_path / "messages.jsonl").read_text()
+    assert state["memory"] == [{"path": "/AGENTS.md", "sha256": hashlib.sha256(content.encode()).hexdigest(), "bytes": len(content)}]
+    assert content not in (tmp_path / "messages.jsonl").read_text()
+
+
+@pytest.mark.parametrize("cap_kind", ["turn", "task"])
+def test_failure_prospective_utf8_caps(monkeypatch, tmp_path, cap_kind):
+    messages = pytest.importorskip("langchain_core.messages")
+    debug = sdk_debug.compute_debug_dir(tmp_path, "TASK-CAP", 2, "player")
+    debug.mkdir(parents=True)
+    old = debug.parent / "turn_1"
+    old.mkdir()
+    (old / "prompt.txt").write_bytes(b"x" * 200)
+    cap = 1000
+    monkeypatch.setattr(sdk_debug, "PER_TURN_CAP_BYTES", cap if cap_kind == "turn" else 10000)
+    monkeypatch.setattr(sdk_debug, "PER_TASK_CAP_BYTES", cap if cap_kind == "task" else 10000)
+    error = _failed_result([messages.AIMessage(content="\U0001f600" * 10000)])
+    sdk_debug.preserve_failure(debug, error)
+    first = (debug / "messages.jsonl").read_bytes()
+    assert _failure_lines(debug)[0]["type"] == "GraphFailure"
+    assert _failure_lines(debug)[0]["text_length"] == 10000
+    assert _failure_lines(debug)[-1]["type"] == "GraphFailureTruncated"
+    assert len(first) + (200 if cap_kind == "task" else 0) <= cap
+    sdk_debug.preserve_failure(debug, error)
+    assert (debug / "messages.jsonl").read_bytes() == first
+
+
+def test_failure_large_field_is_bounded_and_explicit(tmp_path):
+    messages = pytest.importorskip("langchain_core.messages")
+    sdk_debug.preserve_failure(tmp_path, _failed_result([messages.AIMessage(content="é" * 10000)]))
+    record = _failure_lines(tmp_path)[1]
+    assert record["truncated"] is True
+    assert record["content"].endswith("[TRUNCATED]")
+    assert len(record["content"].encode()) <= sdk_debug._FAILURE_FIELD_BYTES
+
+
+@pytest.mark.parametrize("failure", ["serialize", "redact", "redactor_setup", "extract", "write"])
+def test_failure_capture_fails_closed(monkeypatch, tmp_path, failure, caplog):
+    from unittest.mock import Mock
+    secret = "do-not-log-failed-payload"
+    fail = Mock(side_effect=RuntimeError(secret))
+    if failure == "serialize":
+        monkeypatch.setattr(sdk_debug.json, "dumps", fail)
+    elif failure == "redact":
+        monkeypatch.setattr(sdk_debug, "_get_redactor", fail)
+    elif failure == "redactor_setup":
+        monkeypatch.setattr(sdk_debug, "_FailureScrubber", fail)
+    elif failure == "extract":
+        monkeypatch.setattr(sdk_debug, "_failure_records", fail)
+    else:
+        monkeypatch.setattr(Path, "open", fail)
+    sdk_debug.preserve_failure(tmp_path, _failed_result())
+    assert secret not in caplog.text
+    if failure != "write":
+        assert _failure_lines(tmp_path) == [{"type": "GraphFailureRedactionError", "message": "[REDACTION-FAILED]"}]
+
+
+def test_failure_without_graph_needs_no_optional_substrate(monkeypatch, tmp_path):
+    import builtins
+    original_import = builtins.__import__
+
+    def without_langchain(name, *args, **kwargs):
+        if name.startswith("langchain_core"):
+            raise AssertionError("SDK failure capture must not import optional graph dependencies")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_langchain)
+    sdk_debug.preserve_failure(tmp_path, RuntimeError("no graph"))
+    summary = _failure_lines(tmp_path)[0]
+    assert summary["graph_result_available"] is False
+    assert summary["finish_reason"] is None
+    assert summary["stop_reason"] is None
+    assert summary["text_length"] is None
+
+
+def test_failure_metadata_unknowns_and_content_blocks(tmp_path):
+    messages = pytest.importorskip("langchain_core.messages")
+    sdk_debug.preserve_failure(tmp_path, _failed_result([messages.AIMessage(
+        content=[{"type": "text", "text": "first"}, {"type": "output_text", "text": " second"}, {"type": "reasoning", "text": "hidden"}],
+        response_metadata={"finish_reason": 42, "stop_reason": "length", "unrelated": "drop-me",
+                           "token_usage": {"completion_tokens": 12, "prompt_tokens": "unknown", "extra": 99}},
+    )]))
+    records = _failure_lines(tmp_path)
+    assert records[0]["text_length"] == len("first\n second")
+    assert records[0]["finish_reason"] is None
+    assert records[0]["stop_reason"] == "length"
+    assert records[0]["failure_category"] == "truncated_terminal"
+    assert records[0]["usage"] == {"completion_tokens": 12}
+    assert "drop-me" not in (tmp_path / "messages.jsonl").read_text()
+
+
+def test_failure_cap_includes_existing_utf8_bytes(monkeypatch, tmp_path):
+    existing = '{"type":"existing","content":"é"}\n'.encode()
+    path = tmp_path / "messages.jsonl"
+    path.write_bytes(existing)
+    monkeypatch.setattr(sdk_debug, "PER_TURN_CAP_BYTES", len(existing) + 90)
+    sdk_debug.preserve_failure(tmp_path, RuntimeError("unavailable"))
+    assert path.read_bytes().startswith(existing)
+    assert path.stat().st_size <= sdk_debug.PER_TURN_CAP_BYTES
+    assert _failure_lines(tmp_path)[-1]["type"] == "GraphFailureTruncated"
+
+
+@pytest.mark.parametrize("content", ["  ", [{"type": "text", "text": "  "}]])
+def test_failure_whitespace_is_extracted_as_empty(tmp_path, content):
+    messages = pytest.importorskip("langchain_core.messages")
+    sdk_debug.preserve_failure(tmp_path, _failed_result([messages.AIMessage(
+        content=content, additional_kwargs={"finish_reason": "length"},
+    )]))
+    summary = _failure_lines(tmp_path)[0]
+    assert summary["text_length"] == 0
+    assert summary["text_empty"] is True
+    assert summary["finish_reason"] == "length"
