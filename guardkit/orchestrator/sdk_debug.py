@@ -1017,6 +1017,24 @@ def _failure_calls_summary(value: Any, *, raw: bool) -> dict | None:
     return result
 
 
+def _failure_reasoning_block(value: Any) -> bool:
+    """Recognize an assistant reasoning carrier without reading its payload."""
+    if type(value) is not dict:
+        return False
+    block_type = value.get("type")
+    return (
+        type(block_type) is str
+        and block_type.casefold() in {"reasoning", "thinking"}
+    )
+
+
+def _failure_visible_content(value: Any) -> Any:
+    """Remove reasoning blocks while retaining ordinary assistant content."""
+    if type(value) is not list:
+        return value
+    return [block for block in value if not _failure_reasoning_block(block)]
+
+
 def _failure_reasoning_summary(message: dict) -> dict | None:
     """Measure reasoning text without retaining the reasoning itself."""
     carrier_count = 0
@@ -1024,10 +1042,7 @@ def _failure_reasoning_summary(message: dict) -> dict | None:
     content = message.get("content")
     if type(content) is list:
         for block in content:
-            if (
-                type(block) is not dict
-                or block.get("type") not in {"reasoning", "thinking"}
-            ):
+            if not _failure_reasoning_block(block):
                 continue
             carrier_count += 1
             for key in ("text", "reasoning", "content", "thinking"):
@@ -1155,12 +1170,16 @@ def _failure_records(exc: Exception):
         if not isinstance(message, ai_types + tool_types):
             continue
         data = message.model_dump()
+        ai_message = isinstance(message, ai_types)
+        content = data.get("content")
+        if ai_message:
+            content = _failure_visible_content(content)
         record = {
-            "type": "AIMessage" if isinstance(message, ai_types) else "ToolMessage",
+            "type": "AIMessage" if ai_message else "ToolMessage",
             "graph_index": index, "id": data.get("id"), "name": data.get("name"),
-            "content": data.get("content"),
+            "content": content,
         }
-        if isinstance(message, ai_types):
+        if ai_message:
             record["tool_calls"] = [
                 {key: call.get(key) for key in ("id", "name", "args")}
                 for call in data.get("tool_calls", [])

@@ -758,6 +758,44 @@ def test_failure_terminal_metadata_summarizes_provider_fields(monkeypatch, tmp_p
         }
 
 
+@pytest.mark.parametrize(
+    ("kind", "field"),
+    [("reasoning", "text"), ("reasoning", "reasoning"), ("thinking", "thinking")],
+)
+def test_failure_reasoning_content_is_metadata_only(tmp_path, kind, field):
+    messages = pytest.importorskip("langchain_core.messages")
+    private = "The hidden deliberation considers an unpublished acquisition."
+    visible = "Visible result"
+    sdk_debug.preserve_failure(tmp_path, _failed_result([
+        messages.AIMessage(
+            content=[
+                {"type": kind, field: private},
+                {"type": "text", "text": visible},
+            ],
+            response_metadata={"finish_reason": "length"},
+        ),
+    ]))
+
+    persisted = (tmp_path / "messages.jsonl").read_text()
+    records = _failure_lines(tmp_path)
+    assert private not in persisted
+    assert visible in persisted
+    for record in records[:2]:
+        assert record["reasoning_text"] == {
+            "present": True,
+            "carrier_count": 1,
+            "text_count": 1,
+            "nonempty_text_count": 1,
+            "characters": len(private),
+            "bytes": len(private.encode()),
+            "truncated": False,
+            "empty": False,
+        }
+    assert records[1]["content"] == [
+        {"type": "text", "text": visible},
+    ]
+
+
 def test_failure_terminal_metadata_distinguishes_absent_empty_and_truncated(tmp_path):
     messages = pytest.importorskip("langchain_core.messages")
     absent = tmp_path / "absent"
