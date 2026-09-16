@@ -13,6 +13,7 @@ Example:
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -266,9 +267,12 @@ class TaskLoader:
         if requirements_lines:
             return "\n".join(requirements_lines)
 
-        # Default: Use first paragraph of content
-        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-        return paragraphs[0] if paragraphs else "No requirements specified"
+        # Without a dedicated section the complete task body is the requirement.
+        # Task files commonly use domain-specific sections instead of a generic
+        # ``## Requirements`` heading, so selecting only the first paragraph can
+        # silently reduce the task to its title or preamble.
+        body = content.strip()
+        return body if body else "No requirements specified"
 
     @staticmethod
     def _extract_acceptance_criteria(metadata: dict, content: str) -> List[str]:
@@ -297,31 +301,82 @@ class TaskLoader:
             elif isinstance(criteria, str):
                 return [criteria]
 
-        # Fall back to content parsing
-        # Look for "## Acceptance Criteria" section
+        # Fall back to content parsing. Each top-level list item is one
+        # criterion; all following lines belong to it until the next top-level
+        # item or peer section. This preserves wrapped prose, nested lists and
+        # fenced examples as part of the criterion that they qualify.
         lines = content.split("\n")
         in_criteria = False
         criteria_lines = []
+        current_criterion = None
+        fence_character = None
+        fence_length = 0
+
+        criterion_pattern = re.compile(
+            r"^(?:- \[(?: |x|X)\](?: |$)|- |\* )(?P<text>.*)$"
+        )
+        peer_heading_pattern = re.compile(r"^##(?!#)(?:[ \t]+|$)")
+        fence_pattern = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})")
+
+        def finish_criterion() -> None:
+            nonlocal current_criterion
+            if current_criterion is None:
+                return
+            while current_criterion and not current_criterion[-1].strip():
+                current_criterion.pop()
+            criterion = "\n".join(current_criterion)
+            if criterion.strip():
+                criteria_lines.append(criterion)
+            current_criterion = None
 
         for line in lines:
-            if line.strip().lower() in [
-                "## acceptance criteria",
-                "## acceptance criterion",
-            ]:
-                in_criteria = True
+            if fence_character is not None:
+                if in_criteria and current_criterion is not None:
+                    current_criterion.append(line)
+
+                closing_fence = re.match(
+                    rf"^[ \t]*{re.escape(fence_character)}"
+                    rf"{{{fence_length},}}[ \t]*$",
+                    line,
+                )
+                if closing_fence:
+                    fence_character = None
+                    fence_length = 0
                 continue
-            elif in_criteria:
-                if line.startswith("##"):  # Next section
-                    break
-                # Only match TOP-LEVEL list items (no leading whitespace).
-                # Indented items (e.g., "  - sub-bullet") are sub-criteria
-                # belonging to their parent and should not inflate the count.
-                if line.startswith(("- [ ] ", "- [x] ", "- ", "* ")):
-                    # Extract text after checkbox/bullet
-                    text = line.lstrip("- [x] ").lstrip("- [ ] ").lstrip("- ").lstrip("* ")
-                    text = text.strip()
-                    if text:
-                        criteria_lines.append(text)
+
+            opening_fence = fence_pattern.match(line)
+            if opening_fence:
+                fence = opening_fence.group("fence")
+                fence_character = fence[0]
+                fence_length = len(fence)
+                if in_criteria and current_criterion is not None:
+                    current_criterion.append(line)
+                continue
+
+            if not in_criteria:
+                if line.strip().lower() in [
+                    "## acceptance criteria",
+                    "## acceptance criterion",
+                ]:
+                    in_criteria = True
+                continue
+
+            if peer_heading_pattern.match(line):
+                finish_criterion()
+                break
+
+            item = criterion_pattern.match(line)
+            if item:
+                finish_criterion()
+                text = item.group("text")
+                if text.strip():
+                    current_criterion = [text]
+                continue
+
+            if current_criterion is not None:
+                current_criterion.append(line)
+
+        finish_criterion()
 
         return criteria_lines if criteria_lines else ["No acceptance criteria specified"]
 
