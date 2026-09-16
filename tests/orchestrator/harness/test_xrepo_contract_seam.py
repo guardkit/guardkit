@@ -85,7 +85,7 @@ guardkitfactory_harness = pytest.importorskip(
     ),
 )
 
-from guardkit.orchestrator.exceptions import AgentInvocationError
+from guardkit.orchestrator.exceptions import AgentInvocationError  # noqa: E402
 from guardkit.orchestrator.harness.adapter import (  # noqa: E402
     AssistantMessageEvent,
     HarnessAdapter,
@@ -256,7 +256,10 @@ class TestRealConstructionThroughSelector:
                 "memory": ["AGENTS.md"],
             }
         )
-        callback = lambda: None
+
+        def callback() -> None:
+            return None
+
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
         monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
 
@@ -318,17 +321,39 @@ class TestRealConstructionThroughSelector:
         monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
         monkeypatch.setitem(sys.modules, "deepagents_code", None)
 
-        with pytest.raises(AgentInvocationError) as exc_info:
-            select_harness(
-                env_var=_TEST_ENV_VAR,
+        activity_count = 0
+
+        def on_model_activity() -> None:
+            nonlocal activity_count
+            activity_count += 1
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            cwd=tmp_path,
+            harness_role="player",
+            model="qwen36-workhorse",
+            on_model_activity=on_model_activity,
+        )
+
+        async def _invoke() -> None:
+            async for _ in harness.invoke(
+                prompt="Refuse the unavailable dcode Player.",
+                role="player",
+                tools=[],
                 cwd=tmp_path,
-                harness_role="player",
-                model="qwen36-workhorse",
-            )
+                timeout_seconds=10,
+            ):
+                pass
+
+        with pytest.raises(guardkitfactory_harness.LangGraphHarnessError) as exc_info:
+            import asyncio
+
+            asyncio.run(_invoke())
 
         message = str(exc_info.value)
         assert "dcode" in message.lower()
-        assert "Stage 2" in message
+        assert "not" in message.lower() or "unsupported" in message.lower()
+        assert activity_count == 0
         assert sys.modules["deepagents_code"] is None
 
     def test_max_tool_result_chars_reaches_real_backend_factory(
