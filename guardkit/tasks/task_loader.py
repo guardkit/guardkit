@@ -322,6 +322,8 @@ class TaskLoader:
             nonlocal current_criterion
             if current_criterion is None:
                 return
+            while current_criterion and not current_criterion[0].strip():
+                current_criterion.pop(0)
             while current_criterion and not current_criterion[-1].strip():
                 current_criterion.pop()
             criterion = "\n".join(current_criterion)
@@ -369,8 +371,7 @@ class TaskLoader:
             if item:
                 finish_criterion()
                 text = item.group("text")
-                if text.strip():
-                    current_criterion = [text]
+                current_criterion = [text]
                 continue
 
             if current_criterion is not None:
