@@ -29,6 +29,7 @@ LangGraph event taxonomy and the duck-typed orchestrator instrumentation.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ from types import ModuleType
 from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 # Optional dependency (LangGraph harness stack, resolved via guardkitfactory).
@@ -624,3 +626,156 @@ class TestEndToEndSingleTurn:
         # LangGraphHarness reports session_id=None → orchestrator's
         # _last_session_id must mirror that.
         assert invoker._last_session_id is None
+
+
+class TestInstalledCandidateIntegration:
+    """Drive both installed substrates through GuardKit's real selector seam."""
+
+    @pytest.mark.asyncio
+    async def test_selector_created_graph_uses_local_chat_completions(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """The selected 0.7.14 graph keeps the local alias, tools, and events."""
+        import langchain_openai
+
+        from guardkit.orchestrator.harness.adapter import ToolUseEvent
+        from guardkit.orchestrator.harness.selector import select_harness
+        from guardkitfactory.harness import LangGraphHarness
+
+        requests: list[tuple[str, dict[str, Any]]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            requests.append((request.url.path, body))
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chatcmpl-guardkit-selector",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": body["model"],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "selector candidate response",
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 5,
+                        "completion_tokens": 3,
+                        "total_tokens": 8,
+                    },
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        real_constructor = langchain_openai.ChatOpenAI
+
+        def fake_client(**kwargs: Any) -> Any:
+            return real_constructor(
+                **kwargs,
+                http_client=httpx.Client(transport=transport),
+                http_async_client=httpx.AsyncClient(transport=transport),
+                http_socket_options=(),
+                max_retries=0,
+            )
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        with patch("langchain_openai.ChatOpenAI", side_effect=fake_client):
+            harness = select_harness(
+                env_var=_TEST_ENV_VAR,
+                model="qwen36-workhorse",
+                cwd=tmp_path,
+                recursion_limit=20,
+                max_tool_result_chars=8000,
+            )
+            assert isinstance(harness, LangGraphHarness)
+            events = [
+                event
+                async for event in harness.invoke(
+                    prompt="Return the deterministic response.",
+                    role="player",
+                    tools=[],
+                    cwd=tmp_path,
+                    timeout_seconds=10,
+                )
+            ]
+
+        assert len(requests) == 1
+        path, body = requests[0]
+        assert path == "/v1/chat/completions"
+        assert body["model"] == "qwen36-workhorse"
+        tool_names = {tool["function"]["name"] for tool in body["tools"]}
+        assert {
+            "write_todos",
+            "ls",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "delete",
+            "glob",
+            "grep",
+            "execute",
+            "task",
+        } <= tool_names
+        assert not any(isinstance(event, ToolUseEvent) for event in events)
+        assert isinstance(events[-2], AssistantMessageEvent)
+        assert events[-2].text == "selector candidate response"
+        assert isinstance(events[-1], ResultMessageEvent)
+
+    @pytest.mark.asyncio
+    async def test_installed_sdk_selector_invoker_uses_fake_client(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """The installed Claude SDK path preserves routing, events, and session ID."""
+        claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
+        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+        captured: dict[str, Any] = {}
+
+        async def fake_query(**kwargs: Any):
+            captured.update(kwargs)
+            yield AssistantMessage(
+                content=[TextBlock(text="installed SDK response")],
+                model="fake-sdk-model",
+            )
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="sess-installed-sdk",
+                total_cost_usd=0.0,
+            )
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        emitter = NullEmitter(capture=True)
+        invoker = _make_invoker(tmp_path, emitter=emitter)
+
+        with patch.object(claude_agent_sdk, "query", side_effect=fake_query):
+            await invoker._invoke_with_role(
+                prompt="TASK-TEST-SDK-INSTALLED fake client",
+                agent_type="player",
+                allowed_tools=["Read", "Write"],
+                permission_mode="acceptEdits",
+            )
+            await asyncio.sleep(0.05)
+
+        options = captured["options"]
+        assert options.model == M0_FLEET_SEAT
+        assert list(options.allowed_tools) == ["Read", "Write"]
+        assert invoker._last_session_id == "sess-installed-sdk"
+        llm_events = [
+            event for event in emitter.events if isinstance(event, LLMCallEvent)
+        ]
+        assert len(llm_events) == 1
+        assert llm_events[0].status == "ok"
