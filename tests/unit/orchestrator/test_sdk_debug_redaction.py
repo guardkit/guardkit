@@ -571,6 +571,20 @@ def test_failure_nested_credentials_exact_env_values_and_metadata(monkeypatch, t
 
 
 @pytest.mark.parametrize("content,expected", [
+    ("1: safe text\n2: password: 'can''t-opaque-value'\n3: tail",
+     "1: safe text\n2: password: [REDACTED]"),
+    ('1: safe text\n2: password = """opaque-value"""\n3: tail',
+     "1: safe text\n2: password = [REDACTED]"),
+    ("1: safe text\n2: password = 'prefix' 'opaque-value'\n3: tail",
+     "1: safe text\n2: password = [REDACTED]"),
+    ('1: safe text\n2: password = "prefix" + "opaque-value"\n3: tail',
+     "1: safe text\n2: password = [REDACTED]"),
+    ('1: safe text\n2: password = "prefix", "opaque-value"\n3: tail',
+     "1: safe text\n2: password = [REDACTED]"),
+    ('1: safe text\n2: "password": "prefix""opaque-value"\n3: tail',
+     '1: safe text\n2: "password": [REDACTED]'),
+    ('1: safe text\n2: password: "prefix"opaque-value\n3: tail',
+     "1: safe text\n2: password: [REDACTED]"),
     ('1: # Skill\n2: {"Authorization": "opaque-header", "password": "opaque-pass", "safe": "keep"}\n3: tail',
      '1: # Skill\n2: {"Authorization": "[REDACTED]", "password": "[REDACTED]", "safe": "keep"}\n3: tail'),
     ('Example: {"headers": {"AUTHORIZATION": "opaque-header"}, "safe": "keep"} tail',

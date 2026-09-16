@@ -816,8 +816,8 @@ _FAILURE_TEXT_STRING = re.compile(r""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""")
 def _failure_text_credentials(value: str) -> str:
     """Mask textual credential assignments before any truncation.
 
-    Keep complete quoted values' surrounding text verbatim. For an unquoted,
-    structured or incomplete value, discard the remaining text: its endpoint
+    Keep unambiguous quoted values' surrounding text verbatim. For an unquoted,
+    structured, incomplete or continued value, discard the remaining text: its endpoint
     cannot be established safely in numbered or partially returned file output.
     """
     parts = []
@@ -837,7 +837,16 @@ def _failure_text_credentials(value: str) -> str:
             continue
         parts.append(value[end:field.end()])
         quoted = _FAILURE_TEXT_STRING.match(value, field.end())
-        if quoted is None:
+        # A closing quote alone is not an endpoint: YAML doubles apostrophes,
+        # and Python/TOML can use triple quotes or concatenate quoted strings.
+        # Trust only a line/end boundary or a double-quoted JSON field separator.
+        tail = value[quoted.end():].lstrip(" \t") if quoted else ""
+        json_boundary = (
+            quoted is not None and quoted[0].startswith('"')
+            and field["key"].startswith('"') and field[0].rstrip().endswith(":")
+            and tail.startswith((",", "}", "]"))
+        )
+        if quoted is None or (tail and not tail.startswith(("\r", "\n")) and not json_boundary):
             parts.append("[REDACTED]")
             return "".join(parts)
         parts.append(quoted[0][0] + "[REDACTED]" + quoted[0][-1])
