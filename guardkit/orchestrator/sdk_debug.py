@@ -805,6 +805,47 @@ def _credential_field(name: str) -> bool:
     )) or compact in {"auth", "key", "pass"} or name.casefold().endswith("_key")
 
 
+# File tools return numbered Markdown; JSON fields may occur anywhere in it.
+# Recognize assignments without trying to parse the surrounding document.
+_FAILURE_TEXT_FIELD = re.compile(
+    r'''(?<![\w\\])(?P<key>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_][\w.-]*)[ \t]*[:=][ \t]*'''
+)
+_FAILURE_TEXT_STRING = re.compile(r""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""")
+
+
+def _failure_text_credentials(value: str) -> str:
+    """Mask textual credential assignments before any truncation.
+
+    Keep complete quoted values' surrounding text verbatim. For an unquoted,
+    structured or incomplete value, discard the remaining text: its endpoint
+    cannot be established safely in numbered or partially returned file output.
+    """
+    parts = []
+    end = 0
+    for field in _FAILURE_TEXT_FIELD.finditer(value):
+        if field.start() < end:
+            continue
+        key = field["key"]
+        if key.startswith('"'):
+            try:
+                key = json.loads(key)
+            except ValueError:
+                key = key[1:-1]
+        elif key.startswith("'"):
+            key = key[1:-1]
+        if not _credential_field(key):
+            continue
+        parts.append(value[end:field.end()])
+        quoted = _FAILURE_TEXT_STRING.match(value, field.end())
+        if quoted is None:
+            parts.append("[REDACTED]")
+            return "".join(parts)
+        parts.append(quoted[0][0] + "[REDACTED]" + quoted[0][-1])
+        end = quoted.end()
+    parts.append(value[end:])
+    return "".join(parts)
+
+
 class _FailureScrubber:
     """Bounded JSON-only walk; scrub before truncation, never stringify objects."""
 
@@ -817,6 +858,7 @@ class _FailureScrubber:
         self.nodes = 0
 
     def text(self, value: str) -> str:
+        value = _failure_text_credentials(value)
         for secret in self.secrets:
             value = value.replace(secret, "[REDACTED]")
         value = _get_redactor().redact(value)
