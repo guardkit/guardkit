@@ -568,3 +568,33 @@ def test_failure_nested_credentials_exact_env_values_and_metadata(monkeypatch, t
     assert records[1]["tool_calls"][0]["args"]["file_path"] == "/skills/planning/SKILL.md"
     assert records[2]["tool_call_id"] == "skill-read"
     assert json.loads(records[2]["content"])["headers"]["x-api-key"] == "[REDACTED]"
+
+
+@pytest.mark.parametrize("content,expected", [
+    ('1: # Skill\n2: {"Authorization": "opaque-header", "password": "opaque-pass", "safe": "keep"}\n3: tail',
+     '1: # Skill\n2: {"Authorization": "[REDACTED]", "password": "[REDACTED]", "safe": "keep"}\n3: tail'),
+    ('Example: {"headers": {"AUTHORIZATION": "opaque-header"}, "safe": "keep"} tail',
+     'Example: {"headers": {"AUTHORIZATION": "[REDACTED]"}, "safe": "keep"} tail'),
+    ('{"password":"opaque-pass"}\n{"safe":"keep","api_key":"opaque-key"}',
+     '{"password":"[REDACTED]"}\n{"safe":"keep","api_key":"[REDACTED]"}'),
+    (r'Example: {"pass\u0077ord":"escaped\"value", "safe":"keep"}',
+     'Example: {"pass\\u0077ord":"[REDACTED]", "safe":"keep"}'),
+    ("1: auth: 'opaque-value'\n2: safe text", "1: auth: '[REDACTED]'\n2: safe text"),
+    ('1: safe text\n2: password: "unfinished\n3: secret continuation',
+     '1: safe text\n2: password: [REDACTED]'),
+    ('safe prefix\nAuthorization: Bearer opaque-header\ncontinuation',
+     'safe prefix\nAuthorization: [REDACTED]'),
+    ('safe prefix\n{"credentials": {\n3: "nested": "opaque"}}',
+     'safe prefix\n{"credentials": [REDACTED]'),
+])
+def test_failure_textual_credential_fields(content, expected, tmp_path):
+    import json
+    from langchain_core.messages import ToolMessage
+    from guardkit.orchestrator import sdk_debug
+
+    error = RuntimeError("original error")
+    error.raw_result = {"messages": [ToolMessage(content=content, tool_call_id="read-skill")]}
+    sdk_debug.preserve_failure(tmp_path, error)
+    records = [json.loads(line) for line in (tmp_path / "messages.jsonl").read_text().splitlines()]
+    assert records[1]["content"] == expected
+    assert records[1]["tool_call_id"] == "read-skill"

@@ -111,7 +111,12 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     assert call["tool_calls"][0]["args"]["file_path"] == str(skill)
     assert result["tool_call_id"] == actual_call["id"]
     assert result["status"] == "success"
-    assert result["content"] == raw["messages"][2].content
+    # Preserve exact output except these explicit planted regression values.
+    # The independent credential probe also reuses this consumer assertion.
+    expected = raw["messages"][2].content
+    for planted in ("opaque-header-secret", "opaque-password-secret"):
+        expected = expected.replace(planted, "[REDACTED]")
+    assert result["content"] == expected
     assert "ACTUAL_CWD_SKILL_MARKER" in result["content"]
     assert terminal["content"] == text
     assert terminal["finish_reason"] == reason
@@ -155,3 +160,30 @@ async def test_internal_graph_failure_does_not_invent_activity(monkeypatch, tmp_
         assert records[0]["finish_reason"] is None
         assert records[0]["usage"] is None
         assert all("graph_index" not in record for record in records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["native", "dcode"])
+@pytest.mark.parametrize("embedded", [
+    '{"Authorization": "opaque-header-secret", "password": "opaque-password-secret", "safe": "KEEP_JSON"}',
+    'Example: {"Authorization": "opaque-header-secret", "password": "opaque-password-secret"} KEEP_SUFFIX',
+    '{"Authorization": "opaque-header-secret"}\n{"password": "opaque-password-secret", "safe": "KEEP_JSONL"}',
+])
+async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_path, engine, embedded):
+    original = _enable_native_experiment
+
+    def enable(monkeypatch, worktree):
+        skill = original(monkeypatch, worktree)
+        with skill.open("a") as out:
+            out.write("\n" + embedded + "\nKEEP_AFTER_CREDENTIALS\n")
+        return skill
+
+    monkeypatch.setattr(sys.modules[__name__], "_enable_native_experiment", enable)
+    await test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, engine, "", "length", "role")
+    records = [json.loads(line) for line in next(tmp_path.rglob("messages.jsonl")).read_text().splitlines()]
+    content = next(record["content"] for record in records if record["type"] == "ToolMessage")
+    assert "KEEP_AFTER_CREDENTIALS" in content
+    assert "[REDACTED]" in content
+    for marker in ("KEEP_JSON", "KEEP_SUFFIX", "KEEP_JSONL"):
+        if marker in embedded:
+            assert marker in content
