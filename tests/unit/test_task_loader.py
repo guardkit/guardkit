@@ -757,6 +757,25 @@ ignored
     ]
 
 
+@pytest.mark.parametrize("prefix", ["- [ ]", "- [x]", "- "])
+def test_empty_first_line_keeps_wrapped_criterion(prefix):
+    content = (
+        "## Acceptance Criteria\n"
+        f"{prefix}\n"
+        "  Required behavior on its continuation line.\n"
+        "  - Nested condition.\n"
+        "## Next section\n"
+        "excluded\n"
+    )
+
+    assert TaskLoader._extract_acceptance_criteria({}, content) == [
+        (
+            "  Required behavior on its continuation line.\n"
+            "  - Nested condition."
+        )
+    ]
+
+
 def test_unclosed_fence_keeps_apparent_sections_inside_the_criterion():
     """An unclosed fenced example cannot turn its contents into structure."""
     content = """## Acceptance Criteria
