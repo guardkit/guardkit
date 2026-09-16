@@ -565,3 +565,232 @@ Implement flat feature
 
     assert task_data["task_id"] == "TASK-AB-001"
     assert task_data["frontmatter"]["title"] == "Flat Task"
+
+
+def test_task001_shape_preserves_full_fallback_and_wrapped_criteria():
+    """The frozen task001 shape keeps every instruction and five complete ACs."""
+    content = """
+# Define records and exact-byte source ingestion
+
+Read the seed README shared contracts first. Complete predecessors before starting.
+
+## Files this task may change
+
+- src/career_assistant/__init__.py
+- src/career_assistant/models.py
+- src/career_assistant/evidence.py
+- pyproject.toml
+- tests/test_evidence.py
+- README.md
+
+## Request served
+
+Import saved synthetic snapshots and resolve every candidate claim against its exact original
+source, retaining unknowns and the distinction between direct, adjacent and missing evidence.
+
+## Implementation
+
+Implement the README shared model/error/canonicalization contracts before other tasks consume
+them. Freeze public field names in code, including strict BriefContent inputs and server-owned
+output identities. Add complete type validation, nonempty IDs, permitted enums and integer/boolean
+distinctions. No runtime module reads acceptance-spec or test aliases.
+
+Implement reusable source-record functions in evidence.py: exact bytes/hash, source metadata,
+confined relative paths, UTF-8 byte spans and exact excerpt validation. Source identity is separate
+from role deduplication and model inference. Preserve original evidence plus ordered authenticated
+correction records/effective statements; validate source/correction relationships and limits
+without a fixture-specific prose oracle. Corrected wording is not required to be in original bytes.
+
+Set package/CLI metadata but do not introduce agent calls or extra files. Keep initial fixture
+integrity assertions and add behavior tests alongside them. pyproject may package skill data later;
+dcode is a coding-worker runtime choice and is not a product dependency.
+
+## Acceptance criteria
+
+- Exact-byte hashes preserve LF, Unicode and empty-source identity; no decoding normalization.
+- Reject absolute/parent/symlink/intermediate-symlink/escaped paths and mismatched content hashes.
+- UTF-8 span tests cover accented/multibyte characters, byte boundaries, end-exclusive semantics,
+  OOB/negative spans and wrong excerpt paired with a real source ID/hash.
+- Canonical action bytes use complete payload, sorted keys, indent2, ensure_ascii false and final LF.
+  Same textual payload with distinct JSON types is not silently equated.
+- BriefContent rejects forged output metadata and broken proof references; public record serializers
+  preserve checker spellings. Imports are side-effect free. No product implementation is hardcoded
+  to any fixture role, evidence fact, expected output or request alias.
+
+## Verification boundary
+
+Run the frozen .guardkit toolchain command only in the assigned sandbox worktree. Preserve
+supplied fixtures, task/config inputs and external checker. Record actual exits/failures and
+meaningful new assertions; do not claim execution from static review. Use no new test filenames.
+"""
+
+    assert TaskLoader._extract_requirements({}, content) == content.strip()
+    assert TaskLoader._extract_acceptance_criteria({}, content) == [
+        "Exact-byte hashes preserve LF, Unicode and empty-source identity; no decoding normalization.",
+        "Reject absolute/parent/symlink/intermediate-symlink/escaped paths and mismatched content hashes.",
+        (
+            "UTF-8 span tests cover accented/multibyte characters, byte boundaries, "
+            "end-exclusive semantics,\n"
+            "  OOB/negative spans and wrong excerpt paired with a real source ID/hash."
+        ),
+        (
+            "Canonical action bytes use complete payload, sorted keys, indent2, "
+            "ensure_ascii false and final LF.\n"
+            "  Same textual payload with distinct JSON types is not silently equated."
+        ),
+        (
+            "BriefContent rejects forged output metadata and broken proof references; "
+            "public record serializers\n"
+            "  preserve checker spellings. Imports are side-effect free. No product "
+            "implementation is hardcoded\n"
+            "  to any fixture role, evidence fact, expected output or request alias."
+        ),
+    ]
+
+
+def test_task002_shape_preserves_all_wrapped_acceptance_text():
+    """The frozen task002 AC shape remains seven complete criteria."""
+    content = """# Persist queue, decisions and transactional brief records
+
+## Request served
+
+Keep one durable shortlist with source provenance; import idempotently and preserve corrections,
+rejections and generated outputs after restarting.
+
+## Acceptance criteria
+
+- Two imports yield stable snapshot/app IDs, unchanged sources and zero new public history;
+  supplied bundle yields seven snapshots/five roles/one incomplete source through generic parsing.
+- Mirrors link; engagement/location variants stay separate; blocked access does not imply closure.
+- Default list hides only explicit rejection; restart/reimport preserve it and its reason.
+- Correction/rejection replay, conflict, unknown IDs and exact flat action payload hashes behave
+  correctly after close/reopen; prior actions, evidence bytes and outputs never mutate.
+- Concurrent same-key requests have one owner and at most one published output/history row.
+- Changing evidence/correction during a pinned run refuses publication; saving requirements does
+  not itself invalidate replay. Unpublished/failed proposals never appear in public list/history.
+- Simulated crash/file loss recovers Markdown from a valid published row without duplicate history.
+
+## Verification boundary
+
+The following peer section is not acceptance text.
+"""
+
+    criteria = TaskLoader._extract_acceptance_criteria({}, content)
+
+    assert len(criteria) == 7
+    assert criteria[0].endswith(
+        "\n  supplied bundle yields seven snapshots/five roles/one incomplete source "
+        "through generic parsing."
+    )
+    assert criteria[3].endswith(
+        "\n  correctly after close/reopen; prior actions, evidence bytes and outputs never mutate."
+    )
+    assert criteria[5].endswith(
+        "\n  not itself invalidate replay. Unpublished/failed proposals never appear "
+        "in public list/history."
+    )
+    assert "Verification boundary" not in criteria[-1]
+
+
+def test_acceptance_criteria_keep_nested_content_and_fenced_examples():
+    """Nested/fenced bullets stay with their parent and fenced headings do not stop it."""
+    content = """```markdown
+## Acceptance Criteria
+- This bullet is an example, not a real criterion.
+```
+
+## Acceptance Criteria
+- [ ] xylophone behavior is preserved
+  Wrapped explanation.
+  - nested bullet
+  - [ ] nested checkbox
+  ## Nested heading
+
+  ```markdown
+  ## This heading is fenced
+  - This bullet is fenced
+  ```
+
+### Criterion detail
+More detail for the same criterion.
+- [X] Second criterion
+## Verification
+- This belongs to the next peer section.
+"""
+
+    assert TaskLoader._extract_acceptance_criteria({}, content) == [
+        (
+            "xylophone behavior is preserved\n"
+            "  Wrapped explanation.\n"
+            "  - nested bullet\n"
+            "  - [ ] nested checkbox\n"
+            "  ## Nested heading\n\n"
+            "  ```markdown\n"
+            "  ## This heading is fenced\n"
+            "  - This bullet is fenced\n"
+            "  ```\n\n"
+            "### Criterion detail\n"
+            "More detail for the same criterion."
+        ),
+        "Second criterion",
+    ]
+
+
+def test_acceptance_prefix_removal_is_exact_and_malformed_items_are_safe():
+    """Prefix parsing does not use a character-set lstrip or invent empty ACs."""
+    content = """## Acceptance Criteria
+- [x] xylophone starts with x\x20\x20
+  wrapped after a Markdown hard break
+* [brackets] remain literal
+- [maybe] malformed checkbox remains literal
+- [ ]
+- [x]    leading spaces after the real prefix remain
+## Next section
+ignored
+"""
+
+    assert TaskLoader._extract_acceptance_criteria({}, content) == [
+        "xylophone starts with x  \n  wrapped after a Markdown hard break",
+        "[brackets] remain literal",
+        "[maybe] malformed checkbox remains literal",
+        "   leading spaces after the real prefix remain",
+    ]
+
+
+def test_unclosed_fence_keeps_apparent_sections_inside_the_criterion():
+    """An unclosed fenced example cannot turn its contents into structure."""
+    content = """## Acceptance Criteria
+- Preserve this example:
+  ```text
+## Apparent peer heading
+- Apparent top-level bullet
+"""
+
+    assert TaskLoader._extract_acceptance_criteria({}, content) == [
+        (
+            "Preserve this example:\n"
+            "  ```text\n"
+            "## Apparent peer heading\n"
+            "- Apparent top-level bullet"
+        )
+    ]
+
+
+def test_requirements_fallback_empty_body_keeps_existing_sentinel():
+    assert TaskLoader._extract_requirements({}, " \n\t\n") == "No requirements specified"
+
+
+def test_frontmatter_and_explicit_requirements_keep_precedence():
+    content = """# Full task body
+
+## Requirements
+Only this explicit section.
+
+## Other section
+Other body text.
+"""
+
+    assert TaskLoader._extract_requirements(
+        {"requirements": "Frontmatter wins"}, content
+    ) == "Frontmatter wins"
+    assert TaskLoader._extract_requirements({}, content) == "Only this explicit section."
