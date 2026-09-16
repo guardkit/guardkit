@@ -64,6 +64,8 @@ Related design rules
 from __future__ import annotations
 
 import inspect
+import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +85,7 @@ guardkitfactory_harness = pytest.importorskip(
     ),
 )
 
+from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import (  # noqa: E402
     AssistantMessageEvent,
     HarnessAdapter,
@@ -156,6 +159,7 @@ def _real_selector_kwargs(model: Any) -> dict[str, Any]:
         "resume_session_id": None,
         "sdk_debug_dir": None,
         "cleanup_handler_installer": None,
+        "harness_role": "player",
     }
 
 
@@ -225,6 +229,107 @@ class TestRealConstructionThroughSelector:
         # The real backend was constructed from the worktree (run-24 surface).
         assert harness.backend is not None
         assert harness.permissions is not None
+
+    def test_native_player_experiment_reaches_real_factory_with_callback(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The installed factory accepts parsed native sources through the selector."""
+        from guardkitfactory.harness.player_experiment import (
+            parse_player_experiment,
+        )
+
+        skills_dir = tmp_path / "skills"
+        skill_dir = skills_dir / "planning"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "# Planning\n\nUse the approved implementation plan.\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "AGENTS.md").write_text(
+            "# Repository instructions\n",
+            encoding="utf-8",
+        )
+        raw = json.dumps(
+            {
+                "engine": "native",
+                "skills": ["skills"],
+                "memory": ["AGENTS.md"],
+            }
+        )
+        callback = lambda: None
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            cwd=tmp_path,
+            on_model_activity=callback,
+            **_real_selector_kwargs(model="qwen36-workhorse"),
+        )
+
+        assert isinstance(harness, LangGraphHarness)
+        assert harness.player_experiment == parse_player_experiment(
+            raw, cwd=tmp_path
+        )
+        assert harness.on_model_activity is callback
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("not-json", "JSON"),
+            ('{"engine":"native","skills":["missing"]}', "missing"),
+        ],
+    )
+    def test_invalid_player_experiment_is_rejected_through_real_parser(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        raw: str,
+        expected: str,
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
+
+        with pytest.raises(AgentInvocationError) as exc_info:
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                cwd=tmp_path,
+                harness_role="player",
+                model="qwen36-workhorse",
+            )
+
+        assert expected.lower() in str(exc_info.value).lower()
+
+    def test_stage1_dcode_rejects_without_importing_dcode(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        dcode_home = tmp_path.parent / f"{tmp_path.name}-dcode-home"
+        dcode_home.mkdir()
+        raw = json.dumps(
+            {
+                "engine": "dcode",
+                "skills": [],
+                "memory": [],
+                "dcode_home": str(dcode_home),
+            }
+        )
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(dcode_home))
+        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
+        monkeypatch.setitem(sys.modules, "deepagents_code", None)
+
+        with pytest.raises(AgentInvocationError) as exc_info:
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                cwd=tmp_path,
+                harness_role="player",
+                model="qwen36-workhorse",
+            )
+
+        message = str(exc_info.value)
+        assert "dcode" in message.lower()
+        assert "Stage 2" in message
+        assert sys.modules["deepagents_code"] is None
 
     def test_max_tool_result_chars_reaches_real_backend_factory(
         self, tmp_path: Path
@@ -415,7 +520,13 @@ class TestSignaturePin:
         skew that would otherwise only surface mid-run.
         """
         params = inspect.signature(LangGraphHarness.__init__).parameters
-        for required in ("model", "backend", "permissions", "recursion_limit"):
+        for required in (
+            "model",
+            "backend",
+            "permissions",
+            "recursion_limit",
+            "player_experiment",
+        ):
             assert required in params, (
                 f"LangGraphHarness.__init__ dropped/renamed {required!r}; the "
                 f"selector constructs it with that kwarg "

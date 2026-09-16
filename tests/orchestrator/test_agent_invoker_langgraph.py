@@ -779,3 +779,127 @@ class TestInstalledCandidateIntegration:
         ]
         assert len(llm_events) == 1
         assert llm_events[0].status == "ok"
+
+
+class TestPlayerExperimentCallRoutes:
+    """Both production Player selectors carry role and activity context."""
+
+    @staticmethod
+    def _recording_harness(response_text: str):
+        class RecordingHarness:
+            supports_resume = False
+
+            async def invoke(
+                self,
+                prompt: str,
+                role: str,
+                tools: list,
+                cwd: Path,
+                *,
+                timeout_seconds: int,
+            ):
+                yield AssistantMessageEvent(text=response_text, raw=None)
+                yield ResultMessageEvent(session_id=None, raw=None)
+
+            async def invoke_synthesis(
+                self,
+                prompt: str,
+                role: str,
+                cwd: Path,
+                *,
+                timeout_seconds: int,
+                grammar: str | None = None,
+            ):
+                yield AssistantMessageEvent(text=response_text, raw=None)
+                yield ResultMessageEvent(session_id=None, raw=None)
+
+            async def cancel(self) -> None:
+                return None
+
+        return RecordingHarness()
+
+    @pytest.mark.asyncio
+    async def test_direct_player_route_passes_player_role_and_activity_callback(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        harness = self._recording_harness("direct player response")
+        selection: dict[str, Any] = {}
+
+        def capture_selection(**kwargs: Any) -> Any:
+            selection.update(kwargs)
+            return harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=capture_selection,
+        ):
+            await invoker._invoke_with_role(
+                prompt="TASK-PLAYER-EXPERIMENT direct route",
+                agent_type="player",
+                allowed_tools=["Read"],
+                permission_mode="acceptEdits",
+            )
+
+        assert selection["harness_role"] == "player"
+        callback = selection["on_model_activity"]
+        assert callback.__self__ is invoker
+        assert callback.__func__ is invoker._bump_activity.__func__
+
+    @pytest.mark.asyncio
+    async def test_task_work_player_route_passes_player_role_and_activity_callback(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        harness = self._recording_harness(
+            "10 tests passed, 0 tests failed\n"
+            "Coverage: 85.2%\n"
+            "All quality gates passed"
+        )
+        selection: dict[str, Any] = {}
+
+        def capture_selection(**kwargs: Any) -> Any:
+            selection.update(kwargs)
+            return harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=capture_selection,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-PLAYER-EXPERIMENT-task-work",
+                mode="standard",
+            )
+
+        assert result.success is True
+        assert selection["harness_role"] == "player"
+        callback = selection["on_model_activity"]
+        assert callback.__self__ is invoker
+        assert callback.__func__ is invoker._bump_activity.__func__
+
+    @pytest.mark.asyncio
+    async def test_coach_synthesis_route_passes_coach_role(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        harness = self._recording_harness('{"decision":"approved"}')
+        selection: dict[str, Any] = {}
+
+        def capture_selection(**kwargs: Any) -> Any:
+            selection.update(kwargs)
+            return harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=capture_selection,
+        ):
+            await invoker._invoke_with_role(
+                prompt="TASK-PLAYER-EXPERIMENT coach synthesis",
+                agent_type="coach",
+                allowed_tools=[],
+                permission_mode="bypassPermissions",
+                synthesis=True,
+            )
+
+        assert selection["harness_role"] == "coach"
+        assert selection["allowed_tools"] == []

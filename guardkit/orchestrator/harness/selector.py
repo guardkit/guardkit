@@ -395,6 +395,14 @@ def select_harness(
     # incrementally and needs no callback — never sees it.
     on_model_activity = harness_kwargs.pop("on_model_activity", None)
 
+    # Player experiment configuration is role-scoped. Consume the routing
+    # hint for every substrate so it never leaks into either concrete harness
+    # constructor. Only the explicit LangGraph Player branch below consults
+    # GUARDKIT_PLAYER_EXPERIMENT; SDK, Coach, synthesis, and callers that omit
+    # the role retain their existing behaviour even when that environment
+    # variable is malformed.
+    harness_role = harness_kwargs.pop("harness_role", None)
+
     # ------------------------------------------------------------------
     # THE M0 EFFECTIVE-SEAT FENCE (leg-invocation stage-2 design §3)
     # ------------------------------------------------------------------
@@ -470,6 +478,47 @@ def select_harness(
             )
 
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
+        player_experiment = None
+        player_experiment_requested = False
+        if harness_role == "player":
+            raw_player_experiment = os.environ.get("GUARDKIT_PLAYER_EXPERIMENT")
+            player_experiment_requested = raw_player_experiment is not None
+
+            if player_experiment_requested:
+                if not _factory_accepts_kwarg(
+                    LangGraphHarness, "player_experiment"
+                ):
+                    raise AgentInvocationError(
+                        "GUARDKIT_PLAYER_EXPERIMENT was requested, but the "
+                        "installed guardkitfactory LangGraphHarness does not "
+                        "accept `player_experiment`. Install the matching "
+                        "Stage 1 guardkitfactory revision; the requested "
+                        "Player experiment cannot be dropped safely."
+                    )
+
+                try:
+                    from guardkitfactory.harness.player_experiment import (  # type: ignore
+                        parse_player_experiment,
+                    )
+                except ImportError as e:
+                    raise AgentInvocationError(
+                        "GUARDKIT_PLAYER_EXPERIMENT was requested, but the "
+                        "installed guardkitfactory does not provide "
+                        "guardkitfactory.harness.player_experiment. Install "
+                        "the matching Stage 1 guardkitfactory revision; the "
+                        "requested Player experiment cannot be dropped safely."
+                    ) from e
+
+                try:
+                    player_experiment = parse_player_experiment(
+                        raw_player_experiment, cwd=Path(cwd)
+                    )
+                except ValueError as e:
+                    raise AgentInvocationError(
+                        "Invalid GUARDKIT_PLAYER_EXPERIMENT for LangGraph "
+                        f"Player in {Path(cwd)}: {e}"
+                    ) from e
+
         # TASK-FIX-BACKENDKWARG Shape 2: forward ``max_tool_result_chars``
         # only when the installed guardkitfactory's signature accepts it;
         # drop-with-WARNING on a stale factory instead of crashing (run-24).
@@ -502,7 +551,17 @@ def select_harness(
                     "the (substrate-blind) event-arrival clock. Upgrade "
                     "guardkitfactory to restore TASK-FIX-SPECINVOKE01."
                 )
-        return LangGraphHarness(**langgraph_kwargs)
+        if player_experiment_requested:
+            langgraph_kwargs["player_experiment"] = player_experiment
+        try:
+            return LangGraphHarness(**langgraph_kwargs)
+        except (TypeError, ValueError) as e:
+            if player_experiment_requested:
+                raise AgentInvocationError(
+                    "Could not construct the explicitly requested LangGraph "
+                    f"Player experiment: {e}"
+                ) from e
+            raise
 
     raise AgentInvocationError(
         f"Unknown GUARDKIT_HARNESS value: {name!r}. "

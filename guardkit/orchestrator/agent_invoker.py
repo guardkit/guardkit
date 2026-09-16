@@ -4887,6 +4887,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # cadence (which froze ``_last_activity_monotonic`` and
                 # false-killed live specialists at 150 s — FEAT-9DDE run 3).
                 on_model_activity=self._bump_activity,
+                harness_role=agent_type,
             )
 
             # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
@@ -10562,6 +10563,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     # select_harness); passing unconditionally keeps the call
                     # site harness-agnostic.
                     cwd=self.worktree_path,
+                    harness_role="player",
+                    # Keep the main task-work Player on the same substrate-aware
+                    # activity signal as the direct Player route. Native skills
+                    # may trigger nested model/tool work before the first event
+                    # is yielded back to this loop.
+                    on_model_activity=self._bump_activity,
                 )
 
                 # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
