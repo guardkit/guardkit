@@ -812,50 +812,24 @@ class TestInstalledCandidateIntegration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        """The selected 0.7.14 graph keeps the local alias, tools, and events."""
+        """The selected dcode Player keeps the local alias, tools, and events."""
         from guardkit.orchestrator.harness.adapter import ToolUseEvent
         from guardkit.orchestrator.harness.selector import select_harness
         from guardkitfactory.harness import LangGraphHarness
 
-        requests: list[tuple[str, dict[str, Any]]] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            body = json.loads(request.content)
-            requests.append((request.url.path, body))
-            return httpx.Response(
-                200,
-                json={
-                    "id": "chatcmpl-guardkit-selector",
-                    "object": "chat.completion",
-                    "created": 1,
-                    "model": body["model"],
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": "selector candidate response",
-                            },
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {
-                        "prompt_tokens": 5,
-                        "completion_tokens": 3,
-                        "total_tokens": 8,
-                    },
-                },
-            )
-
-        owned_clients = _install_factory_owned_mock_transport(monkeypatch, handler)
-
+        skill_file = _enable_dcode_player(monkeypatch, tmp_path)
+        script = _DcodePlayerChat(
+            skill_file, final_text="selector candidate response"
+        )
+        owned_clients = _install_factory_owned_mock_transport(monkeypatch, script)
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
             model="qwen36-workhorse",
             cwd=tmp_path,
-            recursion_limit=20,
+            recursion_limit=80,
             max_tool_result_chars=8000,
+            harness_role="player",
         )
         assert isinstance(harness, LangGraphHarness)
         events = [
@@ -869,10 +843,8 @@ class TestInstalledCandidateIntegration:
             )
         ]
 
-        assert len(requests) == 1
-        path, body = requests[0]
-        assert path == "/v1/chat/completions"
-        assert body["model"] == "qwen36-workhorse"
+        _assert_dcode_http_evidence(script)
+        body = script.requests[0][1]
         tool_names = {tool["function"]["name"] for tool in body["tools"]}
         assert {
             "write_todos",
@@ -886,7 +858,8 @@ class TestInstalledCandidateIntegration:
             "execute",
             "task",
         } <= tool_names
-        assert not any(isinstance(event, ToolUseEvent) for event in events)
+        use_events = [event for event in events if isinstance(event, ToolUseEvent)]
+        assert [event.name for event in use_events] == ["read_file"]
         assert isinstance(events[-2], AssistantMessageEvent)
         assert events[-2].text == "selector candidate response"
         assert isinstance(events[-1], ResultMessageEvent)
