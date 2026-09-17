@@ -20,11 +20,13 @@ Coverage Target: >=85% line, >=80% branch on
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import ModuleType
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -730,6 +732,7 @@ def _install_fake_guardkitfactory(
     fake.build_autobuild_permissions = (  # type: ignore[attr-defined]
         _build_autobuild_permissions
     )
+    fake.build_player_config = MagicMock(name="build_player_config")  # type: ignore[attr-defined]
 
     # Seed the parent package defensively so the import machinery never tries
     # to locate the real (uninstalled) distribution. The leaf lookup
@@ -748,23 +751,91 @@ def _old_factory_no_cap(worktree: Any) -> Any:
     return MagicMock(name="composite-backend", _worktree=worktree)
 
 
-class TestPlayerExperimentSelection:
-    """Player experiment configuration is isolated to an explicit LangGraph Player."""
+class TestRequiredPlayerSelection:
+    """Project configuration reaches the sole normal dcode Player path."""
+
+    def test_normal_launch_defaults_are_process_scoped_and_thread_safe(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        worktree = tmp_path / "worktree"
+        profile = tmp_path / "profile"
+        worktree.mkdir()
+        profile.mkdir()
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        monkeypatch.setattr(
+            selector_module.tempfile,
+            "mkdtemp",
+            lambda **_kwargs: str(profile),
+        )
+        for name in (
+            "DEEPAGENTS_HOME",
+            "DEEPAGENTS_CODE_OFFLINE",
+            "LANGCHAIN_TRACING",
+            "LANGCHAIN_TRACING_V2",
+            "LANGSMITH_TRACING",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            selected = tuple(
+                pool.map(
+                    lambda _index: selector_module._configure_dcode_launch(worktree),
+                    range(8),
+                )
+            )
+
+        assert selected == (profile.resolve(),) * 8
+        assert selector_module._configure_dcode_launch(worktree) == profile.resolve()
+        assert os.environ["DEEPAGENTS_HOME"] == str(profile.resolve())
+        assert os.environ["DEEPAGENTS_CODE_OFFLINE"] == "1"
+        assert all(os.environ[name] == "false" for name in selector_module._DCODE_TRACE_VARS)
+
+    @pytest.mark.parametrize(
+        ("name", "value", "message"),
+        [
+            ("DEEPAGENTS_CODE_OFFLINE", "0", "must be exactly '1'"),
+            ("LANGSMITH_TRACING", "true", "must be disabled"),
+            ("DEEPAGENTS_HOME", "", "cannot be empty"),
+        ],
+    )
+    def test_explicit_invalid_launch_settings_fail_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        name: str,
+        value: str,
+        message: str,
+    ) -> None:
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        for variable in (
+            "DEEPAGENTS_HOME",
+            "DEEPAGENTS_CODE_OFFLINE",
+            "LANGCHAIN_TRACING",
+            "LANGCHAIN_TRACING_V2",
+            "LANGSMITH_TRACING",
+        ):
+            monkeypatch.delenv(variable, raising=False)
+        monkeypatch.setenv(name, value)
+
+        with pytest.raises(AgentInvocationError, match=message):
+            selector_module._configure_dcode_launch(worktree)
 
     @staticmethod
     def _install_factory(
         monkeypatch: pytest.MonkeyPatch,
         *,
-        accepts_player_experiment: bool,
-        parser: Any = None,
-        constructor_error: str | None = None,
-    ) -> tuple[list[dict[str, Any]], list[tuple[str, Path]]]:
+        accepts_player_config: bool = True,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         import guardkitfactory.harness as factory_harness
 
         constructions: list[dict[str, Any]] = []
-        parser_calls: list[tuple[str, Path]] = []
+        config_calls: list[dict[str, Any]] = []
+        backend_calls: list[dict[str, Any]] = []
+        sentinel = object()
 
-        if accepts_player_experiment:
+        if accepts_player_config:
 
             class CapturingHarness:
                 def __init__(
@@ -775,20 +846,9 @@ class TestPlayerExperimentSelection:
                     permissions: Any,
                     recursion_limit: Any,
                     on_model_activity: Any = None,
-                    player_experiment: Any = None,
+                    player_config: Any = None,
                 ) -> None:
-                    if constructor_error is not None:
-                        raise ValueError(constructor_error)
-                    constructions.append(
-                        {
-                            "model": model,
-                            "backend": backend,
-                            "permissions": permissions,
-                            "recursion_limit": recursion_limit,
-                            "on_model_activity": on_model_activity,
-                            "player_experiment": player_experiment,
-                        }
-                    )
+                    constructions.append(locals().copy())
 
         else:
 
@@ -802,55 +862,46 @@ class TestPlayerExperimentSelection:
                     recursion_limit: Any,
                     on_model_activity: Any = None,
                 ) -> None:
-                    constructions.append(
-                        {
-                            "model": model,
-                            "backend": backend,
-                            "permissions": permissions,
-                            "recursion_limit": recursion_limit,
-                            "on_model_activity": on_model_activity,
-                        }
-                    )
+                    constructions.append(locals().copy())
+
+        def build_player_config(**kwargs: Any) -> Any:
+            config_calls.append(kwargs)
+            return sentinel
+
+        def build_backend(worktree: Path, **kwargs: Any) -> Any:
+            backend_calls.append({"worktree": worktree, **kwargs})
+            return worktree
 
         monkeypatch.setattr(factory_harness, "LangGraphHarness", CapturingHarness)
-        monkeypatch.setattr(
-            factory_harness, "build_autobuild_backend", lambda worktree, **kwargs: worktree
-        )
+        monkeypatch.setattr(factory_harness, "build_player_config", build_player_config)
+        monkeypatch.setattr(factory_harness, "build_autobuild_backend", build_backend)
         monkeypatch.setattr(
             factory_harness, "build_autobuild_permissions", lambda: ["permissions"]
         )
-
-        if parser is not None:
-            parser_module = ModuleType(
-                "guardkitfactory.harness.player_experiment"
-            )
-
-            def recording_parser(raw: str, *, cwd: Path) -> Any:
-                parser_calls.append((raw, cwd))
-                return parser(raw, cwd=cwd)
-
-            parser_module.parse_player_experiment = recording_parser  # type: ignore[attr-defined]
-            monkeypatch.setitem(
-                sys.modules,
-                "guardkitfactory.harness.player_experiment",
-                parser_module,
-            )
-
-        return constructions, parser_calls
+        return constructions, config_calls, backend_calls
 
     @_requires_guardkitfactory
-    def test_explicit_player_parses_with_actual_cwd_and_forwards_config(
+    def test_project_context_commands_and_protection_reach_factory(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        raw = '{"engine":"native","skills":["skills"]}'
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
-        sentinel = object()
-        constructions, parser_calls = self._install_factory(
-            monkeypatch,
-            accepts_player_experiment=True,
-            parser=lambda _raw, *, cwd: sentinel,
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        (tmp_path / "skills").mkdir()
+        (tmp_path / "verification").mkdir()
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "CLAUDE.md").write_text("# Repository guidance\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    protected_paths: [verification/]\n"
+            "toolchain:\n"
+            "  test: './qa/run-suite.sh --exact'\n"
         )
+        constructions, config_calls, backend_calls = self._install_factory(monkeypatch)
 
         select_harness(
             env_var=_TEST_ENV_VAR,
@@ -859,21 +910,35 @@ class TestPlayerExperimentSelection:
             harness_role="player",
         )
 
-        assert parser_calls == [(raw, tmp_path)]
-        assert constructions[0]["player_experiment"] is sentinel
+        assert config_calls == [
+            {
+                "cwd": tmp_path,
+                "dcode_home": profile.resolve(),
+                "skills": ("skills/",),
+                "memory": (),
+                "repository_instructions": (".claude/CLAUDE.md",),
+                "declared_commands": (("test", "./qa/run-suite.sh --exact"),),
+                "protected_paths": ("verification/",),
+            }
+        ]
+        assert backend_calls[0]["protected_paths"] == ("verification/",)
+        assert "player_config" in constructions[0]
+        assert constructions[0]["player_config"] is not None
 
     @_requires_guardkitfactory
-    def test_absent_config_adds_no_constructor_kwarg(
+    def test_skills_selection_is_independent_of_optional_memory(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.delenv("GUARDKIT_PLAYER_EXPERIMENT", raising=False)
-        monkeypatch.setitem(
-            sys.modules, "guardkitfactory.harness.player_experiment", None
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        (tmp_path / "skills").mkdir()
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    skills: [skills/]\n"
         )
-        constructions, _ = self._install_factory(
-            monkeypatch, accepts_player_experiment=False
-        )
+        _, config_calls, _ = self._install_factory(monkeypatch)
 
         select_harness(
             env_var=_TEST_ENV_VAR,
@@ -882,44 +947,77 @@ class TestPlayerExperimentSelection:
             harness_role="player",
         )
 
-        assert "player_experiment" not in constructions[0]
+        assert config_calls[0]["skills"] == ("skills/",)
+        assert config_calls[0]["memory"] == ()
+
+    @_requires_guardkitfactory
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "autobuild: []\n",
+            "autobuild:\n  player:\n    skills: skills/\n",
+            "autobuild:\n  player:\n    unknown: true\n",
+        ],
+    )
+    def test_malformed_project_player_config_fails_visibly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(tmp_path.parent))
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(content)
+        self._install_factory(monkeypatch)
+
+        with pytest.raises(AgentInvocationError, match="Invalid"):
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                harness_role="player",
+            )
+
+    @_requires_guardkitfactory
+    def test_missing_player_config_seam_refuses_native_fallback(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        self._install_factory(monkeypatch, accepts_player_config=False)
+
+        with pytest.raises(AgentInvocationError, match="native Player fallback is not permitted"):
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                harness_role="player",
+            )
 
     @_requires_guardkitfactory
     @pytest.mark.parametrize("harness_role", ["coach", None])
-    def test_malformed_config_is_ignored_without_explicit_player_role(
+    def test_nonplayer_path_does_not_require_player_declarations(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
         harness_role: Any,
     ) -> None:
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", "not-json")
-        monkeypatch.setitem(
-            sys.modules, "guardkitfactory.harness.player_experiment", None
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text("autobuild: []\n")
+        constructions, config_calls, _ = self._install_factory(
+            monkeypatch, accepts_player_config=False
         )
-        constructions, _ = self._install_factory(
-            monkeypatch, accepts_player_experiment=False
-        )
-        kwargs = {
-            "env_var": _TEST_ENV_VAR,
-            "model": MagicMock(),
-            "cwd": tmp_path,
-        }
+        kwargs = {"env_var": _TEST_ENV_VAR, "model": MagicMock(), "cwd": tmp_path}
         if harness_role is not None:
             kwargs["harness_role"] = harness_role
 
         select_harness(**kwargs)
 
-        assert "player_experiment" not in constructions[0]
+        assert config_calls == []
+        assert "player_config" not in constructions[0]
 
-    def test_sdk_consumes_role_and_ignores_malformed_config(
+    def test_sdk_player_remains_separate_from_dcode_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", "not-json")
-        monkeypatch.setitem(
-            sys.modules, "guardkitfactory.harness.player_experiment", None
-        )
 
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
@@ -930,111 +1028,6 @@ class TestPlayerExperimentSelection:
         assert harness._allowed_tools == ["Read", "Write"]
         assert harness._permission_mode == "acceptEdits"
         assert not hasattr(harness, "harness_role")
-
-    @_requires_guardkitfactory
-    def test_parser_failure_is_clear_agent_invocation_error(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", "not-json")
-
-        def reject(_raw: str, *, cwd: Path) -> Any:
-            raise ValueError("expected a JSON object")
-
-        self._install_factory(
-            monkeypatch,
-            accepts_player_experiment=True,
-            parser=reject,
-        )
-
-        with pytest.raises(AgentInvocationError) as exc_info:
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
-
-        assert "Invalid GUARDKIT_PLAYER_EXPERIMENT" in str(exc_info.value)
-        assert "expected a JSON object" in str(exc_info.value)
-
-    @_requires_guardkitfactory
-    def test_missing_parser_is_clear_version_skew_error(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv(
-            "GUARDKIT_PLAYER_EXPERIMENT", '{"engine":"native"}'
-        )
-        monkeypatch.setitem(
-            sys.modules, "guardkitfactory.harness.player_experiment", None
-        )
-        self._install_factory(
-            monkeypatch, accepts_player_experiment=True
-        )
-
-        with pytest.raises(AgentInvocationError) as exc_info:
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
-
-        message = str(exc_info.value)
-        assert "does not provide guardkitfactory.harness.player_experiment" in message
-        assert "cannot be dropped safely" in message
-
-    @_requires_guardkitfactory
-    def test_factory_rejection_is_clear_agent_invocation_error(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv(
-            "GUARDKIT_PLAYER_EXPERIMENT", '{"engine":"dcode"}'
-        )
-        self._install_factory(
-            monkeypatch,
-            accepts_player_experiment=True,
-            parser=lambda _raw, *, cwd: object(),
-            constructor_error="dcode is not implemented until Stage 2",
-        )
-
-        with pytest.raises(AgentInvocationError) as exc_info:
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
-
-        message = str(exc_info.value)
-        assert "explicitly requested LangGraph Player experiment" in message
-        assert "dcode is not implemented until Stage 2" in message
-
-    @_requires_guardkitfactory
-    def test_missing_constructor_parameter_is_clear_version_skew_error(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv(
-            "GUARDKIT_PLAYER_EXPERIMENT", '{"engine":"native"}'
-        )
-        self._install_factory(
-            monkeypatch, accepts_player_experiment=False
-        )
-
-        with pytest.raises(AgentInvocationError) as exc_info:
-            select_harness(
-                env_var=_TEST_ENV_VAR,
-                model=MagicMock(),
-                cwd=tmp_path,
-                harness_role="player",
-            )
-
-        message = str(exc_info.value)
-        assert "does not accept `player_experiment`" in message
-        assert "cannot be dropped safely" in message
 
 
 class TestFactoryAcceptsKwarg:
