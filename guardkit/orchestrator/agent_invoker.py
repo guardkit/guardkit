@@ -6748,10 +6748,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         On ``partial_gate_abort``, a valid bundle-owned ``gate_feedback``
         payload replaces the model's gate narrative for either an ``approve``
-        or ``feedback`` verdict. The payload is accepted only when its five
-        serialized quality-gate values exactly match the typed bundle gates.
-        A missing, malformed, or mismatched payload retains the generic
-        fail-closed behaviour below.
+        or ``feedback`` verdict. The payload is accepted only for the current
+        task and integer turn, when its nested issue/result shapes match the
+        source renderer, both skipped downstream legs remain ``None``, and its
+        five serialized quality-gate values exactly match the typed bundle
+        gates. A missing, malformed, stale, or mismatched payload retains the
+        generic fail-closed behaviour below.
 
         Fail-open rules (this guard must not fire on evidence-less legacy
         paths):
@@ -6849,17 +6851,47 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     "plan_audit_passed",
                     "all_gates_passed",
                 )
-                gates_match = isinstance(serialized_gates, dict) and all(
-                    field in serialized_gates
-                    and serialized_gates[field]
-                    is getattr(gates, field, object())
-                    for field in gate_fields
+                identity_matches = (
+                    isinstance(candidate.get("task_id"), str)
+                    and candidate["task_id"] == task_id
+                    and type(turn) is int
+                    and type(candidate.get("turn")) is int
+                    and candidate["turn"] == turn
+                )
+                validation_shape_matches = (
+                    isinstance(validation_results, dict)
+                    and set(validation_results) == {
+                        "quality_gates",
+                        "independent_tests",
+                        "requirements",
+                    }
+                    and validation_results["independent_tests"] is None
+                    and validation_results["requirements"] is None
+                )
+                gates_match = (
+                    validation_shape_matches
+                    and isinstance(serialized_gates, dict)
+                    and set(serialized_gates) == set(gate_fields)
+                    and all(
+                        serialized_gates[field]
+                        is getattr(gates, field, object())
+                        for field in gate_fields
+                    )
+                )
+                issues = candidate.get("issues")
+                issues_match = isinstance(issues, list) and all(
+                    isinstance(issue, dict)
+                    and isinstance(issue.get("severity"), str)
+                    and isinstance(issue.get("category"), str)
+                    and isinstance(issue.get("description"), str)
+                    and isinstance(issue.get("details"), dict)
+                    for issue in issues
                 )
                 if (
-                    candidate.get("decision") == "feedback"
-                    and isinstance(candidate.get("issues"), list)
+                    identity_matches
+                    and candidate.get("decision") == "feedback"
+                    and issues_match
                     and isinstance(candidate.get("rationale"), str)
-                    and isinstance(validation_results, dict)
                     and gates_match
                 ):
                     gate_feedback = candidate
@@ -7039,6 +7071,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             "details": override_details,
         }
         decision["issues"] = [override_issue, *decision.get("issues", [])]
+        if gathering_status == "partial_gate_abort" and gate_feedback is None:
+            # A rejected source payload cannot lend authority to model-authored
+            # nested evidence. Persist an explicit empty result map so the
+            # generic fallback has the same contract in memory and on disk.
+            decision["validation_results"] = {}
 
         # WARNING with task_id, turn, and the original (overridden) decision.
         logger.warning(
@@ -11766,8 +11803,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # Item 60: Phase 4 is the authoritative executed-test producer. When
         # it passed and supplied typed counts, copy those counts into the gate
         # evidence consumed by gather_evidence. Keep the narrative-derived
-        # ``tests_passed`` compatibility field unchanged, and never coerce an
-        # absent/null count to zero.
+        # ``tests_passed`` compatibility field unchanged. Every successful
+        # injection reflects the current record: absent/null/invalid counts
+        # remove older mapped values instead of coercing them to zero.
         qg = task_work_data.get("quality_gates")
         if (
             isinstance(phase_4_block, dict)
@@ -11778,6 +11816,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 count = phase_4_block.get(count_field)
                 if isinstance(count, int) and not isinstance(count, bool):
                     qg[count_field] = count
+                else:
+                    qg.pop(count_field, None)
             task_work_data["quality_gates"] = qg
 
         # TASK-AB-PERTASKFG01 fix #2 (absence-of-failure-is-not-success):

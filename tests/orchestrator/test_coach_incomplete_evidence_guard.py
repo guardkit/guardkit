@@ -83,7 +83,7 @@ def _bundle(
     )
 
 
-def _coverage_gate_bundle() -> CoachEvidenceBundle:
+def _coverage_gate_bundle(task_id: str, turn: int) -> CoachEvidenceBundle:
     gates = QualityGateStatus(
         tests_passed=True,
         coverage_met=False,
@@ -91,8 +91,8 @@ def _coverage_gate_bundle() -> CoachEvidenceBundle:
         plan_audit_passed=True,
     )
     gate_feedback = {
-        "task_id": "STALE-INTERNAL-IDENTITY",
-        "turn": 99,
+        "task_id": task_id,
+        "turn": turn,
         "decision": "feedback",
         "validation_results": {
             "quality_gates": {
@@ -347,7 +347,7 @@ class TestDeterministicPartialGateFeedback:
             invoker,
             task_id="TASK-TRUTHFUL-GATES",
             turn=2,
-            bundle=_coverage_gate_bundle(),
+            bundle=_coverage_gate_bundle("TASK-TRUTHFUL-GATES", 2),
             decision=model_decision,
             verdict_overrides=overrides,
         )
@@ -393,7 +393,7 @@ class TestDeterministicPartialGateFeedback:
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
-        bundle = _coverage_gate_bundle()
+        bundle = _coverage_gate_bundle("TASK-BAD-GATE-PAYLOAD", 1)
         assert bundle.gate_feedback is not None
         if malformation == "mismatch":
             bundle.gate_feedback["validation_results"]["quality_gates"][
@@ -414,6 +414,133 @@ class TestDeterministicPartialGateFeedback:
             "absence_of_failure"
         )
         assert "partial_gate_abort" in result.report["rationale"]
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("task_id", "TASK-PREVIOUS"),
+            ("turn", 1),
+            ("turn", True),
+            ("turn", "2"),
+        ],
+    )
+    def test_stale_or_noninteger_identity_keeps_generic_fail_closed_guard(
+        self,
+        field: str,
+        value: object,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        bundle = _coverage_gate_bundle("TASK-CURRENT-GATE-PAYLOAD", 2)
+        assert bundle.gate_feedback is not None
+        bundle.gate_feedback[field] = value
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-CURRENT-GATE-PAYLOAD",
+            turn=2,
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"][0]["category"] == "absence_of_failure"
+        assert result.report["rationale"] != "1 quality gate(s) failed"
+        assert result.report["validation_results"] == {}
+
+    @pytest.mark.parametrize(
+        "malformation",
+        [
+            "issue_string",
+            "issue_missing_details",
+            "details_list",
+            "independent_tests",
+            "requirements",
+            "extra_validation_result",
+            "extra_quality_gate",
+        ],
+    )
+    def test_malformed_nested_source_payload_keeps_generic_guard(
+        self,
+        malformation: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        bundle = _coverage_gate_bundle("TASK-NESTED-GATE-PAYLOAD", 3)
+        assert bundle.gate_feedback is not None
+        if malformation == "issue_string":
+            bundle.gate_feedback["issues"] = ["bad"]
+        elif malformation == "issue_missing_details":
+            bundle.gate_feedback["issues"][0].pop("details")
+        elif malformation == "details_list":
+            bundle.gate_feedback["issues"][0]["details"] = []
+        elif malformation == "independent_tests":
+            bundle.gate_feedback["validation_results"]["independent_tests"] = {
+                "tests_passed": False,
+                "test_command": "fabricated",
+            }
+        elif malformation == "requirements":
+            bundle.gate_feedback["validation_results"]["requirements"] = {
+                "criteria_total": 1,
+                "criteria_met": 0,
+                "all_criteria_met": False,
+                "missing": ["AC-001"],
+            }
+        elif malformation == "extra_validation_result":
+            bundle.gate_feedback["validation_results"]["invented"] = {}
+        else:
+            bundle.gate_feedback["validation_results"]["quality_gates"][
+                "invented"
+            ] = True
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-NESTED-GATE-PAYLOAD",
+            turn=3,
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"][0]["category"] == "absence_of_failure"
+        assert result.report["rationale"] != "1 quality gate(s) failed"
+        assert result.report["validation_results"] == {}
+
+    def test_valid_advisory_issue_fields_and_severity_are_preserved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        bundle = _coverage_gate_bundle("TASK-GATE-ADVISORY", 4)
+        assert bundle.gate_feedback is not None
+        advisory = {
+            "severity": "warning",
+            "category": "agent_invocations_advisory",
+            "description": "Advisory fields remain source owned",
+            "details": {
+                "missing_phases": ["5"],
+                "expected_phases": 2,
+                "actual_invocations": 1,
+            },
+            "source": "deterministic-advisory",
+        }
+        bundle.gate_feedback["issues"].insert(0, advisory)
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-GATE-ADVISORY",
+            turn=4,
+            bundle=bundle,
+            decision="feedback",
+        )
+
+        assert result.report["issues"][0] == advisory
+        assert result.report["issues"][0]["severity"] == "warning"
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +688,7 @@ class TestVerifierInfrastructureOnGateAbortRoute:
             invoker,
             task_id="TASK-VINFRA-ITEM60",
             turn=1,
-            bundle=_coverage_gate_bundle(),
+            bundle=_coverage_gate_bundle("TASK-VINFRA-ITEM60", 1),
             decision="feedback",
             verdict_overrides={
                 "rationale": "Invented zero-test complaint",

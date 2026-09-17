@@ -778,6 +778,47 @@ class TestSuccessfulPhase4CountBridge:
         assert qg["tests_run"] == 875
         assert qg["tests_failed"] == 0
 
+    @pytest.mark.parametrize(
+        "current_counts",
+        [
+            {},
+            {"tests_run": None, "tests_failed": None},
+            {"tests_run": True, "tests_failed": False},
+            {"tests_run": "875", "tests_failed": "0"},
+            {"tests_run": 875.0, "tests_failed": 0.0},
+        ],
+    )
+    def test_reinjection_removes_stale_counts_when_current_pass_is_unknown(
+        self,
+        current_counts: dict,
+        worktree: Path,
+        invoker: AgentInvoker,
+    ) -> None:
+        results_path = self._seed_results(worktree)
+        specialist_path = _seed_specialist_results(worktree, phase_4={
+            "status": "passed",
+            "duration_seconds": 1.0,
+            "error": None,
+            "tests_run": 875,
+            "tests_failed": 0,
+        })
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        specialist_path.write_text(json.dumps({
+            "phase_4": {
+                "status": "passed",
+                "duration_seconds": 2.0,
+                "error": None,
+                **current_counts,
+            },
+        }, indent=2))
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert "tests_run" not in qg
+        assert "tests_failed" not in qg
+        assert qg["tests_passed"] == 17
+
     @pytest.mark.parametrize("phase_status", ["failed", "skipped"])
     def test_nonpassing_phase4_does_not_invent_zero_counts(
         self,
