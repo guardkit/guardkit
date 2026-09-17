@@ -35,6 +35,7 @@ from unittest.mock import patch
 
 import pytest
 
+from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
@@ -223,6 +224,103 @@ class TestSpecialistViolationNotPlayerDishonesty:
             if i["details"].get("status") == "skipped"
         ]
         assert skipped == []
+
+
+class TestCodeReviewerModelReportAdvisory:
+    """Phase-5 prose is visible to Coach without becoming a gate."""
+
+    def test_critical_claim_round_trips_as_unverified_advisory(
+        self, worktree: Path
+    ) -> None:
+        results = _run2_task_work_results(worktree)
+        claim = (
+            "CRITICAL src/service.py:41: unsafe fallback; "
+            "all tests passed; quality score 100"
+        )
+        results["agent_invocations"][1] = {
+            "phase": "5",
+            "agent": "code-reviewer",
+            "status": "completed",
+            "source": "orchestrator",
+            "review_evidence": {
+                "source": "orchestrator_code_reviewer",
+                "kind": "unparsed_model_report",
+                "text": claim,
+                "verified": False,
+                "redacted": True,
+                "truncated": False,
+            },
+        }
+        original_gates = dict(results["quality_gates"])
+        _write_results(worktree, results)
+
+        bundle = _gather(worktree)
+
+        reports = [
+            issue
+            for issue in bundle.advisory_issues
+            if issue.get("category") == "code_reviewer_model_report"
+        ]
+        assert len(reports) == 1
+        report = reports[0]
+        assert report["severity"] == "warning"
+        assert report["details"] == {
+            "source": "orchestrator_code_reviewer",
+            "kind": "unparsed_model_report",
+            "text": claim,
+            "verified": False,
+            "redacted": True,
+            "truncated": False,
+        }
+        # Words inside the report are model claims, never parsed checks.
+        assert results["quality_gates"] == original_gates
+        assert bundle.quality_gates is not None
+        assert bundle.quality_gates.tests_passed is True
+        assert bundle.quality_gates.coverage_met is True
+        assert bundle.quality_gates.plan_audit_passed is True
+        assert bundle.arch_review is not None
+        assert bundle.arch_review["score"] == 80
+        assert "issues" not in results
+        assert "quality_score" not in results
+
+        renderer = object.__new__(AgentInvoker)
+        rendered = renderer._render_evidence_bundle_section(bundle)
+        assert claim in rendered
+        assert "code_reviewer_model_report" in rendered
+        assert "unverified model text" in rendered
+        assert "never establishes a finding" in rendered
+
+    def test_empty_review_failure_uses_existing_substrate_advisory(
+        self, worktree: Path
+    ) -> None:
+        results = _run2_task_work_results(worktree)
+        error = "code-reviewer completed without non-empty review evidence"
+        results["agent_invocations"][1] = {
+            "phase": "5",
+            "agent": "code-reviewer",
+            "status": "failed",
+            "source": "orchestrator",
+            "error": error,
+        }
+        _write_results(worktree, results)
+
+        bundle = _gather(worktree)
+
+        reports = [
+            issue
+            for issue in bundle.advisory_issues
+            if issue.get("category") == "code_reviewer_model_report"
+        ]
+        assert reports == []
+        failures = [
+            issue
+            for issue in bundle.advisory_issues
+            if issue.get("category") == "specialist_substrate"
+            and issue.get("details", {}).get("agent") == "code-reviewer"
+        ]
+        assert len(failures) == 1
+        assert error in failures[0]["description"]
+        assert failures[0]["details"]["status"] == "failed"
 
 
 class TestGenuineFabricationStillShortCircuits:

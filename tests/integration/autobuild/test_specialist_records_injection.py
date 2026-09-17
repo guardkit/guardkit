@@ -142,6 +142,113 @@ class TestMergeWithoutPriorPhase45Entries:
         assert gate["missing_phases"] == []
 
 
+class TestPhase5ReviewEvidenceBridge:
+    """Phase-5 model text crosses only the authoritative Phase-5 record."""
+
+    def test_copies_only_bounded_attributed_phase5_evidence(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        report = "CRITICAL src/service.py:41: unsafe fallback"
+        evidence = {
+            "source": "orchestrator_code_reviewer",
+            "kind": "unparsed_model_report",
+            "text": report,
+            "verified": False,
+            "redacted": True,
+            "truncated": False,
+            "unknown_field": "must not cross bridge",
+        }
+        phase_5 = {
+            **_passed_phase_block(8.5),
+            "review_evidence": evidence,
+            "issues": [],
+            "quality_score": 0.0,
+            "semantic_fields_parsed": False,
+        }
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+                {
+                    "phase": "5",
+                    "agent": "player-claimed-review",
+                    "status": "completed",
+                    "review_evidence": {**evidence, "text": "player text"},
+                },
+            ],
+        )
+        _seed_specialist_results(
+            worktree,
+            phase_4=_passed_phase_block(10.0),
+            phase_5=phase_5,
+        )
+
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+        phase_5_records = [
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        ]
+        assert len(phase_5_records) == 1
+        record = phase_5_records[0]
+        assert record["source"] == "orchestrator"
+        assert record["agent"] == "code-reviewer"
+        assert record["status"] == "completed"
+        assert record["review_evidence"] == {
+            "source": "orchestrator_code_reviewer",
+            "kind": "unparsed_model_report",
+            "text": report,
+            "verified": False,
+            "redacted": True,
+            "truncated": False,
+        }
+        assert "unknown_field" not in record["review_evidence"]
+        phase_4_record = next(
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "4"
+        )
+        assert "review_evidence" not in phase_4_record
+
+    def test_failed_phase5_gets_no_completed_credit_or_review_evidence(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+            ],
+        )
+        _seed_specialist_results(
+            worktree,
+            phase_4=_passed_phase_block(10.0),
+            phase_5={
+                "status": "failed",
+                "duration_seconds": 2.0,
+                "error": "completed without non-empty review evidence",
+            },
+        )
+
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+        record = next(
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        )
+        assert record["status"] == "failed"
+        assert "review_evidence" not in record
+        assert on_disk["agent_invocations_validation"]["status"] == "violation"
+        assert "5" in on_disk["agent_invocations_validation"]["missing_phases"]
+
+
 class TestStalePlayerEntriesAreDropped:
     """AC (b): stale Player-emitted Phase 4/5 entries are deduped during merge."""
 
@@ -351,7 +458,21 @@ def test_specialist_results_json_format(tmp_path: Path):
             "duration_seconds": 38.1,
             "error": None,
             "issues": [],
-            "quality_score": 8.5,
+            "quality_score": 0.0,
+            "recommendations": [],
+            "semantic_fields_parsed": False,
+            "output_summary": (
+                "Code-reviewer model report captured for Coach evaluation; "
+                "no semantic verdict parsed."
+            ),
+            "review_evidence": {
+                "source": "orchestrator_code_reviewer",
+                "kind": "unparsed_model_report",
+                "text": "CRITICAL src/service.py:41: unsafe fallback",
+                "verified": False,
+                "redacted": True,
+                "truncated": False,
+            },
         },
     }))
 
@@ -364,6 +485,15 @@ def test_specialist_results_json_format(tmp_path: Path):
         assert block["status"] in ("passed", "failed", "skipped"), \
             f"{block_name}.status must be passed/failed/skipped"
         assert "duration_seconds" in block, f"{block_name} must have duration_seconds"
+
+    phase_5 = data["phase_5"]
+    assert phase_5["semantic_fields_parsed"] is False
+    assert phase_5["issues"] == []
+    assert phase_5["quality_score"] == 0.0
+    assert phase_5["recommendations"] == []
+    assert phase_5["review_evidence"]["source"] == "orchestrator_code_reviewer"
+    assert phase_5["review_evidence"]["kind"] == "unparsed_model_report"
+    assert phase_5["review_evidence"]["verified"] is False
 
 
 # ===========================================================================
