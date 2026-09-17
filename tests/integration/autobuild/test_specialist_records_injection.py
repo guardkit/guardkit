@@ -703,6 +703,122 @@ class TestQualityGatesReconciliation:
         assert "reconciled_from_specialist" not in qg
 
 
+class TestSuccessfulPhase4CountBridge:
+    """Successful Phase 4 contributes authoritative executed-test counts."""
+
+    @staticmethod
+    def _seed_results(worktree: Path) -> Path:
+        TaskArtifactPaths.ensure_autobuild_dir(TASK_ID, worktree)
+        results_path = TaskArtifactPaths.task_work_results_path(
+            TASK_ID, worktree
+        )
+        results_path.write_text(json.dumps({
+            "task_id": TASK_ID,
+            "completed": True,
+            "files_modified": [],
+            "files_created": [],
+            "quality_gates": {
+                "tests_passing": True,
+                "tests_passed": 17,
+                "tests_run": 3,
+                "tests_failed": 2,
+                "coverage": 62.5,
+                "coverage_met": False,
+                "all_passed": False,
+            },
+        }, indent=2))
+        return results_path
+
+    def test_passed_phase4_copies_integer_counts_without_rewriting_compatibility(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        results_path = self._seed_results(worktree)
+        _seed_specialist_results(worktree, phase_4={
+            "status": "passed",
+            "duration_seconds": 12.0,
+            "error": None,
+            "tests_run": 875,
+            "tests_failed": 0,
+            "coverage_pct": 62.5,
+        })
+
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert qg["tests_run"] == 875
+        assert qg["tests_failed"] == 0
+        assert qg["tests_passed"] == 17
+        assert qg["coverage"] == 62.5
+
+    def test_reinjection_replaces_stale_phase4_counts(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        results_path = self._seed_results(worktree)
+        specialist_path = _seed_specialist_results(worktree, phase_4={
+            "status": "passed",
+            "duration_seconds": 1.0,
+            "error": None,
+            "tests_run": 12,
+            "tests_failed": 1,
+        })
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        specialist_path.write_text(json.dumps({
+            "phase_4": {
+                "status": "passed",
+                "duration_seconds": 2.0,
+                "error": None,
+                "tests_run": 875,
+                "tests_failed": 0,
+            },
+        }, indent=2))
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert qg["tests_run"] == 875
+        assert qg["tests_failed"] == 0
+
+    @pytest.mark.parametrize("phase_status", ["failed", "skipped"])
+    def test_nonpassing_phase4_does_not_invent_zero_counts(
+        self,
+        phase_status: str,
+        worktree: Path,
+        invoker: AgentInvoker,
+    ) -> None:
+        TaskArtifactPaths.ensure_autobuild_dir(TASK_ID, worktree)
+        results_path = TaskArtifactPaths.task_work_results_path(
+            TASK_ID, worktree
+        )
+        results_path.write_text(json.dumps({
+            "task_id": TASK_ID,
+            "completed": False,
+            "files_modified": [],
+            "files_created": [],
+            "quality_gates": {
+                "tests_passing": None,
+                "tests_passed": None,
+                "coverage": None,
+                "coverage_met": None,
+                "all_passed": None,
+            },
+        }, indent=2))
+        _seed_specialist_results(worktree, phase_4={
+            "status": phase_status,
+            "duration_seconds": 0.0,
+            "error": "absent test signal",
+            "signal_absent": True,
+            "tests_run": 0,
+            "tests_failed": 0,
+        })
+
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        qg = json.loads(results_path.read_text())["quality_gates"]
+        assert "tests_run" not in qg
+        assert "tests_failed" not in qg
+        assert qg["tests_passed"] is None
+
+
 class TestCurrentSpecialistRecordAuthority:
     """Current specialist-results blocks replace every old Phase 4/5 slot."""
 

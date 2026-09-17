@@ -42,6 +42,9 @@ from guardkit.orchestrator.harness import (
 from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
+from guardkit.orchestrator.quality_gates.coach_validator import (
+    QualityGateStatus,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -65,24 +68,69 @@ def _make_invoker(worktree: Path) -> AgentInvoker:
 def _bundle(
     gathering_status: str,
     gathering_error: Optional[str] = None,
+    quality_gates: Optional[QualityGateStatus] = None,
+    gate_feedback: Optional[dict] = None,
 ) -> CoachEvidenceBundle:
-    """A bundle whose ``gathering_status`` is whatever the test supplies — the
-    retro shape: an aborted gather leaves every downstream leg ``None``
-    (quality_gates, tests, bdd, independent_tests, ...), which is exactly the
-    dataclass default."""
+    """Build a bundle for incomplete-gathering reconciliation tests."""
     return CoachEvidenceBundle(
         honesty=HonestyVerification(
             verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
         ),
         gathering_status=gathering_status,  # type: ignore[arg-type]
         gathering_error=gathering_error,
+        quality_gates=quality_gates,
+        gate_feedback=gate_feedback,
     )
 
 
-def _verdict_events(task_id: str, turn: int, decision: str) -> list:
-    """Harness events carrying a fenced verdict. The ``approve`` variant is
-    the retro shape: a clean approve emitted DESPITE evidence gathering never
-    completing."""
+def _coverage_gate_bundle() -> CoachEvidenceBundle:
+    gates = QualityGateStatus(
+        tests_passed=True,
+        coverage_met=False,
+        arch_review_passed=True,
+        plan_audit_passed=True,
+    )
+    gate_feedback = {
+        "task_id": "STALE-INTERNAL-IDENTITY",
+        "turn": 99,
+        "decision": "feedback",
+        "validation_results": {
+            "quality_gates": {
+                "tests_passed": True,
+                "coverage_met": False,
+                "arch_review_passed": True,
+                "plan_audit_passed": True,
+                "all_gates_passed": False,
+            },
+            "independent_tests": None,
+            "requirements": None,
+        },
+        "issues": [{
+            "severity": "must_fix",
+            "category": "coverage",
+            "description": "Coverage threshold not met",
+            "details": {
+                "line_coverage": 62.5,
+                "branch_coverage": None,
+                "provenance": "player_task_work_results",
+            },
+        }],
+        "rationale": "1 quality gate(s) failed",
+    }
+    return _bundle(
+        "partial_gate_abort",
+        quality_gates=gates,
+        gate_feedback=gate_feedback,
+    )
+
+
+def _verdict_events(
+    task_id: str,
+    turn: int,
+    decision: str,
+    verdict_overrides: Optional[dict] = None,
+) -> list:
+    """Harness events carrying a fenced verdict."""
     verdict = {
         "task_id": task_id,
         "turn": turn,
@@ -92,6 +140,8 @@ def _verdict_events(task_id: str, turn: int, decision: str) -> list:
         else "Feedback: honesty discrepancies must be fixed.",
         "criteria_verification": [],
     }
+    if verdict_overrides:
+        verdict.update(verdict_overrides)
     text = "```json\n" + json.dumps(verdict) + "\n```"
     return [AssistantMessageEvent(text=text), ResultMessageEvent(session_id=None)]
 
@@ -103,10 +153,15 @@ def _run_coach(
     turn: int,
     bundle: CoachEvidenceBundle,
     decision: str = "approve",
+    verdict_overrides: Optional[dict] = None,
 ):
-    """Invoke the Coach with ``_invoke_with_role`` mocked to return the
-    verdict harness events. Everything else runs for real."""
-    iwr = AsyncMock(return_value=(None, _verdict_events(task_id, turn, decision)))
+    """Invoke the Coach with a mocked model boundary and real reconciliation."""
+    iwr = AsyncMock(return_value=(None, _verdict_events(
+        task_id,
+        turn,
+        decision,
+        verdict_overrides,
+    )))
     with patch.object(invoker, "_invoke_with_role", iwr):
         return asyncio.run(
             invoker.invoke_coach(
@@ -251,6 +306,117 @@ class TestIncompleteGatheringOverride:
 
 
 # ---------------------------------------------------------------------------
+# Item 60 — source-owned quality-gate feedback replaces model gate prose
+# ---------------------------------------------------------------------------
+
+
+class TestDeterministicPartialGateFeedback:
+    @pytest.mark.parametrize("model_decision", ["approve", "feedback"])
+    def test_valid_payload_replaces_fabricated_gate_claims_in_memory_and_disk(
+        self,
+        model_decision: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        invented_issue = {
+            "severity": "must_fix",
+            "category": "test_failure",
+            "description": "Zero tests ran and the plan audit is missing",
+            "details": {"failed_count": 0, "total_count": 0},
+        }
+        overrides = {
+            "rationale": (
+                "Zero tests ran; plan audit missing despite green coverage."
+            ),
+            "issues": [invented_issue],
+            "validation_results": {
+                "quality_gates": {
+                    "tests_passed": False,
+                    "coverage_met": True,
+                    "arch_review_passed": True,
+                    "plan_audit_passed": False,
+                    "all_gates_passed": False,
+                }
+            },
+        }
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-TRUTHFUL-GATES",
+            turn=2,
+            bundle=_coverage_gate_bundle(),
+            decision=model_decision,
+            verdict_overrides=overrides,
+        )
+
+        report = result.report
+        assert report["task_id"] == "TASK-TRUTHFUL-GATES"
+        assert report["turn"] == 2
+        assert report["decision"] == "feedback"
+        assert report["rationale"] == "1 quality gate(s) failed"
+        assert [issue["category"] for issue in report["issues"]] == [
+            "coverage"
+        ]
+        assert report["issues"][0]["details"] == {
+            "line_coverage": 62.5,
+            "branch_coverage": None,
+            "provenance": "player_task_work_results",
+        }
+        assert report["validation_results"]["quality_gates"] == {
+            "tests_passed": True,
+            "coverage_met": False,
+            "arch_review_passed": True,
+            "plan_audit_passed": True,
+            "all_gates_passed": False,
+        }
+        on_disk = json.loads(
+            invoker._get_report_path(
+                "TASK-TRUTHFUL-GATES", 2, "coach"
+            ).read_text()
+        )
+        for field in (
+            "task_id", "turn", "decision", "issues", "rationale",
+            "validation_results",
+        ):
+            assert on_disk[field] == report[field]
+
+    @pytest.mark.parametrize("malformation", ["mismatch", "missing_fields"])
+    def test_malformed_or_mismatched_payload_keeps_generic_fail_closed_guard(
+        self,
+        malformation: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        bundle = _coverage_gate_bundle()
+        assert bundle.gate_feedback is not None
+        if malformation == "mismatch":
+            bundle.gate_feedback["validation_results"]["quality_gates"][
+                "coverage_met"
+            ] = True
+        else:
+            bundle.gate_feedback = {"decision": "feedback"}
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-BAD-GATE-PAYLOAD",
+            turn=1,
+            bundle=bundle,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert result.report["issues"][0]["category"] == (
+            "absence_of_failure"
+        )
+        assert "partial_gate_abort" in result.report["rationale"]
+
+
+# ---------------------------------------------------------------------------
 # AC-005 — no over-reach, no happy-path regression
 # ---------------------------------------------------------------------------
 
@@ -383,6 +549,54 @@ def _write_phase4_infra_markers(worktree: Path, task_id: str) -> None:
 
 
 class TestVerifierInfrastructureOnGateAbortRoute:
+    def test_deterministic_replacement_retains_infrastructure_annotation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        invoker = _make_invoker(tmp_path)
+        _write_phase4_infra_markers(tmp_path, "TASK-VINFRA-ITEM60")
+
+        result = _run_coach(
+            invoker,
+            task_id="TASK-VINFRA-ITEM60",
+            turn=1,
+            bundle=_coverage_gate_bundle(),
+            decision="feedback",
+            verdict_overrides={
+                "rationale": "Invented zero-test complaint",
+                "issues": [{
+                    "severity": "must_fix",
+                    "category": "test_failure",
+                    "description": "Zero tests ran",
+                    "details": {"total_count": 0},
+                }],
+            },
+        )
+
+        assert result.report["rationale"] == "1 quality gate(s) failed"
+        assert result.report["issues"][0]["category"] == "coverage"
+        marked = [
+            issue
+            for issue in result.report["issues"]
+            if issue.get("details", {}).get("verifier_infrastructure") is True
+        ]
+        assert len(marked) == 1
+        assert marked[0]["severity"] == "should_fix"
+        assert marked[0]["details"]["resolved_interpreter"] == (
+            _INFRA_INTERPRETER
+        )
+        on_disk = json.loads(
+            invoker._get_report_path(
+                "TASK-VINFRA-ITEM60", 1, "coach"
+            ).read_text()
+        )
+        for field in (
+            "task_id", "turn", "decision", "issues", "rationale",
+            "validation_results",
+        ):
+            assert on_disk[field] == result.report[field]
+
     def test_gate_abort_with_marker_flips_with_infra_framing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
