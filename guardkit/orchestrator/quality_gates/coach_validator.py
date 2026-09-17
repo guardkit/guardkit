@@ -3901,6 +3901,8 @@ class CoachValidator:
         command = declaration.get("command")
         if not isinstance(command, str) or not command:
             return None
+        if declaration.get("required") is False:
+            declaration.pop("required")
         if isinstance(declaration.get("source_paths"), list):
             declaration["source_paths"] = list(declaration["source_paths"])
         return declaration
