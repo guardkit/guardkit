@@ -11544,8 +11544,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 specialist_results_path,
             )
 
-        # Drop Player-emitted Phase 4/5 entries — orchestrator records
-        # below are the single source of truth for those phases.
+        # Drop every existing Phase 4/5 entry before rebuilding those slots
+        # from the current specialist_results.json.  ``agent_invocations`` is
+        # Player-writable, so a retained ``source: orchestrator`` string cannot
+        # establish provenance.  Unconditional replacement also makes repeated
+        # injection idempotent and prevents an earlier successful Phase 5 report
+        # surviving a later failed Phase 5 result.
         existing = task_work_data.get("agent_invocations")
         if not isinstance(existing, list):
             existing = []
@@ -11558,10 +11562,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             if not isinstance(inv, dict):
                 continue
             phase = str(inv.get("phase", ""))
-            source = inv.get("source")
-            if phase in orchestrator_phase_ids and source != "orchestrator":
-                # Drop Player-emitted (or untagged) Phase 4/5 — replaced
-                # below by orchestrator-sourced records.
+            if phase in orchestrator_phase_ids:
+                # The current specialist-results blocks are the sole source for
+                # Phase 4/5 records, regardless of the old record's claimed tag.
                 continue
             filtered.append(inv)
 
