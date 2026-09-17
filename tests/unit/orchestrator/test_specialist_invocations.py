@@ -16,7 +16,8 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -37,6 +38,10 @@ from guardkit.orchestrator.specialist_invocations import (
 def _make_fake_agent_invoker(
     *,
     invoke_side_effect=None,
+    invoke_result=(
+        None,
+        [SimpleNamespace(type="assistant_message", text="Review report available.")],
+    ),
     sdk_timeout_seconds: int = 1200,
     cancellation_event: threading.Event | None = None,
 ) -> MagicMock:
@@ -49,7 +54,10 @@ def _make_fake_agent_invoker(
     invoker = MagicMock(name="AgentInvoker")
     invoker.sdk_timeout_seconds = sdk_timeout_seconds
     invoker._cancellation_event = cancellation_event
-    invoker._invoke_with_role = AsyncMock(side_effect=invoke_side_effect)
+    invoker._invoke_with_role = AsyncMock(
+        side_effect=invoke_side_effect,
+        return_value=invoke_result,
+    )
     invoker._kill_child_claude_processes = MagicMock()
     # TASK-AB-PERTASKFG01 AC-004: real value (not a child MagicMock) so the
     # deterministic Phase-4 runner's getattr(..., "_venv_python", None) yields
@@ -700,9 +708,9 @@ async def test_invoke_code_reviewer_success_appends_phase_5_block_with_correct_s
     tmp_path: Path,
 ) -> None:
     """Success path: phase_5 block carries status/duration/error plus the
-    Phase 5-specific defaults (issues, quality_score, recommendations,
-    output_summary). Phase 4 block is preserved unchanged. Prompt carries
-    the structured "Phase 4 summary" section the AC mandates.
+    Phase 5 compatibility placeholders plus attributed unparsed report
+    evidence. Phase 4 remains unchanged. Prompt carries the structured
+    "Phase 4 summary" section the AC mandates.
     """
     _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
     seeded_phase_4 = {
@@ -765,12 +773,184 @@ async def test_invoke_code_reviewer_success_appends_phase_5_block_with_correct_s
     assert block["status"] == "passed"
     assert block["error"] is None
     assert block["duration_seconds"] >= 0
-    # Phase 5-specific defaults from _PHASE_5_AGENT_FIELD_DEFAULTS.
+    # Compatibility semantic fields stay explicit placeholders. They are
+    # not a clean-review verdict; the unparsed report carries provenance.
     assert block["issues"] == []
-    assert isinstance(block["quality_score"], float)
+    assert block["quality_score"] == 0.0
     assert block["recommendations"] == []
-    assert isinstance(block["output_summary"], str)
-    assert block["output_summary"]  # non-empty placeholder
+    assert block["semantic_fields_parsed"] is False
+    assert block["output_summary"] == (
+        "Code-reviewer model report captured for Coach evaluation; "
+        "no semantic verdict parsed."
+    )
+    assert block["review_evidence"] == {
+        "source": "orchestrator_code_reviewer",
+        "kind": "unparsed_model_report",
+        "text": "Review report available.",
+        "verified": False,
+        "redacted": True,
+        "truncated": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_retains_json_like_text_without_parsing(
+    tmp_path: Path,
+) -> None:
+    """Malformed JSON-looking prose stays an unparsed model report.
+
+    Phase 5 transport success means usable evidence was retained; it does not
+    turn prose into semantic findings, a score, or a clean verdict.
+    """
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005
+    )
+    report = (
+        '{"verdict":"feedback","findings":[}'
+        "\nCRITICAL src/service.py:41 all tests passed"
+    )
+    invoker = _make_fake_agent_invoker(
+        invoke_result=(
+            None,
+            [SimpleNamespace(type="assistant_message", text=report)],
+        )
+    )
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "passed"
+    block = json.loads(results_path.read_text())["phase_5"]
+    assert block["review_evidence"]["text"] == report
+    assert block["review_evidence"]["kind"] == "unparsed_model_report"
+    assert block["review_evidence"]["verified"] is False
+    assert block["semantic_fields_parsed"] is False
+    assert block["issues"] == []
+    assert block["quality_score"] == 0.0
+    assert block["recommendations"] == []
+    assert "no semantic verdict parsed" in block["output_summary"]
+    assert "verdict" not in block
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_empty_response_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Transport completion without non-empty review evidence is a failure."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005
+    )
+    invoker = _make_fake_agent_invoker(
+        invoke_result=(
+            None,
+            [SimpleNamespace(type="assistant_message", text="   ")],
+        )
+    )
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "failed"
+    assert "without non-empty review evidence" in (result.error or "")
+    block = json.loads(results_path.read_text())["phase_5"]
+    assert block["status"] == "failed"
+    assert "review_evidence" not in block
+    assert block["semantic_fields_parsed"] is False
+    assert block["output_summary"] == (
+        "No usable code-reviewer model report was captured."
+    )
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_redacts_before_bounding(
+    tmp_path: Path,
+) -> None:
+    """A recognised secret never reaches disk and long evidence is marked."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005
+    )
+    raw_token = "supersecretvalue"
+    report = (
+        f"token={raw_token}\nCRITICAL src/service.py:41\n"
+        + ("x" * 4500)
+    )
+    invoker = _make_fake_agent_invoker(
+        invoke_result=(
+            None,
+            [SimpleNamespace(type="assistant_message", text=report)],
+        )
+    )
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "passed"
+    persisted = results_path.read_text()
+    assert raw_token not in persisted
+    block = json.loads(persisted)["phase_5"]
+    evidence = block["review_evidence"]
+    assert "token=[REDACTED]" in evidence["text"]
+    assert evidence["truncated"] is True
+    assert "[cut short" in evidence["text"]
+    assert evidence["redacted"] is True
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_redactor_failure_persists_no_raw_text(
+    tmp_path: Path,
+) -> None:
+    """Redaction errors fail Phase 5 without writing the raw report."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    results_path = _seed_specialist_results_with_phase_4(
+        tmp_path, _TASK_ID_OSI_005
+    )
+    raw_report = "CRITICAL token=supersecretvalue"
+    invoker = _make_fake_agent_invoker(
+        invoke_result=(
+            None,
+            [SimpleNamespace(type="assistant_message", text=raw_report)],
+        )
+    )
+
+    with patch.object(
+        specialist_invocations.SecretRedactor,
+        "redact",
+        side_effect=RuntimeError("forced redactor failure"),
+    ):
+        result = await invoke_code_reviewer(
+            worktree_path=tmp_path,
+            task_id=_TASK_ID_OSI_005,
+            phase4_result=_make_passed_phase4_result(),
+            sdk_timeout=42,
+            agent_invoker=invoker,
+        )
+
+    assert result.status == "failed"
+    assert result.final_message is None
+    persisted = results_path.read_text()
+    assert raw_report not in persisted
+    block = json.loads(persisted)["phase_5"]
+    assert block["status"] == "failed"
+    assert "redaction failed" in block["error"]
+    assert "review_evidence" not in block
 
 
 @pytest.mark.asyncio
@@ -796,6 +976,19 @@ async def test_invoke_code_reviewer_failure_writes_failed_block_without_raising(
     results_path = _seed_specialist_results_with_phase_4(
         tmp_path, _TASK_ID_OSI_005, seeded_phase_4
     )
+    seeded = json.loads(results_path.read_text())
+    seeded["phase_5"] = {
+        "status": "passed",
+        "review_evidence": {
+            "source": "orchestrator_code_reviewer",
+            "kind": "unparsed_model_report",
+            "text": "stale report from an earlier invocation",
+            "verified": False,
+            "redacted": True,
+            "truncated": False,
+        },
+    }
+    results_path.write_text(json.dumps(seeded))
 
     invoker = _make_fake_agent_invoker(
         invoke_side_effect=RuntimeError("SDK exploded"),
@@ -828,6 +1021,9 @@ async def test_invoke_code_reviewer_failure_writes_failed_block_without_raising(
     assert isinstance(phase_5["quality_score"], float)
     assert phase_5["recommendations"] == []
     assert isinstance(phase_5["output_summary"], str)
+    assert phase_5["semantic_fields_parsed"] is False
+    assert "review_evidence" not in phase_5
+    assert "stale report" not in results_path.read_text()
 
 
 @pytest.mark.asyncio
@@ -1041,6 +1237,45 @@ def test_no_activity_watchdog_exceeded_predicate() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_specialist_watchdog_captures_last_assistant_message(
+    tmp_path: Path,
+) -> None:
+    """A progressing watchdog call returns events for final-text capture."""
+    seen: dict[str, object] = {}
+
+    async def _complete(**kwargs: object):
+        seen.update(kwargs)
+        invoker._last_activity_monotonic = time.monotonic()
+        await asyncio.sleep(0.01)
+        return (
+            None,
+            [
+                SimpleNamespace(type="assistant_message", text="first report"),
+                SimpleNamespace(type="tool_result", text="ignored"),
+                SimpleNamespace(type="assistant_message", text="   "),
+                SimpleNamespace(type="assistant_message", text="final report"),
+            ],
+        )
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_complete)
+    result = await run_specialist(
+        specialist_name="code-reviewer",
+        worktree_path=tmp_path,
+        task_id="TASK-PHASE5-CAPTURE",
+        sdk_timeout=42,
+        prompt="review",
+        allowed_tools=["Read"],
+        agent_invoker=invoker,
+        no_activity_watchdog_seconds=0.2,
+        capture_final_message=True,
+    )
+
+    assert result.status == "passed"
+    assert result.final_message == "final report"
+    assert seen["return_events"] is True
+
+
+@pytest.mark.asyncio
 async def test_run_specialist_watchdog_terminates_hung_specialist(
     tmp_path: Path,
 ) -> None:
@@ -1066,10 +1301,13 @@ async def test_run_specialist_watchdog_terminates_hung_specialist(
         allowed_tools=["Read", "Bash", "Write"],
         agent_invoker=invoker,
         no_activity_watchdog_seconds=0.2,
+        capture_final_message=True,
     )
     elapsed = time.monotonic() - started
 
     assert result.status == "failed"
+    assert result.final_message is None
+    assert invoker._invoke_with_role.await_args.kwargs["return_events"] is True
     assert result.error is not None
     assert "hang detected (no model activity" in result.error
     assert result.result_file is None

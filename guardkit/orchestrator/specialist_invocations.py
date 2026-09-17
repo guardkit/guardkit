@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
+from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.agent_invoker import AgentInvoker
@@ -71,8 +72,25 @@ _PHASE_5_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
     "issues": [],
     "quality_score": 0.0,
     "recommendations": [],
-    "output_summary": "Review completed by orchestrator-invoked code-reviewer.",
+    "semantic_fields_parsed": False,
+    "output_summary": "No usable code-reviewer model report was captured.",
 }
+
+# Phase 5 has no structured review-response contract. Keep enough of the
+# reviewer's final prose for the outer Coach to inspect without allowing an
+# unbounded model response into durable artifacts or the Coach prompt. These
+# values intentionally match review_runner's established specialist-message
+# bound; importing them would create a cycle because review_runner imports
+# run_specialist from this module.
+_PHASE_5_REVIEW_EVIDENCE_LIMIT = 4000
+_PHASE_5_REVIEW_EVIDENCE_TRUNCATION_MARKER = (
+    f"\n[cut short — only the first {_PHASE_5_REVIEW_EVIDENCE_LIMIT} "
+    "characters of what the specialist said are kept]"
+)
+_PHASE_5_REVIEW_CAPTURED_SUMMARY = (
+    "Code-reviewer model report captured for Coach evaluation; "
+    "no semantic verdict parsed."
+)
 
 # Per-specialist SDK-timeout ceiling for the Phase 4 test-orchestrator.
 #
@@ -310,7 +328,7 @@ async def _run_specialist_with_watchdog(
     specialist_name: str,
     task_id: str,
     poll_interval: Optional[float] = None,
-) -> tuple[Literal["passed", "failed"], Optional[str]]:
+) -> tuple[Literal["passed", "failed"], Optional[str], Any]:
     """Run ``_invoke_with_role`` under a no-model-activity watchdog.
 
     Races the invocation against a poll loop that reads
@@ -346,9 +364,10 @@ async def _run_specialist_with_watchdog(
     the watchdog never trips for it (AC-2 of TASK-FIX-SPECHANG2).
 
     Returns:
-        ``("passed", None)`` on clean completion, or ``("failed", reason)``
-        on a detected hang, an external cancellation, or any exception
-        raised by the invocation. Never propagates.
+        ``("passed", None, invoke_result)`` on clean completion, or
+        ``("failed", reason, None)`` on a detected hang, an external
+        cancellation, or any exception raised by the invocation. Never
+        propagates and never returns a partial result from a failed call.
     """
     poll = (
         poll_interval
@@ -400,26 +419,27 @@ async def _run_specialist_with_watchdog(
             invoke_task.cancel()
             break
 
+    invoke_result: Any = None
     try:
-        await invoke_task
+        invoke_result = await invoke_task
     except asyncio.CancelledError:
         if hang_reason is None:
             # External cancellation (e.g. FeatureOrchestrator timeout), not
             # the watchdog — surface as a generic failed result.
-            return "failed", "specialist invocation cancelled"
+            return "failed", "specialist invocation cancelled", None
     except Exception as exc:  # noqa: BLE001 — runner must never raise
         if hang_reason is None:
             _reap_specialist_processes(agent_invoker, specialist_name)
-            return "failed", f"{type(exc).__name__}: {exc}"
+            return "failed", f"{type(exc).__name__}: {exc}", None
 
     if hang_reason is not None:
         _reap_specialist_processes(agent_invoker, specialist_name)
-        return "failed", hang_reason
+        return "failed", hang_reason, None
     if external_cancel:
         # Shared-event cancellation came from outside; the in-flight LangGraph
         # cleanup contract has already been honoured via the local forward.
-        return "failed", "specialist invocation cancelled"
-    return "passed", None
+        return "failed", "specialist invocation cancelled", None
+    return "passed", None, invoke_result
 
 
 async def run_specialist(
@@ -479,9 +499,9 @@ async def run_specialist(
             Costs one extra kwarg to ``_invoke_with_role``
             (``return_events=True``), which changes what that call *returns*
             and nothing else. Defaults to ``False``, so every existing caller
-            behaves exactly as before. Not available under the no-activity
-            watchdog, which does not hand its invocation's return value back;
-            there ``final_message`` stays ``None`` and the caller says so.
+            behaves exactly as before. The watchdog returns a completed
+            invocation payload only on its clean-success path; hangs,
+            cancellations, and exceptions cannot contribute stale text.
 
     Returns:
         :class:`SpecialistInvocationResult` with ``status="passed"`` on
@@ -563,10 +583,7 @@ async def run_specialist(
         "heartbeat_label_override": heartbeat_label_override,
     }
 
-    # Only the direct path can hand back what the model said: the watchdog
-    # path returns its own (status, error) pair and drops the invocation's
-    # return value. So the extra kwarg is added only where it can be read.
-    capturing = capture_final_message and not watchdog_enabled
+    capturing = capture_final_message
     if capturing:
         invoke_kwargs["return_events"] = True
 
@@ -576,7 +593,11 @@ async def run_specialist(
             # branch by the construction above; assert that for the type
             # checker and to document the invariant for future readers.
             assert specialist_local_event is not None
-            status, error_message = await _run_specialist_with_watchdog(
+            (
+                status,
+                error_message,
+                invoke_result,
+            ) = await _run_specialist_with_watchdog(
                 agent_invoker=agent_invoker,
                 invoke_kwargs=invoke_kwargs,
                 watchdog_seconds=float(no_activity_watchdog_seconds),
@@ -585,6 +606,8 @@ async def run_specialist(
                 specialist_name=specialist_name,
                 task_id=task_id,
             )
+            if status == "passed" and capturing:
+                final_message = _final_assistant_text(invoke_result)
             if status == "failed":
                 logger.warning(
                     "run_specialist(%s) failed for %s: %s",
@@ -623,6 +646,53 @@ async def run_specialist(
         error=error_message,
         final_message=final_message,
     )
+
+
+def _bounded_redacted_review_evidence(
+    final_message: Optional[str],
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """Build safe, unparsed Phase-5 evidence or a fail-closed error.
+
+    Redaction happens before truncation so the retained boundary cannot split
+    and expose a recognised secret. The text remains an attributed model
+    report: no word in it is interpreted as a finding, score, clean result, or
+    deterministic verdict.
+    """
+    if not isinstance(final_message, str) or not final_message.strip():
+        return None, "code-reviewer completed without non-empty review evidence"
+
+    try:
+        redacted_text = SecretRedactor().redact(final_message)
+    except Exception as exc:  # noqa: BLE001 — raw model text must never persist
+        logger.warning(
+            "Phase-5 review evidence redaction failed closed: %s",
+            type(exc).__name__,
+        )
+        return None, (
+            "code-reviewer review evidence redaction failed "
+            f"({type(exc).__name__})"
+        )
+
+    if not redacted_text.strip():
+        return None, "code-reviewer completed without non-empty review evidence"
+
+    truncated = len(redacted_text) > _PHASE_5_REVIEW_EVIDENCE_LIMIT
+    if truncated:
+        persisted_text = (
+            redacted_text[:_PHASE_5_REVIEW_EVIDENCE_LIMIT]
+            + _PHASE_5_REVIEW_EVIDENCE_TRUNCATION_MARKER
+        )
+    else:
+        persisted_text = redacted_text
+
+    return {
+        "source": "orchestrator_code_reviewer",
+        "kind": "unparsed_model_report",
+        "text": persisted_text,
+        "verified": False,
+        "redacted": True,
+        "truncated": truncated,
+    }, None
 
 
 def _load_task_context(worktree_path: Path, task_id: str) -> str:
@@ -1885,7 +1955,23 @@ async def invoke_code_reviewer(
         # (no /v1/responses traffic for N seconds) well before the capped
         # duration timeout fires — same protection the test-orchestrator has.
         no_activity_watchdog_seconds=_SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS,
+        capture_final_message=True,
     )
+
+    review_evidence: Optional[dict[str, Any]] = None
+    if run_result.status == "passed":
+        review_evidence, evidence_error = _bounded_redacted_review_evidence(
+            run_result.final_message
+        )
+        if evidence_error is not None:
+            run_result.status = "failed"
+            run_result.error = evidence_error
+            run_result.result_file = None
+            run_result.final_message = None
+        else:
+            # Do not return the unredacted/unbounded response beyond this
+            # boundary. The durable evidence text is the safe representation.
+            run_result.final_message = review_evidence["text"]
 
     phase_5_block: dict[str, Any] = {
         "status": run_result.status,
@@ -1893,6 +1979,9 @@ async def invoke_code_reviewer(
         "error": run_result.error,
         **_PHASE_5_AGENT_FIELD_DEFAULTS,
     }
+    if review_evidence is not None:
+        phase_5_block["review_evidence"] = review_evidence
+        phase_5_block["output_summary"] = _PHASE_5_REVIEW_CAPTURED_SUMMARY
 
     _merge_specialist_block(specialist_results_path, "phase_5", phase_5_block)
 

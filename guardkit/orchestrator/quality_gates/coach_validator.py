@@ -2385,6 +2385,11 @@ class CoachValidator:
         advisory_issues.extend(
             self._compute_specialist_failure_advisories(task_work_results)
         )
+        advisory_issues.extend(
+            self._compute_code_reviewer_model_report_advisories(
+                task_work_results
+            )
+        )
         advisory_issues.extend(honesty_should_fix)
 
         # 2. Verify quality gates passed with profile
@@ -3127,6 +3132,11 @@ class CoachValidator:
         # a Player honesty issue.
         advisory_issues.extend(
             self._compute_specialist_failure_advisories(task_work_results)
+        )
+        advisory_issues.extend(
+            self._compute_code_reviewer_model_report_advisories(
+                task_work_results
+            )
         )
         advisory_issues.extend(honesty_should_fix)
 
@@ -4253,6 +4263,79 @@ class CoachValidator:
                     "agent": agent,
                     "status": inv.get("status"),
                     "error": str(error),
+                },
+            })
+        return advisories
+
+    def _compute_code_reviewer_model_report_advisories(
+        self, task_work_results: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Carry authoritative Phase-5 prose as an unverified advisory.
+
+        The code-reviewer currently has no structured response schema. This
+        helper therefore validates provenance and shape only; it never parses
+        the text into findings, severity, score, a clean-review claim, or any
+        deterministic gate state.
+        """
+        advisories: List[Dict[str, Any]] = []
+        invocations = task_work_results.get("agent_invocations")
+        if not isinstance(invocations, list):
+            return advisories
+
+        for inv in invocations:
+            if not isinstance(inv, dict):
+                continue
+            if (
+                inv.get("source") != "orchestrator"
+                or str(inv.get("phase", "")) != "5"
+                or inv.get("agent") != "code-reviewer"
+                or inv.get("status") != "completed"
+            ):
+                continue
+
+            evidence = inv.get("review_evidence")
+            if not isinstance(evidence, dict):
+                continue
+            text = evidence.get("text")
+            truncated = evidence.get("truncated")
+            truncation_marker = (
+                "\n[cut short — only the first 4000 characters of "
+                "what the specialist said are kept]"
+            )
+            bounded = isinstance(text, str) and (
+                (truncated is False and len(text) <= 4000)
+                or (
+                    truncated is True
+                    and len(text) <= 4000 + len(truncation_marker)
+                    and text.endswith(truncation_marker)
+                )
+            )
+            if not (
+                evidence.get("source") == "orchestrator_code_reviewer"
+                and evidence.get("kind") == "unparsed_model_report"
+                and bounded
+                and bool(text.strip())
+                and evidence.get("verified") is False
+                and evidence.get("redacted") is True
+            ):
+                continue
+
+            advisories.append({
+                "severity": "warning",
+                "category": "code_reviewer_model_report",
+                "description": (
+                    "The orchestrator code-reviewer supplied a bounded, "
+                    "redacted model report. It is unverified advisory "
+                    "evidence; compare it with deterministic gates and "
+                    "acceptance evidence before deciding."
+                ),
+                "details": {
+                    "source": "orchestrator_code_reviewer",
+                    "kind": "unparsed_model_report",
+                    "text": text,
+                    "verified": False,
+                    "redacted": True,
+                    "truncated": truncated,
                 },
             })
         return advisories
