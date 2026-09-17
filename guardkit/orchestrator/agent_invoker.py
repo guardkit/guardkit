@@ -5019,6 +5019,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # whatever the orchestrator constructs.
         from guardkit.orchestrator.sdk_debug import (
             preserve_prompt as _sdk_preserve_prompt,
+            preserve_event_checked as _sdk_preserve_event_checked,
         )
         _debug_task_id = task_id or heartbeat_task_id
         _debug_turn = turn if turn is not None else 1
@@ -5112,6 +5113,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # cadence (which froze ``_last_activity_monotonic`` and
                 # false-killed live specialists at 150 s — FEAT-9DDE run 3).
                 on_model_activity=self._bump_activity,
+                on_native_tool_event=(
+                    lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
+                ) if _sdk_debug_dir is not None else None,
                 harness_role=agent_type,
             )
 
@@ -10984,6 +10988,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         from guardkit.orchestrator.sdk_debug import (
             preserve_prompt as _sdk_preserve_prompt,
             preserve_event as _sdk_preserve_event,
+            preserve_event_checked as _sdk_preserve_event_checked,
         )
         _sdk_debug_dir = _sdk_preserve_prompt(
             workspace_root=self.worktree_path,
@@ -11107,6 +11112,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     # may trigger nested model/tool work before the first event
                     # is yielded back to this loop.
                     on_model_activity=self._bump_activity,
+                    on_native_tool_event=(
+                        lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
+                    ) if _sdk_debug_dir is not None else None,
                 )
 
                 # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly

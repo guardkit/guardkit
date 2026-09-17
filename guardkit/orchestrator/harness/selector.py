@@ -599,6 +599,9 @@ def select_harness(
     # / ``recursion_limit``) so the SDK harness — which already streams events
     # incrementally and needs no callback — never sees it.
     on_model_activity = harness_kwargs.pop("on_model_activity", None)
+    # Optional progressive native tool evidence, consumed only by LangGraph.
+    # The SDK path already yields each message incrementally.
+    on_native_tool_event = harness_kwargs.pop("on_native_tool_event", None)
 
     # Role is consumed by this selector so it never leaks into either
     # concrete constructor. LangGraph Player selects the required dcode route;
@@ -740,6 +743,16 @@ def select_harness(
                     "no-model-activity specialist watchdog will fall back to "
                     "the (substrate-blind) event-arrival clock. Upgrade "
                     "guardkitfactory to restore TASK-FIX-SPECINVOKE01."
+                )
+        if on_native_tool_event is not None:
+            if "on_native_tool_event" in inspect.signature(
+                LangGraphHarness.__init__
+            ).parameters:
+                langgraph_kwargs["on_native_tool_event"] = on_native_tool_event
+            else:
+                raise AgentInvocationError(
+                    "The installed guardkitfactory cannot record progressive "
+                    "native tool evidence; install the matching Factory revision."
                 )
         if player_config is not None:
             langgraph_kwargs["player_config"] = player_config
