@@ -32,10 +32,13 @@ Example:
 
 import ast
 import fnmatch
+import hashlib
 import json
 import logging
 import os
 import re
+import secrets
+import stat
 import subprocess
 import sys
 import time
@@ -3500,6 +3503,8 @@ class CoachValidator:
             behavioural_oracle_dict = self._produce_behavioural_oracle(
                 authored_files=authored if 'authored' in locals() else [],
                 task=task,
+                task_id=task_id,
+                turn=turn,
             )
             if behavioural_oracle_dict is not None:
                 logger.info(
@@ -3758,6 +3763,8 @@ class CoachValidator:
         self,
         authored_files: List[str],
         task: Optional[Dict[str, Any]] = None,
+        task_id: Optional[str] = None,
+        turn: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Produce the L4 behavioural-oracle result for the bundle.
 
@@ -3803,6 +3810,14 @@ class CoachValidator:
             A dict matching the guard's consumed shape, or ``None`` when
             no oracle file was discovered.
         """
+        declaration = self._oracle_declaration(task)
+        if declaration and declaration.get("required") is True:
+            return self._run_required_shell_command(
+                declaration,
+                task_id=task_id or self.task_id or "unknown-task",
+                turn=turn or self._turn,
+            )
+
         oracle_files = sorted(
             self.worktree_path.glob("tests/acceptance/*_roundtrip.py")
         )
@@ -3856,18 +3871,38 @@ class CoachValidator:
         if isinstance(bo, str):
             return {"command": bo} if bo else None
         if isinstance(bo, dict):
-            return bo
+            copied = dict(bo)
+            if isinstance(copied.get("source_paths"), list):
+                copied["source_paths"] = list(copied["source_paths"])
+            return copied
         # Pydantic model (BehaviouralOracle) or any object exposing
         # ``.command``. Duck-typed on purpose: coach_validator must not
         # import feature_loader (feature_loader already imports downwards).
-        command = getattr(bo, "command", None)
+        allowed = (
+            "command",
+            "expected_exit",
+            "timeout",
+            "required",
+            "expected_checks",
+            "checker_path",
+            "checker_sha256",
+            "source_paths",
+        )
+        model_dump = getattr(bo, "model_dump", None)
+        if callable(model_dump):
+            raw = model_dump(exclude_none=True)
+            declaration = {key: raw[key] for key in allowed if key in raw}
+        else:
+            declaration = {
+                key: getattr(bo, key)
+                for key in allowed
+                if getattr(bo, key, None) is not None
+            }
+        command = declaration.get("command")
         if not isinstance(command, str) or not command:
             return None
-        declaration: Dict[str, Any] = {"command": command}
-        for key in ("expected_exit", "timeout"):
-            value = getattr(bo, key, None)
-            if value is not None:
-                declaration[key] = value
+        if isinstance(declaration.get("source_paths"), list):
+            declaration["source_paths"] = list(declaration["source_paths"])
         return declaration
 
     def _extract_command(
@@ -3935,6 +3970,296 @@ class CoachValidator:
         return self._execute_oracle(
             cmd, oracle_rel, timeout_seconds, env, "python",
         )
+
+    @staticmethod
+    def _path_has_symlink(path: Path) -> bool:
+        """Return whether any existing component of *path* is a symlink."""
+        absolute = path.absolute()
+        components = list(reversed(absolute.parents)) + [absolute]
+        return any(
+            os.path.lexists(component) and stat.S_ISLNK(os.lstat(component).st_mode)
+            for component in components
+        )
+
+    @staticmethod
+    def _snapshot_oracle_identity(path: Path) -> Dict[str, Any]:
+        """Read a stable regular-file identity owned by the producer."""
+        metadata = os.lstat(path)
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f"not a regular file: {path}")
+        resolved = path.resolve(strict=True)
+        resolved_metadata = os.stat(resolved, follow_symlinks=False)
+        if not stat.S_ISREG(resolved_metadata.st_mode):
+            raise ValueError(f"not a regular file: {path}")
+        payload = resolved.read_bytes()
+        after_read = os.stat(resolved, follow_symlinks=False)
+        if (
+            resolved_metadata.st_dev != after_read.st_dev
+            or resolved_metadata.st_ino != after_read.st_ino
+        ):
+            raise ValueError(f"identity changed while reading: {path}")
+        return {
+            "resolved_path": str(resolved),
+            "device": resolved_metadata.st_dev,
+            "inode": resolved_metadata.st_ino,
+            "regular": True,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+
+    @staticmethod
+    def _same_oracle_identity(before: Dict[str, Any], after: Dict[str, Any]) -> bool:
+        return all(
+            before.get(key) == after.get(key)
+            for key in ("resolved_path", "device", "inode", "regular", "sha256")
+        ) and before.get("regular") is True
+
+    def _run_required_shell_command(
+        self,
+        declaration: Dict[str, Any],
+        *,
+        task_id: str,
+        turn: int,
+    ) -> Dict[str, Any]:
+        """Execute a required command with producer-owned identity evidence."""
+        command = declaration.get("command")
+        expected_exit = declaration.get("expected_exit", 0)
+        expected_checks = declaration.get("expected_checks")
+        checker_declared = declaration.get("checker_path")
+        checker_sha256 = declaration.get("checker_sha256")
+        source_paths = declaration.get("source_paths")
+        timeout_value = declaration.get("timeout")
+        timeout_seconds = float(
+            timeout_value
+            if isinstance(timeout_value, (int, float))
+            and not isinstance(timeout_value, bool)
+            and timeout_value > 0
+            else os.environ.get("GUARDKIT_ORACLE_TIMEOUT", "300")
+        )
+        result: Dict[str, Any] = {
+            "status": "not_run",
+            "passed": False,
+            "required": True,
+            "command": command,
+            "expected_exit": expected_exit,
+            "exit_code": None,
+            "timed_out": False,
+            "duration": 0.0,
+            "output_tail": "",
+            "provenance": f"yaml_command:{command}",
+            "receipt_validation": {
+                "valid": False,
+                "fresh": False,
+                "confined": False,
+                "regular_file": False,
+                "path": None,
+            },
+            "receipt": None,
+            "checker_identity": None,
+            "source_identities": [],
+        }
+
+        def fail(reason: str) -> Dict[str, Any]:
+            result["reason"] = reason
+            return result
+
+        if (
+            not isinstance(command, str)
+            or not command
+            or isinstance(expected_exit, bool)
+            or not isinstance(expected_exit, int)
+            or isinstance(expected_checks, bool)
+            or not isinstance(expected_checks, int)
+            or expected_checks < 1
+            or not isinstance(checker_declared, str)
+            or not checker_declared
+            or not isinstance(checker_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", checker_sha256)
+            or not isinstance(source_paths, list)
+            or not source_paths
+        ):
+            return fail("source_binding_invalid")
+
+        checker_path = Path(checker_declared)
+        if not checker_path.is_absolute():
+            checker_path = self.worktree_path / checker_path
+        try:
+            if self._path_has_symlink(checker_path):
+                return fail("checker_missing")
+            checker_before = self._snapshot_oracle_identity(checker_path)
+        except (OSError, ValueError):
+            return fail("checker_missing")
+        result["checker_identity"] = {
+            "declared_path": checker_declared,
+            "expected_sha256": checker_sha256,
+            "before": checker_before,
+            "after": None,
+        }
+        if checker_before["sha256"] != checker_sha256:
+            return fail("checker_digest_mismatch")
+
+        worktree_resolved = self.worktree_path.resolve(strict=True)
+        source_entries: List[Dict[str, Any]] = []
+        try:
+            for declared_path in source_paths:
+                if not isinstance(declared_path, str) or not declared_path:
+                    raise ValueError("invalid source path")
+                relative = Path(declared_path)
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise ValueError("source path escapes candidate")
+                source_path = self.worktree_path / relative
+                if self._path_has_symlink(source_path):
+                    raise ValueError("source path contains symlink")
+                resolved = source_path.resolve(strict=True)
+                if not resolved.is_relative_to(worktree_resolved):
+                    raise ValueError("source path escapes candidate")
+                source_entries.append(
+                    {
+                        "declared_path": declared_path,
+                        "before": self._snapshot_oracle_identity(source_path),
+                        "after": None,
+                    }
+                )
+        except (OSError, ValueError):
+            result["source_identities"] = source_entries
+            return fail("source_binding_invalid")
+        result["source_identities"] = source_entries
+
+        private_root = TaskArtifactPaths.task_private_dir(task_id, self.worktree_path)
+        try:
+            if self._path_has_symlink(private_root):
+                return fail("receipt_unsafe")
+            private_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if self._path_has_symlink(private_root):
+                return fail("receipt_unsafe")
+            attempt_dir = private_root / (
+                f"behavioural-oracle-turn-{turn}-{secrets.token_hex(16)}"
+            )
+            if os.path.lexists(attempt_dir):
+                return fail("receipt_unsafe")
+            attempt_dir.mkdir(mode=0o700, exist_ok=False)
+            if self._path_has_symlink(attempt_dir):
+                return fail("receipt_unsafe")
+            receipt_path = attempt_dir / "receipt.json"
+            if os.path.lexists(receipt_path):
+                return fail("receipt_unsafe")
+        except OSError:
+            return fail("receipt_unsafe")
+
+        result["receipt_validation"]["path"] = str(receipt_path)
+        env = os.environ.copy()
+        env["GUARDKIT_CANDIDATE_ROOT"] = str(worktree_resolved)
+        env["GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT"] = str(receipt_path)
+        start_time = time.time()
+        proc: Optional[subprocess.CompletedProcess[str]] = None
+        try:
+            proc = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                env=env,
+            )
+            result.update(
+                status="ran",
+                exit_code=proc.returncode,
+                output_tail=_combined_output_tail(proc.stdout, proc.stderr),
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else exc.stdout
+            stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else exc.stderr
+            result.update(
+                status="ran",
+                timed_out=True,
+                output_tail=_combined_output_tail(stdout or "", stderr or ""),
+            )
+        except Exception as exc:  # noqa: BLE001 — required failures are evidence
+            result["output_tail"] = str(exc)
+            result["duration"] = time.time() - start_time
+            return fail("failed_to_start")
+        result["duration"] = time.time() - start_time
+
+        try:
+            checker_after = self._snapshot_oracle_identity(checker_path)
+            result["checker_identity"]["after"] = checker_after
+            for entry in source_entries:
+                source_after = self._snapshot_oracle_identity(
+                    self.worktree_path / entry["declared_path"]
+                )
+                entry["after"] = source_after
+            if not self._same_oracle_identity(checker_before, checker_after):
+                return fail("identity_changed")
+            if any(
+                not self._same_oracle_identity(entry["before"], entry["after"])
+                for entry in source_entries
+            ):
+                return fail("identity_changed")
+        except (OSError, ValueError):
+            return fail("identity_changed")
+
+        if result["timed_out"]:
+            return fail("timed_out")
+
+        try:
+            if not os.path.lexists(receipt_path):
+                return fail("receipt_missing")
+            if self._path_has_symlink(receipt_path):
+                return fail("receipt_unsafe")
+            receipt_resolved = receipt_path.resolve(strict=True)
+            if receipt_resolved.parent != attempt_dir.resolve(strict=True):
+                return fail("receipt_unsafe")
+            receipt_metadata = os.lstat(receipt_path)
+            if not stat.S_ISREG(receipt_metadata.st_mode):
+                return fail("receipt_unsafe")
+            flags = os.O_RDONLY | os.O_NONBLOCK
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(receipt_path, flags)
+            try:
+                receipt_stat = os.fstat(fd)
+                if not stat.S_ISREG(receipt_stat.st_mode):
+                    return fail("receipt_unsafe")
+                receipt_bytes = b""
+                while True:
+                    chunk = os.read(fd, 65536)
+                    if not chunk:
+                        break
+                    receipt_bytes += chunk
+            finally:
+                os.close(fd)
+            result["receipt_validation"].update(
+                fresh=True,
+                confined=True,
+                regular_file=True,
+            )
+            receipt = json.loads(receipt_bytes.decode("utf-8"))
+        except FileNotFoundError:
+            return fail("receipt_missing")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return fail("receipt_invalid")
+
+        counts = ("run", "failures", "errors", "skipped")
+        if not isinstance(receipt, dict) or any(
+            type(receipt.get(name)) is not int or receipt[name] < 0
+            for name in counts
+        ):
+            return fail("receipt_invalid")
+        result["receipt"] = receipt
+        result["receipt_validation"]["valid"] = True
+
+        if proc is None or proc.returncode != expected_exit:
+            return fail("command_failed")
+        if receipt["run"] == 0:
+            return fail("zero_checks")
+        if receipt["run"] != expected_checks:
+            return fail("wrong_check_count")
+        if any(receipt[name] != 0 for name in ("failures", "errors", "skipped")):
+            return fail("checks_failed")
+
+        result["passed"] = True
+        result.pop("reason", None)
+        return result
 
     def _run_shell_command(
         self,

@@ -452,6 +452,58 @@ class BehaviouralOracle(BaseModel):
     command: str = Field(min_length=1)
     expected_exit: int = 0
     timeout: Optional[int] = Field(default=None, ge=1, le=3600)
+    required: bool = False
+    expected_checks: Optional[int] = Field(default=None, ge=1)
+    checker_path: Optional[str] = Field(default=None, min_length=1)
+    checker_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    source_paths: Optional[List[str]] = None
+
+    @field_validator("expected_checks", mode="before")
+    @classmethod
+    def _expected_checks_is_strict_integer(cls, value: Any) -> Any:
+        """Reject booleans and coercible scalar values for verdict counts."""
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int)
+        ):
+            raise ValueError("expected_checks must be a positive integer")
+        return value
+
+    @field_validator("source_paths")
+    @classmethod
+    def _source_paths_are_non_empty_strings(
+        cls, value: Optional[List[str]],
+    ) -> Optional[List[str]]:
+        if value is None:
+            return None
+        if not value or any(
+            not isinstance(item, str) or not item for item in value
+        ):
+            raise ValueError("source_paths must be a non-empty list of paths")
+        if len(set(value)) != len(value):
+            raise ValueError("source_paths must not contain duplicates")
+        return value
+
+    @model_validator(mode="after")
+    def _required_declaration_is_complete(self) -> "BehaviouralOracle":
+        if not self.required:
+            return self
+        missing = [
+            name
+            for name in (
+                "expected_checks",
+                "checker_path",
+                "checker_sha256",
+                "source_paths",
+            )
+            if getattr(self, name) is None
+        ]
+        if missing:
+            raise ValueError(
+                "required behavioural_oracle is missing: " + ", ".join(missing)
+            )
+        return self
 
 
 class Feature(BaseModel):

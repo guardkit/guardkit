@@ -112,6 +112,7 @@ from guardkit.orchestrator.quality_gates import (
     CoachValidator,
     CoachValidationResult,
 )
+from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
@@ -2720,13 +2721,46 @@ class AutoBuildOrchestrator:
         consumer_context: Optional[list] = None
         _ri_from_caller = requires_infrastructure  # Preserve explicit parameter (may be None)
         requires_infrastructure = None  # Reset; will be resolved via frontmatter then precedence
-        _bo_raw: Any = None
+        from guardkit.orchestrator.feature_loader import BehaviouralOracle
+
+        if behavioural_oracle is not None:
+            _caller_bo_original = behavioural_oracle
+            if isinstance(behavioural_oracle, str):
+                _caller_bo_raw: Any = {"command": behavioural_oracle}
+            elif isinstance(behavioural_oracle, dict):
+                _caller_bo_raw = dict(behavioural_oracle)
+                if isinstance(_caller_bo_raw.get("source_paths"), list):
+                    _caller_bo_raw["source_paths"] = list(
+                        _caller_bo_raw["source_paths"]
+                    )
+            else:
+                model_dump = getattr(behavioural_oracle, "model_dump", None)
+                _caller_bo_raw = (
+                    model_dump(exclude_none=True)
+                    if callable(model_dump)
+                    else behavioural_oracle
+                )
+            _caller_bo_declaration = BehaviouralOracle.model_validate(
+                _caller_bo_raw
+            ).model_dump(exclude_none=True)
+            if _caller_bo_declaration.get("required") is True:
+                behavioural_oracle = _caller_bo_declaration
+            else:
+                behavioural_oracle = _caller_bo_original
+
+        _task_bo_unset = object()
+        _task_bo_raw: Any = _task_bo_unset
         _component_raw: Any = None
         _verifier_raw: Any = None
         _test_ref_raw: Any = None
         try:
             task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
             frontmatter = task_data.get("frontmatter", {})
+            _task_bo_raw = (
+                frontmatter["behavioural_oracle"]
+                if "behavioural_oracle" in frontmatter
+                else _task_bo_unset
+            )
             task_type = frontmatter.get("task_type")
             if task_type:
                 logger.debug(f"Loaded task_type from task file: {task_type}")
@@ -2742,15 +2776,6 @@ class AutoBuildOrchestrator:
             consumer_context = frontmatter.get("consumer_context")
             if isinstance(consumer_context, list):
                 logger.debug(f"Loaded consumer_context from task file: {consumer_context}")
-            # TS-lane D.1a: lift the declared behavioural oracle beside
-            # task_type / requires_infrastructure. Until this line existed the
-            # executor (CoachValidator._run_shell_command) was built, unit
-            # tested and completely unreachable — no production caller ever
-            # put ``behavioural_oracle`` into the task dict.
-            # Lift RAW here; validation happens OUTSIDE this try — the broad
-            # metadata except below must never swallow a verdict-bearing
-            # declaration's schema error (coordinator cure, D.1a coach).
-            _bo_raw = frontmatter.get("behavioural_oracle")
             # PER-COMPONENT SEAM: the task's `component:` selector, lifted
             # beside behavioural_oracle for the same reason and validated the
             # same way — RAW here, LOUDLY outside this try. Selection is
@@ -2789,7 +2814,6 @@ class AutoBuildOrchestrator:
             logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
         except Exception as e:
             logger.debug(f"Failed to load task metadata from task file: {e}, continuing with defaults")
-            _bo_raw = None
             _component_raw = None
             _verifier_raw = None
             _test_ref_raw = None
@@ -2813,19 +2837,23 @@ class AutoBuildOrchestrator:
             task_id, _verifier_raw, _test_ref_raw
         )
 
-        if _bo_raw:
+        if _task_bo_raw is not _task_bo_unset and _task_bo_raw is not None:
             # Coordinator cure (D.1a coach): the frontmatter path is the
             # HIGHEST-precedence declaration and must pass the same schema as
             # the feature-YAML path. A typo'd key or an out-of-bound timeout in
             # a verdict-bearing declaration is a FALSE GREEN, so a validation
             # failure here fails the task load LOUDLY — deliberately outside
             # the metadata try/except above.
-            from guardkit.orchestrator.feature_loader import BehaviouralOracle
-
-            _bo_val = {"command": _bo_raw} if isinstance(_bo_raw, str) else _bo_raw
+            _bo_val = (
+                {"command": _task_bo_raw}
+                if isinstance(_task_bo_raw, str)
+                else _task_bo_raw
+            )
             behavioural_oracle = BehaviouralOracle.model_validate(
                 _bo_val
             ).model_dump(exclude_none=True)
+            if behavioural_oracle.get("required") is False:
+                behavioural_oracle.pop("required")
             logger.info(
                 "Loaded behavioural_oracle from task frontmatter for %s: %r",
                 task_id, behavioural_oracle,
@@ -8141,6 +8169,31 @@ class AutoBuildOrchestrator:
                 if peer_id != task_id
             }
 
+    @staticmethod
+    def _normalise_behavioural_oracle_declaration(
+        value: Optional[Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Validate and copy authority without depending on a producer instance."""
+        if value is None:
+            return None
+        from guardkit.orchestrator.feature_loader import BehaviouralOracle
+
+        if isinstance(value, str):
+            raw: Any = {"command": value}
+        elif isinstance(value, dict):
+            raw = dict(value)
+            if isinstance(raw.get("source_paths"), list):
+                raw["source_paths"] = list(raw["source_paths"])
+        else:
+            model_dump = getattr(value, "model_dump", None)
+            raw = model_dump(exclude_none=True) if callable(model_dump) else value
+        declaration = BehaviouralOracle.model_validate(raw).model_dump(
+            exclude_none=True
+        )
+        if isinstance(declaration.get("source_paths"), list):
+            declaration["source_paths"] = list(declaration["source_paths"])
+        return declaration
+
     def _invoke_coach_safely(
         self,
         task_id: str,
@@ -8391,6 +8444,22 @@ class AutoBuildOrchestrator:
             "Using CoachValidator (legacy, GUARDKIT_COACH_LEGACY=1) for "
             "%s turn %s", task_id, turn,
         )
+        oracle_declaration = self._normalise_behavioural_oracle_declaration(
+            behavioural_oracle
+        )
+        if oracle_declaration and oracle_declaration.get("required") is True:
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=(
+                    "required_behavioural_oracle_unsupported: the legacy Coach "
+                    "path cannot carry or validate the required behavioural "
+                    "oracle evidence; use the primary Coach path."
+                ),
+                start_time=start_time,
+                category="behavioural_oracle_failure",
+            )
         try:
             coach_cfg = self._load_coach_config()
             # TASK-AB-COACHSUBPROC01: env > config > default (subprocess);
@@ -8597,6 +8666,12 @@ class AutoBuildOrchestrator:
         import time
 
         logger.info("Using LLM Coach (primary) for %s turn %s", task_id, turn)
+        oracle_declaration = self._normalise_behavioural_oracle_declaration(
+            behavioural_oracle
+        )
+        oracle_required = bool(
+            oracle_declaration and oracle_declaration.get("required") is True
+        )
         if context_prompt:
             logger.info(
                 f"[Memory] Coach context provided: {len(context_prompt)} chars"
@@ -8668,6 +8743,19 @@ class AutoBuildOrchestrator:
                 worktree=worktree,
                 rationale=f"Evidence gathering failed: {exc}",
                 start_time=start_time,
+            )
+
+        if oracle_required and not isinstance(evidence_bundle, CoachEvidenceBundle):
+            return self._emit_synthetic_coach_feedback(
+                task_id=task_id,
+                turn=turn,
+                worktree=worktree,
+                rationale=(
+                    "Required behavioural-oracle evidence is missing or malformed: "
+                    "gather_evidence did not return a CoachEvidenceBundle."
+                ),
+                start_time=start_time,
+                category="behavioural_oracle_failure",
             )
 
         # FEAT-SCG (SCG-002): attach the spec-conformance RULE leg beside the
@@ -8770,9 +8858,32 @@ class AutoBuildOrchestrator:
                 # from player_report, which is the pre-HMIG-008R behaviour.
                 import inspect as _inspect
 
-                _sig = _inspect.signature(self._agent_invoker.invoke_coach)
+                try:
+                    _sig = _inspect.signature(self._agent_invoker.invoke_coach)
+                except Exception:
+                    if oracle_required:
+                        return self._emit_synthetic_coach_feedback(
+                            task_id=task_id,
+                            turn=turn,
+                            worktree=worktree,
+                            rationale=(
+                                "required_behavioural_oracle_unsupported: Coach "
+                                "invoker signature could not be inspected."
+                            ),
+                            start_time=start_time,
+                            category="behavioural_oracle_failure",
+                        )
+                    raise
+                if oracle_required and "behavioural_oracle_declaration" not in _sig.parameters:
+                    return self._emit_synthetic_coach_feedback(
+                        task_id=task_id, turn=turn, worktree=worktree,
+                        rationale="required_behavioural_oracle_unsupported: Coach invoker lacks the explicit behavioural_oracle_declaration parameter.",
+                        start_time=start_time, category="behavioural_oracle_failure",
+                    )
                 if "evidence_bundle" in _sig.parameters:
                     invoke_kwargs["evidence_bundle"] = evidence_bundle
+                if "behavioural_oracle_declaration" in _sig.parameters:
+                    invoke_kwargs["behavioural_oracle_declaration"] = oracle_declaration
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
                 # TASK-ARCH-COACHBFULL (AC-4 / AC-1): thread structured ACs into
