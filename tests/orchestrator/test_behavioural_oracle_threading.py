@@ -717,3 +717,65 @@ class TestFrontmatterValidationIsLoud:
                 "TASK-TSD1A-011",
                 {"behavioural_oracle": {"command": "npm test", "timeout": 999999}},
             )
+
+
+class TestRequiredAuthoritySurvivesMetadataErrors:
+    @staticmethod
+    def _required() -> Dict[str, Any]:
+        return {
+            "command": "python checker.py",
+            "expected_exit": 0,
+            "timeout": 20,
+            "required": True,
+            "expected_checks": 1,
+            "checker_path": "/tmp/checker.py",
+            "checker_sha256": "a" * 64,
+            "source_paths": ["source.py"],
+        }
+
+    def test_required_task_authority_survives_later_metadata_failure(
+        self, orchestrator: AutoBuildOrchestrator
+    ) -> None:
+        required = self._required()
+        kwargs = _capture_loop_kwargs(
+            orchestrator,
+            "TASK-TSD1A-REQ-001",
+            {
+                "behavioural_oracle": required,
+                "evidence_repos": 1,
+            },
+            behavioural_oracle={"command": "optional", "required": False},
+        )
+        assert kwargs["behavioural_oracle"] == required
+
+    def test_invalid_required_task_declaration_fails_before_loop_despite_metadata_error(
+        self, orchestrator: AutoBuildOrchestrator
+    ) -> None:
+        import pydantic
+        import pytest as _pytest
+
+        invalid = self._required()
+        invalid.pop("checker_sha256")
+        with _pytest.raises(pydantic.ValidationError):
+            _capture_loop_kwargs(
+                orchestrator,
+                "TASK-TSD1A-REQ-002",
+                {
+                    "behavioural_oracle": invalid,
+                    "evidence_repos": 1,
+                },
+                behavioural_oracle={"command": "optional", "required": False},
+            )
+
+    def test_empty_present_task_declaration_is_not_treated_as_absent(
+        self, orchestrator: AutoBuildOrchestrator
+    ) -> None:
+        import pydantic
+        import pytest as _pytest
+
+        with _pytest.raises(pydantic.ValidationError):
+            _capture_loop_kwargs(
+                orchestrator,
+                "TASK-TSD1A-REQ-003",
+                {"behavioural_oracle": {}},
+            )

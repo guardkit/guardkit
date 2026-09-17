@@ -2547,6 +2547,7 @@ class AgentInvoker:
         player_report: Dict[str, Any],
         remaining_budget: Optional[float] = None,
         evidence_bundle: Optional["CoachEvidenceBundle"] = None,
+        behavioural_oracle_declaration: Optional[Dict[str, Any]] = None,
         coach_context: Optional[str] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
     ) -> AgentInvocationResult:
@@ -2909,6 +2910,7 @@ class AgentInvoker:
             self._apply_behavioural_oracle_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
+                behavioural_oracle_declaration=behavioural_oracle_declaration,
                 task_id=task_id,
                 turn=turn,
                 coach_output_path=coach_output_path,
@@ -8872,11 +8874,133 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             decision, coach_output_path, tag="TASK-ABFIX-012"
         )
 
+    @staticmethod
+    def _validate_required_behavioural_oracle_result(
+        declaration: Dict[str, Any],
+        oracle: Any,
+    ) -> Optional[str]:
+        """Return an actionable reason when required evidence is incomplete."""
+        command = declaration.get("command")
+        expected_exit = declaration.get("expected_exit", 0)
+        expected_checks = declaration.get("expected_checks")
+        checker_path = declaration.get("checker_path")
+        checker_sha256 = declaration.get("checker_sha256")
+        source_paths = declaration.get("source_paths")
+        if (
+            not isinstance(command, str)
+            or not command
+            or isinstance(expected_exit, bool)
+            or not isinstance(expected_exit, int)
+            or isinstance(expected_checks, bool)
+            or not isinstance(expected_checks, int)
+            or expected_checks < 1
+            or not isinstance(checker_path, str)
+            or not checker_path
+            or not isinstance(checker_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", checker_sha256)
+            or not isinstance(source_paths, list)
+            or not source_paths
+            or any(not isinstance(path, str) or not path for path in source_paths)
+            or len(set(source_paths)) != len(source_paths)
+        ):
+            return "the authoritative required declaration is malformed"
+        if not isinstance(oracle, dict):
+            return "required behavioural-oracle evidence is absent or not a mapping"
+        if oracle.get("status") != "ran":
+            return "required behavioural-oracle status is not 'ran'"
+        if oracle.get("passed") is not True:
+            return "required behavioural-oracle result did not pass"
+        if oracle.get("timed_out") is not False:
+            return "required behavioural-oracle result timed out or omitted timed_out=false"
+        if oracle.get("command") != command:
+            return "required behavioural-oracle command does not match its declaration"
+        observed_expected = oracle.get("expected_exit")
+        observed_exit = oracle.get("exit_code")
+        if (
+            isinstance(observed_expected, bool)
+            or not isinstance(observed_expected, int)
+            or isinstance(observed_exit, bool)
+            or not isinstance(observed_exit, int)
+            or observed_expected != expected_exit
+            or observed_exit != expected_exit
+        ):
+            return "required behavioural-oracle exit evidence is missing or contradictory"
+
+        receipt_validation = oracle.get("receipt_validation")
+        if not isinstance(receipt_validation, dict):
+            return "required behavioural-oracle receipt validation is missing"
+        if any(
+            receipt_validation.get(flag) is not True
+            for flag in ("valid", "fresh", "confined", "regular_file")
+        ) or not isinstance(receipt_validation.get("path"), str) or not receipt_validation["path"]:
+            return "required behavioural-oracle receipt is not valid, fresh, confined, and regular"
+        receipt = oracle.get("receipt")
+        count_names = ("run", "failures", "errors", "skipped")
+        if not isinstance(receipt, dict) or any(
+            type(receipt.get(name)) is not int or receipt[name] < 0
+            for name in count_names
+        ):
+            return "required behavioural-oracle receipt counts are missing or malformed"
+        if receipt["run"] != expected_checks:
+            return "required behavioural-oracle receipt has the wrong check count"
+        if any(receipt[name] != 0 for name in ("failures", "errors", "skipped")):
+            return "required behavioural-oracle receipt reports failed, errored, or skipped checks"
+
+        def valid_snapshot(snapshot: Any) -> bool:
+            return (
+                isinstance(snapshot, dict)
+                and isinstance(snapshot.get("resolved_path"), str)
+                and bool(snapshot["resolved_path"])
+                and type(snapshot.get("device")) is int
+                and snapshot["device"] >= 0
+                and type(snapshot.get("inode")) is int
+                and snapshot["inode"] >= 0
+                and snapshot.get("regular") is True
+                and isinstance(snapshot.get("sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", snapshot["sha256"]) is not None
+            )
+
+        checker = oracle.get("checker_identity")
+        if (
+            not isinstance(checker, dict)
+            or checker.get("declared_path") != checker_path
+            or checker.get("expected_sha256") != checker_sha256
+            or not valid_snapshot(checker.get("before"))
+            or not valid_snapshot(checker.get("after"))
+            or checker["before"] != checker["after"]
+            or checker["before"]["sha256"] != checker_sha256
+        ):
+            return "required behavioural-oracle checker identity is missing or changed"
+
+        identities = oracle.get("source_identities")
+        if not isinstance(identities, list) or len(identities) != len(source_paths):
+            return "required behavioural-oracle source identities are missing or have extras"
+        by_path: Dict[str, Dict[str, Any]] = {}
+        for identity in identities:
+            if not isinstance(identity, dict):
+                return "required behavioural-oracle source identity is malformed"
+            declared_path = identity.get("declared_path")
+            if not isinstance(declared_path, str) or declared_path in by_path:
+                return "required behavioural-oracle source identities contain duplicates"
+            by_path[declared_path] = identity
+        if set(by_path) != set(source_paths):
+            return "required behavioural-oracle source identities do not match the declaration"
+        for path in source_paths:
+            identity = by_path[path]
+            if (
+                not valid_snapshot(identity.get("before"))
+                or not valid_snapshot(identity.get("after"))
+                or identity["before"] != identity["after"]
+            ):
+                return f"required behavioural-oracle source identity changed: {path}"
+        return None
+
     def _apply_behavioural_oracle_guard(
         self,
         *,
         decision: Dict[str, Any],
         evidence_bundle: Optional["CoachEvidenceBundle"],
+        behavioural_oracle_declaration: Optional[Dict[str, Any]] = None,
         task_id: str,
         turn: int,
         coach_output_path: Path,
@@ -8941,6 +9065,52 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         """
         decision_value = decision.get("decision")
         if decision_value not in ("approve", "feedback"):
+            return
+        required = (
+            isinstance(behavioural_oracle_declaration, dict)
+            and behavioural_oracle_declaration.get("required") is True
+        )
+        if required:
+            oracle = (
+                getattr(evidence_bundle, "behavioural_oracle", None)
+                if evidence_bundle is not None
+                else None
+            )
+            failure = self._validate_required_behavioural_oracle_result(
+                behavioural_oracle_declaration, oracle
+            )
+            if failure is None:
+                return
+            producer_reason = oracle.get("reason") if isinstance(oracle, dict) else None
+            output_value = oracle.get("output_tail") if isinstance(oracle, dict) else None
+            output_tail = (
+                output_value.strip()
+                if isinstance(output_value, str)
+                else ""
+            )
+            rationale = (
+                "Required behavioural oracle FAILED: "
+                f"{failure}. Producer reason: {producer_reason or '<none>'}. "
+                f"Failure output: {output_tail or '<empty>'}"
+            )
+            issue = {
+                "severity": "must_fix",
+                "category": "behavioural_oracle_failure",
+                "description": rationale,
+                "test_output": output_tail,
+                "details": {
+                    "validation_failure": failure,
+                    "producer_reason": producer_reason,
+                    "receipt": oracle.get("receipt") if isinstance(oracle, dict) else None,
+                    "overridden_decision": decision_value,
+                },
+            }
+            decision["decision"] = "feedback"
+            decision["rationale"] = rationale
+            decision["issues"] = [issue, *decision.get("issues", [])]
+            self._persist_coach_decision(
+                decision, coach_output_path, tag="required-behavioural-oracle"
+            )
             return
         if evidence_bundle is None:
             return
