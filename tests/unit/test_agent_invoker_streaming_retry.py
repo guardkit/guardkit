@@ -20,6 +20,12 @@ from guardkit.orchestrator.agent_invoker import (
     SDK_STREAM_RETRY_BACKOFF,
 )
 from guardkit.orchestrator.exceptions import TaskWorkResult
+from guardkit.orchestrator.harness import (
+    AssistantMessageEvent,
+    ResultMessageEvent,
+    ToolResultEvent,
+    ToolUseEvent,
+)
 
 
 # ============================================================================
@@ -163,3 +169,136 @@ class TestStreamingRetryBehavior:
 
         # On attempt 1 (retry): 1 < 1 is False → cannot retry further
         assert not (1 < MAX_SDK_STREAM_RETRIES)
+
+
+
+class _ScriptedTypedHarness:
+    def __init__(self, events):
+        self._events = events
+
+    @property
+    def supports_resume(self):
+        return False
+
+    async def invoke(self, **kwargs):
+        for event in self._events:
+            yield event
+
+
+class TestRuntimeEvidenceRetryIsolation:
+    @pytest.mark.asyncio
+    async def test_selected_attempt_discards_failed_attempt_evidence(
+        self, tmp_path, monkeypatch
+    ):
+        invoker = _make_invoker(tmp_path)
+        error_marker = object()
+        first = _ScriptedTypedHarness(
+            [
+                ToolUseEvent(
+                    tool_use_id="discarded-secret-id",
+                    name="read_file",
+                    input={"path": "/discarded/secret/path"},
+                ),
+                AssistantMessageEvent(text="", raw=error_marker),
+            ]
+        )
+        second = _ScriptedTypedHarness(
+            [
+                ToolUseEvent(
+                    tool_use_id="selected-secret-id-1",
+                    name="read_file",
+                    input={"path": "/selected/secret/path"},
+                ),
+                ToolUseEvent(
+                    tool_use_id="selected-secret-id-2",
+                    name="UnlistedSecretTool",
+                    input={"command": "command sentinel"},
+                ),
+                ToolResultEvent(
+                    tool_use_id="selected-secret-id-1",
+                    content="output sentinel",
+                    is_error=False,
+                ),
+                ToolResultEvent(
+                    tool_use_id="selected-secret-id-2",
+                    content="failure output sentinel",
+                    is_error=True,
+                ),
+                AssistantMessageEvent(
+                    text="1 tests passed, 0 failed\nQuality gates: PASSED"
+                ),
+                ResultMessageEvent(
+                    session_id=None,
+                    usage={
+                        "input_tokens": 8,
+                        "output_tokens": 5,
+                        "total_tokens": 13,
+                    },
+                ),
+            ]
+        )
+        harnesses = [first, second]
+        captured = {}
+
+        def choose_harness(**kwargs):
+            return harnesses.pop(0)
+
+        def capture_results(
+            task_id, result_data, documentation_level, *, runtime_evidence=None
+        ):
+            captured.update(result_data)
+            captured["runtime_evidence"] = runtime_evidence
+            return tmp_path / "task_work_results.json"
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+        monkeypatch.setattr(
+            invoker,
+            "_build_autobuild_implementation_prompt",
+            lambda **kwargs: "bounded prompt",
+        )
+        monkeypatch.setattr(invoker, "_calculate_sdk_max_turns", lambda task_id: 150)
+        monkeypatch.setattr(invoker, "_write_task_work_results", capture_results)
+
+        with (
+            patch.object(mod, "select_harness", side_effect=choose_harness),
+            patch(
+                "guardkit.orchestrator.sdk_utils.check_assistant_message_error",
+                side_effect=lambda raw: "unknown" if raw is error_marker else None,
+            ),
+            patch.object(asyncio, "sleep", new=AsyncMock()),
+        ):
+            result = await invoker._invoke_task_work_implement("TASK-RETRY-EVIDENCE")
+
+        assert result.success is True
+        assert result.sdk_turns_used is None
+        assert result.sdk_max_turns is None
+        evidence = captured["runtime_evidence"]
+        assert evidence["attempt"] == {
+            "selected": 2,
+            "discarded": 1,
+            "completeness": "terminal_result_observed",
+        }
+        assert evidence["events"] == {
+            "total": 6,
+            "assistant": 1,
+            "result": 1,
+            "tool_use": 2,
+            "tool_result": 2,
+        }
+        assert evidence["pairing"]["paired"] == 2
+        assert evidence["pairing"]["error_result"] == 1
+        assert evidence["categories"]["read"] == 1
+        assert evidence["categories"]["other"] == 1
+        assert evidence["limits"]["sdk_turns"]["supported"] is False
+        assert evidence["limits"]["sdk_turns"]["max_turns"] is None
+        assert evidence["limits"]["wall_timeout"]["seconds"] == 60
+        encoded = str(evidence)
+        for sentinel in (
+            "discarded-secret-id",
+            "selected-secret-id",
+            "/selected/secret/path",
+            "UnlistedSecretTool",
+            "command sentinel",
+            "output sentinel",
+        ):
+            assert sentinel not in encoded

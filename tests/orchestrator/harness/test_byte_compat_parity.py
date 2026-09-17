@@ -23,16 +23,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from unittest.mock import patch
 from typing import Any, AsyncIterator, List
 
 import pytest
 
-from guardkit.orchestrator.agent_invoker import _extract_partial_from_messages
+from guardkit.orchestrator.agent_invoker import (
+    AgentInvoker,
+    _extract_partial_from_messages,
+)
 from guardkit.orchestrator.harness import (
     AssistantMessageEvent,
     HarnessAdapter,
     HarnessEvent,
     ResultMessageEvent,
+    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -85,6 +90,7 @@ class _FakeSDKResultMessage:
     session_id: str | None = None
     stop_reason: str | None = "end_turn"
     usage: dict | None = None
+    num_turns: int | None = 7
 
 
 # ============================================================================
@@ -101,10 +107,20 @@ class _StubSDKHarness(HarnessAdapter):
     AssistantMessageEvent (TASK-HMIG-006.2 production parity).
     """
 
-    def __init__(self, *, text: str, tool_calls: list[dict], session_id: str | None):
+    def __init__(
+        self,
+        *,
+        text: str,
+        tool_calls: list[dict],
+        session_id: str | None,
+        tool_results: list[dict] | None = None,
+        num_turns: int = 7,
+    ):
         self._text = text
         self._tool_calls = tool_calls
         self._session_id = session_id
+        self._tool_results = tool_results or []
+        self._num_turns = num_turns
 
     async def invoke(  # type: ignore[override]
         self, prompt, role, tools, cwd, *, timeout_seconds
@@ -128,12 +144,21 @@ class _StubSDKHarness(HarnessAdapter):
                 input=tc["input"],
             )
         yield AssistantMessageEvent(text=self._text, raw=sdk_msg)
+        for result in self._tool_results:
+            yield ToolResultEvent(
+                tool_use_id=result.get("id", ""),
+                content=result.get("content", ""),
+                is_error=result.get("is_error", False),
+            )
 
-        sdk_result = _FakeSDKResultMessage(session_id=self._session_id)
+        sdk_result = _FakeSDKResultMessage(
+            session_id=self._session_id,
+            num_turns=self._num_turns,
+        )
         yield ResultMessageEvent(
             session_id=self._session_id,
             stop_reason="end_turn",
-            usage=None,
+            usage={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
             raw=sdk_result,
         )
 
@@ -488,3 +513,96 @@ class TestNonEmptyFixtureSurface:
         assert partial["message_count"] >= 2, (
             "SDK fixture should yield AssistantMessage + ResultMessage"
         )
+
+
+
+class TestTaskWorkSdkRuntimeEvidenceParity:
+    @pytest.mark.asyncio
+    async def test_sdk_typed_events_are_counted_once_and_keep_turn_semantics(
+        self, tmp_path, monkeypatch
+    ):
+        invoker = AgentInvoker(
+            worktree_path=tmp_path,
+            max_turns_per_agent=5,
+            sdk_timeout_seconds=45,
+        )
+        harness = _StubSDKHarness(
+            text="1 tests passed, 0 failed\nQuality gates: PASSED",
+            tool_calls=[
+                {
+                    "id": "sdk-secret-id",
+                    "name": "Edit",
+                    "input": {"file_path": "/secret/sdk/path.py"},
+                }
+            ],
+            tool_results=[
+                {
+                    "id": "sdk-secret-id",
+                    "content": "sdk output sentinel",
+                    "is_error": False,
+                }
+            ],
+            session_id="sdk-session-secret",
+            num_turns=7,
+        )
+        captured = {}
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.setattr(
+            invoker,
+            "_build_autobuild_implementation_prompt",
+            lambda **kwargs: "bounded sdk prompt",
+        )
+        monkeypatch.setattr(invoker, "_calculate_sdk_max_turns", lambda task_id: 150)
+
+        def capture_results(
+            task_id, result_data, documentation_level, *, runtime_evidence=None
+        ):
+            captured.update(result_data)
+            captured["runtime_evidence"] = runtime_evidence
+            return tmp_path / "task_work_results.json"
+
+        monkeypatch.setattr(invoker, "_write_task_work_results", capture_results)
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=harness,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                "TASK-SDK-RUNTIME-EVIDENCE"
+            )
+
+        assert result.success is True
+        assert result.sdk_turns_used == 7
+        assert result.sdk_max_turns == 150
+        evidence = captured["runtime_evidence"]
+        assert evidence["events"] == {
+            "total": 4,
+            "assistant": 1,
+            "result": 1,
+            "tool_use": 1,
+            "tool_result": 1,
+        }
+        assert evidence["pairing"]["paired"] == 1
+        assert evidence["tool_trace"] == [
+            {
+                "ordinal": "tool-0001",
+                "category": "write",
+                "outcome": "ok",
+                "duration_ms": None,
+            }
+        ]
+        assert evidence["timing"]["event_delivery"] == "streaming"
+        assert evidence["timing"]["duration_supported"] is False
+        assert evidence["limits"]["sdk_turns"] == {
+            "turns_used": 7,
+            "max_turns": 150,
+            "ceiling_hit": False,
+            "supported": True,
+            "limit_kind": "sdk_turns",
+        }
+        assert evidence["terminal_usage"]["input_tokens"] == 11
+        assert evidence["terminal_usage"]["output_tokens"] == 7
+        encoded = str(evidence)
+        assert "sdk-secret-id" not in encoded
+        assert "/secret/sdk/path.py" not in encoded
+        assert "sdk output sentinel" not in encoded

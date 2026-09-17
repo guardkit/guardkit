@@ -124,28 +124,17 @@ def compute_ceiling_summary(records: List[SdkTurnRecord]) -> CeilingSummary:
 
 
 def detect_ceiling_hit(
-    turns_used: Optional[int], max_turns: Optional[int]
-) -> bool:
+    turns_used: Optional[int],
+    max_turns: Optional[int],
+    *,
+    unknown_is_none: bool = False,
+) -> Optional[bool]:
     """Detect whether an invocation hit the SDK turn ceiling.
 
-    Handles None values gracefully - returns False when data is unavailable.
-
-    Args:
-        turns_used: Actual SDK turns used (from ResultMessage.num_turns)
-        max_turns: SDK turn ceiling (from _effective_sdk_max_turns)
-
-    Returns:
-        True if ceiling was hit (turns_used >= max_turns),
-        False otherwise or if either value is None
-
-    Examples:
-        >>> detect_ceiling_hit(50, 50)
-        True
-        >>> detect_ceiling_hit(30, 50)
-        False
-        >>> detect_ceiling_hit(None, 50)
-        False
+    The unknown_is_none flag lets artifact and recovery callers distinguish
+    absent evidence from a proven non-hit. Its compatibility default preserves
+    the historical boolean result for callers that have not migrated yet.
     """
     if turns_used is None or max_turns is None:
-        return False
+        return None if unknown_is_none else False
     return turns_used >= max_turns

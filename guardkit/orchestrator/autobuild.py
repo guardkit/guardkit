@@ -2112,7 +2112,7 @@ class TurnRecord:
     coach_context_status: Optional[ContextStatus] = None
     sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
-    sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
+    sdk_ceiling_hit: Optional[bool] = None     # TASK-VPR-003: Whether ceiling was hit
     is_configuration_error: bool = False       # TASK-ABFIX-003: True when Coach flagged a config error (e.g. invalid task_type)
     command_results: Optional[Tuple[CommandExecutionResult, ...]] = None  # TASK-RFX-528E: Structured command execution results
     # TASK-AB-NOCHANGE01: how many files this turn actually changed in the
@@ -4887,7 +4887,7 @@ class AutoBuildOrchestrator:
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 )
 
             # Distinguish between missing report and actual failure
@@ -4975,7 +4975,7 @@ class AutoBuildOrchestrator:
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 )
 
         # Warn if passing synthetic report to Coach (TASK-ASF-004)
@@ -5132,7 +5132,7 @@ class AutoBuildOrchestrator:
                 # ACs. Set GUARDKIT_INVOKE_SPECIALISTS_ON_CEILING_HIT=1 to
                 # restore the prior behaviour (emergency backout).
                 sdk_ceiling_hit = getattr(
-                    player_result, "sdk_ceiling_hit", False
+                    player_result, "sdk_ceiling_hit", None
                 )
                 ceiling_skip_disabled = (
                     os.environ.get(
@@ -5169,7 +5169,7 @@ class AutoBuildOrchestrator:
                     logger.info(
                         f"[{task_id}] Skipping orchestrator Phase 4/5 (direct mode)"
                     )
-                elif sdk_ceiling_hit and not ceiling_skip_disabled:
+                elif sdk_ceiling_hit is True and not ceiling_skip_disabled:
                     logger.info(
                         f"[{task_id}] Skipping orchestrator Phase 4/5 "
                         "(Player hit SDK turn ceiling — codebase is partial)"
@@ -5386,7 +5386,7 @@ class AutoBuildOrchestrator:
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                    sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                     command_results=tuple(command_exec_results) if command_exec_results else None,
                 )
         else:
@@ -5430,7 +5430,7 @@ class AutoBuildOrchestrator:
                 player_context_status=player_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
@@ -5460,7 +5460,7 @@ class AutoBuildOrchestrator:
                 player_context_status=player_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
@@ -5575,7 +5575,7 @@ class AutoBuildOrchestrator:
                 coach_context_status=coach_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
@@ -5605,7 +5605,7 @@ class AutoBuildOrchestrator:
                 coach_context_status=coach_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
             )
@@ -5641,7 +5641,7 @@ class AutoBuildOrchestrator:
                 coach_context_status=coach_context_status,
                 sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
                 sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
-                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', False),
+                sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 is_configuration_error=is_config_error,
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
