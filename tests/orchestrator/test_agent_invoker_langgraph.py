@@ -847,7 +847,7 @@ class TestInstalledCandidateIntegration:
         body = script.requests[0][1]
         tool_names = {tool["function"]["name"] for tool in body["tools"]}
         assert {
-            "write_todos",
+            "compact_conversation",
             "ls",
             "read_file",
             "write_file",
