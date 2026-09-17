@@ -24,7 +24,10 @@ import pytest
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     DOCUMENTATION_LEVEL_MAX_FILES,
+    _build_task_work_runtime_evidence,
+    _runtime_tool_category,
 )
+from guardkit.orchestrator.exceptions import TaskWorkResult
 from guardkit.orchestrator.paths import TaskArtifactPaths
 
 
@@ -1443,6 +1446,185 @@ class TestTaskWorkResultsTestsWritten:
             "tests/m_test.py",
             "tests/z_test.py",
         ]
+
+
+class TestRuntimeEvidenceArtifact:
+    """Bounded evidence stays truthful and excludes harness payloads."""
+
+    def test_exact_97_pairs_keep_full_counts_and_bound_trace(self):
+        raw_name = "ArbitrarySecretToolName"
+        uses = [
+            (f"raw-secret-id-{index}", _runtime_tool_category(raw_name))
+            for index in range(97)
+        ]
+        results = [
+            (f"raw-secret-id-{index}", False)
+            for index in range(97)
+        ]
+        evidence = _build_task_work_runtime_evidence(
+            harness_name="langgraph",
+            message_count=196,
+            assistant_count=1,
+            result_count=1,
+            tool_uses=uses,
+            tool_results=results,
+            terminal_usage={
+                "input_tokens": 123,
+                "output_tokens": True,
+                "completion_tokens": 45,
+                "total_tokens": -1,
+                "cache_read_input_tokens": 2.5,
+                "raw_prompt": "PROMPT_SENTINEL",
+            },
+            attempt_wall_duration_ms=321,
+            selected_attempt=1,
+            discarded_attempts=0,
+            sdk_turns_used=97,
+            sdk_max_turns=150,
+            wall_timeout_seconds=600,
+        )
+
+        assert evidence["events"]["tool_use"] == 97
+        assert evidence["events"]["tool_result"] == 97
+        assert evidence["pairing"]["paired"] == 97
+        assert len(evidence["tool_trace"]) == 64
+        assert evidence["trace_truncated"] is True
+        assert evidence["timing"] == {
+            "attempt_wall_duration_ms": 321,
+            "duration_supported": False,
+            "event_delivery": "buffered_post_run",
+        }
+        assert evidence["model_calls"] == {"count": None, "supported": False}
+        assert evidence["limits"]["sdk_turns"] == {
+            "turns_used": None,
+            "max_turns": None,
+            "ceiling_hit": None,
+            "supported": False,
+            "limit_kind": "unsupported",
+        }
+        assert evidence["limits"]["wall_timeout"]["seconds"] == 600
+        assert evidence["terminal_usage"] == {
+            "scope": "terminal_message",
+            "completeness": "reported_by_harness",
+            "input_tokens": 123,
+            "output_tokens": 45,
+            "total_tokens": None,
+            "cache_creation_input_tokens": None,
+            "cache_read_input_tokens": None,
+        }
+        encoded = json.dumps(evidence, sort_keys=True)
+        for sentinel in (
+            "raw-secret-id",
+            raw_name,
+            "PROMPT_SENTINEL",
+            "command sentinel",
+            "/secret/path",
+            "output sentinel",
+        ):
+            assert sentinel not in encoded
+
+    def test_duplicate_missing_and_unmatched_ids_are_reported(self):
+        evidence = _build_task_work_runtime_evidence(
+            harness_name="langgraph",
+            message_count=9,
+            assistant_count=1,
+            result_count=1,
+            tool_uses=[
+                ("duplicate", "read"),
+                ("duplicate", "write"),
+                ("use-only", "other"),
+                ("", "execute"),
+            ],
+            tool_results=[
+                ("duplicate", False),
+                ("duplicate", True),
+                ("result-only", False),
+                ("", True),
+            ],
+            terminal_usage=None,
+            attempt_wall_duration_ms=0,
+            selected_attempt=2,
+            discarded_attempts=1,
+            sdk_turns_used=None,
+            sdk_max_turns=None,
+            wall_timeout_seconds=30,
+        )
+
+        assert evidence["pairing"] == {
+            "paired": 2,
+            "unmatched_use": 2,
+            "unmatched_result": 2,
+            "error_result": 2,
+            "duplicate_use_ids": 1,
+            "duplicate_result_ids": 1,
+            "missing_use_ids": 1,
+            "missing_result_ids": 1,
+        }
+        assert [item["outcome"] for item in evidence["tool_trace"]] == [
+            "ok",
+            "error",
+            "missing_result",
+            "missing_result",
+        ]
+        assert evidence["attempt"]["selected"] == 2
+        assert evidence["attempt"]["discarded"] == 1
+
+    def test_dcode_null_turns_and_runtime_evidence_reach_player_report(
+        self, agent_invoker
+    ):
+        task_id = "TASK-DCODE-EVIDENCE"
+        evidence = _build_task_work_runtime_evidence(
+            harness_name="langgraph",
+            message_count=2,
+            assistant_count=1,
+            result_count=1,
+            tool_uses=[],
+            tool_results=[],
+            terminal_usage=None,
+            attempt_wall_duration_ms=5,
+            selected_attempt=1,
+            discarded_attempts=0,
+            sdk_turns_used=None,
+            sdk_max_turns=None,
+            wall_timeout_seconds=30,
+        )
+        result_path = agent_invoker._write_task_work_results(
+            task_id,
+            {
+                "tests_passed": 1,
+                "tests_failed": 0,
+                "sdk_turns_used": None,
+                "sdk_max_turns": None,
+                "sdk_turns_supported": False,
+                "runtime_evidence": {"raw_model_payload": "MUST_NOT_PROPAGATE"},
+            },
+            "standard",
+            runtime_evidence=evidence,
+        )
+        artifact = json.loads(result_path.read_text())
+        assert artifact["sdk_turns"] == {
+            "turns_used": None,
+            "max_turns": None,
+            "ceiling_hit": None,
+            "supported": False,
+            "limit_kind": "unsupported",
+        }
+        assert artifact["runtime_evidence"] == evidence
+        assert "raw_model_payload" not in json.dumps(artifact)
+
+        agent_invoker._create_player_report_from_task_work(
+            task_id,
+            1,
+            TaskWorkResult(success=True, output={}),
+        )
+        report_path = TaskArtifactPaths.player_report_path(
+            task_id, 1, agent_invoker.worktree_path
+        )
+        report = json.loads(report_path.read_text())
+        assert report["runtime_evidence"] == artifact["runtime_evidence"]
+        assert report["sdk_turns_used"] is None
+        assert report["sdk_max_turns"] is None
+        assert report["sdk_ceiling_hit"] is None
 
 
 if __name__ == "__main__":

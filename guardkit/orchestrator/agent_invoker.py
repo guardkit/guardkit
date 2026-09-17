@@ -117,6 +117,202 @@ from guardkit.orchestrator.harness import (
     select_harness,
 )
 
+_RUNTIME_EVIDENCE_TRACE_LIMIT = 64
+
+_RUNTIME_TOOL_CATEGORIES = {
+    "bash": "execute",
+    "delegate": "delegate",
+    "edit": "write",
+    "edit_file": "write",
+    "execute": "execute",
+    "glob": "search",
+    "grep": "search",
+    "list_files": "read",
+    "ls": "read",
+    "plan": "plan",
+    "read": "read",
+    "read_file": "read",
+    "search": "search",
+    "task": "delegate",
+    "todo_read": "plan",
+    "todo_write": "plan",
+    "write": "write",
+    "write_file": "write",
+    "write_todos": "plan",
+}
+_RUNTIME_USAGE_FIELDS = {
+    "input_tokens": ("input_tokens", "prompt_tokens"),
+    "output_tokens": ("output_tokens", "completion_tokens"),
+    "total_tokens": ("total_tokens",),
+    "cache_creation_input_tokens": ("cache_creation_input_tokens",),
+    "cache_read_input_tokens": ("cache_read_input_tokens",),
+}
+
+
+def _nonnegative_exact_int(value: Any) -> Optional[int]:
+    """Return a nonnegative built-in integer, excluding booleans."""
+    if type(value) is int and value >= 0:
+        return value
+    return None
+
+
+def _runtime_tool_category(name: object) -> str:
+    """Map a tool name to the fixed, non-payload reporting vocabulary."""
+    if not isinstance(name, str):
+        return "other"
+    return _RUNTIME_TOOL_CATEGORIES.get(name.casefold(), "other")
+
+
+def _normalise_terminal_usage(usage: object) -> Dict[str, Any]:
+    """Normalise only terminal-message usage into fixed nullable fields."""
+    source = usage if isinstance(usage, dict) else {}
+    normalised: Dict[str, Any] = {
+        "scope": "terminal_message",
+        "completeness": (
+            "reported_by_harness" if isinstance(usage, dict) else "not_reported"
+        ),
+    }
+    for output_name, aliases in _RUNTIME_USAGE_FIELDS.items():
+        value = None
+        for alias in aliases:
+            candidate = _nonnegative_exact_int(source.get(alias))
+            if candidate is not None:
+                value = candidate
+                break
+        normalised[output_name] = value
+    return normalised
+
+
+def _build_task_work_runtime_evidence(
+    *,
+    harness_name: str,
+    message_count: int,
+    assistant_count: int,
+    result_count: int,
+    tool_uses: List[Tuple[str, str]],
+    tool_results: List[Tuple[str, bool]],
+    terminal_usage: object,
+    attempt_wall_duration_ms: int,
+    selected_attempt: int,
+    discarded_attempts: int,
+    sdk_turns_used: Optional[int],
+    sdk_max_turns: Optional[int],
+    wall_timeout_seconds: int,
+) -> Dict[str, Any]:
+    """Build bounded, payload-free evidence for one selected attempt."""
+    use_positions: Dict[str, List[int]] = {}
+    result_values: Dict[str, List[bool]] = {}
+    missing_use_ids = 0
+    missing_result_ids = 0
+    categories = {
+        "read": 0,
+        "write": 0,
+        "search": 0,
+        "execute": 0,
+        "plan": 0,
+        "delegate": 0,
+        "other": 0,
+    }
+
+    for index, (tool_use_id, category) in enumerate(tool_uses):
+        categories[category] += 1
+        if tool_use_id:
+            use_positions.setdefault(tool_use_id, []).append(index)
+        else:
+            missing_use_ids += 1
+    for tool_use_id, is_error in tool_results:
+        if tool_use_id:
+            result_values.setdefault(tool_use_id, []).append(is_error)
+        else:
+            missing_result_ids += 1
+
+    outcomes = ["missing_result"] * len(tool_uses)
+    paired = 0
+    for tool_use_id, positions in use_positions.items():
+        results = result_values.get(tool_use_id, [])
+        for position, is_error in zip(positions, results):
+            outcomes[position] = "error" if is_error else "ok"
+            paired += 1
+
+    duplicate_use_ids = sum(
+        max(0, len(positions) - 1) for positions in use_positions.values()
+    )
+    duplicate_result_ids = sum(
+        max(0, len(values) - 1) for values in result_values.values()
+    )
+    trace = [
+        {
+            "ordinal": f"tool-{index + 1:04d}",
+            "category": category,
+            "outcome": outcomes[index],
+            "duration_ms": None,
+        }
+        for index, (_, category) in enumerate(
+            tool_uses[:_RUNTIME_EVIDENCE_TRACE_LIMIT]
+        )
+    ]
+
+    sdk_supported = harness_name == "sdk"
+    ceiling_hit: Optional[bool]
+    if sdk_supported and sdk_turns_used is not None and sdk_max_turns is not None:
+        ceiling_hit = sdk_turns_used >= sdk_max_turns
+    else:
+        ceiling_hit = None
+
+    return {
+        "schema_version": 1,
+        "attempt": {
+            "selected": selected_attempt,
+            "discarded": discarded_attempts,
+            "completeness": (
+                "terminal_result_observed" if result_count > 0 else "stream_ended"
+            ),
+        },
+        "events": {
+            "total": message_count,
+            "assistant": assistant_count,
+            "result": result_count,
+            "tool_use": len(tool_uses),
+            "tool_result": len(tool_results),
+        },
+        "pairing": {
+            "paired": paired,
+            "unmatched_use": len(tool_uses) - paired,
+            "unmatched_result": len(tool_results) - paired,
+            "error_result": sum(1 for _, is_error in tool_results if is_error),
+            "duplicate_use_ids": duplicate_use_ids,
+            "duplicate_result_ids": duplicate_result_ids,
+            "missing_use_ids": missing_use_ids,
+            "missing_result_ids": missing_result_ids,
+        },
+        "categories": categories,
+        "tool_trace": trace,
+        "trace_truncated": len(tool_uses) > _RUNTIME_EVIDENCE_TRACE_LIMIT,
+        "terminal_usage": _normalise_terminal_usage(terminal_usage),
+        "timing": {
+            "attempt_wall_duration_ms": attempt_wall_duration_ms,
+            "duration_supported": False,
+            "event_delivery": (
+                "streaming" if sdk_supported else "buffered_post_run"
+            ),
+        },
+        "model_calls": {"count": None, "supported": False},
+        "limits": {
+            "sdk_turns": {
+                "turns_used": sdk_turns_used if sdk_supported else None,
+                "max_turns": sdk_max_turns if sdk_supported else None,
+                "ceiling_hit": ceiling_hit,
+                "supported": sdk_supported,
+                "limit_kind": "sdk_turns" if sdk_supported else "unsupported",
+            },
+            "wall_timeout": {
+                "seconds": wall_timeout_seconds,
+                "supported": True,
+                "limit_kind": "whole_attempt_wall_time",
+            },
+        },
+    }
+
 # TASK-FIX-RWOP1.3.1: Agent-invocations validation on the producer path.
 # task-work.md Step 6.5 declares validate_agent_invocations as "the ONLY
 # checkpoint that prevents false reporting". Folding it into
@@ -1534,7 +1730,7 @@ class AgentInvocationResult:
     error: Optional[str] = None
     sdk_turns_used: Optional[int] = None      # TASK-VPR-003: Actual SDK turns from ResultMessage
     sdk_max_turns: Optional[int] = None        # TASK-VPR-003: Effective SDK turn ceiling
-    sdk_ceiling_hit: bool = False              # TASK-VPR-003: Whether ceiling was hit
+    sdk_ceiling_hit: Optional[bool] = None     # TASK-VPR-003: Whether ceiling was hit
     session_id: Optional[str] = None           # TASK-RFX-B20B: SDK session ID for resumption
 
 
@@ -2210,14 +2406,25 @@ class AgentInvoker:
                     from guardkit.orchestrator.sdk_ceiling import detect_ceiling_hit
                     _sdk_turns_used = result.sdk_turns_used
                     _sdk_max_turns = result.sdk_max_turns
-                    _sdk_ceiling_hit = detect_ceiling_hit(_sdk_turns_used, _sdk_max_turns)
+                    _sdk_ceiling_hit = detect_ceiling_hit(
+                        _sdk_turns_used,
+                        _sdk_max_turns,
+                        unknown_is_none=True,
+                    )
 
                     # TASK-VOPT-002: Per-turn timing instrumentation
-                    logger.info(
-                        "[%s] SDK invocation complete: %.1fs, %d SDK turns (%.1fs/turn avg)",
-                        task_id, duration, _sdk_turns_used or 0,
-                        duration / max(_sdk_turns_used or 0, 1),
-                    )
+                    if _sdk_turns_used is None:
+                        logger.info(
+                            "[%s] Harness invocation complete: %.1fs, SDK turns unknown",
+                            task_id,
+                            duration,
+                        )
+                    else:
+                        logger.info(
+                            "[%s] SDK invocation complete: %.1fs, %d SDK turns (%.1fs/turn avg)",
+                            task_id, duration, _sdk_turns_used,
+                            duration / max(_sdk_turns_used, 1),
+                        )
 
                     return AgentInvocationResult(
                         task_id=task_id,
@@ -5517,7 +5724,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # TASK-VPR-003: SDK turn ceiling data
             "sdk_turns_used": None,
             "sdk_max_turns": None,
-            "sdk_ceiling_hit": False,
+            "sdk_ceiling_hit": None,
         }
 
         # Try to read task_work_results.json for richer data
@@ -5589,7 +5796,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 if sdk_turns:
                     report["sdk_turns_used"] = sdk_turns.get("turns_used")
                     report["sdk_max_turns"] = sdk_turns.get("max_turns")
-                    report["sdk_ceiling_hit"] = sdk_turns.get("ceiling_hit", False)
+                    report["sdk_ceiling_hit"] = sdk_turns.get("ceiling_hit")
+                runtime_evidence = task_work_data.get("runtime_evidence")
+                if isinstance(runtime_evidence, dict):
+                    # Preserve the bounded artifact object byte-for-byte in the report.
+                    report["runtime_evidence"] = runtime_evidence
 
                 logger.info(
                     f"Created Player report from task_work_results.json for {task_id} turn {turn}"
@@ -10585,11 +10796,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # / harness-internal ValueError / SDK import failure) to
         # AgentInvocationError before they reach this caller.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+        from guardkit.orchestrator.harness.selector import resolve_harness_name
 
         # TASK-ABSR-MAXT: Complexity-scale max_turns (mirrors _calculate_sdk_timeout).
         # Computed once per invocation so the same value flows into the harness
         # constructor, the parsed result, and the returned TaskWorkResult.
         effective_max_turns = self._calculate_sdk_max_turns(task_id)
+        resolved_harness_name = resolve_harness_name()
 
         # TASK-DIAG-F4A2: Preserve rendered task-work prompt under
         # sdk_debug/turn_<n>/ when GUARDKIT_AUTOBUILD_PRESERVE_DEBUG is
@@ -10621,8 +10834,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             f"{['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Task']}"
         )
         logger.info(f"[{task_id}] Permission mode: acceptEdits")
-        logger.info(f"[{task_id}] Max turns: {effective_max_turns}")
-        logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
+        if resolved_harness_name == "sdk":
+            logger.info(f"[{task_id}] SDK max turns: {effective_max_turns}")
+        else:
+            logger.info(
+                f"[{task_id}] SDK max turns: unknown "
+                f"(unsupported by {resolved_harness_name} harness)"
+            )
+        logger.info(
+            f"[{task_id}] Whole-attempt wall timeout: {self.sdk_timeout_seconds}s"
+        )
         if self._last_session_id is not None:
             logger.info(
                 f"[{task_id}] Resuming SDK session: "
@@ -10644,6 +10865,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         parser = TaskWorkStreamParser()
         sdk_turns_used = None
         sdk_session_id = None
+        terminal_usage: object = None
+        typed_tool_uses: List[Tuple[str, str]] = []
+        typed_tool_results: List[Tuple[str, bool]] = []
+        attempt_wall_duration_ms = 0
 
         try:
             for _sdk_attempt in range(MAX_SDK_STREAM_RETRIES + 1):
@@ -10660,6 +10885,10 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 _pending_bash_tools: Dict[str, Dict[str, Any]] = {}
                 sdk_turns_used = None
                 sdk_session_id = None
+                terminal_usage = None
+                typed_tool_uses = []
+                typed_tool_results = []
+                attempt_started_ns = time.monotonic_ns()
 
                 # Construct the harness. select_harness() routes via
                 # GUARDKIT_HARNESS env var (default "sdk"). The SDK harness
@@ -10750,7 +10979,27 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                 if _sdk_debug_dir is not None and event.raw is not None:
                                     _sdk_preserve_event(_sdk_debug_dir, event.raw)
 
-                                if isinstance(event, AssistantMessageEvent):
+                                if isinstance(event, ToolUseEvent):
+                                    tool_count += 1
+                                    typed_tool_uses.append(
+                                        (
+                                            event.tool_use_id
+                                            if isinstance(event.tool_use_id, str)
+                                            else "",
+                                            _runtime_tool_category(event.name),
+                                        )
+                                    )
+                                    self._track_tool_use(event)
+                                elif isinstance(event, ToolResultEvent):
+                                    typed_tool_results.append(
+                                        (
+                                            event.tool_use_id
+                                            if isinstance(event.tool_use_id, str)
+                                            else "",
+                                            bool(event.is_error),
+                                        )
+                                    )
+                                elif isinstance(event, AssistantMessageEvent):
                                     # API-error check operates on raw SDK shape;
                                     # only the SDK harness populates event.raw,
                                     # other substrates have raw=None and this
@@ -10790,9 +11039,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                             logger.debug(
                                                 f"SDK progress: {event.text[:100]}..."
                                             )
-                                    # Walk raw content blocks for tool tracking +
-                                    # per-bash-exec emission. Substrate-agnostic
-                                    # via duck-typing on type(block).__name__ —
+                                    # Walk raw SDK content blocks for parser file
+                                    # tracking and per-bash-exec emission.
+                                    # Uses duck-typing on type(block).__name__ —
                                     # matches the heartbeat scan at
                                     # agent_invoker.py:2974-2989 and the SDK
                                     # harness's own ToolUseBlock emission at
@@ -10805,12 +11054,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                     for block in content:
                                         block_class = type(block).__name__
                                         if block_class == "ToolUseBlock":
-                                            tool_count += 1
                                             block_name = getattr(block, "name", "")
                                             logger.debug(f"Tool invoked: {block_name}")
-                                            # TASK-FIX-OBS2: Update progress logger with tool use.
-                                            if self._progress_logger:
-                                                self._progress_logger._last_tool = block_name
                                             # TASK-FIX-STUB-C: Track file operations from
                                             # Write/Edit tools to populate files_created/
                                             # files_modified in task_work_results.json.
@@ -10825,9 +11070,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                     parser._track_tool_call(
                                                         block_name, tool_input
                                                     )
-                                                    # TASK-FIX-OBS2: Track file changes for progress.
-                                                    if self._progress_logger:
-                                                        self._progress_logger._files_changed += 1
                                                 else:
                                                     logger.warning(
                                                         f"[{task_id}] ToolUseBlock {block_name} input is "
@@ -10879,6 +11121,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                                 collected_output.append(str(_result_content))
                                 elif isinstance(event, ResultMessageEvent):
                                     result_count += 1
+                                    terminal_usage = event.usage
                                     # TASK-VPR-003: Capture SDK turns from ResultMessage.
                                     # ResultMessageEvent does not expose num_turns at
                                     # the typed-event level (TASK-HMIG-006 D-1 left
@@ -10887,20 +11130,28 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                     # ResultMessage. LangGraph harness leaves raw=None
                                     # so sdk_turns_used stays None on that path.
                                     if event.raw is not None:
-                                        sdk_turns_used = getattr(
-                                            event.raw, "num_turns", None
+                                        sdk_turns_used = _nonnegative_exact_int(
+                                            getattr(event.raw, "num_turns", None)
                                         )
                                     # TASK-RFX-B20B: Capture session_id for resumption.
                                     # Read from typed field so the same code path
                                     # works for any substrate.
                                     sdk_session_id = event.session_id
                                     self._last_session_id = sdk_session_id
+                                    turns_log = (
+                                        str(sdk_turns_used)
+                                        if sdk_turns_used is not None
+                                        else "unknown"
+                                    )
                                     logger.info(
-                                        f"[{task_id}] SDK completed: turns={sdk_turns_used}"
+                                        f"[{task_id}] Harness completed: SDK turns={turns_log}"
                                     )
                                     break
 
                 if _sdk_stream_error is None:
+                    attempt_wall_duration_ms = max(
+                        0, (time.monotonic_ns() - attempt_started_ns) // 1_000_000
+                    )
                     break  # Stream completed successfully, exit retry loop.
                 # TASK-FIX-46F2: Backoff before retry.
                 await asyncio.sleep(SDK_STREAM_RETRY_BACKOFF)
@@ -10919,7 +11170,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # TASK-FBSDK-011: Log message processing summary.
             logger.info(
                 f"[{task_id}] Message summary: total={message_count}, "
-                f"assistant={assistant_count}, tools={tool_count}, results={result_count}"
+                f"assistant={assistant_count}, tool_uses={tool_count}, "
+                f"tool_results={len(typed_tool_results)}, results={result_count}"
             )
 
             # Join collected output for parsing.
@@ -10931,26 +11183,50 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             parsed_result = parser.to_result()
 
             # TASK-VPR-003: Inject SDK turn metrics into parsed result.
-            # These flow through to task_work_results.json for Coach and reporting.
-            # TASK-ABSR-MAXT: Report the complexity-scaled value actually passed to the SDK.
-            parsed_result["sdk_turns_used"] = sdk_turns_used
-            parsed_result["sdk_max_turns"] = effective_max_turns
+            sdk_supported = resolved_harness_name == "sdk"
+            reported_sdk_turns = sdk_turns_used if sdk_supported else None
+            reported_sdk_max_turns = (
+                effective_max_turns if sdk_supported else None
+            )
+            parsed_result["sdk_turns_used"] = reported_sdk_turns
+            parsed_result["sdk_max_turns"] = reported_sdk_max_turns
+            parsed_result["sdk_turns_supported"] = sdk_supported
+            runtime_evidence = _build_task_work_runtime_evidence(
+                harness_name=resolved_harness_name,
+                message_count=message_count,
+                assistant_count=assistant_count,
+                result_count=result_count,
+                tool_uses=typed_tool_uses,
+                tool_results=typed_tool_results,
+                terminal_usage=terminal_usage,
+                attempt_wall_duration_ms=attempt_wall_duration_ms,
+                selected_attempt=_sdk_attempt + 1,
+                discarded_attempts=_sdk_attempt,
+                sdk_turns_used=reported_sdk_turns,
+                sdk_max_turns=reported_sdk_max_turns,
+                wall_timeout_seconds=self.sdk_timeout_seconds,
+            )
 
             # Write task_work_results.json for Coach validation.
-            self._write_task_work_results(task_id, parsed_result, documentation_level)
+            self._write_task_work_results(
+                task_id,
+                parsed_result,
+                documentation_level,
+                runtime_evidence=runtime_evidence,
+            )
 
             logger.info(f"task-work completed successfully for {task_id}")
             return TaskWorkResult(
                 success=True,
                 output=parsed_result,
-                sdk_turns_used=sdk_turns_used,
-                sdk_max_turns=effective_max_turns,
+                sdk_turns_used=reported_sdk_turns,
+                sdk_max_turns=reported_sdk_max_turns,
                 session_id=sdk_session_id,  # TASK-RFX-B20B
             )
 
         except asyncio.TimeoutError:
             error_msg = f"task-work execution exceeded {self.sdk_timeout_seconds}s timeout"
-            logger.error(f"[{task_id}] SDK TIMEOUT: {error_msg}")
+            logger.error(f"[{task_id}] HARNESS WALL TIMEOUT: {error_msg}")
             logger.error(f"[{task_id}] Messages processed before timeout: {message_count}")
             if collected_output:
                 last_output = " ".join(collected_output)[-500:]
@@ -12851,6 +13127,8 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         task_id: str,
         result_data: Dict[str, Any],
         documentation_level: str = "standard",
+        *,
+        runtime_evidence: Optional[Dict[str, Any]] = None,
     ) -> Path:
         """Write task-work results to JSON file for Coach validation.
 
@@ -12956,17 +13234,31 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         }
 
         # TASK-VPR-003: Add SDK turn ceiling data to results
-        sdk_turns_used_val = result_data.get("sdk_turns_used")
-        sdk_max_turns_val = result_data.get("sdk_max_turns")
+        sdk_turns_used_val = _nonnegative_exact_int(
+            result_data.get("sdk_turns_used")
+        )
+        sdk_max_turns_val = _nonnegative_exact_int(
+            result_data.get("sdk_max_turns")
+        )
+        sdk_turns_supported = result_data.get("sdk_turns_supported")
+        if type(sdk_turns_supported) is not bool:
+            sdk_turns_supported = sdk_max_turns_val is not None
+        sdk_ceiling_hit = (
+            sdk_turns_used_val >= sdk_max_turns_val
+            if sdk_turns_supported
+            and sdk_turns_used_val is not None
+            and sdk_max_turns_val is not None
+            else None
+        )
         results["sdk_turns"] = {
-            "turns_used": sdk_turns_used_val,
-            "max_turns": sdk_max_turns_val,
-            "ceiling_hit": (
-                sdk_turns_used_val is not None
-                and sdk_max_turns_val is not None
-                and sdk_turns_used_val >= sdk_max_turns_val
-            ),
+            "turns_used": sdk_turns_used_val if sdk_turns_supported else None,
+            "max_turns": sdk_max_turns_val if sdk_turns_supported else None,
+            "ceiling_hit": sdk_ceiling_hit,
+            "supported": sdk_turns_supported,
+            "limit_kind": "sdk_turns" if sdk_turns_supported else "unsupported",
         }
+        if isinstance(runtime_evidence, dict):
+            results["runtime_evidence"] = runtime_evidence
 
 # Add code_review field if architectural review data was found
         if code_review:
