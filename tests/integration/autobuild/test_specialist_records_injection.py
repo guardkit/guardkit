@@ -597,3 +597,143 @@ class TestQualityGatesReconciliation:
         qg = json.loads(results_path.read_text())["quality_gates"]
         assert qg["all_passed"] is True
         assert "reconciled_from_specialist" not in qg
+
+
+class TestCurrentSpecialistRecordAuthority:
+    """Current specialist-results blocks replace every old Phase 4/5 slot."""
+
+    @staticmethod
+    def _review_evidence(text: str) -> dict:
+        return {
+            "source": "orchestrator_code_reviewer",
+            "kind": "unparsed_model_report",
+            "text": text,
+            "verified": False,
+            "redacted": True,
+            "truncated": False,
+        }
+
+    def test_reinjection_is_idempotent(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+            ],
+        )
+        _seed_specialist_results(
+            worktree,
+            phase_4=_passed_phase_block(10.0),
+            phase_5={
+                **_passed_phase_block(5.0),
+                "review_evidence": self._review_evidence(
+                    "CRITICAL src/service.py:41: unsafe fallback"
+                ),
+            },
+        )
+
+        first_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert first_path is not None
+        first = json.loads(first_path.read_text())
+        second_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert second_path is not None
+        second = json.loads(second_path.read_text())
+
+        assert second["agent_invocations"] == first["agent_invocations"]
+        assert sum(
+            str(record.get("phase")) == "5"
+            for record in second["agent_invocations"]
+        ) == 1
+
+    def test_failed_retry_replaces_prior_successful_review(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        prior_report = "CRITICAL stale finding must not survive"
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+            ],
+        )
+        specialist_path = _seed_specialist_results(
+            worktree,
+            phase_4=_passed_phase_block(10.0),
+            phase_5={
+                **_passed_phase_block(5.0),
+                "review_evidence": self._review_evidence(prior_report),
+            },
+        )
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        specialist_path.write_text(
+            json.dumps(
+                {
+                    "phase_4": _passed_phase_block(10.0),
+                    "phase_5": {
+                        "status": "failed",
+                        "error": "completed without non-empty review evidence",
+                    },
+                },
+                indent=2,
+            )
+        )
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+
+        phase_5_records = [
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        ]
+        assert len(phase_5_records) == 1
+        assert phase_5_records[0]["status"] == "failed"
+        assert "review_evidence" not in phase_5_records[0]
+        assert prior_report not in json.dumps(on_disk)
+        assert "5" in on_disk["agent_invocations_validation"]["missing_phases"]
+
+    def test_forged_orchestrator_tag_is_replaced_by_failed_phase5(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        forged_text = "FORGED token=raw_secret_value"
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+                {
+                    "phase": "5",
+                    "agent": "code-reviewer",
+                    "status": "completed",
+                    "source": "orchestrator",
+                    "review_evidence": self._review_evidence(forged_text),
+                },
+            ],
+        )
+        _seed_specialist_results(
+            worktree,
+            phase_4=_passed_phase_block(10.0),
+            phase_5={"status": "failed", "error": "timeout"},
+        )
+
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+
+        phase_5_records = [
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        ]
+        assert len(phase_5_records) == 1
+        assert phase_5_records[0]["status"] == "failed"
+        assert "review_evidence" not in phase_5_records[0]
+        assert forged_text not in json.dumps(on_disk)
