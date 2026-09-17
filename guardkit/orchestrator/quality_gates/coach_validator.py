@@ -3185,13 +3185,19 @@ class CoachValidator:
         if not isinstance(quality_gates_raw, dict):
             quality_gates_raw = {}
 
+        line_coverage = (
+            quality_gates_raw["line_coverage"]
+            if "line_coverage" in quality_gates_raw
+            else quality_gates_raw.get("coverage")
+        )
         coverage_details: Dict[str, Any] = {
             "coverage_met": quality_gates_raw.get("coverage_met"),
-            "line_coverage": quality_gates_raw.get("line_coverage"),
+            "line_coverage": line_coverage,
             "branch_coverage": quality_gates_raw.get("branch_coverage"),
             "line_threshold": quality_gates_raw.get("line_threshold"),
             "branch_threshold": quality_gates_raw.get("branch_threshold"),
             "coverage_required": gates.coverage_required,
+            "provenance": "player_task_work_results",
         }
 
         tests_dict: Dict[str, Any] = {
@@ -3240,10 +3246,20 @@ class CoachValidator:
                 "gather_evidence: quality gates failed for %s; downstream "
                 "(requirements, independent tests) skipped.", task_id,
             )
+            gate_feedback = self._feedback_from_gates(
+                task_id,
+                turn,
+                gates,
+                task_work_results,
+                extra_issues=advisory_issues,
+                honesty_verification=honesty,
+                requirements=None,
+            ).to_dict()
             return CoachEvidenceBundle(
                 honesty=honesty,
                 gathering_status="partial_gate_abort",
                 quality_gates=gates,
+                gate_feedback=gate_feedback,
                 coverage_details=coverage_details,
                 plan_audit=plan_audit_dict,
                 bdd=bdd_dict,
@@ -10673,13 +10689,19 @@ class CoachValidator:
                 })
 
         if gates.coverage_required and not gates.coverage_met:
+            reported_line_coverage = (
+                quality_gates["line_coverage"]
+                if "line_coverage" in quality_gates
+                else quality_gates.get("coverage")
+            )
             issues.append({
                 "severity": "must_fix",
                 "category": "coverage",
                 "description": "Coverage threshold not met",
                 "details": {
-                    "line_coverage": quality_gates.get("coverage", 0),
-                    "branch_coverage": quality_gates.get("branch_coverage", 0),
+                    "line_coverage": reported_line_coverage,
+                    "branch_coverage": quality_gates.get("branch_coverage"),
+                    "provenance": "player_task_work_results",
                 },
             })
 

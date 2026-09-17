@@ -1,6 +1,7 @@
 """AgentInvoker handles Claude Agents SDK invocation for Player and Coach agents."""
 
 import asyncio
+from copy import deepcopy
 import json
 import logging
 import os
@@ -6745,13 +6746,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         OPERATOR_HANDOFF empty bundle reports ``"complete"``, and the
         ``complete`` path is the only one that carries a full evidence pass.
 
+        On ``partial_gate_abort``, a valid bundle-owned ``gate_feedback``
+        payload replaces the model's gate narrative for either an ``approve``
+        or ``feedback`` verdict. The payload is accepted only when its five
+        serialized quality-gate values exactly match the typed bundle gates.
+        A missing, malformed, or mismatched payload retains the generic
+        fail-closed behaviour below.
+
         Fail-open rules (this guard must not fire on evidence-less legacy
         paths):
 
         * ``evidence_bundle is None`` → no-op (legacy/tool-using callers).
         * ``gathering_status`` attribute missing or ``None`` → no-op (an
           unknown legacy bundle shape is not positive evidence of an abort).
-        * A ``feedback`` verdict already rejects the turn — never touched.
+        * A ``feedback`` verdict outside a valid ``partial_gate_abort``
+          payload already rejects the turn and is not rewritten.
 
         Absence stays absent (``absence-must-survive-every-reconciliation-layer``):
         this guard flips the *verdict* on the grounds of absent evidence. It
@@ -6789,8 +6798,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         Fails OPEN to the pre-existing generic framing (and the feedback
         no-op) whenever the markers are absent.
 
-        Mutates ``decision`` in place. No-op for every case except the
-        ``approve`` + non-complete ``gathering_status`` shape above and the
+        Mutates ``decision`` in place. No-op for every case except a valid
+        deterministic ``partial_gate_abort`` feedback replacement, the
+        ``approve`` + non-complete ``gathering_status`` shape above, and the
         ``feedback`` + marked ``partial_gate_abort`` annotation.
 
         Args:
@@ -6821,10 +6831,68 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 task_id
             )
 
+        gate_feedback: Optional[Dict[str, Any]] = None
+        if gathering_status == "partial_gate_abort":
+            candidate = getattr(evidence_bundle, "gate_feedback", None)
+            gates = getattr(evidence_bundle, "quality_gates", None)
+            if isinstance(candidate, dict) and gates is not None:
+                validation_results = candidate.get("validation_results")
+                serialized_gates = (
+                    validation_results.get("quality_gates")
+                    if isinstance(validation_results, dict)
+                    else None
+                )
+                gate_fields = (
+                    "tests_passed",
+                    "coverage_met",
+                    "arch_review_passed",
+                    "plan_audit_passed",
+                    "all_gates_passed",
+                )
+                gates_match = isinstance(serialized_gates, dict) and all(
+                    field in serialized_gates
+                    and serialized_gates[field]
+                    is getattr(gates, field, object())
+                    for field in gate_fields
+                )
+                if (
+                    candidate.get("decision") == "feedback"
+                    and isinstance(candidate.get("issues"), list)
+                    and isinstance(candidate.get("rationale"), str)
+                    and isinstance(validation_results, dict)
+                    and gates_match
+                ):
+                    gate_feedback = candidate
+
+        feedback_replaced = gate_feedback is not None
+        if gate_feedback is not None:
+            model_decision = decision_value
+            decision["decision"] = "feedback"
+            decision["issues"] = deepcopy(gate_feedback["issues"])
+            decision["rationale"] = gate_feedback["rationale"]
+            decision["validation_results"] = deepcopy(
+                gate_feedback["validation_results"]
+            )
+            decision_value = "feedback"
+            logger.info(
+                "ITEM60: replacing Coach %s gate narrative for %s turn %s "
+                "with deterministic partial-gate feedback.",
+                model_decision,
+                task_id,
+                turn,
+            )
+
         if decision_value == "feedback":
             if infra_details is None:
-                # A feedback verdict already rejects the turn — untouched
-                # (pre-FIX-4 behaviour, pinned by the NULLEVID01 tests).
+                if feedback_replaced:
+                    self._persist_coach_decision(
+                        decision,
+                        coach_output_path,
+                        tag="ITEM60",
+                        kind="reconciled",
+                    )
+                # A feedback verdict already rejects the turn. Outside the
+                # valid item-60 replacement above it remains untouched.
                 return
             already_marked = any(
                 isinstance(issue, dict)
@@ -6834,6 +6902,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 if issue is not None
             )
             if already_marked:
+                if feedback_replaced:
+                    self._persist_coach_decision(
+                        decision,
+                        coach_output_path,
+                        tag="ITEM60",
+                        kind="reconciled",
+                    )
                 return
             resolved_interpreter = infra_details.get("resolved_interpreter")
             test_command = infra_details.get("test_command")
@@ -6875,7 +6950,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 test_command or "unknown",
             )
             self._persist_coach_decision(
-                decision, coach_output_path, tag="FIX 4", kind="annotated"
+                decision,
+                coach_output_path,
+                tag="ITEM60" if feedback_replaced else "FIX 4",
+                kind="reconciled" if feedback_replaced else "annotated",
             )
             return
 
@@ -11684,6 +11762,23 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             task_work_data, workflow_mode, task_type=task_type
         )
         task_work_data["agent_invocations_validation"] = new_validation
+
+        # Item 60: Phase 4 is the authoritative executed-test producer. When
+        # it passed and supplied typed counts, copy those counts into the gate
+        # evidence consumed by gather_evidence. Keep the narrative-derived
+        # ``tests_passed`` compatibility field unchanged, and never coerce an
+        # absent/null count to zero.
+        qg = task_work_data.get("quality_gates")
+        if (
+            isinstance(phase_4_block, dict)
+            and phase_4_block.get("status") == "passed"
+            and isinstance(qg, dict)
+        ):
+            for count_field in ("tests_run", "tests_failed"):
+                count = phase_4_block.get(count_field)
+                if isinstance(count, int) and not isinstance(count, bool):
+                    qg[count_field] = count
+            task_work_data["quality_gates"] = qg
 
         # TASK-AB-PERTASKFG01 fix #2 (absence-of-failure-is-not-success):
         # reconcile the narrative-derived quality_gates block against the

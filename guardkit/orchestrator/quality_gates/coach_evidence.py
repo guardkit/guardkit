@@ -199,6 +199,11 @@ class CoachEvidenceBundle:
         ``QualityGateStatus`` aggregate (tests / coverage / arch_review /
         plan_audit). ``None`` when gathering aborted before the gates ran or
         when the task type opts out of all gates.
+    gate_feedback
+        Serialized deterministic ``CoachValidationResult`` produced by the
+        existing quality-gate feedback renderer. Populated only for
+        ``partial_gate_abort`` so post-model reconciliation can use the gate
+        owner's findings instead of model-authored gate claims.
     coverage_details
         Raw coverage dict slice from ``task_work_results['test_results']``
         (line_coverage, branch_coverage, files_below_threshold). ``None`` when
@@ -306,6 +311,7 @@ class CoachEvidenceBundle:
     gathering_error: Optional[str] = None
 
     quality_gates: Optional["QualityGateStatus"] = None
+    gate_feedback: Optional[Dict[str, Any]] = None
     coverage_details: Optional[Dict[str, Any]] = None
     plan_audit: Optional[Dict[str, Any]] = None
     bdd: Optional[Dict[str, Any]] = None

@@ -386,6 +386,225 @@ class TestGatherEvidenceNeverRaises:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic feedback on a quality-gate short circuit (item 60)
+# ---------------------------------------------------------------------------
+
+
+def _gather_gate_abort(
+    tmp_path: Path,
+    *,
+    quality_gates: dict,
+    plan_audit: dict | None = None,
+    advisory: dict | None = None,
+) -> CoachEvidenceBundle:
+    _init_git_worktree(tmp_path)
+    results = {
+        "task_id": "TASK-GATE-FEEDBACK",
+        "quality_gates": quality_gates,
+        "code_review": {"score": 80},
+        "plan_audit": plan_audit or {
+            "status": "skipped",
+            "violations": 0,
+        },
+        "files_modified": [],
+        "files_created": [],
+        "tests_written": [],
+    }
+    _write_results(tmp_path, "TASK-GATE-FEEDBACK", results)
+    validator = CoachValidator(
+        str(tmp_path), task_id="TASK-GATE-FEEDBACK"
+    )
+    advisory_patch = (
+        patch.object(
+            validator,
+            "_compute_agent_invocations_advisory",
+            return_value=advisory,
+        )
+        if advisory is not None
+        else patch.object(
+            validator,
+            "_compute_agent_invocations_advisory",
+            wraps=validator._compute_agent_invocations_advisory,
+        )
+    )
+    with advisory_patch:
+        return validator.gather_evidence(
+            task_id="TASK-GATE-FEEDBACK",
+            turn=2,
+            task={
+                "acceptance_criteria": ["AC-001"],
+                "task_type": "feature",
+                "description": "gate feedback",
+            },
+        )
+
+
+class TestPartialGateFeedbackBundle:
+    def test_coverage_only_abort_carries_source_owned_feedback_and_counts(
+        self, tmp_path: Path
+    ) -> None:
+        advisory = {
+            "severity": "warning",
+            "category": "agent_invocations",
+            "description": "existing process advisory",
+            "details": {},
+        }
+        bundle = _gather_gate_abort(
+            tmp_path,
+            quality_gates={
+                "all_passed": True,
+                "tests_run": 875,
+                "tests_failed": 0,
+                "coverage": 62.5,
+                "coverage_met": False,
+            },
+            advisory=advisory,
+        )
+
+        assert bundle.gathering_status == "partial_gate_abort"
+        assert bundle.tests is not None
+        assert bundle.tests["tests_run"] == 875
+        assert bundle.independent_tests is None
+        assert bundle.coverage is None
+        assert bundle.coverage_details == {
+            "coverage_met": False,
+            "line_coverage": 62.5,
+            "branch_coverage": None,
+            "line_threshold": None,
+            "branch_threshold": None,
+            "coverage_required": True,
+            "provenance": "player_task_work_results",
+        }
+        assert bundle.gate_feedback is not None
+        assert bundle.gate_feedback["decision"] == "feedback"
+        assert [
+            issue["category"]
+            for issue in bundle.gate_feedback["issues"]
+        ] == ["agent_invocations", "coverage"]
+        coverage_issue = bundle.gate_feedback["issues"][1]
+        assert coverage_issue["details"]["line_coverage"] == 62.5
+        assert coverage_issue["details"]["provenance"] == (
+            "player_task_work_results"
+        )
+        assert bundle.gate_feedback["validation_results"][
+            "quality_gates"
+        ] == {
+            "tests_passed": True,
+            "coverage_met": False,
+            "arch_review_passed": True,
+            "plan_audit_passed": True,
+            "all_gates_passed": False,
+        }
+
+    @pytest.mark.parametrize(
+        ("coverage_fields", "expected"),
+        [
+            ({"coverage": 62.5}, 62.5),
+            ({"coverage": 62.5, "line_coverage": 0}, 0),
+            ({"coverage": 62.5, "line_coverage": None}, None),
+            ({}, None),
+        ],
+    )
+    def test_line_coverage_preserves_key_presence_and_null_zero_distinctions(
+        self,
+        tmp_path: Path,
+        coverage_fields: dict,
+        expected: float | int | None,
+    ) -> None:
+        bundle = _gather_gate_abort(
+            tmp_path,
+            quality_gates={
+                "all_passed": True,
+                "tests_run": 1,
+                "tests_failed": 0,
+                "coverage_met": False,
+                **coverage_fields,
+            },
+        )
+
+        assert bundle.coverage_details is not None
+        observed = bundle.coverage_details["line_coverage"]
+        if expected is None:
+            assert observed is None
+        else:
+            assert observed == expected
+        assert bundle.gate_feedback is not None
+        issue = bundle.gate_feedback["issues"][0]
+        assert issue["category"] == "coverage"
+        observed_issue = issue["details"]["line_coverage"]
+        if expected is None:
+            assert observed_issue is None
+        else:
+            assert observed_issue == expected
+
+    @pytest.mark.parametrize(
+        ("quality_gates", "category", "details"),
+        [
+            (
+                {
+                    "all_passed": None,
+                    "reconciled_absent": True,
+                    "coverage_met": True,
+                },
+                "test_signal_absent",
+                {"signal_absent": True},
+            ),
+            (
+                {
+                    "all_passed": False,
+                    "tests_passed": 871,
+                    "tests_run": 875,
+                    "tests_failed": 4,
+                    "coverage_met": True,
+                },
+                "test_failure",
+                {"failed_count": 4, "total_count": 875},
+            ),
+        ],
+    )
+    def test_test_absence_and_failure_keep_distinct_feedback(
+        self,
+        tmp_path: Path,
+        quality_gates: dict,
+        category: str,
+        details: dict,
+    ) -> None:
+        bundle = _gather_gate_abort(
+            tmp_path,
+            quality_gates=quality_gates,
+        )
+
+        assert bundle.gate_feedback is not None
+        issue = bundle.gate_feedback["issues"][0]
+        assert issue["category"] == category
+        assert issue["details"] == details
+
+    def test_actual_required_plan_audit_failure_is_reported(
+        self, tmp_path: Path
+    ) -> None:
+        bundle = _gather_gate_abort(
+            tmp_path,
+            quality_gates={
+                "all_passed": True,
+                "tests_run": 1,
+                "tests_failed": 0,
+                "coverage_met": True,
+            },
+            plan_audit={
+                "status": "violation",
+                "severity": "high",
+                "violations": 1,
+                "missing_files": ["src/required.py"],
+            },
+        )
+
+        assert bundle.gate_feedback is not None
+        assert [
+            issue["category"] for issue in bundle.gate_feedback["issues"]
+        ] == ["plan_audit"]
+
+
+# ---------------------------------------------------------------------------
 # Type / API surface checks
 # ---------------------------------------------------------------------------
 
@@ -402,6 +621,7 @@ class TestBundleTypeSurface:
         required = {
             "honesty",
             "quality_gates",
+            "gate_feedback",
             "coverage_details",
             "plan_audit",
             "bdd",
