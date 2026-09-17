@@ -612,3 +612,166 @@ def test_failure_textual_credential_fields(content, expected, tmp_path):
     records = [json.loads(line) for line in (tmp_path / "messages.jsonl").read_text().splitlines()]
     assert records[1]["content"] == expected
     assert records[1]["tool_call_id"] == "read-skill"
+
+
+class TestProgressiveEventPreservation:
+    """Strict writes retain useful payloads and expose recorder failures."""
+
+    def test_checked_write_preserves_structured_unicode_and_redacts_secrets(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from dataclasses import dataclass
+
+        from guardkit.orchestrator import sdk_debug
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+        monkeypatch.setattr(sdk_debug, "_redactor", None)
+        debug_dir = preserve_prompt(
+            workspace_root=tmp_path,
+            task_id="TASK-PROGRESSIVE",
+            turn=1,
+            role="player",
+            prompt="test",
+            options=None,
+        )
+        assert debug_dir is not None
+
+        @dataclass(frozen=True)
+        class NativeToolEvent:
+            phase: str
+            run_id: str
+            parent_run_id: str | None
+            tool_name: str | None
+            payload: Any
+
+        sdk_debug.preserve_event_checked(
+            debug_dir,
+            NativeToolEvent(
+                phase="end",
+                run_id="run-ü",
+                parent_run_id="parent-1",
+                tool_name=None,
+                payload={
+                    "content": "café ✓",
+                    "rows": [{"count": 64}],
+                    "credential": "API_KEY=sk-planted_secret_abc123",
+                },
+            ),
+        )
+
+        record = json.loads((debug_dir / "messages.jsonl").read_text())
+        assert record["type"] == "NativeToolEvent"
+        assert record["payload"]["content"] == "café ✓"
+        assert record["payload"]["rows"] == [{"count": 64}]
+        serialized = json.dumps(record, ensure_ascii=False)
+        assert "sk-planted_secret_abc123" not in serialized
+        assert "[REDACTED]" in serialized
+
+    def test_checked_write_raises_when_existing_recorder_cannot_append(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from guardkit.orchestrator import sdk_debug
+
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+        debug_dir = preserve_prompt(
+            workspace_root=tmp_path,
+            task_id="TASK-PROGRESSIVE",
+            turn=1,
+            role="player",
+            prompt="test",
+            options=None,
+        )
+        assert debug_dir is not None
+        monkeypatch.setattr(sdk_debug, "preserve_event", lambda *_args: None)
+
+        with pytest.raises(
+            sdk_debug.SdkDebugPreservationError,
+            match="appended no evidence",
+        ):
+            sdk_debug.preserve_event_checked(debug_dir, {"content": "must persist"})
+
+
+def test_progressive_event_rejects_already_capped_trace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from guardkit.orchestrator import sdk_debug
+
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+    debug_dir = preserve_prompt(
+        workspace_root=tmp_path,
+        task_id="TASK-PROGRESSIVE-CAP",
+        turn=1,
+        role="player",
+        prompt="test",
+        options=None,
+    )
+    assert debug_dir is not None
+    messages = debug_dir / "messages.jsonl"
+    monkeypatch.setattr(sdk_debug, "PER_TURN_CAP_BYTES", 8)
+    messages.write_bytes(b"x" * sdk_debug.PER_TURN_CAP_BYTES)
+
+    with pytest.raises(sdk_debug.SdkDebugPreservationError, match="per-turn cap"):
+        sdk_debug.preserve_event_checked(debug_dir, {"content": "not recorded"})
+
+
+def test_progressive_event_rejects_redaction_failure_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from guardkit.orchestrator import sdk_debug
+
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+    debug_dir = preserve_prompt(
+        workspace_root=tmp_path,
+        task_id="TASK-PROGRESSIVE-REDACTION",
+        turn=1,
+        role="player",
+        prompt="test",
+        options=None,
+    )
+    assert debug_dir is not None
+    failing_redactor = mock.Mock()
+    failing_redactor.redact.side_effect = RuntimeError("forced redaction failure")
+    monkeypatch.setattr(sdk_debug, "_get_redactor", lambda: failing_redactor)
+
+    with pytest.raises(
+        sdk_debug.SdkDebugPreservationError,
+        match="did not retain the event payload",
+    ):
+        sdk_debug.preserve_event_checked(debug_dir, {"content": "secret"})
+
+
+def test_progressive_event_serializes_concurrent_callback_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from guardkit.orchestrator import sdk_debug
+
+    monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
+    debug_dir = preserve_prompt(
+        workspace_root=tmp_path,
+        task_id="TASK-PROGRESSIVE-CONCURRENT",
+        turn=1,
+        role="player",
+        prompt="test",
+        options=None,
+    )
+    assert debug_dir is not None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [
+            pool.submit(
+                sdk_debug.preserve_event_checked,
+                debug_dir,
+                {"type": "NativeToolEvent", "run_id": f"run-{index}"},
+            )
+            for index in range(8)
+        ]
+        for future in futures:
+            future.result()
+
+    records = [
+        json.loads(line)
+        for line in (debug_dir / "messages.jsonl").read_text().splitlines()
+    ]
+    assert len(records) == 8

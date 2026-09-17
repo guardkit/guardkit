@@ -956,8 +956,9 @@ class TestPlayerExperimentCallRoutes:
 
     @pytest.mark.asyncio
     async def test_direct_player_route_passes_player_role_and_activity_callback(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
         harness = self._recording_harness("direct player response")
         selection: dict[str, Any] = {}
@@ -981,11 +982,13 @@ class TestPlayerExperimentCallRoutes:
         callback = selection["on_model_activity"]
         assert callback.__self__ is invoker
         assert callback.__func__ is invoker._bump_activity.__func__
+        assert callable(selection["on_native_tool_event"])
 
     @pytest.mark.asyncio
     async def test_task_work_player_route_passes_player_role_and_activity_callback(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
         harness = self._recording_harness(
             "10 tests passed, 0 tests failed\n"
@@ -1012,6 +1015,7 @@ class TestPlayerExperimentCallRoutes:
         callback = selection["on_model_activity"]
         assert callback.__self__ is invoker
         assert callback.__func__ is invoker._bump_activity.__func__
+        assert callable(selection["on_native_tool_event"])
 
     @pytest.mark.asyncio
     async def test_coach_synthesis_route_passes_coach_role(

@@ -34,6 +34,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -1341,9 +1342,82 @@ __all__ = [
     "compute_debug_dir",
     "preserve_prompt",
     "preserve_event",
+    "preserve_event_checked",
+    "SdkDebugPreservationError",
     "preserve_failure",
     "prune_old_turns_if_needed",
     "DEFAULT_ON_REPOS",
     "PER_TURN_CAP_BYTES",
     "PER_TASK_CAP_BYTES",
 ]
+
+
+_PROGRESSIVE_EVENT_LOCK = threading.Lock()
+
+class SdkDebugPreservationError(RuntimeError):
+    """An enabled debug recorder could not durably append an event."""
+
+
+def preserve_event_checked(debug_dir: Path, event: Any) -> None:
+    """Serialise and verify one progressive callback record."""
+    with _PROGRESSIVE_EVENT_LOCK:
+        _preserve_event_checked(debug_dir, event)
+
+
+def _preserve_event_checked(debug_dir: Path, event: Any) -> None:
+    """Append an event and fail visibly if no durable record is produced.
+
+    This is the progressive native-callback variant of :func:`preserve_event`.
+    Ordinary SDK stream preservation keeps its historical best-effort contract;
+    a caller that explicitly enables in-flight evidence uses this function so
+    a recorder failure cannot be mistaken for proof that no tool ran.
+    """
+    messages_path = debug_dir / "messages.jsonl"
+    try:
+        before = messages_path.stat().st_size
+    except Exception as exc:  # noqa: BLE001 -- named evidence failure
+        raise SdkDebugPreservationError(
+            f"sdk_debug progressive recorder is unavailable: {messages_path}"
+        ) from exc
+
+    if before >= PER_TURN_CAP_BYTES:
+        raise SdkDebugPreservationError(
+            "sdk_debug progressive recorder reached its per-turn cap; "
+            f"no complete event can be claimed: {messages_path}"
+        )
+
+    preserve_event(debug_dir, event)
+
+    try:
+        after = messages_path.stat().st_size
+        if after <= before:
+            raise SdkDebugPreservationError(
+                f"sdk_debug progressive recorder appended no evidence: {messages_path}"
+            )
+        # Read only bytes appended by this callback. A truncation marker is
+        # explicit incompleteness, not proof of this event's payload.
+        with messages_path.open("rb") as stream:
+            stream.seek(before)
+            appended = stream.read(after - before)
+    except SdkDebugPreservationError:
+        raise
+    except Exception as exc:  # noqa: BLE001 -- named evidence failure
+        raise SdkDebugPreservationError(
+            f"sdk_debug progressive record could not be verified: {messages_path}"
+        ) from exc
+
+    if b"[TRUNCATED at" in appended or b"[REDACTION-FAILED]" in appended:
+        raise SdkDebugPreservationError(
+            "sdk_debug progressive recorder did not retain the event payload: "
+            f"{messages_path}"
+        )
+    try:
+        record = json.loads(appended.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SdkDebugPreservationError(
+            f"sdk_debug progressive record is not valid JSON: {messages_path}"
+        ) from exc
+    if not isinstance(record, dict):
+        raise SdkDebugPreservationError(
+            f"sdk_debug progressive record is not an event object: {messages_path}"
+        )

@@ -1325,3 +1325,39 @@ class TestResolveHarnessName:
 
         assert "Unknown GUARDKIT_HARNESS value: 'banana'" in str(exc.value)
         assert "Expected 'sdk' or 'langgraph'." in str(exc.value)
+
+
+@_requires_guardkitfactory
+def test_langgraph_forwards_progressive_native_tool_sink(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+    from guardkitfactory.harness import LangGraphHarness
+
+    sentinel = lambda _event: None  # noqa: E731
+    harness = select_harness(
+        env_var=_TEST_ENV_VAR,
+        model=MagicMock(),
+        cwd=tmp_path,
+        on_native_tool_event=sentinel,
+    )
+
+    assert isinstance(harness, LangGraphHarness)
+    assert harness.on_native_tool_event is sentinel
+
+
+def test_sdk_drops_progressive_native_tool_sink(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+    from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
+
+    harness = select_harness(
+        env_var=_TEST_ENV_VAR,
+        on_native_tool_event=lambda _event: None,
+        **_sdk_kwargs(),
+    )
+
+    assert isinstance(harness, ClaudeSDKHarness)
+    assert not hasattr(harness, "on_native_tool_event")

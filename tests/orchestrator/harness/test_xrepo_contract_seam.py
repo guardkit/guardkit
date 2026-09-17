@@ -721,3 +721,8 @@ class TestToolResultEmissionContract:
             i for i, e in enumerate(events) if isinstance(e, ResultMessageEvent)
         )
         assert idx_result < idx_terminal
+
+
+def test_langgraph_harness_accepts_progressive_native_tool_sink() -> None:
+    params = inspect.signature(LangGraphHarness.__init__).parameters
+    assert "on_native_tool_event" in params
