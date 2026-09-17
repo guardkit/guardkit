@@ -35,6 +35,7 @@ from unittest.mock import patch
 
 import pytest
 
+from guardkit.orchestrator import specialist_invocations
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
@@ -321,6 +322,75 @@ class TestCodeReviewerModelReportAdvisory:
         assert len(failures) == 1
         assert error in failures[0]["description"]
         assert failures[0]["details"]["status"] == "failed"
+
+    @pytest.mark.parametrize("coach_path", ["validate", "gather_evidence"])
+    def test_budget_skip_does_not_surface_previous_turn_report(
+        self,
+        worktree: Path,
+        coach_path: str,
+    ) -> None:
+        old_report = "CRITICAL OLD_TURN_REPORT src/service.py:41"
+        _write_results(worktree, _run2_task_work_results(worktree))
+        specialist_path = (
+            worktree / ".guardkit" / "autobuild" / TASK_ID
+            / "specialist_results.json"
+        )
+        specialist_path.write_text(json.dumps({
+            "phase_4": {"status": "passed"},
+            "phase_5": {
+                "status": "passed",
+                "review_evidence": {
+                    "source": "orchestrator_code_reviewer",
+                    "kind": "unparsed_model_report",
+                    "text": old_report,
+                    "verified": False,
+                    "redacted": True,
+                    "truncated": False,
+                },
+            },
+        }))
+        # Match autobuild's real coarse-budget branch: only Phase 4 is
+        # replaced, so the persisted Phase 5 block is from the prior turn.
+        specialist_invocations._merge_specialist_block(
+            specialist_path,
+            "phase_4",
+            {
+                "status": "skipped",
+                "duration_seconds": 0.0,
+                "error": "specialist_skipped: budget exhausted",
+                **specialist_invocations._PHASE_4_AGENT_FIELD_DEFAULTS,
+            },
+        )
+        AgentInvoker(
+            worktree_path=worktree
+        )._inject_specialist_records_into_task_work_results(TASK_ID)
+
+        validator = CoachValidator(str(worktree), task_id=TASK_ID)
+        stub_tests = IndependentTestResult(
+            tests_passed=True,
+            test_command="pytest (stubbed)",
+            test_output_summary="stub",
+            duration_seconds=0.0,
+        )
+        with patch.object(
+            CoachValidator, "run_independent_tests", return_value=stub_tests
+        ):
+            result = getattr(validator, coach_path)(
+                task_id=TASK_ID,
+                turn=2,
+                task={
+                    "acceptance_criteria": ["AC-018 existing suites green"],
+                    "task_type": "feature",
+                    "description": "budget-skip regression",
+                },
+            )
+
+        rendered = json.dumps(result.to_dict())
+        if coach_path == "gather_evidence":
+            rendered += object.__new__(AgentInvoker)._render_evidence_bundle_section(
+                result
+            )
+        assert old_report not in rendered
 
 
 class TestGenuineFabricationStillShortCircuits:
