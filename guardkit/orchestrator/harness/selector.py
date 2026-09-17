@@ -31,8 +31,13 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import tempfile
+import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+import yaml
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
@@ -232,6 +237,197 @@ _KNOWN_PROVIDER_PREFIXES: frozenset[str] = frozenset({
     "huggingface",
 })
 
+_PLAYER_PATH_FIELDS = frozenset(
+    {"skills", "memory", "instructions", "protected_paths"}
+)
+_COMMAND_FIELDS = ("test", "install", "typecheck", "lint", "build")
+_DCODE_PROFILE_LOCK = threading.Lock()
+_AUTO_DCODE_PROFILE: Path | None = None
+_DCODE_TRACE_VARS = ("LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")
+
+
+def _configure_dcode_launch(worktree: Path) -> Path:
+    """Install one safe dcode profile and offline policy for this process."""
+
+    global _AUTO_DCODE_PROFILE
+    with _DCODE_PROFILE_LOCK:
+        offline_supplied = "DEEPAGENTS_CODE_OFFLINE" in os.environ
+        if offline_supplied and os.environ["DEEPAGENTS_CODE_OFFLINE"] != "1":
+            raise AgentInvocationError(
+                "DEEPAGENTS_CODE_OFFLINE must be exactly '1' for the local Player."
+            )
+        for name in _DCODE_TRACE_VARS:
+            supplied = os.environ.get(name)
+            if supplied is not None and supplied.lower() not in {"false", "0", ""}:
+                raise AgentInvocationError(f"{name} must be disabled for the local Player.")
+
+        supplied_home = os.environ.get("DEEPAGENTS_HOME")
+        if "DEEPAGENTS_HOME" in os.environ and not supplied_home:
+            raise AgentInvocationError("DEEPAGENTS_HOME cannot be empty when supplied.")
+        if supplied_home:
+            candidate = Path(supplied_home)
+        elif _AUTO_DCODE_PROFILE is not None:
+            candidate = _AUTO_DCODE_PROFILE
+        else:
+            candidate = Path(
+                tempfile.mkdtemp(prefix=f"guardkit-dcode-{os.getpid()}-")
+            )
+            _AUTO_DCODE_PROFILE = candidate
+
+        if not candidate.is_absolute():
+            raise AgentInvocationError("DEEPAGENTS_HOME must be an absolute path.")
+        try:
+            profile = candidate.resolve(strict=True)
+            task_root = worktree.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise AgentInvocationError(
+                f"Invalid dcode launch profile or worktree: {exc}"
+            ) from exc
+        if not profile.is_dir():
+            raise AgentInvocationError(f"DEEPAGENTS_HOME must be a directory: {profile}")
+        if profile == Path.home().resolve() or profile == Path("/"):
+            raise AgentInvocationError("DEEPAGENTS_HOME must be a dedicated run profile.")
+        if profile == task_root or profile.is_relative_to(task_root):
+            raise AgentInvocationError(
+                "DEEPAGENTS_HOME must be outside the assigned task worktree."
+            )
+        if _AUTO_DCODE_PROFILE is not None and profile != _AUTO_DCODE_PROFILE.resolve():
+            raise AgentInvocationError(
+                "DEEPAGENTS_HOME changed after the process-scoped dcode profile was selected."
+            )
+
+        os.environ["DEEPAGENTS_HOME"] = str(profile)
+        os.environ["DEEPAGENTS_CODE_OFFLINE"] = "1"
+        for name in _DCODE_TRACE_VARS:
+            os.environ[name] = "false"
+        return profile
+
+
+def _player_path_list(raw: Any, *, field: str, config_path: Path) -> tuple[str, ...]:
+    """Validate one project-declared list of repository-relative paths."""
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise AgentInvocationError(
+            f"Invalid `{field}` in {config_path}: expected a list of "
+            "repository-relative paths."
+        )
+    result: list[str] = []
+    for index, value in enumerate(raw):
+        if not isinstance(value, str) or not value.strip():
+            raise AgentInvocationError(
+                f"Invalid `{field}[{index}]` in {config_path}: expected a "
+                "non-empty repository-relative path."
+            )
+        if Path(value).is_absolute():
+            raise AgentInvocationError(
+                f"Invalid `{field}[{index}]` in {config_path}: project "
+                "configuration paths must be repository-relative."
+            )
+        result.append(value)
+    return tuple(result)
+
+
+def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
+    """Load generic Player inputs from the repository's own declaration."""
+
+    config_path = worktree / ".guardkit" / "config.yaml"
+    if config_path.exists():
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise AgentInvocationError(
+                f"Could not read Player project configuration {config_path}: {exc}"
+            ) from exc
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise AgentInvocationError(
+                f"Invalid project configuration {config_path}: expected a mapping."
+            )
+    else:
+        data = {}
+
+    autobuild = data.get("autobuild", {})
+    if autobuild is None:
+        autobuild = {}
+    if not isinstance(autobuild, dict):
+        raise AgentInvocationError(
+            f"Invalid `autobuild` in {config_path}: expected a mapping."
+        )
+    player = autobuild.get("player", {})
+    if player is None:
+        player = {}
+    if not isinstance(player, dict):
+        raise AgentInvocationError(
+            f"Invalid `autobuild.player` in {config_path}: expected a mapping."
+        )
+    unknown = sorted(set(player) - _PLAYER_PATH_FIELDS)
+    if unknown:
+        raise AgentInvocationError(
+            f"Invalid `autobuild.player` in {config_path}: unknown keys "
+            f"{unknown}; allowed keys are {sorted(_PLAYER_PATH_FIELDS)}."
+        )
+
+    skills = _player_path_list(
+        player.get("skills"), field="autobuild.player.skills", config_path=config_path
+    )
+    memory = _player_path_list(
+        player.get("memory"), field="autobuild.player.memory", config_path=config_path
+    )
+    protected_paths = _player_path_list(
+        player.get("protected_paths"),
+        field="autobuild.player.protected_paths",
+        config_path=config_path,
+    )
+    instructions = list(
+        _player_path_list(
+            player.get("instructions"),
+            field="autobuild.player.instructions",
+            config_path=config_path,
+        )
+    )
+    for conventional in ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"):
+        if (worktree / conventional).is_file() and conventional not in instructions:
+            instructions.append(conventional)
+
+    declared_commands: list[tuple[str, str]] = []
+    raw_toolchain = data.get("toolchain")
+    if raw_toolchain is not None:
+        from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
+
+        try:
+            declaration = parse_toolchain_block(raw_toolchain)
+        except ValueError as exc:
+            raise AgentInvocationError(
+                f"Invalid Player command declaration in {config_path}: {exc}"
+            ) from exc
+        for command_name in _COMMAND_FIELDS:
+            command = getattr(declaration, command_name)
+            if command:
+                declared_commands.append((command_name, command))
+        for component_name in declaration.component_names:
+            component = declaration.component(component_name)
+            if component is None:  # pragma: no cover - model invariant
+                continue
+            for command_name in _COMMAND_FIELDS:
+                command = getattr(component, command_name)
+                if command:
+                    label = (
+                        f"component.{component_name}.{command_name} "
+                        f"(cwd={component.cwd})"
+                    )
+                    declared_commands.append((label, command))
+
+    return {
+        "skills": skills,
+        "memory": memory,
+        "repository_instructions": tuple(instructions),
+        "declared_commands": tuple(declared_commands),
+        "protected_paths": protected_paths,
+    }
+
 
 def _factory_accepts_kwarg(factory: Callable[..., Any], name: str) -> bool:
     """Return ``True`` iff ``factory`` can accept the keyword ``name``.
@@ -263,6 +459,7 @@ def _build_backend_with_optional_cap(
     factory: Callable[..., Any],
     worktree: Path,
     max_tool_result_chars: int | None,
+    protected_paths: tuple[str, ...] = (),
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -288,10 +485,10 @@ def _build_backend_with_optional_cap(
     and is *not* warned about (it would be pure noise on the Player and
     synthesis paths, which always pass ``None``).
     """
+    kwargs: dict[str, Any] = {}
     if _factory_accepts_kwarg(factory, "max_tool_result_chars"):
-        return factory(worktree, max_tool_result_chars=max_tool_result_chars)
-
-    if max_tool_result_chars is not None:
+        kwargs["max_tool_result_chars"] = max_tool_result_chars
+    elif max_tool_result_chars is not None:
         logger.warning(
             "TASK-FIX-BACKENDKWARG: the installed guardkitfactory's "
             "build_autobuild_backend() does not accept "
@@ -304,7 +501,15 @@ def _build_backend_with_optional_cap(
             max_tool_result_chars,
         )
 
-    return factory(worktree)
+    if protected_paths:
+        if not _factory_accepts_kwarg(factory, "protected_paths"):
+            raise AgentInvocationError(
+                "The project declares autobuild.player.protected_paths, but the "
+                "installed guardkitfactory cannot enforce them. Install the "
+                "matching Factory revision; protection cannot be dropped."
+            )
+        kwargs["protected_paths"] = protected_paths
+    return factory(worktree, **kwargs)
 
 
 def select_harness(
@@ -395,12 +600,10 @@ def select_harness(
     # incrementally and needs no callback — never sees it.
     on_model_activity = harness_kwargs.pop("on_model_activity", None)
 
-    # Player experiment configuration is role-scoped. Consume the routing
-    # hint for every substrate so it never leaks into either concrete harness
-    # constructor. Only the explicit LangGraph Player branch below consults
-    # GUARDKIT_PLAYER_EXPERIMENT; SDK, Coach, synthesis, and callers that omit
-    # the role retain their existing behaviour even when that environment
-    # variable is malformed.
+    # Role is consumed by this selector so it never leaks into either
+    # concrete constructor. LangGraph Player selects the required dcode route;
+    # Coach/synthesis retain the shared Deep Agents graph and SDK remains a
+    # separate substrate.
     harness_role = harness_kwargs.pop("harness_role", None)
 
     # ------------------------------------------------------------------
@@ -456,6 +659,7 @@ def select_harness(
                 LangGraphHarness,
                 build_autobuild_backend,
                 build_autobuild_permissions,
+                build_player_config,
             )
         except ImportError as e:
             raise AgentInvocationError(
@@ -478,52 +682,38 @@ def select_harness(
             )
 
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
-        player_experiment = None
-        player_experiment_requested = False
+        player_config = None
+        protected_paths: tuple[str, ...] = ()
         if harness_role == "player":
-            raw_player_experiment = os.environ.get("GUARDKIT_PLAYER_EXPERIMENT")
-            player_experiment_requested = raw_player_experiment is not None
-
-            if player_experiment_requested:
-                if not _factory_accepts_kwarg(
-                    LangGraphHarness, "player_experiment"
-                ):
-                    raise AgentInvocationError(
-                        "GUARDKIT_PLAYER_EXPERIMENT was requested, but the "
-                        "installed guardkitfactory LangGraphHarness does not "
-                        "accept `player_experiment`. Install the matching "
-                        "Stage 1 guardkitfactory revision; the requested "
-                        "Player experiment cannot be dropped safely."
-                    )
-
-                try:
-                    from guardkitfactory.harness.player_experiment import (  # type: ignore
-                        parse_player_experiment,
-                    )
-                except ImportError as e:
-                    raise AgentInvocationError(
-                        "GUARDKIT_PLAYER_EXPERIMENT was requested, but the "
-                        "installed guardkitfactory does not provide "
-                        "guardkitfactory.harness.player_experiment. Install "
-                        "the matching Stage 1 guardkitfactory revision; the "
-                        "requested Player experiment cannot be dropped safely."
-                    ) from e
-
-                try:
-                    player_experiment = parse_player_experiment(
-                        raw_player_experiment, cwd=Path(cwd)
-                    )
-                except ValueError as e:
-                    raise AgentInvocationError(
-                        "Invalid GUARDKIT_PLAYER_EXPERIMENT for LangGraph "
-                        f"Player in {Path(cwd)}: {e}"
-                    ) from e
+            if not _factory_accepts_kwarg(LangGraphHarness, "player_config"):
+                raise AgentInvocationError(
+                    "The installed guardkitfactory does not provide the required "
+                    "dcode Player configuration seam. Install the matching "
+                    "Factory revision; native Player fallback is not permitted."
+                )
+            task_worktree = Path(cwd)
+            project_inputs = _load_player_project_inputs(task_worktree)
+            protected_paths = project_inputs["protected_paths"]
+            try:
+                dcode_home = _configure_dcode_launch(task_worktree)
+                player_config = build_player_config(
+                    cwd=task_worktree,
+                    dcode_home=dcode_home,
+                    **project_inputs,
+                )
+            except ValueError as exc:
+                raise AgentInvocationError(
+                    f"Invalid project Player configuration for {Path(cwd)}: {exc}"
+                ) from exc
 
         # TASK-FIX-BACKENDKWARG Shape 2: forward ``max_tool_result_chars``
         # only when the installed guardkitfactory's signature accepts it;
         # drop-with-WARNING on a stale factory instead of crashing (run-24).
         backend = _build_backend_with_optional_cap(
-            build_autobuild_backend, Path(cwd), max_tool_result_chars
+            build_autobuild_backend,
+            Path(cwd),
+            max_tool_result_chars,
+            protected_paths,
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING
@@ -551,15 +741,14 @@ def select_harness(
                     "the (substrate-blind) event-arrival clock. Upgrade "
                     "guardkitfactory to restore TASK-FIX-SPECINVOKE01."
                 )
-        if player_experiment_requested:
-            langgraph_kwargs["player_experiment"] = player_experiment
+        if player_config is not None:
+            langgraph_kwargs["player_config"] = player_config
         try:
             return LangGraphHarness(**langgraph_kwargs)
         except (TypeError, ValueError) as e:
-            if player_experiment_requested:
+            if harness_role == "player":
                 raise AgentInvocationError(
-                    "Could not construct the explicitly requested LangGraph "
-                    f"Player experiment: {e}"
+                    f"Could not construct the required dcode Player: {e}"
                 ) from e
             raise
 
@@ -570,8 +759,8 @@ def select_harness(
 
 
 __all__ = [
-    "select_harness",
-    "resolve_harness_name",
     "DEFAULT_HARNESS",
     "SUPPORTED_HARNESSES",
+    "resolve_harness_name",
+    "select_harness",
 ]

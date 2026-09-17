@@ -64,8 +64,6 @@ Related design rules
 from __future__ import annotations
 
 import inspect
-import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -213,6 +211,9 @@ class TestRealConstructionThroughSelector:
     ) -> None:
         """The full orchestrator kwarg bag flows through to a real LangGraphHarness."""
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
 
         # A bare-string model is the production shape (CLI ``--model`` alias).
         # The selector auto-prefixes it; LangGraphHarness stores it without
@@ -230,38 +231,37 @@ class TestRealConstructionThroughSelector:
         assert harness.backend is not None
         assert harness.permissions is not None
 
-    def test_native_player_experiment_reaches_real_factory_with_callback(
+    def test_project_player_config_reaches_real_factory_with_callback(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """The installed factory accepts parsed native sources through the selector."""
-        from guardkitfactory.harness.player_experiment import (
-            parse_player_experiment,
-        )
+        """The real selector supplies generic project inputs to dcode config."""
+        from guardkitfactory.harness.player_config import PlayerConfig
 
-        skills_dir = tmp_path / "skills"
-        skill_dir = skills_dir / "planning"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            "# Planning\n\nUse the approved implementation plan.\n",
-            encoding="utf-8",
+        profile = tmp_path.parent / f"{tmp_path.name}-dcode-home"
+        profile.mkdir()
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        (tmp_path / "skills" / "planning").mkdir(parents=True)
+        (tmp_path / "skills" / "planning" / "SKILL.md").write_text(
+            "---\nname: planning\ndescription: Plan work.\n---\n"
         )
-        (tmp_path / "AGENTS.md").write_text(
-            "# Repository instructions\n",
-            encoding="utf-8",
-        )
-        raw = json.dumps(
-            {
-                "engine": "native",
-                "skills": ["skills"],
-                "memory": ["AGENTS.md"],
-            }
+        (tmp_path / "verification").mkdir()
+        protected = tmp_path / "verification" / "expected.json"
+        protected.write_text("{}\n")
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "CLAUDE.md").write_text("# Repository instructions\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    protected_paths: [verification/]\n"
+            "toolchain:\n"
+            "  test: './qa/run-suite.sh --exact'\n"
         )
 
         def callback() -> None:
             return None
-
-        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
 
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
@@ -271,29 +271,33 @@ class TestRealConstructionThroughSelector:
         )
 
         assert isinstance(harness, LangGraphHarness)
-        assert harness.player_experiment == parse_player_experiment(
-            raw, cwd=tmp_path
+        assert isinstance(harness.player_config, PlayerConfig)
+        assert harness.player_config.skills == ((tmp_path / "skills").resolve(),)
+        assert harness.player_config.memory == ()
+        assert harness.player_config.repository_instructions == (
+            (tmp_path / ".claude" / "CLAUDE.md").resolve(),
+        )
+        assert harness.player_config.declared_commands == (
+            ("test", "./qa/run-suite.sh --exact"),
         )
         assert harness.on_model_activity is callback
+        refusal = harness.backend.write(str(protected), "weakened\n")
+        assert refusal.error is not None
+        assert protected.read_text() == "{}\n"
 
-    @pytest.mark.parametrize(
-        "raw, expected",
-        [
-            ("not-json", "JSON"),
-            ('{"engine":"native","skills":["missing"]}', "missing"),
-        ],
-    )
-    def test_invalid_player_experiment_is_rejected_through_real_parser(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-        raw: str,
-        expected: str,
+    def test_missing_selected_skill_is_rejected_through_real_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
+        profile = tmp_path.parent / f"{tmp_path.name}-dcode-home"
+        profile.mkdir()
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    skills: [missing/]\n"
+        )
 
-        with pytest.raises(AgentInvocationError) as exc_info:
+        with pytest.raises(AgentInvocationError, match="missing"):
             select_harness(
                 env_var=_TEST_ENV_VAR,
                 cwd=tmp_path,
@@ -301,41 +305,25 @@ class TestRealConstructionThroughSelector:
                 model="qwen36-workhorse",
             )
 
-        assert expected.lower() in str(exc_info.value).lower()
-
-    def test_stage1_dcode_rejects_without_importing_dcode(
+    def test_missing_dcode_dependency_refuses_without_native_fallback(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        dcode_home = tmp_path.parent / f"{tmp_path.name}-dcode-home"
-        dcode_home.mkdir()
-        raw = json.dumps(
-            {
-                "engine": "dcode",
-                "skills": [],
-                "memory": [],
-                "dcode_home": str(dcode_home),
-            }
-        )
+        import asyncio
+        from guardkitfactory.harness import dcode_harness
+
+        profile = tmp_path.parent / f"{tmp_path.name}-dcode-home"
+        profile.mkdir()
         monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
-        monkeypatch.setenv("DEEPAGENTS_HOME", str(dcode_home))
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", raw)
-        monkeypatch.setitem(sys.modules, "deepagents_code", None)
-
-        activity_count = 0
-
-        def on_model_activity() -> None:
-            nonlocal activity_count
-            activity_count += 1
-
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        monkeypatch.setenv("DEEPAGENTS_CODE_OFFLINE", "1")
         harness = select_harness(
             env_var=_TEST_ENV_VAR,
             cwd=tmp_path,
             harness_role="player",
             model="qwen36-workhorse",
-            on_model_activity=on_model_activity,
         )
 
-        async def _invoke() -> None:
+        async def invoke() -> None:
             async for _ in harness.invoke(
                 prompt="Refuse the unavailable dcode Player.",
                 role="player",
@@ -345,16 +333,15 @@ class TestRealConstructionThroughSelector:
             ):
                 pass
 
-        with pytest.raises(guardkitfactory_harness.LangGraphHarnessError) as exc_info:
-            import asyncio
-
-            asyncio.run(_invoke())
-
-        message = str(exc_info.value)
-        assert "dcode" in message.lower()
-        assert "not" in message.lower() or "unsupported" in message.lower()
-        assert activity_count == 0
-        assert sys.modules["deepagents_code"] is None
+        with (
+            monkeypatch.context() as scoped,
+            pytest.raises(
+                guardkitfactory_harness.LangGraphHarnessError,
+                match="required dependency.*no fallback",
+            ),
+        ):
+            scoped.setattr(dcode_harness.importlib.util, "find_spec", lambda _: None)
+            asyncio.run(invoke())
 
     def test_max_tool_result_chars_reaches_real_backend_factory(
         self, tmp_path: Path
@@ -550,7 +537,7 @@ class TestSignaturePin:
             "backend",
             "permissions",
             "recursion_limit",
-            "player_experiment",
+            "player_config",
         ):
             assert required in params, (
                 f"LangGraphHarness.__init__ dropped/renamed {required!r}; the "

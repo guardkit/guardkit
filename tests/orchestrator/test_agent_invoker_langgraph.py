@@ -72,7 +72,6 @@ from tests.conftest import M0_FLEET_SEAT
 
 
 _TEST_ENV_VAR = "GUARDKIT_HARNESS_TEST_ONLY_LG"
-_EXPERIMENT_ENV_VAR = "GUARDKIT_PLAYER_EXPERIMENT"
 _INSTRUCTION_MARKER = "ACTUAL_CWD_INSTRUCTION_MARKER"
 _SKILL_MARKER = "ACTUAL_CWD_SKILL_MARKER"
 
@@ -192,8 +191,8 @@ def _install_factory_owned_mock_transport(
     return sync_clients, async_clients
 
 
-def _write_native_experiment_sources(worktree: Path) -> Path:
-    """Write strict native experiment inputs beneath the actual invocation cwd."""
+def _write_dcode_player_sources(worktree: Path) -> Path:
+    """Write strict dcode inputs beneath the actual invocation cwd."""
     skill_file = worktree / "skills" / "planning" / "SKILL.md"
     skill_file.parent.mkdir(parents=True, exist_ok=True)
     skill_file.write_text(
@@ -212,26 +211,30 @@ def _write_native_experiment_sources(worktree: Path) -> Path:
     return skill_file
 
 
-def _enable_native_experiment(
+def _enable_dcode_player(
     monkeypatch: pytest.MonkeyPatch, worktree: Path
 ) -> Path:
-    """Enable native skills/memory using paths relative to the real worktree."""
-    skill_file = _write_native_experiment_sources(worktree)
-    monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
-    monkeypatch.setenv(
-        _EXPERIMENT_ENV_VAR,
-        json.dumps(
-            {
-                "engine": "native",
-                "skills": ["skills"],
-                "memory": ["AGENTS.md"],
-            }
-        ),
+    """Select project skills for the required dcode Player."""
+    skill_file = _write_dcode_player_sources(worktree)
+    (worktree / ".agents").mkdir(exist_ok=True)
+    skills_link = worktree / ".agents" / "skills"
+    if not skills_link.exists():
+        skills_link.symlink_to("../skills", target_is_directory=True)
+    (worktree / ".guardkit").mkdir(exist_ok=True)
+    (worktree / ".guardkit" / "config.yaml").write_text(
+        "autobuild:\n  player:\n    skills: [skills/]\n",
+        encoding="utf-8",
     )
+    monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+    monkeypatch.delenv("DEEPAGENTS_HOME", raising=False)
+    monkeypatch.delenv("DEEPAGENTS_CODE_OFFLINE", raising=False)
+    monkeypatch.delenv("LANGCHAIN_TRACING", raising=False)
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
     return skill_file
 
 
-class _NativeExperimentChat:
+class _DcodePlayerChat:
     """Two-turn ChatCompletions script: read the skill, then finish."""
 
     def __init__(
@@ -307,7 +310,7 @@ class _NativeExperimentChat:
         )
 
 
-def _assert_native_http_evidence(script: _NativeExperimentChat) -> None:
+def _assert_dcode_http_evidence(script: _DcodePlayerChat) -> None:
     """Pin ChatCompletions routing and the nonempty selected-skill tool result."""
     assert len(script.requests) == 2
     assert all(path == "/v1/chat/completions" for path, _ in script.requests)
@@ -1065,8 +1068,8 @@ class TestPlayerExperimentCallRoutes:
         assert selection["allowed_tools"] == []
 
 
-class TestNativePlayerExperimentRealRoutes:
-    """Enabled native configuration runs through both production consumers."""
+class TestDcodePlayerRealRoutes:
+    """The required dcode Player runs through both production consumers."""
 
     @staticmethod
     def _record_activity(activity: list[str]) -> Callable[[], None]:
@@ -1080,26 +1083,26 @@ class TestNativePlayerExperimentRealRoutes:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
-        skill_file = _enable_native_experiment(
+        skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
         )
         activity: list[str] = []
         monkeypatch.setattr(
             invoker, "_bump_activity", self._record_activity(activity)
         )
-        script = _NativeExperimentChat(
-            skill_file, final_text="direct native player completed"
+        script = _DcodePlayerChat(
+            skill_file, final_text="direct dcode player completed"
         )
         clients = _install_factory_owned_mock_transport(monkeypatch, script)
 
         await invoker._invoke_with_role(
-            prompt="TASK-NATIVE-DIRECT read the selected workflow",
+            prompt="TASK-DCODE-DIRECT read the selected workflow",
             agent_type="player",
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
         )
 
-        _assert_native_http_evidence(script)
+        _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)
 
@@ -1108,14 +1111,14 @@ class TestNativePlayerExperimentRealRoutes:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
-        skill_file = _enable_native_experiment(
+        skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
         )
         activity: list[str] = []
         monkeypatch.setattr(
             invoker, "_bump_activity", self._record_activity(activity)
         )
-        script = _NativeExperimentChat(
+        script = _DcodePlayerChat(
             skill_file,
             final_text=(
                 "10 tests passed, 0 tests failed\n"
@@ -1126,12 +1129,12 @@ class TestNativePlayerExperimentRealRoutes:
         clients = _install_factory_owned_mock_transport(monkeypatch, script)
 
         result = await invoker._invoke_task_work_implement(
-            task_id="TASK-NATIVE-TASK-WORK",
+            task_id="TASK-DCODE-TASK-WORK",
             mode="standard",
         )
 
         assert result.success is True
-        _assert_native_http_evidence(script)
+        _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)
 
@@ -1140,28 +1143,28 @@ class TestNativePlayerExperimentRealRoutes:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
-        skill_file = _enable_native_experiment(
+        skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
         )
         activity: list[str] = []
         monkeypatch.setattr(
             invoker, "_bump_activity", self._record_activity(activity)
         )
-        script = _NativeExperimentChat(
+        script = _DcodePlayerChat(
             skill_file, final_text="", finish_reason="length"
         )
         clients = _install_factory_owned_mock_transport(monkeypatch, script)
 
         with pytest.raises(AgentInvocationError) as exc_info:
             await invoker._invoke_with_role(
-                prompt="TASK-NATIVE-DIRECT-TRUNCATED read then fail",
+                prompt="TASK-DCODE-DIRECT-TRUNCATED read then fail",
                 agent_type="player",
                 allowed_tools=["Read"],
                 permission_mode="acceptEdits",
             )
 
         assert "empty terminal assistant" in str(exc_info.value).lower()
-        _assert_native_http_evidence(script)
+        _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)
 
@@ -1170,26 +1173,26 @@ class TestNativePlayerExperimentRealRoutes:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
-        skill_file = _enable_native_experiment(
+        skill_file = _enable_dcode_player(
             monkeypatch, invoker.worktree_path
         )
         activity: list[str] = []
         monkeypatch.setattr(
             invoker, "_bump_activity", self._record_activity(activity)
         )
-        script = _NativeExperimentChat(
+        script = _DcodePlayerChat(
             skill_file, final_text="", finish_reason="length"
         )
         clients = _install_factory_owned_mock_transport(monkeypatch, script)
 
         result = await invoker._invoke_task_work_implement(
-            task_id="TASK-NATIVE-TASK-WORK-TRUNCATED",
+            task_id="TASK-DCODE-TASK-WORK-TRUNCATED",
             mode="standard",
         )
 
         assert result.success is False
         assert result.error is not None
         assert "empty terminal assistant" in result.error.lower()
-        _assert_native_http_evidence(script)
+        _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)

@@ -1,8 +1,7 @@
-"""Returned failed native/dcode graphs reach disk through the real consumer."""
+"""Returned failed dcode graphs reach disk through the real consumer."""
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import socket
@@ -18,10 +17,10 @@ from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent
 from tests.orchestrator.test_agent_invoker_langgraph import (
-    _NativeExperimentChat,
-    _assert_native_http_evidence,
+    _DcodePlayerChat,
+    _assert_dcode_http_evidence,
     _assert_owned_clients_closed,
-    _enable_native_experiment,
+    _enable_dcode_player,
     _install_factory_owned_mock_transport,
     _make_invoker,
 )
@@ -29,12 +28,8 @@ from tests.orchestrator.test_agent_invoker_langgraph import (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["role", "direct"])
-@pytest.mark.parametrize("engine", ["native", "dcode"])
 @pytest.mark.parametrize("text,reason", [("", "stop"), ("", "length"), ("partial", "length")])
-async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, engine, text, reason, route, credential_case=None):
-    if engine == "dcode" and (sys.version_info < (3, 12) or importlib.util.find_spec("deepagents_code") is None):
-        pytest.skip("optional dcode extra requires Python 3.12+")
-
+async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, text, reason, route, credential_case=None):
     def deny(*args, **kwargs):
         raise AssertionError("real network forbidden")
 
@@ -43,20 +38,11 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     monkeypatch.setenv("DEEPAGENTS_CODE_OFFLINE", "1")
     emitter = NullEmitter(capture=True)
     invoker = _make_invoker(tmp_path, emitter=emitter)
-    skill = _enable_native_experiment(monkeypatch, invoker.worktree_path)
+    skill = _enable_dcode_player(monkeypatch, invoker.worktree_path)
     if credential_case is not None:
         with skill.open("a") as out:
             out.write("\n" + credential_case[0] + "\nSAFE_AFTER_CREDENTIAL\n")
-    if engine == "dcode":
-        (invoker.worktree_path / ".agents").mkdir()
-        (invoker.worktree_path / ".agents/skills").symlink_to("../skills", target_is_directory=True)
-        profile = os.environ.get("DEEPAGENTS_HOME")
-        assert profile and Path(profile).is_absolute()
-        monkeypatch.setenv("GUARDKIT_PLAYER_EXPERIMENT", json.dumps({
-            "engine": engine, "skills": ["skills"], "memory": ["AGENTS.md"],
-            "dcode_home": profile,
-        }))
-    script = _NativeExperimentChat(skill, final_text=text, finish_reason=reason)
+    script = _DcodePlayerChat(skill, final_text=text, finish_reason=reason)
     clients = _install_factory_owned_mock_transport(monkeypatch, script)
     errors = []
     invoke = invoker._invoke_with_role
@@ -88,7 +74,7 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     assert type(original).__name__ == "LangGraphHarnessError"
     assert ("empty" if not text else "truncated") in str(original)
     raw = original.raw_result
-    _assert_native_http_evidence(script)
+    _assert_dcode_http_evidence(script)
     _assert_owned_clients_closed(clients)
     calls = [event for event in emitter.events if isinstance(event, LLMCallEvent)]
     assert len(calls) == 1 and calls[0].status == "error"
@@ -130,7 +116,7 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, eng
     assert not any(record["type"] in {"ResultMessageEvent", "AssistantMessageEvent"} for record in records)
     evidence = os.environ.get("FAILED_GRAPH_EVIDENCE")
     if evidence:
-        target = Path(evidence) / f"{engine}-{route}-{reason}-{'partial' if text else 'empty'}.jsonl"
+        target = Path(evidence) / f"dcode-{route}-{reason}-{'partial' if text else 'empty'}.jsonl"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(paths[0].read_bytes())
 
@@ -156,7 +142,7 @@ async def test_internal_graph_failure_does_not_invent_activity(monkeypatch, tmp_
     if break_writer:
         monkeypatch.setattr(sdk_debug, "preserve_failure", Mock(side_effect=RuntimeError("writer failed")))
     with pytest.raises(AgentInvocationError, match="original graph failure") as caught:
-        await invoker._invoke_with_role(prompt="TASK-FAILED-GRAPH crash", agent_type="player",
+        await invoker._invoke_with_role(prompt="TASK-FAILED-GRAPH crash", agent_type="coach",
                                         allowed_tools=[], permission_mode="acceptEdits")
     assert caught.value.__cause__.__cause__.args == ("original graph failure",)
     if not break_writer:
@@ -170,14 +156,13 @@ async def test_internal_graph_failure_does_not_invent_activity(monkeypatch, tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("engine", ["native", "dcode"])
 @pytest.mark.parametrize("embedded", [
     '{"Authorization": "opaque-header-secret", "password": "opaque-password-secret", "safe": "KEEP_JSON"}',
     'Example: {"Authorization": "opaque-header-secret", "password": "opaque-password-secret"} KEEP_SUFFIX',
     '{"Authorization": "opaque-header-secret"}\n{"password": "opaque-password-secret", "safe": "KEEP_JSONL"}',
 ])
-async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_path, engine, embedded):
-    original = _enable_native_experiment
+async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_path, embedded):
+    original = _enable_dcode_player
 
     def enable(monkeypatch, worktree):
         skill = original(monkeypatch, worktree)
@@ -185,8 +170,8 @@ async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_p
             out.write("\n" + embedded + "\nKEEP_AFTER_CREDENTIALS\n")
         return skill
 
-    monkeypatch.setattr(sys.modules[__name__], "_enable_native_experiment", enable)
-    await test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, engine, "", "length", "role")
+    monkeypatch.setattr(sys.modules[__name__], "_enable_dcode_player", enable)
+    await test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, "", "length", "role")
     records = [json.loads(line) for line in next(tmp_path.rglob("messages.jsonl")).read_text().splitlines()]
     content = next(record["content"] for record in records if record["type"] == "ToolMessage")
     assert "KEEP_AFTER_CREDENTIALS" in content
@@ -197,12 +182,11 @@ async def test_failed_skill_read_redacts_embedded_credentials(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("engine", ["native", "dcode"])
 @pytest.mark.parametrize("credential_case", [
     ("password: 'can''t-opaque-actual-value'", "password: "),
     ('password = """opaque-actual-value"""', "password = "),
 ])
-async def test_failed_skill_read_discards_uncertain_quoted_value(monkeypatch, tmp_path, engine, credential_case):
+async def test_failed_skill_read_discards_uncertain_quoted_value(monkeypatch, tmp_path, credential_case):
     await test_failed_graph_retains_actual_skill_read(
-        monkeypatch, tmp_path, engine, "", "length", "role", credential_case,
+        monkeypatch, tmp_path, "", "length", "role", credential_case,
     )
