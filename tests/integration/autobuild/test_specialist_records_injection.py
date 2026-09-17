@@ -248,6 +248,110 @@ class TestPhase5ReviewEvidenceBridge:
         assert on_disk["agent_invocations_validation"]["status"] == "violation"
         assert "5" in on_disk["agent_invocations_validation"]["missing_phases"]
 
+    @pytest.mark.parametrize("phase_4_status", ["failed", "skipped"])
+    def test_authoritative_nonpassing_phase4_suppresses_phase5_evidence(
+        self,
+        invoker: AgentInvoker,
+        worktree: Path,
+        phase_4_status: str,
+    ) -> None:
+        stale_report = "CRITICAL OLD_TURN_REPORT src/service.py:41"
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+            ],
+        )
+        _seed_specialist_results(
+            worktree,
+            phase_4={
+                "status": phase_4_status,
+                "duration_seconds": 0.0,
+                "error": "current Phase 4 did not pass",
+            },
+            phase_5={
+                **_passed_phase_block(5.0),
+                "review_evidence": {
+                    "source": "orchestrator_code_reviewer",
+                    "kind": "unparsed_model_report",
+                    "text": stale_report,
+                    "verified": False,
+                    "redacted": True,
+                    "truncated": False,
+                },
+            },
+        )
+
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+        phase_5_record = next(
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        )
+        assert phase_5_record["status"] == "completed"
+        assert phase_5_record["duration_seconds"] == 5.0
+        assert "review_evidence" not in phase_5_record
+        assert stale_report not in json.dumps(on_disk)
+
+    @pytest.mark.parametrize(
+        "phase_4_value",
+        [
+            pytest.param(None, id="absent"),
+            pytest.param([], id="malformed"),
+            pytest.param({}, id="missing-status"),
+            pytest.param({"status": "unknown"}, id="unrecognized-status"),
+        ],
+    )
+    def test_unknown_phase4_state_keeps_eligible_phase5_evidence(
+        self,
+        invoker: AgentInvoker,
+        worktree: Path,
+        phase_4_value: object,
+    ) -> None:
+        report = "WARNING src/service.py:41: compatibility evidence"
+        _seed_task_work_results(
+            worktree,
+            agent_invocations=[
+                {"phase": "3", "agent": "player", "status": "completed"},
+            ],
+        )
+        payload = {
+            "phase_5": {
+                **_passed_phase_block(5.0),
+                "review_evidence": {
+                    "source": "orchestrator_code_reviewer",
+                    "kind": "unparsed_model_report",
+                    "text": report,
+                    "verified": False,
+                    "redacted": True,
+                    "truncated": False,
+                },
+            },
+        }
+        if phase_4_value is not None:
+            payload["phase_4"] = phase_4_value
+        specialist_path = (
+            TaskArtifactPaths.ensure_autobuild_dir(TASK_ID, worktree)
+            / "specialist_results.json"
+        )
+        specialist_path.write_text(json.dumps(payload, indent=2))
+
+        results_path = invoker._inject_specialist_records_into_task_work_results(
+            TASK_ID
+        )
+        assert results_path is not None
+        on_disk = json.loads(results_path.read_text())
+        phase_5_record = next(
+            record
+            for record in on_disk["agent_invocations"]
+            if str(record.get("phase")) == "5"
+        )
+        assert phase_5_record["review_evidence"]["text"] == report
+
 
 class TestStalePlayerEntriesAreDropped:
     """AC (b): stale Player-emitted Phase 4/5 entries are deduped during merge."""

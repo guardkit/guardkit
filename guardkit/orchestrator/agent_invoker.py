@@ -11568,6 +11568,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 continue
             filtered.append(inv)
 
+        phase_4_block = (specialist_data or {}).get("phase_4")
+        phase_4_blocks_review = (
+            isinstance(phase_4_block, dict)
+            and phase_4_block.get("status") in ("failed", "skipped")
+        )
+
         # Build the orchestrator-sourced records.
         orchestrator_records: List[Dict[str, Any]] = []
         for phase_id, phase_key, agent_name in self._ORCHESTRATOR_SPECIALIST_PHASES:
@@ -11612,7 +11618,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 record["duration_seconds"] = block["duration_seconds"]
             if block.get("error"):
                 record["error"] = block["error"]
-            if phase_id == "5" and invocation_status == "completed":
+            if (
+                phase_id == "5"
+                and invocation_status == "completed"
+                and not phase_4_blocks_review
+            ):
                 review_evidence = block.get("review_evidence")
                 if isinstance(review_evidence, dict):
                     text = review_evidence.get("text")
@@ -11641,6 +11651,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     ):
                         # Copy only the bounded contract fields. Unknown input
                         # fields never cross the authoritative Phase-5 bridge.
+                        # A failed/skipped authoritative Phase 4 may coexist
+                        # with an older Phase 5 block after a budget skip, so
+                        # that report is ineligible for this invocation.
                         record["review_evidence"] = {
                             "source": "orchestrator_code_reviewer",
                             "kind": "unparsed_model_report",
@@ -11685,7 +11698,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # overridden (specialist failed AND narrative claims a pass); a
         # "skipped" phase (e.g. direct-mode Phase-4-not-run) or a genuine pass
         # is left untouched.
-        phase_4_block = (specialist_data or {}).get("phase_4")
         qg = task_work_data.get("quality_gates")
         if (
             isinstance(phase_4_block, dict)
