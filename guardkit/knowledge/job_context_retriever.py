@@ -1116,8 +1116,9 @@ class JobContextRetriever:
                 trimmed.append(item)
                 tokens_used += item_tokens
             else:
-                # Budget exhausted
-                break
+                # This item does not fit. Keep looking: a smaller lower-ranked
+                # result may still fit without exceeding the strict category total.
+                continue
 
         return trimmed, tokens_used
 
