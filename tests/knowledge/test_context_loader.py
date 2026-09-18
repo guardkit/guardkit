@@ -636,8 +636,8 @@ class TestContextLoaderRealSeam:
         assert results and results[0]["fact"] == "ADR: SDK subprocess delegation"
 
     @pytest.mark.asyncio
-    async def test_load_system_context_retire_groups_search_whole_store(self, monkeypatch):
-        """_load_system_context reads only RETIRE groups -> empty filters -> whole-store."""
+    async def test_load_system_context_retired_scope_returns_empty(self, monkeypatch):
+        """Retired system groups cannot admit unrelated whole-store results."""
         from guardkit.knowledge.context_loader import _load_system_context
 
         captured: dict = {}
@@ -649,14 +649,10 @@ class TestContextLoaderRealSeam:
         )
         client = _enabled_fleet_client()
 
-        await _load_system_context(client)
+        results = await _load_system_context(client)
 
-        req = captured["request"]
-        # product_knowledge + command_workflows are RETIRE -> no typed filter
-        # (whole-store semantic search over the harvest corpus).
-        assert req["payload_types"] == []
-        assert req["domain_tags"] == []
-        assert req["query"] == "GuardKit product workflow quality gate"
+        assert results == []
+        assert captured == {}
 
     @pytest.mark.asyncio
     async def test_load_failure_patterns_resolves_migrate_warning(self, monkeypatch):

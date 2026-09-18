@@ -2602,8 +2602,8 @@ class TestJobContextRetrieverRealSeam:
         assert results  # real search() adaptation ran end-to-end
 
     @pytest.mark.asyncio
-    async def test_query_category_retire_group_whole_store(self, monkeypatch):
-        """_query_category(['patterns']) -> RETIRE -> empty filters (whole-store)."""
+    async def test_query_category_retired_group_returns_empty(self, monkeypatch):
+        """A retired category cannot admit unrelated whole-store results."""
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
 
         captured: dict = {}
@@ -2612,7 +2612,7 @@ class TestJobContextRetrieverRealSeam:
         )
         retriever = JobContextRetriever(_enabled_fleet_client())
 
-        await retriever._query_category(
+        results, tokens = await retriever._query_category(
             query="patterns for X",
             group_ids=["patterns"],
             budget_allocation=2000,
@@ -2620,9 +2620,9 @@ class TestJobContextRetrieverRealSeam:
             category="relevant_patterns",
         )
 
-        req = captured["request"]
-        assert req["payload_types"] == []
-        assert req["domain_tags"] == []
+        assert results == []
+        assert tokens == 0
+        assert captured == {}
 
     @pytest.mark.asyncio
     async def test_query_turn_states_resolves_document(self, monkeypatch):

@@ -456,6 +456,27 @@ class FleetMemoryClient:
             logger.debug("fleet_memory.retrieval unavailable, returning empty")
             return []
 
+        from guardkit.knowledge.fleet_memory_mapping import resolve
+
+        # An explicitly scoped read must never degrade into a whole-corpus
+        # search. Retired and unknown Graphiti groups have no Fleet identity;
+        # treating their empty mapping as an unscoped request let unrelated
+        # build outcomes populate policy-specific context sections. A genuinely
+        # unscoped call (None or []) still intentionally searches the corpus.
+        migrated_mappings = []
+        if group_ids:
+            migrated_mappings = [
+                mapping
+                for gid in group_ids
+                if (mapping := resolve(gid)) is not None
+                and mapping.disposition == "migrate"
+            ]
+            if not migrated_mappings:
+                logger.debug(
+                    "Fleet-memory scoped search has no migrated groups: returning empty"
+                )
+                return []
+
         # Lazy-open the store on first read (GROI readers do not call initialize()).
         # Not just "is there a store" but "is it THIS loop's store" — a
         # stale one from another loop never reaches initialize() otherwise,
@@ -479,24 +500,21 @@ class FleetMemoryClient:
 
         try:
             from fleet_memory.retrieval import SearchRequest, search as fm_search
-            from guardkit.knowledge.fleet_memory_mapping import resolve
 
             # Resolve group_ids -> payload_types / domain_tags (migrate only).
-            # Unmapped / retired group_ids leave the filters empty, which searches
-            # ALL payload types (e.g. the harvested `chunk` corpus).
+            # Explicit retired/unknown-only scopes returned above. Mixed scopes use
+            # only their migrated mappings; only None/[] remains an unscoped search.
             payload_types: set[str] = set()
             domain_tags: set[str] = set()
-            for gid in group_ids or []:
-                mapping = resolve(gid)
-                if mapping and mapping.disposition == "migrate":
-                    payload_types.add(mapping.payload_type)
-                    # Migrated Graphiti prose (FEAT-MEM-09 graph_export) lands as typed
-                    # `document` records carrying the group's domain_tags. Include
-                    # "document" so a group-scoped read matches BOTH the live typed
-                    # records (build_outcome/adr/warning) AND the migrated documents;
-                    # the domain_tags filter below does the precise per-group scoping.
-                    payload_types.add("document")
-                    domain_tags.update(mapping.domain_tags)
+            for mapping in migrated_mappings:
+                payload_types.add(mapping.payload_type)
+                # Migrated Graphiti prose (FEAT-MEM-09 graph_export) lands as typed
+                # `document` records carrying the group's domain_tags. Include
+                # "document" so a group-scoped read matches BOTH the live typed
+                # records (build_outcome/adr/warning) AND the migrated documents;
+                # the domain_tags filter below does the precise per-group scoping.
+                payload_types.add("document")
+                domain_tags.update(mapping.domain_tags)
 
             token_budget = max(2000, num_results * 200)
 

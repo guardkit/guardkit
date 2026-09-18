@@ -33,12 +33,20 @@ def _client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> FleetMemoryClient:
     return client
 
 
-def _install_results(monkeypatch: pytest.MonkeyPatch, results: list[object]) -> None:
+def _install_results(
+    monkeypatch: pytest.MonkeyPatch,
+    results: list[object],
+    captured: dict[str, object] | None = None,
+) -> None:
     class SearchRequest:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            if captured is not None:
+                captured["request"] = kwargs
 
     async def search(request, store):
+        if captured is not None:
+            captured["store"] = store
         return results
 
     retrieval = types.ModuleType("fleet_memory.retrieval")
@@ -58,6 +66,62 @@ def _item(key: str, score: object, content: object) -> object:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("group_id", ["patterns", "unknown_group"])
+async def test_explicit_retired_or_unknown_scope_never_searches_whole_store(
+    monkeypatch, tmp_path, group_id
+):
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(
+        monkeypatch,
+        [_item("build_outcome:guardkit:unrelated", 0.99, "unrelated outcome")],
+        captured,
+    )
+
+    assert await client.search("policy guidance", group_ids=[group_id]) == []
+    assert captured == {}
+
+
+@pytest.mark.asyncio
+async def test_genuinely_unscoped_search_still_searches_corpus(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(
+        monkeypatch,
+        [_item("document:guardkit:useful", 0.81, "useful corpus document")],
+        captured,
+    )
+
+    hits = await client.search("broad corpus query", group_ids=None)
+
+    assert [hit["uuid"] for hit in hits] == ["document:guardkit:useful"]
+    request = captured["request"]
+    assert request["payload_types"] == []
+    assert request["domain_tags"] == []
+
+
+@pytest.mark.asyncio
+async def test_mixed_scope_uses_only_migrated_mapping(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(
+        monkeypatch,
+        [_item("build_outcome:guardkit:task", 0.83, "task outcome")],
+        captured,
+    )
+
+    hits = await client.search(
+        "task result",
+        group_ids=["patterns", "task_outcomes", "unknown_group"],
+    )
+
+    assert [hit["uuid"] for hit in hits] == ["build_outcome:guardkit:task"]
+    request = captured["request"]
+    assert request["payload_types"] == ["build_outcome", "document"]
+    assert request["domain_tags"] == ["task"]
+
+
+@pytest.mark.asyncio
 async def test_search_returns_actual_result_relevance_and_identity(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     _install_results(
@@ -68,7 +132,7 @@ async def test_search_returns_actual_result_relevance_and_identity(monkeypatch, 
         ],
     )
 
-    hits = await client.search("full task body", group_ids=["patterns"])
+    hits = await client.search("full task body", group_ids=["task_outcomes"])
 
     assert hits == [
         {
@@ -122,7 +186,7 @@ async def test_retriever_filters_on_source_relevance_not_budget_fill(
 
     results, tokens = await retriever._query_category(
         query="full task body",
-        group_ids=["patterns"],
+        group_ids=["task_outcomes"],
         budget_allocation=200,
         threshold=0.5,
         category="relevant_patterns",
