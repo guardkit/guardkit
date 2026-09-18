@@ -22,16 +22,195 @@ See: TASK-MEM08-002
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
 import os
+import re
 import threading
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Sequence
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*(?:\r?\n)?$"
+)
+_FENCE_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\r\n]*)")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
+_MAX_DOCUMENT_SOURCE_TAGS = 8
+_MAX_DECLARED_DOCUMENT_BYTES = 256 * 1024
+_MAX_SECTIONS_PER_DOCUMENT = 32
+_MAX_SECTION_CANDIDATES = 64
+
+
+def _query_terms(query: str) -> set[str]:
+    return {
+        token.lower()
+        for token in _TOKEN_RE.findall(query)
+        if len(token) >= 3
+    }
+
+
+def _split_markdown_heading_sections(body: str) -> list[dict[str, Any]]:
+    """Return complete ATX-heading sections without splitting fenced code."""
+    if len(body.encode("utf-8")) > _MAX_DECLARED_DOCUMENT_BYTES:
+        return []
+    lines = body.splitlines(keepends=True)
+    headings: list[tuple[int, int, str]] = []
+    char_offset = 0
+    fence_char: str | None = None
+    fence_len = 0
+    for line in lines:
+        fence = _FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(1)
+            suffix = fence.group(2)
+            if fence_char is None:
+                if marker[0] != "`" or "`" not in suffix:
+                    fence_char, fence_len = marker[0], len(marker)
+                    char_offset += len(line)
+                    continue
+            elif (
+                marker[0] == fence_char
+                and len(marker) >= fence_len
+                and not suffix.strip()
+            ):
+                fence_char, fence_len = None, 0
+                char_offset += len(line)
+                continue
+            elif fence_char is not None:
+                char_offset += len(line)
+                continue
+        if fence_char is None:
+            heading = _HEADING_RE.match(line)
+            if heading:
+                headings.append(
+                    (char_offset, len(heading.group(1)), heading.group(2).strip())
+                )
+        char_offset += len(line)
+    if fence_char is not None or not headings or len(headings) > _MAX_SECTIONS_PER_DOCUMENT:
+        return []
+
+    body_bytes = body.encode("utf-8")
+    char_to_byte = [0]
+    for char in body:
+        char_to_byte.append(char_to_byte[-1] + len(char.encode("utf-8")))
+    sections: list[dict[str, Any]] = []
+    ancestry: list[tuple[int, str]] = []
+    for index, (start_char, level, title) in enumerate(headings):
+        end_char = headings[index + 1][0] if index + 1 < len(headings) else len(body)
+        text = body[start_char:end_char]
+        first_newline = text.find("\n")
+        remainder = text[first_newline + 1 :] if first_newline >= 0 else ""
+        if not remainder.strip():
+            continue
+        while ancestry and ancestry[-1][0] >= level:
+            ancestry.pop()
+        ancestry.append((level, title))
+        start_byte, end_byte = char_to_byte[start_char], char_to_byte[end_char]
+        assert body_bytes[start_byte:end_byte].decode("utf-8") == text
+        sections.append(
+            {
+                "text": text,
+                "start_byte": start_byte,
+                "end_byte": end_byte,
+                "heading_path": [name for _, name in ancestry],
+            }
+        )
+    return sections
+
+
+def _decode_declared_rule_document(raw: str, declared_tags: set[str]) -> dict[str, Any] | None:
+    """Decode the canonical legacy rule envelope, failing closed."""
+    if len(raw.encode("utf-8")) > _MAX_DECLARED_DOCUMENT_BYTES:
+        return None
+    try:
+        outer = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(outer, dict):
+        return None
+    source_ref, domain_tags = outer.get("source_ref"), outer.get("domain_tags")
+    if (
+        not isinstance(source_ref, str)
+        or source_ref not in declared_tags
+        or not isinstance(domain_tags, list)
+        or source_ref not in domain_tags
+    ):
+        return None
+    inner_raw = outer.get("content")
+    if not isinstance(inner_raw, str) or len(inner_raw.encode("utf-8")) > _MAX_DECLARED_DOCUMENT_BYTES:
+        return None
+    try:
+        inner, end = json.JSONDecoder().raw_decode(inner_raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    metadata_match = re.fullmatch(
+        r"\s*---\r?\n_metadata:\r?\n```json\r?\n(.*?)\r?\n```\s*",
+        inner_raw[end:],
+        flags=re.DOTALL,
+    )
+    if metadata_match is None:
+        return None
+    try:
+        metadata = json.loads(metadata_match.group(1))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(inner, dict) or not isinstance(metadata, dict):
+        return None
+    body = inner.get("content")
+    if inner.get("entity_type") != "rule" or not isinstance(body, str) or not body.strip():
+        return None
+    return {
+        "body": body,
+        "source_ref": source_ref,
+        "outer_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    }
+
+
+def _declared_rule_section_hits(
+    results: Sequence[Any], query: str, declared_tags: Sequence[str], limit: int
+) -> list[dict[str, Any]]:
+    """Adapt declared rule documents into bounded provenance-bound sections."""
+    query_terms, tags = _query_terms(query), set(declared_tags)
+    candidates: list[tuple[float, int, int, int, dict[str, Any]]] = []
+    for source_rank, item in enumerate(results[:10]):
+        if not isinstance(item.value, dict):
+            continue
+        raw, natural_key = item.value.get("content"), item.value.get("natural_key")
+        if not isinstance(raw, str) or not isinstance(natural_key, str) or not natural_key:
+            continue
+        decoded = _decode_declared_rule_document(raw, tags)
+        if decoded is None:
+            continue
+        score = _safe_relevance_score(item.score)
+        for section in _split_markdown_heading_sections(decoded["body"]):
+            overlap = len(query_terms & _query_terms(section["text"]))
+            hit = {
+                "fact": section["text"],
+                "uuid": natural_key,
+                "score": score,
+                "source_ref": decoded["source_ref"],
+                "score_kind": "document",
+                "outer_sha256": decoded["outer_sha256"],
+                "body_sha256": decoded["body_sha256"],
+                "section_sha256": hashlib.sha256(section["text"].encode("utf-8")).hexdigest(),
+                "section_start_byte": section["start_byte"],
+                "section_end_byte": section["end_byte"],
+                "heading_path": section["heading_path"],
+            }
+            candidates.append((-score, -overlap, source_rank, section["start_byte"], hit))
+            if len(candidates) >= _MAX_SECTION_CANDIDATES:
+                break
+        if len(candidates) >= _MAX_SECTION_CANDIDATES:
+            break
+    candidates.sort(key=lambda candidate: candidate[:4])
+    return [candidate[4] for candidate in candidates[: min(10, limit)]]
 
 
 def _safe_relevance_score(value: Any) -> float:
@@ -208,6 +387,8 @@ def _what_actually_failed(exc: BaseException) -> str:
 
 
 class FleetMemoryClient:
+    supports_document_source_tags = True
+
     """Fleet-memory client with graphiti-client-shaped interface.
 
     Provides search() and add_episode() methods matching the subset
@@ -422,6 +603,7 @@ class FleetMemoryClient:
         num_results: int = 10,
         scope: Optional[str] = None,
         require_substantive: bool = False,
+        document_source_tags: Optional[Sequence[str]] = None,
     ) -> list[dict[str, Any]]:
         """Search fleet-memory for relevant knowledge.
 
@@ -461,13 +643,30 @@ class FleetMemoryClient:
 
         from guardkit.knowledge.fleet_memory_mapping import resolve
 
+        declared_scope = document_source_tags is not None
+        declared_tags = tuple(document_source_tags or ())
+        invalid_declared_tags = any(
+            not isinstance(tag, str) or not _SOURCE_TAG_RE.fullmatch(tag)
+            for tag in declared_tags
+        )
+        if declared_scope and (
+            group_ids
+            or not 1 <= len(declared_tags) <= _MAX_DOCUMENT_SOURCE_TAGS
+            or invalid_declared_tags
+            or len(set(declared_tags)) != len(declared_tags)
+        ):
+            logger.warning(
+                "Fleet-memory invalid document source tag scope; returning empty"
+            )
+            return []
+
         # An explicitly scoped read must never degrade into a whole-corpus
         # search. Retired and unknown Graphiti groups have no Fleet identity;
         # treating their empty mapping as an unscoped request let unrelated
         # build outcomes populate policy-specific context sections. A genuinely
         # unscoped call (None or []) still intentionally searches the corpus.
         migrated_mappings = []
-        if group_ids:
+        if group_ids and not declared_tags:
             migrated_mappings = [
                 mapping
                 for gid in group_ids
@@ -518,6 +717,10 @@ class FleetMemoryClient:
                 # the domain_tags filter below does the precise per-group scoping.
                 payload_types.add("document")
                 domain_tags.update(mapping.domain_tags)
+
+            if declared_tags:
+                payload_types = {"document"}
+                domain_tags = set(declared_tags)
 
             token_budget = max(2000, num_results * 200)
 
@@ -574,6 +777,10 @@ class FleetMemoryClient:
             limit = max(0, num_results)
             if limit == 0:
                 return []
+            if declared_tags:
+                return _declared_rule_section_hits(
+                    results, query, declared_tags, limit
+                )
 
             hits: list[dict[str, Any]] = []
             for item in results:

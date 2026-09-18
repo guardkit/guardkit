@@ -41,10 +41,13 @@ References:
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+import yaml
 
 from .job_context_retriever import JobContextRetriever, RetrievedContext
 from .task_analyzer import TaskPhase
@@ -53,6 +56,56 @@ if TYPE_CHECKING:
     from .template_pattern_loader import TemplatePatternContext
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_MAX_RELEVANT_PATTERN_DOCUMENT_TAGS = 8
+
+
+def _load_relevant_pattern_document_tags(
+    worktree_path: Optional[Path],
+) -> tuple[str, ...]:
+    """Read bounded, project-owned Fleet document tags from config."""
+    if worktree_path is None:
+        return ()
+    config_path = worktree_path / ".guardkit" / "config.yaml"
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return ()
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("[Memory] Cannot read project context sources: %s", exc)
+        return ()
+    if not isinstance(data, dict):
+        logger.warning(
+            "[Memory] Project config must be a mapping; ignoring declaration"
+        )
+        return ()
+    if "memory" not in data:
+        return ()
+    try:
+        tags = data["memory"]["fleet"]["context_sources"][
+            "relevant_patterns"
+        ]["document_tags"]
+    except (KeyError, TypeError):
+        logger.warning(
+            "[Memory] Invalid memory.fleet.context_sources declaration; "
+            "ignoring declaration"
+        )
+        return ()
+    if (
+        not isinstance(tags, list)
+        or not 1 <= len(tags) <= _MAX_RELEVANT_PATTERN_DOCUMENT_TAGS
+        or any(
+            not isinstance(tag, str) or not _SOURCE_TAG_RE.fullmatch(tag)
+            for tag in tags
+        )
+        or len(set(tags)) != len(tags)
+    ):
+        logger.warning(
+            "[Memory] Invalid relevant-pattern document_tags; ignoring declaration"
+        )
+        return ()
+    return tuple(tags)
 
 
 @dataclass
@@ -268,7 +321,12 @@ class AutoBuildContextLoader:
             JobContextRetriever if the memory backend is available, None otherwise.
         """
         if self._retriever is None and self.graphiti is not None:
-            self._retriever = JobContextRetriever(self.graphiti)
+            self._retriever = JobContextRetriever(
+                self.graphiti,
+                relevant_pattern_document_tags=(
+                    _load_relevant_pattern_document_tags(self.worktree_path)
+                ),
+            )
         return self._retriever
 
     async def get_player_context(

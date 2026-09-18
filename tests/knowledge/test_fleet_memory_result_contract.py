@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from guardkit.knowledge.fleet_memory_client import FleetMemoryClient, FleetMemoryConfig
-from guardkit.knowledge.job_context_retriever import JobContextRetriever
+from guardkit.knowledge.job_context_retriever import JobContextRetriever, RetrievedContext
 
 
 def _client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> FleetMemoryClient:
@@ -265,3 +265,171 @@ def test_budget_packing_skips_oversized_item_and_keeps_smaller_results():
 
     assert [item["uuid"] for item in trimmed] == ["one", "two"]
     assert 0 < tokens <= 80
+
+
+
+def _rule_document(body: str, tag: str = "rules_example") -> str:
+    inner = json.dumps(
+        {
+            "entity_type": "rule",
+            "id": "example/guidance/database",
+            "template_id": "example",
+            "name": "Database guidance",
+            "content": body,
+        }
+    )
+    inner += "\n\n---\n_metadata:\n```json\n{}\n```"
+    return json.dumps(
+        {
+            "content": inner,
+            "domain_tags": [tag],
+            "source_ref": tag,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_declared_document_source_returns_exact_provenance_sections(
+    monkeypatch, tmp_path
+):
+    body = (
+        "# Database guidance\n\n"
+        "## Boundaries\n\n"
+        "### ALWAYS\n"
+        "- ✅ Use async SQLAlchemy queries and indexes.\n"
+        "- Keep CRUD operations composable.\n\n"
+        "## Code sample\n"
+        "```python\n"
+        "# not a markdown heading\n"
+        "value = 1\n"
+        "```\n\n"
+        "## Header only\n"
+    )
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(
+        monkeypatch,
+        [_item("document:guardkit:rule-1", 0.73, _rule_document(body))],
+        captured,
+    )
+
+    hits = await client.search(
+        "async SQLAlchemy CRUD query",
+        group_ids=[],
+        document_source_tags=["rules_example"],
+    )
+
+    request = captured["request"]
+    assert request["payload_types"] == ["document"]
+    assert request["domain_tags"] == ["rules_example"]
+    assert request["query"] == "async SQLAlchemy CRUD query"
+    assert hits
+    assert hits[0]["fact"].startswith("### ALWAYS\n")
+    assert hits[0]["uuid"] == "document:guardkit:rule-1"
+    assert hits[0]["source_ref"] == "rules_example"
+    assert hits[0]["score"] == 0.73
+    assert hits[0]["score_kind"] == "document"
+    exact = body.encode("utf-8")[
+        hits[0]["section_start_byte"] : hits[0]["section_end_byte"]
+    ].decode("utf-8")
+    assert exact == hits[0]["fact"]
+    assert "# not a markdown heading" in next(
+        hit["fact"] for hit in hits if hit["fact"].startswith("## Code sample")
+    )
+    assert not any(hit["fact"].startswith("## Header only") for hit in hits)
+
+    retriever = JobContextRetriever(client)
+    selected, used = retriever._trim_to_budget(hits, 709)
+    assert selected and used <= 709
+    assert selected[0]["fact"].startswith("### ALWAYS\n")
+    rendered = RetrievedContext._format_item(None, selected[0])
+    assert "Fleet source: rules_example" in rendered
+    assert selected[0]["fact"] in rendered
+
+
+@pytest.mark.asyncio
+async def test_declared_document_source_fails_closed_on_invalid_scope(
+    monkeypatch, tmp_path
+):
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(monkeypatch, [], captured)
+
+    assert await client.search(
+        "query", document_source_tags=["Rules_Not_Canonical"]
+    ) == []
+    assert captured == {}
+    assert await client.search(
+        "query",
+        group_ids=["patterns"],
+        document_source_tags=["rules_example"],
+    ) == []
+    assert captured == {}
+
+
+@pytest.mark.asyncio
+async def test_retriever_uses_declared_sources_only_for_relevant_patterns():
+    class SupportingClient:
+        supports_document_source_tags = True
+
+        def __init__(self):
+            self.calls = []
+
+        async def search(self, query, **kwargs):
+            self.calls.append((query, kwargs))
+            return []
+
+    client = SupportingClient()
+    retriever = JobContextRetriever(
+        client, relevant_pattern_document_tags=("rules_example",)
+    )
+    await retriever._query_category(
+        "same query", ["patterns"], 709, 0.5, category="relevant_patterns"
+    )
+    await retriever._query_category(
+        "same query", ["role_constraints"], 472, 0.5, category="role_constraints"
+    )
+    assert client.calls == [
+        (
+            "same query",
+            {
+                "group_ids": [],
+                "document_source_tags": ["rules_example"],
+            },
+        ),
+        ("same query", {"group_ids": ["role_constraints"]}),
+    ]
+
+
+def test_project_config_declares_bounded_relevant_pattern_sources(tmp_path):
+    from guardkit.knowledge.autobuild_context_loader import (
+        AutoBuildContextLoader,
+        _load_relevant_pattern_document_tags,
+    )
+
+    config_dir = tmp_path / ".guardkit"
+    config_dir.mkdir()
+    config = config_dir / "config.yaml"
+    config.write_text(
+        "memory:\n"
+        "  fleet:\n"
+        "    context_sources:\n"
+        "      relevant_patterns:\n"
+        "        document_tags:\n"
+        "          - rules_example\n"
+    )
+    assert _load_relevant_pattern_document_tags(tmp_path) == ("rules_example",)
+
+    graphiti = types.SimpleNamespace(supports_document_source_tags=True)
+    loader = AutoBuildContextLoader(graphiti=graphiti, worktree_path=tmp_path)
+    assert loader.retriever.relevant_pattern_document_tags == ("rules_example",)
+
+    config.write_text(
+        "memory:\n"
+        "  fleet:\n"
+        "    context_sources:\n"
+        "      relevant_patterns:\n"
+        "        document_tags:\n"
+        + "".join(f"          - rules_{i}\n" for i in range(9))
+    )
+    assert _load_relevant_pattern_document_tags(tmp_path) == ()
