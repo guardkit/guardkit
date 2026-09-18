@@ -30,8 +30,8 @@ network, and a bounded OpenAI-compatible call against llama-swap (lazy
 ``openai`` import — the pure/flag paths carry no ``openai`` dependency).
 
 **The address and the key** come from the one shared rule in
-``guardkit/lib/client_env.py``. Address, in order: the ``qav_shadow`` config
-block's ``endpoint``, then ``GUARDKIT_QAV_SHADOW_URL``, then ``OPENAI_BASE_URL``,
+``guardkit/lib/client_env.py``. Address, in order: ``GUARDKIT_QAV_SHADOW_URL``,
+then the ``qav_shadow`` config block's ``endpoint``, then ``OPENAI_BASE_URL``,
 then ``http://localhost:9000/v1``. Key: ``OPENAI_API_KEY`` when it is set and
 not blank, else the placeholder ``not-needed`` — never logged or printed.
 
@@ -116,8 +116,8 @@ __all__ = [
 #: anything unrecognised is treated as OFF (loud warning). Default OFF.
 QAV_SHADOW_ENV = "GUARDKIT_QAV_SHADOW"
 
-#: Env override for this client's endpoint, consulted after the config block's
-#: own ``endpoint`` and before the shared ``OPENAI_BASE_URL``.
+#: Runtime override for this client's endpoint, consulted before the config
+#: block's own ``endpoint`` and the shared ``OPENAI_BASE_URL``.
 QAV_SHADOW_URL_ENV = "GUARDKIT_QAV_SHADOW_URL"
 
 #: Env override for the eligibility probe's OWN address, consulted after the
@@ -409,14 +409,18 @@ def is_qav_shadow_enabled(repo_root: Path) -> bool:
 
 
 def _endpoint(cfg: dict) -> str:
-    """The seat address, by the one shared rule
-    (:func:`guardkit.lib.client_env.resolve_base_url`): the config block's own
-    ``endpoint``, then ``GUARDKIT_QAV_SHADOW_URL``, then ``OPENAI_BASE_URL``,
-    then :data:`DEFAULT_ENDPOINT`."""
-    v = cfg.get("endpoint")
+    """Resolve the seat address with the dedicated runtime override first.
+
+    The dedicated environment variable lets a sandbox execution override a
+    project config written for the host network. A project endpoint still
+    takes precedence over the shared ``OPENAI_BASE_URL``.
+    """
+    runtime = os.environ.get(QAV_SHADOW_URL_ENV)
+    configured = cfg.get("endpoint")
+    explicit = runtime if isinstance(runtime, str) and runtime.strip() else configured
     return resolve_base_url(
-        explicit=v if isinstance(v, str) else None,
-        env_vars=(QAV_SHADOW_URL_ENV, "OPENAI_BASE_URL"),
+        explicit=explicit if isinstance(explicit, str) else None,
+        env_vars=("OPENAI_BASE_URL",),
         default=DEFAULT_ENDPOINT,
     )
 

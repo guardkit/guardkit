@@ -42,8 +42,10 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
+    CriterionResult,
     IndependentTestResult,
     QualityGateStatus,
+    RequirementsValidation,
 )
 from guardkit.orchestrator.worktree_checkpoints import (
     Checkpoint,
@@ -110,6 +112,8 @@ def _bundle(
     indep_signal_absent: bool = False,
     include_gates: bool = True,
     include_independent: bool = True,
+    tests_run: int | None = 5,
+    requirements: RequirementsValidation | None = None,
 ) -> CoachEvidenceBundle:
     """Construct a real CoachEvidenceBundle carrying the requested test signal."""
     gates = None
@@ -133,6 +137,8 @@ def _bundle(
         honesty=Mock(),  # not read by the merge helper
         quality_gates=gates,
         independent_tests=independent,
+        tests={"tests_run": tests_run} if tests_run is not None else None,
+        requirements=requirements,
     )
 
 
@@ -331,3 +337,117 @@ class TestNonClobberAndNoOp:
         assert report["decision"] == original_decision
         assert report["issues"] is original_issues
         assert report["criteria_verification"] is original_criteria
+
+
+def _requirements(count: int) -> RequirementsValidation:
+    rows = [
+        CriterionResult(
+            criterion_id=f"AC-{index:03d}",
+            criterion_text=f"criterion {index}",
+            result="verified",
+            status="verified",
+            evidence=f"evidence {index}",
+        )
+        for index in range(1, count + 1)
+    ]
+    return RequirementsValidation(
+        criteria_total=count,
+        criteria_met=count,
+        all_criteria_met=True,
+        criteria_results=rows,
+    )
+
+
+class TestEvidenceMetadataThreading:
+    def test_phase_four_test_count_reaches_checkpoint_consumer(self, orchestrator):
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            _bundle(tests_run=848),
+        )
+
+        assert merged["validation_results"]["tests"]["tests_run"] == 848
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 848
+
+    def test_direct_mode_count_comes_from_independent_summary(self, orchestrator):
+        bundle = _bundle(tests_run=None)
+        bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            bundle,
+        )
+
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 849
+
+    def test_absent_signal_never_manufactures_count_from_summary(self, orchestrator):
+        bundle = _bundle(tests_run=None, indep_signal_absent=True)
+        bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            bundle,
+        )
+
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 0
+
+    def test_green_boolean_without_count_stays_zero(self, orchestrator):
+        report = _llm_coach_report()
+        report["validation_results"] = {"tests_passed": True}
+
+        assert orchestrator._extract_test_count(_turn_record(report)) == 0
+
+    def test_requirements_rows_reach_progress_consumer(
+        self, orchestrator, caplog
+    ):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(requirements=_requirements(4)),
+        )
+        record = _turn_record(merged)
+        record.turn = 1
+        record.player_result = None
+
+        with caplog.at_level("INFO"):
+            orchestrator._display_criteria_progress(
+                record,
+                [f"criterion {index}" for index in range(1, 5)],
+            )
+
+        assert "4/4 verified" in caplog.text
+
+    def test_green_tests_do_not_manufacture_criteria(self, orchestrator):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(requirements=None, tests_run=858),
+        )
+
+        assert orchestrator._criteria_verifications_from_report(merged) == []
+
+    def test_existing_metadata_is_not_overwritten(self, orchestrator):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        report["validation_results"] = {
+            "tests": {"tests_run": 7},
+            "requirements": {
+                "criteria_total": 1,
+                "criteria_met": 0,
+                "criteria_results": [
+                    {
+                        "criterion_id": "AC-001",
+                        "result": "rejected",
+                        "status": "rejected",
+                    }
+                ],
+            },
+        }
+
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(tests_run=848, requirements=_requirements(4)),
+        )
+
+        assert merged["validation_results"]["tests"]["tests_run"] == 7
+        assert merged["validation_results"]["requirements"]["criteria_total"] == 1
+        assert len(orchestrator._criteria_verifications_from_report(merged)) == 1

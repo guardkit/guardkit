@@ -7216,13 +7216,12 @@ class AutoBuildOrchestrator:
             # Build acceptance criteria status
             ac_status = {}
             if turn_record.coach_result and turn_record.coach_result.report:
-                verification = turn_record.coach_result.report.get(
-                    "acceptance_criteria_verification", {}
+                criteria_results = self._criteria_verifications_from_report(
+                    turn_record.coach_result.report
                 )
-                criteria_results = verification.get("criteria_results", [])
                 for result in criteria_results:
                     criterion_id = result.get("criterion_id", "")
-                    status = result.get("status", "not_started")
+                    status = result.get("status") or result.get("result", "not_started")
                     if criterion_id:
                         ac_status[criterion_id] = status
 
@@ -7233,15 +7232,13 @@ class AutoBuildOrchestrator:
             arch_score = None
 
             if turn_record.coach_result and turn_record.coach_result.report:
-                validation = turn_record.coach_result.report.get("validation_results", {})
-                if validation.get("tests_passed"):
-                    # Get test counts
+                test_signal = self._extract_tests_passed(turn_record)
+                if test_signal is True:
                     tests_passed = self._extract_test_count(turn_record)
                     tests_failed = 0
-                elif validation.get("test_output_summary"):
-                    # Try to extract from output
-                    tests_passed = self._extract_test_count(turn_record)
-                    tests_failed = 0 if validation.get("tests_passed") else 1
+                elif test_signal is False:
+                    tests_passed = 0
+                    tests_failed = 1
 
                 # Extract architecture score if available
                 arch_review = turn_record.coach_result.report.get("architecture_review", {})
@@ -7577,10 +7574,16 @@ class AutoBuildOrchestrator:
             promises_data = turn_record.player_result.report.get("completion_promises", [])
             promises = [CompletionPromise.from_dict(p) for p in promises_data]
 
-        # Extract verifications from Coach decision
+        # Extract the Coach's verdict rows when it returned them. The LLM-Coach
+        # response may omit those presentation rows, so fall back to the
+        # deterministic requirements verification already carried in the
+        # evidence bundle. This is criterion evidence, not an inference from a
+        # passing test count.
         verifications: List[CriterionVerification] = []
         if turn_record.coach_result and turn_record.coach_result.success:
-            verifications_data = turn_record.coach_result.report.get("criteria_verification", [])
+            verifications_data = self._criteria_verifications_from_report(
+                turn_record.coach_result.report
+            )
             verifications = [CriterionVerification.from_dict(v) for v in verifications_data]
 
         # Build verification map for quick lookup
@@ -9669,7 +9672,67 @@ class AutoBuildOrchestrator:
                 "test_output_summary", independent.test_output_summary
             )
 
+        # Preserve the deterministic per-criterion result for metadata
+        # consumers. The LLM Coach remains the decision owner: this enriches
+        # validation_results only and never rewrites decision/issues or the
+        # Coach-authored criteria_verification list.
+        requirements = evidence_bundle.requirements
+        if requirements is not None:
+            requirements_dict = validation.get("requirements")
+            if not isinstance(requirements_dict, dict):
+                requirements_dict = {}
+                validation["requirements"] = requirements_dict
+            requirements_dict.setdefault("criteria_total", requirements.criteria_total)
+            requirements_dict.setdefault("criteria_met", requirements.criteria_met)
+            requirements_dict.setdefault(
+                "all_criteria_met", requirements.all_criteria_met
+            )
+            requirements_dict.setdefault("missing", list(requirements.missing))
+            requirements_dict.setdefault(
+                "criteria_results",
+                [result.to_dict() for result in requirements.criteria_results],
+            )
+
+        # Phase 4 can supply an explicit count independently of the prose test
+        # summary. Keep that generic integer when present; direct mode has no
+        # Phase-4 count and is handled by the independent summary fallback.
+        tests = evidence_bundle.tests
+        if isinstance(tests, dict):
+            tests_dict = validation.get("tests")
+            if not isinstance(tests_dict, dict):
+                tests_dict = {}
+                validation["tests"] = tests_dict
+            if "tests_run" in tests:
+                tests_dict.setdefault("tests_run", tests.get("tests_run"))
+
         return report
+
+    @staticmethod
+    def _criteria_verifications_from_report(
+        report: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Return actual per-criterion verification rows from a Coach report.
+
+        Prefer rows authored in the Coach verdict. When that optional display
+        field is absent or empty, use the deterministic requirements rows that
+        were supplied to the Coach and threaded into validation_results.
+        An absent source remains an empty list; callers must not manufacture
+        verification from tests, promises, or the final decision.
+        """
+        coach_rows = report.get("criteria_verification")
+        if isinstance(coach_rows, list) and coach_rows:
+            return [row for row in coach_rows if isinstance(row, dict)]
+
+        validation = report.get("validation_results")
+        if not isinstance(validation, dict):
+            return []
+        requirements = validation.get("requirements")
+        if not isinstance(requirements, dict):
+            return []
+        rows = requirements.get("criteria_results")
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)]
 
     def _load_coach_config(self) -> Dict[str, Any]:
         """
@@ -9722,13 +9785,27 @@ class AutoBuildOrchestrator:
         """
         files_modified = len(report.get("files_modified", []))
         files_created = len(report.get("files_created", []))
-        tests_written = len(report.get("tests_written", []))
+        test_files_reported = len(report.get("tests_written", []))
         tests_passed = report.get("tests_passed", False)
+        quality_gates = report.get("quality_gates")
+        tests_run = (
+            quality_gates.get("tests_run")
+            if isinstance(quality_gates, dict)
+            else None
+        )
+        has_explicit_count = (
+            isinstance(tests_run, int) and not isinstance(tests_run, bool) and tests_run >= 0
+        )
 
-        if not tests_required and tests_written == 0:
+        if has_explicit_count:
+            tests_str = f"{tests_run} tests run ({'passing' if tests_passed else 'failing'})"
+        elif not tests_required and test_files_reported == 0:
             tests_str = "tests not required"
         else:
-            tests_str = f"{tests_written} tests ({'passing' if tests_passed else 'failing'})"
+            tests_str = (
+                f"{test_files_reported} test files reported "
+                f"(tests reported {'passing' if tests_passed else 'failing'})"
+            )
 
         return (
             f"{files_created} files created, {files_modified} modified, "
@@ -10974,16 +11051,37 @@ class AutoBuildOrchestrator:
             return 0
 
         validation = turn_record.coach_result.report.get("validation_results", {})
-        test_output = validation.get("test_output_summary", "")
+        if not isinstance(validation, dict):
+            return 0
 
-        # Try to parse test count from output (e.g., "15 passed")
-        import re
-        match = re.search(r"(\d+)\s+(?:tests?\s+)?passed", test_output, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
+        independent = validation.get("independent_tests")
+        if isinstance(independent, dict) and independent.get("signal_absent") is True:
+            return 0
 
-        # Fallback: assume some tests ran if tests_passed is True
-        return 1 if validation.get("tests_passed", False) else 0
+        tests = validation.get("tests")
+        if isinstance(tests, dict):
+            tests_run = tests.get("tests_run")
+            if (
+                isinstance(tests_run, int)
+                and not isinstance(tests_run, bool)
+                and tests_run >= 0
+            ):
+                return tests_run
+
+        from guardkit.lib.pytest_summary import parse_pytest_summary
+
+        summaries = []
+        if isinstance(independent, dict):
+            summaries.append(independent.get("test_output_summary"))
+        summaries.append(validation.get("test_output_summary"))
+        for output in summaries:
+            parsed = parse_pytest_summary(output if isinstance(output, str) else None)
+            if parsed.tests_run is not None:
+                return parsed.tests_run
+
+        # A green Boolean establishes a verdict, not a count. Unknown count
+        # stays zero rather than manufacturing one executed test.
+        return 0
 
 
 # ============================================================================
