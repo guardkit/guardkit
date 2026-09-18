@@ -9698,7 +9698,7 @@ class AutoBuildOrchestrator:
             if not isinstance(tests_dict, dict):
                 tests_dict = {}
                 validation["tests"] = tests_dict
-            for count_name in ("tests_run", "tests_failed"):
+            for count_name in ("tests_run", "tests_passed", "tests_failed"):
                 if count_name in tests:
                     tests_dict.setdefault(count_name, tests.get(count_name))
 
@@ -11049,11 +11049,10 @@ class AutoBuildOrchestrator:
     ) -> Tuple[Optional[int], Optional[int]]:
         """Return observed passed/failed counts without inventing outcomes.
 
-        Explicit aggregate totals require an explicit failure count before
-        they can be split. A parsed pytest summary supplies its own outcome
-        counts. When only a green verdict and a real total are available, the
-        total is an observed passed count. Every other incomplete combination
-        remains unknown.
+        A parsed pytest summary supplies observed outcome counts. Otherwise,
+        only explicit integer passed/failed fields are returned independently.
+        Aggregate totals and Boolean verdicts never imply a passed count:
+        skipped, xfailed, errors, or an unknown split may occupy that total.
         """
         if not turn_record.coach_result or not turn_record.coach_result.success:
             return None, None
@@ -11073,16 +11072,6 @@ class AutoBuildOrchestrator:
                 and value >= 0
             )
 
-        tests = validation.get("tests")
-        tests_run = None
-        if isinstance(tests, dict):
-            candidate_run = tests.get("tests_run")
-            candidate_failed = tests.get("tests_failed")
-            if valid_count(candidate_run):
-                tests_run = candidate_run
-                if valid_count(candidate_failed) and candidate_failed <= candidate_run:
-                    return candidate_run - candidate_failed, candidate_failed
-
         from guardkit.lib.pytest_summary import parse_pytest_summary
 
         summaries = []
@@ -11094,9 +11083,18 @@ class AutoBuildOrchestrator:
             if parsed.passed is not None and parsed.tests_failed is not None:
                 return parsed.passed, parsed.tests_failed
 
-        if tests_run is not None and self._extract_tests_passed(turn_record) is True:
-            return tests_run, 0
-        return None, None
+        tests = validation.get("tests")
+        if not isinstance(tests, dict):
+            return None, None
+        candidate_passed = tests.get("tests_passed")
+        candidate_failed = tests.get("tests_failed")
+        observed_passed = (
+            candidate_passed if valid_count(candidate_passed) else None
+        )
+        observed_failed = (
+            candidate_failed if valid_count(candidate_failed) else None
+        )
+        return observed_passed, observed_failed
 
     def _extract_test_count(self, turn_record: TurnRecord) -> int:
         """
