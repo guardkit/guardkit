@@ -186,7 +186,9 @@ class TestFleetMemoryClientSearch:
         fleet_client._read_available = True
         fleet_client._store = object()
 
-        hits = await fleet_client.search(query="patterns for X", group_ids=["patterns"])
+        hits = await fleet_client.search(
+            query="outcomes for X", group_ids=["task_outcomes"]
+        )
 
         assert hits == [
             {
@@ -203,7 +205,7 @@ class TestFleetMemoryClientSearch:
         # The real retrieval surface was invoked without collapsing its results.
         assert "assembled_n" not in captured
         assert captured["request"]["project"] == "guardkit"
-        assert captured["request"]["query"] == "patterns for X"
+        assert captured["request"]["query"] == "outcomes for X"
 
     async def test_search_empty_results_returns_empty(self, fleet_client, monkeypatch):
         """No source matches yield [] (result_count 0)."""
