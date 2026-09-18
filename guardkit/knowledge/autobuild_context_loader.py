@@ -67,12 +67,20 @@ def _load_relevant_pattern_document_tags(
     """Read bounded, project-owned Fleet document tags from config."""
     if worktree_path is None:
         return ()
+    project_root = worktree_path.resolve()
     config_path = worktree_path / ".guardkit" / "config.yaml"
     try:
+        if (
+            not config_path.is_file()
+            or config_path.is_symlink()
+            or not config_path.resolve().is_relative_to(project_root)
+        ):
+            return ()
+        if config_path.stat().st_size > 256 * 1024:
+            logger.warning("[Memory] Project config exceeds 256KiB; ignoring declaration")
+            return ()
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except FileNotFoundError:
-        return ()
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
         logger.warning("[Memory] Cannot read project context sources: %s", exc)
         return ()
     if not isinstance(data, dict):
@@ -83,9 +91,9 @@ def _load_relevant_pattern_document_tags(
     if "memory" not in data:
         return ()
     try:
-        tags = data["memory"]["fleet"]["context_sources"][
-            "relevant_patterns"
-        ]["document_tags"]
+        context_sources = data["memory"]["fleet"]["context_sources"]
+        patterns = context_sources["relevant_patterns"]
+        tags = patterns["document_tags"]
     except (KeyError, TypeError):
         logger.warning(
             "[Memory] Invalid memory.fleet.context_sources declaration; "
@@ -93,7 +101,11 @@ def _load_relevant_pattern_document_tags(
         )
         return ()
     if (
-        not isinstance(tags, list)
+        not isinstance(context_sources, dict)
+        or set(context_sources) != {"relevant_patterns"}
+        or not isinstance(patterns, dict)
+        or set(patterns) != {"document_tags"}
+        or not isinstance(tags, list)
         or not 1 <= len(tags) <= _MAX_RELEVANT_PATTERN_DOCUMENT_TAGS
         or any(
             not isinstance(tag, str) or not _SOURCE_TAG_RE.fullmatch(tag)

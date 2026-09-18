@@ -106,11 +106,11 @@ def _split_markdown_heading_sections(body: str) -> list[dict[str, Any]]:
         text = body[start_char:end_char]
         first_newline = text.find("\n")
         remainder = text[first_newline + 1 :] if first_newline >= 0 else ""
-        if not remainder.strip():
-            continue
         while ancestry and ancestry[-1][0] >= level:
             ancestry.pop()
         ancestry.append((level, title))
+        if not remainder.strip():
+            continue
         start_byte, end_byte = char_to_byte[start_char], char_to_byte[end_char]
         assert body_bytes[start_byte:end_byte].decode("utf-8") == text
         sections.append(
@@ -644,6 +644,14 @@ class FleetMemoryClient:
         from guardkit.knowledge.fleet_memory_mapping import resolve
 
         declared_scope = document_source_tags is not None
+        if declared_scope and (
+            isinstance(document_source_tags, (str, bytes))
+            or not isinstance(document_source_tags, Sequence)
+        ):
+            logger.warning(
+                "Fleet-memory invalid document source tag scope; returning empty"
+            )
+            return []
         declared_tags = tuple(document_source_tags or ())
         invalid_declared_tags = any(
             not isinstance(tag, str) or not _SOURCE_TAG_RE.fullmatch(tag)

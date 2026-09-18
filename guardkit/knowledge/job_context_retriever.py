@@ -267,7 +267,7 @@ class RetrievedContext:
             start = item.get("section_start_byte", "?")
             end = item.get("section_end_byte", "?")
             return (
-                f"[Fleet source: {source}; key: {natural_key}; "
+                f"[Fleet source excerpt: {source}; key: {natural_key}; "
                 f"document score: {score:.6f}; bytes: {start}-{end}]\n"
                 f"{item['fact']}"
             )
