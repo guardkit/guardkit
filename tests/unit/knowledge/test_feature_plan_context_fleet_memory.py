@@ -244,26 +244,17 @@ def _install_fake_fleet_memory_retrieval(monkeypatch, *, context_block, coverage
 
         return [
             SimpleNamespace(
-                score=0.9, value={"natural_key": "document:guardkit:r1", "content": "r1"}
+                score=coverage,
+                value={"natural_key": "document:guardkit:r1", "content": context_block},
             ),
             SimpleNamespace(
                 score=0.8, value={"natural_key": "document:guardkit:r2", "content": "r2"}
             ),
         ]
 
-    class _FakeAssembly:
-        pass
-
-    def _fake_assemble(results, token_budget):
-        a = _FakeAssembly()
-        a.context_block = context_block
-        a.coverage_score = coverage
-        return a
-
     retrieval = types.ModuleType("fleet_memory.retrieval")
     retrieval.SearchRequest = _FakeSearchRequest
     retrieval.search = _fake_search
-    retrieval.assemble_context = _fake_assemble
     fm = types.ModuleType("fleet_memory")
     fm.retrieval = retrieval
     monkeypatch.setitem(sys.modules, "fleet_memory", fm)

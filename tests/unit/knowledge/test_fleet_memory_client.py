@@ -104,17 +104,28 @@ def _install_fake_fleet_memory_retrieval(
 
     Args:
         results: fm_search return value (contract-shaped items); defaults to two
-            items so existing wiring assertions (assembled_n == 2) hold.
+            per-result hits using ``context_block`` and ``coverage`` as the first
+            hit's content and source relevance.
         search_exc: when set, fm_search raises it instead of returning results.
     """
     import sys
     import types
 
     if results is None:
-        results = [
-            _mk_result_item("build_outcome:guardkit:R1", 0.9, "result one content"),
-            _mk_result_item("build_outcome:guardkit:R2", 0.8, "result two content"),
-        ]
+        results = (
+            [
+                _mk_result_item(
+                    "build_outcome:guardkit:R1", coverage, context_block
+                ),
+                _mk_result_item(
+                    "build_outcome:guardkit:R2",
+                    max(0.0, coverage - 0.1),
+                    "result two content",
+                ),
+            ]
+            if context_block
+            else []
+        )
 
     class _FakeSearchRequest:
         def __init__(self, **kw):
@@ -126,20 +137,9 @@ def _install_fake_fleet_memory_retrieval(
             raise search_exc
         return results
 
-    class _FakeAssembly:
-        pass
-
-    def _fake_assemble(results, token_budget):
-        captured["assembled_n"] = len(results)
-        a = _FakeAssembly()
-        a.context_block = context_block
-        a.coverage_score = coverage
-        return a
-
     retrieval = types.ModuleType("fleet_memory.retrieval")
     retrieval.SearchRequest = _FakeSearchRequest
     retrieval.search = _fake_search
-    retrieval.assemble_context = _fake_assemble
     fm = types.ModuleType("fleet_memory")
     fm.retrieval = retrieval
     monkeypatch.setitem(sys.modules, "fleet_memory", fm)
@@ -169,9 +169,8 @@ class TestFleetMemoryClientSearch:
         fleet_client._read_available = False
         assert await fleet_client.search(query="x", group_ids=["task_outcomes"]) == []
 
-    async def test_search_adapts_context_block_to_hit(self, fleet_client, monkeypatch):
-        """search() calls fleet_memory.retrieval.search + assemble_context and adapts
-        the assembled context_block into one graphiti-shaped hit (AC-1).
+    async def test_search_adapts_source_results_to_hits(self, fleet_client, monkeypatch):
+        """search() preserves each source result's content, identity, and relevance.
 
         The real dependency + live store are covered by the TASK-MEM08-007 read-proof
         run; here a fake retrieval module exercises the wiring deterministically.
@@ -189,17 +188,25 @@ class TestFleetMemoryClientSearch:
 
         hits = await fleet_client.search(query="patterns for X", group_ids=["patterns"])
 
-        assert len(hits) == 1
-        assert hits[0]["fact"] == "## Recommended Patterns\n\n- Use the X pattern"
-        assert hits[0]["score"] == 0.9
-        assert isinstance(hits[0]["uuid"], str)
-        # the real retrieval surface was actually invoked
-        assert captured["assembled_n"] == 2
+        assert hits == [
+            {
+                "fact": "## Recommended Patterns\n\n- Use the X pattern",
+                "score": 0.9,
+                "uuid": "build_outcome:guardkit:R1",
+            },
+            {
+                "fact": "result two content",
+                "score": 0.8,
+                "uuid": "build_outcome:guardkit:R2",
+            },
+        ]
+        # The real retrieval surface was invoked without collapsing its results.
+        assert "assembled_n" not in captured
         assert captured["request"]["project"] == "guardkit"
         assert captured["request"]["query"] == "patterns for X"
 
-    async def test_search_empty_context_block_returns_empty(self, fleet_client, monkeypatch):
-        """An empty assembled block (no matches) yields [] (result_count 0)."""
+    async def test_search_empty_results_returns_empty(self, fleet_client, monkeypatch):
+        """No source matches yield [] (result_count 0)."""
         captured: dict = {}
         _install_fake_fleet_memory_retrieval(
             monkeypatch, context_block="", coverage=0.0, captured=captured
@@ -326,9 +333,9 @@ class TestSearchArmGateAndRetrievalLog:
         assert "store" not in captured  # fm_search never invoked
         assert self._entries() == []
 
-    async def test_unset_arm_logs_per_item_and_keeps_synthetic_hit(self, monkeypatch):
-        """AC-2: unset arm + 2 mocked items -> same single synthetic hit as
-        before the change, plus exactly one JSONL entry with per-item id/score."""
+    async def test_unset_arm_logs_and_returns_per_item_hits(self, monkeypatch):
+        """AC-2: unset arm preserves two mocked items and writes one JSONL entry
+        with the same per-item identities and scores."""
         captured: dict = {}
         results = [
             _mk_result_item(
@@ -347,11 +354,18 @@ class TestSearchArmGateAndRetrievalLog:
 
         hits = await client.search("q", group_ids=["task_outcomes"])
 
-        # Synthetic single-hit return shape unchanged (requirement 4)
-        assert len(hits) == 1
-        assert hits[0]["fact"] == "assembled block"
-        assert hits[0]["score"] == 0.8
-        assert isinstance(hits[0]["uuid"], str)
+        assert hits == [
+            {
+                "fact": "First outcome content",
+                "uuid": "build_outcome:guardkit:TASK_1",
+                "score": 0.93,
+            },
+            {
+                "fact": "Second content",
+                "uuid": "adr:guardkit:ADR_7",
+                "score": 0.71,
+            },
+        ]
 
         entries = self._entries()
         assert len(entries) == 1
@@ -386,15 +400,14 @@ class TestSearchArmGateAndRetrievalLog:
 
         hits = await client.search("q")
 
-        assert len(hits) == 1  # fixture arm needs no special handling in search()
+        assert len(hits) == 2  # fixture arm needs no special handling in search()
         entries = self._entries()
         assert len(entries) == 1
         logged_ids = [item["id"] for item in entries[0]["items"]]
         assert logged_ids == ["document:guardkit:DOC_A", "document:guardkit:DOC_B"]
         assert entries[0]["items"][0]["score"] == 0.66
         assert entries[0]["items"][1]["score"] == 0.44
-        # the synthetic hit uuid never leaks into the per-item log
-        assert hits[0]["uuid"] not in logged_ids
+        assert [hit["uuid"] for hit in hits] == logged_ids
 
     async def test_empty_results_logs_empty_items_entry(self, monkeypatch):
         """AC-4: fm_search returning [] still appends one entry (result_count 0,

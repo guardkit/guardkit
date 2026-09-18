@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import threading
 from dataclasses import dataclass
@@ -31,6 +32,15 @@ from typing import Any, Literal, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_relevance_score(value: Any) -> float:
+    """Return a finite source relevance score, or honest zero if malformed."""
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return score if math.isfinite(score) else 0.0
 
 
 @dataclass
@@ -412,9 +422,9 @@ class FleetMemoryClient:
     ) -> list[dict[str, Any]]:
         """Search fleet-memory for relevant knowledge.
 
-        Calls memory_search(project, query, payload_types, domain_tags, token_budget)
-        and adapts the single context_block response into the graphiti-shaped
-        [{"fact": str, "uuid": str, "score": float}] list that readers expect.
+        Calls fleet-memory search(project, query, payload_types, domain_tags,
+        token_budget) and adapts each result into the graphiti-shaped
+        {"fact": str, "uuid": str, "score": float} hits that readers expect.
 
         Args:
             query: Search query string
@@ -468,11 +478,7 @@ class FleetMemoryClient:
             return []
 
         try:
-            from fleet_memory.retrieval import (
-                SearchRequest,
-                assemble_context,
-                search as fm_search,
-            )
+            from fleet_memory.retrieval import SearchRequest, search as fm_search
             from guardkit.knowledge.fleet_memory_mapping import resolve
 
             # Resolve group_ids -> payload_types / domain_tags (migrate only).
@@ -507,9 +513,8 @@ class FleetMemoryClient:
             results = await fm_search(request, self._store)
 
             # Per-item retrieval log (FEAT-ABL-001 / TASK-ABL1-003). Emitted HERE
-            # because per-item identity (natural_key + score) only exists between
-            # fm_search() and assemble_context() — assembly collapses everything
-            # into the one synthetic uuid4 hit below. Written on EVERY successful
+            # where the source natural_key and semantic relevance score are intact.
+            # Written on EVERY successful
             # fm_search return, including empty results (items=[]), so the run
             # guardrail can distinguish "retrieval attempted, nothing found"
             # (entry with empty items) from "no retrieval" (no entry). A failed
@@ -532,26 +537,48 @@ class FleetMemoryClient:
                 items=[
                     {
                         "id": item.value.get("natural_key", ""),
-                        "score": float(item.score or 0.0),
+                        "score": _safe_relevance_score(item.score),
                     }
                     for item in results
                 ],
             )
 
-            assembly = assemble_context(results, token_budget)
-
-            if not assembly.context_block:
+            # Preserve the graphiti-shaped *per-result* contract expected by
+            # JobContextRetriever.  Fleet's assembly.coverage_score is a budget-fill
+            # fraction, not semantic relevance; using it as ``score`` caused valid
+            # results to fail the retriever's relevance threshold.  Returning the
+            # actual result granularity also lets the caller enforce each category's
+            # own token allocation instead of accepting or dropping one large block.
+            limit = max(0, num_results)
+            if limit == 0:
                 return []
 
-            # Adapt the assembled context block to the graphiti-shaped hit the GROI
-            # readers expect: [{fact, uuid, score}].
-            return [
-                {
-                    "fact": assembly.context_block,
-                    "uuid": str(uuid4()),
-                    "score": float(assembly.coverage_score),
-                }
-            ]
+            hits: list[dict[str, Any]] = []
+            for item in results:
+                if not isinstance(item.value, dict):
+                    continue
+                content = item.value.get("content")
+                if not isinstance(content, str) or not content:
+                    continue
+
+                score = _safe_relevance_score(item.score)
+
+                natural_key = item.value.get("natural_key")
+                hits.append(
+                    {
+                        "fact": content,
+                        "uuid": (
+                            natural_key
+                            if isinstance(natural_key, str) and natural_key
+                            else str(uuid4())
+                        ),
+                        "score": score,
+                    }
+                )
+                if len(hits) >= limit:
+                    break
+
+            return hits
 
         except Exception as e:
             # Loud, and named for what it costs: a swallowed search reads
