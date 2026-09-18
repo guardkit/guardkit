@@ -258,6 +258,20 @@ class RetrievedContext:
         Returns:
             Formatted string representation
         """
+        # Declared Fleet rule sections keep the exact section bytes in
+        # ``fact`` and render provenance beside, rather than inside, those bytes.
+        if item.get("score_kind") == "document" and "fact" in item:
+            source = item.get("source_ref", "unknown")
+            natural_key = item.get("uuid", "unknown")
+            score = item.get("score", 0.0)
+            start = item.get("section_start_byte", "?")
+            end = item.get("section_end_byte", "?")
+            return (
+                f"[Fleet source: {source}; key: {natural_key}; "
+                f"document score: {score:.6f}; bytes: {start}-{end}]\n"
+                f"{item['fact']}"
+            )
+
         # Try common field names for display
         if "name" in item:
             name = item["name"]
@@ -385,6 +399,7 @@ class JobContextRetriever:
         graphiti: Any,
         relevance_config: Optional[RelevanceConfig] = None,
         cache_ttl: float = 300.0,
+        relevant_pattern_document_tags: tuple[str, ...] = (),
     ) -> None:
         """Initialize JobContextRetriever with a memory client.
 
@@ -398,6 +413,7 @@ class JobContextRetriever:
         self.graphiti = graphiti
         self.relevance_config = relevance_config or default_config()
         self.cache_ttl = cache_ttl
+        self.relevant_pattern_document_tags = relevant_pattern_document_tags
         # Cache: Dict[cache_key, Tuple[RetrievedContext, timestamp]]
         self._cache: Dict[str, Tuple[RetrievedContext, float]] = {}
 
@@ -989,6 +1005,20 @@ class JobContextRetriever:
             # Only Fleet's contextual task-outcome path opts into substantive
             # records. Generic history consumers retain metadata-only availability.
             search_kwargs: dict[str, Any] = {"group_ids": group_ids}
+            if (
+                category == "relevant_patterns"
+                and group_ids == ["patterns"]
+                and self.relevant_pattern_document_tags
+                and getattr(
+                    self.graphiti, "supports_document_source_tags", False
+                ) is True
+            ):
+                search_kwargs = {
+                    "group_ids": [],
+                    "document_source_tags": list(
+                        self.relevant_pattern_document_tags
+                    ),
+                }
             if (
                 category == "similar_outcomes"
                 and group_ids == ["task_outcomes"]
