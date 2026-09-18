@@ -103,9 +103,14 @@ def test_qav_address_own_variable_beats_openai_base_url(monkeypatch):
     assert qs._endpoint({}) == "http://mine:4100/v1"
 
 
-def test_qav_address_config_block_beats_every_variable(monkeypatch):
+def test_qav_dedicated_runtime_variable_beats_config(monkeypatch):
     monkeypatch.setenv(BASE_URL_ENV, "http://shared:4000/v1")
     monkeypatch.setenv(qs.QAV_SHADOW_URL_ENV, "http://mine:4100/v1")
+    assert qs._endpoint({"endpoint": "http://config:4200/v1"}) == "http://mine:4100/v1"
+
+
+def test_qav_config_block_beats_shared_openai_variable(monkeypatch):
+    monkeypatch.setenv(BASE_URL_ENV, "http://shared:4000/v1")
     assert qs._endpoint({"endpoint": "http://config:4200/v1"}) == "http://config:4200/v1"
 
 
