@@ -986,8 +986,20 @@ class JobContextRetriever:
             Tuple of (filtered_results, tokens_used)
         """
         try:
-            # Query the memory backend
-            results = await self.graphiti.search(query, group_ids=group_ids)
+            # Only Fleet's contextual task-outcome path opts into substantive
+            # records. Generic history consumers retain metadata-only availability.
+            search_kwargs: dict[str, Any] = {"group_ids": group_ids}
+            if (
+                category == "similar_outcomes"
+                and group_ids == ["task_outcomes"]
+                and getattr(
+                    self.graphiti, "supports_substantive_search", False
+                ) is True
+            ):
+                search_kwargs["require_substantive"] = True
+
+            # Query the memory backend.
+            results = await self.graphiti.search(query, **search_kwargs)
 
             # Handle None or empty results
             if not results:
