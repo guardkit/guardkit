@@ -7232,13 +7232,9 @@ class AutoBuildOrchestrator:
             arch_score = None
 
             if turn_record.coach_result and turn_record.coach_result.report:
-                test_signal = self._extract_tests_passed(turn_record)
-                if test_signal is True:
-                    tests_passed = self._extract_test_count(turn_record)
-                    tests_failed = 0
-                elif test_signal is False:
-                    tests_passed = 0
-                    tests_failed = 1
+                tests_passed, tests_failed = self._extract_test_outcome_counts(
+                    turn_record
+                )
 
                 # Extract architecture score if available
                 arch_review = turn_record.coach_result.report.get("architecture_review", {})
@@ -9702,8 +9698,9 @@ class AutoBuildOrchestrator:
             if not isinstance(tests_dict, dict):
                 tests_dict = {}
                 validation["tests"] = tests_dict
-            if "tests_run" in tests:
-                tests_dict.setdefault("tests_run", tests.get("tests_run"))
+            for count_name in ("tests_run", "tests_failed"):
+                if count_name in tests:
+                    tests_dict.setdefault(count_name, tests.get(count_name))
 
         return report
 
@@ -9724,15 +9721,24 @@ class AutoBuildOrchestrator:
             return [row for row in coach_rows if isinstance(row, dict)]
 
         validation = report.get("validation_results")
-        if not isinstance(validation, dict):
+        if isinstance(validation, dict):
+            requirements = validation.get("requirements")
+            if isinstance(requirements, dict):
+                rows = requirements.get("criteria_results")
+                if isinstance(rows, list):
+                    requirement_rows = [
+                        row for row in rows if isinstance(row, dict)
+                    ]
+                    if requirement_rows:
+                        return requirement_rows
+
+        legacy = report.get("acceptance_criteria_verification")
+        if not isinstance(legacy, dict):
             return []
-        requirements = validation.get("requirements")
-        if not isinstance(requirements, dict):
+        legacy_rows = legacy.get("criteria_results")
+        if not isinstance(legacy_rows, list):
             return []
-        rows = requirements.get("criteria_results")
-        if not isinstance(rows, list):
-            return []
-        return [row for row in rows if isinstance(row, dict)]
+        return [row for row in legacy_rows if isinstance(row, dict)]
 
     def _load_coach_config(self) -> Dict[str, Any]:
         """
@@ -11036,6 +11042,61 @@ class AutoBuildOrchestrator:
         # No authoritative test verdict in the report (e.g. the LLM-Coach
         # path, whose report omits validation_results). UNKNOWN, not failure.
         return None
+
+    def _extract_test_outcome_counts(
+        self,
+        turn_record: TurnRecord,
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Return observed passed/failed counts without inventing outcomes.
+
+        Explicit aggregate totals require an explicit failure count before
+        they can be split. A parsed pytest summary supplies its own outcome
+        counts. When only a green verdict and a real total are available, the
+        total is an observed passed count. Every other incomplete combination
+        remains unknown.
+        """
+        if not turn_record.coach_result or not turn_record.coach_result.success:
+            return None, None
+
+        validation = turn_record.coach_result.report.get("validation_results", {})
+        if not isinstance(validation, dict):
+            return None, None
+
+        independent = validation.get("independent_tests")
+        if isinstance(independent, dict) and independent.get("signal_absent") is True:
+            return None, None
+
+        def valid_count(value: Any) -> bool:
+            return (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and value >= 0
+            )
+
+        tests = validation.get("tests")
+        tests_run = None
+        if isinstance(tests, dict):
+            candidate_run = tests.get("tests_run")
+            candidate_failed = tests.get("tests_failed")
+            if valid_count(candidate_run):
+                tests_run = candidate_run
+                if valid_count(candidate_failed) and candidate_failed <= candidate_run:
+                    return candidate_run - candidate_failed, candidate_failed
+
+        from guardkit.lib.pytest_summary import parse_pytest_summary
+
+        summaries = []
+        if isinstance(independent, dict):
+            summaries.append(independent.get("test_output_summary"))
+        summaries.append(validation.get("test_output_summary"))
+        for output in summaries:
+            parsed = parse_pytest_summary(output if isinstance(output, str) else None)
+            if parsed.passed is not None and parsed.tests_failed is not None:
+                return parsed.passed, parsed.tests_failed
+
+        if tests_run is not None and self._extract_tests_passed(turn_record) is True:
+            return tests_run, 0
+        return None, None
 
     def _extract_test_count(self, turn_record: TurnRecord) -> int:
         """
