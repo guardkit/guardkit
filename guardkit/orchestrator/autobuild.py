@@ -71,7 +71,11 @@ from guardkit.worktrees import (
 
 # Import local orchestrator components
 from guardkit.lib.secret_scrub import scrub_for_publication
-from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator.agent_invoker import (
+    AgentInvoker,
+    AgentInvocationResult,
+    DEFAULT_SDK_TIMEOUT,
+)
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.phase_specialists import (
@@ -2276,7 +2280,7 @@ class AutoBuildOrchestrator:
         progress_display: Optional[ProgressDisplay] = None,
         pre_loop_gates: Optional[PreLoopQualityGates] = None,
         development_mode: str = "tdd",
-        sdk_timeout: int = 1200,
+        sdk_timeout: int = DEFAULT_SDK_TIMEOUT,
         skip_arch_review: bool = False,
         enable_perspective_reset: bool = True,
         enable_checkpoints: bool = True,
@@ -2304,6 +2308,7 @@ class AutoBuildOrchestrator:
         seed_feedback: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm a)
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
+        sdk_timeout_is_override: Optional[bool] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -2415,6 +2420,7 @@ class AutoBuildOrchestrator:
         self.pre_loop_options = pre_loop_options or {}
         self.development_mode = development_mode
         self.sdk_timeout = sdk_timeout
+        self._sdk_timeout_is_override = sdk_timeout_is_override
         self.timeout_multiplier = timeout_multiplier
         self.skip_arch_review = skip_arch_review
         self.enable_perspective_reset = enable_perspective_reset
@@ -3520,6 +3526,7 @@ class AutoBuildOrchestrator:
                         max_turns_per_agent=self.max_turns,
                         development_mode=self.development_mode,
                         sdk_timeout_seconds=self.sdk_timeout,
+                        sdk_timeout_is_override=self._sdk_timeout_is_override,
                         use_task_work_delegation=True,
                         cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                         timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
@@ -3553,6 +3560,7 @@ class AutoBuildOrchestrator:
                     max_turns_per_agent=self.max_turns,
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
+                    sdk_timeout_is_override=self._sdk_timeout_is_override,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05
@@ -4848,6 +4856,7 @@ class AutoBuildOrchestrator:
         - SDK timeouts: Treated as errors
         """
         timestamp = datetime.now().isoformat()
+        recovered_failure_error: Optional[str] = None
 
         # TASK-AB-NOCHANGE01: photograph the worktree before the generator
         # runs. The matching photograph is taken after the generator and the
@@ -4962,14 +4971,59 @@ class AutoBuildOrchestrator:
             if recovered_player_result:
                 # State recovery succeeded - continue with recovered data
                 player_result = recovered_player_result
-                # Write recovered data to disk so Coach reads it (TASK-FIX-ASPF-002)
-                if self._agent_invoker is not None:
-                    self._agent_invoker._write_direct_mode_results(
-                        task_id, player_result.report, success=True
-                    )
-                logger.info(
-                    f"State recovery successful for {task_id} turn {turn}"
+                implementation_mode = (
+                    self._agent_invoker._get_implementation_mode(task_id)
+                    if self._agent_invoker is not None
+                    else None
                 )
+                is_task_work_timeout = (
+                    implementation_mode == "task-work"
+                    and isinstance(_original_error, str)
+                    and "task-work execution exceeded" in _original_error.lower()
+                    and "timeout" in _original_error.lower()
+                )
+
+                if is_task_work_timeout:
+                    # Recovery found useful partial state, not a successful
+                    # implementation. Preserve the task-work failure receipt
+                    # and keep this Player result failed so no Phase 4/5 or
+                    # approval path can be inferred from passing partial tests.
+                    recovered_failure_error = _original_error
+                    if self._agent_invoker is not None:
+                        self._agent_invoker._write_recovered_task_work_failure(
+                            task_id,
+                            player_result.report,
+                            original_error=_original_error,
+                        )
+                    player_result = AgentInvocationResult(
+                        task_id=player_result.task_id,
+                        turn=player_result.turn,
+                        agent_type=player_result.agent_type,
+                        success=False,
+                        report=player_result.report,
+                        duration_seconds=player_result.duration_seconds,
+                        error=_original_error,
+                        sdk_turns_used=player_result.sdk_turns_used,
+                        sdk_max_turns=player_result.sdk_max_turns,
+                        sdk_ceiling_hit=player_result.sdk_ceiling_hit,
+                        session_id=player_result.session_id,
+                    )
+                    logger.info(
+                        "State recovery preserved partial task-work failure for "
+                        "%s turn %s",
+                        task_id,
+                        turn,
+                    )
+                else:
+                    # Existing direct/missing-report recovery contract: write
+                    # recovered data so Coach can validate it.
+                    if self._agent_invoker is not None:
+                        self._agent_invoker._write_direct_mode_results(
+                            task_id, player_result.report, success=True
+                        )
+                    logger.info(
+                        f"State recovery successful for {task_id} turn {turn}"
+                    )
                 # TASK-PFI-A1B2: Log CancelledError at DEBUG when recovery succeeds
                 if _original_error and _original_error.startswith("Cancelled:"):
                     logger.debug(
@@ -4980,8 +5034,12 @@ class AutoBuildOrchestrator:
                     tests_required=self._resolve_tests_required(task_type),
                 )
                 self._progress_display.complete_turn(
-                    "success",
-                    f"[RECOVERED] {summary}",
+                    "feedback" if recovered_failure_error else "success",
+                    (
+                        f"[RECOVERED PARTIAL FAILURE] {summary}"
+                        if recovered_failure_error
+                        else f"[RECOVERED] {summary}"
+                    ),
                 )
             else:
                 # State recovery failed - return error
@@ -5611,6 +5669,45 @@ class AutoBuildOrchestrator:
         # Extract decision and feedback
         decision_value = coach_result.report.get("decision", "feedback")
 
+        if recovered_failure_error and decision_value == "approve":
+            logger.warning(
+                "Coach returned approve for recovered timeout %s turn %s; "
+                "forcing feedback because the Player attempt failed",
+                task_id,
+                turn,
+            )
+            decision_value = "feedback"
+            coach_result.report["decision"] = "feedback"
+            coach_result.report["rationale"] = (
+                "Recovered partial state cannot approve a failed task-work "
+                f"attempt: {recovered_failure_error}"
+            )
+            issues = coach_result.report.setdefault("issues", [])
+            if isinstance(issues, list):
+                issues.insert(
+                    0,
+                    {
+                        "severity": "must_fix",
+                        "category": "task_work_timeout",
+                        "description": recovered_failure_error,
+                        "suggestion": (
+                            "Reuse the recovered partial work and complete "
+                            "the missing workflow phases."
+                        ),
+                    },
+                )
+            if self._agent_invoker is not None and worktree is not None:
+                from guardkit.orchestrator.paths import TaskArtifactPaths
+
+                coach_output_path = TaskArtifactPaths.private_artifact_path(
+                    task_id, f"coach_turn_{turn}.json", worktree.path
+                )
+                self._agent_invoker._persist_coach_decision(
+                    coach_result.report,
+                    coach_output_path,
+                    tag="TASK-WORK-TIMEOUT",
+                )
+
         if decision_value == "approve":
             self._progress_display.complete_turn(
                 "success",
@@ -5640,6 +5737,14 @@ class AutoBuildOrchestrator:
 
         else:  # feedback
             feedback_text = self._extract_feedback(coach_result.report)
+            if recovered_failure_error:
+                feedback_text = (
+                    "The task-work Player attempt timed out and remains failed: "
+                    f"{recovered_failure_error}. Reuse the recovered partial work, "
+                    "complete the missing workflow phases, and rerun the required "
+                    "checks.\n\n"
+                    + feedback_text
+                )
             # TASK-RFX-F7F5: Inject command failure advisory into feedback
             # when Coach is already rejecting. Environment/transient failures
             # are suppressed; only implementation/unknown failures are shown.
@@ -10582,6 +10687,7 @@ class AutoBuildOrchestrator:
                     max_turns_per_agent=self.max_turns,
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
+                    sdk_timeout_is_override=self._sdk_timeout_is_override,
                     use_task_work_delegation=True,
                     cancellation_event=self._cancellation_event,  # TASK-FIX-ASPF-004
                     venv_python=self._venv_python,  # TASK-FIX-7A05

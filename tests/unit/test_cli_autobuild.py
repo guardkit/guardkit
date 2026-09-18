@@ -1174,6 +1174,7 @@ def test_task_command_sdk_timeout_from_frontmatter(
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs["sdk_timeout"] == 1200
+    assert call_kwargs["sdk_timeout_is_override"] is False
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -1210,6 +1211,7 @@ def test_task_command_sdk_timeout_cli_overrides_frontmatter(
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs["sdk_timeout"] == 1200
+    assert call_kwargs["sdk_timeout_is_override"] is True
 
 
 @patch("guardkit.cli.autobuild._require_sdk")
@@ -1237,6 +1239,7 @@ def test_task_command_sdk_timeout_default_value(
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs["sdk_timeout"] == 1200
+    assert call_kwargs["sdk_timeout_is_override"] is False
 
 
 @patch("guardkit.cli.autobuild._require_sdk")

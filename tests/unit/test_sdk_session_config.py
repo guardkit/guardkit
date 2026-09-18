@@ -20,6 +20,7 @@ from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import guardkit.orchestrator.agent_invoker as agent_invoker_module
 
 _test_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_test_root))
@@ -508,7 +509,7 @@ class TestSDKTimeoutCalculation:
     Where:
       mode_multiplier = 1.5 (task-work) | 1.0 (direct/other)
       complexity_multiplier = 1.0 + (complexity / 10.0)
-    Cap: MAX_SDK_TIMEOUT (3600s)
+    Cap: MAX_SDK_TIMEOUT (3600s when the base is unconfigured)
     """
 
     def test_cli_override_returns_unchanged(self, worktree_path):
@@ -518,6 +519,64 @@ class TestSDKTimeoutCalculation:
 
         timeout = invoker._calculate_sdk_timeout("TASK-001")
         assert timeout == 500
+
+    def test_configured_base_scales_and_retains_finite_cap(
+        self, worktree_path, monkeypatch
+    ):
+        """A configured 1800s base scales to 4050s for complexity-5 task-work."""
+        monkeypatch.setattr(agent_invoker_module, "DEFAULT_SDK_TIMEOUT", 1800)
+        monkeypatch.setattr(agent_invoker_module, "MAX_SDK_TIMEOUT", 5400)
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=1800,
+            sdk_timeout_is_override=False,
+            timeout_multiplier=1.0,
+        )
+        create_task_file(
+            worktree_path, "TASK-001", complexity=5, mode="task-work"
+        )
+
+        assert invoker._calculate_sdk_timeout("TASK-001") == 4050
+        assert agent_invoker_module.MAX_SDK_TIMEOUT <= 7200
+
+    def test_configured_base_still_honours_remaining_budget(
+        self, worktree_path, monkeypatch
+    ):
+        """The outer remaining budget still caps a scaled configured base."""
+        monkeypatch.setattr(agent_invoker_module, "DEFAULT_SDK_TIMEOUT", 1800)
+        monkeypatch.setattr(agent_invoker_module, "MAX_SDK_TIMEOUT", 5400)
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=1800,
+            sdk_timeout_is_override=False,
+            timeout_multiplier=1.0,
+        )
+        create_task_file(
+            worktree_path, "TASK-001", complexity=5, mode="task-work"
+        )
+
+        assert invoker._calculate_sdk_timeout(
+            "TASK-001", remaining_budget=900
+        ) == 900
+
+    def test_explicit_override_equal_to_configured_base_stays_fixed(
+        self, worktree_path, monkeypatch
+    ):
+        """Override provenance, not numeric equality, decides scaling."""
+        monkeypatch.setattr(agent_invoker_module, "DEFAULT_SDK_TIMEOUT", 1800)
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=1800,
+            sdk_timeout_is_override=True,
+            timeout_multiplier=1.0,
+        )
+        create_task_file(
+            worktree_path, "TASK-001", complexity=5, mode="task-work"
+        )
+
+        assert invoker._calculate_sdk_timeout(
+            "TASK-001", remaining_budget=900
+        ) == 1800
 
     def test_default_with_task_work_mode(self, worktree_path):
         """task-work mode uses 1.5x multiplier."""

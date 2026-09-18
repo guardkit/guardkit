@@ -28,6 +28,7 @@ from guardkit.orchestrator import (
     AutoBuildOrchestrator,
     OrchestrationResult,
 )
+from guardkit.orchestrator.agent_invoker import DEFAULT_SDK_TIMEOUT
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
     FeatureOrchestrationError,
@@ -494,8 +495,12 @@ def task(
             param_hint="'--sdk-timeout'",
         )
     effective_sdk_timeout = sdk_timeout
+    sdk_timeout_is_override = sdk_timeout is not None
     if effective_sdk_timeout is None:
-        effective_sdk_timeout = autobuild_config.get("sdk_timeout", 1200)
+        sdk_timeout_is_override = "sdk_timeout" in autobuild_config
+        effective_sdk_timeout = autobuild_config.get(
+            "sdk_timeout", DEFAULT_SDK_TIMEOUT
+        )
     logger.info(f"SDK timeout: {effective_sdk_timeout}s")
 
     # TASK-FIX-HEAB: resolve honesty early-abort settings (CLI > frontmatter > default)
@@ -614,6 +619,7 @@ def task(
             enable_pre_loop=enable_pre_loop,
             development_mode=effective_mode,
             sdk_timeout=effective_sdk_timeout,
+            sdk_timeout_is_override=sdk_timeout_is_override,
             skip_arch_review=effective_skip_arch_review,
             enable_checkpoints=enable_checkpoints,
             rollback_on_pollution=rollback_on_pollution,

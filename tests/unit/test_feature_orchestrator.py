@@ -1229,6 +1229,7 @@ Test requirements.
         # Verify sdk_timeout was passed from task frontmatter
         call_kwargs = mock_orch_class.call_args[1]
         assert call_kwargs.get("sdk_timeout") == 600
+        assert call_kwargs.get("sdk_timeout_is_override") is True
 
 
 def test_execute_task_uses_default_sdk_timeout_when_not_specified(
@@ -1279,6 +1280,54 @@ Test requirements.
         # Verify default sdk_timeout (1200) was used
         call_kwargs = mock_orch_class.call_args[1]
         assert call_kwargs.get("sdk_timeout") == 1200
+        assert call_kwargs.get("sdk_timeout_is_override") is False
+
+
+def test_execute_task_uses_environment_configured_sdk_base(
+    temp_repo,
+    sample_feature,
+    mock_worktree,
+    mock_worktree_manager,
+    monkeypatch,
+):
+    """The normal feature path forwards the environment-backed base as scalable."""
+    import guardkit.orchestrator.feature_orchestrator as feature_module
+
+    monkeypatch.setattr(feature_module, "DEFAULT_SDK_TIMEOUT", 1800)
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        sdk_timeout=None,
+    )
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "---\n"
+        "id: TASK-T-001\n"
+        "title: First Task\n"
+        "status: pending\n"
+        "---\n\n"
+        "# First Task\n"
+    )
+
+    with patch(
+        "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator"
+    ) as mock_orch_class:
+        mock_result = MagicMock(
+            success=True,
+            total_turns=1,
+            final_decision="approved",
+            error=None,
+        )
+        mock_orch_class.return_value.orchestrate.return_value = mock_result
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+    assert result.success is True
+    call_kwargs = mock_orch_class.call_args.kwargs
+    assert call_kwargs["sdk_timeout"] == 1800
+    assert call_kwargs["sdk_timeout_is_override"] is False
 
 
 def test_execute_task_cli_sdk_timeout_overrides_task_frontmatter(
