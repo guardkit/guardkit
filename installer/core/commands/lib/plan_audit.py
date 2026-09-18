@@ -20,7 +20,7 @@ Created: 2025-10-18
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, List, Literal, Optional, Set
+from typing import Callable, Dict, Any, List, Literal, Optional, Set
 from pathlib import Path
 from datetime import datetime
 import json
@@ -101,14 +101,24 @@ _NEVER_COUNTED_PATH_PREFIXES = (".guardkit/", "docs/state/")
 class PlanAuditor:
     """Main auditor class that compares planned vs actual implementation."""
 
-    def __init__(self, workspace_root: Path = Path(".")):
+    def __init__(
+        self,
+        workspace_root: Path = Path("."),
+        path_exclusion: Optional[Callable[[str], bool]] = None,
+    ):
         """
         Initialize plan auditor.
 
         Args:
             workspace_root: Root directory of the workspace (default: current directory)
+            path_exclusion: Optional caller-owned predicate for paths produced by
+                machinery around the implementation. The default preserves the
+                standalone auditor's existing behaviour. If the predicate
+                raises, the path remains in the audit so a broken exclusion can
+                never hide implementation scope.
         """
         self.workspace_root = workspace_root
+        self.path_exclusion = path_exclusion
 
     def audit_implementation(
         self,
@@ -382,6 +392,14 @@ class PlanAuditor:
         for rel_path in changed:
             if self._is_excluded(Path(rel_path)):
                 continue
+            if self.path_exclusion is not None:
+                try:
+                    if self.path_exclusion(rel_path):
+                        continue
+                except Exception:
+                    # Counting the path is the safe fallback. A caller's
+                    # broken filter must not make real scope disappear.
+                    pass
             if rel_path in existed_before:
                 modified.append(rel_path)
             else:

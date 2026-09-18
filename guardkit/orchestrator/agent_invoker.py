@@ -13164,7 +13164,26 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             declared["modify"] or []
         )
         try:
-            auditor = PlanAuditor(workspace_root=self.worktree_path)
+            from guardkit.tasks.state_bridge import TaskStateBridge
+
+            induced_paths = TaskStateBridge.orchestrator_induced_paths_for(
+                task_id, repo_root=self.worktree_path
+            )
+
+            def _excluded_from_player_work(path: str) -> bool:
+                return path in induced_paths or _is_orchestrator_managed_path(
+                    path, worktree_path=self.worktree_path
+                )
+
+            # The plan audit and Player report must ask git about the same
+            # implementation surface. The report already removes both the
+            # orchestrator's managed namespaces and state-transition source
+            # paths; applying those existing decisions at PlanAuditor's change
+            # source prevents Coach from grading factory work as Player scope.
+            auditor = PlanAuditor(
+                workspace_root=self.worktree_path,
+                path_exclusion=_excluded_from_player_work,
+            )
             report = auditor.audit_implementation(
                 task_id,
                 declared=DeclaredFiles(

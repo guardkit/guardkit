@@ -517,6 +517,95 @@ class TestAuditComparesAgainstTheTaskDocument:
             "and all 2 declared file(s) are on disk"
         )
 
+    def test_factory_generated_and_moved_paths_are_not_player_scope(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        """Coach audits the same implementation surface as the Player report."""
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=[],
+        )
+        moved = worktree / "workflow" / "task-card.md"
+        moved.parent.mkdir(parents=True)
+        moved.write_text("orchestrator-owned source path\n")
+        _commit_everything(worktree, "task start")
+
+        _create_src_files(worktree, ["src/users/router.py"])
+        moved.unlink()
+        generated = (
+            worktree
+            / ".claude"
+            / "task-plans"
+            / f"{DECLARING_TASK_ID}-implementation-plan.md"
+        )
+        generated.parent.mkdir(parents=True)
+        generated.write_text("orchestrator-generated plan\n")
+        transitions = (
+            TaskArtifactPaths.autobuild_dir(DECLARING_TASK_ID, worktree)
+            / "state_transitions.json"
+        )
+        transitions.parent.mkdir(parents=True, exist_ok=True)
+        transitions.write_text(
+            json.dumps(
+                [
+                    {
+                        "task_id": DECLARING_TASK_ID,
+                        "pre_path": "workflow/task-card.md",
+                        "post_path": "tasks/in_progress/TASK-DECLARES-FILES.md",
+                        "kind": "design_approved_transition",
+                    }
+                ]
+            )
+        )
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "passed"
+        assert block["extra_files"] == []
+        assert block["missing_files"] == []
+
+    def test_factory_paths_are_filtered_without_hiding_real_sprawl(
+        self, invoker: AgentInvoker, worktree: Path
+    ):
+        """The shared boundary stays narrow: undeclared product files still fail."""
+        _write_task_document(
+            worktree,
+            DECLARING_TASK_ID,
+            creates=["src/users/router.py"],
+            modifies=[],
+        )
+        _commit_everything(worktree, "task start")
+
+        real_sprawl = [
+            "src/unplanned/one.py",
+            "src/unplanned/two.py",
+            "src/unplanned/three.py",
+        ]
+        _create_src_files(worktree, ["src/users/router.py", *real_sprawl])
+        generated = (
+            worktree
+            / ".claude"
+            / "task-plans"
+            / f"{DECLARING_TASK_ID}-implementation-plan.md"
+        )
+        generated.parent.mkdir(parents=True)
+        generated.write_text("orchestrator-generated plan\n")
+
+        results_path = invoker._write_task_work_results(
+            DECLARING_TASK_ID, _minimal_result_data(), documentation_level="standard"
+        )
+        block = json.loads(results_path.read_text())["plan_audit"]
+
+        assert block["status"] == "violation"
+        assert block["severity"] == "high"
+        assert sorted(block["extra_files"]) == sorted(real_sprawl)
+        assert str(generated.relative_to(worktree)) not in block["extra_files"]
+
     def test_a_declared_file_that_was_never_written_is_still_caught(
         self, invoker: AgentInvoker, worktree: Path
     ):
