@@ -7288,7 +7288,8 @@ class CoachValidator:
     def _stop_infrastructure_containers(self, services: List[str]) -> None:
         """Tear down Docker containers for each declared infrastructure service.
 
-        Runs ``docker rm -f <container_name>`` for each known service.
+        Runs ``docker rm -f -v <container_name>`` for each known service,
+        releasing its disposable anonymous volumes. Named volumes are retained.
         Unknown services are silently skipped. Errors during teardown
         are logged but do not raise.
 
@@ -7302,7 +7303,7 @@ class CoachValidator:
             logger.info("Stopping Docker container: %s", container_name)
             try:
                 subprocess.run(
-                    ["docker", "rm", "-f", container_name],
+                    ["docker", "rm", "-f", "-v", container_name],
                     capture_output=True,
                     cwd=str(self.worktree_path),
                 )

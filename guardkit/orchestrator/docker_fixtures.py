@@ -71,8 +71,9 @@ def get_start_commands(service: str) -> List[str]:
 
     commands: List[str] = []
 
-    # Cleanup any existing container first
-    commands.append(f"docker rm -f {container} 2>/dev/null || true")
+    # Remove the disposable fixture and its anonymous volumes before reuse.
+    # Docker preserves explicitly named volumes even with -v.
+    commands.append(f"docker rm -f -v {container} 2>/dev/null || true")
 
     # Build docker run command
     env_flags = " ".join(f"-e {k}={v}" for k, v in fixture["env_vars"].items())
