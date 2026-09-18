@@ -49,6 +49,7 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     QualityGateStatus,
     RequirementsValidation,
 )
+from guardkit.orchestrator.specialist_invocations import _parse_pytest_counts
 from guardkit.orchestrator.worktree_checkpoints import (
     Checkpoint,
     WorktreeCheckpointManager,
@@ -586,3 +587,65 @@ class TestPersistedEvidenceMetadata:
         report = {"validation_results": {"tests": {"tests_run": count}}}
 
         assert orchestrator._extract_test_count(_turn_record(report)) == 0
+
+    @pytest.mark.parametrize(
+        ("summary", "expected_run", "expected_passed", "expected_failed"),
+        [
+            ("8 passed, 2 xfailed", 10, 8, 0),
+            ("8 passed, 2 skipped", 8, 8, 0),
+            ("8 passed, 2 errors", 10, 8, 2),
+        ],
+    )
+    def test_real_phase_four_categories_persist_observed_outcomes(
+        self,
+        orchestrator,
+        tmp_path,
+        summary,
+        expected_run,
+        expected_passed,
+        expected_failed,
+    ):
+        tests_run, tests_failed, _ = _parse_pytest_counts(summary)
+        assert (tests_run, tests_failed) == (expected_run, expected_failed)
+        bundle = _bundle()
+        bundle.tests = {
+            "tests_run": tests_run,
+            "tests_passed": True,
+            "tests_failed": tests_failed,
+        }
+        bundle.independent_tests.test_output_summary = summary
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "approve", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] == expected_passed
+        assert state["tests_failed"] == expected_failed
+
+    @pytest.mark.parametrize("verdict", [True, False, None])
+    def test_boolean_verdict_without_counts_is_unknown(
+        self, orchestrator, verdict
+    ):
+        report = {
+            "validation_results": {
+                "tests": {"tests_passed": verdict},
+                "quality_gates": {"tests_passed": verdict},
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (None, None)
+
+    def test_explicit_integer_outcomes_are_preserved(self, orchestrator):
+        report = {
+            "validation_results": {
+                "tests": {"tests_run": 12, "tests_passed": 7, "tests_failed": 2}
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (7, 2)
