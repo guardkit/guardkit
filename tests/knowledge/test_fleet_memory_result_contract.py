@@ -64,7 +64,6 @@ def _item(key: str, score: object, content: object) -> object:
         value={"natural_key": key, "content": content},
     )
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("group_id", ["patterns", "unknown_group"])
 async def test_explicit_retired_or_unknown_scope_never_searches_whole_store(
@@ -80,7 +79,6 @@ async def test_explicit_retired_or_unknown_scope_never_searches_whole_store(
 
     assert await client.search("policy guidance", group_ids=[group_id]) == []
     assert captured == {}
-
 
 @pytest.mark.asyncio
 async def test_genuinely_unscoped_search_still_searches_corpus(monkeypatch, tmp_path):
@@ -98,7 +96,6 @@ async def test_genuinely_unscoped_search_still_searches_corpus(monkeypatch, tmp_
     request = captured["request"]
     assert request["payload_types"] == []
     assert request["domain_tags"] == []
-
 
 @pytest.mark.asyncio
 async def test_mixed_scope_uses_only_migrated_mapping(monkeypatch, tmp_path):
@@ -120,6 +117,68 @@ async def test_mixed_scope_uses_only_migrated_mapping(monkeypatch, tmp_path):
     assert request["payload_types"] == ["build_outcome", "document"]
     assert request["domain_tags"] == ["task"]
 
+@pytest.mark.asyncio
+async def test_search_threads_explicit_substantive_opt_in(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+    _install_results(
+        monkeypatch,
+        [_item("build_outcome:guardkit:substantive", 0.82, "actual lessons")],
+        captured,
+    )
+
+    hits = await client.search(
+        "task body",
+        group_ids=["task_outcomes"],
+        require_substantive=True,
+    )
+
+    assert [hit["uuid"] for hit in hits] == [
+        "build_outcome:guardkit:substantive"
+    ]
+    assert captured["request"]["require_substantive"] is True
+
+@pytest.mark.asyncio
+async def test_retriever_opts_in_only_for_contextual_task_outcomes():
+    class SupportingClient:
+        supports_substantive_search = True
+
+        def __init__(self):
+            self.calls = []
+
+        async def search(self, query, **kwargs):
+            self.calls.append((query, kwargs))
+            return [
+                {
+                    "fact": "actual lessons",
+                    "uuid": "build_outcome:guardkit:substantive",
+                    "score": 0.82,
+                }
+            ]
+
+    client = SupportingClient()
+    retriever = JobContextRetriever(client)
+
+    await retriever._query_category(
+        query="task body",
+        group_ids=["task_outcomes"],
+        budget_allocation=200,
+        threshold=0.5,
+        category="similar_outcomes",
+    )
+    await retriever._query_category(
+        query="task body",
+        group_ids=["project_architecture"],
+        budget_allocation=200,
+        threshold=0.5,
+        category="architecture_context",
+    )
+
+    assert client.calls[0][1] == {
+        "group_ids": ["task_outcomes"],
+        "require_substantive": True,
+    }
+    assert client.calls[1][1] == {"group_ids": ["project_architecture"]}
 
 @pytest.mark.asyncio
 async def test_search_returns_actual_result_relevance_and_identity(monkeypatch, tmp_path):
@@ -147,7 +206,6 @@ async def test_search_returns_actual_result_relevance_and_identity(monkeypatch, 
         },
     ]
 
-
 @pytest.mark.asyncio
 async def test_search_caps_valid_hits_and_uses_zero_for_malformed_scores(
     monkeypatch, tmp_path
@@ -171,7 +229,6 @@ async def test_search_caps_valid_hits_and_uses_zero_for_malformed_scores(
     assert entry["items"][1]["score"] == 0.0
     assert entry["items"][2]["score"] == 0.0
     assert entry["items"][3]["score"] == 0.0
-
 
 @pytest.mark.asyncio
 async def test_retriever_filters_on_source_relevance_not_budget_fill(

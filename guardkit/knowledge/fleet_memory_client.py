@@ -223,6 +223,8 @@ class FleetMemoryClient:
         ...     print(hit["fact"])
     """
 
+    supports_substantive_search = True
+
     def __init__(self, config: FleetMemoryConfig):
         """Initialize fleet-memory client.
 
@@ -419,6 +421,7 @@ class FleetMemoryClient:
         group_ids: Optional[list[str]] = None,
         num_results: int = 10,
         scope: Optional[str] = None,
+        require_substantive: bool = False,
     ) -> list[dict[str, Any]]:
         """Search fleet-memory for relevant knowledge.
 
@@ -527,6 +530,7 @@ class FleetMemoryClient:
                 domain_tags=sorted(domain_tags),
                 token_budget=token_budget,
                 include_superseded=False,
+                require_substantive=require_substantive,
             )
             results = await fm_search(request, self._store)
 
