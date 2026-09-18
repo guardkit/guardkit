@@ -93,7 +93,7 @@ class TestDockerFixturesModule:
     ) -> None:
         """First command for postgresql removes any existing container."""
         cmds = get_start_commands("postgresql")
-        assert "docker rm -f" in cmds[0]
+        assert "docker rm -f -v" in cmds[0]
         assert "guardkit-test-pg" in cmds[0]
 
     def test_get_start_commands_postgresql_second_cmd_is_docker_run(self) -> None:
@@ -359,14 +359,14 @@ class TestCoachValidatorDockerMethods:
     def test_stop_infrastructure_containers_postgresql_calls_docker_rm(
         self, tmp_path: Path
     ) -> None:
-        """_stop_infrastructure_containers calls docker rm -f for postgresql."""
+        """_stop_infrastructure_containers calls docker rm -f -v for postgresql."""
         validator = make_validator(tmp_path)
         with patch("subprocess.run") as mock_run:
             validator._stop_infrastructure_containers(["postgresql"])
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         cmd = call_args.args[0]
-        assert cmd == ["docker", "rm", "-f", "guardkit-test-pg"]
+        assert cmd == ["docker", "rm", "-f", "-v", "guardkit-test-pg"]
 
     def test_stop_infrastructure_containers_unknown_service_no_subprocess(
         self, tmp_path: Path
@@ -399,13 +399,13 @@ class TestCoachValidatorDockerMethods:
     def test_stop_infrastructure_containers_redis_calls_docker_rm(
         self, tmp_path: Path
     ) -> None:
-        """_stop_infrastructure_containers calls docker rm -f guardkit-test-redis for redis."""
+        """_stop_infrastructure_containers calls docker rm -f -v guardkit-test-redis for redis."""
         validator = make_validator(tmp_path)
         with patch("subprocess.run") as mock_run:
             validator._stop_infrastructure_containers(["redis"])
         call_args = mock_run.call_args
         cmd = call_args.args[0]
-        assert cmd == ["docker", "rm", "-f", "guardkit-test-redis"]
+        assert cmd == ["docker", "rm", "-f", "-v", "guardkit-test-redis"]
 
 
 # ============================================================================
