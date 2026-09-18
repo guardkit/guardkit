@@ -4695,9 +4695,9 @@ class TestBuildPlayerSummary:
 
     Acceptance criteria (TASK-FIX-TS04):
     - Player summary shows 'tests not required' when tests_required=False and no tests written
-    - Tasks with tests_required=True and 0 tests still show '0 tests (failing)' correctly
-    - Tasks with passing tests show 'N tests (passing)' correctly
-    - Tasks with failing tests show 'N tests (failing)' correctly
+    - A tests_written list is labelled as test files rather than execution count
+    - An explicit quality-gate count is labelled as tests run
+    - Passing/failing remains visible
     """
 
     @pytest.fixture
@@ -4728,7 +4728,7 @@ class TestBuildPlayerSummary:
 
         summary = orchestrator._build_player_summary(report, tests_required=True)
 
-        assert "0 tests (failing)" in summary
+        assert "0 test files reported (tests reported failing)" in summary
         assert "tests not required" not in summary
 
     def test_passing_tests_shown_correctly(self, orchestrator):
@@ -4742,7 +4742,7 @@ class TestBuildPlayerSummary:
 
         summary = orchestrator._build_player_summary(report, tests_required=True)
 
-        assert "1 tests (passing)" in summary
+        assert "1 test files reported (tests reported passing)" in summary
 
     def test_failing_tests_shown_correctly(self, orchestrator):
         """When tests fail, show 'N tests (failing)'."""
@@ -4755,7 +4755,7 @@ class TestBuildPlayerSummary:
 
         summary = orchestrator._build_player_summary(report, tests_required=True)
 
-        assert "2 tests (failing)" in summary
+        assert "2 test files reported (tests reported failing)" in summary
 
     def test_tests_not_required_with_tests_written_shows_normal(self, orchestrator):
         """When tests_required=False but tests were written, show normal status."""
@@ -4768,7 +4768,7 @@ class TestBuildPlayerSummary:
 
         summary = orchestrator._build_player_summary(report, tests_required=False)
 
-        assert "1 tests (passing)" in summary
+        assert "1 test files reported (tests reported passing)" in summary
         assert "tests not required" not in summary
 
     def test_default_tests_required_true(self, orchestrator):
@@ -4777,7 +4777,21 @@ class TestBuildPlayerSummary:
 
         summary = orchestrator._build_player_summary(report)
 
-        assert "0 tests (failing)" in summary
+        assert "0 test files reported (tests reported failing)" in summary
+
+    def test_explicit_execution_count_is_not_file_count(self, orchestrator):
+        report = {
+            "files_created": [],
+            "files_modified": [],
+            "tests_written": ["tests/test_one.py"],
+            "tests_passed": True,
+            "quality_gates": {"tests_run": 848},
+        }
+
+        summary = orchestrator._build_player_summary(report)
+
+        assert "848 tests run (passing)" in summary
+        assert "1 test files" not in summary
 
     def test_files_counts_still_in_summary(self, orchestrator):
         """File counts always appear in summary regardless of tests_required."""

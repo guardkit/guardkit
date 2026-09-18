@@ -30,8 +30,10 @@ Invariants under guard:
 Coverage Target: >=85%
 """
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -42,9 +44,12 @@ sys.path.insert(0, str(_test_root))
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
 from guardkit.orchestrator.quality_gates.coach_validator import (
+    CriterionResult,
     IndependentTestResult,
     QualityGateStatus,
+    RequirementsValidation,
 )
+from guardkit.orchestrator.specialist_invocations import _parse_pytest_counts
 from guardkit.orchestrator.worktree_checkpoints import (
     Checkpoint,
     WorktreeCheckpointManager,
@@ -110,6 +115,9 @@ def _bundle(
     indep_signal_absent: bool = False,
     include_gates: bool = True,
     include_independent: bool = True,
+    tests_run: int | None = 5,
+    tests_failed: int | None = None,
+    requirements: RequirementsValidation | None = None,
 ) -> CoachEvidenceBundle:
     """Construct a real CoachEvidenceBundle carrying the requested test signal."""
     gates = None
@@ -129,10 +137,15 @@ def _bundle(
             duration_seconds=1.0,
             signal_absent=indep_signal_absent,
         )
+    tests = {"tests_run": tests_run} if tests_run is not None else None
+    if tests is not None and tests_failed is not None:
+        tests["tests_failed"] = tests_failed
     return CoachEvidenceBundle(
         honesty=Mock(),  # not read by the merge helper
         quality_gates=gates,
         independent_tests=independent,
+        tests=tests,
+        requirements=requirements,
     )
 
 
@@ -143,6 +156,26 @@ def _turn_record(report: dict) -> Mock:
     turn_record.coach_result.success = True
     turn_record.coach_result.report = report
     return turn_record
+
+
+def _capture_state(orchestrator, report: dict, tmp_path: Path) -> dict:
+    record = SimpleNamespace(
+        turn=1,
+        decision=report.get("decision", "feedback"),
+        feedback="fix failures",
+        player_result=None,
+        coach_result=SimpleNamespace(success=True, report=report),
+    )
+    orchestrator._capture_turn_state(
+        record,
+        ["criterion"],
+        task_id="TASK-CKPTGATE-001",
+        worktree_path=tmp_path,
+    )
+    state_path = (
+        tmp_path / ".guardkit/autobuild/TASK-CKPTGATE-001/turn_state_turn_1.json"
+    )
+    return json.loads(state_path.read_text())
 
 
 # ============================================================================
@@ -331,3 +364,288 @@ class TestNonClobberAndNoOp:
         assert report["decision"] == original_decision
         assert report["issues"] is original_issues
         assert report["criteria_verification"] is original_criteria
+
+
+def _requirements(count: int) -> RequirementsValidation:
+    rows = [
+        CriterionResult(
+            criterion_id=f"AC-{index:03d}",
+            criterion_text=f"criterion {index}",
+            result="verified",
+            status="verified",
+            evidence=f"evidence {index}",
+        )
+        for index in range(1, count + 1)
+    ]
+    return RequirementsValidation(
+        criteria_total=count,
+        criteria_met=count,
+        all_criteria_met=True,
+        criteria_results=rows,
+    )
+
+
+class TestEvidenceMetadataThreading:
+    def test_phase_four_test_count_reaches_checkpoint_consumer(self, orchestrator):
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            _bundle(tests_run=848),
+        )
+
+        assert merged["validation_results"]["tests"]["tests_run"] == 848
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 848
+
+    def test_direct_mode_count_comes_from_independent_summary(self, orchestrator):
+        bundle = _bundle(tests_run=None)
+        bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            bundle,
+        )
+
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 849
+
+    def test_absent_signal_never_manufactures_count_from_summary(self, orchestrator):
+        bundle = _bundle(tests_run=None, indep_signal_absent=True)
+        bundle.independent_tests.test_output_summary = "849 passed in 12.3s"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            _llm_coach_report(),
+            bundle,
+        )
+
+        assert orchestrator._extract_test_count(_turn_record(merged)) == 0
+
+    def test_green_boolean_without_count_stays_zero(self, orchestrator):
+        report = _llm_coach_report()
+        report["validation_results"] = {"tests_passed": True}
+
+        assert orchestrator._extract_test_count(_turn_record(report)) == 0
+
+    def test_requirements_rows_reach_progress_consumer(
+        self, orchestrator, caplog
+    ):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(requirements=_requirements(4)),
+        )
+        record = _turn_record(merged)
+        record.turn = 1
+        record.player_result = None
+
+        with caplog.at_level("INFO"):
+            orchestrator._display_criteria_progress(
+                record,
+                [f"criterion {index}" for index in range(1, 5)],
+            )
+
+        assert "4/4 verified" in caplog.text
+
+    def test_green_tests_do_not_manufacture_criteria(self, orchestrator):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(requirements=None, tests_run=858),
+        )
+
+        assert orchestrator._criteria_verifications_from_report(merged) == []
+
+    def test_existing_metadata_is_not_overwritten(self, orchestrator):
+        report = _llm_coach_report()
+        report["criteria_verification"] = []
+        report["validation_results"] = {
+            "tests": {"tests_run": 7},
+            "requirements": {
+                "criteria_total": 1,
+                "criteria_met": 0,
+                "criteria_results": [
+                    {
+                        "criterion_id": "AC-001",
+                        "result": "rejected",
+                        "status": "rejected",
+                    }
+                ],
+            },
+        }
+
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            report,
+            _bundle(tests_run=848, requirements=_requirements(4)),
+        )
+
+        assert merged["validation_results"]["tests"]["tests_run"] == 7
+        assert merged["validation_results"]["requirements"]["criteria_total"] == 1
+        assert len(orchestrator._criteria_verifications_from_report(merged)) == 1
+
+
+class TestPersistedEvidenceMetadata:
+    def test_legacy_criteria_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        report = {
+            "decision": "feedback",
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {
+                        "criterion_id": "AC-001",
+                        "status": "verified",
+                        "result": "verified",
+                    }
+                ]
+            },
+        }
+
+        state = _capture_state(orchestrator, report, tmp_path)
+
+        assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
+
+    def test_synthetic_feedback_criteria_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        result = orchestrator._emit_synthetic_coach_feedback(
+            task_id="TASK-CKPTGATE-001",
+            turn=1,
+            worktree=SimpleNamespace(path=tmp_path),
+            rationale="Missing sibling evidence",
+            start_time=0.0,
+            requirements=_requirements(1),
+        )
+
+        state = _capture_state(orchestrator, result.report, tmp_path)
+
+        assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
+
+    def test_failed_actual_counts_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        bundle = _bundle(
+            gate_tests_passed=False,
+            indep_tests_passed=False,
+            tests_run=10,
+            tests_failed=2,
+        )
+        bundle.independent_tests.test_output_summary = "8 passed, 2 failed"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "feedback", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] == 8
+        assert state["tests_failed"] == 2
+
+    def test_nested_summary_preserves_mixed_outcomes(self, orchestrator):
+        report = {
+            "validation_results": {
+                "independent_tests": {
+                    "signal_absent": False,
+                    "test_output_summary": "8 passed, 2 failed",
+                }
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (8, 2)
+
+    def test_legacy_summary_preserves_mixed_outcomes(self, orchestrator):
+        report = {
+            "validation_results": {
+                "test_output_summary": "8 passed, 2 failed",
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (8, 2)
+
+    def test_incomplete_failed_counts_remain_unknown(
+        self, orchestrator, tmp_path
+    ):
+        bundle = _bundle(
+            gate_tests_passed=False,
+            indep_tests_passed=False,
+            tests_run=10,
+            tests_failed=None,
+        )
+        bundle.independent_tests.test_output_summary = "unparseable output"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "feedback", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] is None
+        assert state["tests_failed"] is None
+
+    @pytest.mark.parametrize("count", [None, True, False, -1, "848", {}, []])
+    def test_invalid_explicit_totals_are_not_counts(self, orchestrator, count):
+        report = {"validation_results": {"tests": {"tests_run": count}}}
+
+        assert orchestrator._extract_test_count(_turn_record(report)) == 0
+
+    @pytest.mark.parametrize(
+        ("summary", "expected_run", "expected_passed", "expected_failed"),
+        [
+            ("8 passed, 2 xfailed", 10, 8, 0),
+            ("8 passed, 2 skipped", 8, 8, 0),
+            ("8 passed, 2 errors", 10, 8, 2),
+        ],
+    )
+    def test_real_phase_four_categories_persist_observed_outcomes(
+        self,
+        orchestrator,
+        tmp_path,
+        summary,
+        expected_run,
+        expected_passed,
+        expected_failed,
+    ):
+        tests_run, tests_failed, _ = _parse_pytest_counts(summary)
+        assert (tests_run, tests_failed) == (expected_run, expected_failed)
+        bundle = _bundle()
+        bundle.tests = {
+            "tests_run": tests_run,
+            "tests_passed": True,
+            "tests_failed": tests_failed,
+        }
+        bundle.independent_tests.test_output_summary = summary
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "approve", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] == expected_passed
+        assert state["tests_failed"] == expected_failed
+
+    @pytest.mark.parametrize("verdict", [True, False, None])
+    def test_boolean_verdict_without_counts_is_unknown(
+        self, orchestrator, verdict
+    ):
+        report = {
+            "validation_results": {
+                "tests": {"tests_passed": verdict},
+                "quality_gates": {"tests_passed": verdict},
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (None, None)
+
+    def test_explicit_integer_outcomes_are_preserved(self, orchestrator):
+        report = {
+            "validation_results": {
+                "tests": {"tests_run": 12, "tests_passed": 7, "tests_failed": 2}
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (7, 2)
