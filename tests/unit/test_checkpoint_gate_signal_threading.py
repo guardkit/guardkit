@@ -30,8 +30,10 @@ Invariants under guard:
 Coverage Target: >=85%
 """
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -113,6 +115,7 @@ def _bundle(
     include_gates: bool = True,
     include_independent: bool = True,
     tests_run: int | None = 5,
+    tests_failed: int | None = None,
     requirements: RequirementsValidation | None = None,
 ) -> CoachEvidenceBundle:
     """Construct a real CoachEvidenceBundle carrying the requested test signal."""
@@ -133,11 +136,14 @@ def _bundle(
             duration_seconds=1.0,
             signal_absent=indep_signal_absent,
         )
+    tests = {"tests_run": tests_run} if tests_run is not None else None
+    if tests is not None and tests_failed is not None:
+        tests["tests_failed"] = tests_failed
     return CoachEvidenceBundle(
         honesty=Mock(),  # not read by the merge helper
         quality_gates=gates,
         independent_tests=independent,
-        tests={"tests_run": tests_run} if tests_run is not None else None,
+        tests=tests,
         requirements=requirements,
     )
 
@@ -149,6 +155,26 @@ def _turn_record(report: dict) -> Mock:
     turn_record.coach_result.success = True
     turn_record.coach_result.report = report
     return turn_record
+
+
+def _capture_state(orchestrator, report: dict, tmp_path: Path) -> dict:
+    record = SimpleNamespace(
+        turn=1,
+        decision=report.get("decision", "feedback"),
+        feedback="fix failures",
+        player_result=None,
+        coach_result=SimpleNamespace(success=True, report=report),
+    )
+    orchestrator._capture_turn_state(
+        record,
+        ["criterion"],
+        task_id="TASK-CKPTGATE-001",
+        worktree_path=tmp_path,
+    )
+    state_path = (
+        tmp_path / ".guardkit/autobuild/TASK-CKPTGATE-001/turn_state_turn_1.json"
+    )
+    return json.loads(state_path.read_text())
 
 
 # ============================================================================
@@ -451,3 +477,112 @@ class TestEvidenceMetadataThreading:
         assert merged["validation_results"]["tests"]["tests_run"] == 7
         assert merged["validation_results"]["requirements"]["criteria_total"] == 1
         assert len(orchestrator._criteria_verifications_from_report(merged)) == 1
+
+
+class TestPersistedEvidenceMetadata:
+    def test_legacy_criteria_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        report = {
+            "decision": "feedback",
+            "acceptance_criteria_verification": {
+                "criteria_results": [
+                    {
+                        "criterion_id": "AC-001",
+                        "status": "verified",
+                        "result": "verified",
+                    }
+                ]
+            },
+        }
+
+        state = _capture_state(orchestrator, report, tmp_path)
+
+        assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
+
+    def test_synthetic_feedback_criteria_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        result = orchestrator._emit_synthetic_coach_feedback(
+            task_id="TASK-CKPTGATE-001",
+            turn=1,
+            worktree=SimpleNamespace(path=tmp_path),
+            rationale="Missing sibling evidence",
+            start_time=0.0,
+            requirements=_requirements(1),
+        )
+
+        state = _capture_state(orchestrator, result.report, tmp_path)
+
+        assert state["acceptance_criteria_status"] == {"AC-001": "verified"}
+
+    def test_failed_actual_counts_survive_turn_state(
+        self, orchestrator, tmp_path
+    ):
+        bundle = _bundle(
+            gate_tests_passed=False,
+            indep_tests_passed=False,
+            tests_run=10,
+            tests_failed=2,
+        )
+        bundle.independent_tests.test_output_summary = "8 passed, 2 failed"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "feedback", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] == 8
+        assert state["tests_failed"] == 2
+
+    def test_nested_summary_preserves_mixed_outcomes(self, orchestrator):
+        report = {
+            "validation_results": {
+                "independent_tests": {
+                    "signal_absent": False,
+                    "test_output_summary": "8 passed, 2 failed",
+                }
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (8, 2)
+
+    def test_legacy_summary_preserves_mixed_outcomes(self, orchestrator):
+        report = {
+            "validation_results": {
+                "test_output_summary": "8 passed, 2 failed",
+            }
+        }
+
+        assert orchestrator._extract_test_outcome_counts(
+            _turn_record(report)
+        ) == (8, 2)
+
+    def test_incomplete_failed_counts_remain_unknown(
+        self, orchestrator, tmp_path
+    ):
+        bundle = _bundle(
+            gate_tests_passed=False,
+            indep_tests_passed=False,
+            tests_run=10,
+            tests_failed=None,
+        )
+        bundle.independent_tests.test_output_summary = "unparseable output"
+        merged = orchestrator._merge_evidence_test_signal_into_report(
+            {"decision": "feedback", "criteria_verification": []},
+            bundle,
+        )
+
+        state = _capture_state(orchestrator, merged, tmp_path)
+
+        assert state["tests_passed"] is None
+        assert state["tests_failed"] is None
+
+    @pytest.mark.parametrize("count", [None, True, False, -1, "848", {}, []])
+    def test_invalid_explicit_totals_are_not_counts(self, orchestrator, count):
+        report = {"validation_results": {"tests": {"tests_run": count}}}
+
+        assert orchestrator._extract_test_count(_turn_record(report)) == 0
