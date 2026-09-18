@@ -760,6 +760,8 @@ async def test_invoke_code_reviewer_success_appends_phase_5_block_with_correct_s
     assert "coverage_pct: 87.3" in kwargs["prompt"]
     assert "quality_gates_passed: True" in kwargs["prompt"]
     assert "all tests green" in kwargs["prompt"]
+    assert f"canonical task worktree root: {tmp_path.resolve()}" in kwargs["prompt"]
+    assert "outer temporary checkout is a non-authoritative snapshot" in kwargs["prompt"]
     # Write tool MUST NOT be granted to the orchestrator-side reviewer.
     assert "Write" not in kwargs["allowed_tools"]
 
@@ -791,6 +793,44 @@ async def test_invoke_code_reviewer_success_appends_phase_5_block_with_correct_s
         "redacted": True,
         "truncated": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_invoke_code_reviewer_keeps_nested_root_under_prompt_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outer_snapshot = tmp_path.parent / "outer-temporary-snapshot"
+    task_path = _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    task_path.write_text(
+        task_path.read_text().replace(
+            "Make the fake thing work.\n\n## Acceptance Criteria",
+            "Make the fake thing work.\n"
+            f"Outer snapshot mentioned by history: {outer_snapshot}\n"
+            + ("large historical context " * 500)
+            + "\n\n## Acceptance Criteria",
+        )
+    )
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+    monkeypatch.setattr(
+        specialist_invocations, "SPECIALIST_PROMPT_MAX_CHARS", 1500
+    )
+    invoker = _make_fake_agent_invoker()
+
+    result = await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=42,
+        agent_invoker=invoker,
+    )
+
+    assert result.status == "passed"
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert len(prompt) <= 1500
+    assert f"canonical task worktree root: {tmp_path.resolve()}" in prompt
+    assert str(outer_snapshot) in prompt
+    assert "outer temporary checkout is a non-authoritative snapshot" in prompt
+    assert "[...truncated" in prompt
 
 
 @pytest.mark.asyncio
@@ -2011,7 +2051,26 @@ class TestSpecialistPromptBudget:
         """Generate a task context large enough to exceed a tight budget."""
         return "x" * 200_000
 
-    def test_oversized_prompt_fits_budget_with_truncation_marker(self):
+    def test_missing_canonical_root_is_refused(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="canonical root does not exist"):
+            _build_code_reviewer_prompt(
+                "TASK-TEST-001",
+                "context",
+                {"tests_run": 0},
+                canonical_root=tmp_path / "missing",
+            )
+
+    def test_tiny_budget_refuses_to_trim_canonical_root(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="cannot preserve the canonical root"):
+            _build_code_reviewer_prompt(
+                "TASK-TEST-001",
+                "context",
+                {"tests_run": 0},
+                canonical_root=tmp_path,
+                max_chars=100,
+            )
+
+    def test_oversized_prompt_fits_budget_with_truncation_marker(self, tmp_path: Path):
         """An oversized prompt must fit the budget and contain the truncation marker."""
         huge_context = self._big_task_context()
         phase_4_summary = {
@@ -2027,6 +2086,7 @@ class TestSpecialistPromptBudget:
             "TASK-TEST-001",
             huge_context,
             phase_4_summary,
+            canonical_root=tmp_path,
             max_chars=budget,
         )
 
@@ -2034,7 +2094,7 @@ class TestSpecialistPromptBudget:
         assert "[...truncated" in prompt, "truncation marker missing"
         assert "Phase 4 summary" in prompt, "Phase 4 summary must be preserved"
 
-    def test_under_budget_no_truncation(self):
+    def test_under_budget_no_truncation(self, tmp_path: Path):
         """When the prompt is under budget, no truncation marker."""
         small_context = "small context"
         phase_4_summary = {
@@ -2050,13 +2110,14 @@ class TestSpecialistPromptBudget:
             "TASK-TEST-001",
             small_context,
             phase_4_summary,
+            canonical_root=tmp_path,
             max_chars=budget,
         )
 
         assert len(prompt) <= budget
         assert "[...truncated" not in prompt
 
-    def test_seed_cap_unchanged_when_under_budget(self):
+    def test_seed_cap_unchanged_when_under_budget(self, tmp_path: Path):
         """The existing ~2000-char seed cap behaviour is unchanged when under budget."""
         # A context that keeps the prompt over 2000 but well under 300k
         medium_context = "a" * 5000
@@ -2073,6 +2134,7 @@ class TestSpecialistPromptBudget:
             "TASK-TEST-001",
             medium_context,
             phase_4_summary,
+            canonical_root=tmp_path,
             max_chars=budget,
         )
 
@@ -2081,7 +2143,7 @@ class TestSpecialistPromptBudget:
             "seed cap should still apply at ~2000 chars when under overall budget"
         )
 
-    def test_backstop_applied_after_seed_cap(self):
+    def test_backstop_applied_after_seed_cap(self, tmp_path: Path):
         """The env-tunable backstop is applied AFTER the 2000-char seed cap."""
         huge_context = "b" * 200_000
         phase_4_summary = {
@@ -2098,6 +2160,7 @@ class TestSpecialistPromptBudget:
             "TASK-TEST-001",
             huge_context,
             phase_4_summary,
+            canonical_root=tmp_path,
             max_chars=budget,
         )
 
