@@ -1162,6 +1162,60 @@ class TestWriteFailureResults:
         results = json.loads(result_path.read_text())
         assert len(results["partial_output"]) == 1000
 
+    def test_failure_results_identify_task_work_mode(self, agent_invoker):
+        """Failure receipts retain the producing workflow mode."""
+        result_path = agent_invoker._write_failure_results(
+            "TASK-FAIL-MODE", "timed out", "TimeoutError"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["implementation_mode"] == "task-work"
+        assert results["completed"] is False
+        assert results["success"] is False
+
+    def test_recovered_timeout_keeps_failure_and_partial_evidence(
+        self, agent_invoker
+    ):
+        """Passing recovered tests cannot turn a task-work timeout green."""
+        task_id = "TASK-FAIL-RECOVERED"
+        timeout_error = "task-work execution exceeded 2700s timeout"
+        result_path = agent_invoker._write_failure_results(
+            task_id,
+            timeout_error,
+            "TimeoutError",
+            ["partial model output"],
+        )
+        original_timestamp = json.loads(result_path.read_text())["timestamp"]
+
+        recovered_report = {
+            "_synthetic": True,
+            "_recovery_metadata": {"detection_method": "git_and_tests"},
+            "files_modified": ["src/service.py"],
+            "files_created": ["tests/test_service.py"],
+            "tests_written": ["tests/test_service.py"],
+            "tests_run": True,
+            "tests_passed": True,
+            "test_count": 12,
+            "requirements_addressed": ["AC-1"],
+        }
+        agent_invoker._write_recovered_task_work_failure(
+            task_id, recovered_report, original_error=f"Recoverable: {timeout_error}"
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["timestamp"] == original_timestamp
+        assert results["implementation_mode"] == "task-work"
+        assert results["completed"] is False
+        assert results["success"] is False
+        assert results["error"] == timeout_error
+        assert results["error_type"] == "TimeoutError"
+        assert results["phases"] == {}
+        assert results["quality_gates"]["all_passed"] is False
+        assert results["files_modified"] == ["src/service.py"]
+        assert results["tests_written"] == ["tests/test_service.py"]
+        assert results["recovery"]["tests_passed"] is True
+        assert results["recovery"]["completion_claimed"] is False
+
 
 class TestFailureResultsCoachIntegration:
     """Test suite for Coach integration with failure results."""

@@ -40,6 +40,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
+from guardkit.orchestrator.agent_invoker import DEFAULT_SDK_TIMEOUT
 from guardkit.orchestrator.permissive_double_advisory import (
     split_findings as split_permissive_double_findings,
 )
@@ -4883,14 +4884,20 @@ The detailed specifications are in the task markdown file.
             # Load task data from markdown file
             task_data = TaskLoader.load_task(task.id, repo_root=self.repo_root)
 
-            # Resolve SDK timeout: CLI > task frontmatter > default (1200)
+            # Resolve SDK timeout: CLI > task frontmatter > configured base.
+            # The environment-backed default is a scalable base; an explicit
+            # CLI/task value remains a fixed override.
             effective_sdk_timeout = self.sdk_timeout
+            sdk_timeout_is_override = self.sdk_timeout is not None
             if effective_sdk_timeout is None:
                 # Try task frontmatter autobuild.sdk_timeout
                 # Note: TaskLoader returns frontmatter as nested dict, not at top level
                 task_frontmatter = task_data.get("frontmatter", {})
                 task_autobuild = task_frontmatter.get("autobuild", {})
-                effective_sdk_timeout = task_autobuild.get("sdk_timeout", 1200)
+                sdk_timeout_is_override = "sdk_timeout" in task_autobuild
+                effective_sdk_timeout = task_autobuild.get(
+                    "sdk_timeout", DEFAULT_SDK_TIMEOUT
+                )
 
             # Resolve enable_pre_loop: CLI > task frontmatter > feature YAML > default (False for feature-build)
             effective_enable_pre_loop = self._resolve_enable_pre_loop(feature, task_data)
@@ -4907,6 +4914,7 @@ The detailed specifications are in the task markdown file.
                 existing_worktree=worktree,  # Pass shared worktree
                 worktree_manager=self._worktree_manager,
                 sdk_timeout=effective_sdk_timeout,
+                sdk_timeout_is_override=sdk_timeout_is_override,
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
                 feature_id=feature.id,

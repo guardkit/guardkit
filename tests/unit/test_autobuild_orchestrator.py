@@ -13,6 +13,7 @@ Test Organization:
 """
 
 import asyncio
+import json
 import pytest
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -33,7 +34,8 @@ from guardkit.orchestrator.autobuild import (
     LoopPhaseError,
     FinalizePhaseError,
 )
-from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
+from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     CoachDecisionInvalidError,
@@ -961,7 +963,6 @@ class TestUnrecoverableErrors:
         mock_agent_invoker.invoke_coach.return_value = make_coach_result(
             decision="approve"
         )
-
         with patch.object(
             orchestrator_with_mocks,
             "_attempt_state_recovery",
@@ -980,6 +981,94 @@ class TestUnrecoverableErrors:
         mock_agent_invoker._write_direct_mode_results.assert_called_once_with(
             "TASK-AB-001", recovered_result.report, success=True
         )
+
+    def test_execute_turn_keeps_recovered_task_work_timeout_failed(
+        self,
+        orchestrator_with_mocks,
+        mock_worktree,
+        mock_agent_invoker,
+        tmp_path,
+    ):
+        """Recovered partial tests preserve the real failure receipt and feedback."""
+        raw_timeout_error = "task-work execution exceeded 2700s timeout"
+        timeout_error = f"Recoverable: {raw_timeout_error}"
+        receipt_invoker = AgentInvoker(
+            worktree_path=tmp_path, timeout_multiplier=1.0
+        )
+        receipt_path = receipt_invoker._write_failure_results(
+            "TASK-AB-001", raw_timeout_error, "TimeoutError", ["partial"]
+        )
+        original_receipt = json.loads(receipt_path.read_text())
+        mock_worktree.path = tmp_path
+        coach_path = TaskArtifactPaths.private_artifact_path(
+            "TASK-AB-001", "coach_turn_1.json", tmp_path
+        )
+        coach_path.parent.mkdir(parents=True, exist_ok=True)
+        coach_path.write_text(json.dumps({"decision": "approve"}))
+        mock_agent_invoker.invoke_player.return_value = make_player_result(
+            success=False,
+            error=timeout_error,
+        )
+        mock_agent_invoker._get_implementation_mode.return_value = "task-work"
+
+        recovered_result = make_player_result(success=True, tests_passed=True)
+        recovered_result.report["_synthetic"] = True
+        recovered_result.report["_recovery_metadata"] = {
+            "detection_method": "git_and_tests"
+        }
+        coach_result = make_coach_result(decision="approve")
+        coach_result.report.pop("validation_results", None)
+        mock_agent_invoker.invoke_coach.return_value = coach_result
+        mock_agent_invoker._write_recovered_task_work_failure.side_effect = (
+            receipt_invoker._write_recovered_task_work_failure
+        )
+        mock_agent_invoker._persist_coach_decision.side_effect = (
+            receipt_invoker._persist_coach_decision
+        )
+
+        with patch.object(
+            orchestrator_with_mocks,
+            "_attempt_state_recovery",
+            return_value=recovered_result,
+        ), patch.object(
+            orchestrator_with_mocks,
+            "_invoke_coach_safely",
+            return_value=coach_result,
+        ):
+            turn_record = orchestrator_with_mocks._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="Test requirements",
+                worktree=mock_worktree,
+                previous_feedback=None,
+            )
+
+        mock_agent_invoker._write_recovered_task_work_failure.assert_called_once_with(
+            "TASK-AB-001",
+            recovered_result.report,
+            original_error=timeout_error,
+        )
+        mock_agent_invoker._write_direct_mode_results.assert_not_called()
+        assert turn_record.player_result.success is False
+        assert turn_record.player_result.error == timeout_error
+        assert turn_record.decision == "feedback"
+        assert turn_record.coach_result.report["decision"] == "feedback"
+        assert timeout_error in turn_record.feedback
+        assert "complete the missing workflow phases" in turn_record.feedback
+
+        persisted = json.loads(receipt_path.read_text())
+        assert persisted["timestamp"] == original_receipt["timestamp"]
+        assert persisted["error"] == raw_timeout_error
+        assert persisted["error_type"] == "TimeoutError"
+        assert persisted["implementation_mode"] == "task-work"
+        assert persisted["completed"] is False
+        assert persisted["success"] is False
+        assert persisted["phases"] == {}
+        assert persisted["recovery"]["tests_passed"] is True
+        persisted_coach = json.loads(coach_path.read_text())
+        assert persisted_coach["decision"] == "feedback"
+        assert timeout_error in persisted_coach["rationale"]
+        assert persisted_coach["issues"][0]["category"] == "task_work_timeout"
 
 
 # ============================================================================

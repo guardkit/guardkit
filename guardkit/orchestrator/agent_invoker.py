@@ -790,9 +790,17 @@ USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "
 # need ~900-1200s. 1200s provides adequate headroom for most tasks.
 DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1200"))
 
-# TASK-ASF-008: Maximum SDK timeout cap to prevent excessively long sessions
-# Even with high complexity + task-work mode, timeout should not exceed 1 hour
-MAX_SDK_TIMEOUT = 3600
+# TASK-ASF-008: Finite SDK timeout cap.  The unconfigured 1200s base retains
+# its historical 3600s ceiling.  When GUARDKIT_SDK_TIMEOUT deliberately raises
+# the base, allow the full task-work/complexity scale (at most 3x) up to a hard
+# two-hour ceiling instead of silently clipping a configured 1800s base to one
+# hour (1800 * 1.5 * 1.5 = 4050s for the ordinary complexity-5 task).
+_DEFAULT_MAX_SDK_TIMEOUT = 3600
+_ABSOLUTE_MAX_SDK_TIMEOUT = 7200
+MAX_SDK_TIMEOUT = min(
+    _ABSOLUTE_MAX_SDK_TIMEOUT,
+    max(_DEFAULT_MAX_SDK_TIMEOUT, DEFAULT_SDK_TIMEOUT * 3),
+)
 
 # TASK-FIX-46F2: Retry constants for transient SDK stream errors.
 # During autobuild, vLLM SSE streams can be interrupted under GPU contention
@@ -1787,6 +1795,7 @@ class AgentInvoker:
         model_name: Optional[str] = None,  # TASK-FIX-MODELPLUMB
         coach_model_name: Optional[str] = None,  # TASK-FIX-COACHBUDG01
         evidence_repos: Optional[List["EvidenceRepo"]] = None,  # TASK-AB-XREPOEV01
+        sdk_timeout_is_override: Optional[bool] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -1799,6 +1808,9 @@ class AgentInvoker:
             worktree_path: Path to the isolated git worktree
             max_turns_per_agent: Maximum turns per agent invocation (default: 30)
             sdk_timeout_seconds: Timeout for SDK invocations (default: 1200s)
+            sdk_timeout_is_override: Whether ``sdk_timeout_seconds`` came from
+                an explicit CLI/task override. ``None`` retains the legacy
+                value-comparison inference for direct callers.
             use_task_work_delegation: If True, delegate Player to task-work instead of
                 direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
             development_mode: Development mode for implementation (default: "tdd").
@@ -1830,7 +1842,11 @@ class AgentInvoker:
         self._venv_python: Optional[str] = venv_python
         self.max_turns_per_agent = max_turns_per_agent
         self.sdk_timeout_seconds = sdk_timeout_seconds
-        self._sdk_timeout_is_override = sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
+        self._sdk_timeout_is_override = (
+            sdk_timeout_seconds != DEFAULT_SDK_TIMEOUT
+            if sdk_timeout_is_override is None
+            else sdk_timeout_is_override
+        )
         self.timeout_multiplier = (
             timeout_multiplier if timeout_multiplier is not None
             else detect_timeout_multiplier()
@@ -9912,8 +9928,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         - Implementation mode multiplier (task-work=1.5x, direct=1.0x)
         - Complexity multiplier (1.0 + complexity/10.0, range 1.1x-2.0x)
 
-        If the user provided a CLI override (sdk_timeout_seconds differs from
-        DEFAULT_SDK_TIMEOUT), returns that value unchanged.
+        If the caller marks the timeout as an explicit CLI/task override,
+        returns that value unchanged.
 
         Args:
             task_id: Task identifier (e.g., "TASK-001")
@@ -9923,7 +9939,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 take precedence and are never capped. (TASK-ABFIX-004)
 
         Returns:
-            Effective timeout in seconds, capped at MAX_SDK_TIMEOUT (3600s)
+            Effective timeout in seconds, capped at the finite MAX_SDK_TIMEOUT
         """
         # Respect CLI override: if user explicitly set a timeout, don't recalculate
         if self._sdk_timeout_is_override:
@@ -13624,6 +13640,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             "timestamp": datetime.now().isoformat(),
             "completed": False,
             "success": False,
+            "implementation_mode": "task-work",
             "error": error,
             "error_type": error_type,
             "partial_output": partial_output or [],
@@ -13648,6 +13665,110 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote failure results to {results_file}")
 
+        return results_file
+
+    def _write_recovered_task_work_failure(
+        self,
+        task_id: str,
+        player_report: Dict[str, Any],
+        original_error: Optional[str],
+    ) -> Path:
+        """Attach recovered partial state without converting a timeout to success.
+
+        The task-work invocation writes the authoritative failure receipt
+        before state recovery inspects the worktree. Recovery can prove useful
+        files and tests exist, but it cannot prove the interrupted Phases 3-5
+        completed. Keep the original failure fields and phase record while
+        adding bounded evidence for Coach feedback and the next Player turn.
+        """
+        TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
+        results_file = TaskArtifactPaths.task_work_results_path(
+            task_id, self.worktree_path
+        )
+
+        results: Dict[str, Any] = {}
+        try:
+            loaded = json.loads(results_file.read_text())
+            if isinstance(loaded, dict):
+                results = loaded
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        if not results or results.get("success") is not False:
+            self._write_failure_results(
+                task_id,
+                original_error or "task-work invocation failed",
+                "TimeoutError",
+            )
+            results = json.loads(results_file.read_text())
+
+        recovery_metadata = player_report.get("_recovery_metadata")
+        if not isinstance(recovery_metadata, dict):
+            recovery_metadata = {}
+
+        def _merged_paths(field: str) -> List[str]:
+            existing = results.get(field)
+            recovered = player_report.get(field)
+            return sorted(
+                {
+                    str(path)
+                    for group in (existing, recovered)
+                    if isinstance(group, list)
+                    for path in group
+                    if isinstance(path, str) and path
+                }
+            )
+
+        # These status fields remain authoritative even when recovered tests
+        # passed. A timed-out implementation has not completed or passed.
+        results["completed"] = False
+        results["success"] = False
+        results["implementation_mode"] = "task-work"
+        results["phases"] = (
+            results.get("phases")
+            if isinstance(results.get("phases"), dict)
+            else {}
+        )
+        quality_gates = results.get("quality_gates")
+        if not isinstance(quality_gates, dict):
+            quality_gates = {}
+        quality_gates["all_passed"] = False
+        results["quality_gates"] = quality_gates
+        results["files_modified"] = _merged_paths("files_modified")
+        results["files_created"] = _merged_paths("files_created")
+        results["tests_written"] = _merged_paths("tests_written")
+
+        preserved_error = results.get("error")
+        if not isinstance(preserved_error, str) or not preserved_error:
+            preserved_error = original_error or "task-work invocation failed"
+            results["error"] = preserved_error
+        results.setdefault("error_type", "TimeoutError")
+
+        results["recovery"] = {
+            "state_recovered": True,
+            "completion_claimed": False,
+            "detection_method": recovery_metadata.get("detection_method"),
+            "tests_run": bool(player_report.get("tests_run")),
+            "tests_passed": bool(player_report.get("tests_passed")),
+            "test_count": player_report.get("test_count", 0),
+            "requirements_addressed": player_report.get(
+                "requirements_addressed", []
+            ),
+            "partial_data": player_report.get("partial_data"),
+            "original_error": preserved_error,
+        }
+        results["_synthetic"] = True
+        results["summary"] = (
+            f"Failed: {results.get('error_type', 'TimeoutError')} - "
+            f"{preserved_error}. Partial work was recovered for the next turn; "
+            "completion was not established."
+        )
+
+        results_file.write_text(json.dumps(results, indent=2))
+        logger.info(
+            "Preserved failed task-work receipt with recovered partial state at %s",
+            results_file,
+        )
         return results_file
 
     def _generate_summary(self, result_data: Dict[str, Any]) -> str:
