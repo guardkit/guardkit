@@ -343,7 +343,7 @@ async def test_declared_document_source_returns_exact_provenance_sections(
     assert selected and used <= 709
     assert selected[0]["fact"].startswith("### ALWAYS\n")
     rendered = RetrievedContext._format_item(None, selected[0])
-    assert "Fleet source: rules_example" in rendered
+    assert "Fleet source excerpt: rules_example" in rendered
     assert selected[0]["fact"] in rendered
 
 
