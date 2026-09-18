@@ -1021,6 +1021,7 @@ def _build_code_reviewer_prompt(
     task_context: str,
     phase_4_summary: dict[str, Any],
     *,
+    canonical_root: Path,
     max_chars: int | None = None,
 ) -> str:
     """Render the prompt the code-reviewer specialist receives.
@@ -1043,6 +1044,17 @@ def _build_code_reviewer_prompt(
     Truncation is **loud**: a visible notice is inserted inside the prompt
     naming what was cut and by how much, and a WARNING is logged.
     """
+    try:
+        review_root = Path(canonical_root).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(
+            f"code-reviewer canonical root does not exist: {canonical_root}"
+        ) from exc
+    if not review_root.is_dir():
+        raise ValueError(
+            f"code-reviewer canonical root is not a directory: {review_root}"
+        )
+
     if max_chars is None:
         max_chars = SPECIALIST_PROMPT_MAX_CHARS
 
@@ -1055,10 +1067,17 @@ def _build_code_reviewer_prompt(
         f"- output_summary: {phase_4_summary.get('output_summary', '')}"
     )
 
-    prompt = (
+    required_prefix = (
         f"You are the code-reviewer specialist for task {task_id}.\n\n"
+        "Authoritative review checkout (required):\n"
+        f"- canonical task worktree root: {review_root}\n"
+        "- resolve every relative file lookup from that exact directory\n"
+        "- any surrounding or outer temporary checkout is a non-authoritative "
+        "snapshot; do not use it to assess this implementation\n\n"
         "Task context (from the task markdown):\n"
-        f"{task_context}\n\n"
+    )
+    required_suffix = (
+        "\n\n"
         "Phase 4 summary (test-orchestrator outcome):\n"
         f"{summary_lines}\n\n"
         "Your job:\n"
@@ -1073,73 +1092,55 @@ def _build_code_reviewer_prompt(
         "withheld from this invocation."
     )
 
-    # Layer 1: Keep the prompt under ~2000 chars to match the
-    # test-orchestrator runner's seed cap. Trim the variable-length
-    # task_context first.
-    if len(prompt) > 2000:
-        overflow = len(prompt) - 2000
-        trimmed_context = task_context[: max(0, len(task_context) - overflow - 32)]
-        prompt = prompt.replace(
-            task_context, trimmed_context + "\n[...truncated]"
+    def render(context: str) -> str:
+        return f"{required_prefix}{context}{required_suffix}"
+
+    prompt = render(task_context)
+
+    # Layer 1: keep the historical seed cap by trimming only task context.
+    # The canonical root and the outer-snapshot warning are required context;
+    # no budget path may cut or replace them.
+    seed_limit = 1999
+    if len(prompt) > seed_limit:
+        overflow = len(prompt) - seed_limit
+        marker = "\n[...truncated]"
+        keep = (
+            seed_limit - len(required_prefix) - len(required_suffix) - len(marker)
+        )
+        if keep < 0:
+            raise ValueError(
+                "code-reviewer prompt seed budget cannot preserve the canonical root"
+            )
+        task_context = f"{task_context[:keep]}{marker}"
+        prompt = render(task_context)
+        logger.warning(
+            "specialist prompt: task_context truncated (%d chars elided) "
+            "to preserve required context within the 1999-char seed budget",
+            overflow,
         )
 
     # Layer 2: Overall backstop budget (env-tunable). Applied after the
-    # seed cap so the 2000-char historic behaviour is preserved when under
-    # budget. Trim task_context first (it's the variable-length section).
+    # seed cap. It also trims only task context; a configuration too small for
+    # required context is refused rather than silently losing the checkout.
     if len(prompt) > max_chars:
         overflow = len(prompt) - max_chars
-        # Reserve space for the truncation marker (~80 chars).
-        marker_reservation = 80
-        overflow += marker_reservation
-        # Find where task_context appears and trim it.
-        task_context_marker = "Task context (from the task markdown):\n"
-        ctx_start = prompt.find(task_context_marker)
-        if ctx_start != -1:
-            ctx_start += len(task_context_marker)
-            # Find the end of the task_context (next double-newline or end)
-            ctx_end = prompt.find("\n\n", ctx_start)
-            if ctx_end != -1:
-                original_ctx = prompt[ctx_start:ctx_end]
-                keep_ctx = max(0, len(original_ctx) - overflow)
-                trimmed_ctx = original_ctx[:keep_ctx]
-                prompt = (
-                    prompt[:ctx_start]
-                    + trimmed_ctx
-                    + f"\n\n[...truncated: {overflow} more chars of task "
-                    f"context elided to fit within {max_chars}-char budget.]"
-                    + prompt[ctx_end:]
-                )
-                logger.warning(
-                    "specialist prompt: task_context truncated (%d chars "
-                    "elided) to fit within %d-char budget",
-                    overflow,
-                    max_chars,
-                )
-            else:
-                prompt = (
-                    prompt[:max_chars]
-                    + f"\n... [specialist prompt truncated at "
-                    f"{max_chars} chars — {len(prompt) - max_chars} more "
-                    f"chars not shown.]"
-                )
-                logger.warning(
-                    "specialist prompt: hard-trimmed at %d chars (%d chars "
-                    "elided)",
-                    max_chars,
-                    len(prompt) - max_chars,
-                )
-        else:
-            prompt = (
-                prompt[:max_chars]
-                + f"\n... [specialist prompt truncated at {max_chars} chars "
-                f"— {len(prompt) - max_chars} more chars not shown.]"
+        marker = (
+            f"\n[...truncated: task context elided to fit within "
+            f"{max_chars}-char budget.]"
+        )
+        keep = max_chars - len(required_prefix) - len(required_suffix) - len(marker)
+        if keep < 0:
+            raise ValueError(
+                "code-reviewer prompt budget cannot preserve the canonical root"
             )
-            logger.warning(
-                "specialist prompt: hard-trimmed at %d chars (%d chars "
-                "elided)",
-                max_chars,
-                len(prompt) - max_chars,
-            )
+        task_context = f"{task_context[:keep]}{marker}"
+        prompt = render(task_context)
+        logger.warning(
+            "specialist prompt: task_context truncated (%d chars elided) "
+            "to fit within %d-char budget while preserving the canonical root",
+            overflow,
+            max_chars,
+        )
 
     return prompt
 
@@ -1925,6 +1926,7 @@ async def invoke_code_reviewer(
         task_id=task_id,
         task_context=task_context,
         phase_4_summary=phase_4_summary,
+        canonical_root=Path(worktree_path),
     )
 
     # TASK-PERF-SPECLAT01: cap the caller-supplied sdk_timeout at the
