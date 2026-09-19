@@ -130,9 +130,17 @@ class TestImplementationPromptBuilder:
         assert "## Coach Feedback from Turn 1" in prompt
         assert "must_fix" in prompt.lower() or "Fix test failure" in prompt
 
-    def test_prompt_excludes_coach_feedback_on_turn_1(self, invoker):
-        """Verify prompt excludes Coach feedback on first turn."""
-        feedback = {"must_fix": ["Some feedback"]}
+    def test_turn_1_feedback_is_a_gate_seed_and_reaches_the_player(self, invoker):
+        """Feedback on turn 1 is a post-wave gate's seed and MUST be shown.
+
+        Before 19 September 2026 this test asserted the opposite ("excludes
+        Coach feedback on first turn"). Driving the real runner showed why that
+        was wrong: a gate that fails after a task is approved re-enters the
+        wave with a fresh turn-1 Player, and the old ``turn > 1`` guard dropped
+        the gate's output, so the re-entered Player was told nothing and
+        changed nothing. There is still no "turn 0" Coach to attribute it to.
+        """
+        feedback = {"must_fix": ["The delivered file must also carry the line: factory"]}
 
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001",
@@ -141,8 +149,20 @@ class TestImplementationPromptBuilder:
             feedback=feedback
         )
 
-        # Should not include feedback section on turn 1
+        assert "## Feedback from the check that failed after this task was approved" in prompt
+        assert "must also carry the line: factory" in prompt
+        assert "Coach Feedback from Turn 0" not in prompt
+
+    def test_turn_1_without_feedback_has_no_feedback_section(self, invoker):
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None
+        )
+
         assert "## Coach Feedback" not in prompt
+        assert "## Feedback from the check" not in prompt
 
     def test_prompt_includes_graphiti_context_when_available(self, invoker):
         """Verify prompt includes Graphiti context when provided."""
