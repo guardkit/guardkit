@@ -121,6 +121,7 @@ from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBund
 # TASK-AB-COACHSUBPROC01: env > config > default (subprocess) resolution for
 # the Coach's independent test-execution mode.
 from guardkit.orchestrator.quality_gates.coach_validator import (
+    MET_RESULTS,
     resolve_coach_test_execution,
 )
 
@@ -9294,7 +9295,12 @@ class AutoBuildOrchestrator:
                 unmet_ids = [
                     cr.criterion_id
                     for cr in req_validation.criteria_results
-                    if cr.result != "verified"
+                    # B9 Lane C: a promise-backed criterion is now recorded as
+                    # "claimed", which still counts as met. Naming it "unmet"
+                    # here would send the Player after a criterion the Coach
+                    # already counted. The decision is unchanged either way —
+                    # this list only names criteria in the message.
+                    if cr.result not in MET_RESULTS
                 ]
                 total = req_validation.criteria_total
                 unmet = total - req_validation.criteria_met

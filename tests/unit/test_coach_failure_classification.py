@@ -290,6 +290,10 @@ class TestFeedbackPathClassification:
                 "all_passed": True,
                 "tests_passed": 10,
                 "tests_failed": 0,
+                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
+                # These fixtures exist to pass the gates, so they now say
+                # plainly that coverage was measured and met.
+                "coverage_met": True,
                 "coverage": 85.0,
                 "branch_coverage": 80.0,
             },
@@ -513,6 +517,10 @@ class TestConditionalApproval:
                 "all_passed": True,
                 "tests_passed": 10,
                 "tests_failed": 0,
+                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
+                # These fixtures exist to pass the gates, so they now say
+                # plainly that coverage was measured and met.
+                "coverage_met": True,
                 "coverage": 85.0,
                 "branch_coverage": 80.0,
             },
@@ -743,6 +751,10 @@ class TestCollectionErrorConditionalApproval:
                 "all_passed": True,
                 "tests_passed": 10,
                 "tests_failed": 0,
+                # B9 Lane C (2026-09-19): a coverage NUMBER is not a verdict.
+                # These fixtures exist to pass the gates, so they now say
+                # plainly that coverage was measured and met.
+                "coverage_met": True,
                 "coverage": 85.0,
                 "branch_coverage": 80.0,
             },

@@ -111,7 +111,10 @@ class TestRealBuildTurnTwo:
             "AC-003",
             "AC-004",
         ]
-        assert all(c.result == "verified" for c in validation.criteria_results)
+        # B9 Lane C (2026-09-19): a promise-backed criterion is recorded
+        # "claimed", not "verified" — the MATCHING this suite pins is
+        # unchanged (same ids, same counts, same evidence text).
+        assert all(c.result == "claimed" for c in validation.criteria_results)
         assert "crud.py" in validation.criteria_results[0].evidence
 
     def test_turn_one_is_unchanged(self) -> None:
@@ -188,8 +191,10 @@ class TestMatchingBehaviour:
     def test_padded_criterion_matches_unpadded_promise(self) -> None:
         v = _validator()
         result = v._match_by_promises(["do the thing"], [_promise("AC-1")])
-        assert result.criteria_results[0].result == "verified"
-        assert result.criteria_results[0].evidence == "evidence for AC-1"
+        assert result.criteria_results[0].result == "claimed"
+        # B9 Lane C: the Player's evidence text is preserved verbatim; the
+        # recorded word in front of it now says whose word it is.
+        assert result.criteria_results[0].evidence.endswith("evidence for AC-1")
 
     def test_unpadded_criterion_matches_padded_promise(self) -> None:
         """The other direction: the task markdown labels the criterion
@@ -197,7 +202,7 @@ class TestMatchingBehaviour:
         v = _validator()
         result = v._match_by_promises(["AC-1: do the thing"], [_promise("AC-001")])
         assert result.criteria_results[0].criterion_id == "AC-1"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"
 
     def test_an_exact_match_always_wins_over_a_padded_alias(self) -> None:
         """Both ``AC-001`` and ``AC-1`` present: the criterion ``AC-001``
@@ -211,7 +216,8 @@ class TestMatchingBehaviour:
              _promise("AC-1", evidence="from the alias")],
         ):
             result = v._match_by_promises(["do the thing"], promises)
-            assert result.criteria_results[0].evidence == "from the exact id"
+            # B9 Lane C: same matching, with the "claimed" prefix in front.
+            assert result.criteria_results[0].evidence.endswith("from the exact id")
 
     def test_an_incomplete_padded_promise_is_still_rejected(self) -> None:
         """Widening WHICH promise is found never changes WHETHER it counts:
@@ -231,7 +237,7 @@ class TestMatchingBehaviour:
         result = v._match_by_promises(
             ["first thing", "second thing"], [_promise("AC-1")]
         )
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"
         assert result.criteria_results[1].result == "rejected"
         assert (
             result.criteria_results[1].evidence
@@ -247,7 +253,7 @@ class TestMatchingBehaviour:
             ["**AC-LOAD-01** — load the thing"], [_promise("AC-LOAD-01")]
         )
         assert result.criteria_results[0].criterion_id == "AC-LOAD-01"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"
 
         missed = v._match_by_promises(
             ["**AC-LOAD-01** — load the thing"], [_promise("AC-1")]
