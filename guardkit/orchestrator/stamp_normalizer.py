@@ -360,6 +360,58 @@ R1_DB_UNAVAILABLE = _family(
     r"postgres\w* .* (stopped|unreachable|down|unavailable)",
 )
 
+# R1 WIDENING — A NAMED DEPENDENCY IS DOWN (2026-09-19, same shape and the
+# same argument as the 2026-08-17 "data store" line above).
+#
+# Datum: on the 2026-09-18 comparison run the specification seat wrote the
+# dependency-down scenario as "Given the user creation SERVICE is
+# unavailable / Then the request should fail gracefully". "service" is not
+# in the lines above, so R1 did not fire and R9's machine idiom (e) ("the
+# request should fail") minted `hurl` — an HTTP twin against the healthy
+# running app can never show a dependency being down, so the scenario is
+# unprovable wherever the twin is enforced and the whole feature becomes
+# unfinishable whatever the coder writes. This is exactly the silent
+# divergence the ordering law (R1 before R9) exists to prevent, and exactly
+# what api_test's hand stamps call probe:process for the database wording.
+#
+# Kept as narrow as the corpus evidence supports:
+#   * A NAMED dependency only — a qualifier word that is not a determiner
+#     must sit directly in front of the noun ("the user creation service",
+#     "the embedding service"). A bare "the service is unavailable" does
+#     NOT match, and "unavailable" on its own never matches.
+#   * The noun must be the SUBJECT of the state: noun + copula + state, in
+#     that order. "service" in an unrelated clause ("the service degrades
+#     cleanly", "spoken narration is unavailable") does not match.
+#   * ONLY on a repo with an HTTP surface (``ctx.repo_has_http_surface``,
+#     the structural detector R9 uses). That is where the harm is: off a
+#     surface R9 cannot fire, the sentence refuses loud as it does today
+#     and a human or the model decides. Gating it here keeps every
+#     non-surface repo byte-identical (fleet-memory's "the embedding
+#     service is unavailable", specialist-agent's "the LLM service is
+#     unreachable", lpa's "the voice service is unavailable" and the rest
+#     are unit-level scenarios proved with a stub, not with infra control —
+#     minting probe:process on them would be a wrong home, silently).
+#   * Negation on the step line rejects the hit, the way R4 already does
+#     ("without the user creation service being down", "the service is not
+#     unavailable" — the latter cannot match the pattern at all).
+# Census delta (the pinned estate corpus, the same measurement the earlier
+# widenings used): 3 scenarios move, all REFUSED → probe:process, all in
+# study-tutor, all genuinely "a named dependency is stopped"; nothing that
+# is proved over the wire moves; every other repo is byte-identical.
+_R1_DEPENDENCY_NOUN = r"(?:service|services|dependency|dependencies|backend|backends|upstream|upstreams)"
+_R1_NOT_A_NAME = r"(?:the|a|an|its|it's|their|our|your|my|this|that|these|those|any|some|no|each|every|one)"
+R1_NAMED_DEPENDENCY_DOWN = _family(
+    r"\b(?!" + _R1_NOT_A_NAME + r"\s)[a-z][a-z0-9+._-]*\s"
+    + _R1_DEPENDENCY_NOUN
+    + r"\s(?:is|are|was|were|becomes?|became|goes|go|remains?|remain|being|stays?)\s"
+    r"(?:unavailable|down|unreachable|offline)\b",
+)
+
+# The negation window for the widening: the whole step line before the hit,
+# as R4 uses, because the negation heads the clause ("without the user
+# creation service being down").
+_R1_NEGATION_WINDOW_WORDS: Optional[int] = None
+
 # ---------------------------------------------------------------------------
 # Negation (2026-08-16 second tightening, re-verifier findings 1 and 3): a
 # rule's token that is NEGATED within the same step line is not evidence.
@@ -1133,6 +1185,20 @@ def classify_scenario(
     hit = _first_match(R1_DB_UNAVAILABLE, text)
     if hit is not None:
         return Home(verifier="probe:process", rule="R1", evidence=hit.strip())
+
+    # R1 WIDENING (2026-09-19) — a NAMED service / dependency / backend /
+    # upstream is unavailable, on a repo with an HTTP surface only. Same
+    # need as a database being down (a process-level condition no HTTP call
+    # against a healthy app can show), so the same home and the same place
+    # in the order — before R9, which would otherwise mint `hurl` on it and
+    # make the feature unfinishable. A hit negated on its step line is not
+    # evidence.
+    if context.repo_has_http_surface:
+        hit = _first_unnegated_match(
+            R1_NAMED_DEPENDENCY_DOWN, text, words=_R1_NEGATION_WINDOW_WORDS
+        )
+        if hit is not None:
+            return Home(verifier="probe:process", rule="R1", evidence=hit.strip())
 
     # R2 — fresh start / restart (negation within three words rejects — finding 3).
     hit = _first_unnegated_match(R2_FRESH_START, text, words=_R2_NEGATION_WINDOW_WORDS)
