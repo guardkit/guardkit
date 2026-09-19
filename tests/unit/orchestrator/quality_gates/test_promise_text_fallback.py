@@ -81,7 +81,7 @@ class TestFeatFd32Reproducer:
         assert result.missing == []
         # The matched criterion_id is the natural label, not the index ID.
         assert result.criteria_results[0].criterion_id == "AC-SEED-01"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
     def test_pre_fix_baseline_would_have_stalled(
         self, validator: CoachValidator
@@ -196,7 +196,7 @@ class TestBackwardsCompatibility:
 
         assert result.criteria_met == 1
         assert result.criteria_results[0].criterion_id == "AC-LOAD-01"
-        assert result.criteria_results[0].evidence == "Direct match"
+        assert result.criteria_results[0].evidence.endswith("Direct match")  # B9 Lane C: the claim prefix rides in front of the Player's own words
 
     def test_explicit_criterion_id_wins_when_both_keys_resolve(
         self, validator: CoachValidator
@@ -226,7 +226,7 @@ class TestBackwardsCompatibility:
         )
 
         assert result.criteria_met == 1
-        assert result.criteria_results[0].evidence == "Explicit match wins"
+        assert result.criteria_results[0].evidence.endswith("Explicit match wins")  # B9 Lane C: the claim prefix rides in front of the Player's own words
 
     def test_index_based_promise_for_unlabelled_criterion(
         self, validator: CoachValidator

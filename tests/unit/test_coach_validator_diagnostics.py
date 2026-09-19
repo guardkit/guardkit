@@ -325,8 +325,8 @@ def test_debug_logging_partial_match_promises(
     # Completion promises logged
     assert "completion_promises:" in log_text
     # Per-criterion results logged
-    assert "AC-001 [verified]:" in log_text
-    assert "AC-002 [verified]:" in log_text
+    assert "AC-001 [claimed]:" in log_text
+    assert "AC-002 [claimed]:" in log_text
     assert "AC-003 [rejected]:" in log_text
     # Per-criterion matching strategy logged for verified criteria
     assert "AC-001: Matched via promises (status: complete, confidence: 1.00)" in log_text
