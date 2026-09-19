@@ -139,8 +139,8 @@ class TestR3Reproducer:
         assert result.missing == []
 
         by_id = {c.criterion_id: c for c in result.criteria_results}
-        assert by_id["AC-ANTISTUB-1"].result == "verified"
-        assert by_id["AC-ANTISTUB-2"].result == "verified"
+        assert by_id["AC-ANTISTUB-1"].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
+        assert by_id["AC-ANTISTUB-2"].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
         # The evidence travelled from the promise, not a synthetic default.
         assert "405" in by_id["AC-ANTISTUB-1"].evidence
 
@@ -427,5 +427,5 @@ class TestExplicitCriterionIdWins:
         result = validator._match_by_promises(criteria, promises)
 
         assert result.criteria_met == 1
-        assert result.criteria_results[0].result == "verified"
-        assert result.criteria_results[0].evidence == "explicit promise"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
+        assert result.criteria_results[0].evidence.endswith("explicit promise")  # B9 Lane C: the claim prefix rides in front of the Player's own words

@@ -646,9 +646,11 @@ class TestQualityGateVerification:
 
         status = validator.verify_quality_gates(results)
 
-        # Should use defaults: tests_passed=False, coverage_met=True
+        # Should use defaults: tests_passed=False, coverage_met UNKNOWN
         assert status.tests_passed is False
-        assert status.coverage_met is True  # Default when not present
+        # B9 Lane C (2026-09-19): nothing measured coverage, so the gate is
+        # UNKNOWN (None), not a default pass.
+        assert status.coverage_met is None
         assert status.arch_review_passed is False  # Score 0 < 60
         assert status.plan_audit_passed is True  # 0 violations default
 
@@ -664,18 +666,19 @@ class TestQualityGateVerification:
         status = validator.verify_quality_gates(results)
 
         assert status.tests_passed is True
-        assert status.coverage_met is True  # Default
+        # B9 Lane C: unmeasured coverage is UNKNOWN, never a default pass.
+        assert status.coverage_met is None
         assert status.arch_review_passed is True  # Has code_review.score = 82
 
-    def test_verify_coverage_none_treated_as_pass(self, tmp_worktree):
-        """Test that coverage_met=None is treated as pass (not measured).
+    def test_verify_coverage_none_is_unknown_and_cannot_approve(self, tmp_worktree):
+        """coverage_met=null means NOTHING measured coverage.
 
-        When task-work writes coverage_met=null (Python None) to task_work_results.json,
-        this means coverage data wasn't collected. We should treat this as "not measured"
-        and allow the gate to pass, rather than failing because it's not explicitly True.
-
-        This is the fix for TASK-FIX-COVNULL where quality gates failed due to
-        coverage=None being evaluated as falsy even though coverage wasn't measured.
+        TASK-FIX-COVNULL originally turned that into a pass so a build would
+        stop failing on absent data. B9 (2026-09-19) reverses the direction:
+        "we did not measure" is not "the threshold was met", and a gate that
+        measured nothing must not approve. The way to pass this gate is to
+        report a measurement, or to declare the project's own coverage command
+        (``toolchain.coverage``), which the Coach then runs itself.
         """
         validator = CoachValidator(str(tmp_worktree))
         results = {
@@ -690,9 +693,8 @@ class TestQualityGateVerification:
 
         status = validator.verify_quality_gates(results)
 
-        # coverage_met=None should be treated as True (pass) since coverage wasn't measured
-        assert status.coverage_met is True
-        assert status.all_gates_passed is True
+        assert status.coverage_met is None
+        assert status.all_gates_passed is False
 
     def test_verify_coverage_false_still_fails(self, tmp_worktree):
         """Test that coverage_met=False still correctly fails the gate.
@@ -2737,7 +2739,10 @@ class TestApprovalRationaleAndZeroTestAnomaly:
                 "tests_passed": 0,
                 "tests_failed": 0,
                 "coverage": None,
-                "coverage_met": None,
+                # B9 Lane C (2026-09-19): coverage is measured and met here so this
+                # test still isolates the zero-test anomaly; an UNMEASURED coverage
+                # is now UNKNOWN and blocks the turn on its own.
+                "coverage_met": True,
                 "all_passed": True,
             },
             "code_review": {"score": 85},
@@ -2925,7 +2930,10 @@ class TestZeroTestBlockingConfiguration:
                 "tests_passed": 0,
                 "tests_failed": 0,
                 "coverage": None,
-                "coverage_met": None,
+                # B9 Lane C (2026-09-19): coverage is measured and met here so this
+                # test still isolates the zero-test anomaly; an UNMEASURED coverage
+                # is now UNKNOWN and blocks the turn on its own.
+                "coverage_met": True,
                 "all_passed": True,
             },
             "code_review": {"score": 85},
@@ -3202,7 +3210,10 @@ class TestZeroTestAnomalyIndependentTestOverride:
                 "tests_passed": 0,
                 "tests_failed": 0,
                 "coverage": None,
-                "coverage_met": None,
+                # B9 Lane C (2026-09-19): coverage is measured and met here so this
+                # test still isolates the zero-test anomaly; an UNMEASURED coverage
+                # is now UNKNOWN and blocks the turn on its own.
+                "coverage_met": True,
                 "all_passed": True,
             },
             "code_review": {"score": 85},
@@ -3912,7 +3923,14 @@ class TestCriteriaVerification:
 
 
 class TestCompletionPromisesMatching:
-    """Test ID-based matching via completion_promises in validate_requirements."""
+    """Test ID-based matching via completion_promises in validate_requirements.
+
+    B9 Lane C (2026-09-19): a promise-backed criterion is recorded ``claimed``
+    — the Player's word, counted as met for the turn but never written down as
+    proof. ``verified`` is reserved for what the Coach corroborated itself
+    (``corroborate_claims``). The MATCHING this class pins is unchanged: same
+    criteria, same counts, same rejections, same evidence text.
+    """
 
     def test_promises_match_all_criteria(self, tmp_worktree):
         """AC-003: All criteria verified when all promises have status complete."""
@@ -3932,7 +3950,7 @@ class TestCompletionPromisesMatching:
         assert validation.criteria_met == 3
         assert validation.criteria_total == 3
         assert len(validation.criteria_results) == 3
-        assert all(cr.status == "verified" for cr in validation.criteria_results)
+        assert all(cr.status == "claimed" for cr in validation.criteria_results)
 
     def test_promises_partial_match(self, tmp_worktree):
         """AC-004: Incomplete promises show as rejected, not false positive."""
@@ -3950,9 +3968,9 @@ class TestCompletionPromisesMatching:
 
         assert validation.all_criteria_met is False
         assert validation.criteria_met == 2
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
         assert validation.criteria_results[1].status == "rejected"
-        assert validation.criteria_results[2].status == "verified"
+        assert validation.criteria_results[2].status == "claimed"
         assert "Feature B" in validation.missing
 
     def test_promises_missing_criterion(self, tmp_worktree):
@@ -3969,7 +3987,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         assert validation.criteria_met == 1
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
         assert validation.criteria_results[1].status == "rejected"
         assert "No completion promise for AC-002" in validation.criteria_results[1].evidence
 
@@ -3990,7 +4008,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         cr = validation.criteria_results[0]
-        assert cr.status == "verified"
+        assert cr.status == "claimed"
         assert "OAuth2 handler" in cr.evidence
 
     def test_promises_preferred_over_requirements_met(self, tmp_worktree):
@@ -4016,7 +4034,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         # AC-001: verified by promise (kept as-is)
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
         # AC-002: promise reported "incomplete" — text fallback no longer
         # upgrades this case (TASK-AB-FIX-INVAB1 AC-004 removed the branch).
         assert validation.criteria_met == 1
@@ -4181,7 +4199,7 @@ class TestCompletionPromisesMatching:
 
         validation = validator.validate_requirements(task, results)
 
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
         assert "AC-001" in validation.criteria_results[0].evidence
 
     def test_promise_with_unknown_status_rejected(self, tmp_worktree):
@@ -4229,7 +4247,7 @@ class TestCompletionPromisesMatching:
 
         assert validation.all_criteria_met is True
         assert validation.criteria_met == 2
-        assert all(cr.status == "verified" for cr in validation.criteria_results)
+        assert all(cr.status == "claimed" for cr in validation.criteria_results)
 
     def test_promises_mixed_criterion_id_and_ac_id(self, tmp_worktree):
         """TASK-PSN-001: Mix of criterion_id and ac_id fields both match correctly."""
@@ -4260,7 +4278,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         assert validation.criteria_met == 1
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
 
     def test_promises_status_finished_normalized_to_complete(self, tmp_worktree):
         """TASK-PSN-002: status 'finished' is normalized to 'complete' in promise matching."""
@@ -4275,7 +4293,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         assert validation.criteria_met == 1
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
 
     def test_promises_status_completed_normalized_to_complete(self, tmp_worktree):
         """TASK-PSN-002: status 'completed' is normalized to 'complete' in promise matching."""
@@ -4290,7 +4308,7 @@ class TestCompletionPromisesMatching:
         validation = validator.validate_requirements(task, results)
 
         assert validation.criteria_met == 1
-        assert validation.criteria_results[0].status == "verified"
+        assert validation.criteria_results[0].status == "claimed"
 
 
 # ============================================================================
