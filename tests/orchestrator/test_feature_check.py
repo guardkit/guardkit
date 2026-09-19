@@ -892,3 +892,95 @@ def test_the_receipt_names_the_criteria_still_claimed(tmp_path: Path) -> None:
     # The check covered that scenario, so the feature may still complete.
     assert receipt["scenarios_covered"] == [SCENARIO_TITLE]
     assert result.status == "completed"
+
+
+# ---------------------------------------------------------------------------
+# The pass bars are where the delivered-surface promises actually live
+# (coordinator's integration fix, 19 September). In the plans the factory
+# writes, the machine-class promises are the approved scenarios registered in
+# qa/pass-bar-<TASK>.yaml — the task Coach never evaluates those rows, so a
+# rule that waited for a "claimed" task receipt never fired. Shapes below are
+# the retained B9 pass-bar shape, with generic words.
+
+PASS_BAR = """format_version: '2.0'
+task_id: TASK-001
+registered_at:
+  sha: 0000000000000000000000000000000000000000
+  date: '2026-09-19'
+auth_surface_bearing: false
+criteria:
+- id: daily-count-AC-001
+  text: {title}
+  class: machine
+  evidence_kind: screenshot
+  runbook_ref: null
+- id: daily-count-AC-002
+  text: An operator signs the release note
+  class: operator
+  evidence_kind: screenshot
+  runbook_ref: docs/runbook.md
+"""
+
+
+def test_a_pass_bar_promise_the_check_did_not_name_blocks_completion(
+    tmp_path: Path,
+) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    _write(
+        worktree,
+        "qa/pass-bar-TASK-001.yaml",
+        PASS_BAR.format(title="A promise nobody checked at the endpoint"),
+    )
+    feature = _make_feature(worktree)
+
+    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    assert result.status == "failed"
+    assert result.success is False
+    receipt = _receipt(worktree)
+    assert receipt["status"] == "passed", "the command itself passed"
+    assert receipt["criteria_still_claimed"] == [
+        "A promise nobody checked at the endpoint"
+    ]
+
+
+def test_a_pass_bar_promise_the_check_named_lets_the_feature_complete(
+    tmp_path: Path,
+) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    _write(worktree, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title=SCENARIO_TITLE))
+    feature = _make_feature(worktree)
+
+    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    assert result.status == "completed"
+    assert _receipt(worktree)["criteria_still_claimed"] == [SCENARIO_TITLE]
+
+
+def test_operator_rows_and_broken_pass_bars_register_nothing(tmp_path: Path) -> None:
+    from guardkit.orchestrator.feature_check import pass_bar_machine_criteria
+
+    _write(tmp_path, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title="Machine promise"))
+    _write(tmp_path, "qa/pass-bar-TASK-002.yaml", "criteria: [not, a, mapping]\n")
+    _write(tmp_path, "qa/pass-bar-TASK-003.yaml", ": : not yaml : :\n")
+    assert pass_bar_machine_criteria(
+        tmp_path, ["TASK-001", "TASK-002", "TASK-003", "TASK-404"]
+    ) == ["Machine promise"]
+
+
+def test_a_project_with_no_declared_check_is_not_held_to_its_pass_bars(
+    tmp_path: Path,
+) -> None:
+    repo_root, worktree = _make_project(tmp_path, declaration=None)
+    _write(worktree, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title="Unchecked promise"))
+    feature = _make_feature(worktree)
+
+    _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    assert result.status == "completed"
