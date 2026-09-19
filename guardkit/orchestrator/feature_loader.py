@@ -956,6 +956,11 @@ class FeatureLoader:
             # .guardkit/config.yaml), an unstamped approved scenario REJECTS
             # the plan load — loudly, here, before any build machinery runs.
             FeatureLoader._enforce_routing_law(feature, repo_root)
+            # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026): a
+            # scenario's `owner_task:` must name a task this feature actually
+            # contains. Absent is allowed everywhere — historical features carry
+            # no such field and load exactly as before.
+            FeatureLoader._validate_scenario_owner_tasks(feature)
             # TASK-AB-WAVECTL01: warn (never block) when the configured smoke
             # gate leaves the final wave ungated.
             coverage_warning = (
@@ -1357,6 +1362,49 @@ class FeatureLoader:
                 len(stale),
                 ", ".join(repr(t) for t in stale),
             )
+
+    @staticmethod
+    def _validate_scenario_owner_tasks(feature: Feature) -> None:
+        """Refuse a scenario stamp whose ``owner_task:`` names no task here.
+
+        The B9 build shipped five tasks that each passed their own checks while
+        the endpoint the person asked for was wrong: a correct helper and a
+        wrong route both counted as done, because nothing said which task owed
+        the promise at the surface the person uses. ``owner_task`` says it.
+
+        A value naming a task the feature does not contain is a load error in
+        the same voice as an unknown verifier — a typo'd owner would leave the
+        scenario unowned behind a map that looks complete, which is the exact
+        failure this field exists to stop. ABSENT is allowed: every feature
+        written before the field existed loads unchanged.
+
+        Raises
+        ------
+        FeatureValidationError
+            When any stamp names a task id absent from ``feature.tasks``.
+        """
+        known = {task.id for task in feature.tasks if getattr(task, "id", None)}
+        unknown: List[str] = []
+        for title, stamp in feature.scenarios.items():
+            owner = getattr(stamp, "owner_task", None)
+            if not isinstance(owner, str) or not owner.strip():
+                continue
+            if owner.strip() not in known:
+                unknown.append(f"  - {title!r} names owner_task {owner!r}")
+        if not unknown:
+            return
+        listed = "\n".join(unknown)
+        available = ", ".join(sorted(known)) or "(this feature declares no tasks)"
+        raise FeatureValidationError(
+            f"Feature {feature.id}: {len(unknown)} scenario stamp(s) name an "
+            f"`owner_task:` that is not a task of this feature — a scenario "
+            f"owned by a task that does not exist is not owned at all.\n"
+            f"{listed}\n"
+            f"Tasks in this feature: {available}.\n"
+            f"FIX: name the task whose acceptance criteria state the "
+            f"scenario's behaviour at the delivered surface, or remove the "
+            f"`owner_task:` line."
+        )
 
     @staticmethod
     def _parse_task(task_data: Dict[str, Any]) -> FeatureTask:
