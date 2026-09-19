@@ -729,11 +729,33 @@ class TestFeatureCompleteThreadsTheCandidateSha:
     def test_a_gate_green_at_this_checkouts_head_completes(
         self, tmp_path, monkeypatch
     ):
-        """POSITIVE CONTROL — the opted-in path works again."""
+        """POSITIVE CONTROL — the opted-in path works again. The candidate is
+        named through the feature's own build branch, never through whatever
+        happens to be checked out."""
+        import subprocess
+
+        monkeypatch.setenv(ENFORCE_ENV, "1")
+        repo = self._repo(tmp_path)
+        subprocess.run(
+            ["git", "-C", str(repo), "branch", "autobuild/FEAT-RT"], check=True
+        )
+        self._dress(repo, _head(repo))
+        assert self._run_completer(repo) is None  # no refusal raised
+
+    def test_a_green_gate_with_no_worktree_and_no_build_branch_refuses(
+        self, tmp_path, monkeypatch
+    ):
+        """NEGATIVE CONTROL (the independent coach's e9): a gate green at this
+        checkout's HEAD is NOT accepted when neither the build worktree nor the
+        build branch exists — the candidate cannot be named, so the check fails
+        closed instead of guessing."""
+        from guardkit.orchestrator.feature_complete import FeatureCompleteError
+
         monkeypatch.setenv(ENFORCE_ENV, "1")
         repo = self._repo(tmp_path)
         self._dress(repo, _head(repo))
-        assert self._run_completer(repo) is None  # no refusal raised
+        with pytest.raises(FeatureCompleteError):
+            self._run_completer(repo)
 
     def test_a_gate_green_at_a_different_sha_still_refuses(
         self, tmp_path, monkeypatch
@@ -741,8 +763,13 @@ class TestFeatureCompleteThreadsTheCandidateSha:
         """NEGATIVE CONTROL — threading a sha did not weaken the binding."""
         from guardkit.orchestrator.feature_complete import FeatureCompleteError
 
+        import subprocess
+
         monkeypatch.setenv(ENFORCE_ENV, "1")
         repo = self._repo(tmp_path)
+        subprocess.run(
+            ["git", "-C", str(repo), "branch", "autobuild/FEAT-RT"], check=True
+        )
         self._dress(repo, "0123456789abcdef0123456789abcdef01234567")
         with pytest.raises(FeatureCompleteError) as exc:
             self._run_completer(repo)

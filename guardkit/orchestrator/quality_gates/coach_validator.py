@@ -9718,13 +9718,19 @@ class CoachValidator:
             }
 
         tail = _combined_output_tail(proc.stdout, proc.stderr, bound=2000) or ""
+        # The command runs through the shell, so a command that does not exist
+        # (127) or cannot be executed (126) comes back as an exit code, never
+        # as an OSError. That is "the measurement could not run", not "the
+        # threshold was missed": UNKNOWN, so the Player is told the truth.
+        could_not_launch = proc.returncode in (126, 127)
         return {
             "command": command,
             "exit_code": proc.returncode,
             "duration_seconds": round(time.time() - started, 2),
             "output_tail": tail,
             "timed_out": False,
-            "coverage_met": proc.returncode == 0,
+            "could_not_launch": could_not_launch,
+            "coverage_met": None if could_not_launch else proc.returncode == 0,
         }
 
     def apply_declared_coverage(
