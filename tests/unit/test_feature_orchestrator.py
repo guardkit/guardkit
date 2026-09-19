@@ -1797,6 +1797,40 @@ status: pending
 
 
 @pytest.mark.asyncio
+async def test_a_gate_re_entry_re_runs_a_completed_task_with_the_feedback(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """A re-entry with feedback must reach the Player, not skip the task.
+
+    Found by driving the real runner on 19 September 2026: the task was marked
+    completed when its Coach approved, the whole-feature check then failed, the
+    wave re-entered — and the task was skipped as "already completed", so no
+    Player turn ran and the gate re-ran against an unchanged candidate.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        resume=True,
+    )
+    parallel_feature.tasks[0].status = "completed"
+    parallel_feature.tasks[0].turns_completed = 1
+
+    with patch.object(orchestrator, '_execute_task') as mock_execute:
+        mock_execute.return_value = TaskExecutionResult(
+            task_id="TASK-P-001", success=True, total_turns=1, final_decision="approved"
+        )
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001"], parallel_feature, mock_worktree,
+            seed_feedback="the whole-feature check failed: the greeting is one line short",
+        )
+
+    assert mock_execute.call_count == 1, "the re-entered task must actually run"
+    assert mock_execute.call_args.kwargs.get("seed_feedback") == (
+        "the whole-feature check failed: the greeting is one line short"
+    )
+    assert results[0].final_decision == "approved"
+    assert results[0].final_decision != "already_completed"
+
+
+@pytest.mark.asyncio
 async def test_completed_tasks_skipped_in_parallel(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
     """Test that completed tasks are skipped correctly in parallel execution."""
     orchestrator = FeatureOrchestrator(
