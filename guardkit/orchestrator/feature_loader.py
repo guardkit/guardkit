@@ -612,6 +612,23 @@ class Feature(BaseModel):
     routing_law: Optional[Literal["enforced", "off"]] = None
     feature_files: List[str] = Field(default_factory=list)
     scenarios: Dict[str, ScenarioStamp] = Field(default_factory=dict)
+    # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026). Approved scenario
+    # title -> the id of the task whose acceptance criteria state that
+    # scenario's observable behaviour at the delivered surface.
+    #
+    # It is a TOP-LEVEL key and not a field of the stamp because the two are
+    # written by different hands at different times: the plan writer writes
+    # ownership on its first answer, and the stamp normaliser mints `scenarios:`
+    # afterwards from the approved feature files. Measured 19 September 2026
+    # across eight real planner sessions: a first answer carries no `scenarios:`
+    # map at all, so ownership carried inside that map was written by nobody.
+    #
+    # Keys are NOT validated against the .feature here. The plan-side check owns
+    # that: it has the approved specification in hand at planning time, where a
+    # violation can still be repaired by one re-ask. By load time the repair
+    # round is long gone, and a loud refusal over a title would strand a build
+    # with nothing to do about it.
+    scenario_owners: Dict[str, str] = Field(default_factory=dict)
     file_path: Optional[Path] = None
 
     @field_validator("feature_files")
@@ -658,6 +675,36 @@ class Feature(BaseModel):
             else:
                 coerced[title] = parse_scenario_stamp(stamp, scenario=title)
         return coerced
+
+    @field_validator("scenario_owners", mode="before")
+    @classmethod
+    def _validate_scenario_owners_shape(cls, v: Any) -> Any:
+        """``scenario_owners`` is a flat mapping of title -> task id.
+
+        Loud at parse time, in the same voice as an unknown verifier: a
+        mis-shaped ownership map would otherwise be silently dropped by
+        ``extra="ignore"`` and the feature would look owned when nothing owned
+        it — the exact failure the field exists to stop.
+        """
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            raise ValueError(
+                "scenario_owners must be a mapping of approved scenario title "
+                f"-> task id; got {type(v).__name__}"
+            )
+        for title, owner in v.items():
+            if not isinstance(title, str) or not title.strip():
+                raise ValueError(
+                    f"scenario_owners keys must be non-empty scenario titles; "
+                    f"got {title!r}"
+                )
+            if not isinstance(owner, str) or not owner.strip():
+                raise ValueError(
+                    f"scenario_owners[{title!r}] must be a non-empty task id "
+                    f"string; got {owner!r}"
+                )
+        return v
 
     @field_validator("evidence_repos")
     @classmethod
@@ -961,6 +1008,11 @@ class FeatureLoader:
             # contains. Absent is allowed everywhere — historical features carry
             # no such field and load exactly as before.
             FeatureLoader._validate_scenario_owner_tasks(feature)
+            # Same rule for the plan writer's own top-level ownership map, which
+            # is where ownership actually arrives (B9 revision, 19 September
+            # 2026): a value naming a task this feature does not contain is a
+            # loud load error. Absent is allowed.
+            FeatureLoader._validate_scenario_owners(feature)
             # TASK-AB-WAVECTL01: warn (never block) when the configured smoke
             # gate leaves the final wave ungated.
             coverage_warning = (
@@ -1191,6 +1243,11 @@ class FeatureLoader:
                 ),
                 "feature_files": data.get("feature_files", []),
                 "scenarios": data.get("scenarios", {}),
+                # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026): thread
+                # the plan writer's own top-level ownership map through. Feature
+                # is extra="ignore", so an unthreaded key here is silently
+                # dropped — exactly how evidence_repos was once inert.
+                "scenario_owners": data.get("scenario_owners", {}),
             })
         except ValidationError as e:
             raise FeatureParseError(
@@ -1404,6 +1461,50 @@ class FeatureLoader:
             f"FIX: name the task whose acceptance criteria state the "
             f"scenario's behaviour at the delivered surface, or remove the "
             f"`owner_task:` line."
+        )
+
+    @staticmethod
+    def _validate_scenario_owners(feature: Feature) -> None:
+        """Refuse a ``scenario_owners:`` value that names no task of this feature.
+
+        The same rule and the same voice as ``_validate_scenario_owner_tasks``,
+        applied to the map the plan writer actually writes. A typo'd owner would
+        leave the scenario unowned behind a map that looks complete, which is the
+        exact failure this key exists to stop. ABSENT is allowed: every feature
+        written before the key existed loads unchanged.
+
+        The keys are NOT compared with the approved ``.feature`` here — that is
+        the plan-side check's job, where the specification is in hand and a
+        violation can still be repaired by one re-ask.
+
+        Raises
+        ------
+        FeatureValidationError
+            When any value names a task id absent from ``feature.tasks``.
+        """
+        owners = getattr(feature, "scenario_owners", None) or {}
+        if not owners:
+            return
+        known = {task.id for task in feature.tasks if getattr(task, "id", None)}
+        unknown: List[str] = []
+        for title, owner in owners.items():
+            if not isinstance(owner, str) or not owner.strip():
+                continue
+            if owner.strip() not in known:
+                unknown.append(f"  - {title!r} is owned by {owner!r}")
+        if not unknown:
+            return
+        listed = "\n".join(unknown)
+        available = ", ".join(sorted(known)) or "(this feature declares no tasks)"
+        raise FeatureValidationError(
+            f"Feature {feature.id}: {len(unknown)} `scenario_owners:` entr"
+            f"{'y' if len(unknown) == 1 else 'ies'} name a task that is not in "
+            f"this feature — a scenario owned by a task that does not exist is "
+            f"not owned at all.\n"
+            f"{listed}\n"
+            f"Tasks in this feature: {available}.\n"
+            f"FIX: name the task whose acceptance criteria state the "
+            f"scenario's behaviour at the delivered surface."
         )
 
     @staticmethod
@@ -2013,6 +2114,12 @@ class FeatureLoader:
                 title: {k: v for k, v in stamp.items() if v is not None}
                 for title, stamp in data["scenarios"].items()
             }
+        # DELIVERY OWNERSHIP (B9, 19 September 2026): same missing-key-equals-
+        # empty law — never sprout an empty `scenario_owners: {}` into every
+        # rewritten feature file. When present it is written back verbatim, so a
+        # feature that declares ownership keeps it across every rewrite.
+        if not data.get("scenario_owners"):
+            data.pop("scenario_owners", None)
 
         # Manually serialize execution (dataclass)
         data["execution"] = {
