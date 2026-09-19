@@ -153,6 +153,24 @@ class TestImplementationPromptBuilder:
         assert "must also carry the line: factory" in prompt
         assert "Coach Feedback from Turn 0" not in prompt
 
+    def test_a_gate_seed_withdraws_the_already_satisfied_escape(self, invoker):
+        """On a gate-driven re-entry the task's own criteria ARE satisfied — its
+        Coach approved them — so offering "change nothing" would let the Player
+        answer truthfully and repair nothing (the independent checker's residue,
+        19 September 2026). A normal first turn still gets the offer."""
+        from guardkit.orchestrator.agent_invoker import ALREADY_SATISFIED_PROMPT_SECTION
+
+        marker = ALREADY_SATISFIED_PROMPT_SECTION.strip().splitlines()[0]
+        seeded = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", turn=1, requirements="Test requirements",
+            feedback="the whole-feature check failed: the greeting is one line short",
+        )
+        plain = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-001", turn=1, requirements="Test requirements", feedback=None,
+        )
+        assert marker not in seeded
+        assert marker in plain
+
     def test_turn_1_without_feedback_has_no_feedback_section(self, invoker):
         prompt = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-001",
