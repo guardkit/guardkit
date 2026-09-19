@@ -2527,3 +2527,177 @@ def test_r9_widening_i_parameter_filtering_idiom_ruled_2026_08_28():
         HTTP,
     )
     assert negative is None, negative
+
+
+# ---------------------------------------------------------------------------
+# R1 WIDENING (2026-09-19) — a NAMED dependency is down → probe:process
+# ---------------------------------------------------------------------------
+# Datum: a specification seat wrote the dependency-down scenario with the
+# word "service" instead of "database"/"data store", so R1 did not fire and
+# R9's machine idiom (e) minted `hurl` — a twin against the healthy running
+# app can never show a dependency being down, so the feature is unfinishable
+# wherever the twin is enforced. Same need as a database being down, so the
+# same home and the same place in the order. Only on an HTTP surface: off a
+# surface R9 cannot fire and the sentence refuses loud as it does today.
+
+R1_DEPENDENCY_DOWN_CASES = [
+    # the datum's own shape (a named service, the machine-idiom Then that
+    # used to carry it to hurl)
+    (
+        "The user creation service is unavailable",
+        "Given the user creation service is unavailable\n"
+        "When I request the user creation counts for the last 7 days\n"
+        "Then the request should fail gracefully",
+    ),
+    # the other named nouns of the same widening
+    (
+        "The pricing dependency is down",
+        "Given the pricing dependency is down\n"
+        "When the endpoint is called\n"
+        "Then the request should fail",
+    ),
+    (
+        "The search backend is unreachable",
+        "Given the search backend is unreachable\n"
+        "When a lookup is requested\n"
+        "Then the endpoint reports an error",
+    ),
+    (
+        "The payments upstream is offline",
+        "Given the payments upstream is offline\n"
+        "When a charge is requested\n"
+        "Then the request should fail",
+    ),
+    # plural subject and the other copulas
+    (
+        "Speech services are down",
+        "Given the speech services are down\n"
+        "When a spoken question is sent\nThen it is refused",
+    ),
+    (
+        "The embedding service becomes unavailable mid-run",
+        "Given a run is in progress\nAnd the embedding service becomes unavailable\n"
+        "Then the run should degrade cleanly",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "title,steps", R1_DEPENDENCY_DOWN_CASES, ids=[c[0][:40] for c in R1_DEPENDENCY_DOWN_CASES]
+)
+def test_r1_widening_named_dependency_down_is_probe_process(title, steps):
+    home = _home(title, steps, HTTP)
+    assert (home.verifier, home.rule) == ("probe:process", "R1"), (title, home)
+
+
+def test_r1_widening_beats_r9_on_the_datum_and_its_siblings_keep_hurl():
+    """The ordering law through the widening: the dependency-down scenario
+    goes to probe:process even though its Then is R9 phrase (e), while the
+    plain over-the-wire scenarios beside it are untouched and stay hurl."""
+    title, steps = R1_DEPENDENCY_DOWN_CASES[0]
+    assert "the request should fail" in steps  # R9 machine idiom (e)
+    assert _home(title, steps, HTTP).verifier == "probe:process"
+    for sibling_title, sibling_steps in (
+        (
+            "Requesting the last 7 days returns exactly 7 entries",
+            "When I request the daily counts for the last 7 days\n"
+            "Then the response should list 7 entries oldest first",
+        ),
+        (
+            "Sending a POST request to the endpoint is rejected",
+            "When I send a POST request to the reporting endpoint\n"
+            "Then the response status code should be 405",
+        ),
+        (
+            "Zero is reported when nothing was created",
+            "Given nothing was created in the window\n"
+            "When I request the daily counts\n"
+            "Then each entry should have a count of zero",
+        ),
+    ):
+        home = _home(sibling_title, sibling_steps, HTTP)
+        assert (home.verifier, home.rule) == ("hurl", "R9"), (sibling_title, home)
+
+
+def test_r1_widening_near_misses_do_not_match():
+    """As narrow as the evidence: the dependency must be NAMED and must be
+    the subject of the state, and a bare 'unavailable' is never enough."""
+    # a bare "the service" is not a named dependency
+    assert classify_scenario(
+        "The service is unavailable",
+        "Given the service is unavailable\nThen nothing is written",
+        HTTP,
+    ) is None
+    # "unavailable" on its own
+    assert classify_scenario(
+        "Narration is unavailable",
+        "Given spoken narration is unavailable right now\nThen the text answer still arrives",
+        HTTP,
+    ) is None
+    # "service" in an unrelated clause — not the subject of a down state
+    unrelated = classify_scenario(
+        "The service degrades cleanly under load",
+        "Given the user creation service is under load\n"
+        "When the daily counts are requested\n"
+        "Then the service should answer within the budget",
+        HTTP,
+    )
+    assert unrelated is None or unrelated.rule != "R1", unrelated
+    # off an HTTP surface the widening never fires (R9 cannot fire either,
+    # so the sentence refuses loud, exactly as it does today)
+    title, steps = R1_DEPENDENCY_DOWN_CASES[0]
+    off = classify_scenario(title, steps, NO_HTTP)
+    assert off is None, off
+
+
+def test_r1_widening_negated_dependency_down_is_not_evidence():
+    """Negation on the step line rejects the hit, the way R4 already does."""
+    negated = classify_scenario(
+        "The run completes without the dependency being down",
+        "Given the run completes without the user creation service being down\n"
+        "Then the counts should be written",
+        HTTP,
+    )
+    assert negated is None or negated.rule != "R1", negated
+    # "is NOT unavailable" cannot match the pattern at all (the copula and
+    # the state must be adjacent)
+    not_unavailable = classify_scenario(
+        "The dependency is healthy",
+        "Given the user creation service is not unavailable\nThen the counts should be written",
+        HTTP,
+    )
+    assert not_unavailable is None or not_unavailable.rule != "R1", not_unavailable
+
+
+def test_r1_widening_estate_corpus_moves_are_the_three_named_study_tutor_scenarios():
+    """The census delta of record (measured against c617f9b8 over the pinned
+    estate corpus): three scenarios move, all REFUSED → probe:process, all in
+    study-tutor, each one 'a named dependency is stopped'; nothing that is
+    proved over the wire moves, and every non-surface repo is unchanged."""
+    moved = [
+        (
+            "When the embedding service is unavailable retrieval is skipped and the turn proceeds in Analysis Mode",
+            "Given the session is on a primary text\nAnd the embedding service is unavailable\n"
+            "When the retrieval-decision function runs for the turn\n"
+            "Then the decision should be to skip retrieval",
+            "embedding service is unavailable",
+        ),
+        (
+            "When speech services are down, voice is refused but typed streaming still works",
+            "Given the speech services are unavailable\n"
+            "When I send a spoken question over the live channel\n"
+            "Then it is refused because spoken answers are unavailable",
+            # the title itself carries the hit for this one ("… are down")
+            "speech services are down",
+        ),
+        (
+            "When speech services are unavailable, voice degrades and text tutoring continues",
+            "Given the speech services are unavailable\nWhen I submit a voice turn\n"
+            "Then I should be told spoken answers are temporarily unavailable",
+            "speech services are unavailable",
+        ),
+    ]
+    for title, steps, evidence in moved:
+        home = _home(title, steps, HTTP)
+        assert (home.verifier, home.rule) == ("probe:process", "R1"), (title, home)
+        assert evidence in home.evidence, (title, home.evidence)
