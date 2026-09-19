@@ -240,6 +240,16 @@ class ScenarioStamp(BaseModel):
     # unconsumed case is logged loudly at build time, never silently dropped.
     test_ref: Optional[str] = Field(default=None, min_length=1)
     test_paths: Optional[List[str]] = None
+    # DELIVERY OWNERSHIP (B9 corrections, 19 September 2026). The task whose
+    # acceptance criteria state THIS scenario's observable behaviour at the
+    # surface the person uses — the route, command, screen or message — never a
+    # helper behind it. B9 shipped five tasks that each passed their own checks
+    # while the endpoint the person asked for was wrong, because no task owned
+    # the promise at the public surface. Optional on purpose: every feature
+    # written before this field existed still loads unchanged. When it IS
+    # present, ``FeatureLoader`` refuses a value naming a task the feature does
+    # not contain, in the same voice as an unknown verifier.
+    owner_task: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("verifier")
     @classmethod
@@ -306,8 +316,8 @@ def parse_scenario_stamp(raw: Any, *, scenario: str = "") -> ScenarioStamp:
         raise ValueError(
             f"Invalid verifier stamp{where}:\n{exc}\n\n"
             f"{_vocabulary_sentence()}. "
-            "Allowed keys: verifier, test_ref, test_paths. Unknown keys are "
-            "rejected — check for typos."
+            "Allowed keys: verifier, test_ref, test_paths, owner_task. "
+            "Unknown keys are rejected — check for typos."
         ) from exc
 
 
