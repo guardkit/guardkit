@@ -80,6 +80,7 @@ from guardkit.orchestrator.twin_coverage import (
     write_twin_coverage_receipt,
 )
 from guardkit.orchestrator.feature_check import (
+    claimed_machine_criteria,
     FeatureCheckAttempt,
     FeatureCheckOutcome,
     build_feature_check_feedback,
@@ -2971,7 +2972,11 @@ The detailed specifications are in the task markdown file.
             timeout=declaration.timeout,
             attempts=attempts,
             reason=None if passed else last_attempt.failure_reason,
-            claimed_machine_criteria=[],
+            # The receipt names the criteria the task Coaches still list as
+            # claimed (never raises; absent evidence reads as no claims).
+            claimed_machine_criteria=claimed_machine_criteria(
+                Path(worktree.path), [t.id for t in feature.tasks]
+            ),
         )
         try:
             receipt_path = write_feature_check_receipt(
