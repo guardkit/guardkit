@@ -3859,7 +3859,26 @@ The detailed specifications are in the task markdown file.
                 )
                 continue
 
-            # Skip already completed tasks (for resume)
+            # Skip already completed tasks (for resume) — but NEVER on a
+            # gate-driven re-entry of this wave.
+            #
+            # 19 September 2026, found by driving the real runner: a task is
+            # marked completed as soon as its Coach approves, BEFORE the
+            # post-wave gates run. Every gate that re-enters the wave with
+            # feedback (the smoke gate, the wiring gate, the whole-feature
+            # check) therefore found all of its tasks "already completed",
+            # skipped them, ran no Player turn, and re-ran the gate against an
+            # unchanged candidate: the repair loop looked wired and repaired
+            # nothing. ``seed_feedback`` is non-None only on such a re-entry,
+            # and the feedback is addressed to exactly these tasks, so they are
+            # re-opened and run again with it.
+            if task.status == "completed" and seed_feedback is not None:
+                logger.info(
+                    "Re-opening %s for a gate-driven re-entry of wave %s "
+                    "(it was approved, and the gate that ran after it failed)",
+                    task_id, wave_number,
+                )
+                task.status = "in_progress"
             if task.status == "completed":
                 if self._wave_display:
                     self._wave_display.update_task_status(
