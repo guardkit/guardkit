@@ -422,12 +422,6 @@ class FeatureCompleteOrchestrator:
                         "Use --force to override."
                     )
 
-        # WS2 B2: a feature whose pass bar declares a runtime surface cannot
-        # reach feature-complete without at least one registered, green F4 gate.
-        # Flag-gated (qa.enforce_tier1, default OFF) — a no-op unless the repo
-        # has opted in, so existing feature-complete behaviour is unchanged.
-        self._check_runtime_surface_gate(feature)
-
         # Find worktree if it exists
         worktree = None
         if feature.execution.worktree_path:
@@ -443,11 +437,66 @@ class FeatureCompleteOrchestrator:
             else:
                 console.print("[yellow]⚠[/yellow] Worktree path not found (may have been cleaned up)")
 
+        # WS2 B2: a feature whose pass bar declares a runtime surface cannot
+        # reach feature-complete without at least one registered, green F4 gate.
+        # Flag-gated (qa.enforce_tier1, default OFF) — a no-op unless the repo
+        # has opted in, so existing feature-complete behaviour is unchanged.
+        # B9 (2026-09-19): the gate must be green for THIS candidate, so the
+        # candidate's commit is named to the check (see ``_candidate_sha``).
+        self._check_runtime_surface_gate(
+            feature, candidate_sha=self._candidate_sha(feature_id, worktree)
+        )
+
         console.print("[green]✓[/green] Validation complete\n")
 
         return feature, worktree
 
-    def _check_runtime_surface_gate(self, feature: Feature) -> None:
+    def _candidate_sha(
+        self, feature_id: str, worktree: Optional[Worktree] = None
+    ) -> Optional[str]:
+        """The commit the feature's candidate is at, or ``None`` when unknown.
+
+        B9 (2026-09-19). The runtime-surface check binds a green gate to the
+        code under check, so the caller has to name that code. In order: the
+        build worktree's HEAD when the worktree still exists; else the
+        ``autobuild/<feature_id>`` branch in the repository; else this
+        checkout's own HEAD (feature-complete run from inside the candidate
+        checkout). Never raises: when git cannot answer, ``None`` is returned
+        and the check fails closed with the reason named — it never silently
+        accepts an unbound gate and never guesses.
+        """
+        import subprocess
+
+        attempts = []
+        if worktree is not None:
+            attempts.append(["git", "-C", str(worktree.path), "rev-parse", "HEAD"])
+        attempts.append(
+            [
+                "git",
+                "-C",
+                str(self.repo_root),
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                f"refs/heads/autobuild/{feature_id}",
+            ]
+        )
+        attempts.append(["git", "-C", str(self.repo_root), "rev-parse", "HEAD"])
+        for command in attempts:
+            try:
+                completed = subprocess.run(
+                    command, check=False, capture_output=True, text=True, timeout=30
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            sha = (completed.stdout or "").strip()
+            if completed.returncode == 0 and len(sha) >= 7:
+                return sha
+        return None
+
+    def _check_runtime_surface_gate(
+        self, feature: Feature, candidate_sha: Optional[str] = None
+    ) -> None:
         """WS2 B2: refuse feature-complete for a runtime-surface feature with
         no registered green gate (flag-gated by ``qa.enforce_tier1``).
 
@@ -467,7 +516,11 @@ class FeatureCompleteOrchestrator:
             if not is_tier1_enforced(self.repo_root):
                 return
             task_ids = [task.id for task in feature.tasks]
-            result = check_runtime_surface_gate(self.repo_root, task_ids)
+            if candidate_sha is None:
+                candidate_sha = self._candidate_sha(str(feature.id))
+            result = check_runtime_surface_gate(
+                self.repo_root, task_ids, candidate_sha=candidate_sha
+            )
         except FeatureCompleteError:
             raise
         except Exception as exc:  # pragma: no cover - defensive

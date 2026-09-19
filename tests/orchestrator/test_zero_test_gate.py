@@ -122,6 +122,11 @@ def _results(
             "tests_passed": tests_passed_count,
             "tests_failed": 0,
             "coverage": None,
+            # B9 Lane C: a feature-profile turn with nothing measured is now
+            # UNKNOWN coverage, and UNKNOWN short-circuits gather_evidence at
+            # the gate stage. This fixture is about the zero-test observation,
+            # not coverage, so it states a measured pass.
+            "coverage_met": True,
         },
         "files_created": list(files_created or []),
         "files_modified": list(files_modified or []),

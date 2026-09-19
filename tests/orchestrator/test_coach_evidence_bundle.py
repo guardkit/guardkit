@@ -491,6 +491,10 @@ class TestPartialGateFeedbackBundle:
         ] == {
             "tests_passed": True,
             "coverage_met": False,
+            # B9 Lane C: both keys are always serialised (absent key = dead
+            # downstream read), and nothing relaxed or measured coverage here.
+            "coverage_relaxed_by": None,
+            "coverage_receipt": None,
             "arch_review_passed": True,
             "plan_audit_passed": True,
             "all_gates_passed": False,

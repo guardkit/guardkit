@@ -11017,9 +11017,37 @@ class CoachValidator:
             # self-reported — neither should surface a spec warning.
             return []
 
+        # B9 (2026-09-19): a declared assumptions manifest that could not be
+        # read or parsed is visible here too. The producer names such files in
+        # ``malformed``; before this, a malformed-only scan returned nothing
+        # and the unreadable manifest was invisible to the person reviewing.
+        malformed = [
+            str(path)
+            for path in (block.get("malformed") or [])
+            if isinstance(path, str) and path.strip()
+        ]
+        malformed_issues: List[Dict[str, Any]] = []
+        if malformed:
+            logger.info(
+                "Malformed assumptions manifest(s): %s", ", ".join(malformed)
+            )
+            malformed_issues.append({
+                "severity": "warning",
+                "category": "malformed_assumptions_manifest",
+                "description": (
+                    f"{len(malformed)} assumptions manifest(s) under features/ "
+                    "could not be read or parsed, so their assumptions were "
+                    "not checked: " + ", ".join(malformed) + "."
+                ),
+                "details": {
+                    "files_scanned": block.get("files_scanned", 0),
+                    "malformed": malformed,
+                },
+            })
+
         unconfirmed = block.get("unconfirmed") or []
         if not unconfirmed:
-            return []
+            return malformed_issues
 
         row_count = len(unconfirmed)
         # Keep the description terse; put the full row list in details so
@@ -11047,7 +11075,7 @@ class CoachValidator:
                 "files_scanned": block.get("files_scanned", 0),
                 "unconfirmed": unconfirmed,
             },
-        }]
+        }] + malformed_issues
 
     def _verify_honesty(
         self, task_work_results: Dict[str, Any]

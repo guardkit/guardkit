@@ -647,3 +647,125 @@ class TestGitChangedPaths:
         )
         assert res.status == "fail"
         assert res.offending_paths == ("qa/known-failures.yaml",)
+
+
+# ---------------------------------------------------------------------------
+# B9 repair pass (2026-09-19): the caller names the candidate, and pass-bar
+# references that begin with a dot are compared whole.
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureCompleteThreadsTheCandidateSha:
+    """The gate binding is only usable if the caller names the code under check.
+
+    Before this repair ``feature_complete`` called the check with no candidate
+    sha at all, so every opted-in repo (``qa.enforce_tier1``) would have been
+    refused feature-complete for any runtime-surface feature. Enforcement is
+    OFF by default, so this was a no-op by default — and a wall for anyone who
+    had opted in.
+    """
+
+    def _repo(self, tmp_path: Path) -> Path:
+        return _init_repo(tmp_path / "repo")
+
+    def _dress(self, repo: Path, green_sha: str) -> None:
+        (repo / "qa" / "gates").mkdir(parents=True, exist_ok=True)
+        (repo / "qa" / "gates" / "registry.yaml").write_text(
+            "format_version: \"1.0\"\ngates:\n"
+            "  - id: live-suite\n"
+            "    path: app/test_live\n"
+            "    target: {base_url_env: API_BASE_URL, environment_id: env1}\n"
+            "    pass_bar_ref: qa/pass-bar-TASK-RT.yaml\n"
+            "    evidence_dir_pattern: qa/ev-{date}\n"
+            f"    last_green: {{date: \"2026-09-19\", sha: {green_sha}}}\n"
+        )
+        _write_pass_bar(
+            repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True
+        )
+        history = repo / "qa" / "gates" / "history"
+        history.mkdir(parents=True, exist_ok=True)
+        (history / "run-1.json").write_text(
+            json.dumps(
+                {
+                    "format_version": "1.0",
+                    "run_id": "run-1",
+                    "feature_id": "FEAT-RT",
+                    "target_env": "env1",
+                    "started": "2026-09-19T00:00:00Z",
+                    "finished": "2026-09-19T00:01:00Z",
+                    "preflight": {"checks": [], "instrument_ok": True},
+                    "gates": [
+                        {
+                            "gate_id": "live-suite",
+                            "exit_code": 0,
+                            "assertions": [
+                                {"id": "A1", "status": "pass", "expected": "200 OK"}
+                            ],
+                        }
+                    ],
+                    "verdict": "pass",
+                }
+            )
+        )
+
+    def _run_completer(self, repo: Path):
+        from guardkit.orchestrator.feature_complete import (
+            FeatureCompleteOrchestrator,
+        )
+
+        completer = object.__new__(FeatureCompleteOrchestrator)
+        completer.repo_root = repo
+        completer.dry_run = False
+
+        class _Task:
+            id = "TASK-RT"
+
+        class _Feature:
+            id = "FEAT-RT"
+            tasks = [_Task()]
+
+        return completer._check_runtime_surface_gate(_Feature())
+
+    def test_a_gate_green_at_this_checkouts_head_completes(
+        self, tmp_path, monkeypatch
+    ):
+        """POSITIVE CONTROL — the opted-in path works again."""
+        monkeypatch.setenv(ENFORCE_ENV, "1")
+        repo = self._repo(tmp_path)
+        self._dress(repo, _head(repo))
+        assert self._run_completer(repo) is None  # no refusal raised
+
+    def test_a_gate_green_at_a_different_sha_still_refuses(
+        self, tmp_path, monkeypatch
+    ):
+        """NEGATIVE CONTROL — threading a sha did not weaken the binding."""
+        from guardkit.orchestrator.feature_complete import FeatureCompleteError
+
+        monkeypatch.setenv(ENFORCE_ENV, "1")
+        repo = self._repo(tmp_path)
+        self._dress(repo, "0123456789abcdef0123456789abcdef01234567")
+        with pytest.raises(FeatureCompleteError) as exc:
+            self._run_completer(repo)
+        assert "stale green" in str(exc.value)
+
+    def test_enforcement_off_is_still_a_no_op(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(ENFORCE_ENV, "0")
+        repo = self._repo(tmp_path)
+        self._dress(repo, "0123456789abcdef0123456789abcdef01234567")
+        assert self._run_completer(repo) is None
+
+
+class TestPassBarRefComparison:
+    def test_a_leading_dot_in_the_name_survives_normalisation(self, tmp_path):
+        """``lstrip('./')`` stripped any leading dot or slash, which would
+        mangle a bar kept under a dot-directory."""
+        from guardkit.qa.enforcement import _normalise_pass_bar_ref
+
+        assert (
+            _normalise_pass_bar_ref(".guardkit/pass-bar-TASK-RT.yaml", tmp_path)
+            == ".guardkit/pass-bar-TASK-RT.yaml"
+        )
+        assert (
+            _normalise_pass_bar_ref("./qa/pass-bar-TASK-RT.yaml", tmp_path)
+            == "qa/pass-bar-TASK-RT.yaml"
+        )
