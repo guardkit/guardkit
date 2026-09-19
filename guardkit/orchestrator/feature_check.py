@@ -557,6 +557,57 @@ def _walk_for_claimed(node: Any, found: List[str]) -> None:
             _walk_for_claimed(value, found)
 
 
+def pass_bar_machine_criteria(
+    worktree_root: Path, task_ids: Sequence[str]
+) -> List[str]:
+    """The machine-class promises the feature's own pass bars register.
+
+    WHY THIS READER EXISTS (19 September 2026, found at integration). In the
+    plans the factory actually writes, the promises at the delivered surface
+    are not the task documents' acceptance criteria at all: they are the
+    approved scenarios, registered per task in ``qa/pass-bar-<TASK-ID>.yaml``
+    with ``class: machine`` and the scenario's title as ``text``. The task
+    Coach never evaluates those rows, so no task receipt ever says "claimed"
+    about them — and a completion rule that waited for such a receipt never
+    fired. In the failed B9 build every one of these rows went unproved while
+    five task Coaches approved.
+
+    So the rule reads the pass bars themselves: every ``class: machine`` row
+    of every task in the feature is a promise that only the whole-feature
+    check can prove, and it counts as claimed until that check names it as
+    covered. Read as plain YAML on purpose — no schema import, no raise: a
+    missing, unreadable or oddly shaped pass bar registers nothing, because
+    absent evidence is not evidence of a claim. ``class: operator`` rows are
+    a person's to prove and are never consumed here.
+    """
+    names: List[str] = []
+    try:
+        import yaml
+    except Exception:  # noqa: BLE001 — no parser, no claims
+        return names
+    for task_id in task_ids or []:
+        try:
+            path = Path(worktree_root) / "qa" / f"pass-bar-{task_id}.yaml"
+            if not path.is_file():
+                continue
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — unreadable is absence
+            continue
+        rows = data.get("criteria") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            klass = row.get("class", row.get("criterion_class"))
+            if not isinstance(klass, str) or klass.strip().lower() != "machine":
+                continue
+            text = row.get("text")
+            if isinstance(text, str) and text.strip() and text.strip() not in names:
+                names.append(text.strip())
+    return names
+
+
 def claimed_machine_criteria(
     worktree_root: Path, task_ids: Sequence[str]
 ) -> List[str]:
@@ -571,6 +622,12 @@ def claimed_machine_criteria(
     raises and never blocks a build on its own uncertainty.
     """
     found: List[str] = []
+    # The feature's own pass bars come first: a criterion a pass bar marks
+    # ``class: machine`` is a promise at a delivered surface, and no task turn
+    # proves it on its own (see ``pass_bar_machine_criteria``).
+    for name in pass_bar_machine_criteria(worktree_root, task_ids):
+        if name not in found:
+            found.append(name)
     root = Path(worktree_root) / ".guardkit" / "autobuild-private"
     for task_id in task_ids or []:
         directory = root / str(task_id)
@@ -708,6 +765,7 @@ __all__ = [
     "build_feature_check_feedback",
     "candidate_sha",
     "claimed_machine_criteria",
+    "pass_bar_machine_criteria",
     "completion_verdict",
     "feature_request_words",
     "load_feature_check_declaration",
