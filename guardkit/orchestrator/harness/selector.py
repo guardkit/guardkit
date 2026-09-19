@@ -238,7 +238,7 @@ _KNOWN_PROVIDER_PREFIXES: frozenset[str] = frozenset({
 })
 
 _PLAYER_PATH_FIELDS = frozenset(
-    {"skills", "memory", "instructions", "protected_paths"}
+    {"skills", "memory", "instructions", "protected_paths", "required_documents"}
 )
 _COMMAND_FIELDS = ("test", "install", "typecheck", "lint", "build")
 _DCODE_PROFILE_LOCK = threading.Lock()
@@ -381,6 +381,15 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         field="autobuild.player.protected_paths",
         config_path=config_path,
     )
+    # Mandatory supporting documents the project says the Player must read in
+    # full, alongside the selected skill bodies. Parsed exactly like
+    # ``protected_paths``: a generic list of repository-relative paths, with no
+    # stack knowledge and no per-language default.
+    required_documents = _player_path_list(
+        player.get("required_documents"),
+        field="autobuild.player.required_documents",
+        config_path=config_path,
+    )
     instructions = list(
         _player_path_list(
             player.get("instructions"),
@@ -426,6 +435,7 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         "repository_instructions": tuple(instructions),
         "declared_commands": tuple(declared_commands),
         "protected_paths": protected_paths,
+        "required_documents": required_documents,
     }
 
 
@@ -697,6 +707,18 @@ def select_harness(
             task_worktree = Path(cwd)
             project_inputs = _load_player_project_inputs(task_worktree)
             protected_paths = project_inputs["protected_paths"]
+            # A declared required document is never dropped silently: either the
+            # installed factory can require it, or the run refuses loudly. Same
+            # discipline as ``protected_paths`` at the backend seam below.
+            if not _factory_accepts_kwarg(build_player_config, "required_documents"):
+                if project_inputs["required_documents"]:
+                    raise AgentInvocationError(
+                        "The project declares autobuild.player.required_documents, "
+                        "but the installed guardkitfactory cannot require them. "
+                        "Install the matching Factory revision; a declared required "
+                        "document cannot be dropped."
+                    )
+                project_inputs.pop("required_documents")
             try:
                 dcode_home = _configure_dcode_launch(task_worktree)
                 player_config = build_player_config(

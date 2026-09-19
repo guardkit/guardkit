@@ -109,6 +109,23 @@ pytestmark = [pytest.mark.seam, pytest.mark.integration]
 # ``GUARDKIT_HARNESS`` (mirrors tests/orchestrator/harness/test_selector.py).
 _TEST_ENV_VAR = "GUARDKIT_HARNESS_XREPO_SEAM"
 
+
+def _installed_factory_requires_documents() -> bool:
+    """Report whether the INSTALLED factory can accept declared documents.
+
+    This file exercises whatever guardkitfactory is installed. Against a
+    Factory revision that predates project-declared required documents the
+    selector refuses loudly by design (proved as a unit in
+    ``test_selector.py``), so the connected-seam test below is skipped rather
+    than counted as a failure.
+    """
+    try:
+        from guardkit.orchestrator.harness.selector import _factory_accepts_kwarg
+        from guardkitfactory.harness import build_player_config
+    except Exception:  # pragma: no cover - no factory installed at all
+        return False
+    return _factory_accepts_kwarg(build_player_config, "required_documents")
+
 # The HarnessEvent taxonomy every substrate's ``invoke`` / ``invoke_synthesis``
 # may yield. Pinned here so a substrate that invents a new event type without
 # extending the shared union is caught by the consumer-side dispatch contract.
@@ -284,6 +301,67 @@ class TestRealConstructionThroughSelector:
         refusal = harness.backend.write(str(protected), "weakened\n")
         assert refusal.error is not None
         assert protected.read_text() == "{}\n"
+
+    @pytest.mark.skipif(
+        not _installed_factory_requires_documents(),
+        reason=(
+            "the installed guardkitfactory predates "
+            "autobuild.player.required_documents; the selector refuses it "
+            "loudly, which test_selector.py proves as a unit"
+        ),
+    )
+    def test_declared_required_documents_reach_the_real_player_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The connected result: declaration -> real selector -> real PlayerConfig."""
+        from guardkitfactory.harness.player_config import PlayerConfig
+
+        profile = tmp_path.parent / f"{tmp_path.name}-dcode-home"
+        profile.mkdir()
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        # Test-only isolation: the selector pins one dcode profile per process,
+        # so a whole-directory run otherwise refuses this test's fresh profile.
+        # monkeypatch restores the module global afterwards.
+        from guardkit.orchestrator.harness import selector as _selector_module
+
+        monkeypatch.setattr(_selector_module, "_AUTO_DCODE_PROFILE", None)
+        (tmp_path / "skills" / "planning").mkdir(parents=True)
+        (tmp_path / "skills" / "planning" / "SKILL.md").write_text(
+            "---\nname: planning\ndescription: Plan work.\n---\n"
+            "Read references/project-conventions.md before planning.\n"
+        )
+        (tmp_path / "skills" / "planning" / "references").mkdir()
+        conventions = (
+            tmp_path / "skills" / "planning" / "references" / "project-conventions.md"
+        )
+        conventions.write_text("# Conventions\nName the delivered surface.\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    required_documents:\n"
+            "      - skills/planning/references/project-conventions.md\n"
+        )
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR,
+            cwd=tmp_path,
+            **_real_selector_kwargs(model="qwen36-workhorse"),
+        )
+
+        assert isinstance(harness, LangGraphHarness)
+        assert isinstance(harness.player_config, PlayerConfig)
+        assert harness.player_config.required_documents == (conventions.resolve(),)
+
+        from guardkitfactory.harness.dcode_harness import required_skill_reads
+
+        required = required_skill_reads(harness.player_config)
+        assert [item["kind"] for item in required] == ["skill", "declared_document"]
+        assert required[1]["relative_path"] == (
+            "skills/planning/references/project-conventions.md"
+        )
 
     def test_missing_selected_skill_is_rejected_through_real_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
