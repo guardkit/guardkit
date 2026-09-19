@@ -421,8 +421,12 @@ _R1_DEPENDENCY_NOUN = r"(?:service|services|dependency|dependencies|backend|back
 _R1_DEPENDENCY_COPULA = r"(?:is|are|was|were|becomes?|became|goes|go|remains?|remain|being|stays?)"
 _R1_DEPENDENCY_STATE = r"(?:unavailable|down|unreachable|offline)"
 R1_DEPENDENCY_DOWN = _family(
-    # optional qualifier + noun + copula + state, all on ONE line
-    r"(?<![a-z0-9+._-])(?:[a-z][a-z0-9+._-]*[ \t]+)?"
+    # optional qualifier + noun + copula + state, all on ONE line. A negation
+    # word is never a qualifier: "no service is down" must leave the word
+    # "no" in the line BEFORE the hit, where the negation window finds it
+    # (independent re-check, 19 September: with "no" swallowed as the
+    # dependency's name, a healthy-app scenario was routed to probe:process).
+    r"(?<![a-z0-9+._-])(?:(?!(?:no|not|never|nor|neither)[ \t])[a-z][a-z0-9+._-]*[ \t]+)?"
     + _R1_DEPENDENCY_NOUN
     + r"[ \t]+"
     + _R1_DEPENDENCY_COPULA

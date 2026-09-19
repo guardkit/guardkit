@@ -2757,6 +2757,26 @@ def test_r1_widening_negated_dependency_down_is_not_evidence():
     assert not_unavailable is None or not_unavailable.rule != "R1", not_unavailable
 
 
+def test_r1_widening_a_negation_word_is_never_the_dependency_name():
+    """"no service is down" describes a HEALTHY app, which an HTTP call can
+    prove. The optional qualifier must not swallow the negation word (found by
+    the independent re-check on 19 September)."""
+    for steps in (
+        "Given no service is down\nThen the endpoint returns the user count",
+        "Given that no upstream is offline\nThen the endpoint returns the user count",
+        "Given neither backend is unreachable\nThen the endpoint returns the user count",
+    ):
+        home = classify_scenario("The healthy path answers", steps, HTTP)
+        assert home is None or home.rule != "R1", (steps, home)
+    # the un-negated datum is still claimed by R1
+    datum = classify_scenario(
+        "The user creation service is unavailable",
+        "Given the user creation service is unavailable\nThen the request should fail gracefully",
+        HTTP,
+    )
+    assert datum is not None and datum.rule == "R1" and datum.verifier == "probe:process", datum
+
+
 def test_r1_widening_KNOWN_EDGE_quoted_response_text_also_routes_to_probe_process():
     """DOCUMENTED KNOWN EDGE — this asserts TODAY'S behaviour, not a wish.
 
