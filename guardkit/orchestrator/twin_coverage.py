@@ -393,6 +393,21 @@ def render_twin_coverage_lines(
     return lines
 
 
+def twin_coverage_summary(report: TwinCoverageReport) -> dict:
+    """The twin check's answer in a handful of plain fields.
+
+    Written for the whole-feature check's receipt (B9 correction,
+    2026-09-19), which runs the twin check first and must record what it
+    found even when the feature check itself never got to run.
+    """
+    return {
+        "scenarios_checked": report.checked,
+        "twin_files_scanned": report.twins_scanned,
+        "enforced": report.enforced,
+        "missing": list(report.missing),
+    }
+
+
 __all__ = [
     "ENFORCE_ENV",
     "TWINS_RELATIVE_DIR",
@@ -403,4 +418,5 @@ __all__ = [
     "check_twin_coverage",
     "write_twin_coverage_receipt",
     "render_twin_coverage_lines",
+    "twin_coverage_summary",
 ]
