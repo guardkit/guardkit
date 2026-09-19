@@ -3405,7 +3405,12 @@ Please address all feedback points in this turn.
         # ALREADY_SATISFIED_PROMPT_SECTION). From turn two on the builder is
         # answering the reviewer, not deciding whether to start.
         already_satisfied_section = (
-            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 else ""
+            # Not offered on a gate-driven re-entry: turn-1 feedback means a
+            # check that ran AFTER this task was approved has failed, so the
+            # task's own criteria really are satisfied and "change nothing"
+            # would be a truthful answer that leaves the failure unrepaired.
+            # The builder is answering a reviewer, not deciding whether to start.
+            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 and not feedback else ""
         )
 
         # TASK-AB-INVARIANTTEST01: responsibility 2 carries the
@@ -10649,7 +10654,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # A task the tree already satisfies should cost one turn, not five.
         # See ALREADY_SATISFIED_PROMPT_SECTION.
         already_satisfied_section = (
-            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 else ""
+            # Not offered on a gate-driven re-entry: turn-1 feedback means a
+            # check that ran AFTER this task was approved has failed, so the
+            # task's own criteria really are satisfied and "change nothing"
+            # would be a truthful answer that leaves the failure unrepaired.
+            # The builder is answering a reviewer, not deciding whether to start.
+            ALREADY_SATISFIED_PROMPT_SECTION if turn == 1 and not feedback else ""
         )
 
         # --- Section 4: Coach feedback (inline when available) ---
