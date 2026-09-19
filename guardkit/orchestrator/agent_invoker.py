@@ -10361,7 +10361,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 "tests_passed": tests_passed_count,
                 "tests_failed": player_report.get("tests_failed_count", 0),
                 "coverage": None,  # No coverage requirement for direct mode
-                "coverage_met": True,  # Direct mode relaxes coverage
+                # B9 Lane C: direct mode measures NOTHING, so it may not write
+                # a measured value. ``None`` is UNKNOWN; the relaxation is
+                # carried by ``quality_gates_relaxed`` beside it, and the Coach
+                # reads ``implementation_mode == "direct"`` to decide the gate
+                # is not required (recording ``coverage_relaxed_by:
+                # direct_mode``). Writing ``True`` here was a measurement the
+                # factory never took.
+                "coverage_met": None,  # UNKNOWN — direct mode measures nothing
                 "quality_gates_relaxed": True,  # Signal to Coach
                 "all_passed": success,
             },
