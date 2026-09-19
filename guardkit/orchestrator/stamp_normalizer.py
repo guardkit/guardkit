@@ -360,8 +360,8 @@ R1_DB_UNAVAILABLE = _family(
     r"postgres\w* .* (stopped|unreachable|down|unavailable)",
 )
 
-# R1 WIDENING — A NAMED DEPENDENCY IS DOWN (2026-09-19, same shape and the
-# same argument as the 2026-08-17 "data store" line above).
+# R1 WIDENING — A DEPENDENCY IS DOWN (2026-09-19, same shape and the same
+# argument as the 2026-08-17 "data store" line above).
 #
 # Datum: on the 2026-09-18 comparison run the specification seat wrote the
 # dependency-down scenario as "Given the user creation SERVICE is
@@ -374,37 +374,61 @@ R1_DB_UNAVAILABLE = _family(
 # divergence the ordering law (R1 before R9) exists to prevent, and exactly
 # what api_test's hand stamps call probe:process for the database wording.
 #
-# Kept as narrow as the corpus evidence supports:
-#   * A NAMED dependency only — a qualifier word that is not a determiner
-#     must sit directly in front of the noun ("the user creation service",
-#     "the embedding service"). A bare "the service is unavailable" does
-#     NOT match, and "unavailable" on its own never matches.
-#   * The noun must be the SUBJECT of the state: noun + copula + state, in
-#     that order. "service" in an unrelated clause ("the service degrades
-#     cleanly", "spoken narration is unavailable") does not match.
-#   * ONLY on a repo with an HTTP surface (``ctx.repo_has_http_surface``,
-#     the structural detector R9 uses). That is where the harm is: off a
-#     surface R9 cannot fire, the sentence refuses loud as it does today
-#     and a human or the model decides. Gating it here keeps every
-#     non-surface repo byte-identical (fleet-memory's "the embedding
-#     service is unavailable", specialist-agent's "the LLM service is
-#     unreachable", lpa's "the voice service is unavailable" and the rest
-#     are unit-level scenarios proved with a stub, not with infra control —
-#     minting probe:process on them would be a wrong home, silently).
-#   * Negation on the step line rejects the hit, the way R4 already does
-#     ("without the user creation service being down", "the service is not
-#     unavailable" — the latter cannot match the pattern at all).
-# Census delta (the pinned estate corpus, the same measurement the earlier
-# widenings used): 3 scenarios move, all REFUSED → probe:process, all in
-# study-tutor, all genuinely "a named dependency is stopped"; nothing that
-# is proved over the wire moves; every other repo is byte-identical.
+# THE NAME IS NOT REQUIRED, deliberately (coordinator's decision, 2026-09-19
+# repair pass). The R1 lines above send "the database is unavailable" to
+# probe:process without asking which database; by the same reasoning "the
+# service is unavailable", "services are down", "the backend is unreachable"
+# and "an upstream dependency is offline" are dependency-down scenarios
+# whether or not a qualifier precedes the noun. Which of those wordings the
+# specification seat will pick cannot be predicted, and a plain "the service
+# is unavailable" left to R9 is labelled `hurl` and makes the feature
+# unfinishable. So the rule is: the dependency noun, a copula and a
+# down-state, in that order, on ONE line. A qualifier in front is optional.
+#
+# What is still excluded:
+#   * The noun as the tail of a hyphenated or compound word — "self-service
+#     is down", "the microservice is unavailable" do NOT match (the
+#     lookbehind refuses a word character or a hyphen before the noun).
+#   * A bare "unavailable" with no dependency noun, and the noun in a clause
+#     where it is not the subject of a down-state ("the service should
+#     answer within the budget").
+#   * A hit NEGATED anywhere earlier on its own step line, the way R4 does
+#     ("without the user creation service being down").
+#   * LINE-CROSSING. The separators are [ \t]+, never \s, so a hit can never
+#     take its noun from the end of one step line and its state from the
+#     next — which also keeps the negation window on the right line.
+#   * Repos with no HTTP surface (``ctx.repo_has_http_surface``, the
+#     structural detector R9 uses). That is where the harm is: off a surface
+#     R9 cannot fire, the sentence refuses loud as it does today and a human
+#     or the model decides. Gating it here keeps every non-surface repo
+#     byte-identical (fleet-memory's "the embedding service is unavailable",
+#     specialist-agent's "the LLM service is unreachable", lpa's "the voice
+#     service is unavailable" and the rest are unit-level scenarios proved
+#     with a stub, not with infra control — minting probe:process on them
+#     would be a wrong home, silently).
+#
+# KNOWN EDGE, accepted: a Then-clause that only QUOTES response text — Then
+# the response says "pricing service is unavailable" — also routes here. It
+# is accepted because for that to be the app's honest answer the dependency
+# must actually be down, so the scenario still needs infra control to stand
+# up; and a wrongly-refused scenario is loud while a wrongly-`hurl` one is
+# unfinishable. ``test_stamp_normalizer.py`` pins it as a documented edge.
+#
+# Census delta over the pinned estate corpus (3,077 scenarios, the same
+# measurement the earlier widenings used) is recorded in the commit and in
+# the fixture README; the moved scenarios were read one by one.
 _R1_DEPENDENCY_NOUN = r"(?:service|services|dependency|dependencies|backend|backends|upstream|upstreams)"
-_R1_NOT_A_NAME = r"(?:the|a|an|its|it's|their|our|your|my|this|that|these|those|any|some|no|each|every|one)"
-R1_NAMED_DEPENDENCY_DOWN = _family(
-    r"\b(?!" + _R1_NOT_A_NAME + r"\s)[a-z][a-z0-9+._-]*\s"
+_R1_DEPENDENCY_COPULA = r"(?:is|are|was|were|becomes?|became|goes|go|remains?|remain|being|stays?)"
+_R1_DEPENDENCY_STATE = r"(?:unavailable|down|unreachable|offline)"
+R1_DEPENDENCY_DOWN = _family(
+    # optional qualifier + noun + copula + state, all on ONE line
+    r"(?<![a-z0-9+._-])(?:[a-z][a-z0-9+._-]*[ \t]+)?"
     + _R1_DEPENDENCY_NOUN
-    + r"\s(?:is|are|was|were|becomes?|became|goes|go|remains?|remain|being|stays?)\s"
-    r"(?:unavailable|down|unreachable|offline)\b",
+    + r"[ \t]+"
+    + _R1_DEPENDENCY_COPULA
+    + r"[ \t]+"
+    + _R1_DEPENDENCY_STATE
+    + r"(?![a-z0-9+._-])",
 )
 
 # The negation window for the widening: the whole step line before the hit,
@@ -1186,16 +1210,16 @@ def classify_scenario(
     if hit is not None:
         return Home(verifier="probe:process", rule="R1", evidence=hit.strip())
 
-    # R1 WIDENING (2026-09-19) — a NAMED service / dependency / backend /
-    # upstream is unavailable, on a repo with an HTTP surface only. Same
-    # need as a database being down (a process-level condition no HTTP call
-    # against a healthy app can show), so the same home and the same place
-    # in the order — before R9, which would otherwise mint `hurl` on it and
-    # make the feature unfinishable. A hit negated on its step line is not
-    # evidence.
+    # R1 WIDENING (2026-09-19) — a service / dependency / backend / upstream
+    # is unavailable, on a repo with an HTTP surface only. Same need as a
+    # database being down (a process-level condition no HTTP call against a
+    # healthy app can show), so the same home and the same place in the
+    # order — before R9, which would otherwise mint `hurl` on it and make
+    # the feature unfinishable. A hit negated on its step line is not
+    # evidence, and a hit can never cross a line.
     if context.repo_has_http_surface:
         hit = _first_unnegated_match(
-            R1_NAMED_DEPENDENCY_DOWN, text, words=_R1_NEGATION_WINDOW_WORDS
+            R1_DEPENDENCY_DOWN, text, words=_R1_NEGATION_WINDOW_WORDS
         )
         if hit is not None:
             return Home(verifier="probe:process", rule="R1", evidence=hit.strip())
