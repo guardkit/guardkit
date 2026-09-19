@@ -2529,8 +2529,9 @@ def test_r9_widening_i_parameter_filtering_idiom_ruled_2026_08_28():
     assert negative is None, negative
 
 
+
 # ---------------------------------------------------------------------------
-# R1 WIDENING (2026-09-19) — a NAMED dependency is down → probe:process
+# R1 WIDENING (2026-09-19) — a dependency is down → probe:process
 # ---------------------------------------------------------------------------
 # Datum: a specification seat wrote the dependency-down scenario with the
 # word "service" instead of "database"/"data store", so R1 did not fire and
@@ -2539,14 +2540,20 @@ def test_r9_widening_i_parameter_filtering_idiom_ruled_2026_08_28():
 # wherever the twin is enforced. Same need as a database being down, so the
 # same home and the same place in the order. Only on an HTTP surface: off a
 # surface R9 cannot fire and the sentence refuses loud as it does today.
+#
+# The name is NOT required (repair pass, same day): the R1 lines above send
+# "the database is unavailable" to probe:process without asking which
+# database, and the seat's wording cannot be predicted — a plain "the
+# service is unavailable" left to R9 is labelled hurl and the feature is
+# unfinishable. The noun, a copula and a down-state, on ONE line.
 
 R1_DEPENDENCY_DOWN_CASES = [
-    # the datum's own shape (a named service, the machine-idiom Then that
-    # used to carry it to hurl)
+    # THE DATUM — a named service, with the machine-idiom Then that used to
+    # carry it to hurl. Steps written generically (no product detail).
     (
         "The user creation service is unavailable",
         "Given the user creation service is unavailable\n"
-        "When I request the user creation counts for the last 7 days\n"
+        "When I request the reporting endpoint\n"
         "Then the request should fail gracefully",
     ),
     # the other named nouns of the same widening
@@ -2581,11 +2588,48 @@ R1_DEPENDENCY_DOWN_CASES = [
     ),
 ]
 
+# UNNAMED forms — deliberately matched (see the module comment). The rule
+# no longer asks WHICH dependency, exactly as the database lines above do
+# not ask which database.
+R1_DEPENDENCY_DOWN_UNNAMED_CASES = [
+    (
+        "The service is unavailable",
+        "Given the service is unavailable\n"
+        "When the endpoint is called\nThen the request should fail",
+    ),
+    (
+        "Services are down",
+        "Given services are down\n"
+        "When the endpoint is called\nThen the request should fail",
+    ),
+    (
+        "The backend is unreachable",
+        "Given the backend is unreachable\n"
+        "When the endpoint is called\nThen the request should fail",
+    ),
+    (
+        "An upstream dependency is offline",
+        "Given an upstream dependency is offline\n"
+        "When the endpoint is called\nThen the request should fail",
+    ),
+]
+
 
 @pytest.mark.parametrize(
     "title,steps", R1_DEPENDENCY_DOWN_CASES, ids=[c[0][:40] for c in R1_DEPENDENCY_DOWN_CASES]
 )
-def test_r1_widening_named_dependency_down_is_probe_process(title, steps):
+def test_r1_widening_dependency_down_is_probe_process(title, steps):
+    home = _home(title, steps, HTTP)
+    assert (home.verifier, home.rule) == ("probe:process", "R1"), (title, home)
+
+
+@pytest.mark.parametrize(
+    "title,steps",
+    R1_DEPENDENCY_DOWN_UNNAMED_CASES,
+    ids=[c[0][:40] for c in R1_DEPENDENCY_DOWN_UNNAMED_CASES],
+)
+def test_r1_widening_unnamed_dependency_down_is_probe_process(title, steps):
+    """The name is not required — the decision of 2026-09-19."""
     home = _home(title, steps, HTTP)
     assert (home.verifier, home.rule) == ("probe:process", "R1"), (title, home)
 
@@ -2619,22 +2663,64 @@ def test_r1_widening_beats_r9_on_the_datum_and_its_siblings_keep_hurl():
         assert (home.verifier, home.rule) == ("hurl", "R9"), (sibling_title, home)
 
 
-def test_r1_widening_near_misses_do_not_match():
-    """As narrow as the evidence: the dependency must be NAMED and must be
-    the subject of the state, and a bare 'unavailable' is never enough."""
-    # a bare "the service" is not a named dependency
-    assert classify_scenario(
-        "The service is unavailable",
-        "Given the service is unavailable\nThen nothing is written",
+def test_r1_widening_never_crosses_a_line():
+    """LINE-BOUND (the checker's finding): the separators are [ \\t]+, not
+    \\s, so a hit can never take its qualifier from the end of the previous
+    step line — which also keeps the negation window on the right line."""
+    # "processing" ends line one; "service" opens line two. If the
+    # separators matched a newline this would read "processing service is
+    # unavailable" across the break. It must not.
+    crossing = classify_scenario(
+        "Two step lines",
+        "Given a request is queued for processing\n"
+        "service is unavailable is the label shown on the queue card\n"
+        "Then the card should be rendered",
         HTTP,
-    ) is None
-    # "unavailable" on its own
-    assert classify_scenario(
-        "Narration is unavailable",
-        "Given spoken narration is unavailable right now\nThen the text answer still arrives",
+    )
+    # the second line on its own DOES carry a real hit ("service is
+    # unavailable" at the head of the line) — that is the widening working,
+    # not a line crossing. What we pin is that the EVIDENCE never contains
+    # the word from the previous line.
+    if crossing is not None and crossing.rule == "R1":
+        assert "processing" not in crossing.evidence, crossing.evidence
+    # and the negation on line one must not reach line two
+    not_borrowed = classify_scenario(
+        "Negation stays on its own line",
+        "Given the run completes without a retry\n"
+        "And the search backend is unreachable\n"
+        "Then the request should fail",
         HTTP,
-    ) is None
-    # "service" in an unrelated clause — not the subject of a down state
+    )
+    assert not_borrowed is not None and not_borrowed.rule == "R1", not_borrowed
+
+
+def test_r1_widening_compounds_and_bare_states_do_not_match():
+    """The noun as the tail of a hyphenated or compound word is not a
+    dependency, and a bare down-state with no dependency noun never fires."""
+    for title, steps in (
+        ("Self-service is down", "Given self-service is down\nThen the page shows a notice"),
+        (
+            "The microservice is unavailable",
+            "Given the microservice is unavailable\nThen the page shows a notice",
+        ),
+        (
+            "Microservices are down",
+            "Given microservices are down\nThen the page shows a notice",
+        ),
+        (
+            "Narration is unavailable",
+            "Given spoken narration is unavailable right now\n"
+            "Then the text answer still arrives",
+        ),
+        (
+            "Nothing is available",
+            "Given the feature is unavailable to this account\n"
+            "Then the page shows a notice",
+        ),
+    ):
+        home = classify_scenario(title, steps, HTTP)
+        assert home is None or home.rule != "R1", (title, home)
+    # "service" in a clause where it is not the subject of a down-state
     unrelated = classify_scenario(
         "The service degrades cleanly under load",
         "Given the user creation service is under load\n"
@@ -2651,7 +2737,8 @@ def test_r1_widening_near_misses_do_not_match():
 
 
 def test_r1_widening_negated_dependency_down_is_not_evidence():
-    """Negation on the step line rejects the hit, the way R4 already does."""
+    """Negation anywhere earlier on the step line rejects the hit, the way
+    R4 already does."""
     negated = classify_scenario(
         "The run completes without the dependency being down",
         "Given the run completes without the user creation service being down\n"
@@ -2663,17 +2750,41 @@ def test_r1_widening_negated_dependency_down_is_not_evidence():
     # the state must be adjacent)
     not_unavailable = classify_scenario(
         "The dependency is healthy",
-        "Given the user creation service is not unavailable\nThen the counts should be written",
+        "Given the user creation service is not unavailable\n"
+        "Then the counts should be written",
         HTTP,
     )
     assert not_unavailable is None or not_unavailable.rule != "R1", not_unavailable
 
 
-def test_r1_widening_estate_corpus_moves_are_the_three_named_study_tutor_scenarios():
-    """The census delta of record (measured against c617f9b8 over the pinned
-    estate corpus): three scenarios move, all REFUSED → probe:process, all in
-    study-tutor, each one 'a named dependency is stopped'; nothing that is
-    proved over the wire moves, and every non-surface repo is unchanged."""
+def test_r1_widening_KNOWN_EDGE_quoted_response_text_also_routes_to_probe_process():
+    """DOCUMENTED KNOWN EDGE — this asserts TODAY'S behaviour, not a wish.
+
+    A Then-clause that only QUOTES the response text the app should show
+    ("pricing service is unavailable") reads exactly like the state itself,
+    so the rule routes the scenario to probe:process. It is ACCEPTED, not
+    hidden: for that quoted text to be the app's honest answer the
+    dependency must really be down, so the scenario needs infra control to
+    stand up anyway. If this ever has to change, change it here first.
+    """
+    home = classify_scenario(
+        "The error message names the failing dependency",
+        "When I request the price of an item\n"
+        'Then the response body should read "pricing service is unavailable"',
+        HTTP,
+    )
+    assert home is not None, "the known edge has changed — update the doc paragraph too"
+    assert (home.verifier, home.rule) == ("probe:process", "R1"), home
+
+
+def test_r1_widening_estate_corpus_moves_are_the_three_study_tutor_scenarios():
+    """The census delta of record (measured 2026-09-19 against unmodified
+    main c617f9b8 over the pinned 3,077-scenario estate corpus): three
+    scenarios move, all REFUSED → probe:process, all in study-tutor, each
+    one a dependency being stopped. Nothing proved over the wire moves,
+    nothing leaves hurl, and every non-surface repo is byte-identical.
+    Dropping the "must be named" requirement moved NOTHING extra: the
+    broader form and the named form have the same delta on this corpus."""
     moved = [
         (
             "When the embedding service is unavailable retrieval is skipped and the turn proceeds in Analysis Mode",

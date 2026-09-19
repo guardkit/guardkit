@@ -44,6 +44,21 @@ title in the fixture README). Every non-surface repo is byte-identical
 (hurl 0, operator 3 unchanged); zero silent divergences (no probe:process
 or bus scenario moved). Refused 2,698 → 2,641.
 
+R1 WIDENING (2026-09-19 — A DEPENDENCY IS DOWN): the baseline below is the
+third DELIBERATE re-baseline. R1 learned that a service / dependency /
+backend / upstream that is unavailable, down, unreachable or offline is the
+same kind of condition as a database that is — a process-level state no HTTP
+call against a healthy running app can show — on HTTP-surface repos only.
+**3 stamps moved, all REFUSED → probe:process, all in study-tutor**:
+"the embedding service is unavailable" (RAG retrieval skipped), "speech
+services are down" (voice refused, typed streaming continues) and "speech
+services are unavailable" (voice degrades, text tutoring continues). Nothing
+left `hurl`; no scenario provable over the wire moved; every non-surface repo
+is byte-identical. study-tutor REFUSED 426 → 423, probe:process 10 → 13;
+estate refused 2,641 → 2,638. The rule does NOT require the dependency to be
+named, and that choice cost nothing here: the named form and the unnamed form
+have the identical delta on this corpus.
+
 The corpus (``tests/fixtures/stamp_normalizer/estate_corpus/``) is a
 READ-ONLY copy of every tracked ``features/**/*.feature`` (lpa: ``docs/poc/
 features/``) across forge, jarvis, fleet-memory, fleet-gateway,
@@ -85,17 +100,17 @@ human echo of the same file at the time of writing.
     fleet-memory              no      233      210   19        4     0        0           0     0         0
     fleet-gateway             no       33       24    9        0     0        0           0     0         0
     specialist-agent          no      796      731   28        2    35        0           0     0         0
-    study-tutor               YES     501      426   14       10     3       28           1    18         1
+    study-tutor               YES     501      423   14       13     3       28           1    18         1
     guardkit                  no      168      161    7        0     0        0           0     0         0
     lpa-platform-poc          no      205      195    0        0     4        0           4     0         2
     agentic-dataset-factory   no      253      251    0        2     0        0           0     0         0
     api_test                  YES      74        2    0       17     0        0           0    55         0
     ------------------------------------------------------------------------------------------------------
-    TOTAL                            3077     2641  217       68    42       28           5    73         3
+    TOTAL                            3077     2638  217       71    42       28           5    73         3
 
 Refused is the HONEST number: under Rich's condition 2 (no model in the
 loop, no fallback home) an undecidable scenario refuses loud rather than
-landing somewhere it does not belong. 2,641 of 3,077 (86%) refuse today —
+landing somewhere it does not belong. 2,638 of 3,077 (86%) refuse today —
 the rules stamp only what they can prove; the rest is the model's (or a
 human's) turn, by design. study-tutor's hurl is 18 (was 0): the R9 widening
 reads its http-app-access-adapter's and Keycloak token-validation's
@@ -309,7 +324,9 @@ def test_c_the_per_repo_histogram_equals_the_committed_baseline():
     total = sum(int(r["total"]) for r in actual.values())
     refused = sum(int(r[REFUSED]) for r in actual.values())
     assert total == 3077
-    assert refused == 2641
+    # 2,641 until the 2026-09-19 R1 widening moved three study-tutor
+    # dependency-down scenarios from REFUSED to probe:process.
+    assert refused == 2638
 
 
 def test_c_the_docstring_table_matches_the_baseline_totals():
