@@ -576,6 +576,20 @@ class TestPromptBuilding:
         # Verify absolute path with worktree_path prefix
         assert f"{worktree_path}/.guardkit/autobuild/TASK-001/player_turn_1.json" in prompt
 
+    def test_build_player_prompt_shows_a_turn_1_gate_seed(self, agent_invoker):
+        """A gate-driven re-entry starts at turn 1 WITH feedback; it must be shown."""
+        feedback = "the whole-feature check failed: the greeting is one line short"
+        prompt = agent_invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Implement the greeting",
+            feedback=feedback,
+        )
+
+        assert "Feedback from the check that failed after this task was approved" in prompt
+        assert feedback in prompt
+        assert "Coach Feedback from Turn 0" not in prompt
+
     def test_build_player_prompt_with_feedback(self, agent_invoker):
         """Player prompt includes feedback from previous turn."""
         feedback = "Please add error handling for token expiration"

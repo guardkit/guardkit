@@ -2364,8 +2364,14 @@ class AgentInvoker:
             # Write turn context for Player to read (includes approaching_limit)
             self._write_turn_context(task_id, turn, max_turns, approaching_limit)
 
-            # Write Coach feedback for task-work to read (if present and not turn 1)
-            if feedback and turn > 1:
+            # Write feedback for task-work to read whenever there is any.
+            # Feedback on turn 1 is a gate's seed: a post-wave gate (smoke,
+            # wiring, the whole-feature check) failed AFTER this task was
+            # approved and the wave was re-entered with the gate's output. The
+            # old ``turn > 1`` guard dropped exactly that feedback, so every
+            # gate-driven re-entry ran a Player that had been told nothing
+            # (found by driving the real runner, 19 September 2026).
+            if feedback:
                 self._write_coach_feedback(task_id, turn, feedback)
 
             # Route based on implementation_mode from task frontmatter
@@ -3318,9 +3324,16 @@ JSON verdict.
             Formatted prompt string for Player agent
         """
         feedback_section = ""
-        if feedback and turn > 1:
+        if feedback:
+            # Turn-1 feedback is a gate's seed (see invoke_player); there is
+            # no "turn 0" Coach to attribute it to.
+            heading = (
+                f"Coach Feedback from Turn {turn - 1}"
+                if turn > 1
+                else "Feedback from the check that failed after this task was approved"
+            )
             feedback_section = f"""
-## Coach Feedback from Turn {turn - 1}
+## {heading}
 
 {feedback}
 
@@ -10641,10 +10654,19 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         # --- Section 4: Coach feedback (inline when available) ---
         feedback_section = ""
-        if feedback and turn > 1:
+        if feedback:
+            # Turn-1 feedback is a gate's seed (see invoke_player): the wave
+            # was re-entered because a check that ran AFTER this task was
+            # approved failed. It must reach the Player or the re-entry
+            # repairs nothing.
             formatted = self._format_feedback_for_prompt(feedback, turn)
+            heading = (
+                f"Coach Feedback from Turn {turn - 1}"
+                if turn > 1
+                else "Feedback from the check that failed after this task was approved"
+            )
             feedback_section = (
-                f"\n## Coach Feedback from Turn {turn - 1}\n"
+                f"\n## {heading}\n"
                 f"\n"
                 f"{formatted}\n"
                 f"\n"
