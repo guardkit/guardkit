@@ -15,6 +15,7 @@ tripwire proves the ledger diff is load-bearing: break the diff and reds appear.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -389,23 +390,105 @@ class TestRuntimeSurfaceGate:
         )
         return repo
 
-    def test_runtime_surface_with_green_gate_passes(self, tmp_path):
+    def _write_envelope(self, repo, gate_id="live-suite", expected="200 OK"):
+        """An F4 results envelope recording what the gate actually asserted."""
+        history = repo / "qa" / "gates" / "history"
+        history.mkdir(parents=True, exist_ok=True)
+        assertions = (
+            [{"id": "A1", "status": "pass", "expected": expected}] if expected else []
+        )
+        (history / "run-1.json").write_text(
+            json.dumps(
+                {
+                    "format_version": "1.0",
+                    "run_id": "run-1",
+                    "feature_id": "FEAT-RT",
+                    "target_env": "env1",
+                    "started": "2026-07-05T00:00:00Z",
+                    "finished": "2026-07-05T00:01:00Z",
+                    "preflight": {"checks": [], "instrument_ok": True},
+                    "gates": [
+                        {"gate_id": gate_id, "exit_code": 0, "assertions": assertions}
+                    ],
+                    "verdict": "pass",
+                }
+            )
+        )
+
+    def test_runtime_surface_with_bound_green_gate_passes(self, tmp_path):
+        """POSITIVE CONTROL — bound to this feature's pass bar, green at the
+        candidate sha, with a recorded assertion."""
         repo = self._repo_with_registry(tmp_path, green=True)
         _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        self._write_envelope(repo)
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
+        assert res.passed is True and res.runtime_surface is True, res.detail
+
+    def test_green_gate_without_a_candidate_sha_fails_closed(self, tmp_path):
+        """NEGATIVE CONTROL — a caller that cannot name the candidate cannot be
+        told the gate covers it (B9 2026-09-19)."""
+        repo = self._repo_with_registry(tmp_path, green=True)
+        _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        self._write_envelope(repo)
         res = check_runtime_surface_gate(repo, ["TASK-RT"])
-        assert res.passed is True and res.runtime_surface is True
+        assert res.passed is False
+        assert "no candidate sha" in res.detail
+
+    def test_unrelated_green_gate_fails(self, tmp_path):
+        """NEGATIVE CONTROL — a green gate for someone else's pass bar."""
+        repo = tmp_path / "repo"
+        (repo / "qa" / "gates").mkdir(parents=True)
+        (repo / "qa" / "gates" / "registry.yaml").write_text(
+            'format_version: "1.0"\ngates:\n'
+            "  - id: other-suite\n"
+            "    path: app/test_other\n"
+            "    target: {base_url_env: API_BASE_URL, environment_id: env1}\n"
+            "    pass_bar_ref: qa/pass-bar-TASK-OTHER.yaml\n"
+            "    evidence_dir_pattern: qa/ev-{date}\n"
+            '    last_green: {date: "2026-07-05", sha: abcd123}\n'
+        )
+        _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        self._write_envelope(repo, gate_id="other-suite")
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
+        assert res.passed is False
+        assert "not evidence about this feature" in res.detail
+
+    def test_stale_sha_fails(self, tmp_path):
+        """NEGATIVE CONTROL — green at a different commit."""
+        repo = self._repo_with_registry(tmp_path, green=True)
+        _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        self._write_envelope(repo)
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="deadbee")
+        assert res.passed is False
+        assert "not at the candidate sha" in res.detail
+
+    def test_assertion_free_envelope_fails(self, tmp_path):
+        """NEGATIVE CONTROL — a gate that asserted nothing proves nothing."""
+        repo = self._repo_with_registry(tmp_path, green=True)
+        _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        self._write_envelope(repo, expected=None)
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
+        assert res.passed is False
+        assert "asserted" in res.detail
+
+    def test_missing_envelope_fails(self, tmp_path):
+        repo = self._repo_with_registry(tmp_path, green=True)
+        _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
+        assert res.passed is False
+        assert "no results envelope" in res.detail
 
     def test_runtime_surface_without_green_gate_refuses(self, tmp_path):
         repo = self._repo_with_registry(tmp_path, green=False)
         _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
-        res = check_runtime_surface_gate(repo, ["TASK-RT"])
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
         assert res.passed is False and res.runtime_surface is True
         assert "no green gate" in res.detail
 
     def test_runtime_surface_without_registry_refuses(self, tmp_path):
         repo = tmp_path / "repo"
         _write_pass_bar(repo / "qa" / "pass-bar-TASK-RT.yaml", "TASK-RT", "abcd", auth=True)
-        res = check_runtime_surface_gate(repo, ["TASK-RT"])
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
         assert res.passed is False
         assert "no F4 gate registry" in res.detail
 
@@ -436,8 +519,11 @@ class TestRuntimeSurfaceGate:
             "criteria:\n  - id: A\n    text: t\n    class: machine\n    evidence_kind: json\n"
             "negative_paths: [dependency_down_degradation]\n"
         )
-        res = check_runtime_surface_gate(repo, ["TASK-RT"])
-        assert res.runtime_surface is True and res.passed is True
+        # B9 2026-09-19: a walk-bearing bar still DECLARES a runtime surface;
+        # the gate is now also bound (pass bar, sha, recorded assertion).
+        self._write_envelope(repo)
+        res = check_runtime_surface_gate(repo, ["TASK-RT"], candidate_sha="abcd123")
+        assert res.runtime_surface is True and res.passed is True, res.detail
 
     @pytest.mark.parametrize(
         "src,task_id",
@@ -454,8 +540,12 @@ class TestRuntimeSurfaceGate:
         # Copy the committed instances into their canonical repo-local paths.
         shutil.copy(src / f"pass-bar-{task_id}.yaml", repo / "qa" / f"pass-bar-{task_id}.yaml")
         shutil.copy(src / "gates-registry.yaml", repo / "qa" / "gates" / "registry.yaml")
+        # B9 2026-09-19: the committed fixtures carry a green gate but no
+        # candidate sha and no results envelope — the bound check refuses, and
+        # says which binding is missing rather than passing on a bare green.
         res = check_runtime_surface_gate(repo, [task_id])
-        assert res.passed is True, res.detail
+        assert res.passed is False
+        assert "no candidate sha" in res.detail
         assert res.runtime_surface is True
 
 
