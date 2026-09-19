@@ -119,7 +119,7 @@ class TestNaturalLabelACMatching:
         assert result.criteria_met == 1
         assert result.all_criteria_met is True
         assert result.criteria_results[0].criterion_id == "AC-1"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
     def test_natural_label_matches_with_checkbox_prefix(
         self, validator: CoachValidator,
@@ -139,7 +139,7 @@ class TestNaturalLabelACMatching:
 
         assert result.criteria_met == 1
         assert result.criteria_results[0].criterion_id == "AC-1"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
 
 # ============================================================================
@@ -179,7 +179,7 @@ class TestZeroPaddedFormatStillMatches:
         # The criterion ID is the natural label (AC-1), not the
         # zero-padded form, because extraction now succeeds.
         assert result.criteria_results[0].criterion_id == "AC-1"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
 
 # ============================================================================
@@ -211,7 +211,7 @@ class TestCompoundIDsStillMatch:
         assert result.criteria_met == 1
         assert result.all_criteria_met is True
         assert result.criteria_results[0].criterion_id == "AC-LOAD-01"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
     def test_compound_id_with_checkbox(self, validator: CoachValidator):
         """AC-4 variant: ``- [ ] **AC-LOAD-01** — text`` still extracts AC-LOAD-01."""
@@ -229,7 +229,7 @@ class TestCompoundIDsStillMatch:
 
         assert result.criteria_met == 1
         assert result.criteria_results[0].criterion_id == "AC-LOAD-01"
-        assert result.criteria_results[0].result == "verified"
+        assert result.criteria_results[0].result == "claimed"  # B9 Lane C: promise-backed → "claimed"
 
 
 # ============================================================================
@@ -275,4 +275,4 @@ class TestFeatPebrRun2Reproducer:
                 f"Criterion {i} keyed as {criterion_result.criterion_id!r} "
                 f"but expected 'AC-{i}'"
             )
-            assert criterion_result.result == "verified"
+            assert criterion_result.result == "claimed"  # B9 Lane C: promise-backed → "claimed"

@@ -46,7 +46,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 from guardkit.lib.pytest_argv import isolated_basetemp
 from guardkit.lib.pytest_summary import parse_pytest_summary
@@ -782,8 +782,10 @@ class QualityGateStatus:
     ----------
     tests_passed : bool
         Whether all tests passed in Phase 4.5
-    coverage_met : bool
-        Whether coverage threshold was met
+    coverage_met : Optional[bool]
+        Whether the coverage threshold was met. Tri-state (B9 Lane C):
+        ``True``/``False`` are measurements; ``None`` is UNKNOWN — nothing
+        measured coverage — and UNKNOWN can never approve.
     arch_review_passed : bool
         Whether architectural review passed (score >= 60)
     plan_audit_passed : bool
@@ -810,13 +812,28 @@ class QualityGateStatus:
     # let the OTHER gates approve despite absent tests — a gate-level
     # false-green. See ``.claude/rules/absence-must-survive-every-reconciliation-layer.md``.
     tests_passed: Optional[bool]
-    coverage_met: bool
+    # B9 Lane C: ``coverage_met`` is tri-state for exactly the reason
+    # ``tests_passed`` is. ``None`` is UNKNOWN (no measurement anywhere), it is
+    # APPENDED to ``required_gates`` when coverage is required, so
+    # ``all([None, ...])`` is falsy and an unmeasured coverage cannot approve.
+    # Before this it was coerced to ``True`` — "we did not measure" read as
+    # "the threshold was met".
+    coverage_met: Optional[bool]
     arch_review_passed: bool
     plan_audit_passed: bool
     tests_required: bool = True
     coverage_required: bool = True
     arch_review_required: bool = True
     plan_audit_required: bool = True
+    # B9 Lane C. When the coverage gate was turned off by a named relaxation
+    # rather than by a measurement, the relaxation is recorded by name
+    # (today the only one is ``"direct_mode"``). A reader can then tell
+    # "coverage was met" from "coverage was not required of this task".
+    coverage_relaxed_by: Optional[str] = None
+    # B9 Lane C. The receipt of the project's OWN declared coverage command
+    # when the Coach ran it: {command, exit_code, duration_seconds,
+    # output_tail, timed_out}. ``None`` when nothing was declared or run.
+    coverage_receipt: Optional[Dict[str, Any]] = None
     all_gates_passed: bool = field(init=False)
 
     def __post_init__(self):
@@ -1150,6 +1167,21 @@ class SuiteComparedToBase:
     note: str
 
 
+#: B9 Lane C — the two words a criterion can carry when the Coach counts it as
+#: met. ``"verified"`` means the Coach itself corroborated the behaviour;
+#: ``"claimed"`` means the PLAYER said so and nothing independent has confirmed
+#: it yet. A claim is still counted for the per-turn decision (the turn behaves
+#: exactly as it did before this split), but the receipt and the evidence
+#: dossier say which of the two it was, so nobody downstream can read a promise
+#: as a proof. Machine-class criteria — a behaviour at a delivered surface —
+#: stay ``"claimed"`` until a bound verifier receipt or a bound gate result
+#: covers them.
+CLAIMED = "claimed"
+VERIFIED = "verified"
+#: Results that count as "met" wherever the code used to test ``== "verified"``.
+MET_RESULTS = frozenset({VERIFIED, CLAIMED})
+
+
 @dataclass
 class CriterionResult:
     """
@@ -1162,7 +1194,9 @@ class CriterionResult:
     criterion_text : str
         Full text of the acceptance criterion
     result : str
-        Verification result: "verified", "rejected", or "pending"
+        Verification result: "verified", "claimed", "rejected", or "pending".
+        ``"claimed"`` (B9 Lane C) is a Player promise with no independent
+        corroboration — counted as met for the turn, never recorded as proof.
     status : str
         Alias for result, used by _count_criteria_passed consumer
     evidence : str
@@ -1171,7 +1205,7 @@ class CriterionResult:
 
     criterion_id: str
     criterion_text: str
-    result: str  # "verified" | "rejected" | "pending"
+    result: str  # "verified" | "claimed" | "rejected" | "pending"
     status: str  # same as result, for _count_criteria_passed compatibility
     evidence: str
 
@@ -1287,6 +1321,13 @@ class CoachValidationResult:
                 "quality_gates": {
                     "tests_passed": self.quality_gates.tests_passed,
                     "coverage_met": self.quality_gates.coverage_met,
+                    # B9 Lane C: serialised even when None/absent — a key left
+                    # out of to_dict makes every downstream read dead (the
+                    # ABFIX-010 lesson).
+                    "coverage_relaxed_by": (
+                        self.quality_gates.coverage_relaxed_by
+                    ),
+                    "coverage_receipt": self.quality_gates.coverage_receipt,
                     "arch_review_passed": self.quality_gates.arch_review_passed,
                     "plan_audit_passed": self.quality_gates.plan_audit_passed,
                     "all_gates_passed": self.quality_gates.all_gates_passed,
@@ -2407,7 +2448,11 @@ class CoachValidator:
         # all-gates-passed path below, so the call happens exactly once.
         requirements = self.validate_requirements(task, task_work_results, turn=turn)
 
-        if not gates_status.all_gates_passed:
+        # B9 Lane C: the same deferral gather_evidence makes — an UNKNOWN
+        # required coverage the project can still measure waits for its own
+        # declared command, which runs after the independent test run below.
+        coverage_pending = self._coverage_resolution_pending(gates_status)
+        if not gates_status.all_gates_passed and not coverage_pending:
             logger.info(f"Quality gates failed for {task_id}: {gates_status}")
             return self._feedback_from_gates(
                 task_id=task_id,
@@ -2418,6 +2463,7 @@ class CoachValidator:
                 extra_issues=advisory_issues,
                 honesty_verification=honesty_verification,
                 requirements=requirements,
+                task_type=task_type.value,
             )
 
         # 3. Independent test verification (trust but verify)
@@ -2458,6 +2504,36 @@ class CoachValidator:
                 context=context,
                 honesty_verification=honesty_verification,
             )
+
+        # B9 Lane C: promise-backed criteria arrive as ``claimed``; the
+        # Coach's own passing run plus the honesty check is what can raise one
+        # to ``verified`` (a machine-class criterion needs a bound receipt).
+        requirements = self.corroborate_claims(
+            requirements,
+            independent_tests=test_result,
+            honesty_verification=honesty_verification,
+        )
+
+        # B9 Lane C: resolve a deferred UNKNOWN coverage with the project's
+        # own command, then end the turn in gate feedback if it says no.
+        if coverage_pending:
+            gates_status = self.apply_declared_coverage(gates_status)
+            if not gates_status.all_gates_passed:
+                logger.info(
+                    "Quality gates failed for %s after the declared coverage "
+                    "command: %s", task_id, gates_status,
+                )
+                return self._feedback_from_gates(
+                    task_id=task_id,
+                    turn=turn,
+                    gates=gates_status,
+                    task_work_results=task_work_results,
+                    context_used=context,
+                    extra_issues=advisory_issues,
+                    honesty_verification=honesty_verification,
+                    requirements=requirements,
+                    task_type=task_type.value,
+                )
 
         conditional_approval = False
         environment_conditional_approval = False
@@ -3244,7 +3320,14 @@ class CoachValidator:
 
         # Quality-gate-failure short-circuit. Legacy validate() also
         # short-circuits here via _feedback_from_gates.
-        if not gates.all_gates_passed:
+        #
+        # B9 Lane C exception: when the only thing unresolved is a required
+        # coverage nothing has measured AND the project declares its own
+        # coverage command, the abort is deferred so that command can run
+        # after the independent test run. Every other gate failure aborts
+        # exactly as before.
+        coverage_pending = self._coverage_resolution_pending(gates)
+        if not gates.all_gates_passed and not coverage_pending:
             logger.info(
                 "gather_evidence: quality gates failed for %s; downstream "
                 "(requirements, independent tests) skipped.", task_id,
@@ -3257,6 +3340,7 @@ class CoachValidator:
                 extra_issues=advisory_issues,
                 honesty_verification=honesty,
                 requirements=None,
+                task_type=task_type.value,
             ).to_dict()
             return CoachEvidenceBundle(
                 honesty=honesty,
@@ -3378,6 +3462,66 @@ class CoachValidator:
             )
             gates = self._gates_with_unknown_tests(gates)
             tests_dict["tests_passed"] = None
+
+        # ------------------------------------------------------------------
+        # 4b. The project's own coverage measurement (B9 Lane C). Runs AFTER
+        # the independent test run, against the same tree, and only when the
+        # gate is still UNKNOWN. Its exit code is the verdict; if it says the
+        # threshold is not met (or nothing was declared after all), the turn
+        # ends in the same gate feedback it would have ended in above.
+        # ------------------------------------------------------------------
+        if coverage_pending and not test_result.check_could_not_run:
+            gates = self.apply_declared_coverage(gates)
+            if gates is not None:
+                coverage_details["coverage_met"] = gates.coverage_met
+                coverage_details["coverage_receipt"] = gates.coverage_receipt
+                if gates.coverage_receipt is not None:
+                    coverage_details["provenance"] = (
+                        "declared_coverage_command"
+                    )
+        if (
+            coverage_pending
+            and gates is not None
+            and not gates.all_gates_passed
+        ):
+            gate_feedback = self._feedback_from_gates(
+                task_id,
+                turn,
+                gates,
+                task_work_results,
+                extra_issues=advisory_issues,
+                honesty_verification=honesty,
+                requirements=requirements,
+                task_type=task_type.value,
+            ).to_dict()
+            return CoachEvidenceBundle(
+                honesty=honesty,
+                gathering_status="partial_gate_abort",
+                quality_gates=gates,
+                gate_feedback=gate_feedback,
+                coverage_details=coverage_details,
+                plan_audit=plan_audit_dict,
+                bdd=bdd_dict,
+                bdd_authoring_sweep=None,
+                arch_review=arch_review_dict,
+                tests=tests_dict,
+                requirements=requirements,
+                severity_recommendations=severity_recommendations,
+                advisory_issues=advisory_issues,
+                task_type=task_type.value,
+                profile_name=profile_name,
+            )
+
+        # ------------------------------------------------------------------
+        # 4c. Corroboration (B9 Lane C). Promise-backed criteria are recorded
+        # as ``claimed``; this is the only place one can become ``verified``,
+        # and only on the Coach's own evidence. The counts do not move.
+        # ------------------------------------------------------------------
+        requirements = self.corroborate_claims(
+            requirements,
+            independent_tests=test_result,
+            honesty_verification=honesty,
+        )
 
         # ------------------------------------------------------------------
         # 5. Wiring analysis (Wave-1, TASK-QAWE-002).
@@ -5295,14 +5439,42 @@ class CoachValidator:
 
         # Coverage - read from quality_gates.coverage_met
         # If coverage not required by profile, default to True (skip gate)
+        #
+        # B9 Lane C. Unknown stays unknown. ``coverage_met: None`` means NOTHING
+        # measured coverage: not the Player's report, not the project. That is
+        # not a pass, and it is not a failure to fix — it is UNKNOWN, and
+        # ``QualityGateStatus.__post_init__`` makes UNKNOWN unable to approve.
+        # The one relaxation the factory actually has is direct mode, and it is
+        # named as such: ``implementation_mode == "direct"`` (which is what
+        # writes ``quality_gates_relaxed``) turns the gate off and records
+        # ``coverage_relaxed_by: direct_mode`` — it never invents a measurement.
+        coverage_relaxed_by: Optional[str] = None
         if not profile.coverage_required:
             coverage_met = True
             logger.debug("Coverage not required per task type profile, skipping")
+        elif self._is_direct_mode(task_work_results):
+            coverage_met = True
+            coverage_relaxed_by = "direct_mode"
+            logger.info(
+                "Coverage gate relaxed for a direct-mode task "
+                "(coverage_relaxed_by=direct_mode); no measurement is claimed."
+            )
         else:
-            # Handle None explicitly: treat as "not measured" = pass (same as coverage not required)
             coverage_met_value = quality_gates.get("coverage_met")
-            coverage_met = coverage_met_value if coverage_met_value is not None else True
-            logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met (raw={coverage_met_value})")
+            coverage_met = (
+                coverage_met_value if coverage_met_value is not None else None
+            )
+            if coverage_met is None:
+                logger.info(
+                    "Coverage is required and NOTHING measured it "
+                    "(quality_gates.coverage_met is absent/null): the gate is "
+                    "UNKNOWN, not passed."
+                )
+            else:
+                logger.debug(
+                    f"Extracted coverage_met={coverage_met} from "
+                    f"quality_gates.coverage_met (raw={coverage_met_value})"
+                )
 
         # Architectural review - may be in separate code_review field or not present
         # If arch review not required by profile OR skip_arch_review=True, default to True (skip gate)
@@ -5374,6 +5546,7 @@ class CoachValidator:
             coverage_required=profile.coverage_required,
             arch_review_required=effective_arch_review_required,
             plan_audit_required=profile.plan_audit_required,
+            coverage_relaxed_by=coverage_relaxed_by,
         )
 
         # Log final decision at INFO level for visibility
@@ -6406,6 +6579,32 @@ class CoachValidator:
         if gates is None or gates.tests_passed is None:
             return gates
         return dataclass_replace(gates, tests_passed=None)
+
+    def _coverage_resolution_pending(
+        self, gates: Optional[QualityGateStatus]
+    ) -> bool:
+        """True when the ONLY unresolved required gate is an UNKNOWN coverage
+        the project itself can still measure.
+
+        The gate-fail short-circuit is deferred in exactly this case, so the
+        declared coverage command runs AFTER the independent test run (the
+        order the design names) instead of never running at all. Any other
+        failing gate short-circuits as it always did.
+        """
+        if gates is None:
+            return False
+        if not gates.coverage_required or gates.coverage_met is not None:
+            return False
+        others = []
+        if gates.tests_required:
+            others.append(gates.tests_passed)
+        if gates.arch_review_required:
+            others.append(gates.arch_review_passed)
+        if gates.plan_audit_required:
+            others.append(gates.plan_audit_passed)
+        if not all(others):
+            return False
+        return self._declared_coverage_command() is not None
 
     def _estate_fault_result(
         self,
@@ -7963,20 +8162,32 @@ class CoachValidator:
             raw_status = promise.get("status", "") if promise else ""
             normalized_status = STATUS_ALIASES.get(raw_status, raw_status)
             if promise and normalized_status == "complete":
-                result_str = "verified"
+                # B9 LANE C: A PROMISE IS A CLAIM. The Player saying
+                # "complete" is the Player's word, and the word the Coach
+                # writes down says so. ``corroborate_claims`` may later raise
+                # it to ``verified`` — only on independent evidence (the
+                # Coach's own passing test run plus the honesty check finding
+                # the files the promise cites), and for a machine-class
+                # criterion only on a bound verifier receipt or a bound gate.
+                # The per-turn arithmetic is untouched: a claim still counts
+                # as met, so no turn behaves differently for it.
+                result_str = CLAIMED
                 evidence = promise.get(
                     "evidence",
                     f"Player completed {criterion_id}",
                 )
+                evidence = f"[Claimed by the Player, not yet corroborated] {evidence}"
             elif promise and normalized_status == "partial":
-                # TASK-ACR-004: Treat partial as verified with lower confidence
-                result_str = "verified"
+                # TASK-ACR-004: partial counts as met with lower confidence —
+                # and, B9 Lane C, it too is the Player's claim, never a proof.
+                result_str = CLAIMED
                 evidence_type = promise.get("evidence_type", "unknown")
                 base_evidence = promise.get(
                     "evidence",
                     f"Player partially completed {criterion_id}",
                 )
                 evidence = (
+                    f"[Claimed by the Player, not yet corroborated] "
                     f"[Partial confidence - {evidence_type}] {base_evidence}"
                 )
             else:
@@ -7990,7 +8201,7 @@ class CoachValidator:
                 missing.append(criterion_text)
 
             # Log per-criterion matching result at DEBUG level (TASK-FIX-54F6)
-            if result_str == "verified" and promise:
+            if result_str in MET_RESULTS and promise:
                 promise_status = promise.get("status", "unknown")
                 confidence = 1.0 if promise_status == "complete" else 0.8
                 logger.debug(
@@ -8642,7 +8853,7 @@ class CoachValidator:
             promise_validation.criteria_results,
             text_validation.criteria_results,
         ):
-            if promise_cr.result == "verified":
+            if promise_cr.result in MET_RESULTS:
                 merged_results.append(promise_cr)
             elif (
                 text_cr.result == "verified"
@@ -9259,6 +9470,294 @@ class CoachValidator:
         if self._toolchain is None:
             return None
         return self._toolchain.test or None
+
+    # ---- B9 Lane C: a claim becomes a verdict only on corroboration ------
+
+    #: Where Lane D's feature-level verifier writes its receipt, relative to
+    #: the worktree. Read defensively: an absent or unreadable file is simply
+    #: NO corroboration — never an error, and never a pass.
+    FEATURE_CHECK_RECEIPT_RELPATH = (
+        Path(".guardkit") / "autobuild-private" / "feature_check.json"
+    )
+
+    def _pass_bar_criterion_classes(self) -> Dict[str, str]:
+        """Map criterion id → pass-bar class for THIS task, defensively.
+
+        Returns an empty mapping whenever there is no pinned pass bar, it does
+        not parse, or it names no criteria. An empty mapping means "no
+        criterion is known to be machine-class", which keeps every repository
+        without pass bars behaving exactly as it did.
+        """
+        task_id = self.task_id
+        if not task_id:
+            return {}
+        try:
+            from guardkit.qa.enforcement import pass_bar_path_for
+            from guardkit.qa.formats import validate_instance
+
+            path = pass_bar_path_for(Path(self.worktree_path), task_id)
+            if not path.is_file():
+                return {}
+            bar = validate_instance("pass-bar", path)
+            return {
+                str(c.id): str(c.criterion_class)
+                for c in getattr(bar, "criteria", []) or []
+            }
+        except Exception as exc:  # noqa: BLE001 — absence is not an error
+            logger.debug(
+                "pass-bar criterion classes unavailable for %s: %s",
+                task_id, exc,
+            )
+            return {}
+
+    def _feature_check_covered_ids(self) -> Set[str]:
+        """Criterion / scenario ids a PASSING Lane D verifier receipt covers.
+
+        Defensive by contract: a missing file, unreadable JSON, a receipt whose
+        latest attempt did not pass, or a receipt with no coverage list all
+        yield the empty set — no corroboration.
+        """
+        try:
+            path = Path(self.worktree_path) / self.FEATURE_CHECK_RECEIPT_RELPATH
+            if not path.is_file():
+                return set()
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 — absence is not an error
+            logger.debug("feature_check receipt unreadable: %s", exc)
+            return set()
+        if not isinstance(data, dict):
+            return set()
+        status = str(data.get("status", "")).strip().lower()
+        if status and status not in {"pass", "passed", "green"}:
+            return set()
+        covered: Set[str] = set()
+        for key in ("scenarios_covered", "criteria_covered"):
+            values = data.get(key)
+            if isinstance(values, list):
+                covered.update(str(v).strip() for v in values if str(v).strip())
+        return covered
+
+    def corroborate_claims(
+        self,
+        requirements: Optional[RequirementsValidation],
+        *,
+        independent_tests: Optional["IndependentTestResult"] = None,
+        honesty_verification: Optional[Any] = None,
+        gate_verified_ids: Optional[Set[str]] = None,
+    ) -> Optional[RequirementsValidation]:
+        """Raise ``claimed`` criteria to ``verified`` where evidence supports it.
+
+        THE ONE PLACE A PROMISE CAN BECOME A VERDICT. The bar, exactly as the
+        B9 design states it:
+
+        * the Coach's OWN independent test run passed, and tests actually
+          executed (not an absent signal, not a run that could not run), and
+        * the honesty check found the files the promise cites (``verified``,
+          no fabricated path), and
+        * for a criterion whose pass bar class is ``machine`` — a behaviour at
+          a delivered surface — a bound verifier receipt (Lane D's
+          ``feature_check.json``) or a bound gate result covers it by id.
+          A green generic suite is NOT corroboration of a surface behaviour:
+          that is precisely the gap B9 walked through.
+
+        Counts are untouched: ``criteria_met``, ``all_criteria_met`` and
+        ``missing`` are identical before and after, because ``claimed`` already
+        counts as met. Only the recorded word changes.
+        """
+        if requirements is None or not requirements.criteria_results:
+            return requirements
+
+        run_corroborates = bool(
+            independent_tests is not None
+            and independent_tests.tests_passed
+            and not independent_tests.signal_absent
+            and not independent_tests.check_could_not_run
+        )
+        honesty_corroborates = bool(
+            honesty_verification is not None
+            and getattr(honesty_verification, "verified", False)
+        )
+        classes = self._pass_bar_criterion_classes()
+        covered = set(gate_verified_ids or set()) | self._feature_check_covered_ids()
+
+        upgraded = 0
+        new_results: List[CriterionResult] = []
+        for cr in requirements.criteria_results:
+            if cr.result != CLAIMED:
+                new_results.append(cr)
+                continue
+            is_machine = classes.get(cr.criterion_id) == "machine"
+            if is_machine:
+                promoted = cr.criterion_id in covered
+                why = "bound verifier receipt / bound gate result"
+            else:
+                promoted = run_corroborates and honesty_corroborates
+                why = "the Coach's own passing test run and the honesty check"
+            if not promoted:
+                new_results.append(cr)
+                continue
+            upgraded += 1
+            new_results.append(CriterionResult(
+                criterion_id=cr.criterion_id,
+                criterion_text=cr.criterion_text,
+                result=VERIFIED,
+                status=VERIFIED,
+                evidence=f"[Corroborated by {why}] {cr.evidence}",
+            ))
+
+        if upgraded:
+            logger.info(
+                "Corroboration raised %d claimed criteria to verified "
+                "(machine-class criteria need a bound receipt or gate).",
+                upgraded,
+            )
+        return dataclass_replace(requirements, criteria_results=new_results)
+
+    # ---- B9 Lane C: the project's own coverage measurement ---------------
+
+    @staticmethod
+    def _is_direct_mode(task_work_results: Optional[Dict[str, Any]]) -> bool:
+        """True when this task was implemented in ``direct`` mode.
+
+        The ONE named relaxation of the coverage gate. Read from the results
+        block's own ``implementation_mode`` (written by the direct-mode
+        results writer), never inferred from the presence of a relaxation
+        flag — ``quality_gates_relaxed`` is a consequence of the mode, not
+        evidence of it, and anything can set a flag.
+        """
+        if not isinstance(task_work_results, dict):
+            return False
+        mode = task_work_results.get("implementation_mode")
+        return isinstance(mode, str) and mode.strip().lower() == "direct"
+
+    def _declared_coverage_command(self) -> Optional[str]:
+        """Return the declared ``coverage`` command for THIS TASK, or ``None``.
+
+        The exact twin of :meth:`_declared_test_command`, including the
+        component rule: a task that names a component gets that component's
+        ``coverage:`` and never the root block's.
+        """
+        if self._component_toolchain is not None:
+            return self._component_toolchain.coverage or None
+        if self._component:
+            return None
+        if self._toolchain is None:
+            return None
+        return self._toolchain.coverage or None
+
+    def _declared_coverage_timeout(self) -> int:
+        """The declared coverage command's bound, in seconds."""
+        source = self._component_toolchain or self._toolchain
+        timeout = getattr(source, "coverage_timeout", None)
+        return int(timeout) if isinstance(timeout, int) and timeout > 0 else 300
+
+    def run_declared_coverage(self) -> Optional[Dict[str, Any]]:
+        """Run the project's OWN coverage command and return its receipt.
+
+        THE PROJECT DECIDES, AND ITS EXIT CODE IS THE VERDICT (the declaration
+        law): exit 0 means the project's coverage threshold is met, non-zero
+        means it is not. Nothing here parses a percentage out of the output and
+        nothing here assumes a language — the repo's command names its own
+        interpreter, in its own component directory.
+
+        Returns ``None`` when nothing is declared (the caller then leaves the
+        gate UNKNOWN). Otherwise a receipt:
+        ``{command, exit_code, duration_seconds, output_tail, timed_out,
+        coverage_met}``. A timeout or a launch failure is NOT a pass: it is
+        recorded with ``coverage_met: None`` (UNKNOWN), because a command that
+        did not finish measured nothing.
+        """
+        command = self._declared_coverage_command()
+        if not command:
+            return None
+
+        try:
+            cwd = self._component_run_cwd(self.worktree_path)
+        except ValueError as exc:
+            return {
+                "command": command,
+                "exit_code": None,
+                "duration_seconds": 0.0,
+                "output_tail": f"component cwd refused: {exc}",
+                "timed_out": False,
+                "coverage_met": None,
+            }
+
+        timeout = self._declared_coverage_timeout()
+        started = time.time()
+        try:
+            proc = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=self._declared_command_env(),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "command": command,
+                "exit_code": None,
+                "duration_seconds": round(time.time() - started, 2),
+                "output_tail": (
+                    f"declared coverage command timed out after {timeout}s — "
+                    f"nothing was measured"
+                ),
+                "timed_out": True,
+                "coverage_met": None,
+            }
+        except (OSError, ValueError) as exc:  # noqa: BLE001 — launch faults
+            return {
+                "command": command,
+                "exit_code": None,
+                "duration_seconds": round(time.time() - started, 2),
+                "output_tail": f"declared coverage command could not run: {exc}",
+                "timed_out": False,
+                "coverage_met": None,
+            }
+
+        tail = _combined_output_tail(proc.stdout, proc.stderr, bound=2000) or ""
+        return {
+            "command": command,
+            "exit_code": proc.returncode,
+            "duration_seconds": round(time.time() - started, 2),
+            "output_tail": tail,
+            "timed_out": False,
+            "coverage_met": proc.returncode == 0,
+        }
+
+    def apply_declared_coverage(
+        self,
+        gates: Optional[QualityGateStatus],
+    ) -> Optional[QualityGateStatus]:
+        """Resolve an UNKNOWN required coverage with the project's own command.
+
+        Called AFTER the independent test run, so the coverage command sees the
+        same tree the tests just ran against. A no-op unless coverage is
+        required and still UNKNOWN: a measured value (from the Player's report)
+        is never overwritten, and a task whose coverage gate is not required is
+        untouched.
+        """
+        if gates is None or not gates.coverage_required:
+            return gates
+        if gates.coverage_met is not None:
+            return gates
+        receipt = self.run_declared_coverage()
+        if receipt is None:
+            return gates
+        logger.info(
+            "Declared coverage command finished: exit=%s duration=%ss "
+            "(coverage_met=%s)",
+            receipt.get("exit_code"),
+            receipt.get("duration_seconds"),
+            receipt.get("coverage_met"),
+        )
+        return dataclass_replace(
+            gates,
+            coverage_met=receipt.get("coverage_met"),
+            coverage_receipt=receipt,
+        )
 
     # ---- the per-component seam ------------------------------------------
 
@@ -10518,9 +11017,37 @@ class CoachValidator:
             # self-reported — neither should surface a spec warning.
             return []
 
+        # B9 (2026-09-19): a declared assumptions manifest that could not be
+        # read or parsed is visible here too. The producer names such files in
+        # ``malformed``; before this, a malformed-only scan returned nothing
+        # and the unreadable manifest was invisible to the person reviewing.
+        malformed = [
+            str(path)
+            for path in (block.get("malformed") or [])
+            if isinstance(path, str) and path.strip()
+        ]
+        malformed_issues: List[Dict[str, Any]] = []
+        if malformed:
+            logger.info(
+                "Malformed assumptions manifest(s): %s", ", ".join(malformed)
+            )
+            malformed_issues.append({
+                "severity": "warning",
+                "category": "malformed_assumptions_manifest",
+                "description": (
+                    f"{len(malformed)} assumptions manifest(s) under features/ "
+                    "could not be read or parsed, so their assumptions were "
+                    "not checked: " + ", ".join(malformed) + "."
+                ),
+                "details": {
+                    "files_scanned": block.get("files_scanned", 0),
+                    "malformed": malformed,
+                },
+            })
+
         unconfirmed = block.get("unconfirmed") or []
         if not unconfirmed:
-            return []
+            return malformed_issues
 
         row_count = len(unconfirmed)
         # Keep the description terse; put the full row list in details so
@@ -10548,7 +11075,7 @@ class CoachValidator:
                 "files_scanned": block.get("files_scanned", 0),
                 "unconfirmed": unconfirmed,
             },
-        }]
+        }] + malformed_issues
 
     def _verify_honesty(
         self, task_work_results: Dict[str, Any]
@@ -10925,6 +11452,7 @@ class CoachValidator:
         extra_issues: Optional[List[Dict[str, Any]]] = None,
         honesty_verification: Optional[HonestyVerification] = None,
         requirements: Optional["RequirementsValidation"] = None,
+        task_type: Optional[str] = None,
     ) -> CoachValidationResult:
         """
         Create feedback result from failed quality gates.
@@ -11016,7 +11544,36 @@ class CoachValidator:
                     },
                 })
 
-        if gates.coverage_required and not gates.coverage_met:
+        if gates.coverage_required and gates.coverage_met is None:
+            # B9 Lane C. UNKNOWN is not "the threshold was missed" — nothing
+            # measured it at all, and the feedback says exactly that, names the
+            # task type coverage is required for, and names the two places a
+            # measurement could have come from.
+            type_words = (
+                f"{task_type} tasks" if task_type else "this task type"
+            )
+            issues.append({
+                "severity": "must_fix",
+                "category": "coverage_unknown",
+                "description": (
+                    f"Coverage is UNKNOWN, not met: coverage is required for "
+                    f"{type_words}, and neither the Player's report "
+                    f"(quality_gates.coverage_met) nor the project "
+                    f"(toolchain.coverage in .guardkit/config.yaml) provided a "
+                    f"measurement. Nothing measured coverage, so the gate "
+                    f"cannot approve. Report a measured coverage_met, or "
+                    f"declare the project's own coverage command."
+                ),
+                "details": {
+                    "coverage_met": None,
+                    "provenance": "unmeasured",
+                    "declared_coverage_command": (
+                        gates.coverage_receipt or {}
+                    ).get("command"),
+                    "coverage_receipt": gates.coverage_receipt,
+                },
+            })
+        elif gates.coverage_required and not gates.coverage_met:
             reported_line_coverage = (
                 quality_gates["line_coverage"]
                 if "line_coverage" in quality_gates
@@ -11029,7 +11586,12 @@ class CoachValidator:
                 "details": {
                     "line_coverage": reported_line_coverage,
                     "branch_coverage": quality_gates.get("branch_coverage"),
-                    "provenance": "player_task_work_results",
+                    "provenance": (
+                        "declared_coverage_command"
+                        if gates.coverage_receipt is not None
+                        else "player_task_work_results"
+                    ),
+                    "coverage_receipt": gates.coverage_receipt,
                 },
             })
 

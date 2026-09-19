@@ -846,10 +846,11 @@ def test_coach_validator_treats_partial_as_verified(coach_validator):
             turn=1,
         )
 
-    # Partial status is treated as verified
+    # Partial status still counts as met — and, B9 Lane C (2026-09-19), it is
+    # recorded as the Player's claim, not as a Coach verdict.
     assert result.criteria_met == 1
     assert result.all_criteria_met is True
-    assert result.criteria_results[0].result == "verified"
+    assert result.criteria_results[0].result == "claimed"
     assert "[Partial confidence" in result.criteria_results[0].evidence
     assert "git_analysis" in result.criteria_results[0].evidence
 

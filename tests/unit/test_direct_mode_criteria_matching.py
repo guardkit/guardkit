@@ -121,7 +121,10 @@ def test_direct_mode_scaffolding_criteria_matching(coach_validator):
 
     # Verify each criterion was verified via file-existence promises
     for cr in result.criteria_results:
-        assert cr.result == "verified"
+        # B9 Lane C (2026-09-19): a promise-backed criterion is recorded
+        # "claimed" — counted as met exactly as before, but named as the
+        # Player's word until the Coach corroborates it itself.
+        assert cr.result == "claimed"
         assert "File-existence verified" in cr.evidence
 
 
@@ -243,7 +246,10 @@ def test_coach_uses_file_existence_for_direct_mode_synthetic(
 
     # Assert evidence comes from file-existence promises (not text matching)
     for cr in result.criteria_results:
-        assert cr.result == "verified"
+        # B9 Lane C (2026-09-19): a promise-backed criterion is recorded
+        # "claimed" — counted as met exactly as before, but named as the
+        # Player's word until the Coach corroborates it itself.
+        assert cr.result == "claimed"
         assert "File-existence verified" in cr.evidence
 
 
@@ -301,6 +307,9 @@ def test_task_work_mode_criteria_matching_unchanged(coach_validator):
 
     # Evidence should come from agent report, not file-existence
     for cr in result.criteria_results:
-        assert cr.result == "verified"
+        # B9 Lane C (2026-09-19): a promise-backed criterion is recorded
+        # "claimed" — counted as met exactly as before, but named as the
+        # Player's word until the Coach corroborates it itself.
+        assert cr.result == "claimed"
         # Should NOT contain "Synthetic report" evidence
         assert "Synthetic report" not in cr.evidence

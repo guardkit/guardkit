@@ -188,6 +188,13 @@ class _ToolchainCommands(BaseModel):
 
     # ---- verdict-bearing ------------------------------------------------
     test: Optional[str] = Field(default=None, min_length=1)
+    # B9 Lane C: the project's OWN coverage measurement. Exit 0 = the project's
+    # coverage threshold is met; non-zero = not met. The Coach runs it itself,
+    # after its own independent test run, and that exit decides coverage_met.
+    # Optional: a project that declares nothing keeps today's behaviour, and
+    # an unmeasured required coverage stays UNKNOWN rather than becoming a pass.
+    coverage: Optional[str] = Field(default=None, min_length=1)
+    coverage_timeout: int = Field(default=_DEFAULT_TIMEOUT, ge=1, le=_MAX_TIMEOUT)
 
     # ---- environment ----------------------------------------------------
     install: Optional[str] = Field(default=None, min_length=1)
@@ -241,6 +248,7 @@ class _ToolchainCommands(BaseModel):
         return not any(
             (
                 self.test,
+                self.coverage,
                 self.install,
                 self.typecheck,
                 self.lint,
