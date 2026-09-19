@@ -36,6 +36,7 @@ a dict with the same invariants as the TASK-FIX-RWOP1.3.1 producers
         ],
         "files_scanned": int,
         "files_skipped": int,
+        "malformed": [str, ...],  # paths that could not be read/parsed
         "message": str | None,  # populated on checker_error
     }
 
@@ -56,10 +57,22 @@ the single predicate below.
 Discovery glob
 ==============
 
-Scans ``{workspace_root}/features/**/_assumptions.yaml`` to match
-feature-spec.md's declared output path. A missing ``features/``
-directory yields ``status: "ok"`` with ``files_scanned: 0`` — the
-expected shape for tasks that don't touch feature specs at all.
+Scans ``{workspace_root}/features/**/*_assumptions.yaml``. The literal
+``_assumptions.yaml`` name feature-spec.md declares still matches; so
+does the slugged name the specification writer actually emits
+(``user-creation-analytics_assumptions.yaml``). Before 19 September 2026
+the glob was the literal name alone, so every slugged manifest the
+factory wrote was scanned zero times and the gate reported a clean
+``files_scanned: 0`` over a directory full of unconfirmed rows.
+
+A missing ``features/`` directory yields ``status: "ok"`` with
+``files_scanned: 0`` — the expected shape for tasks that don't touch
+feature specs at all.
+
+A file that cannot be read or parsed is named in ``malformed`` and
+raises the block to ``status: "warning"``: a manifest nobody could read
+is not a manifest with nothing in it, and the difference must be said
+out loud rather than hidden in a skipped-file count.
 """
 
 from __future__ import annotations
@@ -108,6 +121,7 @@ def check_unconfirmed_low_confidence_assumptions(
             "unconfirmed": [],
             "files_scanned": 0,
             "files_skipped": 0,
+            "malformed": [],
             "message": f"{exc.__class__.__name__}: {exc}",
         }
 
@@ -121,21 +135,29 @@ def _scan(root: Path) -> Dict[str, Any]:
             "unconfirmed": [],
             "files_scanned": 0,
             "files_skipped": 0,
+            "malformed": [],
             "message": None,
         }
 
     unconfirmed: List[Dict[str, Any]] = []
+    malformed: List[str] = []
     files_scanned = 0
     files_skipped = 0
 
-    for yaml_path in sorted(features_dir.rglob("_assumptions.yaml")):
+    # ``*_assumptions.yaml`` — the slugged name the writer emits AND the
+    # literal name feature-spec.md declares (fnmatch lets ``*`` match the
+    # empty string).
+    for yaml_path in sorted(features_dir.rglob("*_assumptions.yaml")):
+        if not yaml_path.is_file():
+            continue
         files_scanned += 1
+        rel_path = _relative(yaml_path, root)
         rows = _read_assumption_rows(yaml_path)
         if rows is None:
             files_skipped += 1
+            malformed.append(rel_path)
             continue
 
-        rel_path = _relative(yaml_path, root)
         for row in rows:
             if not _is_unconfirmed_low_confidence(row):
                 continue
@@ -147,12 +169,13 @@ def _scan(root: Path) -> Dict[str, Any]:
                 "human_response": row.get("human_response"),
             })
 
-    status = "warning" if unconfirmed else "ok"
+    status = "warning" if (unconfirmed or malformed) else "ok"
     return {
         "status": status,
         "unconfirmed": unconfirmed,
         "files_scanned": files_scanned,
         "files_skipped": files_skipped,
+        "malformed": malformed,
         "message": None,
     }
 
