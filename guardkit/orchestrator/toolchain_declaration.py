@@ -204,6 +204,16 @@ class _ToolchainCommands(BaseModel):
     lint: Optional[str] = Field(default=None, min_length=1)
     build: Optional[str] = Field(default=None, min_length=1)
 
+    # ---- the whole-feature check (B9 correction, 2026-09-19) -------------
+    # The one command that proves the FINISHED FEATURE at the surface the
+    # person uses, run once after the last wave. Exit 0 is the only pass (the
+    # standing law above). CONSUMED FROM THE ROOT BLOCK ONLY: a feature is a
+    # property of the repository, not of one component. The field lives here,
+    # with the other commands, so the root and component schemas stay provably
+    # "the SAME fields".
+    feature_check: Optional[str] = Field(default=None, min_length=1)
+    feature_check_timeout: int = Field(default=600, ge=1, le=_MAX_TIMEOUT)
+
     # ---- bounded timeouts -----------------------------------------------
     # Both default to TODAY's hardcoded 300s, deliberately: a repo that
     # declares only ``test:`` must not silently acquire a different timeout
@@ -255,6 +265,7 @@ class _ToolchainCommands(BaseModel):
                 self.build,
                 self.has_classifier_overlay,
                 self.runtime,
+                self.feature_check,
             )
         )
 
@@ -381,7 +392,8 @@ def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
             f"{exc}\n\n"
             "Allowed keys: test, install, typecheck, lint, build, "
             "test_timeout, install_timeout, absent_substrings, "
-            "ran_marker_regex, requires_ran_marker, runtime, components. "
+            "ran_marker_regex, requires_ran_marker, runtime, components, "
+            "feature_check, feature_check_timeout. "
             "Unknown keys are rejected — check for typos.\n"
             "Inside `components: <name>:` the SAME keys are allowed plus a "
             "REQUIRED repo-relative `cwd:`."
