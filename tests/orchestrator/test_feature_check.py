@@ -846,3 +846,49 @@ def test_forge_refuses_the_merge_card_for_a_failed_build() -> None:
     asyncio.run(service._maybe_offer(_build_complete(tasks_failed=0)))
     assert len(offers) == 1
     assert offers[0]["feature_id"] == "FEAT-TEST"
+
+
+# ---------------------------------------------------------------------------
+# The receipt names the criteria the task Coaches still list as claimed
+# (coordinator's integration fix, 19 September: the list was hardcoded empty).
+
+
+def test_the_receipt_names_the_criteria_still_claimed(tmp_path: Path) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    _write(
+        worktree,
+        ".guardkit/autobuild-private/TASK-001/coach_evidence_turn_1.json",
+        json.dumps(
+            {
+                "requirements": {
+                    "criteria_results": [
+                        {
+                            "criterion_id": "AC-001",
+                            "text": SCENARIO_TITLE,
+                            "status": "claimed",
+                            "class": "machine",
+                        },
+                        {
+                            "criterion_id": "AC-002",
+                            "text": "lint passes",
+                            "status": "verified",
+                            "class": "toolchain",
+                        },
+                    ]
+                }
+            }
+        ),
+    )
+    feature = _make_feature(worktree)
+    recorder = _WaveRecorder(worktree)
+
+    _, _, result = _run_build(repo_root, worktree, feature, recorder)
+
+    receipt = _receipt(worktree)
+    assert receipt["criteria_still_claimed"] == [SCENARIO_TITLE]
+    # The check covered that scenario, so the feature may still complete.
+    assert receipt["scenarios_covered"] == [SCENARIO_TITLE]
+    assert result.status == "completed"
