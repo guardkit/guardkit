@@ -76,7 +76,24 @@ from guardkit.orchestrator.twin_coverage import (
     check_twin_coverage,
     is_twin_coverage_enforced,
     render_twin_coverage_lines,
+    twin_coverage_summary,
     write_twin_coverage_receipt,
+)
+from guardkit.orchestrator.feature_check import (
+    claimed_machine_criteria,
+    FeatureCheckAttempt,
+    FeatureCheckOutcome,
+    build_feature_check_feedback,
+    candidate_sha as feature_check_candidate_sha,
+    completion_verdict as feature_check_completion_verdict,
+    feature_request_words,
+    load_feature_check_declaration,
+    parse_scenarios_covered,
+    resolve_max_retries as feature_check_max_retries,
+    run_feature_check_command,
+    scenario_titles as feature_scenario_titles,
+    tail_lines as feature_check_tail,
+    write_feature_check_receipt,
 )
 from guardkit.orchestrator.baseline import (
     SOURCE_FEATURE_SMOKE,
@@ -906,6 +923,13 @@ class FeatureOrchestrator:
             )
         except (TypeError, ValueError):
             self._wiring_gate_max_retries = 1
+        # B9 correction (2026-09-19): bounded retry budget for the
+        # whole-feature check that runs after the last wave. On a failure the
+        # LAST wave is re-entered with the check's own output, the request's
+        # words and the scenario titles fed back to the Player as turn-1
+        # feedback, up to this many extra rounds. Default 1; 0 means the first
+        # failure is final. Same shape as the smoke gate's budget above.
+        self._feature_check_max_retries = feature_check_max_retries()
         self.resume = resume
         self.fresh = fresh
         self.refresh = refresh
@@ -2557,6 +2581,14 @@ The detailed specifications are in the task markdown file.
         # and for why only the declaration committed BEFORE the build is read.
         self._run_final_wave_boot_smoke(feature, worktree, wave_results)
 
+        # The whole-feature check, after the last wave (B9 correction,
+        # 2026-09-19). Everything above proves the parts; the boot smoke
+        # proves the thing loads. This proves the FEATURE does what the
+        # person asked, at the surface they use, using the one command the
+        # project declared for exactly that. It runs after the boot smoke so
+        # a build the boot smoke already failed does not run it twice over.
+        self._run_feature_check(feature, worktree, wave_results)
+
         return wave_results
 
     def _boot_smoke_skip_reason(
@@ -2672,6 +2704,333 @@ The detailed specifications are in the task markdown file.
                 summary,
             )
 
+        return outcome
+
+    # -----------------------------------------------------------------------
+    # The whole-feature check (B9 correction, 2026-09-19)
+    # -----------------------------------------------------------------------
+
+    def _run_feature_check(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+        wave_results: List[WaveExecutionResult],
+    ) -> Optional[FeatureCheckOutcome]:
+        """Prove the finished feature at its delivered surface, then repair.
+
+        Plain words: the build says every task passed. Before anybody is
+        offered a merge card, run the one command this project declared for
+        its finished features and see whether the thing the person asked for
+        actually works. If it does not, hand the Player the command's own
+        output, the words of the request and the scenarios the feature
+        promised, re-enter the LAST wave, and try again — a bounded number of
+        times. When the budget is spent, this feature is failed: the failure
+        rides the same rail the start-up checks use (a failed gate result on
+        the last wave, and that wave un-marked so a resume re-runs it), so the
+        finaliser records ``failed`` and Forge never offers the card.
+
+        Returns ``None`` when nothing ran: a build that did not finish (it has
+        its own answer already), or a project that declared no check.
+        """
+        skip_reason = self._boot_smoke_skip_reason(feature, wave_results)
+        if skip_reason is not None:
+            logger.info(
+                "Whole-feature check skipped: %s, so this build already has "
+                "its own answer",
+                skip_reason,
+            )
+            return None
+
+        declaration = load_feature_check_declaration(self.repo_root)
+        if declaration is None:
+            outcome = FeatureCheckOutcome(
+                feature_id=feature.id,
+                status="not_declared",
+                declared=False,
+                reason=(
+                    "this project declares no `toolchain.feature_check` "
+                    "command in .guardkit/config.yaml, so nothing checked the "
+                    "finished feature as a whole"
+                ),
+            )
+            try:
+                write_feature_check_receipt(outcome, Path(worktree.path))
+            except Exception as exc:  # noqa: BLE001 — a receipt never fails a build
+                logger.warning(
+                    "Whole-feature check receipt could not be written: %s", exc
+                )
+            return outcome
+
+        last_wave = wave_results[-1]
+        wave_number = last_wave.wave_number
+        task_ids = list(last_wave.task_ids)
+        titles = feature_scenario_titles(feature)
+        request_words = feature_request_words(feature, Path(worktree.path))
+        attempts: List[FeatureCheckAttempt] = []
+        retries_remaining = self._feature_check_max_retries
+        attempt_number = 0
+
+        while True:
+            attempt_number += 1
+            attempt = self._one_feature_check_attempt(
+                attempt_number, declaration, feature, worktree
+            )
+            attempts.append(attempt)
+
+            if attempt.passed:
+                logger.info(
+                    "Whole-feature check PASSED on attempt %d: %s",
+                    attempt_number,
+                    declaration.command,
+                )
+                if not self.quiet:
+                    console.print(
+                        f"[green]✓ Whole-feature check passed[/green] "
+                        f"({declaration.command})",
+                        markup=True,
+                    )
+                return self._finish_feature_check(
+                    feature, worktree, declaration, attempts, wave_results,
+                    passed=True,
+                )
+
+            if retries_remaining <= 0:
+                return self._finish_feature_check(
+                    feature, worktree, declaration, attempts, wave_results,
+                    passed=False,
+                )
+
+            retries_remaining -= 1
+            feedback = build_feature_check_feedback(
+                attempt, request_words=request_words, titles=titles
+            )
+            console.print(
+                f"[yellow]↻ The whole-feature check failed[/yellow] — "
+                f"re-entering wave {wave_number} with the check's output as "
+                f"Player feedback (retry {attempt_number}/"
+                f"{self._feature_check_max_retries}).",
+                markup=True,
+            )
+            wave_result = self._execute_wave(
+                wave_number,
+                task_ids,
+                feature,
+                worktree,
+                seed_feedback=feedback,
+                attempt=attempt_number,
+            )
+            wave_results[-1] = wave_result
+            last_wave = wave_result
+            if self._wave_display:
+                passed = sum(1 for r in wave_result.results if r.success)
+                failed = len(wave_result.results) - passed
+                skipped = sum(
+                    1 for r in wave_result.results
+                    if r.final_decision == "skipped"
+                )
+                recovered = sum(
+                    1 for r in wave_result.results if r.recovery_count > 0
+                )
+                self._wave_display.complete_wave(
+                    wave_number, passed, failed, skipped, recovered
+                )
+            if not wave_result.all_succeeded:
+                # The repair round itself did not pass its own Coach. There is
+                # nothing left to re-check: the feature is failed, and the
+                # tasks' own failure is already the ledger's answer.
+                logger.error(
+                    "The repair round for the whole-feature check did not "
+                    "pass its own checks, so this feature is failed."
+                )
+                return self._finish_feature_check(
+                    feature, worktree, declaration, attempts, wave_results,
+                    passed=False,
+                )
+
+    def _one_feature_check_attempt(
+        self,
+        attempt_number: int,
+        declaration: Any,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> FeatureCheckAttempt:
+        """One pass: twin coverage first, then the declared command.
+
+        Twin coverage runs FIRST and, when the repository enforces it, a
+        missing twin is a failure of this check — with the scenario titles in
+        the feedback, because "write the twin you promised" is an actionable
+        sentence and "exit 1" is not.
+        """
+        sha = feature_check_candidate_sha(Path(worktree.path))
+        twin_summary: Dict[str, Any] = {}
+        missing_twins: List[str] = []
+        try:
+            twin_report = check_twin_coverage(
+                feature_id=feature.id,
+                scenarios=getattr(feature, "scenarios", None) or {},
+                root=Path(worktree.path),
+                enforced=is_twin_coverage_enforced(self.repo_root),
+            )
+            twin_summary = twin_coverage_summary(twin_report)
+            if twin_report.blocks_build:
+                missing_twins = list(twin_report.missing)
+        except Exception as exc:  # noqa: BLE001 — the twin check never crashes a build
+            logger.warning(
+                "Whole-feature check: twin coverage could not run: %s", exc
+            )
+
+        if missing_twins:
+            return FeatureCheckAttempt(
+                attempt=attempt_number,
+                command=declaration.command,
+                candidate_sha=sha,
+                passed=False,
+                failure_reason=(
+                    f"{len(missing_twins)} scenario(s) marked for a frozen "
+                    "twin have no twin file, so the declared check was not run"
+                ),
+                twin_coverage=twin_summary,
+                missing_twins=missing_twins,
+                ran_at=datetime.now().isoformat(),
+            )
+
+        env_extra = {
+            "GUARDKIT_FEATURE_ID": str(feature.id),
+            "GUARDKIT_FEATURE_RECORD": str(
+                getattr(feature, "file_path", "") or ""
+            ),
+            "GUARDKIT_WORKTREE": str(worktree.path),
+            "GUARDKIT_CANDIDATE_SHA": sha,
+        }
+        logger.info(
+            "Running the whole-feature check (attempt %d): %s (cwd=%s, "
+            "timeout=%ds)",
+            attempt_number,
+            declaration.command,
+            worktree.path,
+            declaration.timeout,
+        )
+        run = run_feature_check_command(
+            declaration.command,
+            cwd=Path(worktree.path),
+            timeout=declaration.timeout,
+            env_extra=env_extra,
+            venv_python=self._bootstrap_venv_python,
+        )
+        exit_code = run["exit_code"]
+        timed_out = bool(run["timed_out"])
+        passed = (not timed_out) and exit_code == 0
+        if timed_out:
+            failure_reason = f"timed out after {declaration.timeout}s"
+        elif exit_code is None:
+            failure_reason = "the command could not run"
+        elif exit_code != 0:
+            failure_reason = f"exit={exit_code}, expected=0"
+        else:
+            failure_reason = None
+        return FeatureCheckAttempt(
+            attempt=attempt_number,
+            command=declaration.command,
+            candidate_sha=sha,
+            passed=passed,
+            exit_code=exit_code,
+            timed_out=timed_out,
+            duration_seconds=float(run["duration_seconds"]),
+            stdout_tail=feature_check_tail(run["stdout"]),
+            stderr_tail=feature_check_tail(run["stderr"]),
+            failure_reason=failure_reason,
+            twin_coverage=twin_summary,
+            scenarios_covered=(
+                parse_scenarios_covered(run["stdout"]) if passed else []
+            ),
+            ran_at=datetime.now().isoformat(),
+        )
+
+    def _finish_feature_check(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+        declaration: Any,
+        attempts: List[FeatureCheckAttempt],
+        wave_results: List[WaveExecutionResult],
+        *,
+        passed: bool,
+    ) -> FeatureCheckOutcome:
+        """Write the receipt and, on a failure, fail the feature.
+
+        The failure rail is the start-up checks' rail, deliberately: a failed
+        gate result on the last wave (which the finaliser already reads as a
+        failed feature) and that wave un-marked on disk, so a resume re-runs
+        it rather than skipping an unproven wave.
+        """
+        last_attempt = attempts[-1]
+        outcome = FeatureCheckOutcome(
+            feature_id=feature.id,
+            status="passed" if passed else "failed",
+            declared=True,
+            command=declaration.command,
+            timeout=declaration.timeout,
+            attempts=attempts,
+            reason=None if passed else last_attempt.failure_reason,
+            # The receipt names the criteria the task Coaches still list as
+            # claimed (never raises; absent evidence reads as no claims).
+            claimed_machine_criteria=claimed_machine_criteria(
+                Path(worktree.path), [t.id for t in feature.tasks]
+            ),
+        )
+        try:
+            receipt_path = write_feature_check_receipt(
+                outcome, Path(worktree.path)
+            )
+        except Exception as exc:  # noqa: BLE001 — a receipt never fails a build
+            logger.warning(
+                "Whole-feature check receipt could not be written: %s", exc
+            )
+            receipt_path = None
+
+        if passed:
+            return outcome
+
+        summary = (
+            f"the whole-feature check failed ({last_attempt.failure_reason}) "
+            f"after {len(attempts)} attempt(s): {declaration.command}"
+        )
+        if last_attempt.missing_twins:
+            summary += (
+                " — scenarios with no twin: "
+                + "; ".join(last_attempt.missing_twins)
+            )
+        last = wave_results[-1] if wave_results else None
+        if last is not None:
+            last.smoke_gate_result = SmokeGateResult(
+                passed=False,
+                exit_code=(
+                    -1 if last_attempt.timed_out
+                    else (
+                        last_attempt.exit_code
+                        if last_attempt.exit_code is not None
+                        else 1
+                    )
+                ),
+                stdout=last_attempt.stdout_tail,
+                stderr=summary,
+                timed_out=last_attempt.timed_out,
+                command=(
+                    "whole-feature check (toolchain.feature_check): "
+                    f"{declaration.command}"
+                ),
+                timeout=declaration.timeout,
+                after_wave=last.wave_number,
+            )
+            self._unmark_wave_completed(feature, last.wave_number)
+        logger.error(
+            "Whole-feature check FAILED, so this feature is marked failed: "
+            "%s%s",
+            summary,
+            f" (receipt: {receipt_path})" if receipt_path else "",
+        )
+        if not self.quiet:
+            console.print(f"[red]✗ {summary}[/red]", markup=True)
         return outcome
 
     def _build_smoke_feedback(
@@ -5380,6 +5739,57 @@ The detailed specifications are in the task markdown file.
             except Exception as exc:  # noqa: BLE001 — the check never crashes a build
                 logger.warning("Twin coverage check could not run: %s", exc)
 
+        # The completion rule for the whole-feature check (B9 correction,
+        # 2026-09-19). A project that declares a check cannot have a feature
+        # recorded as completed on a receipt that is missing, not passing, or
+        # about different code; and a promise the Coach could only record as
+        # CLAIMED (a behaviour at a delivered surface that nothing independent
+        # proved) counts only when the check itself named that scenario as
+        # covered. A project that declares no check is untouched by this.
+        feature_check_error: Optional[str] = None
+        if final_status == "completed":
+            try:
+                verdict = feature_check_completion_verdict(
+                    repo_root=self.repo_root,
+                    worktree_root=Path(worktree.path),
+                    feature=feature,
+                )
+            except Exception as exc:  # noqa: BLE001 — the rule never crashes a build
+                logger.warning(
+                    "The whole-feature check's completion rule could not run: "
+                    "%s",
+                    exc,
+                )
+                verdict = None
+            if verdict is not None and verdict.blocks:
+                final_status = "failed"
+                success = False
+                feature_check_error = verdict.reason
+                logger.error(
+                    "This feature is NOT completed: %s", verdict.reason
+                )
+                if not self.quiet:
+                    console.print(
+                        f"[red]✗ Not completed: {verdict.reason}[/red]",
+                        markup=True,
+                    )
+
+        # When the whole-feature check failed during the wave phase, the
+        # feature is already failed by its gate result — say WHY in the
+        # result's own words rather than letting it read as a smoke gate.
+        if feature_check_error is None:
+            for wave in wave_results:
+                gate = wave.smoke_gate_result
+                if (
+                    gate is not None
+                    and not gate.passed
+                    and str(gate.command).startswith("whole-feature check (")
+                ):
+                    feature_check_error = (
+                        gate.stderr or "the whole-feature check failed"
+                    )
+                    break
+
         # Update feature
         feature.status = final_status
         feature.execution.completed_at = datetime.now().isoformat()
@@ -5409,6 +5819,8 @@ The detailed specifications are in the task markdown file.
                 else (
                     twin_error
                     if twin_error is not None
+                    else feature_check_error
+                    if feature_check_error is not None
                     else (
                         "smoke gate failed between waves"
                         if smoke_gate_failed and tasks_failed == 0
