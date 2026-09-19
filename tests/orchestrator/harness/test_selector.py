@@ -827,6 +827,7 @@ class TestRequiredPlayerSelection:
         monkeypatch: pytest.MonkeyPatch,
         *,
         accepts_player_config: bool = True,
+        accepts_required_documents: bool = True,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         import guardkitfactory.harness as factory_harness
 
@@ -864,9 +865,37 @@ class TestRequiredPlayerSelection:
                 ) -> None:
                     constructions.append(locals().copy())
 
-        def build_player_config(**kwargs: Any) -> Any:
-            config_calls.append(kwargs)
-            return sentinel
+        if accepts_required_documents:
+
+            def build_player_config(**kwargs: Any) -> Any:
+                config_calls.append(kwargs)
+                return sentinel
+
+        else:
+            # A stale installed factory: its signature has no seat for the
+            # project-declared required documents.
+            def build_player_config(  # type: ignore[misc]
+                *,
+                cwd: Any,
+                dcode_home: Any,
+                skills: Any = (),
+                memory: Any = (),
+                repository_instructions: Any = (),
+                declared_commands: Any = (),
+                protected_paths: Any = (),
+            ) -> Any:
+                config_calls.append(
+                    {
+                        "cwd": cwd,
+                        "dcode_home": dcode_home,
+                        "skills": skills,
+                        "memory": memory,
+                        "repository_instructions": repository_instructions,
+                        "declared_commands": declared_commands,
+                        "protected_paths": protected_paths,
+                    }
+                )
+                return sentinel
 
         def build_backend(worktree: Path, **kwargs: Any) -> Any:
             backend_calls.append({"worktree": worktree, **kwargs})
@@ -919,11 +948,191 @@ class TestRequiredPlayerSelection:
                 "repository_instructions": (".claude/CLAUDE.md",),
                 "declared_commands": (("test", "./qa/run-suite.sh --exact"),),
                 "protected_paths": ("verification/",),
+                "required_documents": (),
             }
         ]
         assert backend_calls[0]["protected_paths"] == ("verification/",)
         assert "player_config" in constructions[0]
         assert constructions[0]["player_config"] is not None
+
+    @_requires_guardkitfactory
+    def test_declared_required_documents_reach_the_factory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A project-declared required document is passed like protected_paths."""
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        # Test-only isolation: ``_configure_dcode_launch`` pins one profile per
+        # process, so a whole-directory run otherwise refuses this test's own
+        # fresh profile. monkeypatch restores the module global afterwards.
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        (tmp_path / "skills").mkdir()
+        (tmp_path / "references").mkdir()
+        (tmp_path / "references" / "project-conventions.md").write_text("# rules\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    required_documents: [references/project-conventions.md]\n"
+        )
+        _, config_calls, _ = self._install_factory(monkeypatch)
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            harness_role="player",
+        )
+
+        assert config_calls[0]["required_documents"] == (
+            "references/project-conventions.md",
+        )
+
+    @_requires_guardkitfactory
+    def test_declared_required_documents_suit_a_non_python_project(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A Makefile project declaring a plain-text document, no Python default."""
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        # Test-only isolation: ``_configure_dcode_launch`` pins one profile per
+        # process, so a whole-directory run otherwise refuses this test's own
+        # fresh profile. monkeypatch restores the module global afterwards.
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        (tmp_path / "skills").mkdir()
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "conventions.txt").write_text("Use make check.\n")
+        (tmp_path / "Makefile").write_text("check:\n\t./qa/run-suite.sh\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    required_documents:\n"
+            "      - docs/conventions.txt\n"
+            "toolchain:\n"
+            "  test: 'make check'\n"
+        )
+        _, config_calls, _ = self._install_factory(monkeypatch)
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            harness_role="player",
+        )
+
+        assert config_calls[0]["required_documents"] == ("docs/conventions.txt",)
+        assert config_calls[0]["declared_commands"] == (("test", "make check"),)
+
+    @_requires_guardkitfactory
+    @pytest.mark.parametrize(
+        "declaration",
+        [
+            "    required_documents: references/project-conventions.md\n",
+            "    required_documents: [/etc/passwd]\n",
+            "    required_documents: ['']\n",
+        ],
+    )
+    def test_malformed_required_documents_fail_visibly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, declaration: str
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(tmp_path.parent))
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n" + declaration
+        )
+        self._install_factory(monkeypatch)
+
+        with pytest.raises(
+            AgentInvocationError, match="autobuild.player.required_documents"
+        ):
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                harness_role="player",
+            )
+
+    @_requires_guardkitfactory
+    def test_stale_factory_refuses_declared_required_documents_loudly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A factory that cannot require the documents must not silently drop them."""
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        # Test-only isolation: ``_configure_dcode_launch`` pins one profile per
+        # process, so a whole-directory run otherwise refuses this test's own
+        # fresh profile. monkeypatch restores the module global afterwards.
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        (tmp_path / "skills").mkdir()
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "conventions.txt").write_text("Use make check.\n")
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n"
+            "  player:\n"
+            "    skills: [skills/]\n"
+            "    required_documents: [docs/conventions.txt]\n"
+        )
+        _, config_calls, _ = self._install_factory(
+            monkeypatch, accepts_required_documents=False
+        )
+
+        with pytest.raises(
+            AgentInvocationError, match="cannot require them"
+        ):
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,
+                harness_role="player",
+            )
+        assert config_calls == []
+
+    @_requires_guardkitfactory
+    def test_stale_factory_still_runs_without_a_declaration(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Positive control: no declaration, stale factory, unchanged behaviour."""
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        profile = tmp_path.parent / f"{tmp_path.name}-profile"
+        profile.mkdir()
+        monkeypatch.setenv("DEEPAGENTS_HOME", str(profile))
+        # Test-only isolation: ``_configure_dcode_launch`` pins one profile per
+        # process, so a whole-directory run otherwise refuses this test's own
+        # fresh profile. monkeypatch restores the module global afterwards.
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+        (tmp_path / "skills").mkdir()
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    skills: [skills/]\n"
+        )
+        _, config_calls, _ = self._install_factory(
+            monkeypatch, accepts_required_documents=False
+        )
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            harness_role="player",
+        )
+
+        assert config_calls[0]["skills"] == ("skills/",)
+        assert "required_documents" not in config_calls[0]
 
     @_requires_guardkitfactory
     def test_skills_selection_is_independent_of_optional_memory(
