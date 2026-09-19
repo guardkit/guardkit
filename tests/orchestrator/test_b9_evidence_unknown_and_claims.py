@@ -566,3 +566,28 @@ class TestMachineClassNeedsABoundReceipt:
             gate_verified_ids={"AC-001"},
         )
         assert corroborated.criteria_results[0].result == VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# A declared coverage command the shell could not launch is UNKNOWN, not a miss
+# (the independent re-coach's finding, 19 September 2026).
+
+
+def test_a_coverage_command_the_shell_cannot_find_is_unknown(tmp_path):
+    import subprocess as _subprocess
+    from unittest.mock import patch as _patch
+
+    validator = _validator(tmp_path)
+    fake = _subprocess.CompletedProcess(
+        args="no-such-coverage-tool", returncode=127, stdout="", stderr="sh: 1: no-such-coverage-tool: not found"
+    )
+    with _patch.object(
+        type(validator), "_declared_coverage_command", return_value="no-such-coverage-tool"
+    ), _patch(
+        "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run",
+        return_value=fake,
+    ):
+        receipt = validator.run_declared_coverage()
+    assert receipt["exit_code"] == 127
+    assert receipt["could_not_launch"] is True
+    assert receipt["coverage_met"] is None

@@ -459,11 +459,15 @@ class FeatureCompleteOrchestrator:
         B9 (2026-09-19). The runtime-surface check binds a green gate to the
         code under check, so the caller has to name that code. In order: the
         build worktree's HEAD when the worktree still exists; else the
-        ``autobuild/<feature_id>`` branch in the repository; else this
-        checkout's own HEAD (feature-complete run from inside the candidate
-        checkout). Never raises: when git cannot answer, ``None`` is returned
-        and the check fails closed with the reason named — it never silently
-        accepts an unbound gate and never guesses.
+        ``autobuild/<feature_id>`` branch in the repository (which also covers
+        feature-complete run from inside the candidate checkout, because that
+        checkout is on that branch). This checkout's own HEAD is deliberately
+        NOT a fallback: with the worktree and the branch both gone it would
+        name whatever happens to be checked out, and a gate that went green
+        against pre-feature main would then be accepted for a candidate it
+        never saw (the independent coach drove exactly that, 2026-09-19).
+        Never raises: when git cannot answer, ``None`` is returned and the
+        check fails closed with the reason named — it never guesses.
         """
         import subprocess
 
@@ -481,7 +485,6 @@ class FeatureCompleteOrchestrator:
                 f"refs/heads/autobuild/{feature_id}",
             ]
         )
-        attempts.append(["git", "-C", str(self.repo_root), "rev-parse", "HEAD"])
         for command in attempts:
             try:
                 completed = subprocess.run(
