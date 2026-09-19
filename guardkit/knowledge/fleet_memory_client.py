@@ -275,6 +275,39 @@ DEFAULT_DOOR_URL = "http://host.docker.internal:8005/mcp"
 DOOR_WRITE_TIMEOUT_SECONDS = 10.0
 
 
+def _typed_door_payload(episode: Any) -> dict[str, Any]:
+    """Return a fresh MCP payload carrying the episode's outer type identity.
+
+    MemoryEpisodeV1.body contains the registered model fields while
+    payload_type lives on the envelope. The MCP write boundary accepts one
+    flat typed payload, so the HTTP fallback must join those two layers without
+    mutating either. A body-supplied conflicting type is rejected rather than
+    silently overwritten.
+    """
+    payload_type = getattr(episode, "payload_type", None)
+    if (
+        not isinstance(payload_type, str)
+        or not payload_type
+        or payload_type != payload_type.strip()
+    ):
+        raise ValueError("typed memory episode has no valid outer payload_type")
+
+    try:
+        body = json.loads(episode.body)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("typed memory episode body is not valid JSON") from exc
+    if not isinstance(body, dict):
+        raise ValueError("typed memory episode body is not a JSON object")
+
+    body_type = body.get("payload_type")
+    if "payload_type" in body and body_type != payload_type:
+        raise ValueError("typed memory episode body conflicts with outer payload_type")
+
+    payload = dict(body)
+    payload["payload_type"] = payload_type
+    return payload
+
+
 async def write_through_the_door(payload: dict, *, url: str | None = None) -> bool:
     """Write one typed payload to fleet-memory over HTTP. True when it landed.
 
@@ -957,7 +990,7 @@ class FleetMemoryClient:
                     natural_key,
                     type(bus_refused).__name__,
                 )
-                if await write_through_the_door(json.loads(episode.body)):
+                if await write_through_the_door(_typed_door_payload(episode)):
                     logger.info(
                         "[Memory] Wrote %s episode %s through the door",
                         mapping.payload_type,
@@ -981,7 +1014,7 @@ class FleetMemoryClient:
                 summary.published,
                 summary.skipped_oversized,
             )
-            if await write_through_the_door(json.loads(episode.body)):
+            if await write_through_the_door(_typed_door_payload(episode)):
                 logger.info(
                     "[Memory] Wrote %s episode %s through the door",
                     mapping.payload_type,
