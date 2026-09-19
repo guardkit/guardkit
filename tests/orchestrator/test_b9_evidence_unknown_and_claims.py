@@ -306,6 +306,71 @@ class TestDeclaredCoverageCommand:
         assert receipt["coverage_met"] is None
         assert "timed out" in receipt["output_tail"]
 
+    def test_a_command_that_cannot_launch_is_unknown_not_a_pass(self, tmp_path):
+        """NEGATIVE CONTROL (B9 repair pass) — a declared command that never
+        ran measured nothing, so the gate stays UNKNOWN and cannot approve."""
+        worktree = tmp_path / "broken"
+        worktree.mkdir()
+        _write_config(worktree, {"coverage": "./no-such-command-here"})
+        v = _validator(worktree)
+        receipt = v.run_declared_coverage()
+        assert receipt["coverage_met"] is not True
+        gates = v.verify_quality_gates(
+            _results(), profile=get_profile(TaskType.FEATURE)
+        )
+        resolved = v.apply_declared_coverage(gates)
+        assert resolved.coverage_met is not True
+        assert resolved.all_gates_passed is False
+
+    def test_the_command_runs_in_the_worktree_with_the_project_environment(
+        self, tmp_path
+    ):
+        """The Coach runs the project's own command in the project's own tree
+        (B9 repair pass: this subprocess path driven end to end, not read)."""
+        worktree = tmp_path / "cwdproj"
+        worktree.mkdir()
+        (worktree / "Makefile").write_text("all:\n\t@echo build\n", encoding="utf-8")
+        script = worktree / "coverage.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            'printf "cwd=%s\\n" "$PWD"\n'
+            'printf "path_set=%s\\n" "${PATH:+yes}"\n'
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        _write_config(worktree, {"coverage": "./coverage.sh"})
+        receipt = _validator(worktree).run_declared_coverage()
+        assert receipt["exit_code"] == 0
+        assert receipt["coverage_met"] is True
+        assert str(worktree.resolve()) in receipt["output_tail"]
+        assert "path_set=yes" in receipt["output_tail"]
+        assert receipt["timed_out"] is False
+        assert isinstance(receipt["duration_seconds"], float)
+
+    def test_the_receipt_reaches_the_serialised_turn_record(self, tmp_path):
+        """The receipt is not a local variable: it is on the turn record the
+        coordinator and the repair loop read."""
+        worktree = _make_shell_project(tmp_path, exit_code=0)
+        v = _validator(worktree)
+        gates = v.apply_declared_coverage(
+            v.verify_quality_gates(_results(), profile=get_profile(TaskType.FEATURE))
+        )
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidationResult,
+        )
+
+        record = CoachValidationResult(
+            task_id="TASK-B9C",
+            turn=1,
+            decision="approve",
+            quality_gates=gates,
+        ).to_dict()
+        serialised = record["validation_results"]["quality_gates"]
+        assert serialised["coverage_met"] is True
+        assert serialised["coverage_receipt"]["exit_code"] == 0
+        assert serialised["coverage_relaxed_by"] is None
+
     def test_the_toolchain_schema_accepts_coverage_and_rejects_typos(self, tmp_path):
         from guardkit.orchestrator.toolchain_declaration import (
             parse_toolchain_block,

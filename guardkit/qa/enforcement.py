@@ -744,7 +744,13 @@ def _normalise_pass_bar_ref(ref: str, repo_root: Path) -> str:
             candidate = candidate.relative_to(repo_root)
     except ValueError:
         pass
-    return candidate.as_posix().lstrip("./")
+    text = candidate.as_posix()
+    # Drop a leading "./" only. ``lstrip("./")`` strips any run of dots and
+    # slashes, which would mangle a name that begins with a dot
+    # (".guardkit/pass-bar.yaml" -> "guardkit/pass-bar.yaml").
+    while text.startswith("./"):
+        text = text[2:]
+    return text
 
 
 # ---------------------------------------------------------------------------
