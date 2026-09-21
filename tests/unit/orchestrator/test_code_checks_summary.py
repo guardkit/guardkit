@@ -257,6 +257,19 @@ def test_an_unknown_word_keeps_the_check_s_own_reason_when_it_gave_one() -> None
     assert summary["reason"] == "the thing it needed was not there"
 
 
+def test_no_word_at_all_is_not_checked_and_never_a_clean_run() -> None:
+    """A check that recorded findings but no word saying whether it ran.
+
+    Nothing says it looked at anything, so it cannot read as "ran and found
+    nothing" (coordinator's review, 21 September 2026).
+    """
+    for block in ({"findings": []}, {"status": "", "findings": []}, {"status": None, "findings": []}):
+        summary = summarise_check(block)
+        assert summary["state"] == STATE_NOT_CHECKED
+        assert summary["state"] != STATE_RAN_FOUND_NOTHING
+        assert "no word" in summary["reason"]
+
+
 def test_every_entry_is_the_same_shape_as_the_group_half_s() -> None:
     """One field, one name, one meaning, on both halves of the record."""
     for block in (None, CLEAN, FINDING, NOT_CHECKED, NOT_SUPPORTED, "rubbish"):

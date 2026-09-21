@@ -275,15 +275,19 @@ def summarise_check(
             )
 
         partly_read = status in _PARTLY_READ_STATUSES
-        if status and not partly_read and status not in _RAN_STATUSES:
-            # A word nobody here knows says nothing about whether the check
-            # looked at anything, so it cannot be read as either answer.
+        if not partly_read and status not in _RAN_STATUSES:
+            # A word nobody here knows, or no word at all, says nothing about
+            # whether the check looked at anything, so it cannot be read as
+            # either answer (the no-word case: coordinator's review,
+            # 21 September 2026).
             return _entry(
                 STATE_NOT_CHECKED,
                 reason
                 or (
                     f"this check reported '{status}', which is not a word "
                     "this summary knows"
+                    if status
+                    else "this check recorded no word saying whether it ran"
                 ),
                 block.get("findings")
                 if isinstance(block.get("findings"), (list, tuple))
