@@ -279,6 +279,68 @@ def test_the_guard_s_missing_list_reaches_the_record_without_blocking(
     assert receipt["scenarios_covered"] == []
 
 
+def test_one_example_named_by_both_sources_is_counted_once(
+    tmp_path: Path,
+) -> None:
+    """The record's own total counted the same example twice.
+
+    Corrected 21 September 2026, after the Stage C review. The central guard
+    names the examples with no check file of their own, and the project's own
+    line names them too — the LIST holds each name once, but the total was
+    the two sources' lengths added together, so both kept builds of
+    19 September say fourteen beside seven names. Anything reading the record
+    rather than counting the list got the wrong number.
+    """
+    repo_root, worktree, feature = _project(
+        tmp_path,
+        "echo '"
+        + _line(
+            scenarios_covered=[],
+            not_checked=[
+                {"name": SCENARIO_TITLE, "reason": "the project says so too"}
+            ],
+        )
+        + "'\nexit 0\n",
+        hurl_scenario=True,
+    )
+
+    _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    receipt = _receipt(worktree)
+    assert [e["name"] for e in receipt["not_checked"]] == [SCENARIO_TITLE]
+    assert receipt["not_checked_total"] == 1
+    assert receipt["attempts"][-1]["not_checked_total"] == 1
+
+
+def test_names_the_project_could_not_carry_are_still_counted(
+    tmp_path: Path,
+) -> None:
+    """The overflow is the one thing the list cannot hold, so it is added.
+
+    The project names more examples than its line is allowed to carry. The
+    ones it could not carry are nowhere in the list, and the total is the
+    only place they are counted at all.
+    """
+    repo_root, worktree, feature = _project(
+        tmp_path,
+        "echo '"
+        + _line(
+            scenarios_covered=[],
+            not_checked=[
+                {"name": f"example {i}", "reason": "no check file"}
+                for i in range(MAX_NOT_CHECKED_CARRIED + 5)
+            ],
+        )
+        + "'\nexit 0\n",
+    )
+
+    _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    receipt = _receipt(worktree)
+    assert len(receipt["not_checked"]) == MAX_NOT_CHECKED_CARRIED
+    assert receipt["not_checked_total"] == MAX_NOT_CHECKED_CARRIED + 5
+
+
 def test_finishing_the_record_removes_a_newly_not_checked_name_from_covered(
     tmp_path: Path,
 ) -> None:

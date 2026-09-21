@@ -3139,7 +3139,16 @@ The detailed specifications are in the task markdown file.
             could_not_run_reason=line.could_not_run_reason,
             twin_coverage=twin_summary,
             not_checked=not_checked,
-            not_checked_total=len(reported_not_checked) + line.not_checked_total,
+            # How many examples nothing looked at. It is the MERGED list,
+            # which counts a name once however many sources named it, plus
+            # the entries the project named but its own line could not carry.
+            # Adding the two sources' lengths counted the same example twice:
+            # both kept builds of 19 September say 14 beside seven names
+            # (found while driving stage B, corrected 21 September 2026).
+            not_checked_total=(
+                len(not_checked)
+                + max(line.not_checked_total - len(line.not_checked), 0)
+            ),
             observations=line.observations,
             observations_total=line.observations_total,
             notes=list(line.notes),
