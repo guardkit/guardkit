@@ -584,6 +584,21 @@ def test_an_outcome_object_never_reports_a_not_checked_name_as_covered() -> None
     assert outcome.to_dict()["scenarios_covered"] == ["Kept"]
 
 
+def test_the_record_s_own_explanation_does_not_claim_two_outcomes() -> None:
+    """The record explains itself in a sentence, and that sentence was wrong.
+
+    It read "Exit 0 is the only pass." while the record beside it could say
+    ``could_not_run`` — a third outcome that is neither a pass nor a failure.
+    Anyone reading the record on its own was told there were two.
+    """
+    what = FeatureCheckOutcome(
+        feature_id="FEAT-TEST", status="could_not_run", declared=True
+    ).to_dict()["what"]
+    assert "Exit 0 is the only pass" not in what
+    assert "three outcomes" in what
+    assert "could not run" in what
+
+
 # ---------------------------------------------------------------------------
 # 5. The summary of what the code checks did, written by the real build
 # ---------------------------------------------------------------------------
