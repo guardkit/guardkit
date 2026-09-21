@@ -72,6 +72,12 @@ from guardkit.orchestrator.stale_test_attribution import (
     smoke_gate_header,
     stale_test_notes,
 )
+from guardkit.orchestrator.authored_files import (
+    NOT_CHECKED_REASON,
+    STATUS_NO_KEY,
+    STATUS_UNKNOWN,
+    read_authored_files,
+)
 from guardkit.orchestrator.twin_coverage import (
     check_twin_coverage,
     is_twin_coverage_enforced,
@@ -424,6 +430,11 @@ class WiringGatePhaseOutcome:
     terminate: bool
     final_wave_result: WaveExecutionResult
     findings_unresolved: bool = False
+    #: ``True`` when at least one task in the wave has no recorded authored
+    #: file list, so the gate could not analyse the wave (2026-09-21). Never a
+    #: block; it keeps "the gate found nothing" apart from "the gate could not
+    #: look".
+    not_checked: bool = False
 
 
 @dataclass
@@ -3281,21 +3292,31 @@ The detailed specifications are in the task markdown file.
     # Post-wave wiring gate (TASK-AB-WIREGATE01)
     # -----------------------------------------------------------------------
 
-    def _wave_authored_files(self, task_ids: List[str]) -> List[str]:
+    def _wave_authored_files(
+        self, task_ids: List[str]
+    ) -> Tuple[List[str], List[str]]:
         """Union the worktree-relative files authored across a whole wave.
 
         Reads each task's ``task_work_results.json`` (across every direct /
         worktree autobuild dir via ``_autobuild_candidate_dirs``) and unions the
-        presence-based authored set — ``files_authored`` when present, else
-        ``files_created ∪ files_modified`` — exactly as
+        authored set under the one rule in
+        :mod:`guardkit.orchestrator.authored_files`, exactly as
         ``coach_validator._compute_authored_set`` does per task. This is the
         assembled-feature write surface the per-task Coach aperture is too
         narrow to see (evidence-boundary-narrower-than-write-surface).
+
+        Returns ``(files, not_recorded_task_ids)``. A task in the second list
+        has no recorded file list at all (2026-09-21): the union is therefore
+        incomplete, and the caller must report "not checked" rather than treat
+        the wave as analysed. The legacy no-key branch — a record written
+        before ``files_authored`` existed — keeps its old fallback union of
+        ``files_created ∪ files_modified`` and is NOT reported as unknown.
 
         Never raises: an unreadable / missing results file contributes nothing.
         """
         authored: List[str] = []
         seen: set = set()
+        not_recorded: List[str] = []
         for task_id in task_ids:
             data: Optional[Dict[str, Any]] = None
             for d in self._autobuild_candidate_dirs(task_id):
@@ -3311,9 +3332,11 @@ The detailed specifications are in the task markdown file.
                     )
             if not isinstance(data, dict):
                 continue
-            if isinstance(data.get("files_authored"), list):
-                files = [str(f) for f in data["files_authored"]]
-            else:
+            files, status = read_authored_files(data)
+            if status == STATUS_UNKNOWN:
+                not_recorded.append(str(task_id))
+                continue
+            if status == STATUS_NO_KEY:
                 files = [
                     str(f)
                     for f in list(data.get("files_created") or [])
@@ -3323,7 +3346,7 @@ The detailed specifications are in the task markdown file.
                 if f not in seen:
                     seen.add(f)
                     authored.append(f)
-        return authored
+        return authored, not_recorded
 
     @staticmethod
     def _collect_turn_rejecting_wiring_findings(
@@ -3684,7 +3707,29 @@ The detailed specifications are in the task markdown file.
         retries_remaining = self._wiring_gate_max_retries
         attempt = 0
         while True:
-            authored = self._wave_authored_files(task_ids)
+            authored, not_recorded = self._wave_authored_files(task_ids)
+            if not_recorded:
+                # 2026-09-21. At least one task's file list was never
+                # recorded, so the union is incomplete and this gate cannot
+                # say the assembled feature is wired. Report it; never treat
+                # it as "no findings", and never fall back to the
+                # modified-files list.
+                console.print(
+                    f"[yellow]⚠ Wiring gate after wave {wave_number}: "
+                    f"{NOT_CHECKED_REASON} for "
+                    f"{', '.join(not_recorded)}[/yellow]"
+                )
+                logger.warning(
+                    "[wave %s] wiring gate %s for %s",
+                    wave_number,
+                    NOT_CHECKED_REASON,
+                    ", ".join(not_recorded),
+                )
+                return WiringGatePhaseOutcome(
+                    terminate=False,
+                    final_wave_result=wave_result,
+                    not_checked=True,
+                )
             if not authored:
                 return WiringGatePhaseOutcome(
                     terminate=False, final_wave_result=wave_result

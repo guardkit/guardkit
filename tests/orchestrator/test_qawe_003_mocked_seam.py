@@ -416,7 +416,9 @@ class TestGatherIntegration:
 
     def test_zero_authored_files_all_fields_none(self, tmp_path: Path) -> None:
         _init_git_worktree(tmp_path)
-        results = _passing_task_work_results({"files_authored": []})
+        results = _passing_task_work_results(
+            {"files_authored": [], "files_authored_tracking": "tracked"}
+        )
         _write_results(tmp_path, "TASK-ZERO", results)
 
         bundle = self._gather(tmp_path, "TASK-ZERO")

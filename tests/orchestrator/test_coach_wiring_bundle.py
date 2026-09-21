@@ -247,11 +247,12 @@ class TestAC008TaskTypeGate:
         assert bundle.mocked_seam is None
         assert bundle.spec_gap is None
 
-    def test_zero_authored_files_excluded(self, tmp_path: Path) -> None:
-        """Zero-authored files -> all three fields None."""
+    def test_zero_authored_files_tracked_excluded(self, tmp_path: Path) -> None:
+        """A TRACKED empty list -> all three fields None (nothing to look at)."""
         _init_git_worktree(tmp_path)
         results = _passing_task_work_results({
             "files_authored": [],
+            "files_authored_tracking": "tracked",
         })
         _write_results(tmp_path, "TASK-EMPTY", results)
 
@@ -269,6 +270,36 @@ class TestAC008TaskTypeGate:
         assert bundle.wiring is None
         assert bundle.mocked_seam is None
         assert bundle.spec_gap is None
+
+    def test_unrecorded_file_list_reports_not_checked(
+        self, tmp_path: Path
+    ) -> None:
+        """2026-09-21: an empty list with no marker is UNKNOWN. The detectors
+        say "not checked", never "clean", and never read the modified files."""
+        _init_git_worktree(tmp_path)
+        results = _passing_task_work_results({"files_authored": []})
+        _write_results(tmp_path, "TASK-UNKNOWN", results)
+
+        validator = CoachValidator(str(tmp_path), task_id="TASK-UNKNOWN")
+        bundle = validator.gather_evidence(
+            task_id="TASK-UNKNOWN",
+            turn=1,
+            task={
+                "acceptance_criteria": ["AC-001"],
+                "task_type": "feature",
+                "description": "x",
+            },
+        )
+        assert bundle.gathering_status == "complete"
+        for block in (bundle.wiring, bundle.mocked_seam, bundle.stub_scan,
+                      bundle.coverage):
+            assert isinstance(block, dict), block
+            assert block["status"] == "not_checked"
+            assert block["ran"] is False
+            assert block["findings"] is None
+            assert block["reason"] == (
+                "not checked: the builder's file list was not recorded"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -491,8 +522,9 @@ class TestComputeAuthoredSet:
 
     def test_returns_authored_files(self) -> None:
         results = {"files_authored": ["src/a.py", "src/b.py"]}
-        authored = _compute_authored_set(results)
+        authored, status = _compute_authored_set(results)
         assert sorted(authored) == ["src/a.py", "src/b.py"]
+        assert status == "tracked"
 
     def test_fallback_to_created_modified(self, tmp_path: Path) -> None:
         """When files_authored is missing, falls back to created + modified."""
@@ -500,8 +532,9 @@ class TestComputeAuthoredSet:
             "files_created": ["src/new.py"],
             "files_modified": ["src/old.py"],
         }
-        authored = _compute_authored_set(results)
+        authored, status = _compute_authored_set(results)
         assert sorted(authored) == ["src/new.py", "src/old.py"]
+        assert status == "no_key"
 
     def test_fallback_avoids_duplicates(self) -> None:
         """Duplicates across created and modified are deduplicated."""
@@ -509,12 +542,45 @@ class TestComputeAuthoredSet:
             "files_created": ["src/same.py"],
             "files_modified": ["src/same.py", "src/other.py"],
         }
-        authored = _compute_authored_set(results)
+        authored, status = _compute_authored_set(results)
         assert sorted(authored) == ["src/other.py", "src/same.py"]
+        assert status == "no_key"
 
     def test_returns_empty_for_missing_key(self) -> None:
-        authored = _compute_authored_set({})
+        authored, status = _compute_authored_set({})
         assert authored == []
+        assert status == "no_key"
+
+    def test_empty_list_with_no_marker_is_unknown(self) -> None:
+        """2026-09-21: an unmarked empty list says nothing, and never falls
+        back to the modified-files list."""
+        results = {
+            "files_authored": [],
+            "files_created": ["src/new.py"],
+            "files_modified": ["src/old.py"],
+        }
+        authored, status = _compute_authored_set(results)
+        assert authored == []
+        assert status == "unknown"
+
+    def test_empty_list_marked_tracked_is_tracked(self) -> None:
+        """A tracked empty list really does mean the task wrote nothing."""
+        results = {
+            "files_authored": [],
+            "files_authored_tracking": "tracked",
+            "files_created": ["src/new.py"],
+        }
+        authored, status = _compute_authored_set(results)
+        assert authored == []
+        assert status == "tracked"
+
+    def test_empty_list_marked_not_tracked_is_unknown(self) -> None:
+        results = {
+            "files_authored": [],
+            "files_authored_tracking": "not_tracked",
+        }
+        authored, status = _compute_authored_set(results)
+        assert status == "unknown"
 
 
 # ---------------------------------------------------------------------------

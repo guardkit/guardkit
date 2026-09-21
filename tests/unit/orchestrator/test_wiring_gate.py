@@ -123,8 +123,9 @@ class TestWaveAuthoredFiles:
         orch = _orchestrator(tmp_path)
         _write_results(tmp_path, "TASK-A", {"files_authored": ["a.py", "shared.py"]})
         _write_results(tmp_path, "TASK-B", {"files_authored": ["b.py", "shared.py"]})
-        got = orch._wave_authored_files(["TASK-A", "TASK-B"])
+        got, not_recorded = orch._wave_authored_files(["TASK-A", "TASK-B"])
         assert sorted(got) == ["a.py", "b.py", "shared.py"]
+        assert not_recorded == []
 
     def test_falls_back_to_created_union_modified(self, tmp_path):
         orch = _orchestrator(tmp_path)
@@ -132,20 +133,41 @@ class TestWaveAuthoredFiles:
             tmp_path, "TASK-A",
             {"files_created": ["new.py"], "files_modified": ["old.py", "new.py"]},
         )
-        got = orch._wave_authored_files(["TASK-A"])
+        got, not_recorded = orch._wave_authored_files(["TASK-A"])
         assert sorted(got) == ["new.py", "old.py"]
+        assert not_recorded == []
 
     def test_missing_results_file_contributes_nothing(self, tmp_path):
         orch = _orchestrator(tmp_path)
         _write_results(tmp_path, "TASK-A", {"files_authored": ["a.py"]})
         # TASK-B has no results file.
-        got = orch._wave_authored_files(["TASK-A", "TASK-B"])
+        got, not_recorded = orch._wave_authored_files(["TASK-A", "TASK-B"])
         assert got == ["a.py"]
+        assert not_recorded == []
 
-    def test_empty_authored_list_is_authoritative(self, tmp_path):
+    def test_empty_tracked_list_is_authoritative(self, tmp_path):
         orch = _orchestrator(tmp_path)
-        _write_results(tmp_path, "TASK-A", {"files_authored": []})
-        assert orch._wave_authored_files(["TASK-A"]) == []
+        _write_results(
+            tmp_path, "TASK-A",
+            {"files_authored": [], "files_authored_tracking": "tracked"},
+        )
+        assert orch._wave_authored_files(["TASK-A"]) == ([], [])
+
+    def test_unmarked_empty_list_is_reported_not_recorded(self, tmp_path):
+        """2026-09-21: an unmarked empty list is not 'this task wrote
+        nothing'; it is 'nobody recorded what this task wrote'."""
+        orch = _orchestrator(tmp_path)
+        _write_results(
+            tmp_path, "TASK-A",
+            {
+                "files_authored": [],
+                "files_created": ["new.py"],
+                "files_modified": ["old.py"],
+            },
+        )
+        got, not_recorded = orch._wave_authored_files(["TASK-A"])
+        assert got == []
+        assert not_recorded == ["TASK-A"]
 
 
 # ============================================================================
@@ -216,7 +238,7 @@ class TestRunPostWaveWiringGate:
     def test_no_findings_is_neutral_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    return_value=_wiring_dict()), \
              patch.object(orch, "_execute_wave") as exec_wave:
@@ -231,7 +253,7 @@ class TestRunPostWaveWiringGate:
     def test_empty_authored_set_is_noop(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
-        with patch.object(orch, "_wave_authored_files", return_value=[]), \
+        with patch.object(orch, "_wave_authored_files", return_value=([], [])), \
              patch("guardkitfactory.wiring.analyze_wiring") as az, \
              patch.object(orch, "_execute_wave") as exec_wave:
             outcome = orch._run_post_wave_wiring_gate(
@@ -245,7 +267,7 @@ class TestRunPostWaveWiringGate:
     def test_analyzer_error_is_absent_signal_no_reentry(self, tmp_path):
         orch = _orchestrator(tmp_path)
         wr = _wave_result(["TASK-A"])
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    side_effect=RuntimeError("boom")), \
              patch.object(orch, "_execute_wave") as exec_wave:
@@ -275,7 +297,7 @@ class TestRunPostWaveWiringGate:
         rerun = _wave_result(["TASK-A"], all_succeeded=True)
         # First analyze → findings; after the re-run → clean.
         results = [_wiring_dict(seam_findings=[_SEAM]), _wiring_dict()]
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    side_effect=results), \
              patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
@@ -298,7 +320,7 @@ class TestRunPostWaveWiringGate:
         wr = _wave_result(["TASK-A"])
         rerun = _wave_result(["TASK-A"], all_succeeded=True)
         # Findings persist on both the first and the re-run analysis.
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    return_value=_wiring_dict(ctor_findings=[_CTOR])), \
              patch.object(orch, "_execute_wave", return_value=rerun) as exec_wave:
@@ -314,7 +336,7 @@ class TestRunPostWaveWiringGate:
         orch = _orchestrator(tmp_path)
         orch._wiring_gate_max_retries = 0
         wr = _wave_result(["TASK-A"])
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    return_value=_wiring_dict(seam_findings=[_SEAM])), \
              patch.object(orch, "_execute_wave") as exec_wave:
@@ -332,7 +354,7 @@ class TestRunPostWaveWiringGate:
         orch.stop_on_failure = True
         wr = _wave_result(["TASK-A"])
         rejected = _wave_result(["TASK-A"], all_succeeded=False)
-        with patch.object(orch, "_wave_authored_files", return_value=["a.py"]), \
+        with patch.object(orch, "_wave_authored_files", return_value=(["a.py"], [])), \
              patch("guardkitfactory.wiring.analyze_wiring",
                    return_value=_wiring_dict(seam_findings=[_SEAM])), \
              patch.object(orch, "_execute_wave", return_value=rejected):

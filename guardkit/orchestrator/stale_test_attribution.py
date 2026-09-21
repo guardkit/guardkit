@@ -26,6 +26,13 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Collection, Iterable, List, Optional, Union
 
+from guardkit.orchestrator.authored_files import (
+    NOT_CHECKED_REASON,
+    STATUS_NO_KEY,
+    STATUS_UNKNOWN,
+    read_authored_files,
+)
+
 logger = logging.getLogger(__name__)
 
 # Substring heuristic for "the smoke command is a test-runner invocation".
@@ -120,8 +127,19 @@ def _normalise_relpath(
 def _authored_files(data: dict) -> List[str]:
     """The authorship-based file set for one task's results record.
 
-    Uses ``files_authored`` (the Write/Edit-captured record) when present,
-    falling back to ``files_created`` ONLY — **never** ``files_modified``.
+    Reads ``files_authored`` under the one rule in
+    :mod:`guardkit.orchestrator.authored_files` (2026-09-21), so this reader,
+    the per-task review and the after-each-group gate cannot drift apart. A
+    record whose list was never recorded contributes **nothing**: it is not
+    evidence that the task wrote no file, and it must never be answered from
+    ``files_modified`` or ``files_created``. Contributing nothing is the safe
+    reading here, because every miss fails OPEN — no match, no note, and the
+    caller's default red framing stands unchanged, which is the same thing as
+    "not checked" at this seam. The legacy no-key branch below (a record
+    written before ``files_authored`` existed) is unchanged.
+
+    The fallback for that legacy branch is ``files_created`` ONLY — **never**
+    ``files_modified``.
     ``files_modified`` is union-merged with the post-turn ``git diff`` paths
     (``agent_invoker`` merges ``git_modified`` into the report), so it names
     files a task merely *touched*: a pre-existing regression test that task A
@@ -134,8 +152,15 @@ def _authored_files(data: dict) -> List[str]:
     ``feature_orchestrator._wave_authored_files``, whose write-surface
     aperture wants the touched union.)
     """
-    if isinstance(data.get("files_authored"), list):
-        return [str(f) for f in data["files_authored"]]
+    files, status = read_authored_files(data)
+    if status == STATUS_UNKNOWN:
+        logger.debug(
+            "TASK-AB-STALEATTRIB01: %s; this record names no author.",
+            NOT_CHECKED_REASON,
+        )
+        return []
+    if status != STATUS_NO_KEY:
+        return files
     return [str(f) for f in list(data.get("files_created") or [])]
 
 
