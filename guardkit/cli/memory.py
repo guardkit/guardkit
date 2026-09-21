@@ -626,6 +626,14 @@ async def _cmd_status() -> None:
     """Async implementation of status command."""
     console.print("\n[bold cyan]Memory Store Status[/bold cyan]\n")
 
+    # WHICH MEMORY, SAID ON THE CONSOLE THE PERSON IS LOOKING AT (2026-09-21).
+    # With no name there is no memory for this folder to have a status of, and
+    # saying so through a log line the person never sees is not saying it.
+    resolution = memory_project_resolution()
+    if not resolution.is_on:
+        console.print(f"[yellow]{resolution.message}[/yellow]")
+        return
+
     client = get_memory_client()
 
     if client is None:
@@ -717,6 +725,17 @@ async def _cmd_capture_outcome(
     """Async implementation of capture-outcome command."""
     import yaml
     from datetime import datetime
+
+    # WHICH MEMORY, SAID ON THE CONSOLE BEFORE THE ARGUMENTS ARE EVEN CHECKED
+    # (2026-09-21). With no name there is nowhere for this outcome to go, and a
+    # person who typed the command deserves that sentence rather than a silent
+    # return with a log line behind it. Exit 0: nothing was wrong with the
+    # command, there is simply no memory to write to.
+    resolution = memory_project_resolution()
+    if not resolution.is_on:
+        console.print(f"[yellow]{resolution.message}[/yellow]")
+        console.print("[yellow]Nothing was written.[/yellow]")
+        return
 
     # Parse task file if provided
     if from_task_file:

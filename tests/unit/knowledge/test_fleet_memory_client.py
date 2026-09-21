@@ -841,10 +841,16 @@ class TestRetrievalArmParsing:
         cfg = _load_fleet_config_from_env()
         assert cfg.retrieval_arm is None
         assert cfg.fixture_id is None
-        # Other fields keep their pre-change defaults (env fully scrubbed,
-        # so these are the dataclass/loader defaults — never ambient values).
+        # ``enabled`` keeps its loader default (env fully scrubbed).
         assert cfg.enabled is False
-        assert cfg.project == "guardkit"
+        # The name is no longer a loader default of any kind (2026-09-21): it is
+        # the one settled answer for this process, whatever that turns out to be.
+        # Asserting the literal "guardkit" here would pass only because the suite
+        # happens to run in GuardKit's own repo, which declares that name — and
+        # would fail the moment an earlier test settled a different one.
+        from guardkit.knowledge.fleet_memory_client import memory_project_resolution
+
+        assert cfg.project == memory_project_resolution().project
 
     def test_blank_string_is_live_arm(self, monkeypatch):
         monkeypatch.setenv("FLEET_MEMORY_RETRIEVAL", "   ")

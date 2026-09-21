@@ -173,6 +173,33 @@ def guard_live_memory_writes(monkeypatch, request):
 
 
 # ---------------------------------------------------------------------------
+# One settled memory name per PROCESS is right; one per TEST RUN is not
+# ---------------------------------------------------------------------------
+# ``configure_memory_project`` settles which memory a build uses and keeps the
+# answer in a module global, on purpose: in a real run the process is one build,
+# and the builder thread and the reviewer thread must not end up under different
+# names. A test run is not one build. Every ``AutoBuildOrchestrator(...)`` a test
+# constructs settles the answer for whatever temporary folder that test made, and
+# without this fixture the answer outlived the test: a later test that asked
+# ``memory_project_resolution()`` — the CLI's search command, the config loader —
+# got the previous test's folder, so the suite's result depended on the order the
+# files happened to run in. Forgetting the answer between tests puts each test
+# back on the same footing as the first one.
+
+
+@pytest.fixture(autouse=True)
+def forget_settled_memory_project():
+    """Each test settles the memory name for itself, never inherits one."""
+    from guardkit.knowledge import fleet_memory_client as _fmc
+
+    _fmc.reset_memory_project()
+    try:
+        yield
+    finally:
+        _fmc.reset_memory_project()
+
+
+# ---------------------------------------------------------------------------
 # The M0 effective-seat fence (leg-invocation stage-2 design §3)
 # ---------------------------------------------------------------------------
 # ``select_harness`` now refuses to build a harness on a seat it cannot show is
