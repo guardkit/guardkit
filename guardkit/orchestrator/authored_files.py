@@ -57,6 +57,18 @@ STATUS_NO_KEY = "no_key"
 #: goes in front of a reader, and "clean" would be a lie.
 NOT_CHECKED_REASON = "not checked: the builder's file list was not recorded"
 
+#: The kinds of task the code checks look at at all. Every other kind of task
+#: legitimately leaves half-wired code behind, so the checks decline, and that
+#: absence is an honest one. Kept here so the checks that gate on it and the
+#: summary that reads their records cannot drift apart. Compared upper-case: a
+#: record carries the kind in lower case.
+ANALYSED_TASK_KINDS = ("FEATURE", "REFACTOR", "INTEGRATION")
+
+
+def kind_is_analysed(task_kind: Any) -> bool:
+    """Whether the code checks look at this kind of task at all."""
+    return str(task_kind or "").strip().upper() in ANALYSED_TASK_KINDS
+
 
 def read_authored_files(data: Any) -> Tuple[List[str], str]:
     """Read one task record's authored-file list under the one rule.

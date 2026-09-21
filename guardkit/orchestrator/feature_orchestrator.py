@@ -206,6 +206,24 @@ console = Console()
 _BASELINE_DECLARED_SUITE_TIMEOUT = min(DEFAULT_VERIFY_TIMEOUT, 600)
 
 
+def _path_as_told_from(path: Path, root: Path) -> str:
+    """Where a file is, said from ``root``. Never raises.
+
+    Inside ``root`` this is the plain relative path. A file that is NOT under
+    ``root`` — which every per-task private record is, because those live
+    outside the worktree on purpose — is said the only other honest way, by
+    the steps from ``root`` to it, and failing that in full.
+    """
+    try:
+        return str(Path(path).relative_to(root))
+    except Exception:  # noqa: BLE001 — a path is never worth a build
+        pass
+    try:
+        return os.path.relpath(str(path), str(root))
+    except Exception:  # noqa: BLE001
+        return str(path)
+
+
 def _record_left_behind(worktree_path: Path) -> Optional[Path]:
     """The baseline record downstream will read that this build did NOT measure.
 
@@ -2672,12 +2690,19 @@ The detailed specifications are in the task markdown file.
                 if found is not None:
                     try:
                         review = json.loads(found.read_text(encoding="utf-8"))
-                        review_path = str(found.relative_to(root))
                     except Exception as exc:  # noqa: BLE001 — unreadable is absence
                         logger.debug(
                             "code checks: %s could not be read: %s", found, exc
                         )
                         review = None
+                    else:
+                        # Where the record is SAID to be, and nothing else.
+                        # In every worktree-backed build the private records
+                        # sit outside the worktree on purpose (see
+                        # TaskArtifactPaths.task_private_dir), so a path
+                        # relative to the worktree cannot be made and asking
+                        # for one used to throw the record itself away.
+                        review_path = _path_as_told_from(found, root)
                 results: Any = None
                 for directory in self._autobuild_candidate_dirs(task_id):
                     candidate = directory / "task_work_results.json"
@@ -3170,6 +3195,10 @@ The detailed specifications are in the task markdown file.
                     }
                     for title in feature_scenario_titles(feature)
                 ],
+                # The check could not run, so that is why each of these was
+                # not checked — including the ones an earlier source (the
+                # central guard) had already named for a reason of its own.
+                later_reason_wins=True,
             )
             not_checked = everything
             not_checked_total = max(not_checked_total, len(everything))
@@ -3892,13 +3921,21 @@ The detailed specifications are in the task markdown file.
         """This gate's own state, in the five words the summary uses.
 
         The check's own status word decides: a check that says it does not
-        cover this kind of project is not a check that found nothing.
+        cover this kind of project is not a check that found nothing. When it
+        says it could not read part of what it was given, how much travels
+        beside the state as a number, because the part it could not read is
+        part nothing looked at.
         """
         status = ""
+        not_read: Optional[int] = None
         if isinstance(wiring_result, dict) and isinstance(
             wiring_result.get("status"), str
         ):
             status = wiring_result["status"].strip().lower()
+        if isinstance(wiring_result, dict):
+            unread = wiring_result.get("degraded_files")
+            if isinstance(unread, (list, tuple)):
+                not_read = len(unread)
         if status == "unsupported_stack":
             return code_check_group_record(
                 wave_number,
@@ -3918,15 +3955,23 @@ The detailed specifications are in the task markdown file.
                 state=CODE_CHECK_FOUND_SOMETHING,
                 reason="reported without asking for a re-run",
                 findings=list(advisory),
+                inputs_not_read=not_read,
             )
+        degraded = status == "parse_degraded"
         return code_check_group_record(
             wave_number,
             state=CODE_CHECK_RAN_FOUND_NOTHING,
             reason=(
-                "some of what it was given could not be read"
-                if status == "parse_degraded"
+                (
+                    f"some of what it was given could not be read "
+                    f"({not_read} of them)"
+                    if not_read
+                    else "some of what it was given could not be read"
+                )
+                if degraded
                 else ""
             ),
+            inputs_not_read=not_read if degraded else None,
         )
 
     def _run_post_wave_wiring_gate(

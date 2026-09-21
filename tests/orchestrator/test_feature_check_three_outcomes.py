@@ -191,11 +191,14 @@ def test_row_three_could_not_run_enters_no_repair_and_does_not_block(
 
     names = [e["name"] for e in receipt["not_checked"]]
     assert SCENARIO_TITLE in names, "every example goes on the not-checked list"
-    # Every entry gives a reason. This example has two sources saying nothing
-    # looked at it (the central guard named it first, then the check could not
-    # run at all); the first reason is kept and the record still says, at the
-    # top, why the check itself could not run.
+    # Every entry gives a reason, and on this outcome the reason is the one
+    # that is true of all of them: the check could not run. Two sources named
+    # this example (the central guard first, then the check itself), and until
+    # 21 September the guard's narrower reason was the one that landed.
     assert all(e["reason"] for e in receipt["not_checked"])
+    assert all(
+        "no container runtime" in e["reason"] for e in receipt["not_checked"]
+    )
     assert receipt["scenarios_covered"] == []
 
 
@@ -249,6 +252,9 @@ def test_a_name_on_the_not_checked_list_is_never_on_the_covered_list(
     receipt = _receipt(worktree)
     assert receipt["scenarios_covered"] == ["Another example"]
     assert [e["name"] for e in receipt["not_checked"]] == [SCENARIO_TITLE]
+    # And in the copy inside the attempt, which is the list every reader
+    # written before today picks up (found by driving, 21 September).
+    assert receipt["attempts"][-1]["scenarios_covered"] == ["Another example"]
 
 
 def test_the_guard_s_missing_list_reaches_the_record_without_blocking(
@@ -297,6 +303,32 @@ def test_finishing_the_record_removes_a_newly_not_checked_name_from_covered(
     assert data["record_notes"] == ["said once"]
 
 
+def test_finishing_the_record_cleans_the_copy_inside_each_attempt_too(
+    tmp_path: Path,
+) -> None:
+    """The completion rule and the guard both speak after the record is written."""
+    path = tmp_path / RECEIPT_RELATIVE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "scenarios_covered": ["A", "B"],
+                "attempts": [{"attempt": 1, "scenarios_covered": ["A", "B"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    update_feature_check_receipt(
+        tmp_path, not_checked=[{"name": "A", "reason": "nothing looked at it"}]
+    )
+
+    data = json.loads(path.read_text())
+    assert data["scenarios_covered"] == ["B"]
+    assert data["attempts"][0]["scenarios_covered"] == ["B"]
+
+
 def test_finishing_a_record_that_is_not_there_never_raises(tmp_path: Path) -> None:
     assert update_feature_check_receipt(
         tmp_path, not_checked=[{"name": "x", "reason": "y"}]
@@ -311,6 +343,23 @@ def test_merging_two_sources_keeps_one_entry_per_name(tmp_path: Path) -> None:
     )
     assert merged == [
         {"name": "One", "reason": "first"},
+        {"name": "Two", "reason": ""},
+    ]
+
+
+def test_the_later_reason_can_be_the_one_that_wins() -> None:
+    """For the one caller that knows better: the whole check could not run.
+
+    THAT is then why each example was not checked, whatever an earlier source
+    said about one of them. The name keeps its place; only the reason moves.
+    """
+    merged = merge_not_checked(
+        [{"name": "One", "reason": "no check file for it"}, {"name": "Two"}],
+        [{"name": "one", "reason": "the check could not run"}],
+        later_reason_wins=True,
+    )
+    assert merged == [
+        {"name": "One", "reason": "the check could not run"},
         {"name": "Two", "reason": ""},
     ]
 

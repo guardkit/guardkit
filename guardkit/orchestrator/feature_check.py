@@ -208,7 +208,31 @@ class FeatureCheckAttempt:
     def could_not_run(self) -> bool:
         return self.resolved_outcome == OUTCOME_COULD_NOT_RUN
 
-    def to_dict(self) -> Dict[str, Any]:
+    def covered_minus_not_checked(
+        self, also_not_checked: Sequence[Dict[str, str]] = ()
+    ) -> List[str]:
+        """What this attempt covered, minus anything named as not checked.
+
+        The rule the record's top-level covered list already follows, applied
+        to the copy inside the attempt — the shape every reader written before
+        today picks up. A name can never be on both lists, whichever list a
+        reader happens to read.
+        """
+        blocked = {
+            str(e.get("name", "")).strip().lower()
+            for e in list(self.not_checked) + list(also_not_checked or [])
+            if isinstance(e, dict)
+        }
+        blocked.discard("")
+        return [
+            name
+            for name in self.scenarios_covered
+            if str(name).strip().lower() not in blocked
+        ]
+
+    def to_dict(
+        self, also_not_checked: Sequence[Dict[str, str]] = ()
+    ) -> Dict[str, Any]:
         return {
             "attempt": self.attempt,
             "command": self.command,
@@ -229,7 +253,7 @@ class FeatureCheckAttempt:
             "failure_reason": self.failure_reason,
             "twin_coverage": self.twin_coverage,
             "missing_twins": list(self.missing_twins),
-            "scenarios_covered": list(self.scenarios_covered),
+            "scenarios_covered": self.covered_minus_not_checked(also_not_checked),
             "ran_at": self.ran_at,
         }
 
@@ -316,7 +340,10 @@ class FeatureCheckOutcome:
             "could_not_run_reason": self.could_not_run_reason,
             "record_notes": list(self.notes),
             "criteria_still_claimed": list(self.claimed_machine_criteria),
-            "attempts": [a.to_dict() for a in self.attempts],
+            # Every attempt's covered list is filtered by the record's
+            # not-checked list as well as its own, so the two lists never
+            # both claim the same example anywhere in the record.
+            "attempts": [a.to_dict(self.not_checked) for a in self.attempts],
         }
 
 
@@ -369,13 +396,27 @@ def update_feature_check_receipt(
             int(data.get("not_checked_total") or 0), len(merged)
         )
         blocked = {e["name"].strip().lower() for e in merged}
-        covered = data.get("scenarios_covered")
-        if isinstance(covered, list):
-            data["scenarios_covered"] = [
+
+        def _minus_blocked(names: Any) -> Any:
+            if not isinstance(names, list):
+                return names
+            return [
                 name
-                for name in covered
+                for name in names
                 if not (isinstance(name, str) and name.strip().lower() in blocked)
             ]
+
+        data["scenarios_covered"] = _minus_blocked(data.get("scenarios_covered"))
+        # The copy inside each attempt follows the same rule: a reader that
+        # picks up the attempt rather than the top of the record must not be
+        # told an example was covered that this list says nothing looked at.
+        attempts = data.get("attempts")
+        if isinstance(attempts, list):
+            for entry in attempts:
+                if isinstance(entry, dict):
+                    entry["scenarios_covered"] = _minus_blocked(
+                        entry.get("scenarios_covered")
+                    )
         if extra_notes:
             existing_notes = data.get("record_notes")
             existing_notes = existing_notes if isinstance(existing_notes, list) else []
@@ -649,19 +690,28 @@ def parse_project_check_line(stdout: str) -> ProjectCheckLine:
 
 
 def merge_not_checked(
-    existing: Any, additions: Sequence[Dict[str, str]]
+    existing: Any,
+    additions: Sequence[Dict[str, str]],
+    *,
+    later_reason_wins: bool = False,
 ) -> List[Dict[str, str]]:
     """One not-checked list out of several, first reason wins, bounded.
 
     Names are compared case-insensitively, exactly as the completion rule
     compares a covered name, so the same example named by two sources appears
-    once.
+    once, keeping the order it was first named in.
+
+    ``later_reason_wins`` is for the one caller that knows better than the
+    lists it is merging: when the whole check could not run, THAT is why every
+    example was not checked, whatever an earlier source said about one of
+    them. The name keeps its place in the list; only its reason is replaced.
     """
     merged: List[Dict[str, str]] = []
-    seen: set = set()
-    for source in (existing, additions):
+    at: Dict[str, int] = {}
+    for position, source in enumerate((existing, additions)):
         if not isinstance(source, (list, tuple)):
             continue
+        later = position == 1
         for item in source:
             if isinstance(item, str):
                 item = {"name": item, "reason": ""}
@@ -671,17 +721,20 @@ def merge_not_checked(
             if not isinstance(name, str) or not name.strip():
                 continue
             key = name.strip().lower()
-            if key in seen:
-                continue
-            seen.add(key)
             reason = item.get("reason")
+            reason = cut(
+                reason.strip() if isinstance(reason, str) else "",
+                NOT_CHECKED_REASON_LIMIT,
+            )
+            if key in at:
+                if later and later_reason_wins and reason:
+                    merged[at[key]]["reason"] = reason
+                continue
+            at[key] = len(merged)
             merged.append(
                 {
                     "name": cut(name.strip(), NOT_CHECKED_NAME_LIMIT),
-                    "reason": cut(
-                        reason.strip() if isinstance(reason, str) else "",
-                        NOT_CHECKED_REASON_LIMIT,
-                    ),
+                    "reason": reason,
                 }
             )
     return merged

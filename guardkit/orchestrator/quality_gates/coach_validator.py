@@ -52,6 +52,7 @@ from guardkit.orchestrator.authored_files import (
     NOT_CHECKED_REASON,
     STATUS_NO_KEY,
     STATUS_UNKNOWN,
+    kind_is_analysed,
     not_checked_block,
     read_authored_files,
 )
@@ -566,7 +567,7 @@ def _run_wiring_analysis(
     # INTEGRATION are analyzed. Everything else (scaffolding, documentation,
     # testing, infrastructure, …) legitimately produces un-wired stubs →
     # all three fields None. Case-insensitive: frontmatter uses lowercase.
-    if (task_type or "").upper() not in ("FEATURE", "REFACTOR", "INTEGRATION"):
+    if not kind_is_analysed(task_type):
         logger.debug(
             "wiring analysis: task_type=%s gates out; "
             "all three fields left as None.",
@@ -705,7 +706,7 @@ def _compute_stub_scan(
     """
     # Positive task-type gate (same as wiring): only FEATURE / REFACTOR /
     # INTEGRATION are scanned. Everything else produces None.
-    if (task_type or "").upper() not in ("FEATURE", "REFACTOR", "INTEGRATION"):
+    if not kind_is_analysed(task_type):
         logger.debug(
             "stub_scan: task_type=%s gates out; "
             "all three fields left as None.",
@@ -3668,10 +3669,8 @@ class CoachValidator:
                 run_coverage_gate_for_bundle,
             )
 
-            if authored_status == STATUS_UNKNOWN and task_type.value.upper() in (
-                "FEATURE",
-                "REFACTOR",
-                "INTEGRATION",
+            if authored_status == STATUS_UNKNOWN and kind_is_analysed(
+                task_type.value
             ):
                 # 2026-09-21. The coverage gate reports "clean" when it runs
                 # and finds no zero-execution symbol. With no recorded file

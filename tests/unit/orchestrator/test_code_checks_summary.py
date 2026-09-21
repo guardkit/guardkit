@@ -12,6 +12,13 @@ and named a real finding. The two acceptance cases the design asks for are the
 last two tests: a named finding reaches the summary, and incomplete checking
 reaches the summary.
 
+Corrected 21 September 2026 after a second model drove this against the kept
+records. Those records hold ``null`` under a check's name, not the shape the
+file-list repair produces, and every ``null`` was being read as "it had
+nothing to do" — so a build nothing had looked at came out as nought not
+checked. The absence tests below are that correction, and the two acceptance
+cases now run on kept-shaped records.
+
 Nothing here is a gate. Every function under test swallows its own errors, and
 the last test drives that.
 """
@@ -29,6 +36,7 @@ from guardkit.orchestrator.code_checks import (
     STATE_NOT_CHECKED,
     STATE_RAN_FOUND_NOTHING,
     SUMMARY_RELATIVE_PATH,
+    absence_reading,
     build_code_checks_summary,
     group_record,
     latest_review_record,
@@ -79,6 +87,21 @@ NOT_SUPPORTED = {
 }
 
 
+#: What EVERY check leaves behind when its analyser was not installed, or
+#: when it stopped on the way: nothing at all. The kept 19 September records
+#: are this shape — ``"wiring": null`` beside the kind of task it was.
+ANALYSER_DID_NOT_RUN = {
+    "task_type": "feature",
+    "wiring": None,
+    "mocked_seam": None,
+    "stub_scan": None,
+    "coverage": None,
+}
+
+#: The same absence on a kind of task the checks never look at.
+A_KIND_THE_CHECKS_SKIP = dict(ANALYSER_DID_NOT_RUN, task_type="declarative")
+
+
 def _kept_task_results(*, files: list | None, tracked: bool, shell: int = 0) -> dict:
     record: dict = {"task_id": "TASK-001", "files_created": ["src/users/service.py"]}
     if files is not None:
@@ -113,12 +136,32 @@ def test_a_check_that_was_not_checked_carries_its_reason() -> None:
     assert summary["findings"] == []
 
 
-def test_a_check_with_nothing_to_do_does_not_apply() -> None:
-    assert summarise_check(None)["state"] == STATE_DOES_NOT_APPLY
+def test_a_check_that_said_it_had_nothing_to_look_at_does_not_apply() -> None:
+    """Its own word for it, in the record. That is an honest absence."""
     assert (
         summarise_check({"status": "skipped_no_targets", "findings": []})["state"]
         == STATE_DOES_NOT_APPLY
     )
+
+
+def test_an_absence_nothing_explains_is_not_checked() -> None:
+    """The correction of 21 September, and the rule of this whole module.
+
+    An entry that is ``None`` is what a check leaves behind when it declined
+    AND what it leaves behind when its analyser was never there. Read alone,
+    it cannot be called either, so it is "not checked" — never a word that
+    counts it as done.
+    """
+    summary = summarise_check(None)
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert summary["reason"]
+
+
+def test_an_absence_the_record_does_explain_keeps_its_honest_word() -> None:
+    reading = {"state": STATE_DOES_NOT_APPLY, "reason": "nothing to look at"}
+    summary = summarise_check(None, absence=reading)
+    assert summary["state"] == STATE_DOES_NOT_APPLY
+    assert summary["reason"] == "nothing to look at"
 
 
 def test_a_kind_of_project_the_check_does_not_cover() -> None:
@@ -175,12 +218,66 @@ def test_a_task_row_says_whether_the_file_list_was_recorded() -> None:
     assert legacy["file_list_note"]
 
 
-def test_a_check_absent_from_a_kept_review_does_not_apply() -> None:
+def test_a_check_absent_from_a_kept_review_is_not_checked() -> None:
     row = summarise_task(
         "TASK-001", review_record={"wiring": CLEAN}, task_results=None
     )
     assert row["checks"]["wiring"]["state"] == STATE_RAN_FOUND_NOTHING
-    assert row["checks"]["stub_scan"]["state"] == STATE_DOES_NOT_APPLY
+    assert row["checks"]["stub_scan"]["state"] == STATE_NOT_CHECKED
+
+
+# ---------------------------------------------------------------------------
+# 2b. What an absence means, read off the record (corrected 21 September)
+# ---------------------------------------------------------------------------
+
+
+def test_a_kind_of_task_the_checks_skip_reads_as_does_not_apply() -> None:
+    reading = absence_reading(A_KIND_THE_CHECKS_SKIP, None)
+    assert reading["state"] == STATE_DOES_NOT_APPLY
+    assert "declarative" in reading["reason"]
+
+    row = summarise_task("TASK-001", review_record=A_KIND_THE_CHECKS_SKIP)
+    assert all(
+        check["state"] == STATE_DOES_NOT_APPLY for check in row["checks"].values()
+    )
+
+
+def test_a_task_that_wrote_no_file_reads_as_does_not_apply() -> None:
+    """The list WAS recorded and it is empty, so there was nothing to read."""
+    reading = absence_reading(
+        ANALYSER_DID_NOT_RUN, _kept_task_results(files=[], tracked=True)
+    )
+    assert reading["state"] == STATE_DOES_NOT_APPLY
+    assert "no file" in reading["reason"]
+
+
+def test_an_analyser_that_was_not_there_reads_as_not_checked() -> None:
+    """The case the second model drove: nothing else about the task is amiss.
+
+    The file list was recorded and names a file, the kind of task is one the
+    checks do look at, and every check is still absent. Only one thing
+    explains that: the check did not run.
+    """
+    results = _kept_task_results(files=["src/users/service.py"], tracked=True)
+    assert absence_reading(ANALYSER_DID_NOT_RUN, results)["state"] == STATE_NOT_CHECKED
+
+    row = summarise_task(
+        "TASK-DEMO-001", review_record=ANALYSER_DID_NOT_RUN, task_results=results
+    )
+    summary = build_code_checks_summary(
+        feature_id="FEAT-DEMO", tasks=[row], groups=[]
+    )
+    assert all(
+        check["state"] == STATE_NOT_CHECKED for check in row["checks"].values()
+    )
+    assert summary["tasks_with_something_not_checked"] == 1
+    assert summary["tasks_not_checked"] == ["TASK-DEMO-001"]
+
+
+def test_a_record_that_never_had_a_file_list_cannot_explain_an_absence() -> None:
+    """Every task of the kept 19 September build is this shape."""
+    reading = absence_reading(ANALYSER_DID_NOT_RUN, {"task_id": "TASK-001"})
+    assert reading["state"] == STATE_NOT_CHECKED
 
 
 def test_the_last_review_of_a_task_is_the_one_read(tmp_path: Path) -> None:
@@ -218,6 +315,19 @@ def test_a_group_with_a_finding_names_it() -> None:
     row = group_record(4, state=STATE_FOUND_SOMETHING, findings=FINDING["findings"])
     assert row["finding_count"] == 1
     assert row["findings"][0]["name"] == "get_user_creation_counts_per_day"
+    assert row["inputs_not_read"] is None
+
+
+def test_a_group_check_that_read_only_part_of_its_input_says_how_much() -> None:
+    """It ran and found nothing IN WHAT IT COULD READ. The rest is not that."""
+    row = group_record(
+        5,
+        state=STATE_RAN_FOUND_NOTHING,
+        reason="some of what it was given could not be read (2 of them)",
+        inputs_not_read=2,
+    )
+    assert row["inputs_not_read"] == 2
+    assert group_record(5, state=STATE_RAN_FOUND_NOTHING)["inputs_not_read"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -226,12 +336,19 @@ def test_a_group_with_a_finding_names_it() -> None:
 
 
 def _summary_from_kept_records() -> dict:
-    """The 19 September shape: two tasks nothing looked at, one with a finding."""
+    """The 19 September shape: one task nothing looked at, one with a finding.
+
+    The first task's record is the one the build really left: no entry at all
+    under any check's name, and no file list to explain it. The second is that
+    same build with its file list filled in, which is when the checks ran and
+    named something. The third is a kind of task the checks never look at, and
+    it must not be counted as unchecked.
+    """
     tasks = [
         summarise_task(
             "TASK-DBE3-002",
-            review_record={name: NOT_CHECKED for name in CHECK_NAMES},
-            task_results=_kept_task_results(files=[], tracked=False, shell=12),
+            review_record=dict(ANALYSER_DID_NOT_RUN),
+            task_results=_kept_task_results(files=None, tracked=False, shell=12),
         ),
         summarise_task(
             "TASK-DBE3-004",
@@ -244,6 +361,11 @@ def _summary_from_kept_records() -> dict:
             task_results=_kept_task_results(
                 files=["src/users/service.py"], tracked=True, shell=25
             ),
+        ),
+        summarise_task(
+            "TASK-DBE3-005",
+            review_record=dict(A_KIND_THE_CHECKS_SKIP),
+            task_results=_kept_task_results(files=None, tracked=False),
         ),
     ]
     groups = [
@@ -283,6 +405,13 @@ def test_incomplete_checking_reaches_the_summary() -> None:
         check["state"] == STATE_NOT_CHECKED
         for check in not_checked_task["checks"].values()
     )
+    # The kind of task the checks never look at is an honest absence, and it
+    # is not counted as something nobody checked.
+    skipped_kind = summary["tasks"][2]
+    assert all(
+        check["state"] == STATE_DOES_NOT_APPLY
+        for check in skipped_kind["checks"].values()
+    )
 
 
 def test_the_summary_is_written_and_read_back(tmp_path: Path) -> None:
@@ -290,6 +419,57 @@ def test_the_summary_is_written_and_read_back(tmp_path: Path) -> None:
     assert path == tmp_path / SUMMARY_RELATIVE_PATH
     assert read_code_checks_summary(tmp_path)["feature"] == "FEAT-DBE3"
     assert read_code_checks_summary(tmp_path / "nothing-here") is None
+
+
+def test_the_kept_review_is_read_in_the_layout_a_real_build_has(
+    tmp_path: Path,
+) -> None:
+    """The blocker a second model found by driving, on 21 September.
+
+    Every ``FEAT-*`` build works in a worktree, and the per-task review
+    records are kept OUTSIDE that worktree on purpose. The summariser found
+    each record, then asked for its path relative to the worktree — which
+    cannot be made — and the error threw the record away, so every task of
+    every real build came out "no review record of this task was kept". No
+    finding could ever reach a card. Here the records sit exactly where a real
+    build leaves them.
+    """
+    from types import SimpleNamespace
+
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+    worktree = tmp_path / ".guardkit" / "worktrees" / "FEAT-X"
+    worktree.mkdir(parents=True)
+    private = tmp_path / ".guardkit" / "autobuild-private" / "TASK-X-001"
+    private.mkdir(parents=True)
+    (private / "coach_evidence_turn_1.json").write_text(
+        json.dumps({"task_type": "feature", "wiring": FINDING}), encoding="utf-8"
+    )
+    results = tmp_path / ".guardkit" / "autobuild" / "TASK-X-001"
+    results.mkdir(parents=True)
+    (results / "task_work_results.json").write_text(
+        json.dumps(_kept_task_results(files=["src/users/service.py"], tracked=True)),
+        encoding="utf-8",
+    )
+
+    orchestrator = object.__new__(FeatureOrchestrator)
+    orchestrator.repo_root = tmp_path
+    orchestrator._group_code_check_records = []
+    written = orchestrator._write_code_checks_summary(
+        SimpleNamespace(id="FEAT-X", tasks=[SimpleNamespace(id="TASK-X-001")]),
+        SimpleNamespace(path=str(worktree)),
+    )
+
+    assert written == worktree / SUMMARY_RELATIVE_PATH
+    row = json.loads(written.read_text())["tasks"][0]
+    assert row["review_record_kept"] is True
+    assert row["review_record"], "the summary says where the record is"
+    assert row["checks"]["wiring"]["state"] == STATE_FOUND_SOMETHING
+    assert (
+        row["checks"]["wiring"]["findings"][0]["name"]
+        == "get_user_creation_counts_per_day"
+    )
+    assert row["file_list_recorded"] is True
 
 
 def test_nothing_in_here_ever_raises(tmp_path: Path) -> None:
