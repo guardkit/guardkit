@@ -29,7 +29,6 @@ fm_identity = pytest.importorskip("fleet_memory.writer.identity")
 
 def _map(payload_type, tags, disposition="migrate"):
     return GroupMapping(
-        project="guardkit",
         payload_type=payload_type,
         domain_tags=list(tags),
         disposition=disposition,
@@ -85,6 +84,7 @@ def test_build_outcome_shape_and_validates():
         _map("build_outcome", ["task"]),
         name="OUT-1: TASK-1234 - OAuth2",
         episode_body=json.dumps(body),
+        project="guardkit",
     )
     assert ep.content_format == "json"
     assert ep.payload_type == "build_outcome"
@@ -112,6 +112,7 @@ def test_build_outcome_failure_status_and_zero_duration():
         _map("build_outcome", ["task"]),
         name="OUT-2: TASK-9 - failed",
         episode_body=json.dumps({"task_id": "TASK-9", "success": False}),
+        project="guardkit",
     )
     sent = json.loads(ep.body)
     assert sent["status"] == "failure"
@@ -125,6 +126,7 @@ def test_build_adr_validates():
         episode_body=json.dumps(
             {"id": "ADR-0001", "decision": "Adopt fleet-memory", "status": "accepted"}
         ),
+        project="guardkit",
     )
     assert ep.payload_type == "adr"
     sent = json.loads(ep.body)
@@ -139,6 +141,7 @@ def test_build_adr_missing_decision_falls_back():
         _map("adr", ["decision"]),
         name="adr_ADR-0002",
         episode_body=json.dumps({"id": "ADR-0002", "title": "Untitled"}),
+        project="guardkit",
     )
     sent = json.loads(ep.body)
     # Validates (decision + status both present, non-empty)
@@ -152,6 +155,7 @@ def test_build_warning_validates():
         _map("warning", ["failure", "approach"]),
         name="failed_approach_FAIL-7",
         episode_body=json.dumps({"id": "FAIL-7", "summary": "retry storm", "severity": "high"}),
+        project="guardkit",
     )
     assert ep.payload_type == "warning"
     sent = json.loads(ep.body)
@@ -167,6 +171,7 @@ def test_store_key_is_recomputable_uuid5():
         _map("build_outcome", ["task"]),
         name="OUT: TASK-1234",
         episode_body=json.dumps({"task_id": "TASK-1234", "success": True}),
+        project="guardkit",
     )
     key = fm_identity.record_identity(ep.episode_id)
     assert str(key)  # a valid UUID string
@@ -184,6 +189,7 @@ def test_document_type_uses_prose_chunk_path():
         _map("document", ["architecture"]),
         name="System Overview",
         episode_body="# System Overview\n\nThe orchestrator coordinates waves.",
+        project="guardkit",
     )
     assert ep.content_format == "markdown"
     assert ep.payload_type is None  # chunk path has no typed payload
@@ -196,6 +202,7 @@ def test_non_json_body_tolerated():
         _map("build_outcome", ["task"]),
         name="TASK-5 raw",
         episode_body="not json at all",
+        project="guardkit",
     )
     # Identifier recovered from the name; still a valid build_outcome.
     sent = json.loads(ep.body)

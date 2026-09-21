@@ -26,6 +26,7 @@ def _client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> FleetMemoryClient:
             embed_model="fixture",
             embed_dims=8,
             nats_url="nats://disabled.invalid:1",
+            project="guardkit",
         )
     )
     client._read_available = True

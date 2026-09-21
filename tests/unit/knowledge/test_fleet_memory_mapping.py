@@ -19,12 +19,10 @@ class TestGroupMapping:
     def test_group_mapping_structure(self):
         """Verify GroupMapping has required fields."""
         mapping = GroupMapping(
-            project="guardkit",
             payload_type="build_outcome",
             domain_tags=["task"],
             disposition="migrate",
         )
-        assert mapping.project == "guardkit"
         assert mapping.payload_type == "build_outcome"
         assert mapping.domain_tags == ["task"]
         assert mapping.disposition == "migrate"
@@ -33,13 +31,11 @@ class TestGroupMapping:
         """Verify disposition is restricted to 'migrate' or 'retire'."""
         # Valid dispositions
         GroupMapping(
-            project="guardkit",
             payload_type="document",
             domain_tags=[],
             disposition="migrate",
         )
         GroupMapping(
-            project="guardkit",
             payload_type="document",
             domain_tags=[],
             disposition="retire",
@@ -113,13 +109,19 @@ class TestGroupIDMap:
                 mapping.payload_type in valid_types
             ), f"{group_id}: invalid payload_type '{mapping.payload_type}'"
 
-    def test_project_field_populated(self):
-        """Every mapping must have a non-empty project field."""
+    def test_no_mapping_carries_a_project_name(self):
+        """A mapping says NOTHING about which memory a record belongs to.
+
+        It used to carry the literal "guardkit" on all thirty entries, as the
+        name to use when a caller passed none — which is how every project's
+        records came to be filed under GuardKit's name (2026-09-21). Which
+        memory a record belongs to is a property of the build emitting it, so
+        there must be nothing here to fall back to.
+        """
         for group_id, mapping in GROUP_ID_MAP.items():
-            assert mapping.project, f"{group_id}: empty project field"
-            assert (
-                mapping.project == mapping.project.lower()
-            ), f"{group_id}: project must be lowercase"
+            assert not hasattr(
+                mapping, "project"
+            ), f"{group_id}: a mapping must not carry a project name"
 
     def test_domain_tags_is_list(self):
         """domain_tags must be a list (can be empty)."""
@@ -146,7 +148,6 @@ class TestResolveFunction:
         assert result is not None
         assert isinstance(result, GroupMapping)
         assert result.payload_type == "build_outcome"
-        assert result.project == "guardkit"
 
     def test_resolve_unknown_group(self):
         """resolve() returns None for an unknown group_id (fail-open)."""

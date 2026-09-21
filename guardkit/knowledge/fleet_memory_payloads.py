@@ -172,12 +172,19 @@ def build_memory_episode(
     name: str,
     episode_body: str,
     source: str = "user_added",
-    project: str | None = None,
+    *,
+    project: str,
 ) -> Any:
     """Build a typed ``MemoryEpisodeV1`` for the fleet-memory relay.
 
     Returns a ``nats_core.events.MemoryEpisodeV1`` ready to publish, or ``None`` if the
     episode cannot be built. Does not raise — callers fail open.
+
+    ``project`` — which memory the record belongs to — is REQUIRED and has no
+    default (2026-09-21). It used to fall back to the group's own static name,
+    always the literal ``"guardkit"``, so a caller that had not worked out whose
+    record this was filed it under GuardKit's name instead of saying so. An
+    absent or empty name now writes nothing at all.
 
     Structured types (build_outcome/adr/warning) are emitted on the JSON typed path with
     a sanitised ``identifier`` and an ``episode_id`` equal to the natural key
@@ -187,11 +194,16 @@ def build_memory_episode(
     """
     from nats_core.events import MemoryEpisodeV1  # write-path dep (guardkit `memory` extra)
 
+    if not project or not isinstance(project, str) or not project.strip():
+        logger.error(
+            "Refusing to build a memory record for %r: no memory name was given, "
+            "and there is no name to fall back to. Nothing is written.",
+            name,
+        )
+        return None
+    project = project.strip()
+
     data = _parse_episode_body(episode_body)
-    # Per-project scoping (WS-0 / FEAT-MEM-09): the active project is a runtime
-    # property (which repo is emitting the episode), not a per-group static. An
-    # explicit ``project`` wins; ``mapping.project`` remains the back-compat default.
-    project = project or mapping.project
     payload_type = mapping.payload_type
     builder = _BODY_BUILDERS.get(payload_type)
 
@@ -234,13 +246,15 @@ def _build_prose_episode(
     episode_body: str,
     source: str,
     data: dict,
-    project: str | None = None,
+    project: str,
 ) -> Any:
     """Fallback for non-structured migrate types (document, seed_module, …): publish the
-    text on the markdown/chunk path so it is embedded and retrievable (no natural_key)."""
+    text on the markdown/chunk path so it is embedded and retrievable (no natural_key).
+
+    ``project`` is required and already checked by the one caller
+    (:func:`build_memory_episode`); there is no name to fall back to."""
     from nats_core.events import MemoryEpisodeV1
 
-    project = project or mapping.project
     content = data.get("content") if isinstance(data, dict) else None
     body_text = content if isinstance(content, str) and content.strip() else episode_body
     identifier = sanitize_identifier(name)

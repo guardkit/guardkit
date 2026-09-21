@@ -175,7 +175,11 @@ from guardkit.knowledge.turn_state_operations import (
 )
 from guardkit.knowledge.entities.turn_state import TurnMode
 # FEAT-MEM-09 WS-2c: fleet-memory per-thread factory (graphiti factory retired).
-from guardkit.knowledge.fleet_memory_client import get_memory_client, get_memory_factory
+from guardkit.knowledge.fleet_memory_client import (
+    configure_memory_project,
+    get_memory_client,
+    get_memory_factory,
+)
 
 # Flywheel write seam: every autobuild terminal (approved AND failed) records a
 # build outcome so a future gate can read it back as a prior.
@@ -2562,6 +2566,21 @@ class AutoBuildOrchestrator:
         self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
         # TASK-GLF-002: Suppress memory operations during shutdown
         self._shutting_down: bool = False
+
+        # WHICH MEMORY THIS BUILD USES, SETTLED ONCE, HERE (2026-09-21).
+        # Before any thread gets a client, and before anything reads or writes:
+        # a name handed to this build on purpose, else the name this project
+        # declares in its own .guardkit/config.yaml, else nothing — and nothing
+        # means memory is off for this build, said out loud with the line to
+        # add. There is no fallback name, which is what used to file every
+        # project's outcomes under GuardKit's own.
+        # The project's settings are read from the CANONICAL repo root, the same
+        # copy the toolchain declaration is read from (see _load_toolchain).
+        try:
+            self._memory_project = configure_memory_project(self.repo_root)
+        except Exception as e:  # noqa: BLE001 — memory never breaks a build
+            self._memory_project = None
+            logger.warning("Could not settle which memory this build uses: %s", e)
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
         # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode.

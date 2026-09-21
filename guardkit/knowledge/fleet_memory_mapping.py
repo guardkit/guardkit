@@ -1,7 +1,10 @@
 """Fleet-memory group_id mapping for Graphiti to fleet-memory migration.
 
 This module provides the authoritative mapping from Graphiti group_ids to
-fleet-memory's identity model (project, payload_type, domain_tags).
+fleet-memory's identity model (payload_type, domain_tags).
+
+It deliberately says NOTHING about which memory a record belongs to: that is a
+property of the build emitting it and is passed in (2026-09-21).
 
 Single source of truth for:
 - Which groups migrate vs. retire
@@ -16,40 +19,40 @@ Usage:
 
 ## Group ID Mapping Table
 
-| group_id | project | payload_type | domain_tags | disposition | identifier_convention | note |
-|----------|---------|--------------|-------------|-------------|----------------------|------|
+| group_id | payload_type | domain_tags | disposition | identifier_convention | note |
+|----------|--------------|-------------|-------------|----------------------|------|
 | **Project Groups (9)** |
-| task_outcomes | guardkit | build_outcome | [task] | migrate | task_id | Primary home for task completion data |
-| project_decisions | guardkit | adr | [project] | migrate | decision_id | Project-level ADRs |
-| adrs | guardkit | adr | [decision] | migrate | decision_id | ADRService.create_adr runtime group_id |
-| project_architecture | guardkit | document | [architecture] | migrate | doc_path | System architecture docs |
-| project_overview | guardkit | document | [overview] | migrate | doc_path | High-level project context |
-| feature_specs | guardkit | document | [feature, spec] | migrate | feature_id | Feature specifications |
-| domain_knowledge | guardkit | document | [domain] | migrate | doc_path | Domain terminology and concepts |
-| project_constraints | guardkit | document | [constraints] | migrate | doc_path | Project limitations |
-| bdd_scenarios | guardkit | document | [bdd, behavior] | migrate | scenario_id | Gherkin BDD scenarios |
-| turn_states | guardkit | document | [turn, state] | migrate | turn_id | Feature-build turn state history |
+| task_outcomes | build_outcome | [task] | migrate | task_id | Primary home for task completion data |
+| project_decisions | adr | [project] | migrate | decision_id | Project-level ADRs |
+| adrs | adr | [decision] | migrate | decision_id | ADRService.create_adr runtime group_id |
+| project_architecture | document | [architecture] | migrate | doc_path | System architecture docs |
+| project_overview | document | [overview] | migrate | doc_path | High-level project context |
+| feature_specs | document | [feature, spec] | migrate | feature_id | Feature specifications |
+| domain_knowledge | document | [domain] | migrate | doc_path | Domain terminology and concepts |
+| project_constraints | document | [constraints] | migrate | doc_path | Project limitations |
+| bdd_scenarios | document | [bdd, behavior] | migrate | scenario_id | Gherkin BDD scenarios |
+| turn_states | document | [turn, state] | migrate | turn_id | Feature-build turn state history |
 | **System Groups (20)** |
-| architecture_decisions | guardkit | adr | [system] | migrate | decision_id | System-level ADRs |
-| failure_patterns | guardkit | warning | [failure, pattern] | migrate | pattern_id | Known failure patterns and mitigations |
-| failed_approaches | guardkit | warning | [failure, approach] | migrate | approach_id | Failed approaches and lessons |
-| guardkit_templates | guardkit | seed_module | [template] | retire | - | Covered by harvest corpus |
-| guardkit_patterns | guardkit | seed_module | [pattern] | retire | - | Covered by harvest corpus |
-| guardkit_workflows | guardkit | seed_module | [workflow] | retire | - | Covered by harvest corpus |
-| product_knowledge | guardkit | seed_module | [product] | retire | - | Covered by harvest corpus |
-| command_workflows | guardkit | seed_module | [command] | retire | - | Covered by harvest corpus |
-| quality_gate_phases | guardkit | seed_module | [quality] | retire | - | Covered by harvest corpus |
-| technology_stack | guardkit | seed_module | [tech] | retire | - | Covered by harvest corpus |
-| feature_build_architecture | guardkit | seed_module | [architecture] | retire | - | Covered by harvest corpus |
-| component_status | guardkit | seed_module | [status] | retire | - | Covered by harvest corpus |
-| integration_points | guardkit | seed_module | [integration] | retire | - | Covered by harvest corpus |
-| templates | guardkit | seed_module | [template] | retire | - | Covered by harvest corpus |
-| agents | guardkit | seed_module | [agent] | retire | - | Covered by harvest corpus |
-| patterns | guardkit | seed_module | [pattern] | retire | - | Covered by harvest corpus |
-| rules | guardkit | seed_module | [rule] | retire | - | Covered by harvest corpus |
-| quality_gate_configs | guardkit | seed_module | [quality] | retire | - | Covered by harvest corpus |
-| role_constraints | guardkit | seed_module | [role] | retire | - | Covered by harvest corpus |
-| implementation_modes | guardkit | seed_module | [mode] | retire | - | Covered by harvest corpus |
+| architecture_decisions | adr | [system] | migrate | decision_id | System-level ADRs |
+| failure_patterns | warning | [failure, pattern] | migrate | pattern_id | Known failure patterns and mitigations |
+| failed_approaches | warning | [failure, approach] | migrate | approach_id | Failed approaches and lessons |
+| guardkit_templates | seed_module | [template] | retire | - | Covered by harvest corpus |
+| guardkit_patterns | seed_module | [pattern] | retire | - | Covered by harvest corpus |
+| guardkit_workflows | seed_module | [workflow] | retire | - | Covered by harvest corpus |
+| product_knowledge | seed_module | [product] | retire | - | Covered by harvest corpus |
+| command_workflows | seed_module | [command] | retire | - | Covered by harvest corpus |
+| quality_gate_phases | seed_module | [quality] | retire | - | Covered by harvest corpus |
+| technology_stack | seed_module | [tech] | retire | - | Covered by harvest corpus |
+| feature_build_architecture | seed_module | [architecture] | retire | - | Covered by harvest corpus |
+| component_status | seed_module | [status] | retire | - | Covered by harvest corpus |
+| integration_points | seed_module | [integration] | retire | - | Covered by harvest corpus |
+| templates | seed_module | [template] | retire | - | Covered by harvest corpus |
+| agents | seed_module | [agent] | retire | - | Covered by harvest corpus |
+| patterns | seed_module | [pattern] | retire | - | Covered by harvest corpus |
+| rules | seed_module | [rule] | retire | - | Covered by harvest corpus |
+| quality_gate_configs | seed_module | [quality] | retire | - | Covered by harvest corpus |
+| role_constraints | seed_module | [role] | retire | - | Covered by harvest corpus |
+| implementation_modes | seed_module | [mode] | retire | - | Covered by harvest corpus |
 """
 
 from __future__ import annotations
@@ -62,14 +65,18 @@ from typing import Literal
 class GroupMapping:
     """Fleet-memory identity mapping for a Graphiti group_id.
 
+    **A mapping carries no project name (2026-09-21).** It used to carry the
+    literal ``"guardkit"``, thirty times over, as the name to use "when no
+    explicit project is passed" — which is how every project's build outcomes
+    came to be filed under GuardKit's own name. Which memory a record belongs to
+    is a property of the build emitting it, not of the group, so it is passed in
+    and there is nothing here to fall back to.
+
     Attributes:
-        project: Fleet-memory project identifier (lowercase, underscore-separated)
         payload_type: One of the 7 registered fleet-memory payload types
         domain_tags: List of domain-specific tags for categorization
         disposition: Whether to migrate or retire this group
     """
-
-    project: str
     payload_type: Literal[
         "adr",
         "review_report",
@@ -87,13 +94,11 @@ class GroupMapping:
 GROUP_ID_MAP: dict[str, GroupMapping] = {
     # ========== PROJECT GROUPS (9) ==========
     "task_outcomes": GroupMapping(
-        project="guardkit",
         payload_type="build_outcome",
         domain_tags=["task"],
         disposition="migrate",
     ),
     "project_decisions": GroupMapping(
-        project="guardkit",
         payload_type="adr",
         domain_tags=["project"],
         disposition="migrate",
@@ -102,49 +107,41 @@ GROUP_ID_MAP: dict[str, GroupMapping] = {
     # this entry resolve("adrs") returned None and every ADR dual-write silently no-op'd
     # (DualWriteClient skips unmapped groups). Map it to the adr payload so ADRs migrate.
     "adrs": GroupMapping(
-        project="guardkit",
         payload_type="adr",
         domain_tags=["decision"],
         disposition="migrate",
     ),
     "project_architecture": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["architecture"],
         disposition="migrate",
     ),
     "project_overview": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["overview"],
         disposition="migrate",
     ),
     "feature_specs": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["feature", "spec"],
         disposition="migrate",
     ),
     "domain_knowledge": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["domain"],
         disposition="migrate",
     ),
     "project_constraints": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["constraints"],
         disposition="migrate",
     ),
     "bdd_scenarios": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["bdd", "behavior"],
         disposition="migrate",
     ),
     "turn_states": GroupMapping(
-        project="guardkit",
         payload_type="document",
         domain_tags=["turn", "state"],
         disposition="migrate",
@@ -152,122 +149,102 @@ GROUP_ID_MAP: dict[str, GroupMapping] = {
     # ========== SYSTEM GROUPS (20) ==========
     # Migrate these 3: runtime failures/lessons
     "architecture_decisions": GroupMapping(
-        project="guardkit",
         payload_type="adr",
         domain_tags=["system"],
         disposition="migrate",
     ),
     "failure_patterns": GroupMapping(
-        project="guardkit",
         payload_type="warning",
         domain_tags=["failure", "pattern"],
         disposition="migrate",
     ),
     "failed_approaches": GroupMapping(
-        project="guardkit",
         payload_type="warning",
         domain_tags=["failure", "approach"],
         disposition="migrate",
     ),
     # Retire these 17: covered by harvest corpus
     "guardkit_templates": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["template"],
         disposition="retire",
     ),
     "guardkit_patterns": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["pattern"],
         disposition="retire",
     ),
     "guardkit_workflows": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["workflow"],
         disposition="retire",
     ),
     "product_knowledge": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["product"],
         disposition="retire",
     ),
     "command_workflows": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["command"],
         disposition="retire",
     ),
     "quality_gate_phases": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["quality"],
         disposition="retire",
     ),
     "technology_stack": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["tech"],
         disposition="retire",
     ),
     "feature_build_architecture": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["architecture"],
         disposition="retire",
     ),
     "component_status": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["status"],
         disposition="retire",
     ),
     "integration_points": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["integration"],
         disposition="retire",
     ),
     "templates": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["template"],
         disposition="retire",
     ),
     "agents": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["agent"],
         disposition="retire",
     ),
     "patterns": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["pattern"],
         disposition="retire",
     ),
     "rules": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["rule"],
         disposition="retire",
     ),
     "quality_gate_configs": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["quality"],
         disposition="retire",
     ),
     "role_constraints": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["role"],
         disposition="retire",
     ),
     "implementation_modes": GroupMapping(
-        project="guardkit",
         payload_type="seed_module",
         domain_tags=["mode"],
         disposition="retire",

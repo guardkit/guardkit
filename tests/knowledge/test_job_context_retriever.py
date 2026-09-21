@@ -2567,6 +2567,7 @@ def _enabled_fleet_client():
             embed_model="nomic-embed",
             embed_dims=768,
             nats_url="nats://localhost:4222",
+            project="guardkit",
         )
     )
     client._read_available = True

@@ -52,7 +52,10 @@ except ImportError as _memory_import_exc:  # optional `memory` extra not install
 else:
     _MEMORY_IMPORT_ERROR = None
 
-from guardkit.knowledge.fleet_memory_client import get_memory_client
+from guardkit.knowledge.fleet_memory_client import (
+    get_memory_client,
+    memory_project_resolution,
+)
 from guardkit.knowledge.outcome_manager import capture_task_outcome_verified
 from guardkit.knowledge.entities.outcome import OutcomeType
 
@@ -326,6 +329,11 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
 
 
 @memory.command("migrate-graph")
+# DELIBERATELY STILL "guardkit" (2026-09-21). This is a command someone runs by
+# hand, about GuardKit's own old graph, and the name is what it migrates FROM —
+# not a name a build reads or writes under. The build paths lost their default
+# name entirely; this one is an argument with a sensible value, still
+# overridable, and a person is standing over it.
 @click.option(
     "--project",
     default="guardkit",
@@ -523,6 +531,15 @@ async def _cmd_search(
     domain_tags: tuple[str, ...],
 ) -> None:
     """Async implementation of search command."""
+    # WHICH MEMORY, SAID BEFORE ANYTHING IS ASKED FOR (2026-09-21). Run by hand
+    # in a folder that declares no memory name, this says so and stops, plainly
+    # and with exit code 0: the reviewer runs this command as one of its
+    # tiers and records what it said, and memory never fails a review.
+    resolution = memory_project_resolution()
+    if not resolution.is_on:
+        console.print(f"[yellow]{resolution.message}[/yellow]")
+        return
+
     client = get_memory_client()
 
     if client is None:
