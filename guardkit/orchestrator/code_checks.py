@@ -25,6 +25,18 @@ WHAT IT IS NOT
   carries the checks' own words as TEXT and never reads, compares or judges
   them. "This kind of project is not supported" is a state a check reports
   about itself; this module repeats it and does not work out what kind.
+
+AN ABSENCE IS NOT A DECISION (corrected 21 September 2026)
+---------------------------------------------------------
+A kept review holds nothing at all for a check in several different cases: the
+checks do not look at that kind of task, the task wrote no file with its file
+tools, the check's analyser was not installed, or the analyser stopped on the
+way. The first two are honest declines; the last two mean the check DID NOT
+RUN. Reading every absence as "it had nothing to do" counted a check that
+never ran as one that was done, so the count of what nothing looked at came
+out as nought on a build nothing had looked at. Now the record decides — see
+:func:`absence_reading` — and where it cannot decide, the answer is "not
+checked".
 """
 
 from __future__ import annotations
@@ -40,6 +52,7 @@ from guardkit.orchestrator.authored_files import (
     STATUS_NO_KEY,
     STATUS_TRACKED,
     STATUS_UNKNOWN,
+    kind_is_analysed,
     read_authored_files,
     shell_command_count,
 )
@@ -81,6 +94,22 @@ _DOES_NOT_APPLY_STATUSES = {
 }
 _ERROR_STATUSES = {"error"}
 
+#: What an entry that is ``None`` — or missing altogether — means when the
+#: kept record cannot say. The review writes that same absence for several
+#: different reasons: the check declined (a kind of task it does not look at,
+#: or a task that wrote no file with its file tools), or the check never ran
+#: (its analyser was not installed, or it stopped on the way). Only the record
+#: can tell those apart, and where it cannot, the answer is "not checked".
+#: An absence is never reported as a state that reads like a clean run, and
+#: never as a decision the record does not support.
+ABSENCE_CANNOT_TELL: Dict[str, str] = {
+    "state": STATE_NOT_CHECKED,
+    "reason": (
+        "the kept record holds nothing for this check, and nothing in it "
+        "shows the check ran"
+    ),
+}
+
 
 def _finding_summary(finding: Any) -> Dict[str, Optional[str]]:
     """One finding, as the file and the name it is about."""
@@ -101,18 +130,65 @@ def _finding_summary(finding: Any) -> Dict[str, Optional[str]]:
     }
 
 
-def summarise_check(block: Any) -> Dict[str, Any]:
+def absence_reading(review_record: Any, task_results: Any = None) -> Dict[str, str]:
+    """What an absent entry means on THIS task. Never raises.
+
+    Two absences are honest, and the kept record says both in its own words:
+
+    * a kind of task the checks do not look at at all — they declined;
+    * a task whose file list WAS recorded and is empty — it wrote no file with
+      its file tools, so there was nothing for a check to look at.
+
+    Anything else is "not checked": the same absence is what a task gets when
+    the check's analyser was not there or stopped, and nothing in the record
+    tells those apart. See :data:`ABSENCE_CANNOT_TELL`.
+    """
+    try:
+        kind = (
+            review_record.get("task_type")
+            if isinstance(review_record, dict)
+            else None
+        )
+        if isinstance(kind, str) and kind.strip() and not kind_is_analysed(kind):
+            return {
+                "state": STATE_DOES_NOT_APPLY,
+                "reason": (
+                    "the code checks do not look at a "
+                    f"{kind.strip().lower()} task"
+                ),
+            }
+        files, status = read_authored_files(task_results)
+        if status == STATUS_TRACKED and not files:
+            return {
+                "state": STATE_DOES_NOT_APPLY,
+                "reason": "this task wrote no file with its file tools",
+            }
+    except Exception as exc:  # noqa: BLE001 — a summary never fails a build
+        logger.debug("code checks: an absence could not be read: %s", exc)
+    return dict(ABSENCE_CANNOT_TELL)
+
+
+def summarise_check(
+    block: Any, *, absence: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
     """What one check did, in one of the five states. Never raises.
 
     ``block`` is whatever the kept record holds under the check's name.
-    ``None`` — the shape a check uses when it legitimately had nothing to do —
-    reads as "does not apply", which is an honest absence and not a pass.
+    ``None`` is the shape a check leaves behind whether it declined or never
+    ran, so what that absence means comes from ``absence`` — the reading
+    :func:`absence_reading` takes off the record. With no reading given, an
+    absence is "not checked", never a state that reads like a clean run.
     """
     try:
         if block is None:
+            reading = absence if isinstance(absence, dict) else ABSENCE_CANNOT_TELL
+            state = str(reading.get("state") or "") or STATE_NOT_CHECKED
             return {
-                "state": STATE_DOES_NOT_APPLY,
-                "reason": "this check had nothing to do on this task",
+                "state": state,
+                "reason": (
+                    str(reading.get("reason") or "")
+                    or ABSENCE_CANNOT_TELL["reason"]
+                ),
                 "findings": [],
                 "finding_count": 0,
             }
@@ -231,9 +307,11 @@ def summarise_task(
     """
     checks: Dict[str, Any] = {}
     if isinstance(review_record, dict):
+        absence = absence_reading(review_record, task_results)
         for name in CHECK_NAMES:
             checks[name] = summarise_check(
-                review_record.get(name) if name in review_record else None
+                review_record.get(name) if name in review_record else None,
+                absence=absence,
             )
         reviewed = True
     else:
@@ -277,9 +355,21 @@ def group_record(
     reason: str = "",
     findings: Optional[Sequence[Any]] = None,
     tasks_without_a_file_list: Optional[Sequence[str]] = None,
+    inputs_not_read: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """One entry for the check that runs after a group of tasks."""
+    """One entry for the check that runs after a group of tasks.
+
+    ``inputs_not_read`` is how many of the things the check was given it could
+    not read. A check that read only part of what it was given and found
+    nothing in the rest has not covered the part it could not read, so the
+    count travels beside the state instead of being lost in a sentence.
+    """
     listed = list(findings or [])
+    count: Optional[int]
+    try:
+        count = int(inputs_not_read) if inputs_not_read is not None else None
+    except (TypeError, ValueError):
+        count = None
     return {
         "group": group,
         "check": "wiring",
@@ -288,6 +378,7 @@ def group_record(
         "findings": [_finding_summary(f) for f in listed[:MAX_LISTED_FINDINGS]],
         "finding_count": len(listed),
         "tasks_without_a_file_list": [str(t) for t in (tasks_without_a_file_list or [])],
+        "inputs_not_read": count,
     }
 
 
@@ -368,6 +459,7 @@ def read_code_checks_summary(root: Path) -> Optional[Dict[str, Any]]:
 
 
 __all__ = [
+    "ABSENCE_CANNOT_TELL",
     "CHECK_NAMES",
     "MAX_LISTED_FINDINGS",
     "STATE_DOES_NOT_APPLY",
@@ -376,6 +468,7 @@ __all__ = [
     "STATE_NOT_CHECKED",
     "STATE_RAN_FOUND_NOTHING",
     "SUMMARY_RELATIVE_PATH",
+    "absence_reading",
     "build_code_checks_summary",
     "group_record",
     "latest_review_record",
