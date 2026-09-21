@@ -1427,11 +1427,12 @@ class TaskWorkStreamParser:
 
         The local builder's file tools take an absolute path — its schema says
         "Must be absolute, not relative", and every ``write_file`` / ``edit_file``
-        call in the kept 19 September builds' preserved tool streams is
-        absolute and rooted at the task's worktree (checked, not guessed:
-        ``~/forge-state/receipts/build-FEAT-29C9-20260919145234/worktrees/
-        FEAT-29C9/.guardkit/autobuild/TASK-*/sdk_debug/turn_*/messages.jsonl``,
-        63 ``write_file`` and 95 ``edit_file`` calls, all absolute). Every
+        call in the preserved tool streams is absolute (checked, not guessed:
+        ``~/forge-state/receipts/build-FEAT-*/worktrees/*/.guardkit/autobuild/
+        TASK-*/sdk_debug/turn_*/messages.jsonl``. The two kept 19 September
+        builds hold 47 ``write_file`` and 50 ``edit_file`` calls, 97 of 97
+        absolute and 96 rooted at the task's worktree; every build in that
+        folder together holds 161, all absolute). Every
         reader of ``files_authored`` expects a worktree-relative path, so an
         absolute path inside the worktree is made relative here.
 
