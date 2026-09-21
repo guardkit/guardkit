@@ -206,8 +206,9 @@ class TestComputeAuthoredSet:
             "files_created": ["src/c.py"],
             "files_modified": ["src/d.py"],
         }
-        authored = _compute_authored_set(results)
+        authored, status = _compute_authored_set(results)
         assert authored == ["src/a.py", "src/b.py"]
+        assert status == "tracked"
 
     def test_fallback_to_created_modified(self) -> None:
         """Without files_authored, falls back to created ∪ modified."""
@@ -215,7 +216,8 @@ class TestComputeAuthoredSet:
             "files_created": ["src/a.py", "src/b.py"],
             "files_modified": ["src/c.py", "src/b.py"],  # b.py in both
         }
-        authored = _compute_authored_set(results)
+        authored, status = _compute_authored_set(results)
+        assert status == "no_key"
         # b.py should appear only once
         assert "src/a.py" in authored
         assert "src/b.py" in authored
@@ -224,8 +226,9 @@ class TestComputeAuthoredSet:
 
     def test_empty_results(self) -> None:
         """Empty results → empty list."""
-        authored = _compute_authored_set({})
+        authored, status = _compute_authored_set({})
         assert authored == []
+        assert status == "no_key"
 
 
 # ---------------------------------------------------------------------------

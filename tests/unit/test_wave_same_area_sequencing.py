@@ -1084,7 +1084,7 @@ class TestTheWiringGateRetryBannerAgrees:
             sys.modules,
             {"guardkitfactory": package, "guardkitfactory.wiring": wiring_module},
         ), patch.object(
-            orch, "_wave_authored_files", return_value=["src/users/schemas.ts"]
+            orch, "_wave_authored_files", return_value=(["src/users/schemas.ts"], [])
         ), patch.object(
             orch, "_execute_wave", return_value=_wave_result(task_ids)
         ) as executed:

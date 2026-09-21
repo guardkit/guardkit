@@ -48,6 +48,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
+from guardkit.orchestrator.authored_files import (
+    NOT_CHECKED_REASON,
+    STATUS_NO_KEY,
+    STATUS_UNKNOWN,
+    not_checked_block,
+    read_authored_files,
+)
 from guardkit.lib.pytest_argv import isolated_basetemp
 from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator.coach_verification import (
@@ -287,13 +294,30 @@ def _reset_wiring_factory_cache() -> None:
     return None
 
 
+def _finding_count(block: Optional[Dict[str, Any]]) -> int:
+    """How many findings a detector block holds, for a log line only.
+
+    ``findings`` is ``None`` on a block that did not run (2026-09-21: the
+    "not checked" block), so this answers 0 rather than raising inside a
+    logging call and losing the block to the surrounding fail-open handler.
+    """
+    if not isinstance(block, dict):
+        return 0
+    findings = block.get("findings")
+    return len(findings) if isinstance(findings, (list, tuple)) else 0
+
+
 def _compute_authored_set(
     task_work_results: Dict[str, Any],
-) -> List[str]:
+) -> Tuple[List[str], str]:
     """Compute the set of source files authored by the Player this turn.
 
-    Uses the presence-based fallback from the task-work results:
-    ``files_authored`` when present, else ``files_created ∪ files_modified``.
+    Reads ``files_authored`` under the one rule in
+    :mod:`guardkit.orchestrator.authored_files`, so this reader, the
+    after-each-group gate and the stale-test attribution map cannot drift
+    apart. When the record has no ``files_authored`` key at all — how records
+    written before the key existed read — the older fallback union of
+    ``files_created ∪ files_modified`` is kept, unchanged.
 
     This is NOT the git-enriched ``files_modified`` (which can be
     peer-contaminated in parallel-wave execution).
@@ -305,17 +329,19 @@ def _compute_authored_set(
 
     Returns
     -------
-    List[str]
-        List of authored file paths (relative to worktree root).
+    (files, status)
+        ``status`` is ``"tracked"`` (the list is what the builder's file tools
+        wrote — an empty list then really means it wrote nothing),
+        ``"unknown"`` (the list was never recorded; the detectors must report
+        "not checked", never "clean") or ``"no_key"`` (the legacy branch, where
+        the fallback union stands). Paths are relative to the worktree root.
     """
-    if "files_authored" in task_work_results and isinstance(
-        task_work_results["files_authored"], list
-    ):
-        # Presence-based: an explicit empty list is authoritative (the
-        # Player authored nothing), NOT a trigger for the fallback union.
-        return [str(f) for f in task_work_results["files_authored"]]
+    files, status = read_authored_files(task_work_results)
+    if status != STATUS_NO_KEY:
+        return files, status
 
-    # Fallback: files_created ∪ files_modified
+    # Legacy fallback for a record with no ``files_authored`` key at all:
+    # files_created ∪ files_modified. Deliberately left as it was.
     created = task_work_results.get("files_created") or []
     modified = task_work_results.get("files_modified") or []
     authored: List[str] = []
@@ -325,7 +351,7 @@ def _compute_authored_set(
         if fs not in seen:
             seen.add(fs)
             authored.append(fs)
-    return authored
+    return authored, STATUS_NO_KEY
 
 
 def _compute_spec_gap(
@@ -502,6 +528,7 @@ def _run_wiring_analysis(
     stack_template: Optional[str],
     bdd_dict: Optional[Dict[str, Any]] = None,
     task_id: str = "",
+    authored_status: str = STATUS_NO_KEY,
 ) -> Optional[Dict[str, Any]]:
     """Run the wiring analysis for the authored files.
 
@@ -547,7 +574,31 @@ def _run_wiring_analysis(
         )
         return None
 
+    # 2026-09-21. The list was never recorded, so nothing is known about what
+    # this task wrote. Say so; never "clean", and never the modified-files
+    # fallback. SPEC_GAP does not read the authored list, so it is still
+    # computed.
+    if authored_status == STATUS_UNKNOWN:
+        logger.info(
+            "wiring analysis: %s; wiring and mocked_seam reported as "
+            "not checked.",
+            NOT_CHECKED_REASON,
+        )
+        return {
+            "wiring": not_checked_block(),
+            "mocked_seam": not_checked_block(
+                {"external_mocks_ignored": []}
+            ),
+            "spec_gap": _compute_spec_gap(
+                bdd_dict=bdd_dict,
+                worktree_path=worktree_path,
+                task_id=task_id,
+            ),
+        }
+
     # Zero-authored-targets gate → None (probe legitimately did not run).
+    # Reached only for a tracked empty list (the task really wrote no file
+    # with its file tools) or the legacy no-key branch.
     if not authored_files:
         logger.debug(
             "wiring analysis: no authored source targets; "
@@ -625,6 +676,7 @@ def _compute_stub_scan(
     worktree_path: Path,
     authored_files: List[str],
     task_type: str,
+    authored_status: str = STATUS_NO_KEY,
 ) -> Optional[Dict[str, Any]]:
     """Run the L2 anti-stub scan for the authored files.
 
@@ -661,7 +713,14 @@ def _compute_stub_scan(
         )
         return None
 
-    # Zero-authored-targets gate → None.
+    # 2026-09-21. The list was never recorded: report "not checked", never
+    # "clean", and never the modified-files fallback.
+    if authored_status == STATUS_UNKNOWN:
+        logger.info("stub_scan: %s.", NOT_CHECKED_REASON)
+        return not_checked_block({"symbols_examined": None})
+
+    # Zero-authored-targets gate → None. Reached only for a tracked empty
+    # list or the legacy no-key branch.
     if not authored_files:
         logger.debug(
             "stub_scan: no authored source targets; "
@@ -3532,10 +3591,12 @@ class CoachValidator:
         wiring_dict: Optional[Dict[str, Any]] = None
         mocked_seam_dict: Optional[Dict[str, Any]] = None
         spec_gap_dict: Optional[Dict[str, Any]] = None
+        authored: List[str] = []
+        authored_status: str = STATUS_NO_KEY
 
         try:
             stack_template = detect_stack_template(self.worktree_path)
-            authored = _compute_authored_set(task_work_results)
+            authored, authored_status = _compute_authored_set(task_work_results)
             wiring_result = _run_wiring_analysis(
                 worktree_path=self.worktree_path,
                 authored_files=authored,
@@ -3543,6 +3604,7 @@ class CoachValidator:
                 stack_template=stack_template,
                 bdd_dict=bdd_dict,
                 task_id=task_id,
+                authored_status=authored_status,
             )
             if wiring_result is not None:
                 wiring_dict = wiring_result.get("wiring")
@@ -3552,9 +3614,9 @@ class CoachValidator:
                     "gather_evidence: wiring analysis complete "
                     "(wiring_findings=%d, mocked_seam_findings=%d, "
                     "spec_gap_findings=%d).",
-                    len(wiring_dict.get("findings", [])) if wiring_dict else 0,
-                    len(mocked_seam_dict.get("findings", [])) if mocked_seam_dict else 0,
-                    len(spec_gap_dict.get("findings", [])) if spec_gap_dict else 0,
+                    _finding_count(wiring_dict),
+                    _finding_count(mocked_seam_dict),
+                    _finding_count(spec_gap_dict),
                 )
         except Exception as exc:  # noqa: BLE001 — wiring errors must not break gathering
             logger.warning(
@@ -3574,14 +3636,15 @@ class CoachValidator:
         try:
             stub_scan_dict = _compute_stub_scan(
                 worktree_path=self.worktree_path,
-                authored_files=authored if 'authored' in locals() else [],
+                authored_files=authored,
                 task_type=task_type.value,
+                authored_status=authored_status,
             )
             if stub_scan_dict is not None:
                 logger.info(
                     "gather_evidence: stub_scan complete "
                     "(findings=%d).",
-                    len(stub_scan_dict.get("findings", [])),
+                    _finding_count(stub_scan_dict),
                 )
         except Exception as exc:  # noqa: BLE001 — stub scan errors must not break gathering
             logger.warning(
@@ -3605,18 +3668,35 @@ class CoachValidator:
                 run_coverage_gate_for_bundle,
             )
 
-            coverage_dict = run_coverage_gate_for_bundle(
-                worktree_path=self.worktree_path,
-                authored_files=authored if 'authored' in locals() else [],
-                task_type=task_type.value,
-                timeout=self.test_timeout,
-            )
+            if authored_status == STATUS_UNKNOWN and task_type.value.upper() in (
+                "FEATURE",
+                "REFACTOR",
+                "INTEGRATION",
+            ):
+                # 2026-09-21. The coverage gate reports "clean" when it runs
+                # and finds no zero-execution symbol. With no recorded file
+                # list there is nothing to be clean about, so it does not run
+                # and says so. A task type this gate never analyses is a
+                # different (and honest) absence, so it keeps its old None.
+                coverage_dict = not_checked_block(
+                    {
+                        "coverage_percentage": None,
+                        "files_below_threshold": None,
+                    }
+                )
+            else:
+                coverage_dict = run_coverage_gate_for_bundle(
+                    worktree_path=self.worktree_path,
+                    authored_files=authored,
+                    task_type=task_type.value,
+                    timeout=self.test_timeout,
+                )
             if coverage_dict is not None:
                 logger.info(
                     "gather_evidence: coverage gate complete "
                     "(status=%s, findings=%d).",
                     coverage_dict.get("status"),
-                    len(coverage_dict.get("findings", [])),
+                    _finding_count(coverage_dict),
                 )
         except Exception as exc:  # noqa: BLE001 — coverage gate errors must not break gathering
             logger.warning(

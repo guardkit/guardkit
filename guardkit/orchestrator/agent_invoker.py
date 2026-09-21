@@ -74,9 +74,16 @@ from guardkit.orchestrator.schemas import (
     CriterionVerification,
 )
 from guardkit.orchestrator.stale_test_attribution import (
+    _normalise_relpath,
     extract_failing_test_lines,
     runtime_parity_rationale,
     stale_test_notes,
+)
+from guardkit.orchestrator.authored_files import (
+    NOT_TRACKED as _AUTHORED_NOT_TRACKED,
+    SHELL_COMMAND_COUNT_KEY as _AUTHORED_SHELL_COUNT_KEY,
+    TRACKED as _AUTHORED_TRACKED,
+    TRACKING_KEY as _AUTHORED_TRACKING_KEY,
 )
 
 # TASK-CMIR-002: contract-resolution seam for coach synthesis prompt.
@@ -1285,8 +1292,18 @@ class TaskWorkStreamParser:
     # Alternative pytest pattern for simpler output: "5 passed in 0.23s"
     PYTEST_SIMPLE_PATTERN = re.compile(r"(\d+)\s+passed(?:\s+in\s+[\d.]+s)?", re.IGNORECASE)
 
-    def __init__(self) -> None:
-        """Initialize the parser with empty accumulated state."""
+    def __init__(self, worktree_root: Optional[Union[str, Path]] = None) -> None:
+        """Initialize the parser with empty accumulated state.
+
+        Args:
+            worktree_root: The task's working folder. When given, an absolute
+                tool-call path inside it is recorded relative to it (see
+                ``_record_authored_path``). When omitted, paths are recorded
+                exactly as the tool call gave them.
+        """
+        self._worktree_root: Optional[str] = (
+            str(worktree_root) if worktree_root else None
+        )
         self._phases: Dict[str, Dict[str, Any]] = {}
         self._tests_passed: Optional[int] = None
         self._tests_failed: Optional[int] = None
@@ -1405,16 +1422,39 @@ class TaskWorkStreamParser:
         # Must contain a path separator or file extension indicator
         return "/" in path or "\\" in path or "." in path
 
-    def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
-        """Track file operations from tool calls.
+    def _record_authored_path(self, file_path: str) -> str:
+        """Normalise one tool-call path to the task's working folder.
 
-        Extracts file paths from Write and Edit tool invocations and adds them
-        to the appropriate tracking set (created or modified). Also tracks
-        test file creation separately.
+        The local builder's file tools take an absolute path — its schema says
+        "Must be absolute, not relative", and every ``write_file`` / ``edit_file``
+        call in the kept 19 September builds' preserved tool streams is
+        absolute and rooted at the task's worktree (checked, not guessed:
+        ``~/forge-state/receipts/build-FEAT-29C9-20260919145234/worktrees/
+        FEAT-29C9/.guardkit/autobuild/TASK-*/sdk_debug/turn_*/messages.jsonl``,
+        63 ``write_file`` and 95 ``edit_file`` calls, all absolute). Every
+        reader of ``files_authored`` expects a worktree-relative path, so an
+        absolute path inside the worktree is made relative here.
+
+        A path outside the worktree, or already relative, is kept as it is:
+        guessing would be worse than recording what the builder actually said.
+        """
+        if not self._worktree_root:
+            return file_path
+        normalised = _normalise_relpath(file_path, self._worktree_root)
+        return normalised if normalised else file_path
+
+    def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+        """Track file operations from a write-category tool call.
+
+        Accepts ANY tool whose name maps to the ``"write"`` category in
+        :data:`_RUNTIME_TOOL_CATEGORIES` — the one list of tool names in this
+        module. That table already knows ``Write``/``Edit`` (the hosted
+        builder) and ``write_file``/``edit_file`` (the local builder), so a new
+        builder's tool name is added in one place, not two.
 
         Args:
-            tool_name: Name of the tool (e.g., "Write", "Edit")
-            tool_args: Tool arguments dictionary containing file_path
+            tool_name: Name of the tool (e.g. ``"Write"``, ``"write_file"``)
+            tool_args: Tool arguments dictionary containing the file path
         """
         # TASK-FIX-PIPELINE: Try multiple key names for file path (Fix 1)
         # Claude Code SDK tools may use different key names
@@ -1431,18 +1471,29 @@ class TaskWorkStreamParser:
             )
             return
 
-        if tool_name == "Write":
-            self._files_created.add(file_path)
-            self._files_authored.add(file_path)
-            logger.debug(f"Tool call tracked - file created: {file_path}")
+        if _runtime_tool_category(tool_name) != "write":
+            logger.debug(f"Tool {tool_name} is not a write tool; not tracked.")
+            return
+
+        recorded = self._record_authored_path(file_path)
+        # Which side of the created/modified split this call lands on, read off
+        # the same names the category table already holds: a "write"-shaped
+        # name creates, anything else in the write category amends.
+        base = tool_name.strip().casefold()
+        if base.endswith("_file"):
+            base = base[: -len("_file")]
+
+        self._files_authored.add(recorded)
+        if base == "write":
+            self._files_created.add(recorded)
+            logger.debug(f"Tool call tracked - file created: {recorded}")
             # Track test files separately
-            if self._is_test_file(file_path):
-                self._test_files_created.add(file_path)
-                logger.debug(f"Test file tracked: {file_path}")
-        elif tool_name == "Edit":
-            self._files_modified.add(file_path)
-            self._files_authored.add(file_path)
-            logger.debug(f"Tool call tracked - file modified: {file_path}")
+            if self._is_test_file(recorded):
+                self._test_files_created.add(recorded)
+                logger.debug(f"Test file tracked: {recorded}")
+        else:
+            self._files_modified.add(recorded)
+            logger.debug(f"Tool call tracked - file modified: {recorded}")
 
     def _parse_tool_invocations(self, message: str) -> None:
         """Parse tool invocations from message and track file operations.
@@ -1957,7 +2008,11 @@ class AgentInvoker:
         try:
             name = event.name
             self._progress_logger._last_tool = name
-            if name in ("Write", "Edit"):
+            # Same one list of write-tool names as the file tracker. Before
+            # 2026-09-21 this tested for ``Write``/``Edit`` only, so every
+            # local build's progress line read ``files_changed=0`` however many
+            # files the builder wrote.
+            if _runtime_tool_category(name) == "write":
                 self._progress_logger._files_changed += 1
         except Exception:
             pass  # Never crash orchestration for progress tracking
@@ -11092,7 +11147,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         assistant_count = 0
         tool_count = 0
         result_count = 0
-        parser = TaskWorkStreamParser()
+        parser = TaskWorkStreamParser(worktree_root=self.worktree_path)
         sdk_turns_used = None
         sdk_session_id = None
         terminal_usage: object = None
@@ -11106,7 +11161,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
                 # file operations from a previous (failed) attempt do not
                 # leak into the successful attempt's result.
-                parser = TaskWorkStreamParser()
+                parser = TaskWorkStreamParser(worktree_root=self.worktree_path)
                 message_count = 0
                 assistant_count = 0
                 tool_count = 0
@@ -11214,14 +11269,41 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
 
                                 if isinstance(event, ToolUseEvent):
                                     tool_count += 1
+                                    _tool_category = _runtime_tool_category(
+                                        event.name
+                                    )
                                     typed_tool_uses.append(
                                         (
                                             event.tool_use_id
                                             if isinstance(event.tool_use_id, str)
                                             else "",
-                                            _runtime_tool_category(event.name),
+                                            _tool_category,
                                         )
                                     )
+                                    # 2026-09-21 repair. Every harness yields
+                                    # one typed event per tool call; only the
+                                    # hosted one also fills ``event.raw``, and
+                                    # the raw-content walk below was the ONLY
+                                    # place that fed the file tracker. On the
+                                    # local builder ``event.raw`` is None, so
+                                    # ``files_authored`` came out empty on
+                                    # every task while the builder wrote real
+                                    # files (kept 19 September records: write
+                                    # category 6-12 calls per task, list
+                                    # empty). Feed the tracker from the typed
+                                    # event instead, for any tool the category
+                                    # table calls a write. The hosted path
+                                    # still walks raw blocks below; both add to
+                                    # the same set, so the overlap is free.
+                                    if _tool_category == "write":
+                                        _typed_input = (
+                                            event.input
+                                            if isinstance(event.input, dict)
+                                            else {}
+                                        )
+                                        parser._track_tool_call(
+                                            event.name, _typed_input
+                                        )
                                     self._track_tool_use(event)
                                 elif isinstance(event, ToolResultEvent):
                                     typed_tool_results.append(
@@ -11424,6 +11506,20 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             parsed_result["sdk_turns_used"] = reported_sdk_turns
             parsed_result["sdk_max_turns"] = reported_sdk_max_turns
             parsed_result["sdk_turns_supported"] = sdk_supported
+            # 2026-09-21. Say whether the file list was recorded at all, so a
+            # reader can keep "the tracking failed" apart from "this task
+            # changed nothing". At least one tool event seen ⇒ the stream that
+            # feeds the tracker was working, so an empty list means the builder
+            # wrote no file with its file tools. No tool event at all ⇒ the
+            # list says nothing.
+            parsed_result[_AUTHORED_TRACKING_KEY] = (
+                _AUTHORED_TRACKED if typed_tool_uses else _AUTHORED_NOT_TRACKED
+            )
+            # A file written by a shell command is not in the list. Count the
+            # shell commands so a card line can say so.
+            parsed_result[_AUTHORED_SHELL_COUNT_KEY] = sum(
+                1 for _, _category in typed_tool_uses if _category == "execute"
+            )
             runtime_evidence = _build_task_work_runtime_evidence(
                 harness_name=resolved_harness_name,
                 message_count=message_count,
@@ -13480,6 +13576,21 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             # peer-task edits to this task in parallel waves.
             "files_authored": sorted(
                 list(set(result_data.get("files_authored", []) or []))
+            ),
+            # 2026-09-21: the marker that keeps "the tracking failed" apart
+            # from "this task changed nothing". ``tracked`` only when the
+            # caller saw at least one tool event; anything else is
+            # ``not_tracked``, because not knowing is the honest default.
+            _AUTHORED_TRACKING_KEY: (
+                _AUTHORED_TRACKED
+                if result_data.get(_AUTHORED_TRACKING_KEY) == _AUTHORED_TRACKED
+                else _AUTHORED_NOT_TRACKED
+            ),
+            # How many shell commands ran. A file written by a shell command
+            # never reaches the list above, so a reader can say why an empty
+            # list may still not be the whole story. ``None`` when unknown.
+            _AUTHORED_SHELL_COUNT_KEY: _nonnegative_exact_int(
+                result_data.get(_AUTHORED_SHELL_COUNT_KEY)
             ),
             "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
             "summary": self._generate_summary(result_data),
