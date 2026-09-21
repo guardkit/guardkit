@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -94,12 +94,38 @@ from guardkit.orchestrator.feature_check import (
     completion_verdict as feature_check_completion_verdict,
     feature_request_words,
     load_feature_check_declaration,
-    parse_scenarios_covered,
+    merge_not_checked,
+    parse_project_check_line,
     resolve_max_retries as feature_check_max_retries,
     run_feature_check_command,
     scenario_titles as feature_scenario_titles,
     tail_lines as feature_check_tail,
+    update_feature_check_receipt,
     write_feature_check_receipt,
+    OUTCOME_COULD_NOT_RUN as FEATURE_CHECK_COULD_NOT_RUN,
+    OUTCOME_FAILED as FEATURE_CHECK_FAILED,
+    OUTCOME_PASSED as FEATURE_CHECK_PASSED,
+)
+
+#: What the central guard says about an example it reports without blocking:
+#: the project marked it for a check file of its own and no such file is in the
+#: built tree, so nothing looked at it. No stack word appears here on purpose.
+from guardkit.orchestrator.code_checks import (
+    STATE_DOES_NOT_APPLY as CODE_CHECK_DOES_NOT_APPLY,
+    STATE_FOUND_SOMETHING as CODE_CHECK_FOUND_SOMETHING,
+    STATE_KIND_NOT_SUPPORTED as CODE_CHECK_KIND_NOT_SUPPORTED,
+    STATE_NOT_CHECKED as CODE_CHECK_NOT_CHECKED,
+    STATE_RAN_FOUND_NOTHING as CODE_CHECK_RAN_FOUND_NOTHING,
+    build_code_checks_summary,
+    group_record as code_check_group_record,
+    latest_review_record as code_checks_latest_review,
+    summarise_task as summarise_code_checks_task,
+    write_code_checks_summary,
+)
+
+GUARD_MISSING_CHECK_FILE_REASON = (
+    "not checked: this example is marked for a check file of its own and no "
+    "such file exists in the built tree"
 )
 from guardkit.orchestrator.baseline import (
     SOURCE_FEATURE_SMOKE,
@@ -435,6 +461,10 @@ class WiringGatePhaseOutcome:
     #: block; it keeps "the gate found nothing" apart from "the gate could not
     #: look".
     not_checked: bool = False
+    #: What this gate did, in the five words the end-of-build summary uses
+    #: (2026-09-21). Until today the result was printed and dropped, so the
+    #: summary had nothing to say about the groups. Never read as a verdict.
+    record: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -941,6 +971,11 @@ class FeatureOrchestrator:
         # feedback, up to this many extra rounds. Default 1; 0 means the first
         # failure is final. Same shape as the smoke gate's budget above.
         self._feature_check_max_retries = feature_check_max_retries()
+        # 21 September 2026. What the check after each group of tasks found, or
+        # could not look at. Until today its result was printed and dropped, so
+        # by merge time nobody could tell "found nothing" from "never looked".
+        # Collected here and written into the end-of-build summary.
+        self._group_code_check_records: List[Dict[str, Any]] = []
         self.resume = resume
         self.fresh = fresh
         self.refresh = refresh
@@ -2561,6 +2596,12 @@ The detailed specifications are in the task markdown file.
             )
             wave_result = wiring_outcome.final_wave_result
             wave_results[-1] = wave_result
+            # Keep what this gate did (21 September 2026). It used to be
+            # printed and dropped, so the end-of-build summary could say
+            # nothing at all about the groups.
+            record = getattr(wiring_outcome, "record", None)
+            if isinstance(record, dict):
+                self._group_code_check_records.append(record)
             if wiring_outcome.terminate:
                 break
 
@@ -2601,6 +2642,74 @@ The detailed specifications are in the task markdown file.
         self._run_feature_check(feature, worktree, wave_results)
 
         return wave_results
+
+    def _write_code_checks_summary(
+        self, feature: Feature, worktree: Worktree
+    ) -> Optional[Path]:
+        """One summary of what the code checks did, beside the whole-feature
+        record, written once at the end of the build.
+
+        Per task: the LAST review's result for each check, whether the
+        builder's file list was recorded, and how many shell commands ran. Per
+        group of tasks: what the check after that group did. Nothing here
+        refuses anything and nothing here raises — a build is never failed by
+        a summary of itself.
+        """
+        try:
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+
+            root = Path(worktree.path)
+            task_rows: List[Dict[str, Any]] = []
+            for task in getattr(feature, "tasks", None) or []:
+                task_id = str(getattr(task, "id", "") or "")
+                if not task_id:
+                    continue
+                review: Any = None
+                review_path: Optional[str] = None
+                found = code_checks_latest_review(
+                    TaskArtifactPaths.task_private_dir(task_id, root)
+                )
+                if found is not None:
+                    try:
+                        review = json.loads(found.read_text(encoding="utf-8"))
+                        review_path = str(found.relative_to(root))
+                    except Exception as exc:  # noqa: BLE001 — unreadable is absence
+                        logger.debug(
+                            "code checks: %s could not be read: %s", found, exc
+                        )
+                        review = None
+                results: Any = None
+                for directory in self._autobuild_candidate_dirs(task_id):
+                    candidate = directory / "task_work_results.json"
+                    if not candidate.exists():
+                        continue
+                    try:
+                        results = json.loads(candidate.read_text(encoding="utf-8"))
+                        break
+                    except (OSError, ValueError):
+                        continue
+                task_rows.append(
+                    summarise_code_checks_task(
+                        task_id,
+                        review_record=review,
+                        task_results=results,
+                        review_record_path=review_path,
+                    )
+                )
+            summary = build_code_checks_summary(
+                feature_id=getattr(feature, "id", ""),
+                tasks=task_rows,
+                groups=list(self._group_code_check_records),
+            )
+            path = write_code_checks_summary(summary, root)
+            if path is not None:
+                logger.info("What the code checks did: %s", path)
+            return path
+        except Exception as exc:  # noqa: BLE001 — a summary never fails a build
+            logger.warning(
+                "The code-checks summary could not be written: %s", exc
+            )
+            return None
 
     def _boot_smoke_skip_reason(
         self,
@@ -2802,13 +2911,34 @@ The detailed specifications are in the task markdown file.
                     )
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
-                    passed=True,
+                    status=FEATURE_CHECK_PASSED,
+                )
+
+            if attempt.could_not_run:
+                # The third outcome (21 September 2026). The project said in so
+                # many words that its check could not run, so there is nothing
+                # for a builder to repair: no repair round, no failed gate
+                # result, and every example goes on the not-checked list with
+                # the reason instead of being recorded as passed.
+                logger.warning(
+                    "The whole-feature check COULD NOT RUN: %s",
+                    attempt.could_not_run_reason,
+                )
+                if not self.quiet:
+                    console.print(
+                        "[yellow]⚠ The project's check could not run: "
+                        f"{attempt.could_not_run_reason}[/yellow]",
+                        markup=True,
+                    )
+                return self._finish_feature_check(
+                    feature, worktree, declaration, attempts, wave_results,
+                    status=FEATURE_CHECK_COULD_NOT_RUN,
                 )
 
             if retries_remaining <= 0:
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
-                    passed=False,
+                    status=FEATURE_CHECK_FAILED,
                 )
 
             retries_remaining -= 1
@@ -2855,7 +2985,7 @@ The detailed specifications are in the task markdown file.
                 )
                 return self._finish_feature_check(
                     feature, worktree, declaration, attempts, wave_results,
-                    passed=False,
+                    status=FEATURE_CHECK_FAILED,
                 )
 
     def _one_feature_check_attempt(
@@ -2871,10 +3001,16 @@ The detailed specifications are in the task markdown file.
         missing twin is a failure of this check — with the scenario titles in
         the feedback, because "write the twin you promised" is an actionable
         sentence and "exit 1" is not.
+
+        When the repository does NOT enforce it, the guard reports and the
+        command still runs — and since 21 September 2026 the examples it named
+        go onto the attempt's not-checked list rather than vanishing, because
+        an example with nothing to check it is not an example that passed.
         """
         sha = feature_check_candidate_sha(Path(worktree.path))
         twin_summary: Dict[str, Any] = {}
         missing_twins: List[str] = []
+        reported_not_checked: List[Dict[str, str]] = []
         try:
             twin_report = check_twin_coverage(
                 feature_id=feature.id,
@@ -2885,6 +3021,11 @@ The detailed specifications are in the task markdown file.
             twin_summary = twin_coverage_summary(twin_report)
             if twin_report.blocks_build:
                 missing_twins = list(twin_report.missing)
+            elif twin_report.missing:
+                reported_not_checked = [
+                    {"name": str(name), "reason": GUARD_MISSING_CHECK_FILE_REASON}
+                    for name in twin_report.missing
+                ]
         except Exception as exc:  # noqa: BLE001 — the twin check never crashes a build
             logger.warning(
                 "Whole-feature check: twin coverage could not run: %s", exc
@@ -2896,6 +3037,7 @@ The detailed specifications are in the task markdown file.
                 command=declaration.command,
                 candidate_sha=sha,
                 passed=False,
+                outcome=FEATURE_CHECK_FAILED,
                 failure_reason=(
                     f"{len(missing_twins)} scenario(s) marked for a frozen "
                     "twin have no twin file, so the declared check was not run"
@@ -2930,30 +3072,53 @@ The detailed specifications are in the task markdown file.
         )
         exit_code = run["exit_code"]
         timed_out = bool(run["timed_out"])
-        passed = (not timed_out) and exit_code == 0
+        # Everything the project's one line said, read defensively. Central
+        # code carries this text and never reads, compares or judges it.
+        line = parse_project_check_line(run["stdout"])
+
+        # The three outcomes, in the order they decide (21 September 2026).
+        # A timeout is a failure whatever the output says: a command cut off
+        # part-way has not finished telling anyone anything. Otherwise the
+        # project's own words decide "could not run" — a command that says
+        # nothing and exits non-zero is "failed", never "could not run".
         if timed_out:
+            outcome = FEATURE_CHECK_FAILED
             failure_reason = f"timed out after {declaration.timeout}s"
-        elif exit_code is None:
-            failure_reason = "the command could not run"
-        elif exit_code != 0:
-            failure_reason = f"exit={exit_code}, expected=0"
-        else:
+        elif line.could_not_run:
+            outcome = FEATURE_CHECK_COULD_NOT_RUN
             failure_reason = None
+        elif exit_code == 0:
+            outcome = FEATURE_CHECK_PASSED
+            failure_reason = None
+        elif exit_code is None:
+            outcome = FEATURE_CHECK_FAILED
+            failure_reason = "the command could not start"
+        else:
+            outcome = FEATURE_CHECK_FAILED
+            failure_reason = f"exit={exit_code}, expected=0"
+        passed = outcome == FEATURE_CHECK_PASSED
+
+        not_checked = merge_not_checked(reported_not_checked, line.not_checked)
         return FeatureCheckAttempt(
             attempt=attempt_number,
             command=declaration.command,
             candidate_sha=sha,
             passed=passed,
+            outcome=outcome,
             exit_code=exit_code,
             timed_out=timed_out,
             duration_seconds=float(run["duration_seconds"]),
             stdout_tail=feature_check_tail(run["stdout"]),
             stderr_tail=feature_check_tail(run["stderr"]),
             failure_reason=failure_reason,
+            could_not_run_reason=line.could_not_run_reason,
             twin_coverage=twin_summary,
-            scenarios_covered=(
-                parse_scenarios_covered(run["stdout"]) if passed else []
-            ),
+            not_checked=not_checked,
+            not_checked_total=len(reported_not_checked) + line.not_checked_total,
+            observations=line.observations,
+            observations_total=line.observations_total,
+            notes=list(line.notes),
+            scenarios_covered=(line.scenarios_covered if passed else []),
             ran_at=datetime.now().isoformat(),
         )
 
@@ -2965,24 +3130,65 @@ The detailed specifications are in the task markdown file.
         attempts: List[FeatureCheckAttempt],
         wave_results: List[WaveExecutionResult],
         *,
-        passed: bool,
+        status: str,
     ) -> FeatureCheckOutcome:
-        """Write the receipt and, on a failure, fail the feature.
+        """Write the receipt and, on a FAILURE only, fail the feature.
 
         The failure rail is the start-up checks' rail, deliberately: a failed
         gate result on the last wave (which the finaliser already reads as a
         failed feature) and that wave un-marked on disk, so a resume re-runs
         it rather than skipping an unproven wave.
+
+        A check that COULD NOT RUN takes neither rail: it is not a pass and it
+        is not a fault of the build, so it writes its record, says why, and
+        leaves the build's own result alone.
         """
         last_attempt = attempts[-1]
+        passed = status == FEATURE_CHECK_PASSED
+        could_not_run = status == FEATURE_CHECK_COULD_NOT_RUN
+        reason: Optional[str]
+        if passed:
+            reason = None
+        elif could_not_run:
+            reason = (
+                "the project's check could not run: "
+                f"{last_attempt.could_not_run_reason}"
+            )
+        else:
+            reason = last_attempt.failure_reason
+        not_checked = list(last_attempt.not_checked)
+        not_checked_total = last_attempt.not_checked_total
+        if could_not_run:
+            # Nothing was looked at, so every example the feature promised is
+            # named as not checked, with the project's own reason.
+            everything = merge_not_checked(
+                not_checked,
+                [
+                    {
+                        "name": title,
+                        "reason": str(last_attempt.could_not_run_reason or ""),
+                    }
+                    for title in feature_scenario_titles(feature)
+                ],
+            )
+            not_checked = everything
+            not_checked_total = max(not_checked_total, len(everything))
         outcome = FeatureCheckOutcome(
             feature_id=feature.id,
-            status="passed" if passed else "failed",
+            status=status,
             declared=True,
             command=declaration.command,
             timeout=declaration.timeout,
             attempts=attempts,
-            reason=None if passed else last_attempt.failure_reason,
+            reason=reason,
+            not_checked=not_checked,
+            not_checked_total=not_checked_total,
+            observations=list(last_attempt.observations),
+            observations_total=last_attempt.observations_total,
+            could_not_run_reason=(
+                last_attempt.could_not_run_reason if could_not_run else None
+            ),
+            notes=list(last_attempt.notes),
             # The receipt names the criteria the task Coaches still list as
             # claimed (never raises; absent evidence reads as no claims).
             claimed_machine_criteria=claimed_machine_criteria(
@@ -2999,7 +3205,7 @@ The detailed specifications are in the task markdown file.
             )
             receipt_path = None
 
-        if passed:
+        if passed or could_not_run:
             return outcome
 
         summary = (
@@ -3662,6 +3868,67 @@ The detailed specifications are in the task markdown file.
                 )
         return "\n".join(lines)
 
+    @staticmethod
+    def _advisory_wiring_findings(
+        wiring_result: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """The findings this gate reports without asking for a re-run.
+
+        They are still findings: a summary that listed only the re-run-worthy
+        ones would say "found nothing" about a group where something was
+        found. Never raises.
+        """
+        if not isinstance(wiring_result, dict):
+            return []
+        findings = wiring_result.get("findings")
+        return [f for f in findings if isinstance(f, dict)] if isinstance(findings, list) else []
+
+    @staticmethod
+    def _wiring_gate_record(
+        wave_number: int,
+        wiring_result: Optional[Dict[str, Any]],
+        advisory: Sequence[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """This gate's own state, in the five words the summary uses.
+
+        The check's own status word decides: a check that says it does not
+        cover this kind of project is not a check that found nothing.
+        """
+        status = ""
+        if isinstance(wiring_result, dict) and isinstance(
+            wiring_result.get("status"), str
+        ):
+            status = wiring_result["status"].strip().lower()
+        if status == "unsupported_stack":
+            return code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_KIND_NOT_SUPPORTED,
+                reason=str(wiring_result.get("skip_reason") or "")
+                or "this check does not cover this kind of project",
+            )
+        if status == "error":
+            return code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_NOT_CHECKED,
+                reason="this check stopped on an error of its own",
+            )
+        if advisory:
+            return code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_FOUND_SOMETHING,
+                reason="reported without asking for a re-run",
+                findings=list(advisory),
+            )
+        return code_check_group_record(
+            wave_number,
+            state=CODE_CHECK_RAN_FOUND_NOTHING,
+            reason=(
+                "some of what it was given could not be read"
+                if status == "parse_degraded"
+                else ""
+            ),
+        )
+
     def _run_post_wave_wiring_gate(
         self,
         wave_number: int,
@@ -3701,7 +3968,13 @@ The detailed specifications are in the task markdown file.
                 "unavailable", wave_number,
             )
             return WiringGatePhaseOutcome(
-                terminate=False, final_wave_result=wave_result
+                terminate=False,
+                final_wave_result=wave_result,
+                record=code_check_group_record(
+                    wave_number,
+                    state=CODE_CHECK_NOT_CHECKED,
+                    reason="this check's analyser was not installed in this build",
+                ),
             )
 
         retries_remaining = self._wiring_gate_max_retries
@@ -3729,10 +4002,25 @@ The detailed specifications are in the task markdown file.
                     terminate=False,
                     final_wave_result=wave_result,
                     not_checked=True,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_NOT_CHECKED,
+                        reason=NOT_CHECKED_REASON,
+                        tasks_without_a_file_list=not_recorded,
+                    ),
                 )
             if not authored:
                 return WiringGatePhaseOutcome(
-                    terminate=False, final_wave_result=wave_result
+                    terminate=False,
+                    final_wave_result=wave_result,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_DOES_NOT_APPLY,
+                        reason=(
+                            "no task in this group recorded a file it wrote "
+                            "with its own file tools"
+                        ),
+                    ),
                 )
             try:
                 wiring_result = analyze_wiring(
@@ -3747,7 +4035,13 @@ The detailed specifications are in the task markdown file.
                     wave_number, exc, exc_info=exc,
                 )
                 return WiringGatePhaseOutcome(
-                    terminate=False, final_wave_result=wave_result
+                    terminate=False,
+                    final_wave_result=wave_result,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_NOT_CHECKED,
+                        reason="this check stopped on an error of its own",
+                    ),
                 )
 
             # WS3-S3 (advisory-only; §8 promotion gate not yet passed): surface
@@ -3760,9 +4054,14 @@ The detailed specifications are in the task markdown file.
             )
 
             findings = self._collect_turn_rejecting_wiring_findings(wiring_result)
+            advisory = self._advisory_wiring_findings(wiring_result)
             if not findings:
                 return WiringGatePhaseOutcome(
-                    terminate=False, final_wave_result=wave_result
+                    terminate=False,
+                    final_wave_result=wave_result,
+                    record=self._wiring_gate_record(
+                        wave_number, wiring_result, advisory
+                    ),
                 )
 
             if retries_remaining <= 0:
@@ -3783,6 +4082,12 @@ The detailed specifications are in the task markdown file.
                     terminate=False,
                     final_wave_result=wave_result,
                     findings_unresolved=True,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_FOUND_SOMETHING,
+                        reason="unresolved after the retry budget was spent",
+                        findings=list(findings) + list(advisory),
+                    ),
                 )
 
             # Retry: feed the wiring findings back and re-enter the wave.
@@ -3839,7 +4144,17 @@ The detailed specifications are in the task markdown file.
                     "(stop_on_failure=True)"
                 )
                 return WiringGatePhaseOutcome(
-                    terminate=True, final_wave_result=wave_result
+                    terminate=True,
+                    final_wave_result=wave_result,
+                    record=code_check_group_record(
+                        wave_number,
+                        state=CODE_CHECK_FOUND_SOMETHING,
+                        reason=(
+                            "the build stopped after the re-run this check "
+                            "asked for, so the check did not run again"
+                        ),
+                        findings=list(findings) + list(advisory),
+                    ),
                 )
             # Loop: re-run the wiring gate against the re-executed wave.
 
@@ -5770,6 +6085,12 @@ The detailed specifications are in the task markdown file.
         # (qa.enforce_twin_coverage in .guardkit/config.yaml, read from the
         # MAIN checkout so a build cannot switch its own gate off).
         twin_error: Optional[str] = None
+        # 21 September 2026. Everything this phase learns that NOTHING LOOKED
+        # AT is collected here and written onto the whole-feature record before
+        # the build returns — which is before the runner exports that folder,
+        # so the record on disk is the complete one.
+        not_checked_additions: List[Dict[str, str]] = []
+        record_notes: List[str] = []
         if final_status == "completed":
             try:
                 twin_report = check_twin_coverage(
@@ -5799,6 +6120,17 @@ The detailed specifications are in the task markdown file.
                         f"{len(twin_report.missing)} scenario(s) are marked "
                         "for a Hurl twin but have no twin file (see "
                         f"{receipt_path})"
+                    )
+                elif twin_report.missing:
+                    # The guard reported and did not block. The examples it
+                    # named still had nothing looking at them, so they are
+                    # said out loud rather than left to read as clean.
+                    not_checked_additions.extend(
+                        {
+                            "name": str(name),
+                            "reason": GUARD_MISSING_CHECK_FILE_REASON,
+                        }
+                        for name in twin_report.missing
                     )
             except Exception as exc:  # noqa: BLE001 — the check never crashes a build
                 logger.warning("Twin coverage check could not run: %s", exc)
@@ -5837,6 +6169,51 @@ The detailed specifications are in the task markdown file.
                         f"[red]✗ Not completed: {verdict.reason}[/red]",
                         markup=True,
                     )
+            elif verdict is not None and verdict.not_checked:
+                # The rule did not block, and it learned something the record
+                # does not say yet: names nothing looked at. They go on the
+                # not-checked list and never on the covered list.
+                not_checked_additions.extend(verdict.not_checked)
+                if verdict.reason:
+                    record_notes.append(verdict.reason)
+                logger.warning(
+                    "%d promise(s) go on the not-checked list: %s",
+                    len(verdict.not_checked),
+                    verdict.reason,
+                )
+                if not self.quiet:
+                    console.print(
+                        f"[yellow]⚠ Not checked: {verdict.reason}[/yellow]",
+                        markup=True,
+                    )
+
+        # Finish the whole-feature record on disk. This is the LAST thing in
+        # the build that learns anything about what was not looked at, and the
+        # runner exports ``.guardkit/autobuild-private`` after the build
+        # returns — so the record the card is built from is the complete one.
+        if not_checked_additions or record_notes:
+            try:
+                finished = update_feature_check_receipt(
+                    Path(worktree.path),
+                    not_checked=not_checked_additions,
+                    notes=record_notes,
+                )
+                if finished is not None:
+                    logger.info(
+                        "The whole-feature record now carries %d not-checked "
+                        "item(s): %s",
+                        len(not_checked_additions),
+                        finished,
+                    )
+            except Exception as exc:  # noqa: BLE001 — a record never fails a build
+                logger.warning(
+                    "The whole-feature record could not be finished: %s", exc
+                )
+
+        # What the per-task and per-group code checks did, in one summary
+        # beside that record (21 September 2026). Never raises, and a build is
+        # never failed by it.
+        self._write_code_checks_summary(feature, worktree)
 
         # When the whole-feature check failed during the wave phase, the
         # feature is already failed by its gate result — say WHY in the

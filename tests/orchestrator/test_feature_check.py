@@ -629,9 +629,15 @@ def _write_claimed_criterion(worktree: Path, name: str) -> None:
     )
 
 
-def test_a_claimed_promise_the_check_did_not_cover_blocks_completion(
+def test_a_claimed_promise_the_check_did_not_cover_is_not_checked_not_blocked(
     tmp_path: Path,
 ) -> None:
+    """21 September 2026: it comes back by name instead of failing the build.
+
+    The old rule refused the whole build over a promise nothing had proved.
+    The new rule says so out loud — on the not-checked list, by name, with a
+    reason — and never records it as passed.
+    """
     repo_root, worktree = _make_project(
         tmp_path, declaration=_declaration("sh qa/feature-check.sh")
     )
@@ -643,8 +649,10 @@ def test_a_claimed_promise_the_check_did_not_cover_blocks_completion(
         repo_root=repo_root, worktree_root=worktree, feature=feature
     )
 
-    assert verdict.blocks is True
+    assert verdict.blocks is False
     assert SCENARIO_TITLE in verdict.reason
+    assert [e["name"] for e in verdict.not_checked] == [SCENARIO_TITLE]
+    assert verdict.not_checked[0]["reason"]
 
 
 def test_a_claimed_promise_the_check_covered_does_not_block(tmp_path: Path) -> None:
@@ -922,29 +930,34 @@ criteria:
 """
 
 
-def test_a_pass_bar_promise_the_check_did_not_name_blocks_completion(
+def test_a_pass_bar_promise_the_check_did_not_name_reaches_the_record(
     tmp_path: Path,
 ) -> None:
+    """The build completes and the record says, by name, what nothing checked.
+
+    This is the whole end of the chain (21 September 2026): the rule stops
+    blocking, hands the names back, and the caller finishes the record on disk
+    BEFORE the runner exports it — so the complete record is the one exported.
+    """
     repo_root, worktree = _make_project(
         tmp_path, declaration=_declaration("sh qa/feature-check.sh")
     )
     _write(worktree, "THE_FEATURE_IS_FIXED", "")
-    _write(
-        worktree,
-        "qa/pass-bar-TASK-001.yaml",
-        PASS_BAR.format(title="A promise nobody checked at the endpoint"),
-    )
+    promise = "A promise nobody checked at the surface"
+    _write(worktree, "qa/pass-bar-TASK-001.yaml", PASS_BAR.format(title=promise))
     feature = _make_feature(worktree)
 
     _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
 
-    assert result.status == "failed"
-    assert result.success is False
+    assert result.status == "completed"
+    assert result.success is True
     receipt = _receipt(worktree)
     assert receipt["status"] == "passed", "the command itself passed"
-    assert receipt["criteria_still_claimed"] == [
-        "A promise nobody checked at the endpoint"
-    ]
+    assert receipt["criteria_still_claimed"] == [promise]
+    assert [e["name"] for e in receipt["not_checked"]] == [promise]
+    assert promise not in receipt["scenarios_covered"], (
+        "a name on the not-checked list is never also on the covered list"
+    )
 
 
 def test_a_pass_bar_promise_the_check_named_lets_the_feature_complete(

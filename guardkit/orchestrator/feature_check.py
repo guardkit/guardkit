@@ -65,6 +65,27 @@ RECEIPT_RELATIVE_PATH = (
 #: ``{"guardkit_feature_check": {"scenarios_covered": ["...", "..."]}}``
 STDOUT_JSON_KEY = "guardkit_feature_check"
 
+#: The three outcomes of one attempt, by name (2026-09-21). "Not checked" is
+#: never one of them: it is a LIST carried beside the outcome, and nothing that
+#: was not checked is ever recorded as passed.
+OUTCOME_PASSED = "passed"
+OUTCOME_FAILED = "failed"
+OUTCOME_COULD_NOT_RUN = "could_not_run"
+
+#: Caps on the text the project hands back. Central code carries this text and
+#: never reads, compares or judges it, so the only thing it owes the reader is
+#: a bound: a project cannot flood a card or a record.
+MAX_OBSERVATIONS = 6
+OBSERVATION_SIDE_LIMIT = 400
+MAX_NOT_CHECKED_CARRIED = 50
+NOT_CHECKED_NAME_LIMIT = 300
+NOT_CHECKED_REASON_LIMIT = 300
+CUT_MARK = " …[cut]"
+
+#: Said on the record when the project declared "could not run" without saying
+#: why. A reason is expected; its absence is stated rather than invented.
+COULD_NOT_RUN_WITHOUT_REASON = "the project's check said it could not run and gave no reason"
+
 #: How much of the command's output the Player is shown on a failure.
 OUTPUT_TAIL_LINES = 40
 
@@ -166,6 +187,26 @@ class FeatureCheckAttempt:
     missing_twins: List[str] = field(default_factory=list)
     scenarios_covered: List[str] = field(default_factory=list)
     ran_at: str = ""
+    #: One of :data:`OUTCOME_PASSED`, :data:`OUTCOME_FAILED`,
+    #: :data:`OUTCOME_COULD_NOT_RUN`. Empty means "read it off ``passed``",
+    #: which is how every attempt written before 2026-09-21 reads.
+    outcome: str = ""
+    could_not_run_reason: Optional[str] = None
+    not_checked: List[Dict[str, str]] = field(default_factory=list)
+    not_checked_total: int = 0
+    observations: List[Dict[str, str]] = field(default_factory=list)
+    observations_total: int = 0
+    notes: List[str] = field(default_factory=list)
+
+    @property
+    def resolved_outcome(self) -> str:
+        if self.outcome:
+            return self.outcome
+        return OUTCOME_PASSED if self.passed else OUTCOME_FAILED
+
+    @property
+    def could_not_run(self) -> bool:
+        return self.resolved_outcome == OUTCOME_COULD_NOT_RUN
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -173,6 +214,13 @@ class FeatureCheckAttempt:
             "command": self.command,
             "candidate_sha": self.candidate_sha,
             "passed": self.passed,
+            "outcome": self.resolved_outcome,
+            "could_not_run_reason": self.could_not_run_reason,
+            "not_checked": [dict(e) for e in self.not_checked],
+            "not_checked_total": self.not_checked_total,
+            "observations": [dict(o) for o in self.observations],
+            "observations_total": self.observations_total,
+            "notes": list(self.notes),
             "exit_code": self.exit_code,
             "timed_out": self.timed_out,
             "duration_seconds": round(self.duration_seconds, 3),
@@ -191,24 +239,53 @@ class FeatureCheckOutcome:
     """Everything the receipt says, and what the finaliser reads back."""
 
     feature_id: str
-    status: str  # "passed" | "failed" | "not_declared" | "skipped"
+    #: "passed" | "failed" | "could_not_run" | "not_declared" | "skipped"
+    status: str
     declared: bool
     command: Optional[str] = None
     timeout: Optional[int] = None
     attempts: List[FeatureCheckAttempt] = field(default_factory=list)
     reason: Optional[str] = None
     claimed_machine_criteria: List[str] = field(default_factory=list)
+    #: Everything nothing looked at, by name and reason. Fed from the central
+    #: guard, from the project's own line and from the completion rule. A name
+    #: on this list is NEVER on :attr:`scenarios_covered`.
+    not_checked: List[Dict[str, str]] = field(default_factory=list)
+    not_checked_total: int = 0
+    observations: List[Dict[str, str]] = field(default_factory=list)
+    observations_total: int = 0
+    could_not_run_reason: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
-        return self.status == "passed"
+        return self.status == OUTCOME_PASSED
+
+    @property
+    def could_not_run(self) -> bool:
+        return self.status == OUTCOME_COULD_NOT_RUN
 
     @property
     def scenarios_covered(self) -> List[str]:
+        """What a PASSING attempt said it covered, minus anything not checked.
+
+        The second half is the rule that matters: a name the record also
+        carries as not checked can never be read back as covered, whatever the
+        project printed.
+        """
+        covered: List[str] = []
         for attempt in reversed(self.attempts):
             if attempt.passed:
-                return list(attempt.scenarios_covered)
-        return []
+                covered = list(attempt.scenarios_covered)
+                break
+        if not covered or not self.not_checked:
+            return covered
+        blocked = {
+            str(e.get("name", "")).strip().lower()
+            for e in self.not_checked
+            if isinstance(e, dict)
+        }
+        return [name for name in covered if name.strip().lower() not in blocked]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -228,6 +305,16 @@ class FeatureCheckOutcome:
             "generated_at": datetime.now().isoformat(),
             "reason": self.reason,
             "scenarios_covered": self.scenarios_covered,
+            "not_checked": [dict(e) for e in self.not_checked],
+            "not_checked_total": max(
+                int(self.not_checked_total or 0), len(self.not_checked)
+            ),
+            "observations": [dict(o) for o in self.observations],
+            "observations_total": max(
+                int(self.observations_total or 0), len(self.observations)
+            ),
+            "could_not_run_reason": self.could_not_run_reason,
+            "record_notes": list(self.notes),
             "criteria_still_claimed": list(self.claimed_machine_criteria),
             "attempts": [a.to_dict() for a in self.attempts],
         }
@@ -241,6 +328,63 @@ def write_feature_check_receipt(outcome: FeatureCheckOutcome, root: Path) -> Pat
         json.dumps(outcome.to_dict(), indent=2) + "\n", encoding="utf-8"
     )
     return receipt_path
+
+
+def update_feature_check_receipt(
+    root: Path,
+    *,
+    not_checked: Optional[Sequence[Dict[str, str]]] = None,
+    notes: Optional[Sequence[str]] = None,
+) -> Optional[Path]:
+    """Finish the record on disk, after the last thing that learns anything.
+
+    The record is written inside the build, before the completion rule and the
+    end-of-build guard have run. Those two are the last sources of "nothing
+    looked at this", so the record on disk would be incomplete without this
+    call — and the runner exports it straight afterwards. Adding a name here
+    also REMOVES it from ``scenarios_covered``: the two lists can never both
+    claim the same example.
+
+    Never raises: a record that cannot be read or written is logged and the
+    build is unaffected. Returns the path when it wrote, ``None`` otherwise.
+    """
+    path = Path(root) / RECEIPT_RELATIVE_PATH
+    additions = list(not_checked or [])
+    extra_notes = [str(n) for n in (notes or []) if str(n).strip()]
+    if not additions and not extra_notes:
+        return None
+    try:
+        if not path.is_file():
+            logger.warning(
+                "feature check: no record at %s to finish, so the "
+                "not-checked list could not be recorded", path,
+            )
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        merged = merge_not_checked(data.get("not_checked"), additions)
+        data["not_checked"] = merged
+        data["not_checked_total"] = max(
+            int(data.get("not_checked_total") or 0), len(merged)
+        )
+        blocked = {e["name"].strip().lower() for e in merged}
+        covered = data.get("scenarios_covered")
+        if isinstance(covered, list):
+            data["scenarios_covered"] = [
+                name
+                for name in covered
+                if not (isinstance(name, str) and name.strip().lower() in blocked)
+            ]
+        if extra_notes:
+            existing_notes = data.get("record_notes")
+            existing_notes = existing_notes if isinstance(existing_notes, list) else []
+            data["record_notes"] = existing_notes + extra_notes
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return path
+    except Exception as exc:  # noqa: BLE001 — finishing a record never fails a build
+        logger.warning("feature check: could not finish %s: %s", path, exc)
+        return None
 
 
 def read_feature_check_receipt(root: Path) -> Optional[Dict[str, Any]]:
@@ -295,6 +439,252 @@ def parse_scenarios_covered(stdout: str) -> List[str]:
             if isinstance(item, str) and item.strip() and item not in covered:
                 covered.append(item)
     return covered
+
+
+# -------------------------------------------------------------------------
+# The rest of the project's one line (2026-09-21)
+# -------------------------------------------------------------------------
+
+
+def cut(text: Any, limit: int) -> str:
+    """One piece of the project's text, bounded, with a visible mark when cut."""
+    value = "" if text is None else str(text)
+    if len(value) <= limit:
+        return value
+    return value[:limit] + CUT_MARK
+
+
+@dataclass
+class ProjectCheckLine:
+    """Everything the project's one line of JSON said, read defensively.
+
+    The project writes this line; central code carries it and never reads,
+    compares or judges what is in it. Anything malformed is ignored and the
+    fact that it was ignored is recorded in :attr:`notes`, because silently
+    dropping what a project said is how "not checked" turns into "fine".
+    """
+
+    scenarios_covered: List[str] = field(default_factory=list)
+    not_checked: List[Dict[str, str]] = field(default_factory=list)
+    not_checked_total: int = 0
+    observations: List[Dict[str, str]] = field(default_factory=list)
+    observations_total: int = 0
+    could_not_run: bool = False
+    could_not_run_reason: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
+
+
+def _read_not_checked(block: Dict[str, Any], line: ProjectCheckLine) -> None:
+    raw = block.get("not_checked")
+    if raw is None:
+        return
+    if not isinstance(raw, list):
+        line.notes.append(
+            "the project's not_checked was not a list, so it was ignored"
+        )
+        return
+    entries: List[Dict[str, str]] = []
+    malformed = 0
+    for item in raw:
+        if isinstance(item, str):
+            name, reason = item, ""
+        elif isinstance(item, dict):
+            name = item.get("name")
+            if not isinstance(name, str):
+                name = item.get("scenario") if isinstance(item.get("scenario"), str) else None
+            reason = item.get("reason")
+            reason = reason if isinstance(reason, str) else ""
+        else:
+            malformed += 1
+            continue
+        if not isinstance(name, str) or not name.strip():
+            malformed += 1
+            continue
+        entries.append(
+            {
+                "name": cut(name.strip(), NOT_CHECKED_NAME_LIMIT),
+                "reason": cut(reason.strip(), NOT_CHECKED_REASON_LIMIT),
+            }
+        )
+    if malformed:
+        line.notes.append(
+            f"{malformed} not_checked entr(y/ies) the project sent were "
+            "malformed and were ignored"
+        )
+    line.not_checked_total = len(entries)
+    line.not_checked = entries[:MAX_NOT_CHECKED_CARRIED]
+    if line.not_checked_total > len(line.not_checked):
+        line.notes.append(
+            f"the project named {line.not_checked_total} not-checked "
+            f"item(s); the first {len(line.not_checked)} are carried"
+        )
+
+
+def _read_observations(block: Dict[str, Any], line: ProjectCheckLine) -> None:
+    raw = block.get("observations")
+    if raw is None:
+        return
+    if not isinstance(raw, list):
+        line.notes.append(
+            "the project's observations were not a list, so they were ignored"
+        )
+        return
+    entries: List[Dict[str, str]] = []
+    malformed = 0
+    for item in raw:
+        if not isinstance(item, dict):
+            malformed += 1
+            continue
+        asked = item.get("asked")
+        answered = item.get("answered")
+        if not isinstance(asked, str) and not isinstance(answered, str):
+            malformed += 1
+            continue
+        entries.append(
+            {
+                "asked": cut(asked if isinstance(asked, str) else "", OBSERVATION_SIDE_LIMIT),
+                "answered": cut(
+                    answered if isinstance(answered, str) else "",
+                    OBSERVATION_SIDE_LIMIT,
+                ),
+            }
+        )
+    if malformed:
+        line.notes.append(
+            f"{malformed} observation(s) the project sent were malformed and "
+            "were ignored"
+        )
+    line.observations_total = len(entries)
+    line.observations = entries[:MAX_OBSERVATIONS]
+    if line.observations_total > len(line.observations):
+        line.notes.append(
+            f"the project sent {line.observations_total} observation(s); the "
+            f"first {len(line.observations)} are carried"
+        )
+
+
+def _read_could_not_run(block: Dict[str, Any], line: ProjectCheckLine) -> None:
+    raw = block.get("could_not_run")
+    if raw is None:
+        return
+    reason: Optional[str] = None
+    if isinstance(raw, bool):
+        if not raw:
+            return
+        spare = block.get("could_not_run_reason")
+        reason = spare if isinstance(spare, str) else None
+    elif isinstance(raw, str):
+        if not raw.strip():
+            return
+        reason = raw
+    elif isinstance(raw, dict):
+        value = raw.get("reason")
+        reason = value if isinstance(value, str) else None
+    else:
+        line.notes.append(
+            "the project's could_not_run was not a statement this could read, "
+            "so it was ignored"
+        )
+        return
+    line.could_not_run = True
+    line.could_not_run_reason = (
+        cut(reason.strip(), NOT_CHECKED_REASON_LIMIT)
+        if isinstance(reason, str) and reason.strip()
+        else COULD_NOT_RUN_WITHOUT_REASON
+    )
+
+
+def parse_project_check_line(stdout: str) -> ProjectCheckLine:
+    """Read the whole of the project's optional line, not only what it covered.
+
+    Never raises. A line that is not JSON, a block that is not a mapping and a
+    field of the wrong shape are all ignored — and each one that is ignored
+    leaves a note, so a reader can tell "the project said nothing" from "the
+    project said something this could not read".
+    """
+    line = ProjectCheckLine()
+    saw_block = False
+    for raw_line in (stdout or "").splitlines():
+        stripped = raw_line.strip()
+        if not stripped.startswith("{") or STDOUT_JSON_KEY not in stripped:
+            continue
+        try:
+            payload = json.loads(stripped)
+        except (ValueError, TypeError):
+            line.notes.append(
+                "a line naming the check's key was not readable as JSON and "
+                "was ignored"
+            )
+            continue
+        if not isinstance(payload, dict):
+            continue
+        block = payload.get(STDOUT_JSON_KEY)
+        if not isinstance(block, dict):
+            line.notes.append(
+                "the check's key carried something other than a block of "
+                "fields, so it was ignored"
+            )
+            continue
+        saw_block = True
+        raw = block.get("scenarios_covered")
+        if isinstance(raw, list):
+            for item in raw:
+                if (
+                    isinstance(item, str)
+                    and item.strip()
+                    and item not in line.scenarios_covered
+                ):
+                    line.scenarios_covered.append(item)
+        elif raw is not None:
+            line.notes.append(
+                "the project's scenarios_covered was not a list, so it was "
+                "ignored"
+            )
+        _read_not_checked(block, line)
+        _read_observations(block, line)
+        _read_could_not_run(block, line)
+    if not saw_block:
+        line.notes = [n for n in line.notes if n]
+    return line
+
+
+def merge_not_checked(
+    existing: Any, additions: Sequence[Dict[str, str]]
+) -> List[Dict[str, str]]:
+    """One not-checked list out of several, first reason wins, bounded.
+
+    Names are compared case-insensitively, exactly as the completion rule
+    compares a covered name, so the same example named by two sources appears
+    once.
+    """
+    merged: List[Dict[str, str]] = []
+    seen: set = set()
+    for source in (existing, additions):
+        if not isinstance(source, (list, tuple)):
+            continue
+        for item in source:
+            if isinstance(item, str):
+                item = {"name": item, "reason": ""}
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            key = name.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            reason = item.get("reason")
+            merged.append(
+                {
+                    "name": cut(name.strip(), NOT_CHECKED_NAME_LIMIT),
+                    "reason": cut(
+                        reason.strip() if isinstance(reason, str) else "",
+                        NOT_CHECKED_REASON_LIMIT,
+                    ),
+                }
+            )
+    return merged
 
 
 def run_feature_check_command(
@@ -658,10 +1048,17 @@ def _covers(covered: Sequence[str], name: str) -> bool:
 
 @dataclass(frozen=True)
 class CompletionVerdict:
-    """Whether the finaliser may record this feature as completed."""
+    """Whether the finaliser may record this feature as completed.
+
+    ``not_checked`` is what the rule learned and the record does not yet say:
+    names nothing looked at, each with a reason. The caller adds them to the
+    record before it leaves the build. They are never added to the covered
+    list, and the record never calls them passed.
+    """
 
     blocks: bool
     reason: Optional[str] = None
+    not_checked: List[Dict[str, str]] = field(default_factory=list)
 
 
 def completion_verdict(
@@ -683,6 +1080,15 @@ def completion_verdict(
 
     A project that declared no check is unchanged: no receipt is required and
     this always answers "does not block".
+
+    2026-09-21, two changes, and only two. A record that says the check COULD
+    NOT RUN does not block: there was nothing for anyone to repair, so every
+    example goes on the not-checked list with that reason instead. And a
+    promise that was only claimed and never covered no longer blocks either —
+    it comes back on the not-checked list, by name, so the reader is told what
+    was not looked at rather than the build being refused over it. Everything
+    else blocks exactly as before: no record, a record that did not pass, a
+    pass about different code.
     """
     declaration = load_feature_check_declaration(repo_root)
     if declaration is None:
@@ -698,12 +1104,34 @@ def completion_verdict(
                 "so nothing proved the finished feature"
             ),
         )
-    if receipt.get("status") != "passed":
+    status = receipt.get("status")
+    if status == OUTCOME_COULD_NOT_RUN:
+        reason = receipt.get("could_not_run_reason")
+        reason = (
+            reason.strip()
+            if isinstance(reason, str) and reason.strip()
+            else COULD_NOT_RUN_WITHOUT_REASON
+        )
+        every_example = list(scenario_titles(feature))
+        for name in claimed_machine_criteria(
+            worktree_root,
+            [getattr(t, "id", "") for t in getattr(feature, "tasks", []) or []],
+        ):
+            if name not in every_example:
+                every_example.append(name)
+        return CompletionVerdict(
+            blocks=False,
+            reason=f"the project's check could not run: {reason}",
+            not_checked=[
+                {"name": name, "reason": reason} for name in every_example
+            ],
+        )
+    if status != OUTCOME_PASSED:
         return CompletionVerdict(
             blocks=True,
             reason=(
                 "the declared whole-feature check did not pass "
-                f"(receipt status: {receipt.get('status')!r})"
+                f"(receipt status: {status!r})"
             ),
         )
 
@@ -740,13 +1168,27 @@ def completion_verdict(
     covered_list = covered if isinstance(covered, list) else []
     uncovered = [name for name in claimed if not _covers(covered_list, name)]
     if uncovered:
+        # Not a block any more (21 September 2026): these names go back to the
+        # caller and onto the record's not-checked list, by name. They are
+        # never added to the covered list and the record never calls them
+        # passed — "nothing looked at this" is said out loud instead.
         return CompletionVerdict(
-            blocks=True,
+            blocks=False,
             reason=(
                 "these promises were only claimed, never independently "
                 "proved, and the whole-feature check did not name them as "
                 "covered: " + "; ".join(uncovered)
             ),
+            not_checked=[
+                {
+                    "name": name,
+                    "reason": (
+                        "only claimed by the build; the project's check did "
+                        "not name it as covered"
+                    ),
+                }
+                for name in uncovered
+            ],
         )
     return CompletionVerdict(blocks=False)
 
@@ -758,6 +1200,19 @@ __all__ = [
     "STDOUT_JSON_KEY",
     "OUTPUT_TAIL_LINES",
     "REQUEST_WORDS_HEADING",
+    "OUTCOME_PASSED",
+    "OUTCOME_FAILED",
+    "OUTCOME_COULD_NOT_RUN",
+    "COULD_NOT_RUN_WITHOUT_REASON",
+    "MAX_OBSERVATIONS",
+    "OBSERVATION_SIDE_LIMIT",
+    "MAX_NOT_CHECKED_CARRIED",
+    "CUT_MARK",
+    "ProjectCheckLine",
+    "cut",
+    "merge_not_checked",
+    "parse_project_check_line",
+    "update_feature_check_receipt",
     "CompletionVerdict",
     "FeatureCheckAttempt",
     "FeatureCheckDeclaration",
