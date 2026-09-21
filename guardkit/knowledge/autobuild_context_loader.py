@@ -90,6 +90,19 @@ def _load_relevant_pattern_document_tags(
         return ()
     if "memory" not in data:
         return ()
+    # A ``memory:`` block that says nothing about pattern sources declares
+    # nothing here; it is not an invalid declaration. Since 2026-09-21 every
+    # project carries ``memory: project: <name>``, often with nothing else in
+    # the block, and warning on each of them would cry wolf on every build. A
+    # level that IS present and is not a mapping still falls through to the
+    # warning below.
+    memory_block = data["memory"]
+    if isinstance(memory_block, dict):
+        if "fleet" not in memory_block:
+            return ()
+        fleet_block = memory_block["fleet"]
+        if isinstance(fleet_block, dict) and "context_sources" not in fleet_block:
+            return ()
     try:
         context_sources = data["memory"]["fleet"]["context_sources"]
         patterns = context_sources["relevant_patterns"]
