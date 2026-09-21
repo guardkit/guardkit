@@ -93,6 +93,16 @@ _DOES_NOT_APPLY_STATUSES = {
     "skipped_no_acceptance_files",
 }
 _ERROR_STATUSES = {"error"}
+#: The words a check uses for "I ran, and my list of findings is the whole
+#: answer". Only these mean an empty findings list may be read as a result.
+_RAN_STATUSES = {"complete", "ran"}
+#: The word a check uses when it read only PART of what it was given. It ran,
+#: and its findings stand for the part it could read — the rest was covered by
+#: nothing, so how much it could not read travels beside the state as a number
+#: (21 September 2026; the group half below has carried it from the start).
+_PARTLY_READ_STATUSES = {"parse_degraded"}
+#: Where a check lists the things it could not read.
+_UNREAD_KEYS = ("degraded_files",)
 
 #: What an entry that is ``None`` — or missing altogether — means when the
 #: kept record cannot say. The review writes that same absence for several
@@ -168,6 +178,42 @@ def absence_reading(review_record: Any, task_results: Any = None) -> Dict[str, s
     return dict(ABSENCE_CANNOT_TELL)
 
 
+def _entry(
+    state: str,
+    reason: str,
+    findings: Optional[Sequence[Any]] = None,
+    inputs_not_read: Optional[int] = None,
+) -> Dict[str, Any]:
+    """One check's entry, always the same shape.
+
+    ``inputs_not_read`` is how many of the things the check was given it
+    could not read, or ``None`` when the record does not say. It is the same
+    field, with the same name and the same meaning, that :func:`group_record`
+    has carried since this module was written; the per-task half gained it on
+    21 September 2026, because it was throwing the number away and calling a
+    partly-read check clean.
+    """
+    listed = list(findings or [])
+    return {
+        "state": state,
+        "reason": reason,
+        "findings": [_finding_summary(f) for f in listed[:MAX_LISTED_FINDINGS]],
+        "finding_count": len(listed),
+        "inputs_not_read": inputs_not_read,
+    }
+
+
+def _unread_count(block: Any) -> Optional[int]:
+    """How many things this check says it could not read, or ``None``."""
+    if not isinstance(block, dict):
+        return None
+    for key in _UNREAD_KEYS:
+        value = block.get(key)
+        if isinstance(value, (list, tuple)):
+            return len(value)
+    return None
+
+
 def summarise_check(
     block: Any, *, absence: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
@@ -178,27 +224,31 @@ def summarise_check(
     ran, so what that absence means comes from ``absence`` — the reading
     :func:`absence_reading` takes off the record. With no reading given, an
     absence is "not checked", never a state that reads like a clean run.
+
+    TWO CORRECTIONS, 21 September 2026 (the Stage C re-check):
+
+    * a check that could read only PART of what it was given still ran, and
+      its empty findings list still means "nothing in the part I read" — but
+      the part it could not read was covered by nothing, so the count travels
+      beside the state exactly as the group half has always carried it;
+    * a status word this mapping does not know is "not checked", with the
+      word itself as the reason. It used to fall through to the findings
+      list, so an unknown skip word with no findings came out as "ran and
+      found nothing" — a clean answer made out of a word nobody understood.
     """
     try:
         if block is None:
             reading = absence if isinstance(absence, dict) else ABSENCE_CANNOT_TELL
             state = str(reading.get("state") or "") or STATE_NOT_CHECKED
-            return {
-                "state": state,
-                "reason": (
-                    str(reading.get("reason") or "")
-                    or ABSENCE_CANNOT_TELL["reason"]
-                ),
-                "findings": [],
-                "finding_count": 0,
-            }
+            return _entry(
+                state,
+                str(reading.get("reason") or "") or ABSENCE_CANNOT_TELL["reason"],
+            )
         if not isinstance(block, dict):
-            return {
-                "state": STATE_NOT_CHECKED,
-                "reason": "the kept record's entry for this check could not be read",
-                "findings": [],
-                "finding_count": 0,
-            }
+            return _entry(
+                STATE_NOT_CHECKED,
+                "the kept record's entry for this check could not be read",
+            )
 
         status = block.get("status")
         status = status.strip().lower() if isinstance(status, str) else ""
@@ -208,65 +258,64 @@ def summarise_check(
             reason = skip if isinstance(skip, str) else ""
 
         if status in _KIND_NOT_SUPPORTED_STATUSES:
-            return {
-                "state": STATE_KIND_NOT_SUPPORTED,
-                "reason": reason or "this check does not cover this kind of project",
-                "findings": [],
-                "finding_count": 0,
-            }
+            return _entry(
+                STATE_KIND_NOT_SUPPORTED,
+                reason or "this check does not cover this kind of project",
+            )
         if status == STATE_NOT_CHECKED:
-            return {
-                "state": STATE_NOT_CHECKED,
-                "reason": reason or NOT_CHECKED_REASON,
-                "findings": [],
-                "finding_count": 0,
-            }
+            return _entry(STATE_NOT_CHECKED, reason or NOT_CHECKED_REASON)
         if status in _DOES_NOT_APPLY_STATUSES:
-            return {
-                "state": STATE_DOES_NOT_APPLY,
-                "reason": reason or "this check had nothing to look at",
-                "findings": [],
-                "finding_count": 0,
-            }
+            return _entry(
+                STATE_DOES_NOT_APPLY, reason or "this check had nothing to look at"
+            )
+        if status in _ERROR_STATUSES:
+            return _entry(
+                STATE_NOT_CHECKED,
+                reason or "this check stopped on an error of its own",
+            )
+
+        partly_read = status in _PARTLY_READ_STATUSES
+        if status and not partly_read and status not in _RAN_STATUSES:
+            # A word nobody here knows says nothing about whether the check
+            # looked at anything, so it cannot be read as either answer.
+            return _entry(
+                STATE_NOT_CHECKED,
+                reason
+                or (
+                    f"this check reported '{status}', which is not a word "
+                    "this summary knows"
+                ),
+                block.get("findings")
+                if isinstance(block.get("findings"), (list, tuple))
+                else None,
+            )
 
         findings = block.get("findings")
-        if status in _ERROR_STATUSES:
-            return {
-                "state": STATE_NOT_CHECKED,
-                "reason": reason or "this check stopped on an error of its own",
-                "findings": [],
-                "finding_count": 0,
-            }
         if not isinstance(findings, (list, tuple)):
             # ``findings: None`` is the shape a check that did not run uses.
-            return {
-                "state": STATE_NOT_CHECKED,
-                "reason": reason or "this check recorded no list of findings",
-                "findings": [],
-                "finding_count": 0,
-            }
-        listed = [_finding_summary(f) for f in findings[:MAX_LISTED_FINDINGS]]
+            return _entry(
+                STATE_NOT_CHECKED,
+                reason or "this check recorded no list of findings",
+            )
+
+        not_read = _unread_count(block) if partly_read else None
+        if partly_read and not reason:
+            reason = (
+                f"some of what it was given could not be read ({not_read} of them)"
+                if not_read
+                else "some of what it was given could not be read"
+            )
         if findings:
-            return {
-                "state": STATE_FOUND_SOMETHING,
-                "reason": reason or "",
-                "findings": listed,
-                "finding_count": len(findings),
-            }
-        return {
-            "state": STATE_RAN_FOUND_NOTHING,
-            "reason": reason or "",
-            "findings": [],
-            "finding_count": 0,
-        }
+            return _entry(
+                STATE_FOUND_SOMETHING, reason or "", findings, not_read
+            )
+        return _entry(STATE_RAN_FOUND_NOTHING, reason or "", None, not_read)
     except Exception as exc:  # noqa: BLE001 — a summary never fails a build
         logger.debug("code checks: a check entry could not be summarised: %s", exc)
-        return {
-            "state": STATE_NOT_CHECKED,
-            "reason": "the kept record's entry for this check could not be read",
-            "findings": [],
-            "finding_count": 0,
-        }
+        return _entry(
+            STATE_NOT_CHECKED,
+            "the kept record's entry for this check could not be read",
+        )
 
 
 def latest_review_record(task_private_dir: Path) -> Optional[Path]:
@@ -316,12 +365,9 @@ def summarise_task(
         reviewed = True
     else:
         for name in CHECK_NAMES:
-            checks[name] = {
-                "state": STATE_NOT_CHECKED,
-                "reason": "no review record of this task was kept",
-                "findings": [],
-                "finding_count": 0,
-            }
+            checks[name] = _entry(
+                STATE_NOT_CHECKED, "no review record of this task was kept"
+            )
         reviewed = False
 
     files_recorded: Optional[bool]

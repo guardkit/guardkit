@@ -182,6 +182,89 @@ def test_the_word_clean_is_never_the_answer_to_an_absent_signal() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 1b. Two corrections of 21 September 2026 (after the Stage C re-check)
+# ---------------------------------------------------------------------------
+
+
+def test_a_task_check_that_read_only_part_of_its_input_says_how_much() -> None:
+    """The per-task half now says what the group half has always said.
+
+    It ran, and it found nothing IN WHAT IT COULD READ. The part it could not
+    read was covered by nothing, and the count of it used to be thrown away —
+    so a check that had read one file in three came out of here as "ran and
+    found nothing" with no number beside it at all.
+    """
+    summary = summarise_check(
+        {
+            "status": "parse_degraded",
+            "ran": True,
+            "findings": [],
+            "degraded_files": ["a/one", "a/two"],
+        }
+    )
+    assert summary["state"] == STATE_RAN_FOUND_NOTHING
+    assert summary["inputs_not_read"] == 2
+    assert "could not be read" in summary["reason"]
+    assert "2" in summary["reason"]
+
+
+def test_a_partly_read_task_check_that_found_something_keeps_both() -> None:
+    summary = summarise_check(
+        dict(FINDING, status="parse_degraded", degraded_files=["a/one"])
+    )
+    assert summary["state"] == STATE_FOUND_SOMETHING
+    assert summary["finding_count"] == 1
+    assert summary["inputs_not_read"] == 1
+
+
+def test_a_check_that_read_everything_carries_no_count() -> None:
+    assert summarise_check(CLEAN)["inputs_not_read"] is None
+    assert summarise_check(FINDING)["inputs_not_read"] is None
+    assert summarise_check(None)["inputs_not_read"] is None
+
+
+def test_a_status_word_this_summary_does_not_know_is_not_checked() -> None:
+    """It used to fall through the mapping and land on "found nothing".
+
+    A skip word nobody here knows says nothing about whether the check looked
+    at anything, so it cannot be read as either answer — and "not checked" is
+    the only honest one. The word itself is the reason, so whoever reads the
+    record can see which word it was.
+    """
+    summary = summarise_check(
+        {"status": "skipped_no_composition_root", "ran": False, "findings": []}
+    )
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert "skipped_no_composition_root" in summary["reason"]
+
+
+def test_an_unknown_word_never_throws_away_what_the_check_did_name() -> None:
+    summary = summarise_check(dict(FINDING, status="a_word_from_nowhere"))
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert summary["finding_count"] == 1
+    assert summary["findings"][0]["name"] == "get_user_creation_counts_per_day"
+
+
+def test_an_unknown_word_keeps_the_check_s_own_reason_when_it_gave_one() -> None:
+    summary = summarise_check(
+        {
+            "status": "a_word_from_nowhere",
+            "skip_reason": "the thing it needed was not there",
+            "findings": [],
+        }
+    )
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert summary["reason"] == "the thing it needed was not there"
+
+
+def test_every_entry_is_the_same_shape_as_the_group_half_s() -> None:
+    """One field, one name, one meaning, on both halves of the record."""
+    for block in (None, CLEAN, FINDING, NOT_CHECKED, NOT_SUPPORTED, "rubbish"):
+        assert "inputs_not_read" in summarise_check(block)
+    assert "inputs_not_read" in group_record(1, state=STATE_NOT_CHECKED)
+
+
+# ---------------------------------------------------------------------------
 # 2. One task's row
 # ---------------------------------------------------------------------------
 

@@ -318,9 +318,13 @@ class FeatureCheckOutcome:
                 "The whole-feature check: the one command this project "
                 "declared (toolchain.feature_check in .guardkit/config.yaml, "
                 "read from the main checkout) that proves the feature does "
-                "what was asked at the surface the person uses. Exit 0 is the "
-                "only pass. Every attempt is listed, including the wave "
-                "re-entries the failures paid for."
+                "what was asked at the surface the person uses. There are "
+                "three outcomes and exit 0 is only one of them: the command "
+                "exits 0 and passed; it ran and did not pass; or the project "
+                "said in its own line of JSON that the check could not run at "
+                "all, which is neither a pass nor a failure and is never "
+                "counted as either. Every attempt is listed, including the "
+                "wave re-entries the failures paid for."
             ),
             "status": self.status,
             "declared": self.declared,
