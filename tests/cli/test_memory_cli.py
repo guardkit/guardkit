@@ -431,3 +431,51 @@ class TestSearchWithNoMemoryName:
         # It says which line to add, and to which file.
         assert "project:" in result.output
         assert str(tmp_path) in result.output
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["memory", "status"],
+            [
+                "memory",
+                "capture-outcome",
+                "--task-id",
+                "TASK-X",
+                "--task-title",
+                "A title",
+                "--summary",
+                "A summary",
+            ],
+        ],
+        ids=["status", "capture-outcome"],
+    )
+    def test_the_other_by_hand_commands_say_it_on_the_console_too(
+        self, tmp_path, monkeypatch, argv
+    ):
+        """Loud and ONCE means on the console, not only in a log line.
+
+        ``status`` and ``capture-outcome`` are typed by a person watching the
+        console. With no memory name they correctly do nothing, and until
+        2026-09-21 they did it in silence, because the only explanation went to
+        a logger nobody had configured.
+        """
+        import guardkit.knowledge.fleet_memory_client as fmc
+
+        monkeypatch.delenv("GUARDKIT_MEMORY_PROJECT", raising=False)
+        monkeypatch.chdir(tmp_path)  # a folder that declares nothing
+        fmc.reset_memory_project()
+
+        def never(*args, **kwargs):  # pragma: no cover - must never run
+            raise AssertionError("a memory client was asked for with no name")
+
+        monkeypatch.setattr("guardkit.cli.memory.get_memory_client", never)
+
+        try:
+            result = CliRunner().invoke(cli, argv)
+        finally:
+            fmc.reset_memory_project()
+
+        assert result.exit_code == 0
+        assert "memory: OFF" in result.output
+        assert "project:" in result.output
+        assert str(tmp_path) in result.output

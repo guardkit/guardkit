@@ -1186,6 +1186,11 @@ _backend_initialized: bool = False
 # config, so the builder thread and the reviewer thread cannot end up reading
 # and writing under different names.
 _memory_project_resolution: Optional[MemoryProjectResolution] = None
+# Settling the name, and discarding what was built under an older one, is one
+# step. A parallel wave builds its orchestrators in threads, each of which calls
+# ``configure_memory_project`` on the way up, so without this lock two of them
+# can be half-way through that step at once and leave a torn factory behind.
+_memory_project_lock = threading.Lock()
 
 
 def configure_memory_project(
@@ -1193,10 +1198,16 @@ def configure_memory_project(
 ) -> MemoryProjectResolution:
     """Settle which memory this build uses, before any thread gets a client.
 
-    Called once at the start of a build with the folder the build works in.
-    Says the answer out loud — including, when there is no name, the two lines
-    to add and the file to add them to — and drops any client or factory built
-    under an earlier answer so nothing can keep using a stale name.
+    Called at the start of a build with the folder the build works in. Says the
+    answer out loud — including, when there is no name, the two lines to add and
+    the file to add them to.
+
+    When the answer is the one already settled, nothing else is touched: a
+    parallel wave builds every orchestrator against the same folder, so every
+    call after the first is a restatement, and throwing away the shared client
+    and factory each time would only rebuild them under the same name. When the
+    answer really is different, anything built under the earlier one is dropped
+    so nothing can keep using a stale name.
 
     Returns the resolution, so the caller can record what was decided.
     """
@@ -1205,11 +1216,15 @@ def configure_memory_project(
 
     resolution = resolve_memory_project(project_root)
     log_resolution(resolution)
-    _memory_project_resolution = resolution
-    # Anything built under an earlier answer is discarded, config and all.
-    _memory_client = None
-    _memory_factory = None
-    _backend_initialized = False
+    with _memory_project_lock:
+        if _memory_project_resolution == resolution:
+            # Same answer as the one already settled: change nothing.
+            return resolution
+        _memory_project_resolution = resolution
+        # Anything built under an earlier answer is discarded, config and all.
+        _memory_client = None
+        _memory_factory = None
+        _backend_initialized = False
     return resolution
 
 

@@ -416,3 +416,90 @@ def test_guardkits_own_repository_answers_by_declaration(memory_module):
     answer = resolve_memory_project(repo_root, env={})
     assert answer.project == "guardkit"
     assert answer.source == "declaration"
+
+
+class TestOneAnswerPerBuild:
+    """Settling the name twice for the same folder is a restatement, not a reset.
+
+    Every orchestrator in a parallel wave calls ``configure_memory_project`` on
+    its way up, in its own thread, against the same folder. Discarding the shared
+    client and factory on each of those calls only rebuilt them under the same
+    name, and left a window where another thread could pick up a half-replaced
+    one. A different answer still drops everything built under the old one.
+    """
+
+    def test_the_same_answer_again_keeps_what_was_built(self, memory_module, tmp_path):
+        _declare(tmp_path, "memory:\n  project: widget_shop\n")
+        memory_module.configure_memory_project(tmp_path)
+
+        sentinel = object()
+        memory_module._memory_client = sentinel
+        memory_module._backend_initialized = True
+
+        again = memory_module.configure_memory_project(tmp_path)
+
+        assert again.project == "widget_shop"
+        assert memory_module._memory_client is sentinel
+        assert memory_module._backend_initialized is True
+
+    def test_a_different_answer_drops_what_was_built(self, memory_module, tmp_path):
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        _declare(first, "memory:\n  project: widget_shop\n")
+        _declare(second, "memory:\n  project: other_shop\n")
+
+        memory_module.configure_memory_project(first)
+        memory_module._memory_client = object()
+        memory_module._backend_initialized = True
+
+        moved = memory_module.configure_memory_project(second)
+
+        assert moved.project == "other_shop"
+        assert memory_module._memory_client is None
+        assert memory_module._memory_factory is None
+        assert memory_module._backend_initialized is False
+
+    def test_every_wave_thread_settles_the_same_answer_without_tearing(
+        self, memory_module, tmp_path
+    ):
+        """Sixteen threads settle it at once, as a parallel wave does."""
+        _declare(tmp_path, "memory:\n  project: widget_shop\n")
+
+        answers: list = []
+        barrier = threading.Barrier(16)
+
+        def settle() -> None:
+            barrier.wait()
+            answers.append(memory_module.configure_memory_project(tmp_path))
+
+        threads = [threading.Thread(target=settle) for _ in range(16)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(answers) == 16
+        assert {answer.project for answer in answers} == {"widget_shop"}
+        assert memory_module.memory_project_resolution().project == "widget_shop"
+
+
+class TestTheSettledAnswerDoesNotOutliveItsTest:
+    """The suite must not depend on the order its files happen to run in.
+
+    ``configure_memory_project`` keeps its answer in a module global, which is
+    right for a process that is one build and wrong for a test run that is
+    hundreds. ``tests/conftest.py`` forgets the answer around every test. These
+    two run in file order: the first settles a name for a throwaway folder, the
+    second proves it did not inherit it.
+    """
+
+    def test_a_settles_a_name_for_its_own_folder(self, tmp_path):
+        import guardkit.knowledge.fleet_memory_client as fmc
+
+        _declare(tmp_path, "memory:\n  project: leaky_shop\n")
+        assert fmc.configure_memory_project(tmp_path).project == "leaky_shop"
+
+    def test_b_starts_with_nothing_settled(self):
+        import guardkit.knowledge.fleet_memory_client as fmc
+
+        assert fmc._memory_project_resolution is None
