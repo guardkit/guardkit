@@ -213,6 +213,7 @@ def _client_under_test():
             embed_model="embed",
             embed_dims=768,
             nats_url="nats://127.0.0.1:9",
+            project="guardkit",
         )
     )
     client._nats_available = True

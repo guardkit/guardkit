@@ -1,4 +1,11 @@
 
+# Which memory this repository's own builds read and write (2026-09-21).
+# GuardKit gets its memory the same way every other project does: by saying so
+# here. There is no built-in default any more — a project that says nothing runs
+# with memory off rather than filing its work under somebody else's name.
+memory:
+  project: guardkit
+
 # QAV shadow mode (2026-07-25, design: ai-transition docs/qav-shadow-mode-design-2026-07-25.md).
 # Log-only second opinion beside every coach verdict — never blocks, absent-not-fail,
 # default OFF when this block is missing. Reversible one-line kill: enabled: false or

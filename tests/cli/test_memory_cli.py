@@ -397,3 +397,37 @@ class TestMemoryHarvestCommand:
             # Should exit non-zero
             assert result.exit_code == 1
             assert "Walker error" in result.output or "error" in result.output.lower()
+
+
+class TestSearchWithNoMemoryName:
+    """The reviewer runs `guardkit memory search` as one of its tiers.
+
+    With no memory name it must say so and stop, and it must never be the
+    reason a review fails: that means exit code 0 and nothing connected
+    (2026-09-21, design item 2).
+    """
+
+    def test_search_with_no_declared_name_says_so_and_exits_zero(
+        self, tmp_path, monkeypatch
+    ):
+        import guardkit.knowledge.fleet_memory_client as fmc
+
+        monkeypatch.delenv("GUARDKIT_MEMORY_PROJECT", raising=False)
+        monkeypatch.chdir(tmp_path)  # a folder that declares nothing
+        fmc.reset_memory_project()
+
+        def never(*args, **kwargs):  # pragma: no cover - must never run
+            raise AssertionError("a memory client was asked for with no name")
+
+        monkeypatch.setattr("guardkit.cli.memory.get_memory_client", never)
+
+        try:
+            result = CliRunner().invoke(cli, ["memory", "search", "anything"])
+        finally:
+            fmc.reset_memory_project()
+
+        assert result.exit_code == 0
+        assert "memory: OFF" in result.output
+        # It says which line to add, and to which file.
+        assert "project:" in result.output
+        assert str(tmp_path) in result.output

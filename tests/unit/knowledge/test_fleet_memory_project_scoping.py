@@ -4,9 +4,11 @@ Proves the ``project`` dimension threads end-to-end instead of the old hardcoded
 ``"guardkit"``:
 - ``build_memory_episode(project=...)`` sets the natural_key / project_id / body project
   on both the structured (json) and prose (markdown) paths.
-- ``project=None`` preserves the back-compat ``mapping.project`` default.
-- ``FleetMemoryConfig.project`` defaults to ``"guardkit"``; ``GUARDKIT_MEMORY_PROJECT``
-  overrides it via the env factory.
+- **A missing name writes NOTHING** (2026-09-21). The three tests that pinned the old
+  fallback to ``"guardkit"`` — on the structured path, on the prose path, and on
+  ``FleetMemoryConfig`` — moved with the change and now pin the refusal instead.
+- ``FleetMemoryConfig.project`` has no default; ``GUARDKIT_MEMORY_PROJECT`` hands a name
+  over on purpose through the env factory.
 - ``FleetMemoryClient`` threads ``self.config.project`` into the write path.
 
 Coverage Target: >=85%
@@ -35,7 +37,6 @@ fm_registry = pytest.importorskip("fleet_memory.payloads.registry")
 
 def _map(payload_type, tags, disposition="migrate"):
     return GroupMapping(
-        project="guardkit",
         payload_type=payload_type,
         domain_tags=list(tags),
         disposition=disposition,
@@ -65,28 +66,45 @@ def test_structured_episode_uses_explicit_project():
     assert ep.episode_id == inst.natural_key
 
 
-def test_structured_episode_defaults_to_mapping_project_when_none():
-    """Back-compat: project=None falls back to mapping.project ('guardkit')."""
-    ep = build_memory_episode(
-        _map("adr", ["decision"]),
-        name="adr_ADR-0001",
-        episode_body=json.dumps(
-            {"id": "ADR-0001", "decision": "Adopt fleet-memory", "status": "accepted"}
-        ),
-        project=None,
-    )
-    assert ep.project_id == "guardkit"
-    assert ep.episode_id == "adr:guardkit:ADR_0001"
+def test_structured_episode_with_no_name_writes_nothing(caplog):
+    """MOVED 2026-09-21: project=None used to be filed under "guardkit"."""
+    with caplog.at_level("ERROR"):
+        ep = build_memory_episode(
+            _map("adr", ["decision"]),
+            name="adr_ADR-0001",
+            episode_body=json.dumps(
+                {"id": "ADR-0001", "decision": "Adopt fleet-memory", "status": "accepted"}
+            ),
+            project=None,
+        )
+    assert ep is None
+    assert "no memory name was given" in caplog.text
 
 
-def test_structured_episode_project_defaults_absent_kwarg():
-    """Omitting the kwarg entirely is identical to the old hardcoded behaviour."""
-    ep = build_memory_episode(
-        _map("adr", ["decision"]),
-        name="adr_ADR-0009",
-        episode_body=json.dumps({"id": "ADR-0009", "decision": "x", "status": "accepted"}),
-    )
-    assert ep.project_id == "guardkit"
+def test_structured_episode_with_an_empty_name_writes_nothing():
+    """An empty or blank name is refused exactly like a missing one."""
+    for blank in ("", "   "):
+        ep = build_memory_episode(
+            _map("adr", ["decision"]),
+            name="adr_ADR-0009",
+            episode_body=json.dumps(
+                {"id": "ADR-0009", "decision": "x", "status": "accepted"}
+            ),
+            project=blank,
+        )
+        assert ep is None
+
+
+def test_the_name_cannot_be_omitted_at_all():
+    """There is no default to omit it into: the call itself is a TypeError."""
+    with pytest.raises(TypeError):
+        build_memory_episode(
+            _map("adr", ["decision"]),
+            name="adr_ADR-0010",
+            episode_body=json.dumps(
+                {"id": "ADR-0010", "decision": "x", "status": "accepted"}
+            ),
+        )
 
 
 # ============================================================================
@@ -107,13 +125,15 @@ def test_prose_episode_uses_explicit_project():
     assert ep.episode_id == "document:study_tutor:project_overview_doc"
 
 
-def test_prose_episode_defaults_to_mapping_project():
+def test_prose_episode_with_no_name_writes_nothing():
+    """MOVED 2026-09-21: the prose path used to fall back to "guardkit" too."""
     ep = build_memory_episode(
         _map("document", ["overview"]),
         name="another_doc",
         episode_body=json.dumps({"content": "prose"}),
+        project=None,
     )
-    assert ep.project_id == "guardkit"
+    assert ep is None
 
 
 # ============================================================================
@@ -121,20 +141,36 @@ def test_prose_episode_defaults_to_mapping_project():
 # ============================================================================
 
 
-def test_config_project_defaults_to_guardkit():
-    assert FleetMemoryConfig().project == "guardkit"
+def test_config_has_no_project_by_default():
+    """MOVED 2026-09-21: this used to assert the default was "guardkit"."""
+    assert FleetMemoryConfig().project is None
 
 
-def test_env_factory_reads_project_override(monkeypatch):
+def test_env_factory_reads_the_name_handed_over(monkeypatch, tmp_path):
+    import guardkit.knowledge.fleet_memory_client as fmc
+
     monkeypatch.setenv("GUARDKIT_MEMORY_PROJECT", "forge")
-    cfg = _load_fleet_config_from_env()
+    monkeypatch.chdir(tmp_path)
+    fmc.reset_memory_project()
+    try:
+        cfg = _load_fleet_config_from_env()
+    finally:
+        fmc.reset_memory_project()
     assert cfg.project == "forge"
 
 
-def test_env_factory_defaults_project_when_unset(monkeypatch):
+def test_env_factory_has_no_name_when_nothing_says_one(monkeypatch, tmp_path):
+    """MOVED 2026-09-21: this used to assert the name fell back to "guardkit"."""
+    import guardkit.knowledge.fleet_memory_client as fmc
+
     monkeypatch.delenv("GUARDKIT_MEMORY_PROJECT", raising=False)
-    cfg = _load_fleet_config_from_env()
-    assert cfg.project == "guardkit"
+    monkeypatch.chdir(tmp_path)  # a folder that declares nothing
+    fmc.reset_memory_project()
+    try:
+        cfg = _load_fleet_config_from_env()
+    finally:
+        fmc.reset_memory_project()
+    assert cfg.project is None
 
 
 # ============================================================================
@@ -150,7 +186,7 @@ async def test_client_threads_config_project_into_write(monkeypatch):
 
     captured: dict = {}
 
-    def fake_build(mapping, name, episode_body, source="user_added", project=None):
+    def fake_build(mapping, name, episode_body, source="user_added", *, project):
         captured["project"] = project
 
         class _Ep:

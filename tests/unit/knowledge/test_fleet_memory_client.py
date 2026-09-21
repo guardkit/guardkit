@@ -61,6 +61,7 @@ def fleet_config():
         embed_model="nomic-embed",
         embed_dims=768,
         nats_url="nats://localhost:4222",
+        project="guardkit",
     )
 
 
@@ -79,6 +80,7 @@ def _disabled_config():
         embed_model="embed",
         embed_dims=1024,
         nats_url="nats://localhost:4222",
+        project="guardkit",
     )
 
 
@@ -228,7 +230,6 @@ class TestFleetMemoryClientSearch:
 
         with patch("guardkit.knowledge.fleet_memory_mapping.resolve") as mock_resolve:
             mock_resolve.return_value = GroupMapping(
-                project="guardkit",
                 payload_type="build_outcome",
                 domain_tags=["task"],
                 disposition="migrate",
@@ -255,7 +256,6 @@ class TestFleetMemoryClientSearch:
 
         with patch("guardkit.knowledge.fleet_memory_mapping.resolve") as mock_resolve:
             mock_resolve.return_value = GroupMapping(
-                project="guardkit",
                 payload_type="document",
                 domain_tags=["architecture"],
                 disposition="migrate",
@@ -293,6 +293,7 @@ class TestSearchArmGateAndRetrievalLog:
             embed_model="nomic-embed",
             embed_dims=768,
             nats_url="nats://localhost:4222",
+            project="guardkit",
             retrieval_arm=retrieval_arm,
             fixture_id=fixture_id,
         )

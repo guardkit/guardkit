@@ -30,8 +30,15 @@ import os
 import re
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
 from uuid import uuid4
+
+from guardkit.knowledge.memory_project import (
+    MemoryProjectResolution,
+    log_resolution,
+    resolve_memory_project,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -233,10 +240,14 @@ class FleetMemoryConfig:
         embed_model: Embedding model identifier
         embed_dims: Embedding vector dimensions
         nats_url: NATS server URL for episode writes
-        project: Fleet-memory project namespace for reads/writes. The middle segment
-            of the store prefix ``fleet_memory.{project}.{payload_type}`` and the
-            ``project`` component of every natural key. Defaults to ``"guardkit"``
-            (single-project back-compat); FEAT-MEM-09 WS-0 makes it per-project.
+        project: The memory this build reads and writes — the middle segment of
+            the store prefix ``fleet_memory.{project}.{payload_type}`` and the
+            ``project`` component of every natural key. **There is no default**
+            (2026-09-21): ``None`` means this build has no memory, so nothing is
+            read and nothing is written, under any name. It used to default to
+            ``"guardkit"``, which is why every project's build outcomes were
+            filed under GuardKit's own name. The name comes from
+            :func:`guardkit.knowledge.memory_project.resolve_memory_project`.
     """
 
     enabled: bool = False
@@ -245,7 +256,7 @@ class FleetMemoryConfig:
     embed_model: str = "nomic-embed"
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
-    project: str = "guardkit"
+    project: Optional[str] = None
     # New retrieval arm configuration (FEAT-ABL-001)
     retrieval_arm: Optional[str] = None
     fixture_id: Optional[str] = None
@@ -456,6 +467,8 @@ class FleetMemoryClient:
         self._store: Any = None
         self._store_cm: Any = None
         self._initialized = False
+        # Said once per client when something asks for memory without a name.
+        self._said_no_memory_name: bool = False
         # TASK-FIX-GTP2/GLF-003 parity: the per-thread FleetMemoryClientFactory sets
         # this True when it creates a client inside a running loop, deferring the
         # asyncpg store connection to the consumer's event loop (loop-affinity). The
@@ -466,6 +479,28 @@ class FleetMemoryClient:
     def enabled(self) -> bool:
         """Whether reads are enabled (FLEET_MEMORY_ENABLED)."""
         return bool(self.config.enabled)
+
+    def _memory_named(self, about_to: str) -> bool:
+        """Whether this build has a memory name, said once per client if not.
+
+        WITHOUT A NAME NOTHING HAPPENS (2026-09-21). There is deliberately no
+        fallback name: a build whose project said nothing reads nothing and
+        writes nothing, rather than reading and writing under somebody else's
+        records. The loud sentence naming the line to add is emitted where the
+        name is resolved; this is the last gate before the store or the bus.
+        """
+        if self.config.project:
+            return True
+        if not self._said_no_memory_name:
+            self._said_no_memory_name = True
+            logger.warning(
+                "memory: refusing to %s — this build has no memory name, so "
+                "nothing is read and nothing is written. The project declares "
+                "one with a `memory:` block carrying `project:` in its "
+                ".guardkit/config.yaml.",
+                about_to,
+            )
+        return False
 
     @property
     def is_initialized(self) -> bool:
@@ -518,6 +553,8 @@ class FleetMemoryClient:
             True if the store is ready, False otherwise.
         """
         if not self.config.enabled:
+            return False
+        if not self._memory_named("open the store"):
             return False
         if self._store is not None:
             # THE STORE IS AFFINE TO THE LOOP IT WAS OPENED ON (2026-09-13).
@@ -662,6 +699,8 @@ class FleetMemoryClient:
             "TASK-X completed with 80% coverage..."
         """
         if not self.config.enabled:
+            return []
+        if not self._memory_named("search memory"):
             return []
         if self.config.retrieval_arm == "off":
             # Retrieval ablation arm gate (FEAT-ABL-001 / TASK-ABL1-003): mirror
@@ -931,6 +970,8 @@ class FleetMemoryClient:
             ...     group_id="task_outcomes",
             ... )  # -> "build_outcome:guardkit:TASK_1234"
         """
+        if not self._memory_named("write to memory"):
+            return None
         try:
             # Resolve group_id to fleet-memory identity
             from guardkit.knowledge.fleet_memory_mapping import resolve
@@ -1095,6 +1136,21 @@ class FleetMemoryClientFactory:
             )
             return None
 
+        if not self._config.project:
+            # NO NAME, NO CLIENT (2026-09-21). Every thread of this build asks
+            # here, so refusing here is what makes "nothing is read and nothing
+            # is written" true for the whole build rather than one code path.
+            # The sentence saying which line to add to which file was already
+            # emitted once, where the name was resolved.
+            logger.warning(
+                "memory: OFF — this build has no memory name, so no thread gets "
+                "a memory client: this run reads no prior decisions and writes "
+                "no outcomes, and nothing is read or written under any other "
+                "name. The project declares its name with a `memory:` block "
+                "carrying `project:` in its .guardkit/config.yaml."
+            )
+            return None
+
         client = self.create_client()
         # Always defer the asyncpg store connection to the consumer's event loop
         # (the store is loop-affine — TASK-GLF-003). Never connect on the
@@ -1124,6 +1180,57 @@ _backend: Literal["fleet_memory"] = "fleet_memory"
 # lazily on first get_memory_client). Guards the one-time auto-init so an explicit
 # init always wins and tests that set state directly are not disrupted.
 _backend_initialized: bool = False
+# THE ONE SHARED NAME FOR THIS PROCESS (2026-09-21). Resolved once — by
+# ``configure_memory_project`` at the start of a build, or lazily from the
+# current folder when GuardKit is used by hand — and then handed to every
+# config, so the builder thread and the reviewer thread cannot end up reading
+# and writing under different names.
+_memory_project_resolution: Optional[MemoryProjectResolution] = None
+
+
+def configure_memory_project(
+    project_root: Optional[Path],
+) -> MemoryProjectResolution:
+    """Settle which memory this build uses, before any thread gets a client.
+
+    Called once at the start of a build with the folder the build works in.
+    Says the answer out loud — including, when there is no name, the two lines
+    to add and the file to add them to — and drops any client or factory built
+    under an earlier answer so nothing can keep using a stale name.
+
+    Returns the resolution, so the caller can record what was decided.
+    """
+    global _memory_project_resolution, _memory_client, _memory_factory
+    global _backend_initialized
+
+    resolution = resolve_memory_project(project_root)
+    log_resolution(resolution)
+    _memory_project_resolution = resolution
+    # Anything built under an earlier answer is discarded, config and all.
+    _memory_client = None
+    _memory_factory = None
+    _backend_initialized = False
+    return resolution
+
+
+def memory_project_resolution() -> MemoryProjectResolution:
+    """The settled answer for this process, resolving it now if nothing has.
+
+    The lazy path is GuardKit used by hand, with nobody to hand a name over: it
+    reads the declaration in the current folder. It is said out loud once.
+    """
+    global _memory_project_resolution
+    if _memory_project_resolution is None:
+        resolution = resolve_memory_project(Path.cwd())
+        log_resolution(resolution)
+        _memory_project_resolution = resolution
+    return _memory_project_resolution
+
+
+def reset_memory_project() -> None:
+    """Forget the settled answer (tests, and a process that changes projects)."""
+    global _memory_project_resolution
+    _memory_project_resolution = None
 
 
 def _ensure_backend_initialized() -> None:
@@ -1299,9 +1406,13 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         embed_model=os.getenv("FLEET_MEMORY_EMBED_MODEL", "embed"),
         embed_dims=int(os.getenv("FLEET_MEMORY_EMBED_DIMS", "1024")),
         nats_url=os.getenv("FLEET_MEMORY_NATS_URL", "nats://localhost:4222"),
-        # Per-project scoping (FEAT-MEM-09 WS-0): the fleet-memory namespace this
-        # guardkit instance reads/writes. Defaults to "guardkit" (back-compat).
-        project=os.getenv("GUARDKIT_MEMORY_PROJECT", "guardkit"),
+        # WHICH MEMORY THIS BUILD USES (2026-09-21). One answer for the whole
+        # process: a name handed over on purpose, else the project's own
+        # declaration, else None — which means memory is off and nothing is read
+        # or written. There is no default name here any more; the old
+        # "guardkit" default is why every project's outcomes were filed under
+        # GuardKit's name.
+        project=memory_project_resolution().project,
         retrieval_arm=retrieval_arm,
         fixture_id=fixture_id,
     )

@@ -121,6 +121,7 @@ def _make_client(
         embed_model="nomic-embed",
         embed_dims=768,
         nats_url="nats://localhost:4222",
+        project="guardkit",
         retrieval_arm=retrieval_arm,
         fixture_id=fixture_id,
     )
