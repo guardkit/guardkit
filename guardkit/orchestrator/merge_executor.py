@@ -560,6 +560,7 @@ def perform_merge(
     target_branch: str = "main",
     manager: Optional[WorktreeManager] = None,
     branch: Optional[str] = None,
+    working_folder: Optional[Path] = None,
 ) -> MergeReport:
     """Merge the build's branch into ``target_branch``.
 
@@ -571,12 +572,24 @@ def perform_merge(
     clean, and report outcome ``conflict``. The branch is NEVER deleted on any
     path — no ``cleanup()``, no ``auto_merge_if_graduated``, no
     preserve-then-delete.
+
+    ``working_folder`` is the folder the merge happens in. ``None`` is the
+    repository's main copy, exactly as before. A caller that hands one in —
+    a working folder of its own, made at the commit being joined onto — gets
+    the checkout, the merge, the conflict reading and the abort all run
+    THERE, and the repository's main copy is never switched or merged into.
+    The commits, the refs and the objects are the same either way: a working
+    folder of a repository shares all three.
     """
     branch = branch_to_merge(feature_id, branch)
     notes: List[str] = []
+    # Where the tree is. Every read of a tree below goes here; every read of
+    # a ref may go here too, because a working folder shares the repository's
+    # refs.
+    tree_root = Path(working_folder) if working_folder is not None else Path(repo_root)
 
-    pre_sha = _rev_parse(repo_root, target_branch)
-    branch_sha = _rev_parse(repo_root, branch)
+    pre_sha = _rev_parse(tree_root, target_branch)
+    branch_sha = _rev_parse(tree_root, branch)
     if pre_sha is None or branch_sha is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -607,14 +620,19 @@ def perform_merge(
     )
 
     try:
-        manager.merge(worktree, target_branch=target_branch, message=message)
+        manager.merge(
+            worktree,
+            target_branch=target_branch,
+            message=message,
+            working_folder=working_folder,
+        )
     except WorktreeMergeError as exc:
         # Conflict path: capture the UU rows BEFORE aborting (the abort wipes
         # them), then abort and re-verify the tree is clean.
-        status_before_abort = _porcelain_status(repo_root) or ""
+        status_before_abort = _porcelain_status(tree_root) or ""
         conflict_files = conflicted_files_from_status(status_before_abort)
 
-        abort = _run_git(repo_root, "merge", "--abort")
+        abort = _run_git(tree_root, "merge", "--abort")
         if abort.returncode != 0:
             # Ignored by design (there may be nothing to abort), but recorded.
             notes.append(
@@ -622,7 +640,7 @@ def perform_merge(
                 f"{abort.stderr.strip() or '(no stderr)'}"
             )
 
-        status_after = _porcelain_status(repo_root)
+        status_after = _porcelain_status(tree_root)
         if status_after is None or status_after.strip():
             notes.append(
                 "the working tree is NOT clean after the abort — "
@@ -640,7 +658,7 @@ def perform_merge(
             notes=tuple(notes),
         )
 
-    post_sha = _rev_parse(repo_root, target_branch)
+    post_sha = _rev_parse(tree_root, target_branch)
     return MergeReport(
         outcome=OUTCOME_MERGED,
         feature_id=feature_id,
@@ -1005,6 +1023,7 @@ def execute_merge(
     validate_command: Optional[Sequence[str]] = None,
     measure_baseline: bool = True,
     branch: Optional[str] = None,
+    working_folder: Optional[Path] = None,
 ) -> MergeReport:
     """Refusal preflight, the pre-merge baseline, the merge, the checks.
 
@@ -1041,12 +1060,28 @@ def execute_merge(
     would mean a wrong guess skips the baseline and reports a clean merge as
     red. A wasted run on a conflicting branch is cheaper than a false red on
     a good one, and a conflict already needs a person.
+
+    ``working_folder`` (22 September 2026) is a working folder of this same
+    repository, made at the commit being joined onto. Handed one, EVERYTHING
+    that touches a tree happens in there: the refusal preflight, the choice of
+    the test command on the target branch, the pre-merge baseline run, the
+    merge itself and the post-merge checks. The repository's main copy is
+    never switched, reset or merged into. Handed none — every caller that
+    existed before this — the whole function runs exactly where it always ran.
+
+    ``repo_root`` itself is NOT moved: it stays the repository, so a
+    worktree's administrative paths are still the repository's own.
     """
     repo_root = Path(repo_root)
     branch = branch_to_merge(feature_id, branch)
+    # The tree everything is done to. A working folder shares the
+    # repository's refs and objects, so every ref read below answers the same
+    # thing in either place; what differs is which branch is checked out and
+    # which files the checks see, and those are exactly what must move.
+    tree_root = Path(working_folder) if working_folder is not None else repo_root
 
     reason = preflight_refusal(
-        repo_root, feature_id, target_branch, expect_target_sha, branch=branch
+        tree_root, feature_id, target_branch, expect_target_sha, branch=branch
     )
     if reason is not None:
         return MergeReport(
@@ -1061,8 +1096,8 @@ def execute_merge(
     # checks this too, but it does so AFTER the baseline run has already put
     # HEAD on the target branch and spent a whole suite; refusing here leaves
     # HEAD exactly where the caller had it, as a refusal always should.
-    if _rev_parse(repo_root, target_branch) is None or _rev_parse(
-        repo_root, branch
+    if _rev_parse(tree_root, target_branch) is None or _rev_parse(
+        tree_root, branch
     ) is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -1084,7 +1119,7 @@ def execute_merge(
     resolution_problem: Optional[str] = None
     if verify:
         resolution, resolution_problem = resolve_verify_command_on_target(
-            repo_root, target_branch
+            tree_root, target_branch
         )
     verify_command = (resolution[0] or None) if resolution else None
     verify_source = (resolution[1] or None) if resolution else None
@@ -1103,7 +1138,7 @@ def execute_merge(
         )
     elif verify and measure_baseline and baseline_failing is None:
         baseline = measure_pre_merge_baseline(
-            repo_root,
+            tree_root,
             target_branch=target_branch,
             timeout=verify_timeout,
             resolved_command=resolution,
@@ -1122,7 +1157,12 @@ def execute_merge(
             )
 
     report = perform_merge(
-        repo_root, feature_id, target_branch, manager=manager, branch=branch
+        repo_root,
+        feature_id,
+        target_branch,
+        manager=manager,
+        branch=branch,
+        working_folder=working_folder,
     )
     if report.outcome != OUTCOME_MERGED or not verify:
         return replace(
@@ -1147,7 +1187,7 @@ def execute_merge(
         could_not_run_detail = baseline.detail
     if could_not_run_detail is not None:
         validate_valid, validate_notes = validate_with_notes(
-            repo_root, feature_id, validate_command=validate_command
+            tree_root, feature_id, validate_command=validate_command
         )
         return MergeReport(
             outcome=report.outcome,
@@ -1171,7 +1211,7 @@ def execute_merge(
         )
 
     validate_valid, verification, charged, notes = verify_merged(
-        repo_root,
+        tree_root,
         feature_id,
         baseline_failing=baseline_failing,
         timeout=verify_timeout,

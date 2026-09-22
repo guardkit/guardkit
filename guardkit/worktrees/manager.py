@@ -460,6 +460,7 @@ class WorktreeManager:
         worktree: Worktree,
         target_branch: str = "main",
         message: Optional[str] = None,
+        working_folder: Optional[Path] = None,
     ) -> None:
         """
         Merge worktree branch into target branch.
@@ -473,6 +474,27 @@ class WorktreeManager:
             message: Merge commit message. ``None`` (the default) keeps the
                 historical ``"Merge {task_id} from AutoBuild"`` message
                 byte-identically.
+            working_folder: The folder the checkout and the merge happen in.
+                ``None`` (the default) is the repository's main copy, exactly
+                as before. A caller that hands one in gets the same two git
+                commands run THERE instead — see below.
+
+        WHY A CALLER MAY NAME THE FOLDER (22 September 2026, the one-true-copy
+        design pass, "Every step happens in a working folder of its own"). The
+        two commands below switch the branch that is checked out. Run in the
+        repository's main copy, they switch it underneath whoever else is
+        using it — and when a factory drives this merge, that copy is shared
+        with every other piece of work in flight. Git's own answer to that is
+        a working folder of its own (``git worktree``), and a worktree is a
+        real directory of the same repository: the refs, the objects and the
+        merge result are shared, only the checked-out branch is not. So a
+        caller that has made one at the commit it wants to join onto hands it
+        in here, and the repository's main copy is never switched, reset or
+        merged into at all.
+
+        Nothing else moves: the commands, their arguments, the conflict
+        detection and the messages are what they were, and a call that names
+        no folder is byte for byte the call it has always been.
 
         Raises:
             WorktreeMergeError: If merge fails or has conflicts
@@ -480,9 +502,11 @@ class WorktreeManager:
         Example:
             >>> manager.merge(worktree, target_branch="main")
         """
+        where = Path(working_folder) if working_folder is not None else None
+
         # Switch to target branch
         try:
-            self._run_git(["checkout", target_branch])
+            self._run_git(["checkout", target_branch], cwd=where)
         except WorktreeError as e:
             raise WorktreeMergeError(
                 f"Failed to checkout {target_branch}: {e}"
@@ -500,11 +524,11 @@ class WorktreeManager:
                 "merge", "--no-ff",
                 "-m", commit_message,
                 worktree.branch_name
-            ])
+            ], cwd=where)
         except WorktreeError as e:
             # Check for merge conflicts
             try:
-                status = self._run_git(["status", "--porcelain"])
+                status = self._run_git(["status", "--porcelain"], cwd=where)
                 if status.stdout and "UU" in status.stdout:
                     raise WorktreeMergeError(
                         f"Merge conflicts in {worktree.task_id}. "
