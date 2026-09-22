@@ -66,7 +66,7 @@ MAX_CONFIG_BYTES = 256 * 1024
 #: an accidental paste (a whole file, a token) out of every natural key.
 MAX_NAME_LENGTH = 128
 
-Source = Literal["handover", "declaration", "none", "refused"]
+Source = Literal["handover", "declaration", "none", "refused", "failed"]
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,7 @@ class MemoryProjectResolution:
         project: The memory name to use, or ``None`` when memory is off.
         source: Where the name came from — ``"handover"`` (the setting),
             ``"declaration"`` (the project's own file), ``"none"`` (nothing said),
+            ``"failed"`` (resolving it raised: memory is off, said so),
             or ``"refused"`` (something was said and it is not usable).
         message: One plain sentence (or a short block) for a human to read. For
             ``"none"`` and ``"refused"`` it says exactly which line to add to

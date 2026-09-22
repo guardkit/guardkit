@@ -503,3 +503,59 @@ class TestTheSettledAnswerDoesNotOutliveItsTest:
         import guardkit.knowledge.fleet_memory_client as fmc
 
         assert fmc._memory_project_resolution is None
+
+
+# ===========================================================================
+# A failure to settle the name must not keep the previous project's memory
+# (Codex, 22 September 2026).
+# ===========================================================================
+
+
+def test_a_failed_resolution_discards_the_previous_projects_memory(
+    memory_module, tmp_path, monkeypatch, caplog
+):
+    """Two projects in one process; the second's name cannot be settled.
+
+    Before the fix, ``configure_memory_project`` raised before it reached the
+    discard, so the client and factory built for the FIRST project survived,
+    and the second project's reads and outcome writes went under the first's
+    name. Now a failure is itself the answer "memory off", settled through the
+    same path, and nothing built earlier survives it.
+    """
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    _declare(first, "memory:\n  project: first_project\n")
+    _declare(second, "memory:\n  project: second_project\n")
+
+    answer = memory_module.configure_memory_project(first)
+    assert answer.project == "first_project"
+    memory_module.init_memory_client(
+        fleet_config=memory_module.FleetMemoryConfig(enabled=True, project="first_project")
+    )
+    assert memory_module._memory_client is not None
+    assert memory_module._memory_client.config.project == "first_project"
+    memory_module._memory_factory = object()  # anything cached for the first project
+
+    def blow_up(*args, **kwargs):
+        raise RecursionError("maximum recursion depth exceeded while parsing settings")
+
+    monkeypatch.setattr(memory_module, "resolve_memory_project", blow_up)
+
+    with caplog.at_level("WARNING"):
+        answer = memory_module.configure_memory_project(second)
+
+    assert answer.project is None
+    assert answer.source == "failed"
+    assert "memory: OFF" in caplog.text and "RecursionError" in caplog.text
+    # Nothing of the first project survives: no client, no factory, and the
+    # shared configuration now carries no name at all.
+    assert memory_module._memory_client is None
+    assert memory_module._memory_factory is None
+    assert memory_module._backend_initialized is False
+    assert memory_module.memory_project_resolution().project is None
+    assert memory_module._load_fleet_config_from_env().project is None
+    # And a client asked for now is refused, so neither a read nor an outcome
+    # write can be filed under "first_project".
+    assert memory_module.get_memory_client() is None
+    factory = memory_module.get_memory_factory()
+    assert factory is None or factory.get_thread_client() is None
