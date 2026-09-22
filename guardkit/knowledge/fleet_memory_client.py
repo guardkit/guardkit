@@ -1214,7 +1214,24 @@ def configure_memory_project(
     global _memory_project_resolution, _memory_client, _memory_factory
     global _backend_initialized
 
-    resolution = resolve_memory_project(project_root)
+    try:
+        resolution = resolve_memory_project(project_root)
+    except Exception as exc:  # noqa: BLE001 — memory never breaks a build
+        # A failure to settle the name is itself an answer: memory OFF. It must
+        # go through the same discard below, or a client built for the
+        # PREVIOUS project in this process would go on answering reads and
+        # filing this project's outcomes under that name (Codex, 22 September
+        # 2026: two projects in one process, the second's settings unparseable,
+        # its outcome sent under the first's name).
+        resolution = MemoryProjectResolution(
+            project=None,
+            source="failed",
+            message=(
+                "memory: OFF — which memory this build uses could not be settled "
+                f"({type(exc).__name__}: {exc}). Nothing is read or written "
+                "under any name until it can be."
+            ),
+        )
     log_resolution(resolution)
     with _memory_project_lock:
         if _memory_project_resolution == resolution:
@@ -1322,7 +1339,15 @@ def get_memory_client() -> Optional[FleetMemoryClient | Any]:
     # First call (no explicit init): lazily initialize the fleet-memory backend.
     _ensure_backend_initialized()
 
-    return _memory_client
+    # NO NAME, NO CLIENT, on this path too (22 September 2026). The per-thread
+    # factory already refuses; this singleton is what the outcome writer and
+    # the other writers use, and a client here carrying no project name would
+    # file under nothing, or, after a discard, keep whatever name the
+    # configuration was last built with.
+    client = _memory_client
+    if client is not None and not getattr(getattr(client, "config", None), "project", None):
+        return None
+    return client
 
 
 def get_memory_factory() -> Optional[FleetMemoryClientFactory]:

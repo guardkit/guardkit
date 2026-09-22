@@ -2576,11 +2576,10 @@ class AutoBuildOrchestrator:
         # project's outcomes under GuardKit's own.
         # The project's settings are read from the CANONICAL repo root, the same
         # copy the toolchain declaration is read from (see _load_toolchain).
-        try:
-            self._memory_project = configure_memory_project(self.repo_root)
-        except Exception as e:  # noqa: BLE001 — memory never breaks a build
-            self._memory_project = None
-            logger.warning("Could not settle which memory this build uses: %s", e)
+        # configure_memory_project never raises: a failure to settle the name
+        # is itself the answer "memory off", settled through the same path, so
+        # nothing built for an earlier project in this process survives it.
+        self._memory_project = configure_memory_project(self.repo_root)
 
         # Store factory reference for per-thread client creation (TASK-FIX-GTP2)
         # Replaces shared singleton pattern that caused cross-loop hangs in parallel mode.
