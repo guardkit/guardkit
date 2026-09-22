@@ -2574,8 +2574,18 @@ class AutoBuildOrchestrator:
         # means memory is off for this build, said out loud with the line to
         # add. There is no fallback name, which is what used to file every
         # project's outcomes under GuardKit's own.
-        # The project's settings are read from the CANONICAL repo root, the same
-        # copy the toolchain declaration is read from (see _load_toolchain).
+        # The project's settings are read from the CANONICAL repo root — the
+        # build's own working folder — which is the same copy the toolchain
+        # declaration is read from (see _load_toolchain) and, since 2026-09-21,
+        # the same copy the pattern-sources declaration is read from too (the
+        # context loader's ``declaration_root``, below). ONE copy of one file
+        # answers everything this project declares about its memory; there used
+        # to be two, and two can disagree for a whole build.
+        # When Forge launched this build it handed the name over on purpose
+        # (``GUARDKIT_MEMORY_PROJECT``), having read it at the commit the work
+        # started from. THAT NAME WINS: this read is for GuardKit used by hand,
+        # with no Forge, and a stale working copy must never overrule the commit
+        # the work actually started from.
         # configure_memory_project never raises: a failure to settle the name
         # is itself the answer "memory off", settled through the same path, so
         # nothing built for an earlier project in this process survives it.
@@ -7736,6 +7746,14 @@ class AutoBuildOrchestrator:
             loader = AutoBuildContextLoader(
                 graphiti=client, verbose=self.verbose,
                 worktree_path=getattr(self, '_active_worktree_path', None),
+                # ONE COPY FOR THE WHOLE DECLARATION (2026-09-21). The memory
+                # name was settled from ``self.repo_root`` — the build's own
+                # working folder — and everything else this project declares
+                # about its memory is now read from that same copy, rather
+                # than from whichever per-task worktree happens to be active.
+                # Two copies of one file could disagree for a whole build;
+                # now there is one.
+                declaration_root=self.repo_root,
             )
             self._thread_loaders[thread_id] = (loader, loop)
             logger.info(f"Created per-thread context loader for thread {thread_id}")

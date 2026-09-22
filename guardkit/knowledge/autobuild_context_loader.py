@@ -322,6 +322,7 @@ class AutoBuildContextLoader:
         graphiti: Optional[Any] = None,
         verbose: bool = False,
         worktree_path: Optional[Path] = None,
+        declaration_root: Optional[Path] = None,
     ) -> None:
         """Initialize AutoBuildContextLoader.
 
@@ -331,11 +332,27 @@ class AutoBuildContextLoader:
             verbose: If True, include detailed context information in results.
             worktree_path: Optional worktree path for local turn state file reads
                 (TASK-RFX-5FED). Enables fast local file reads instead of the
-                memory backend.
+                memory backend. This is the PER-TASK worktree: it changes from
+                task to task within one build.
+            declaration_root: ONE COPY FOR THE WHOLE DECLARATION (2026-09-21,
+                the stage-1 review's two-copies question). Everything this
+                project DECLARES about its memory — the name, in
+                ``memory: project:``, and the pattern sources, in
+                ``memory.fleet.context_sources`` — is read from this one
+                folder: the build's own working folder, which is where the
+                orchestrator settles the memory name from. Before this, the
+                name was read from the build's working folder and the pattern
+                sources from the per-task worktree — two copies of one file,
+                able to disagree with each other for a whole build. Left unset
+                it falls back to ``worktree_path``, which is what a caller that
+                knows only a worktree has always passed.
         """
         self.graphiti = graphiti
         self.verbose = verbose
         self.worktree_path = worktree_path
+        self.declaration_root = (
+            declaration_root if declaration_root is not None else worktree_path
+        )
         self._retriever: Optional[JobContextRetriever] = None
 
     @property
@@ -349,7 +366,9 @@ class AutoBuildContextLoader:
             self._retriever = JobContextRetriever(
                 self.graphiti,
                 relevant_pattern_document_tags=(
-                    _load_relevant_pattern_document_tags(self.worktree_path)
+                    # The project's declaration, out of the SAME copy the
+                    # memory name is settled from (see ``declaration_root``).
+                    _load_relevant_pattern_document_tags(self.declaration_root)
                 ),
             )
         return self._retriever
