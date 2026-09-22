@@ -1976,6 +1976,19 @@ def zero_test_report(repo_root: tuple, limit: int, as_json: bool):
     help="Seconds before the post-merge verification run is killed.",
 )
 @click.option(
+    "--in-worktree",
+    "in_worktree",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "A working folder of this repository to do the merge in — made "
+        "beforehand, at the commit being joined onto. The checkout, the "
+        "merge and the checks all happen there, and the repository's main "
+        "copy is never switched or merged into. Without it everything "
+        "happens where the command was run, exactly as before."
+    ),
+)
+@click.option(
     "--json",
     "as_json",
     is_flag=True,
@@ -1990,6 +2003,7 @@ def merge(
     verify: bool,
     measure_baseline: bool,
     verify_timeout: int,
+    in_worktree: Optional[Path],
     as_json: bool,
 ):
     """
@@ -2049,6 +2063,7 @@ def merge(
             verify_timeout=verify_timeout,
             measure_baseline=measure_baseline,
             branch=branch,
+            working_folder=in_worktree,
         )
     except Exception as e:  # noqa: BLE001 — the CLI boundary reports plainly
         console.print(f"[red]Unexpected error: {e}[/red]")
