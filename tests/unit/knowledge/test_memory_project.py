@@ -22,6 +22,7 @@ import threading
 import pytest
 
 from guardkit.knowledge.memory_project import (
+    FACTORY_LAUNCH_ENV,
     MEMORY_PROJECT_ENV,
     MAX_CONFIG_BYTES,
     resolve_memory_project,
@@ -53,6 +54,50 @@ def test_an_empty_handover_is_not_a_handover(tmp_path):
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
     for blank in ("", "   ", "\t"):
         answer = resolve_memory_project(tmp_path, env={MEMORY_PROJECT_ENV: blank})
+        assert answer.project == "widget_shop"
+        assert answer.source == "declaration"
+
+
+def test_a_factory_launch_never_takes_the_name_from_the_folder(tmp_path):
+    """The fault a review found on 22 September 2026, and the fence for it.
+
+    A factory reads the project's declaration itself, at the commit the work
+    started from. The folder a leg is pointed at is a working copy, and it said
+    something else: with ``changed_project`` in the worktree and
+    ``recorded_project`` in the ledger, a call the factory made and handed no
+    name to took the worktree's name. A launch that says a factory made it now
+    runs with memory OFF instead.
+    """
+    _declare(tmp_path, "memory:\n  project: changed_project\n")
+
+    answer = resolve_memory_project(tmp_path, env={FACTORY_LAUNCH_ENV: "1"})
+
+    assert answer.project is None
+    assert answer.source == "none"
+    assert not answer.is_on
+    assert "a factory launched this" in answer.message
+    assert "changed_project" not in answer.message
+
+
+def test_a_factory_launch_still_uses_the_name_it_was_handed(tmp_path):
+    """The handover is the point: the name it hands over is the one used."""
+    _declare(tmp_path, "memory:\n  project: changed_project\n")
+
+    answer = resolve_memory_project(
+        tmp_path,
+        env={FACTORY_LAUNCH_ENV: "1", MEMORY_PROJECT_ENV: "recorded_project"},
+    )
+
+    assert answer.project == "recorded_project"
+    assert answer.source == "handover"
+
+
+def test_without_the_factory_setting_the_folder_still_answers(tmp_path):
+    """GuardKit used by hand is untouched: its own folder still declares."""
+    _declare(tmp_path, "memory:\n  project: widget_shop\n")
+
+    for blank in ({}, {FACTORY_LAUNCH_ENV: ""}, {FACTORY_LAUNCH_ENV: "   "}):
+        answer = resolve_memory_project(tmp_path, env=blank)
         assert answer.project == "widget_shop"
         assert answer.source == "declaration"
 

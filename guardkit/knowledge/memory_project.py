@@ -13,7 +13,13 @@ The order of authority (design pass 2026-09-21, item 2):
    two cannot disagree and a stale checkout cannot supply the name.
 2. **The project's own declaration**: ``memory: project: <name>`` in the
    project's ``.guardkit/config.yaml``, read from the folder the build works in.
-   This is the by-hand case, where nothing handed a name over.
+   This is the by-hand case, where nothing handed a name over — and ONLY that
+   case. A launch that says a factory made it (``GUARDKIT_FACTORY_LAUNCH``,
+   added 22 September 2026) skips this step entirely: the factory read the
+   declaration at the commit the work started from, and the folder this process
+   is pointed at is a working copy that may say something else. It did, in a
+   review on 22 September 2026: with one name in the ledger and another in the
+   worktree, this step chose the worktree's.
 3. **Nothing.** Memory is then OFF for this build: nothing is read and nothing is
    written, under any name. There is no fallback name, deliberately — a build
    that quietly files its work under somebody else's name is worse than a build
@@ -43,6 +49,14 @@ logger = logging.getLogger(__name__)
 
 #: The setting a caller uses to hand a name over on purpose.
 MEMORY_PROJECT_ENV = "GUARDKIT_MEMORY_PROJECT"
+
+#: The setting that says "a factory launched this" (22 September 2026). A
+#: factory reads the project's declaration ITSELF, at the commit the work
+#: started from, and hands the name over above. The folder this process is
+#: pointed at is a different thing — a working copy, which may have been
+#: changed since — so when this is set the declaration in that folder is NOT
+#: consulted: the handed-over name is used, or memory is off.
+FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
 
 #: Where a project declares its own name, relative to the folder being built.
 CONFIG_RELATIVE_PATH = Path(".guardkit") / "config.yaml"
@@ -244,6 +258,24 @@ def resolve_memory_project(
                 ),
             )
         return MemoryProjectResolution(project=None, source="refused", message=refusal or "")
+
+    if str(settings.get(FACTORY_LAUNCH_ENV) or "").strip():
+        # A FACTORY launched this and handed over no name. It reads the
+        # project's declaration itself, at the commit the work started from, so
+        # the absence of a name here is a decision and not an omission — and
+        # the folder this process is pointed at must not be allowed to overrule
+        # it. Memory is off, and it says so.
+        return MemoryProjectResolution(
+            project=None,
+            source="none",
+            message=(
+                "memory: OFF — a factory launched this and handed over no "
+                "memory name, so nothing is read and nothing is written under "
+                "any name. The name a factory hands over is the one the "
+                "project declares at the commit the work started from; the "
+                "declaration in this folder is deliberately not consulted."
+            ),
+        )
 
     declared, refusal, was_declared = read_declared_project(root)
     if declared is not None:
