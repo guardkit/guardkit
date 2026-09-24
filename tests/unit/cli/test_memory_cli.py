@@ -353,3 +353,95 @@ class TestMemoryExtraOptionalImport:
         assert "guardkit-py" in joined
         assert "[falkordb]" in joined  # falkordb extra, and bracket not swallowed
         assert "[memory]" not in joined
+
+
+class TestMigrateGraphHasNoDefaultHost:
+    """`memory migrate-graph` must never guess which FalkorDB to read.
+
+    Until 2026-09-24 an unset ``FALKORDB_HOST`` fell back to the name of one
+    machine on one network, so any other deployment that left the setting
+    unset silently tried to connect to somebody else's box. There is no
+    default now: the command refuses and names the setting.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_host_in_the_environment(self, monkeypatch):
+        monkeypatch.delenv("FALKORDB_HOST", raising=False)
+
+    def test_refuses_and_names_the_setting_when_nothing_says_which_host(
+        self, runner
+    ):
+        """No --host and no FALKORDB_HOST: exit 1, the setting named, no connection."""
+        import guardkit.cli.memory as memory_mod
+
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", None), patch.object(
+            memory_mod, "read_falkordb_episodics"
+        ) as mock_read:
+            result = runner.invoke(memory, ["migrate-graph", "--dry-run"])
+
+        assert result.exit_code == 1
+        assert "FALKORDB_HOST" in result.output
+        assert "--host" in result.output
+        # It refused before reaching FalkorDB, not after failing to reach it.
+        mock_read.assert_not_called()
+
+    def test_no_machine_name_is_offered_anywhere(self, runner):
+        """Neither the refusal nor --help suggests a host that belongs to a machine."""
+        import guardkit.cli.memory as memory_mod
+
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", None), patch.object(
+            memory_mod, "read_falkordb_episodics"
+        ):
+            refusal = runner.invoke(memory, ["migrate-graph", "--dry-run"]).output
+        help_text = runner.invoke(memory, ["migrate-graph", "--help"]).output
+
+        for text in (refusal, help_text, memory_mod.MISSING_FALKORDB_HOST_REFUSAL):
+            assert "whitestocks" not in text
+            assert "promaxgb10" not in text
+
+    def test_the_host_option_is_accepted_and_used(self, runner):
+        """--host still works, and is the host that is read."""
+        import guardkit.cli.memory as memory_mod
+
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", None), patch.object(
+            memory_mod, "read_falkordb_episodics", return_value=iter([])
+        ) as mock_read, patch.object(
+            memory_mod, "build_export_episodes"
+        ) as mock_build:
+            mock_build.return_value = MagicMock(
+                episodes=[],
+                graphs_scanned=0,
+                skipped_retired=0,
+                skipped_empty=0,
+                skipped_no_group=0,
+                counts_per_project={},
+            )
+            result = runner.invoke(
+                memory, ["migrate-graph", "--host", "localhost", "--dry-run"]
+            )
+
+        assert result.exit_code == 0
+        assert mock_read.call_args.args[0] == "localhost"
+
+    def test_the_environment_setting_is_accepted_and_used(self, runner, monkeypatch):
+        """FALKORDB_HOST alone is enough, and is the host that is read."""
+        import guardkit.cli.memory as memory_mod
+
+        monkeypatch.setenv("FALKORDB_HOST", "falkordb.example")
+        with patch.object(memory_mod, "_MEMORY_IMPORT_ERROR", None), patch.object(
+            memory_mod, "read_falkordb_episodics", return_value=iter([])
+        ) as mock_read, patch.object(
+            memory_mod, "build_export_episodes"
+        ) as mock_build:
+            mock_build.return_value = MagicMock(
+                episodes=[],
+                graphs_scanned=0,
+                skipped_retired=0,
+                skipped_empty=0,
+                skipped_no_group=0,
+                counts_per_project={},
+            )
+            result = runner.invoke(memory, ["migrate-graph", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert mock_read.call_args.args[0] == "falkordb.example"
