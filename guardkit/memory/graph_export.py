@@ -235,7 +235,9 @@ def read_falkordb_episodics(
     Entity/edge layer.
 
     Args:
-        host: FalkorDB host (e.g. ``whitestocks``).
+        host: FalkorDB host, as the caller was told it (e.g. ``localhost``).
+            There is no default on this path: the CLI refuses when neither
+            ``--host`` nor ``FALKORDB_HOST`` says which host to read.
         port: FalkorDB port (default 6379).
         project_filter: If set, only graphs whose sanitised project equals this value
             (e.g. ``"guardkit"``) are read.

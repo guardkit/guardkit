@@ -328,6 +328,21 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
 # ============================================================================
 
 
+#: What ``memory migrate-graph`` says when it has not been told which FalkorDB
+#: to read (2026-09-24). There is no default host and there is not going to be
+#: one: a default is a guess at somebody's machine, and the guess that used to
+#: be here was the name of one box on one network, so every other deployment
+#: that left the setting unset silently tried to talk to it. Same treatment as
+#: FORGE_REPO_BASE — name the setting, say what it is for, name the other way
+#: to answer the same question.
+MISSING_FALKORDB_HOST_REFUSAL: str = (
+    "FALKORDB_HOST is not set and --host was not given, so this command does "
+    "not know which FalkorDB to read — refusing. Set FALKORDB_HOST to the host "
+    "your FalkorDB runs on (or put it in the file you pass to --env-file), or "
+    "pass --host."
+)
+
+
 @memory.command("migrate-graph")
 # DELIBERATELY STILL "guardkit" (2026-09-21). This is a command someone runs by
 # hand, about GuardKit's own old graph, and the name is what it migrates FROM —
@@ -347,7 +362,10 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
 @click.option(
     "--host",
     default=None,
-    help="FalkorDB host (default: $FALKORDB_HOST or 'whitestocks').",
+    help=(
+        "FalkorDB host. Required, and there is no default: pass --host or set "
+        "FALKORDB_HOST (e.g. 'localhost')."
+    ),
 )
 @click.option(
     "--port",
@@ -395,8 +413,12 @@ def migrate_graph(
     RELAY REBUILD REQUIRED first: DocumentPayload.content (FEAT-MEM-09 WS-1a) is only
     stored by a rebuilt relay image; an older relay SILENTLY DROPS content.
 
+    The FalkorDB host must be given, by --host or FALKORDB_HOST; there is no
+    default, because a default would be one deployment's machine name.
+
     Examples:
-        guardkit memory migrate-graph --dry-run --limit 5
+        guardkit memory migrate-graph --host localhost --dry-run --limit 5
+        export FALKORDB_HOST=localhost
         guardkit memory migrate-graph                     # guardkit only
         guardkit memory migrate-graph --all-projects      # fleet-wide
     """
@@ -410,7 +432,14 @@ def migrate_graph(
         load_dotenv(env_file)
         logger.info("Loaded environment from %s", env_file)
 
-    fdb_host = host or os.getenv("FALKORDB_HOST", "whitestocks")
+    # No default host: an unset setting is said out loud, by name, rather than
+    # guessed at. See MISSING_FALKORDB_HOST_REFUSAL above. --env-file is read
+    # first, so a host named in that file counts as set.
+    fdb_host = host or os.getenv("FALKORDB_HOST") or ""
+    if not fdb_host.strip():
+        console.print(f"\n[red]Error:[/red] {MISSING_FALKORDB_HOST_REFUSAL}\n")
+        sys.exit(1)
+
     fdb_port = port if port is not None else int(os.getenv("FALKORDB_PORT", "6379"))
     project_filter = None if all_projects else project
 
