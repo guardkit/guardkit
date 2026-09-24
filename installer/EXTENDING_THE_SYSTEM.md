@@ -2,6 +2,13 @@
 
 This guide explains how to add new agents and templates to the AI-Engineer global installation system.
 
+> The commands below use `$GUARDKIT_REPO` for the root of your checkout of this
+> repository. Set it once for your shell —
+> `export GUARDKIT_REPO=$(git rev-parse --show-toplevel)` from anywhere inside
+> the checkout — and every example works wherever the checkout lives. (Until
+> 2026-09-24 these examples wrote out one person's home directory, which is no
+> use to anyone else and puts one machine's paths in a public repository.)
+
 ## Table of Contents
 - [System Architecture Overview](#system-architecture-overview)
 - [Adding a New Agent](#adding-a-new-agent)
@@ -43,7 +50,7 @@ Agents are specialized AI assistants that help with specific aspects of the deve
 Create a new markdown file in the base agents directory:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.claude/agents/
+cd "$GUARDKIT_REPO"/.claude/agents/
 ```
 
 Create your agent file (e.g., `performance-optimizer.md`):
@@ -166,7 +173,7 @@ Agents that work with ANY technology stack should be added to **ALL templates**.
 # Copy to ALL templates
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
   cp performance-optimizer.md \
-    /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/$template/agents/
+    "$GUARDKIT_REPO"/installer/core/templates/$template/agents/
 done
 ```
 
@@ -191,15 +198,15 @@ Agents that only work with ONE technology stack should be added to **THAT TEMPLA
 # Copy to SPECIFIC template only
 # Example: Adding a Python-specific agent
 cp my-python-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/python/agents/
+  "$GUARDKIT_REPO"/installer/core/templates/python/agents/
 
 # Example: Adding a React-specific agent
 cp my-react-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/react/agents/
+  "$GUARDKIT_REPO"/installer/core/templates/react/agents/
 
 # Example: Adding a MAUI-specific agent
 cp my-maui-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/agents/
+  "$GUARDKIT_REPO"/installer/core/templates/maui/agents/
 ```
 
 #### Decision Tree
@@ -241,7 +248,7 @@ Add your agent to the main documentation in `.claude/CLAUDE.md`:
 If your agent needs a specific command, create one in `installer/core/commands/`:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/
+cd "$GUARDKIT_REPO"/installer/core/commands/
 ```
 
 Create `optimize-performance.md`:
@@ -272,7 +279,7 @@ Templates provide stack-specific configurations and resources for different proj
 ### Step 1: Create Template Directory Structure
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/
+cd "$GUARDKIT_REPO"/installer/core/templates/
 mkdir -p my-template/{agents,templates}
 ```
 
@@ -321,8 +328,8 @@ project/
 Copy the standard agents to your template:
 
 ```bash
-cp /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/default/agents/*.md \
-   /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/my-template/agents/
+cp "$GUARDKIT_REPO"/installer/core/templates/default/agents/*.md \
+   "$GUARDKIT_REPO"/installer/core/templates/my-template/agents/
 ```
 
 ### Step 4: Add Template-Specific Files
@@ -424,7 +431,7 @@ ls .claude/agents/  # Should show your new agent
 1. **Installation Test**:
 ```bash
 # Reinstall global system
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer
+cd "$GUARDKIT_REPO"/installer
 ./scripts/install-global.sh
 
 # Verify template appears in list

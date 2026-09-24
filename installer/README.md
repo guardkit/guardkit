@@ -205,9 +205,15 @@ cd installer
 ```
 
 ### Fixing Missing Agents
+
+`$GUARDKIT_REPO` below is the root of your checkout of this repository — set it
+with `export GUARDKIT_REPO=$(git rev-parse --show-toplevel)` from anywhere
+inside the checkout. (It used to be written out as one person's home directory,
+which is a machine's path in a public repository.)
+
 ```bash
 # Run the provided fix script
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer
+cd "$GUARDKIT_REPO"
 chmod +x copy-agents.sh
 ./copy-agents.sh
 

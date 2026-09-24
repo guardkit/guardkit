@@ -43,8 +43,19 @@ Use these patterns to execute clarification based on context.
 
 ```python
 import sys
-sys.path.insert(0, '/Users/richardwoollcott/.agentecflow/lib')
-sys.path.insert(0, '/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib')
+from pathlib import Path
+
+# No machine's home directory belongs in this file (2026-09-24). The two places
+# the clarification library can live are worked out at run time: the installed
+# agentecflow library under whatever home this is running as, and the copy that
+# ships inside the installed guardkit package (a development checkout falls back
+# to installer/core/commands/lib under the repository root).
+sys.path.insert(0, str(Path.home() / '.agentecflow' / 'lib'))
+try:
+    import guardkit._installer_core as _installer_core
+    sys.path.insert(0, str(Path(_installer_core.__file__).parent / 'commands' / 'lib'))
+except ImportError:
+    sys.path.insert(0, str(Path.cwd() / 'installer' / 'core' / 'commands' / 'lib'))
 
 from clarification.core import ClarificationMode, ClarificationContext, should_clarify
 from clarification.generators.review_generator import generate_review_questions
@@ -314,8 +325,19 @@ clarification_context:
 
 ```python
 import sys
-sys.path.insert(0, '/Users/richardwoollcott/.agentecflow/lib')
-sys.path.insert(0, '/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib')
+from pathlib import Path
+
+# No machine's home directory belongs in this file (2026-09-24). The two places
+# the clarification library can live are worked out at run time: the installed
+# agentecflow library under whatever home this is running as, and the copy that
+# ships inside the installed guardkit package (a development checkout falls back
+# to installer/core/commands/lib under the repository root).
+sys.path.insert(0, str(Path.home() / '.agentecflow' / 'lib'))
+try:
+    import guardkit._installer_core as _installer_core
+    sys.path.insert(0, str(Path(_installer_core.__file__).parent / 'commands' / 'lib'))
+except ImportError:
+    sys.path.insert(0, str(Path.cwd() / 'installer' / 'core' / 'commands' / 'lib'))
 
 from pathlib import Path
 from clarification.core import (
