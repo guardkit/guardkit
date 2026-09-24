@@ -45,17 +45,15 @@ Use these patterns to execute clarification based on context.
 import sys
 from pathlib import Path
 
-# No machine's home directory belongs in this file (2026-09-24). The two places
-# the clarification library can live are worked out at run time: the installed
-# agentecflow library under whatever home this is running as, and the copy that
-# ships inside the installed guardkit package (a development checkout falls back
-# to installer/core/commands/lib under the repository root).
+# The installed payload resolver works for both wheels and editable installs,
+# even when this command is run from a different project's working directory.
 sys.path.insert(0, str(Path.home() / '.agentecflow' / 'lib'))
 try:
-    import guardkit._installer_core as _installer_core
-    sys.path.insert(0, str(Path(_installer_core.__file__).parent / 'commands' / 'lib'))
+    from guardkit.templates.resolver import resolve_installer_core_dir
 except ImportError:
-    sys.path.insert(0, str(Path.cwd() / 'installer' / 'core' / 'commands' / 'lib'))
+    pass  # A standalone agentecflow install uses the home library above.
+else:
+    sys.path.insert(0, str(resolve_installer_core_dir() / 'commands' / 'lib'))
 
 from clarification.core import ClarificationMode, ClarificationContext, should_clarify
 from clarification.generators.review_generator import generate_review_questions
@@ -327,19 +325,15 @@ clarification_context:
 import sys
 from pathlib import Path
 
-# No machine's home directory belongs in this file (2026-09-24). The two places
-# the clarification library can live are worked out at run time: the installed
-# agentecflow library under whatever home this is running as, and the copy that
-# ships inside the installed guardkit package (a development checkout falls back
-# to installer/core/commands/lib under the repository root).
+# The installed payload resolver works for both wheels and editable installs,
+# even when this command is run from a different project's working directory.
 sys.path.insert(0, str(Path.home() / '.agentecflow' / 'lib'))
 try:
-    import guardkit._installer_core as _installer_core
-    sys.path.insert(0, str(Path(_installer_core.__file__).parent / 'commands' / 'lib'))
+    from guardkit.templates.resolver import resolve_installer_core_dir
 except ImportError:
-    sys.path.insert(0, str(Path.cwd() / 'installer' / 'core' / 'commands' / 'lib'))
-
-from pathlib import Path
+    pass  # A standalone agentecflow install uses the home library above.
+else:
+    sys.path.insert(0, str(resolve_installer_core_dir() / 'commands' / 'lib'))
 from clarification.core import (
     ClarificationContext,
     ClarificationMode,
