@@ -1298,7 +1298,7 @@ class CoachVerifier:
         2. Strip trailing ``/`` (so ``adapters/`` matches ``adapters``).
         3. **Convert absolute paths to worktree-relative** (TASK-FIX-CAUD-J6F1):
            when the Player reports
-           ``/Users/.../FEAT-X/src/foo.py`` and ``git status --porcelain``
+           ``<worktree>/FEAT-X/src/foo.py`` and ``git status --porcelain``
            reports ``src/foo.py``, the literal-string membership test in
            :py:meth:`_verify_claims_were_staged` would otherwise produce a
            guaranteed false-positive ``claim_audit`` discrepancy.

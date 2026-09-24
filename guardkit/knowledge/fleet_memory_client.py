@@ -252,7 +252,11 @@ class FleetMemoryConfig:
 
     enabled: bool = False
     postgres_dsn: str = "postgresql://postgres:test@localhost:5433/memory"
-    embed_url: str = "http://promaxgb10-41b1:9000/v1"
+    # No machine's name in a default (2026-09-24): this used to name one box on
+    # one network, which resolves nowhere else — inside a container least of
+    # all. The address of the embedding service is a deployment fact and comes
+    # from FLEET_MEMORY_EMBED_URL; the local default only says "here".
+    embed_url: str = "http://localhost:9000/v1"
     embed_model: str = "nomic-embed"
     embed_dims: int = 768
     nats_url: str = "nats://localhost:4222"
@@ -1436,9 +1440,12 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
     return FleetMemoryConfig(
         enabled=os.getenv("FLEET_MEMORY_ENABLED", "false").lower() == "true",
         postgres_dsn=postgres_dsn,
+        # As above: the fallback says "here", never a machine's name. A
+        # deployment that has an embedding service elsewhere names it in
+        # FLEET_MEMORY_EMBED_URL.
         embed_url=os.getenv(
             "FLEET_MEMORY_EMBED_URL",
-            "http://promaxgb10-41b1:9000",
+            "http://localhost:9000",
         ),
         # Defaults match the live deployment (Qwen3-Embedding-0.6B @ 1024 dims).
         # A wrong default silently mis-embeds against the rebuilt corpus and

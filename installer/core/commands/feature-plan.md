@@ -2607,7 +2607,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     are per-repo conventions; a path that exists in one repo is
     almost never present at the same location in another.
 
-    Example failure (TASK-REV-DEA8 — appmilla_github/forge,
+    Example failure (TASK-REV-DEA8 — the forge repository,
     2026-05-02): the agent wrote
     `pytest tests/cli tests/forge -x -k "..."` for a forge feature.
     `tests/cli/` does not exist in forge (it is a guardkit-shaped

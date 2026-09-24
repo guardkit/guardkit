@@ -516,7 +516,7 @@ def _is_orchestrator_managed_path(
     path:
         Path string from the Player report. May be relative
         (``.guardkit/...``) or absolute
-        (``/Users/.../FEAT-X/.guardkit/...``).
+        (``<worktree>/FEAT-X/.guardkit/...``).
     worktree_path:
         When provided, absolute path inputs are first normalised to be
         relative to ``worktree_path`` so the same regex set matches
@@ -536,7 +536,7 @@ def _is_orchestrator_managed_path(
     # the regex match. Without this, the patterns at
     # ``_ORCHESTRATOR_MANAGED_PATH_PATTERNS`` (anchored at start-of-
     # string with ``^\.guardkit/...``) cannot match
-    # ``/Users/.../FEAT-X/.guardkit/...`` and harness-owned paths in
+    # ``<worktree>/FEAT-X/.guardkit/...`` and harness-owned paths in
     # absolute form leak through to the Coach. See TASK-FIX-CAUD-J6F1.
     if worktree_path is not None:
         candidate = Path(normalized)
@@ -585,7 +585,7 @@ def _strip_orchestrator_managed_paths(
         paths under the worktree are normalised to their
         worktree-relative form before matching, so harness-owned paths
         in absolute form (e.g.
-        ``/Users/.../FEAT-X/.guardkit/autobuild/<TASK_ID>/...``) are
+        ``<worktree>/FEAT-X/.guardkit/autobuild/<TASK_ID>/...``) are
         also stripped. See TASK-FIX-CAUD-J6F1 AC-003a.
     """
     stripped: Set[str] = set()
@@ -6203,7 +6203,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         #
         # TASK-FIX-CAUD-J6F1 AC-003a: thread ``self.worktree_path`` so the
         # filter also catches harness-owned paths in absolute form
-        # (``/Users/.../FEAT-X/.guardkit/autobuild/<TASK_ID>/...``). The
+        # (``<worktree>/FEAT-X/.guardkit/autobuild/<TASK_ID>/...``). The
         # FEAT-JARVIS-006 fail-run-1 incident leaked exactly these into
         # the Coach because the filter only matched relative paths.
         try:

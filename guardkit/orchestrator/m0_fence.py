@@ -168,7 +168,7 @@ def is_local_seat_host(host: str) -> bool:
     * an IP literal inside :data:`LOCAL_SEAT_NETWORKS` (loopback, RFC1918,
       link-local, IPv6 ULA);
     * a **single-label** hostname — no dot — which is what a LAN name looks like
-      (``promaxgb10-41b1``, the fleet's own workhorse). A dotted name is a
+      (``some-workhorse``, a box on the same network). A dotted name is a
       public DNS name shape and is NOT admitted structurally;
     * listed verbatim in :data:`LOCAL_SEAT_HOSTS_ENV` (exact match), which is
       how a dotted INTERNAL name gets in.
