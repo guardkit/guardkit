@@ -33,7 +33,8 @@ def _function(script: str, name: str) -> str:
 @pytest.fixture(scope="module")
 def functions() -> str:
     script = INSTALL_SH.read_text(encoding="utf-8")
-    names = ["print_message", "print_success", "print_error", "print_info", "print_warning", "setup_pi_integration"]
+    names = ["print_message", "print_success", "print_error", "print_info", "print_warning",
+             "pi_skills_dir", "check_pi_destination", "setup_pi_integration"]
     return "\n".join(_function(script, n) for n in names)
 
 
@@ -166,16 +167,49 @@ def test_defaults_to_home_pi_agent_without_override(functions, env):
     assert (env["home"] / ".pi" / "agent" / "skills" / "guardkit" / "guardkit-pi.json").is_file()
 
 
-def test_pi_step_only_runs_with_the_pi_option():
+def test_pi_step_only_runs_with_the_pi_option_and_test_mode_is_unchanged():
     script = INSTALL_SH.read_text(encoding="utf-8")
     main = _function(script, "main")
     assert re.search(r'if \[ "\$INSTALL_PI" = true \]; then\n\s+setup_pi_integration\n\s+fi', main)
     assert main.index("setup_claude_integration") < main.index("setup_pi_integration")
-    for options, expected in (("", "false false"), ("--pi", "false true"),
-                              ("--pi --test-mode", "true true"), ("--test-mode", "true false")):
-        block = re.search(r"^TEST_MODE=false\n.*?^done$", script, re.MULTILINE | re.DOTALL).group(0)
+    # The refusal check runs before any install step changes anything.
+    assert main.index("check_pi_destination") < main.index("check_prerequisites")
+    # The original --test-mode block is byte-for-byte what it was at 1ae0b701.
+    original = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", "1ae0b701:installer/scripts/install.sh"],
+        capture_output=True, text=True,
+    )
+    if original.returncode == 0:
+        block = re.search(r"^# Test mode configuration\n.*?^fi$", original.stdout, re.MULTILINE | re.DOTALL)
+        assert block.group(0) in script
+    parse = re.search(r"^INSTALL_PI=false\n.*?^done$", script, re.MULTILINE | re.DOTALL).group(0)
+    for options, expected in (("", "false"), ("--pi", "true"), ("--other --pi", "true")):
         out = subprocess.run(
-            ["bash", "-c", f'set -- {options}\n{block}\necho "$TEST_MODE $INSTALL_PI"'],
+            ["bash", "-c", f'set -- {options}\n{parse}\necho "$INSTALL_PI"'],
             capture_output=True, text=True, check=True,
-        ).stdout.strip().splitlines()[-1]
+        ).stdout.strip()
         assert out == expected, options
+
+
+def test_name_clash_with_a_user_skill_is_reported(functions, env):
+    mine = env["pi_dir"] / "skills" / "my-debug"
+    mine.mkdir(parents=True)
+    (mine / "SKILL.md").write_text("---\nname: debug\ndescription: mine\n---\n")
+    result = _run(functions, env)
+    assert result.returncode == 0
+    assert "already have a Pi skill named 'debug'" in result.stderr
+    assert (mine / "SKILL.md").read_text().startswith("---\nname: debug")
+
+
+def test_failed_generation_leaves_the_previous_install_and_adapter(functions, env):
+    assert _run(functions, env).returncode == 0
+    skills = env["pi_dir"] / "skills" / "guardkit"
+    adapter = env["install_dir"] / "pi" / "guardkit-on-pi.md"
+    adapter.write_text("previous adapter")
+    before = {p: p.read_bytes() for p in skills.rglob("*") if p.is_file()}
+    (env["install_dir"] / "commands" / "broken.md").write_bytes(b"# x\n\xff\xfe")
+    result = _run(functions, env)
+    assert result.returncode != 0
+    assert {p: p.read_bytes() for p in skills.rglob("*") if p.is_file()} == before
+    assert adapter.read_text() == "previous adapter"
+    assert not list((env["pi_dir"] / "skills").glob(".guardkit.staging.*"))

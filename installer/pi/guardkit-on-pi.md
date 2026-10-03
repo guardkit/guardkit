@@ -52,13 +52,15 @@ pi -p --no-session \
 ## Fleet memory
 
 The `project="guardkit"` values written in command text are examples, not the project to use.
-Before any memory search or write, run `guardkit memory status` in the project directory:
+Before any memory search or write, ask GuardKit's own resolver in the project directory:
 
-- If its output contains `memory: ON (project=<name>)`, use exactly that `<name>` in every memory
-  call. (Its separate `Status:` line describes the command-line client's own connection, not
-  whether the `mcp__fleet_memory__*` tools work.)
-- If it contains `memory: OFF`, do not search or write memory. Say that memory was not used and
-  continue with local files.
+```bash
+python3 -c 'from pathlib import Path; from guardkit.knowledge.memory_project import resolve_memory_project as r; print(r(Path.cwd()).message)'
+```
+
+- If it prints `memory: ON (project=<name>) ...`, use exactly that `<name>` in every memory call.
+- If it prints `memory: OFF ...`, or the command fails, do not search or write memory. Say that
+  memory was not used and continue with local files.
 
 If a memory call fails, say retrieval or saving failed. Never claim something was saved unless the
 write call returned its key.
