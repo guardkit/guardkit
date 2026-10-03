@@ -775,3 +775,38 @@ def test_claim_through_a_link_inside_the_scratch_folder_still_aborts(
     assert coach_result.quality_gates is None
     assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
     assert bundle.gathering_status == "partial_honesty_abort"
+
+
+def test_scratch_folder_swapped_for_a_symlink_mid_run_still_aborts(
+    git_worktree: Path,
+) -> None:
+    """The checked folder replaced by a symlink to ``src`` during the run: an
+    unwritten file claimed in it in the builder's own words reaches the
+    Coach and is caught."""
+    import shutil
+
+    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+    task_id = "TASK-SCRATCH-SWAP"
+    (git_worktree / "src").mkdir()
+    scratch = prepare_builder_scratch_dir(git_worktree)
+    claimed = scratch / "not_written.py"
+
+    def swap() -> None:
+        shutil.rmtree(scratch)
+        scratch.symlink_to(git_worktree / "src")
+
+    _run_builder_turn(
+        git_worktree,
+        task_id,
+        [swap],
+        final_text=f"Created: {claimed}\n" + _TURN_TEXT,
+        provides_scratch=scratch,
+    )
+
+    results, report = _records(git_worktree, task_id)
+    assert any("not_written.py" in path for path in results["files_created"])
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert coach_result.quality_gates is None
+    assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+    assert bundle.gathering_status == "partial_honesty_abort"

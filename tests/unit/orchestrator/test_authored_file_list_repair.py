@@ -839,6 +839,40 @@ class TestScratchFolder:
         assert record["files_created"] == [".git/guardkit-scratch/project/app.py"]
         assert record["files_authored"] == [".git/guardkit-scratch/project/app.py"]
 
+    @pytest.mark.asyncio
+    async def test_scratch_folder_swapped_for_a_symlink_mid_run_hides_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """The checked folder replaced by a symlink to ``src`` during the run:
+        a write through it lands in the project and is listed."""
+        import shutil
+
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+        invoker = _git_invoker(tmp_path)
+        wt = invoker.worktree_path
+        (wt / "src").mkdir()
+        scratch = prepare_builder_scratch_dir(wt)
+
+        def swap() -> None:
+            shutil.rmtree(scratch)
+            scratch.symlink_to(wt / "src")
+
+        events = [
+            swap,
+            _put(scratch / "app.py"),
+            _use("c1", "write_file", scratch / "app.py"),
+            _ok("c1"),
+        ]
+
+        record = await _run(
+            invoker, "TASK-SCRATCH-SWAP", events, provides_scratch=scratch
+        )
+
+        assert (wt / "src" / "app.py").exists()
+        assert record["files_created"] == [".git/guardkit-scratch/app.py"]
+        assert record["files_authored"] == [".git/guardkit-scratch/app.py"]
+
     def test_symlinked_scratch_folder_never_hides_a_project_claim(
         self, tmp_path: Path
     ) -> None:
