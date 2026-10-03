@@ -1491,16 +1491,20 @@ class TaskWorkStreamParser:
         # symlink, including one placed inside the scratch folder) must be in
         # the folder. So a project path such as ``src/app.py`` is never taken
         # for scratch, and neither is ``<scratch>/link/app.py`` when ``link``
-        # points into the project. The folder must also still be the real
-        # folder recorded when it was checked, not since swapped for a
-        # symlink. If any of that cannot be worked out, keep the path.
+        # points into the project. If the folder is there, it must still be
+        # the real folder recorded when it was checked, not since swapped for
+        # a symlink or a file. A folder the builder simply removed still
+        # counts: its paths then resolve to where it was, so the landing check
+        # below still holds unless a parent folder has moved. If any of that
+        # cannot be worked out, keep the path.
         if not inside(os.path.normpath(path), self._scratch_root):
             return False
         try:
-            if (
-                os.path.islink(self._scratch_root)
-                or not os.path.isdir(self._scratch_root)
-                or os.path.realpath(self._scratch_root) != self._scratch_real
+            root = self._scratch_root
+            if os.path.lexists(root) and (
+                os.path.islink(root)
+                or not os.path.isdir(root)
+                or os.path.realpath(root) != self._scratch_real
             ):
                 return False
             landed = os.path.realpath(path)

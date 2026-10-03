@@ -810,3 +810,43 @@ def test_scratch_folder_swapped_for_a_symlink_mid_run_still_aborts(
     assert coach_result.quality_gates is None
     assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
     assert bundle.gathering_status == "partial_honesty_abort"
+
+
+def test_scratch_folder_removed_by_the_builder_still_passes_honesty(
+    git_worktree: Path,
+) -> None:
+    """The builder writes a script in the scratch folder and a product file,
+    then removes the whole scratch folder: the script stays off the list and
+    the product file stays on it."""
+    import shutil
+
+    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+    task_id = "TASK-SCRATCH-REMOVED"
+    scratch = prepare_builder_scratch_dir(git_worktree)
+    script = scratch / "verify.py"
+    product = git_worktree / "src" / "app.py"
+    steps = [
+        _make(script),
+        _make(product),
+        lambda: shutil.rmtree(scratch),
+        _tool_use("c1", "write_file", script),
+        _tool_use("c2", "write_file", product),
+        _tool_result("c1"),
+        _tool_result("c2"),
+    ]
+
+    result = _run_builder_turn(
+        git_worktree, task_id, steps, provides_scratch=scratch
+    )
+
+    for files in [result.output["files_created"]] + [
+        r["files_created"] + r["files_modified"]
+        for r in _records(git_worktree, task_id)
+    ]:
+        assert not any("verify.py" in path for path in files), files
+        assert "src/app.py" in files
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert _honesty_must_fix(coach_result) == [], coach_result.issues
+    assert coach_result.quality_gates is not None
+    assert bundle.gathering_status != "partial_honesty_abort"
