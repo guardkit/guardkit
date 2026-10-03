@@ -233,6 +233,118 @@ class TestTheCopyIsRemoved:
         assert v._run_isolated_tests(v.test_command).tests_passed
         assert _leftovers(worktree.parent) == []
 
+    def test_removed_with_nested_read_only_and_unreadable_folders(
+        self, tmp_path, git_layout, system_temp, caplog
+    ):
+        """Review round 1, R2: the outer folder cannot even be listed and the
+        inner one is read-only; both belong to this process, so all of it
+        must go, without a single cleanup warning."""
+        _, worktree = git_layout
+        v = _validator(
+            worktree,
+            "mkdir -p outer/inner && touch outer/inner/f"
+            " && chmod 555 outer/inner && chmod 000 outer",
+        )
+        with caplog.at_level(logging.WARNING):
+            assert v._run_isolated_tests(v.test_command).tests_passed
+        assert _leftovers(worktree.parent) == []
+        assert not [
+            r for r in caplog.records if "cleaning up the isolated copy" in r.getMessage()
+        ]
+
+    def test_cleanup_never_changes_permissions_through_a_link_back_to_the_worktree(
+        self, tmp_path, git_layout, system_temp
+    ):
+        """The copy links skipped folders (a bootstrap environment, say) back
+        to the real ones in the worktree. Opening up permissions for cleanup
+        must not follow those links into the worktree."""
+        _, worktree = git_layout
+        venv = worktree / ".venv"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "python").write_text("")
+        venv.chmod(0o555)
+        try:
+            v = _validator(worktree, "test -L .venv")
+            assert v._run_isolated_tests(v.test_command).tests_passed
+            assert _leftovers(worktree.parent) == []
+            assert (venv.stat().st_mode & 0o777) == 0o555
+            assert (venv / "bin" / "python").exists()
+        finally:
+            venv.chmod(0o755)
+
+
+class TestLeftoversStayHiddenFromGit:
+    """Review round 1, R1: if part of the copy cannot be removed (a folder a
+    container wrote into as root), the holder's ignore-everything file must
+    stay, so the containing checkout stays clean and ``git add -A`` stages
+    nothing from it.
+
+    A non-root test cannot make a folder it owns undeletable, so ownership is
+    simulated: ``os.chmod`` refuses for the one folder, exactly as it refuses
+    for a root-owned folder. The failure to delete is then real — the folder
+    is genuinely read-only and the file in it genuinely cannot be unlinked.
+    """
+
+    def test_undeletable_leftovers_keep_the_ignore_file_and_the_clone_clean(
+        self, tmp_path, git_layout, system_temp, monkeypatch, caplog
+    ):
+        clone, worktree = git_layout
+        status_before = _git(clone, "status", "--porcelain", "--untracked-files=all")
+
+        real_chmod = os.chmod
+
+        def chmod_as_if_root_owned(path, mode, *args, **kwargs):
+            if os.path.basename(os.fspath(path)) == "written-by-a-container":
+                raise PermissionError(1, "Operation not permitted", os.fspath(path))
+            return real_chmod(path, mode, *args, **kwargs)
+
+        monkeypatch.setattr(os, "chmod", chmod_as_if_root_owned)
+        v = _validator(
+            worktree,
+            "mkdir written-by-a-container && echo data > written-by-a-container/out"
+            " && chmod 555 written-by-a-container",
+        )
+        with caplog.at_level(logging.WARNING):
+            assert v._run_isolated_tests(v.test_command).tests_passed
+        monkeypatch.setattr(os, "chmod", real_chmod)
+
+        holders = [p for p in worktree.parent.iterdir() if p.name.startswith("." + PREFIX)]
+        try:
+            assert len(holders) == 1
+            holder = holders[0]
+            stuck = holder / holder.name.lstrip(".") / "written-by-a-container"
+            assert (stuck / "out").read_text() == "data\n"  # really left behind
+            assert (holder / ".gitignore").read_text() == "*\n"  # protection kept
+            assert any("could not be removed completely" in r.getMessage()
+                       for r in caplog.records)
+
+            # The containing clone does not ignore this location itself: only
+            # the holder's own .gitignore keeps the leftovers out of git.
+            assert ".guardkit" not in (clone / ".git" / "info" / "exclude").read_text()
+            assert not (clone / ".gitignore").exists()
+            assert (
+                _git(clone, "status", "--porcelain", "--untracked-files=all")
+                == status_before
+            )
+            subprocess.run(
+                ["git", "add", "-A"], cwd=str(clone), check=True, capture_output=True
+            )
+            staged = _git(clone, "diff", "--cached", "--name-only")
+            assert PREFIX not in staged
+        finally:
+            for h in holders:
+                for dirpath, dirnames, _ in os.walk(h):
+                    for d in dirnames:
+                        os.chmod(os.path.join(dirpath, d), 0o755)
+
+    def test_the_holder_is_removed_once_the_copy_is_gone(
+        self, tmp_path, git_layout, system_temp
+    ):
+        _, worktree = git_layout
+        v = _validator(worktree, "true")
+        assert v._run_isolated_tests("true").tests_passed
+        assert [p.name for p in worktree.parent.iterdir()] == ["FEAT-X"]
+
 
 class TestPlainDirectory:
     def test_a_plain_directory_works_the_same(self, tmp_path, system_temp):
