@@ -12,10 +12,9 @@ at the same moment on one container engine, so nothing here is fixed:
   the sanitised ``GUARDKIT_RUN_OWNER`` (Forge sets it to the build ID) plus the
   task ID — or a per-process random ID when GuardKit runs outside the factory.
   Starting a fixture removes only a container of that same name.
-- The Coach lets the engine choose the host port (``-p 127.0.0.1::5432``) and
-  reads it back with ``docker port``; the Player's protocol is given a free
-  loopback port chosen when its prompt is built. The exported URLs use the
-  real port.
+- The engine chooses the host port (``-p 127.0.0.1::5432``) and it is read
+  back with ``docker port``: by the Coach in Python, and by the Player's
+  recipe in the shell. The exported URLs use the real port.
 - Containers carry the labels ``guardkit.fixture.owner`` (the run owner) and
   ``guardkit.fixture.task`` (the task ID), which Forge uses to remove a
   cancelled build's fixtures.
@@ -28,9 +27,8 @@ import os
 import re
 import secrets
 import shlex
-import socket
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Mapping, Optional
+from typing import Dict, List, Mapping, Optional, Union
 
 
 # Container name prefix for test isolation
@@ -141,7 +139,6 @@ def get_start_commands(
     service: str,
     owner: Optional[FixtureOwner] = None,
     *,
-    host_port: Optional[int] = None,
     extra_labels: Optional[Mapping[str, str]] = None,
 ) -> List[str]:
     """Return the shell commands to start this owner's container for a service.
@@ -149,8 +146,8 @@ def get_start_commands(
     Args:
         service: Infrastructure service name (e.g., "postgresql", "redis", "mongodb")
         owner: The fixture's owner; defaults to :func:`fixture_owner` with no task.
-        host_port: Loopback port to publish on; ``None`` lets the engine choose
-            (read it back with :func:`get_port_command`).
+            The engine chooses the loopback host port; read it back with
+            :func:`get_port_command`.
         extra_labels: Further labels to set (used by tests to mark disposables).
 
     Returns:
@@ -162,7 +159,7 @@ def get_start_commands(
     fixture = _fixture(service)
     owner = owner or fixture_owner()
     container = get_container_name(service, owner)
-    publish = f"{BIND_HOST}:{host_port or ''}:{fixture['container_port']}"
+    publish = f"{BIND_HOST}::{fixture['container_port']}"
 
     commands: List[str] = []
 
@@ -228,7 +225,7 @@ def get_env_exports(
     service: str,
     consumer_context: Optional[Dict] = None,
     *,
-    host_port: int,
+    host_port: Union[int, str],
 ) -> Dict[str, str]:
     """Return environment variables to export after starting the service.
 
@@ -244,7 +241,8 @@ def get_env_exports(
             Each adapter must expose an ``adapt_url(base_url: str) -> str``
             method.  Keys not present in the returned exports are silently
             ignored.
-        host_port: The port the container is really published on.
+        host_port: The port the container is really published on, or a shell
+            expression that prints it (the Player's recipe).
 
     Returns:
         Dict mapping env var names to values.
@@ -269,13 +267,6 @@ def is_known_service(service: str) -> bool:
     return service.lower() in DOCKER_FIXTURES
 
 
-def allocate_loopback_port() -> int:
-    """A loopback port that is free now (the Player's recipe names it)."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((BIND_HOST, 0))
-        return s.getsockname()[1]
-
-
 # Placeholders in autobuild_execution_protocol*.md, filled per task.
 RECIPES_PLACEHOLDER = "{infrastructure_recipes}"
 BRIEF_RECIPES_PLACEHOLDER = "{infrastructure_recipes_brief}"
@@ -287,14 +278,14 @@ def render_player_recipes(
     task_id: str,
     *,
     environ: Optional[Mapping[str, str]] = None,
-    port_allocator: Callable[[], int] = allocate_loopback_port,
 ) -> str:
     """Fill the protocol's fixture placeholders with this task's own recipes.
 
     The Player's containers are named for the run, the task and the ``player``
-    role, and each is given a concrete free loopback port, so the commands in
-    the prompt can be run as written. Content without the placeholders is
-    returned unchanged (no ports are allocated).
+    role. As for the Coach, the engine chooses the host port; the recipe reads
+    it back with ``docker port`` when the URL is exported, so the commands can
+    be run as written and no port is guessed in advance. Content without the
+    placeholders is returned unchanged.
     """
     placeholders = (RECIPES_PLACEHOLDER, BRIEF_RECIPES_PLACEHOLDER, CLEANUP_PLACEHOLDER)
     if not any(p in protocol_content for p in placeholders):
@@ -305,13 +296,13 @@ def render_player_recipes(
     bullets: List[str] = []
     names: List[str] = []
     for service, fixture in DOCKER_FIXTURES.items():
-        port = port_allocator()
-        commands = get_start_commands(service, owner, host_port=port)
+        commands = get_start_commands(service, owner)
+        port = f"$({' '.join(get_port_command(service, owner))} | head -n 1 | sed 's/.*://')"
         exports = get_env_exports(service, host_port=port)
         export_lines = [f"export {k}={v}" for k, v in exports.items()]
         names.append(get_container_name(service, owner))
         body = "\n".join(commands + export_lines)
-        sections.append(f"#### {fixture['label']} (port {port})\n\n```bash\n{body}\n```")
+        sections.append(f"#### {fixture['label']}\n\n```bash\n{body}\n```")
         bullets.append(
             f"- {fixture['label']}: `{commands[1]}` then "
             + ", ".join(f"`{line}`" for line in export_lines)
