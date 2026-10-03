@@ -42,7 +42,7 @@ import stat
 import subprocess
 import sys
 import time
-from contextlib import aclosing
+from contextlib import aclosing, contextmanager
 from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -6182,6 +6182,117 @@ class CoachValidator:
     # ``_paths_the_snapshot_must_reach``.
     _ISOLATION_NEVER_LINK: set = {".git", ".guardkit"}
 
+    # Name stem of the isolated copy. The copy itself is called
+    # ``guardkit-coach-iso-<random>``; the folder that holds it carries the
+    # same name with a leading dot.
+    _ISOLATION_COPY_PREFIX = "guardkit-coach-iso-"
+
+    @contextmanager
+    def _isolated_copy_location(self):
+        """Make an empty folder for the isolated copy, beside the worktree.
+
+        Yields ``(copy_dir, holder_dir)``. The copy goes into ``copy_dir``;
+        ``holder_dir`` is the folder around it, which is removed afterwards.
+
+        WHERE IT LIVES, AND WHY. The copy sits in the worktree's parent
+        directory, not in the system temp folder. A test command can hand a
+        path inside the copy to another program that does not share this
+        process's view of the files — a container engine bind-mounting
+        ``<copy>/probe.py`` is the case that broke (FEAT-FFEC and FEAT-78F7,
+        3 October 2026): the engine ran on another machine, could not see this
+        process's ``/tmp``, made an empty folder in place of the file, and the
+        test failed before it reached the code. Whatever can see the worktree
+        at its path can, in every layout we run, also see the folder that
+        holds it, so the copy is visible wherever the worktree is.
+
+        It is never inside the worktree being tested, so it can never appear
+        as a change to that worktree. The holder carries a ``.gitignore``
+        that ignores everything (itself included), so if the parent folder
+        belongs to a git checkout the copy does not show up there either.
+        This does not depend on the worktree being a git worktree; a plain
+        directory works the same.
+
+        If the parent folder cannot take a new folder (read-only, or the
+        worktree is the filesystem root), the copy falls back to the system
+        temp folder, as before, and says so in the log.
+        """
+        import shutil
+        import tempfile
+
+        holder: Optional[Path] = None
+        parent = Path(os.path.abspath(str(self.worktree_path))).parent
+        if parent != Path(os.path.abspath(str(self.worktree_path))):
+            try:
+                holder = Path(
+                    tempfile.mkdtemp(
+                        prefix="." + self._ISOLATION_COPY_PREFIX, dir=str(parent)
+                    )
+                )
+            except OSError as exc:
+                logger.warning(
+                    "Could not make the isolated copy beside the worktree in "
+                    "%s (%s); using the system temp folder instead. A test "
+                    "that hands a path inside the copy to a program on "
+                    "another machine (a container engine, say) may not find "
+                    "it there.",
+                    parent,
+                    exc,
+                )
+        if holder is None:
+            holder = Path(
+                tempfile.mkdtemp(prefix="." + self._ISOLATION_COPY_PREFIX)
+            )
+
+        def _report(_func, path, exc) -> None:
+            logger.warning(
+                "Could not remove %s while cleaning up the isolated copy: %s",
+                path,
+                exc,
+            )
+
+        def _make_writable_and_retry(func, path, exc) -> None:
+            # A test may leave read-only files or folders in the copy; make
+            # them writable and try again, as the system temp folder's own
+            # cleanup did. Anything still left is logged, never raised: a
+            # leftover must not turn a finished check into "could not run".
+            if not isinstance(exc, PermissionError):
+                _report(func, path, exc)
+                return
+            try:
+                os.chmod(os.path.dirname(path), stat.S_IRWXU)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    os.chmod(path, stat.S_IRWXU)
+                    shutil.rmtree(path, onexc=_report)
+                else:
+                    os.unlink(path)
+            except OSError as again:
+                _report(func, path, again)
+
+        try:
+            (holder / ".gitignore").write_text("*\n", encoding="utf-8")
+            copy_dir = holder / holder.name.lstrip(".")
+            copy_dir.mkdir()
+            yield copy_dir, holder
+        finally:
+            shutil.rmtree(str(holder), onexc=_make_writable_and_retry)
+
+    @staticmethod
+    def _with_git_ceiling(env: Dict[str, str], holder: Path) -> Dict[str, str]:
+        """Stop git, run inside the copy, from finding a repository above it.
+
+        The copy deliberately has no ``.git``. Beside the worktree, the folder
+        above it can belong to a git checkout (the build's own clone), and a
+        ``git`` command in the test suite would otherwise act on that
+        checkout. ``GIT_CEILING_DIRECTORIES`` set to the holder makes git
+        behave as it did in the system temp folder: no repository here.
+        """
+        env = dict(env)
+        existing = env.get("GIT_CEILING_DIRECTORIES")
+        env["GIT_CEILING_DIRECTORIES"] = (
+            f"{holder}{os.pathsep}{existing}" if existing else str(holder)
+        )
+        return env
+
     def _pytest_interpreter(self) -> str:
         """Return the interpreter Coach should run pytest under.
 
@@ -6845,12 +6956,13 @@ class CoachValidator:
 
     def _run_isolated_tests(self, test_cmd: str) -> "IndependentTestResult":
         """
-        Run tests in an isolated temporary directory (Option B: tempdir copy).
+        Run tests in an isolated copy of the worktree (Option B: copy).
 
-        Copies the worktree to a temp directory, excluding large/irrelevant
-        directories, and runs tests there.  This prevents spurious failures
-        caused by concurrent mutations from other tasks running in the same
-        parallel wave.
+        Copies the worktree to a folder beside it (see
+        ``_isolated_copy_location`` for where and why — not the system temp
+        folder), excluding large/irrelevant directories, and runs tests
+        there. This prevents spurious failures caused by concurrent mutations
+        from other tasks running in the same parallel wave.
 
         Parameters
         ----------
@@ -6863,7 +6975,6 @@ class CoachValidator:
             Result of isolated test execution
         """
         import shutil
-        import tempfile
 
         start_time = time.time()
         logger.info(
@@ -6871,8 +6982,7 @@ class CoachValidator:
         )
 
         try:
-            with tempfile.TemporaryDirectory(prefix="guardkit-coach-iso-") as tmpdir:
-                tmpdir_path = Path(tmpdir)
+            with self._isolated_copy_location() as (tmpdir_path, holder):
 
                 # Copy worktree snapshot, skipping large/irrelevant directories
                 for item in self.worktree_path.iterdir():
@@ -6945,7 +7055,9 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=self._pytest_env(),
+                            env=self._with_git_ceiling(
+                                self._pytest_env(), holder
+                            ),
                         )
                 else:
                     # Per-component seam: the isolated copy is a copy of the
@@ -6961,7 +7073,9 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=self._declared_command_env(),
+                        env=self._with_git_ceiling(
+                            self._declared_command_env(), holder
+                        ),
                     )
 
                 duration = time.time() - start_time
@@ -7246,7 +7360,7 @@ class CoachValidator:
             if self.is_parallel and not use_sdk:
                 logger.info(
                     f"[TASK-ABFIX-005] Parallel wave detected (wave_size={self.wave_size}), "
-                    f"running tests in isolated temp directory"
+                    f"running tests in an isolated copy beside the worktree"
                 )
                 isolated = self._run_isolated_tests(test_cmd)
                 if not isolated.check_could_not_run:
