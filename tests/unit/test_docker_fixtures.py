@@ -236,8 +236,8 @@ class TestDockerFixturesModule:
     # Host port: chosen by the engine, never a fixed shared one
     # ------------------------------------------------------------------
     # The fixed 5433/6380/27018 meant two tasks could not run one service at
-    # once (concurrent builds, 2026-10-03). The Coach now publishes on a
-    # loopback port the engine chooses; the Player's prompt names a free one.
+    # once (concurrent builds, 2026-10-03). The Coach and the Player both publish
+    # on a loopback port the engine chooses and read it back with docker port.
 
     def test_postgresql_publishes_on_engine_chosen_loopback_port(self) -> None:
         cmds = get_start_commands("postgresql")
@@ -253,10 +253,6 @@ class TestDockerFixturesModule:
         cmds = get_start_commands("mongodb")
         assert "-p 127.0.0.1::27017 " in cmds[1]
         assert "27018" not in cmds[1]
-
-    def test_explicit_host_port_is_published(self) -> None:
-        cmds = get_start_commands("redis", host_port=41234)
-        assert "-p 127.0.0.1:41234:6379 " in cmds[1]
 
 
 # ============================================================================

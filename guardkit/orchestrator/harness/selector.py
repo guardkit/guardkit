@@ -734,6 +734,12 @@ def select_harness(
                 "to pass cwd=self.worktree_path."
             )
 
+        if sdk_env is not None:
+            logger.warning(
+                "select_harness(langgraph): env overrides are SDK-only and "
+                "were not applied: %s",
+                sorted(sdk_env),
+            )
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         player_config = None
         protected_paths: tuple[str, ...] = ()

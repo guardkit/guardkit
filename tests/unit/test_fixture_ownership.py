@@ -406,14 +406,15 @@ def test_player_protocol_names_the_tasks_own_fixture(
     prompt = invoker._build_autobuild_implementation_prompt("TASK-PG-1")
 
     name = get_container_name("postgresql", fixture_owner("TASK-PG-1", role="player"))
-    assert name in prompt
-    match = re.search(rf"--name {re.escape(name)} .*?-p 127\.0\.0\.1:(\d+):5432 ", prompt)
-    assert match, prompt
-    port = match.group(1)
-    assert f"DATABASE_URL=postgresql://postgres:test@127.0.0.1:{port}/test" in prompt
+    assert f"--name {name} " in prompt
+    # The engine chooses the port; the recipe reads it back. No port is fixed.
+    assert re.search(rf"--name {re.escape(name)} .*?-p 127\.0\.0\.1::5432 ", prompt)
+    assert not re.search(r"-p 127\.0\.0\.1:\d+:", prompt)
+    readback = f"$(docker port {name} 5432/tcp | head -n 1 | sed 's/.*://')"
+    assert f"DATABASE_URL=postgresql://postgres:test@127.0.0.1:{readback}/test" in prompt
     assert f"--label {OWNER_LABEL}=build-prompt" in prompt
     assert not re.search(r"guardkit-test-(pg|redis|mongo)(?![-\w])", prompt)
-    assert "5433:5432" not in prompt
+    assert "5433" not in prompt and "6380" not in prompt and "27018" not in prompt
     assert "{infrastructure" not in prompt
 
 
@@ -426,9 +427,40 @@ def test_slim_protocol_renders_too(monkeypatch) -> None:
     )
     name = get_container_name("redis", fixture_owner("TASK-S", role="player"))
     assert name in rendered
-    assert re.search(r"-p 127\.0\.0\.1:\d+:6379 ", rendered)
+    assert "-p 127.0.0.1::6379 " in rendered
+    assert f"$(docker port {name} 6379/tcp | head -n 1 | sed 's/.*://')" in rendered
     assert not re.search(r"guardkit-test-(pg|redis|mongo)(?![-\w])", rendered)
     assert "{infrastructure" not in rendered
+
+
+@needs_docker
+def test_rendered_player_recipe_runs_and_exports_a_working_url(run_owner: str) -> None:
+    """Run the Player's rendered redis recipe in a shell on the local engine."""
+    rendered = render_player_recipes("{infrastructure_recipes}", "TASK-SH")
+    block = re.search(r"#### Redis\n\n```bash\n(.*?)\n```", rendered, re.S)
+    assert block, rendered
+    script = block.group(1).replace(
+        "docker run -d ",
+        "docker run -d --label forge.test=concurrent-builds "
+        f"--label forge.test-run={run_owner} ",
+        1,
+    )
+    name = get_container_name("redis", fixture_owner("TASK-SH", role="player"))
+    try:
+        out = subprocess.run(
+            ["bash", "-c", f"set -e\n{script}\necho \"URL=$REDIS_URL\""],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert out.returncode == 0, out.stderr
+        url = re.search(r"^URL=(\S+)$", out.stdout, re.M).group(1)
+        match = re.fullmatch(r"redis://127\.0\.0\.1:(\d+)", url)
+        assert match, url
+        assert _redis_answers(int(match.group(1)))
+    finally:
+        subprocess.run(["docker", "rm", "-f", "-v", name], capture_output=True)
+    assert _container_ids(name) == []
 
 
 # ============================================================================
