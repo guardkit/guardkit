@@ -35,12 +35,18 @@ GITHUB_REPO="https://github.com/guardkit/guardkit"
 GITHUB_BRANCH="main"
 INSTALL_METHOD="git-clone"  # Default, updated if running via curl
 
-# Test mode configuration
+# Options, in any order:
+#   --test-mode  test mode (unchanged behaviour)
+#   --pi         also install GuardKit's commands for the Pi coding agent
+#                (setup_pi_integration), into ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
 TEST_MODE=false
-if [ "$1" = "--test-mode" ]; then
-    TEST_MODE=true
-    print_info "Running in test mode"
-fi
+INSTALL_PI=false
+for arg in "$@"; do
+    case "$arg" in
+        --test-mode) TEST_MODE=true; echo "Running in test mode" ;;
+        --pi) INSTALL_PI=true ;;
+    esac
+done
 
 # Function to print colored messages
 print_message() {
@@ -1759,6 +1765,116 @@ setup_claude_integration() {
     fi
 }
 
+# Pi coding agent integration (--pi). Installs one thin, explicit-only Pi skill
+# per installed GuardKit command into <pi-dir>/skills/guardkit/<name>/SKILL.md.
+# Each wrapper tells Pi to read ~/.agentecflow/pi/guardkit-on-pi.md and then
+# the installed command file in full: the command text is never copied, so it
+# cannot drift. Skills (not prompt templates) because Pi passes the text typed
+# after /skill:<name> through verbatim, keeping quoted and repeated arguments.
+# The installer owns <pi-dir>/skills/guardkit/ and nothing else in the Pi
+# directory; guardkit-pi.json in it is the installed identity record.
+setup_pi_integration() {
+    local pi_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+    local skills_dir="$pi_dir/skills/guardkit"
+    local record_name="guardkit-pi.json"
+
+    print_info "Setting up Pi integration in $pi_dir ..."
+
+    if [ -e "$skills_dir" ] && [ ! -f "$skills_dir/$record_name" ]; then
+        print_error "$skills_dir exists but was not created by GuardKit (no $record_name); left unchanged"
+        return 1
+    fi
+
+    if [ ! -f "$INSTALLER_DIR/pi/guardkit-on-pi.md" ]; then
+        print_error "Missing $INSTALLER_DIR/pi/guardkit-on-pi.md"
+        return 1
+    fi
+    mkdir -p "$INSTALL_DIR/pi"
+    cp "$INSTALLER_DIR/pi/guardkit-on-pi.md" "$INSTALL_DIR/pi/guardkit-on-pi.md"
+
+    local source_revision
+    source_revision="$(git -C "$INSTALLER_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
+
+    local staging="$pi_dir/skills/.guardkit.staging.$$"
+    rm -rf "$staging"
+    mkdir -p "$staging"
+
+    if ! python3 - "$INSTALL_DIR" "$staging" "$record_name" "$AGENTECFLOW_VERSION" "$source_revision" <<'PY'
+import datetime, hashlib, json, sys
+from pathlib import Path
+
+install_dir, staging, record_name, version, revision = sys.argv[1:6]
+install_dir, staging = Path(install_dir), Path(staging)
+commands_dir = install_dir / "commands"
+adapter = install_dir / "pi" / "guardkit-on-pi.md"
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+try:
+    manifest = json.loads((commands_dir / "MANIFEST.json").read_text()).get("commands", {})
+except (OSError, ValueError):
+    manifest = {}
+
+record = dict(
+    guardkit_version=version,
+    source_revision=revision,
+    installed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    install_dir=str(install_dir),
+    adapter={"path": str(adapter), "sha256": sha256(adapter)},
+    commands={},
+)
+for command in sorted(commands_dir.glob("*.md")):
+    name = command.stem
+    if name.endswith("-ext"):
+        continue  # extension documents are read by their commands
+    heading = next(
+        (line[2:].strip() for line in command.read_text(encoding="utf-8").splitlines()
+         if line.startswith("# ")),
+        name,
+    )
+    digest = sha256(command)
+    description = f"GuardKit /{name}: {heading}"[:1000]
+    body = (
+        "---\n"
+        f"name: {name}\n"
+        f"description: {json.dumps(description)}\n"
+        "disable-model-invocation: true\n"
+        "---\n"
+        f"<!-- guardkit-pi-wrapper source={command} sha256={digest} -->\n"
+        f"Run the GuardKit `/{name}` command.\n\n"
+        f"1. Read `{adapter}` in full.\n"
+        f"2. Read `{command}` in full, every page to the end.\n"
+        "3. Carry out that command exactly as written. Its arguments are the text the user typed\n"
+        f"   after `/skill:{name}`, shown after these instructions. If nothing follows, the command\n"
+        "   was run without arguments.\n"
+    )
+    target = staging / name / "SKILL.md"
+    target.parent.mkdir(parents=True)
+    target.write_text(body, encoding="utf-8")
+    entry = {"sha256": digest}
+    expected = manifest.get(command.name, {}).get("sha256")
+    if expected is not None:
+        entry["manifest_sha256"] = expected
+        if expected != digest:
+            print(f"WARNING: installed {command.name} differs from MANIFEST.json", file=sys.stderr)
+    record["commands"][name] = entry
+
+(staging / record_name).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+print(len(record["commands"]))
+PY
+    then
+        rm -rf "$staging"
+        print_error "Failed to generate Pi command skills"
+        return 1
+    fi
+
+    rm -rf "$skills_dir"
+    mv "$staging" "$skills_dir"
+    print_success "Pi integration configured: /skill:<command> in $skills_dir"
+    print_info "  Instructions for Pi: $INSTALL_DIR/pi/guardkit-on-pi.md"
+}
+
 # PB-3: prune retired command markdowns from an installed commands dir.
 # Removes ONLY the exact tombstone names declared in the shipped MANIFEST.json
 # (retired command names deleted from installer/core/commands). Never touches a
@@ -2152,6 +2268,9 @@ main() {
     setup_cache
     # create_package_marker  # DEPRECATED - using create_marker_file instead
     setup_claude_integration
+    if [ "$INSTALL_PI" = true ]; then
+        setup_pi_integration
+    fi
     setup_python_bin_symlinks
     create_marker_file
 
