@@ -22,43 +22,14 @@ requires_infrastructure:
 
 Start each declared service using the recipes below. Use non-standard ports to avoid conflicts with local services.
 
-#### PostgreSQL (port 5433)
-
-```bash
-docker rm -f guardkit-test-pg 2>/dev/null || true
-docker run -d --name guardkit-test-pg \
-  -e POSTGRES_PASSWORD=test \
-  -p 5433:5432 postgres:16-alpine
-until docker exec guardkit-test-pg pg_isready; do sleep 1; done
-export DATABASE_URL=postgresql://postgres:test@localhost:5433/test
-```
-
-#### Redis (port 6380)
-
-```bash
-docker rm -f guardkit-test-redis 2>/dev/null || true
-docker run -d --name guardkit-test-redis \
-  -p 6380:6379 redis:7-alpine
-sleep 1
-export REDIS_URL=redis://localhost:6380
-```
-
-#### MongoDB (port 27018)
-
-```bash
-docker rm -f guardkit-test-mongo 2>/dev/null || true
-docker run -d --name guardkit-test-mongo \
-  -p 27018:27017 mongo:7
-sleep 2
-export MONGODB_URL=mongodb://localhost:27018
-```
+{infrastructure_recipes}
 
 ### Cleanup
 
 When your turn finishes — after Phase 3 and any Phase 4.5 fix-loop iterations — tear down all containers you started:
 
 ```bash
-docker rm -f guardkit-test-pg guardkit-test-redis guardkit-test-mongo 2>/dev/null || true
+{infrastructure_cleanup}
 ```
 
 ### When requires_infrastructure is absent

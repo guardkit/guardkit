@@ -309,6 +309,18 @@ class TestSelectHarnessDispatch:
 
         assert isinstance(harness, ClaudeSDKHarness)
 
+    def test_sdk_receives_env_overrides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``env=`` reaches the SDK harness (the Coach's per-call PYTHONPATH/PATH)."""
+        monkeypatch.setenv(_TEST_ENV_VAR, "sdk")
+
+        harness = select_harness(
+            env_var=_TEST_ENV_VAR, env={"PYTHONPATH": "/wt"}, **_sdk_kwargs()
+        )
+
+        assert harness._env == {"PYTHONPATH": "/wt"}
+
     def test_explicit_sdk_case_insensitive(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

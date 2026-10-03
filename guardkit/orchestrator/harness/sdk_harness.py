@@ -80,7 +80,7 @@ import logging
 import sys
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import (
@@ -140,6 +140,11 @@ class ClaudeSDKHarness(HarnessAdapter):
         the query loop starts. Lets the orchestrator inject its
         existing ``_install_sdk_cleanup_handler`` without the harness
         depending on it directly (TASK-HMIG-006 Design Decision D-6).
+    env:
+        Optional environment overrides for this call's SDK subprocess,
+        passed as ``ClaudeAgentOptions.env`` (merged over the inherited
+        environment). Lets a caller set e.g. ``PYTHONPATH`` for one run
+        without changing ``os.environ``, which parallel tasks share.
     """
 
     def __init__(
@@ -156,6 +161,7 @@ class ClaudeSDKHarness(HarnessAdapter):
             Callable[[asyncio.AbstractEventLoop], None]
         ] = None,
         setting_sources: Optional[List[str]] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> None:
         self._sdk_timeout_seconds = sdk_timeout_seconds
         self._allowed_tools = list(allowed_tools)
@@ -170,6 +176,7 @@ class ClaudeSDKHarness(HarnessAdapter):
         self._resume_session_id = resume_session_id
         self._sdk_debug_dir = sdk_debug_dir
         self._cleanup_handler_installer = cleanup_handler_installer
+        self._env = dict(env) if env else None
         self._session_id: Optional[str] = None
         # TASK-FIX-CTOUT01: handle to the in-flight query() async generator,
         # exposed for cooperative close from :meth:`cancel`. Set inside
@@ -278,6 +285,8 @@ class ClaudeSDKHarness(HarnessAdapter):
         )
         if self._model is not None:
             options_kwargs["model"] = self._model
+        if self._env:
+            options_kwargs["env"] = dict(self._env)
         if self._resume_session_id is not None:
             options_kwargs["resume"] = self._resume_session_id
             logger.info(

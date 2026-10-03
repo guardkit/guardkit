@@ -58,6 +58,7 @@ from guardkit.orchestrator.paths import (
     TaskArtifactPaths,
     prepare_builder_scratch_dir,
 )
+from guardkit.orchestrator.docker_fixtures import render_player_recipes
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
@@ -10897,6 +10898,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         protocol_content = protocol_content.replace("{task_id}", task_id)
         protocol_content = protocol_content.replace("{turn}", str(turn))
         protocol_content = protocol_content.replace("{worktree_path}", str(self.worktree_path))
+        # 3 October 2026 (concurrent builds): the test-fixture recipes come
+        # from docker_fixtures, the same source the Coach uses, with this
+        # task's own container names and a free loopback port, so two tasks
+        # or two builds never start or remove each other's containers.
+        protocol_content = render_player_recipes(protocol_content, task_id)
         # 3 October 2026: name the builder's scratch folder, the one place
         # outside the worktree the factory lets it write, only when the
         # caller knows the selected harness provides it. Otherwise the line

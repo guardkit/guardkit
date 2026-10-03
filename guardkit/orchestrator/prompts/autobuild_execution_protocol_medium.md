@@ -9,11 +9,9 @@
 ## Pre-Phase 3: Infrastructure
 
 If task frontmatter has `requires_infrastructure`, start declared services:
-- PostgreSQL: `docker run -d --name guardkit-test-pg -e POSTGRES_PASSWORD=test -p 5433:5432 postgres:16-alpine`
-- Redis: `docker run -d --name guardkit-test-redis -p 6380:6379 redis:7-alpine`
-- MongoDB: `docker run -d --name guardkit-test-mongo -p 27018:27017 mongo:7`
+{infrastructure_recipes_brief}
 
-Cleanup after tests: `docker rm -f guardkit-test-pg guardkit-test-redis guardkit-test-mongo 2>/dev/null || true`
+Cleanup after tests: `{infrastructure_cleanup}`
 
 Skip if `requires_infrastructure` is absent.
 
