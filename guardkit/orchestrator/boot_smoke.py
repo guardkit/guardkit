@@ -116,8 +116,17 @@ def _worst(verdicts: List[str]) -> str:
     return max(verdicts, key=lambda v: _SEVERITY.get(v, 0))
 
 
+_RUN_OWNER_ENV = "GUARDKIT_RUN_OWNER"
+
+
 def _hermetic_env(worktree: Path, overlay: Optional[Dict[str, str]] = None) -> dict:
-    """Clean worktree-only PYTHONPATH env (namespace-hygiene remediation 4)."""
+    """Clean worktree-only PYTHONPATH env (namespace-hygiene remediation 4).
+
+    The build's owner marker (``GUARDKIT_RUN_OWNER``, set by Forge per build)
+    always comes from this process, never from the project's overlay: the
+    serve probe starts its own session, and Forge finds it by that marker
+    when it stops a cancelled build. A project cannot set or remove it.
+    """
     env = {
         k: v for k, v in os.environ.items()
         if k not in ("PYTHONPATH",)
@@ -125,6 +134,11 @@ def _hermetic_env(worktree: Path, overlay: Optional[Dict[str, str]] = None) -> d
     env["PYTHONPATH"] = str(worktree)
     if overlay:
         env.update(overlay)
+    run_owner = os.environ.get(_RUN_OWNER_ENV)
+    if run_owner:
+        env[_RUN_OWNER_ENV] = run_owner
+    else:
+        env.pop(_RUN_OWNER_ENV, None)
     return env
 
 

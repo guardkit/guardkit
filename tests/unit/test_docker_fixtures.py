@@ -23,6 +23,7 @@ import pytest
 
 from guardkit.orchestrator.docker_fixtures import (
     DOCKER_FIXTURES,
+    fixture_owner,
     get_container_name,
     get_env_exports,
     get_start_commands,
@@ -121,17 +122,23 @@ class TestDockerFixturesModule:
     # get_container_name
     # ------------------------------------------------------------------
 
+    # Names are owner-scoped (concurrent builds, 2026-10-03): the fixed
+    # ``guardkit-test-pg`` let two tasks remove each other's container.
+
     def test_get_container_name_postgresql(self) -> None:
-        """get_container_name('postgresql') returns 'guardkit-test-pg'."""
-        assert get_container_name("postgresql") == "guardkit-test-pg"
+        """get_container_name('postgresql') is guardkit-test-pg-<owner>."""
+        owner = fixture_owner("TASK-1", environ={"GUARDKIT_RUN_OWNER": "build-1"})
+        assert get_container_name("postgresql", owner) == "guardkit-test-pg-build-1-task-1"
 
     def test_get_container_name_redis(self) -> None:
-        """get_container_name('redis') returns 'guardkit-test-redis'."""
-        assert get_container_name("redis") == "guardkit-test-redis"
+        """get_container_name('redis') is guardkit-test-redis-<owner>."""
+        owner = fixture_owner("TASK-1", environ={"GUARDKIT_RUN_OWNER": "build-1"})
+        assert get_container_name("redis", owner) == "guardkit-test-redis-build-1-task-1"
 
     def test_get_container_name_mongodb(self) -> None:
-        """get_container_name('mongodb') returns 'guardkit-test-mongo'."""
-        assert get_container_name("mongodb") == "guardkit-test-mongo"
+        """get_container_name('mongodb') is guardkit-test-mongo-<owner>."""
+        owner = fixture_owner("TASK-1", environ={"GUARDKIT_RUN_OWNER": "build-1"})
+        assert get_container_name("mongodb", owner) == "guardkit-test-mongo-build-1-task-1"
 
     # ------------------------------------------------------------------
     # get_env_exports
@@ -139,14 +146,14 @@ class TestDockerFixturesModule:
 
     def test_get_env_exports_postgresql_contains_database_url(self) -> None:
         """get_env_exports('postgresql') returns dict with DATABASE_URL key using base URL."""
-        exports = get_env_exports("postgresql")
+        exports = get_env_exports("postgresql", host_port=41000)
         assert "DATABASE_URL" in exports
         assert exports["DATABASE_URL"].startswith("postgresql://")
 
     def test_get_env_exports_without_consumer_context_returns_base_url(self) -> None:
         """get_env_exports without consumer_context returns plain postgresql:// base URL."""
-        exports = get_env_exports("postgresql")
-        assert exports["DATABASE_URL"] == "postgresql://postgres:test@localhost:5433/test"
+        exports = get_env_exports("postgresql", host_port=41000)
+        assert exports["DATABASE_URL"] == "postgresql://postgres:test@127.0.0.1:41000/test"
         # Must NOT contain asyncpg in base form
         assert "+asyncpg" not in exports["DATABASE_URL"]
 
@@ -158,8 +165,10 @@ class TestDockerFixturesModule:
                 return base_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
         adapter = AsyncpgAdapter()
-        exports = get_env_exports("postgresql", consumer_context={"DATABASE_URL": adapter})
-        assert exports["DATABASE_URL"] == "postgresql+asyncpg://postgres:test@localhost:5433/test"
+        exports = get_env_exports(
+            "postgresql", consumer_context={"DATABASE_URL": adapter}, host_port=41000
+        )
+        assert exports["DATABASE_URL"] == "postgresql+asyncpg://postgres:test@127.0.0.1:41000/test"
 
     def test_get_env_exports_consumer_context_unknown_key_ignored(self) -> None:
         """get_env_exports silently ignores consumer_context keys not in the export dict."""
@@ -170,27 +179,29 @@ class TestDockerFixturesModule:
 
         adapter = DummyAdapter()
         # "NONEXISTENT_KEY" is not in postgresql env_export
-        exports = get_env_exports("postgresql", consumer_context={"NONEXISTENT_KEY": adapter})
+        exports = get_env_exports(
+            "postgresql", consumer_context={"NONEXISTENT_KEY": adapter}, host_port=41000
+        )
         # DATABASE_URL should be unchanged (base URL)
-        assert exports["DATABASE_URL"] == "postgresql://postgres:test@localhost:5433/test"
+        assert exports["DATABASE_URL"] == "postgresql://postgres:test@127.0.0.1:41000/test"
         assert "NONEXISTENT_KEY" not in exports
 
     def test_get_env_exports_redis_contains_redis_url(self) -> None:
         """get_env_exports('redis') returns dict with REDIS_URL key."""
-        exports = get_env_exports("redis")
+        exports = get_env_exports("redis", host_port=41001)
         assert "REDIS_URL" in exports
         assert exports["REDIS_URL"].startswith("redis://")
 
     def test_get_env_exports_mongodb_contains_mongodb_url(self) -> None:
         """get_env_exports('mongodb') returns dict with MONGODB_URL key."""
-        exports = get_env_exports("mongodb")
+        exports = get_env_exports("mongodb", host_port=41002)
         assert "MONGODB_URL" in exports
         assert exports["MONGODB_URL"].startswith("mongodb://")
 
     def test_get_env_exports_returns_copy(self) -> None:
         """get_env_exports returns a new dict (not a reference to the fixture)."""
-        exports1 = get_env_exports("redis")
-        exports2 = get_env_exports("redis")
+        exports1 = get_env_exports("redis", host_port=41001)
+        exports2 = get_env_exports("redis", host_port=41001)
         assert exports1 is not exports2
 
     # ------------------------------------------------------------------
@@ -222,26 +233,30 @@ class TestDockerFixturesModule:
         assert is_known_service("PostgreSQL") is True
 
     # ------------------------------------------------------------------
-    # Non-standard port verification
+    # Host port: chosen by the engine, never a fixed shared one
     # ------------------------------------------------------------------
+    # The fixed 5433/6380/27018 meant two tasks could not run one service at
+    # once (concurrent builds, 2026-10-03). The Coach now publishes on a
+    # loopback port the engine chooses; the Player's prompt names a free one.
 
-    def test_postgresql_uses_non_standard_port_5433(self) -> None:
-        """PostgreSQL docker run command uses port 5433 (not standard 5432)."""
+    def test_postgresql_publishes_on_engine_chosen_loopback_port(self) -> None:
         cmds = get_start_commands("postgresql")
-        run_cmd = cmds[1]
-        assert "5433" in run_cmd
+        assert "-p 127.0.0.1::5432 " in cmds[1]
+        assert "5433" not in cmds[1]
 
-    def test_redis_uses_non_standard_port_6380(self) -> None:
-        """Redis docker run command uses port 6380 (not standard 6379)."""
+    def test_redis_publishes_on_engine_chosen_loopback_port(self) -> None:
         cmds = get_start_commands("redis")
-        run_cmd = cmds[1]
-        assert "6380" in run_cmd
+        assert "-p 127.0.0.1::6379 " in cmds[1]
+        assert "6380" not in cmds[1]
 
-    def test_mongodb_uses_non_standard_port_27018(self) -> None:
-        """MongoDB docker run command uses port 27018 (not standard 27017)."""
+    def test_mongodb_publishes_on_engine_chosen_loopback_port(self) -> None:
         cmds = get_start_commands("mongodb")
-        run_cmd = cmds[1]
-        assert "27018" in run_cmd
+        assert "-p 127.0.0.1::27017 " in cmds[1]
+        assert "27018" not in cmds[1]
+
+    def test_explicit_host_port_is_published(self) -> None:
+        cmds = get_start_commands("redis", host_port=41234)
+        assert "-p 127.0.0.1:41234:6379 " in cmds[1]
 
 
 # ============================================================================
@@ -318,39 +333,36 @@ class TestCoachValidatorDockerMethods:
         # subprocess.run should not be called for unknown service
         mock_run.assert_not_called()
 
-    def test_start_infrastructure_containers_sets_env_vars(
-        self, tmp_path: Path
-    ) -> None:
-        """_start_infrastructure_containers sets env vars in os.environ."""
-        validator = make_validator(tmp_path)
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stderr = ""
-        with patch("subprocess.run", return_value=mock_result):
-            with patch.dict(os.environ, {}, clear=False):
-                # Remove key first to ensure clean state
-                os.environ.pop("DATABASE_URL", None)
-                validator._start_infrastructure_containers(["postgresql"])
-                assert "DATABASE_URL" in os.environ
-                assert os.environ["DATABASE_URL"].startswith("postgresql://")
-                # Clean up
-                os.environ.pop("DATABASE_URL", None)
+    # The URLs go to this validator's own test subprocesses, never into
+    # os.environ, which parallel tasks share (concurrent builds, 2026-10-03).
 
-    def test_start_infrastructure_containers_redis_sets_redis_url(
+    def test_start_infrastructure_containers_returns_database_url(
         self, tmp_path: Path
     ) -> None:
-        """_start_infrastructure_containers sets REDIS_URL for redis service."""
+        """_start_infrastructure_containers returns DATABASE_URL on the real port."""
         validator = make_validator(tmp_path)
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stderr = ""
+        mock_result = Mock(returncode=0, stdout="127.0.0.1:41000\n", stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("DATABASE_URL", None)
+                env = validator._start_infrastructure_containers(["postgresql"])
+                assert "DATABASE_URL" not in os.environ
+        assert env["DATABASE_URL"] == "postgresql://postgres:test@127.0.0.1:41000/test"
+        assert validator._pytest_env()["DATABASE_URL"] == env["DATABASE_URL"]
+        assert validator._declared_command_env()["DATABASE_URL"] == env["DATABASE_URL"]
+
+    def test_start_infrastructure_containers_redis_returns_redis_url(
+        self, tmp_path: Path
+    ) -> None:
+        """_start_infrastructure_containers returns REDIS_URL for redis service."""
+        validator = make_validator(tmp_path)
+        mock_result = Mock(returncode=0, stdout="127.0.0.1:41001\n", stderr="")
         with patch("subprocess.run", return_value=mock_result):
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("REDIS_URL", None)
-                validator._start_infrastructure_containers(["redis"])
-                assert "REDIS_URL" in os.environ
-                assert os.environ["REDIS_URL"].startswith("redis://")
-                os.environ.pop("REDIS_URL", None)
+                env = validator._start_infrastructure_containers(["redis"])
+                assert "REDIS_URL" not in os.environ
+        assert env["REDIS_URL"] == "redis://127.0.0.1:41001"
 
     # ------------------------------------------------------------------
     # _stop_infrastructure_containers
@@ -366,7 +378,10 @@ class TestCoachValidatorDockerMethods:
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         cmd = call_args.args[0]
-        assert cmd == ["docker", "rm", "-f", "-v", "guardkit-test-pg"]
+        assert cmd == [
+            "docker", "rm", "-f", "-v",
+            get_container_name("postgresql", fixture_owner(validator.task_id)),
+        ]
 
     def test_stop_infrastructure_containers_unknown_service_no_subprocess(
         self, tmp_path: Path
@@ -380,12 +395,14 @@ class TestCoachValidatorDockerMethods:
     def test_stop_infrastructure_containers_cleans_env_vars(
         self, tmp_path: Path
     ) -> None:
-        """_stop_infrastructure_containers removes env vars from os.environ."""
+        """_stop_infrastructure_containers drops this task's URLs, not os.environ's."""
         validator = make_validator(tmp_path)
+        validator._fixture_env["DATABASE_URL"] = "postgresql://this-task"
         with patch("subprocess.run"):
-            with patch.dict(os.environ, {"DATABASE_URL": "postgresql://placeholder"}, clear=False):
+            with patch.dict(os.environ, {"DATABASE_URL": "postgresql://operator"}, clear=False):
                 validator._stop_infrastructure_containers(["postgresql"])
-                assert "DATABASE_URL" not in os.environ
+                assert os.environ["DATABASE_URL"] == "postgresql://operator"
+        assert validator._fixture_env == {}
 
     def test_stop_infrastructure_containers_exception_handled_no_raise(
         self, tmp_path: Path
@@ -399,13 +416,16 @@ class TestCoachValidatorDockerMethods:
     def test_stop_infrastructure_containers_redis_calls_docker_rm(
         self, tmp_path: Path
     ) -> None:
-        """_stop_infrastructure_containers calls docker rm -f -v guardkit-test-redis for redis."""
+        """_stop_infrastructure_containers removes only this task's redis container."""
         validator = make_validator(tmp_path)
         with patch("subprocess.run") as mock_run:
             validator._stop_infrastructure_containers(["redis"])
         call_args = mock_run.call_args
         cmd = call_args.args[0]
-        assert cmd == ["docker", "rm", "-f", "-v", "guardkit-test-redis"]
+        assert cmd == [
+            "docker", "rm", "-f", "-v",
+            get_container_name("redis", fixture_owner(validator.task_id)),
+        ]
 
 
 # ============================================================================
