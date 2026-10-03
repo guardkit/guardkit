@@ -173,7 +173,7 @@ def test_pi_step_only_runs_with_the_pi_option_and_test_mode_is_unchanged():
     assert re.search(r'if \[ "\$INSTALL_PI" = true \]; then\n\s+setup_pi_integration\n\s+fi', main)
     assert main.index("setup_claude_integration") < main.index("setup_pi_integration")
     # The refusal check runs before any install step changes anything.
-    assert main.index("check_pi_destination") < main.index("check_prerequisites")
+    assert main.index("check_pi_destination") < main.index("ensure_repository_files")
     # The original --test-mode block is byte-for-byte what it was at 1ae0b701.
     original = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "show", "1ae0b701:installer/scripts/install.sh"],
@@ -199,6 +199,16 @@ def test_name_clash_with_a_user_skill_is_reported(functions, env):
     assert result.returncode == 0
     assert "already have a Pi skill named 'debug'" in result.stderr
     assert (mine / "SKILL.md").read_text().startswith("---\nname: debug")
+
+
+def test_name_clash_in_home_agents_skills_is_reported_and_body_names_ignored(functions, env):
+    other = env["home"] / ".agents" / "skills" / "tw"
+    other.mkdir(parents=True)
+    (other / "SKILL.md").write_text("---\nname: task-work\ndescription: mine\n---\nname: feature-plan\n")
+    result = _run(functions, env)
+    assert result.returncode == 0
+    assert "already have a Pi skill named 'task-work'" in result.stderr
+    assert "named 'feature-plan'" not in result.stderr
 
 
 def test_failed_generation_leaves_the_previous_install_and_adapter(functions, env):
