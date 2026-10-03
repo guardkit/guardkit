@@ -6215,8 +6215,10 @@ class CoachValidator:
         If the parent folder cannot take a new folder (read-only, or the
         worktree is the filesystem root), the copy falls back to the system
         temp folder, as before, and says so in the log.
+
+        Cleanup is ``_remove_isolated_copy``: the copy first, and the ignore
+        file only once nothing is left.
         """
-        import shutil
         import tempfile
 
         holder: Optional[Path] = None
@@ -6243,6 +6245,30 @@ class CoachValidator:
                 tempfile.mkdtemp(prefix="." + self._ISOLATION_COPY_PREFIX)
             )
 
+        copy_dir = holder / holder.name.lstrip(".")
+        try:
+            (holder / ".gitignore").write_text("*\n", encoding="utf-8")
+            copy_dir.mkdir()
+            yield copy_dir, holder
+        finally:
+            self._remove_isolated_copy(holder, copy_dir=copy_dir)
+
+    @staticmethod
+    def _remove_isolated_copy(holder: Path, *, copy_dir: Path) -> None:
+        """Remove the copy, then its holder — but keep the ignore file if
+        anything survives.
+
+        ORDER MATTERS. The copy goes first. Only when it is completely gone
+        are the holder's ``.gitignore`` and the holder removed. If a test
+        left something this process cannot delete (a root-owned folder a
+        container wrote into, say), the holder and its ignore-everything
+        ``.gitignore`` stay, so the leftovers never become visible to git in
+        a checkout that holds the worktree's parent and cannot block a
+        clean-tree check. Leftovers are logged, never raised: they must not
+        turn a finished check into "could not run".
+        """
+        import shutil
+
         def _report(_func, path, exc) -> None:
             logger.warning(
                 "Could not remove %s while cleaning up the isolated copy: %s",
@@ -6250,31 +6276,71 @@ class CoachValidator:
                 exc,
             )
 
-        def _make_writable_and_retry(func, path, exc) -> None:
-            # A test may leave read-only files or folders in the copy; make
-            # them writable and try again, as the system temp folder's own
-            # cleanup did. Anything still left is logged, never raised: a
-            # leftover must not turn a finished check into "could not run".
-            if not isinstance(exc, PermissionError):
-                _report(func, path, exc)
+        def _open_up(root: Path) -> None:
+            # One bounded pass, top down: make every folder in the copy that
+            # this process owns writable and traversable before it is
+            # entered, so read-only and unreadable folders the test left
+            # (nested ones included) can be emptied. Never through a symlink:
+            # the copy links back to real things in the worktree (a
+            # bootstrap environment, say), and chmod follows links.
+            # Folders this process does not own fail chmod quietly here and
+            # are reported by the removal below.
+            def _chmod_dir(p: str) -> None:
+                if os.path.islink(p):
+                    return
+                try:
+                    os.chmod(p, stat.S_IRWXU)
+                except OSError:
+                    pass
+
+            if not root.is_dir() or root.is_symlink():
                 return
+            _chmod_dir(str(root))
+            for dirpath, dirnames, _files in os.walk(str(root)):
+                for name in dirnames:
+                    _chmod_dir(os.path.join(dirpath, name))
+
+        if copy_dir.exists() or copy_dir.is_symlink():
+            _open_up(copy_dir)
+            shutil.rmtree(str(copy_dir), onexc=_report)
+
+        if copy_dir.exists() or copy_dir.is_symlink():
+            # Something survived: keep (and re-assert) the protection.
             try:
-                os.chmod(os.path.dirname(path), stat.S_IRWXU)
-                if os.path.isdir(path) and not os.path.islink(path):
-                    os.chmod(path, stat.S_IRWXU)
-                    shutil.rmtree(path, onexc=_report)
-                else:
-                    os.unlink(path)
-            except OSError as again:
-                _report(func, path, again)
+                (holder / ".gitignore").write_text("*\n", encoding="utf-8")
+            except OSError as exc:
+                logger.warning(
+                    "Could not restore %s over the isolated copy's leftovers: "
+                    "%s",
+                    holder / ".gitignore",
+                    exc,
+                )
+            logger.warning(
+                "The isolated copy could not be removed completely; what is "
+                "left stays in %s, which ignores everything in it so git "
+                "never sees it. Remove it by hand when convenient.",
+                holder,
+            )
+            return
 
         try:
-            (holder / ".gitignore").write_text("*\n", encoding="utf-8")
-            copy_dir = holder / holder.name.lstrip(".")
-            copy_dir.mkdir()
-            yield copy_dir, holder
-        finally:
-            shutil.rmtree(str(holder), onexc=_make_writable_and_retry)
+            others = [p.name for p in holder.iterdir() if p.name != ".gitignore"]
+            if others:
+                # Something was put beside the copy, outside it. Leave it
+                # under the ignore file rather than expose it.
+                logger.warning(
+                    "Left the isolated copy's holder %s in place: it still "
+                    "holds %s, which the copy's cleanup does not own.",
+                    holder,
+                    ", ".join(sorted(others)),
+                )
+                return
+            (holder / ".gitignore").unlink(missing_ok=True)
+            holder.rmdir()
+        except OSError as exc:
+            logger.warning(
+                "Could not remove the isolated copy's holder %s: %s", holder, exc
+            )
 
     @staticmethod
     def _with_git_ceiling(env: Dict[str, str], holder: Path) -> Dict[str, str]:
