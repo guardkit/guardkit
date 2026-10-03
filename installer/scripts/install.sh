@@ -1828,15 +1828,20 @@ try:
 except (OSError, ValueError):
     manifest = {}
 
-# Names of the user's own Pi skills: Pi keeps the first skill found with a
-# name, so a user skill with a command's name hides that GuardKit wrapper.
+# Names of the user's own skills in the user-level folders Pi loads. Pi keeps
+# the first skill it finds with a name, so a clash hides one of the two.
 user_names = set()
-for skill in user_skills.rglob("SKILL.md"):
-    parts = skill.relative_to(user_skills).parts
-    if parts[0] == "guardkit" or any(part.startswith(".") for part in parts):
+for root in (user_skills, Path.home() / ".agents" / "skills"):
+    if not root.is_dir():
         continue
-    found = re.search(r"^name:\s*(\S+)", skill.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
-    user_names.add(found.group(1).strip("'\"") if found else skill.parent.name)
+    for skill in root.rglob("SKILL.md"):
+        parts = skill.relative_to(root).parts
+        if (root == user_skills and parts[0] == "guardkit") or any(p.startswith(".") for p in parts):
+            continue
+        text = skill.read_text(encoding="utf-8", errors="replace")
+        front = re.match(r"---\n(.*?)\n---", text, re.DOTALL)
+        found = re.search(r"^name:\s*(\S+)", front.group(1), re.MULTILINE) if front else None
+        user_names.add(found.group(1).strip("'\"") if found else skill.parent.name)
 
 record = dict(
     guardkit_version=version,
@@ -1881,8 +1886,8 @@ for command in sorted(commands_dir.glob("*.md")):
         if expected != digest:
             print(f"WARNING: installed {command.name} differs from MANIFEST.json", file=sys.stderr)
     if name in user_names:
-        print(f"WARNING: you already have a Pi skill named '{name}'; Pi will use yours, "
-              f"not GuardKit's /skill:{name}", file=sys.stderr)
+        print(f"WARNING: you already have a Pi skill named '{name}'; Pi keeps whichever of the two "
+              f"it finds first and reports the clash at startup", file=sys.stderr)
     record["commands"][name] = entry
 
 (staging / "guardkit-pi.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -2276,13 +2281,13 @@ main() {
     print_info "Installing GuardKit to $INSTALL_DIR"
     echo ""
 
-    # Ensure we have repository files (download if running via curl)
-    ensure_repository_files
-
     # Refuse --pi before changing anything if its destination is not ours.
     if [ "$INSTALL_PI" = true ]; then
         check_pi_destination
     fi
+
+    # Ensure we have repository files (download if running via curl)
+    ensure_repository_files
 
     # Run installation steps
     check_prerequisites
