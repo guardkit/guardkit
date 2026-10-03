@@ -26,6 +26,7 @@ Skip if `requires_infrastructure` is absent.
 3. Follow detected stack conventions (type hints, strict mode, async patterns)
 4. Create production-quality code with error handling
 5. Do NOT create stubs (see Anti-Stub Rules below)
+6. Put throwaway scripts in `{scratch_folder}`: it is outside the project, so nothing there is committed, reviewed or listed, and any other write outside the worktree is refused.
 
 File count constraints: minimal/standard = max 2 files, comprehensive = unlimited.
 

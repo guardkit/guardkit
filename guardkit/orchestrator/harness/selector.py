@@ -42,6 +42,7 @@ import yaml
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
 from guardkit.orchestrator.m0_fence import enforce_effective_seat
+from guardkit.orchestrator.paths import builder_scratch_dir
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,7 @@ def _build_backend_with_optional_cap(
     worktree: Path,
     max_tool_result_chars: int | None,
     protected_paths: tuple[str, ...] = (),
+    scratch_root: Path | None = None,
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -519,6 +521,18 @@ def _build_backend_with_optional_cap(
                 "matching Factory revision; protection cannot be dropped."
             )
         kwargs["protected_paths"] = protected_paths
+    # 3 October 2026: the builder's scratch folder (``builder_scratch_dir``).
+    # An older factory without it still runs; scratch writes outside the
+    # worktree are then refused and never reach the builder's file list.
+    if scratch_root is not None:
+        if _factory_accepts_kwarg(factory, "scratch_root"):
+            kwargs["scratch_root"] = scratch_root
+        else:
+            logger.warning(
+                "The installed guardkitfactory cannot allow the builder's "
+                "scratch folder %s; writes there will be refused.",
+                scratch_root,
+            )
     return factory(worktree, **kwargs)
 
 
@@ -697,7 +711,9 @@ def select_harness(
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         player_config = None
         protected_paths: tuple[str, ...] = ()
+        scratch_root: Path | None = None
         if harness_role == "player":
+            scratch_root = builder_scratch_dir(Path(cwd))
             if not _factory_accepts_kwarg(LangGraphHarness, "player_config"):
                 raise AgentInvocationError(
                     "The installed guardkitfactory does not provide the required "
@@ -739,6 +755,7 @@ def select_harness(
             Path(cwd),
             max_tool_result_chars,
             protected_paths,
+            scratch_root,
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING

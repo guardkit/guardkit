@@ -54,7 +54,7 @@ from guardkit.orchestrator.instrumentation.llm_instrumentation import (
 )
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent, ToolExecEvent
-from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.paths import TaskArtifactPaths, builder_scratch_dir
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
@@ -1304,6 +1304,13 @@ class TaskWorkStreamParser:
         self._worktree_root: Optional[str] = (
             str(worktree_root) if worktree_root else None
         )
+        # 3 October 2026: the builder's scratch folder (see
+        # ``builder_scratch_dir``). Nothing in it is part of the project, so
+        # no path in it is ever listed as created or modified.
+        _scratch = builder_scratch_dir(Path(worktree_root)) if worktree_root else None
+        self._scratch_root: Optional[str] = (
+            os.path.realpath(_scratch) if _scratch is not None else None
+        )
         self._phases: Dict[str, Dict[str, Any]] = {}
         self._tests_passed: Optional[int] = None
         self._tests_failed: Optional[int] = None
@@ -1325,6 +1332,9 @@ class TaskWorkStreamParser:
         # authoritative for source-file contention detection.
         self._files_authored: set = set()
         self._test_files_created: set = set()
+        # 3 October 2026: write/edit requests waiting for their result, by
+        # call id (see ``record_tool_request``).
+        self._pending_tool_writes: Dict[str, Tuple[str, Dict[str, Any]]] = {}
         self._arch_score: Optional[int] = None
         self._solid_score: Optional[int] = None
         self._dry_score: Optional[int] = None
@@ -1444,6 +1454,68 @@ class TaskWorkStreamParser:
         normalised = _normalise_relpath(file_path, self._worktree_root)
         return normalised if normalised else file_path
 
+    def _in_scratch(self, path: str) -> bool:
+        """True when ``path`` is inside the builder's scratch folder.
+
+        Such a path is left off every list, whether it came from a tool call
+        or from the builder's own words: nothing there can be a product file,
+        so leaving it off cannot hide a real claim. Only this folder is left
+        off. A file written inside the worktree and later deleted, including
+        a file git tracks, stays listed, and the existence check still
+        reports it missing (unchanged, out of scope).
+        """
+        if self._scratch_root is None:
+            return False
+        if not os.path.isabs(path) and self._worktree_root:
+            path = os.path.join(self._worktree_root, path)
+        resolved = os.path.realpath(path)
+        return resolved == self._scratch_root or resolved.startswith(
+            self._scratch_root + os.sep
+        )
+
+    def record_tool_request(
+        self, tool_use_id: Any, tool_name: str, tool_args: Dict[str, Any]
+    ) -> None:
+        """Hold a write/edit request until its result says whether it worked.
+
+        3 October 2026. The list used to be filled when the builder *asked* to
+        write, so a write the factory refused (a scratch file aimed at
+        ``/tmp``, outside the worktree) stayed on it and the honesty check
+        called it fabricated (FEAT-D586, FEAT-E592). Both the local and the
+        hosted harness pair each tool call with its result by call id, so the
+        path is recorded by :meth:`record_tool_result` once the result is
+        known. A request with no call id cannot be paired and is recorded now,
+        as before; one whose result never arrives is recorded by
+        :meth:`to_result`, also as before.
+        """
+        if _runtime_tool_category(tool_name) != "write":
+            return
+        if isinstance(tool_use_id, str) and tool_use_id:
+            self._pending_tool_writes[tool_use_id] = (tool_name, tool_args)
+        else:
+            self._track_tool_call(tool_name, tool_args)
+
+    def record_tool_result(self, tool_use_id: Any, is_error: bool) -> None:
+        """Record a held write/edit now its result has arrived.
+
+        A result with an error records nothing: the file was never written. A
+        failed write retried successfully to the same path is recorded once,
+        by the retry.
+        """
+        if not isinstance(tool_use_id, str):
+            return
+        held = self._pending_tool_writes.pop(tool_use_id, None)
+        if held is None:
+            return
+        tool_name, tool_args = held
+        if is_error:
+            logger.debug(
+                f"Tool {tool_name} call {tool_use_id} failed; its path is not "
+                f"recorded as written."
+            )
+            return
+        self._track_tool_call(tool_name, tool_args)
+
     def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Track file operations from a write-category tool call.
 
@@ -1474,6 +1546,10 @@ class TaskWorkStreamParser:
 
         if _runtime_tool_category(tool_name) != "write":
             logger.debug(f"Tool {tool_name} is not a write tool; not tracked.")
+            return
+
+        if self._in_scratch(file_path):
+            logger.debug(f"Scratch-folder write not tracked: {file_path}")
             return
 
         recorded = self._record_authored_path(file_path)
@@ -1518,13 +1594,21 @@ class TaskWorkStreamParser:
         # Track tool result messages (e.g., "File created successfully at: /path")
         for result_match in self.TOOL_RESULT_CREATED_PATTERN.finditer(message):
             file_path = result_match.group(1).strip()
-            if file_path and self._is_valid_file_path(file_path):
+            if (
+                file_path
+                and self._is_valid_file_path(file_path)
+                and not self._in_scratch(file_path)
+            ):
                 self._files_created.add(file_path)
                 logger.debug(f"Tool result tracked - file created: {file_path}")
 
         for result_match in self.TOOL_RESULT_MODIFIED_PATTERN.finditer(message):
             file_path = result_match.group(1).strip()
-            if file_path and self._is_valid_file_path(file_path):
+            if (
+                file_path
+                and self._is_valid_file_path(file_path)
+                and not self._in_scratch(file_path)
+            ):
                 self._files_modified.add(file_path)
                 logger.debug(f"Tool result tracked - file modified: {file_path}")
 
@@ -1644,16 +1728,18 @@ class TaskWorkStreamParser:
             self._quality_gates_passed = False
             logger.debug("Quality gates: FAILED")
 
-        # File modifications (use sets to avoid duplicates)
+        # File modifications (use sets to avoid duplicates). A scratch-folder
+        # path named in the builder's own words is left off too: it can never
+        # be a product file, so the claim is harmless.
         for file_match in self.FILES_MODIFIED_PATTERN.finditer(message):
             file_path = file_match.group(1)
-            if self._is_valid_file_path(file_path):
+            if self._is_valid_file_path(file_path) and not self._in_scratch(file_path):
                 self._files_modified.add(file_path)
                 logger.debug(f"File modified: {file_path}")
 
         for file_match in self.FILES_CREATED_PATTERN.finditer(message):
             file_path = file_match.group(1)
-            if self._is_valid_file_path(file_path):
+            if self._is_valid_file_path(file_path) and not self._in_scratch(file_path):
                 self._files_created.add(file_path)
                 logger.debug(f"File created: {file_path}")
 
@@ -1694,6 +1780,11 @@ class TaskWorkStreamParser:
             - architectural_review: Dict with score and optional SOLID/DRY/YAGNI
               subscores (or absent if no arch review score found)
         """
+        # A write whose result never arrived stays on the list, as before.
+        for tool_name, tool_args in self._pending_tool_writes.values():
+            self._track_tool_call(tool_name, tool_args)
+        self._pending_tool_writes = {}
+
         result: Dict[str, Any] = {}
 
         if self._phases:
@@ -1761,6 +1852,7 @@ class TaskWorkStreamParser:
         self._files_created = set()
         self._files_authored = set()
         self._test_files_created = set()
+        self._pending_tool_writes = {}
         self._arch_score = None
         self._solid_score = None
         self._dry_score = None
@@ -10763,6 +10855,20 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         protocol_content = protocol_content.replace("{task_id}", task_id)
         protocol_content = protocol_content.replace("{turn}", str(turn))
         protocol_content = protocol_content.replace("{worktree_path}", str(self.worktree_path))
+        # 3 October 2026: name the builder's scratch folder, the one place
+        # outside the worktree the factory lets it write. Not a git checkout
+        # means no such folder, and the line naming it is left out.
+        scratch_folder = builder_scratch_dir(self.worktree_path)
+        if scratch_folder is not None:
+            protocol_content = protocol_content.replace(
+                "{scratch_folder}", str(scratch_folder)
+            )
+        else:
+            protocol_content = "\n".join(
+                line
+                for line in protocol_content.splitlines()
+                if "{scratch_folder}" not in line
+            )
 
         # --- Section 7: Implementation plan locations ---
         plan_paths = TaskArtifactPaths.implementation_plan_paths(
@@ -11293,17 +11399,21 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                     # category 6-12 calls per task, list
                                     # empty). Feed the tracker from the typed
                                     # event instead, for any tool the category
-                                    # table calls a write. The hosted path
-                                    # still walks raw blocks below; both add to
-                                    # the same set, so the overlap is free.
+                                    # table calls a write.
+                                    # 3 October 2026: this is now the ONLY
+                                    # place a tool write is tracked, for both
+                                    # harnesses, and the path waits for the
+                                    # call's result (``record_tool_request``).
                                     if _tool_category == "write":
                                         _typed_input = (
                                             event.input
                                             if isinstance(event.input, dict)
                                             else {}
                                         )
-                                        parser._track_tool_call(
-                                            event.name, _typed_input
+                                        parser.record_tool_request(
+                                            event.tool_use_id,
+                                            event.name,
+                                            _typed_input,
                                         )
                                     self._track_tool_use(event)
                                 elif isinstance(event, ToolResultEvent):
@@ -11314,6 +11424,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                             else "",
                                             bool(event.is_error),
                                         )
+                                    )
+                                    parser.record_tool_result(
+                                        event.tool_use_id, bool(event.is_error)
                                     )
                                 elif isinstance(event, AssistantMessageEvent):
                                     # API-error check operates on raw SDK shape;
@@ -11372,28 +11485,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                                         if block_class == "ToolUseBlock":
                                             block_name = getattr(block, "name", "")
                                             logger.debug(f"Tool invoked: {block_name}")
-                                            # TASK-FIX-STUB-C: Track file operations from
-                                            # Write/Edit tools to populate files_created/
-                                            # files_modified in task_work_results.json.
-                                            if block_name in ("Write", "Edit"):
-                                                tool_input = getattr(block, "input", {})
-                                                if isinstance(tool_input, dict):
-                                                    # TASK-FIX-PIPELINE: Log actual SDK key names (Fix 1).
-                                                    logger.info(
-                                                        f"[{task_id}] ToolUseBlock {block_name} input keys: "
-                                                        f"{list(tool_input.keys())}"
-                                                    )
-                                                    parser._track_tool_call(
-                                                        block_name, tool_input
-                                                    )
-                                                else:
-                                                    logger.warning(
-                                                        f"[{task_id}] ToolUseBlock {block_name} input is "
-                                                        f"{type(tool_input).__name__}, not dict: {str(tool_input)[:200]}"
-                                                    )
+                                            # Write/Edit blocks are not tracked here
+                                            # (3 October 2026): the SDK harness
+                                            # yields a typed ToolUseEvent for each
+                                            # of them first, and the branch above
+                                            # records the path once its result is
+                                            # known. Tracking the raw block too put
+                                            # a refused write on the list.
                                             # TASK-INST-005c: Track Bash tool invocations
                                             # for tool.exec event emission.
-                                            elif block_name == "Bash":
+                                            if block_name == "Bash":
                                                 tool_input = getattr(block, "input", {})
                                                 if isinstance(tool_input, dict):
                                                     _pending_bash_tools[getattr(block, "id", "")] = {
@@ -11494,7 +11595,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             output_text = "\n".join(collected_output)
 
             # Parse text output for quality gate metrics (tests, coverage, phases).
-            # Note: parser already has file tracking from ToolUseBlock processing above.
+            # Note: parser already has file tracking from the typed tool events above.
             parser.parse_message(output_text)
             parsed_result = parser.to_result()
 

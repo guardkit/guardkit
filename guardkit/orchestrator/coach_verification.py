@@ -947,13 +947,24 @@ class CoachVerifier:
                 abs_path = self.worktree_path / path
                 path_exists = abs_path.exists()
                 if classification == "fabricated":
-                    # Reaching this branch means ``_classify_dropped_path``
-                    # observed: check-ignore exit 1 (no rule matched) AND
-                    # — if path exists — ls-files exit != 0 (not tracked).
-                    diagnosis = (
-                        f"path_exists={path_exists}; "
-                        f"gitignore_match=no rule matched; tracked=no"
-                    )
+                    # For a path that exists, reaching this branch means
+                    # ``_classify_dropped_path`` observed check-ignore exit 1
+                    # (no rule matched) AND ls-files exit != 0 (not tracked).
+                    # For a missing path it returns before either probe runs,
+                    # so the text must not claim they ran (3 October 2026: a
+                    # missing scratch file in an ignored folder read as "no
+                    # rule matched").
+                    if path_exists:
+                        diagnosis = (
+                            f"path_exists={path_exists}; "
+                            f"gitignore_match=no rule matched; tracked=no"
+                        )
+                    else:
+                        diagnosis = (
+                            f"path_exists={path_exists}; "
+                            f"gitignore_match=not checked (file missing); "
+                            f"tracked=not checked (file missing)"
+                        )
                     if not path_exists:
                         cause = (
                             "Most likely cause: the Player claimed work "

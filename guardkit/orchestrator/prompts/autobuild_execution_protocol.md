@@ -81,6 +81,7 @@ You are implementing a task. Follow these instructions exactly.
    - .NET: Follow C# conventions, use async/await patterns
 4. **Create production-quality code** with proper error handling
 5. **Do NOT create stub implementations** (see Anti-Stub Rules below)
+6. **Put throwaway scripts in `{scratch_folder}`**: it is outside the project, so nothing there is committed, reviewed or listed, and any other write outside the worktree is refused.
 
 ### File Count Constraints
 
