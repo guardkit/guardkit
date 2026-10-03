@@ -489,6 +489,59 @@ class TestIntraWaveDependencies:
 
 
 # ============================================================================
+# A task file that names another task needs an order (3 October 2026)
+# ============================================================================
+
+
+class TestTaskReferencesThroughTheCommand:
+    """``guardkit feature validate <id> --json`` is the command forge's plan
+    check runs (the deploy sidecar's ``feature-validate`` pre-commit check).
+    The committed FEAT-FFEC plan is refused with the plain sentence; the same
+    plan with the need declared and the waves reordered passes."""
+
+    _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "task_references" / "ffec_c9c3714c"
+
+    def _repo(self, tmp_path, monkeypatch):
+        import shutil
+
+        shutil.copytree(self._FIXTURE, tmp_path, dirs_exist_ok=True)
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_the_committed_ffec_plan_is_refused(self, runner, tmp_path, monkeypatch):
+        self._repo(tmp_path, monkeypatch)
+
+        result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.output[result.output.index("{"):])
+        assert data["valid"] is False
+        assert data["structural_errors"] == [
+            "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends "
+            "on the other, so they can run together or in either order. Add "
+            "TASK-FFEC-003 to its dependencies (and put TASK-FFEC-002 in a later "
+            "wave than TASK-FFEC-003), or remove the reference."
+        ]
+
+    def test_the_corrected_ffec_plan_passes(self, runner, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path, monkeypatch)
+        path = repo / ".guardkit" / "features" / "FEAT-FFEC.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for task in data["tasks"]:
+            if task["id"] == "TASK-FFEC-002":
+                task["dependencies"] = ["TASK-FFEC-001", "TASK-FFEC-003"]
+        data["orchestration"]["parallel_groups"] = [
+            ["TASK-FFEC-001"], ["TASK-FFEC-003"], ["TASK-FFEC-002"], ["TASK-FFEC-004"]
+        ]
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+        result = runner.invoke(feature, ["validate", "FEAT-FFEC", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output[result.output.index("{"):])["valid"] is True
+
+
+# ============================================================================
 # Task Type Validation Tests (structural errors - exit code 1)
 # ============================================================================
 

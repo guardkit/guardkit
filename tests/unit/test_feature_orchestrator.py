@@ -345,6 +345,89 @@ def test_setup_phase_updates_execution_state(temp_repo, mock_worktree, mock_work
 
 
 # ============================================================================
+# Test: Setup Phase refuses a task that names an unordered task (3 Oct 2026)
+# ============================================================================
+
+_FFEC_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "task_references" / "ffec_c9c3714c"
+)
+
+
+def _ffec_repo(tmp_path: Path) -> Path:
+    import shutil
+
+    repo = tmp_path / "repo"
+    shutil.copytree(_FFEC_FIXTURE, repo)
+    return repo
+
+
+def _declare_ffec_002_needs_003(repo: Path) -> None:
+    path = repo / ".guardkit" / "features" / "FEAT-FFEC.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for task in data["tasks"]:
+        if task["id"] == "TASK-FFEC-002":
+            task["dependencies"] = ["TASK-FFEC-001", "TASK-FFEC-003"]
+    data["orchestration"]["parallel_groups"] = [
+        ["TASK-FFEC-001"], ["TASK-FFEC-003"], ["TASK-FFEC-002"], ["TASK-FFEC-004"]
+    ]
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def test_setup_phase_refuses_the_committed_ffec_plan_before_any_worktree(
+    tmp_path, mock_worktree_manager
+):
+    """The build-start validation (``_setup_phase``) runs the same validator as
+    the plan check, so the FEAT-FFEC plan as committed never starts a build."""
+    repo = _ffec_repo(tmp_path)
+    orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
+
+    with pytest.raises(FeatureValidationError) as exc_info:
+        orchestrator._setup_phase("FEAT-FFEC", "main")
+
+    assert (
+        "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends on "
+        "the other" in str(exc_info.value)
+    )
+    mock_worktree_manager.create.assert_not_called()
+
+
+def test_setup_phase_refuses_when_the_task_file_has_moved_along_the_lifecycle(
+    tmp_path, mock_worktree_manager
+):
+    """A resumed build finds its task files moved out of ``tasks/backlog/``
+    while the feature YAML still points there; the check reads them where they
+    are now."""
+    repo = _ffec_repo(tmp_path)
+    slug = "get-users-created-per-day"
+    name = "TASK-FFEC-002-add-endpoint-to-router.md"
+    moved = repo / "tasks" / "in_progress" / slug / name
+    moved.parent.mkdir(parents=True)
+    (repo / "tasks" / "backlog" / slug / name).rename(moved)
+    orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
+
+    with pytest.raises(FeatureValidationError) as exc_info:
+        orchestrator._setup_phase("FEAT-FFEC", "main")
+
+    assert "TASK-FFEC-002's task file refers to TASK-FFEC-003" in str(exc_info.value)
+    mock_worktree_manager.create.assert_not_called()
+
+
+def test_setup_phase_accepts_the_corrected_ffec_plan(
+    tmp_path, mock_worktree, mock_worktree_manager
+):
+    repo = _ffec_repo(tmp_path)
+    _declare_ffec_002_needs_003(repo)
+    orchestrator = FeatureOrchestrator(repo_root=repo, worktree_manager=mock_worktree_manager)
+
+    feature, worktree = orchestrator._setup_phase("FEAT-FFEC", "main")
+
+    assert worktree == mock_worktree
+    assert feature.orchestration.parallel_groups == [
+        ["TASK-FFEC-001"], ["TASK-FFEC-003"], ["TASK-FFEC-002"], ["TASK-FFEC-004"]
+    ]
+
+
+# ============================================================================
 # Test: Clean State (Force Cleanup)
 # ============================================================================
 
