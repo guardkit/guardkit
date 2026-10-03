@@ -1320,6 +1320,12 @@ class TaskWorkStreamParser:
         self._scratch_root: Optional[str] = (
             os.path.normpath(str(scratch_root)) if scratch_root else None
         )
+        # Where the folder really is, recorded once now that it has been
+        # checked, so a later swap of the folder for a symlink cannot move
+        # the boundary (see ``_in_scratch``).
+        self._scratch_real: Optional[str] = (
+            os.path.realpath(self._scratch_root) if self._scratch_root else None
+        )
         self._phases: Dict[str, Dict[str, Any]] = {}
         self._tests_passed: Optional[int] = None
         self._tests_failed: Optional[int] = None
@@ -1485,15 +1491,22 @@ class TaskWorkStreamParser:
         # symlink, including one placed inside the scratch folder) must be in
         # the folder. So a project path such as ``src/app.py`` is never taken
         # for scratch, and neither is ``<scratch>/link/app.py`` when ``link``
-        # points into the project. If that cannot be worked out, keep it.
+        # points into the project. The folder must also still be the real
+        # folder recorded when it was checked, not since swapped for a
+        # symlink. If any of that cannot be worked out, keep the path.
         if not inside(os.path.normpath(path), self._scratch_root):
             return False
         try:
+            if (
+                os.path.islink(self._scratch_root)
+                or not os.path.isdir(self._scratch_root)
+                or os.path.realpath(self._scratch_root) != self._scratch_real
+            ):
+                return False
             landed = os.path.realpath(path)
-            real_root = os.path.realpath(self._scratch_root)
         except (OSError, ValueError):
             return False
-        return inside(landed, real_root)
+        return inside(landed, self._scratch_real)
 
     def record_tool_request(
         self, tool_use_id: Any, tool_name: str, tool_args: Dict[str, Any]
