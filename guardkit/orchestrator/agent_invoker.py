@@ -54,7 +54,10 @@ from guardkit.orchestrator.instrumentation.llm_instrumentation import (
 )
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent, ToolExecEvent
-from guardkit.orchestrator.paths import TaskArtifactPaths, builder_scratch_dir
+from guardkit.orchestrator.paths import (
+    TaskArtifactPaths,
+    prepare_builder_scratch_dir,
+)
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
@@ -1292,7 +1295,11 @@ class TaskWorkStreamParser:
     # Alternative pytest pattern for simpler output: "5 passed in 0.23s"
     PYTEST_SIMPLE_PATTERN = re.compile(r"(\d+)\s+passed(?:\s+in\s+[\d.]+s)?", re.IGNORECASE)
 
-    def __init__(self, worktree_root: Optional[Union[str, Path]] = None) -> None:
+    def __init__(
+        self,
+        worktree_root: Optional[Union[str, Path]] = None,
+        scratch_root: Optional[Union[str, Path]] = None,
+    ) -> None:
         """Initialize the parser with empty accumulated state.
 
         Args:
@@ -1300,16 +1307,18 @@ class TaskWorkStreamParser:
                 tool-call path inside it is recorded relative to it (see
                 ``_record_authored_path``). When omitted, paths are recorded
                 exactly as the tool call gave them.
+            scratch_root: 3 October 2026. The builder's scratch folder, only
+                when it was checked (``prepare_builder_scratch_dir``) and the
+                harness's backend really allows writes there
+                (``provided_scratch_root``). Nothing in it is part of the
+                project, so no path in it is listed. ``None`` leaves nothing
+                off.
         """
         self._worktree_root: Optional[str] = (
             str(worktree_root) if worktree_root else None
         )
-        # 3 October 2026: the builder's scratch folder (see
-        # ``builder_scratch_dir``). Nothing in it is part of the project, so
-        # no path in it is ever listed as created or modified.
-        _scratch = builder_scratch_dir(Path(worktree_root)) if worktree_root else None
         self._scratch_root: Optional[str] = (
-            os.path.realpath(_scratch) if _scratch is not None else None
+            os.path.normpath(str(scratch_root)) if scratch_root else None
         )
         self._phases: Dict[str, Dict[str, Any]] = {}
         self._tests_passed: Optional[int] = None
@@ -1468,8 +1477,10 @@ class TaskWorkStreamParser:
             return False
         if not os.path.isabs(path) and self._worktree_root:
             path = os.path.join(self._worktree_root, path)
-        resolved = os.path.realpath(path)
-        return resolved == self._scratch_root or resolved.startswith(
+        # Judged by the path as written, never through symlinks, so a
+        # project path such as ``src/app.py`` is never taken for scratch.
+        spelled = os.path.normpath(path)
+        return spelled == self._scratch_root or spelled.startswith(
             self._scratch_root + os.sep
         )
 
@@ -10728,6 +10739,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         feedback: Optional[Union[str, Dict[str, Any]]] = None,
         max_turns: int = 5,
         context: str = "",
+        scratch_folder: Optional[Path] = None,
     ) -> str:
         """Build implementation prompt using loaded execution protocol.
 
@@ -10746,6 +10758,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             feedback: Optional Coach feedback from previous turn
             max_turns: Maximum turns allowed for this orchestration
             context: Job-specific context from the memory backend
+            scratch_folder: The builder's scratch folder, given only when the
+                selected harness provides it; ``None`` leaves its line out
 
         Returns:
             Assembled prompt string with protocol and all context sections
@@ -10856,9 +10870,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         protocol_content = protocol_content.replace("{turn}", str(turn))
         protocol_content = protocol_content.replace("{worktree_path}", str(self.worktree_path))
         # 3 October 2026: name the builder's scratch folder, the one place
-        # outside the worktree the factory lets it write. Not a git checkout
-        # means no such folder, and the line naming it is left out.
-        scratch_folder = builder_scratch_dir(self.worktree_path)
+        # outside the worktree the factory lets it write, only when the
+        # caller knows the selected harness provides it. Otherwise the line
+        # naming it is left out.
         if scratch_folder is not None:
             protocol_content = protocol_content.replace(
                 "{scratch_folder}", str(scratch_folder)
@@ -11151,17 +11165,35 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         Raises:
             SDKTimeoutError: If execution exceeds timeout
         """
-        # TASK-ACO-002: Build prompt with loaded protocol and inline context
-        prompt = self._build_autobuild_implementation_prompt(
-            task_id=task_id,
-            mode=mode,
-            documentation_level=documentation_level,
-            turn=turn,
-            requirements=requirements,
-            feedback=feedback,
-            max_turns=max_turns,
-            context=context,
+        from guardkit.orchestrator.harness.selector import (
+            provided_scratch_root,
+            resolve_harness_name,
         )
+
+        # 3 October 2026: only the local (LangGraph) builder's file backend
+        # can allow a scratch folder, so only then is one prepared. Whether
+        # the backend really accepted it is checked once the harness exists.
+        scratch_folder = (
+            prepare_builder_scratch_dir(self.worktree_path)
+            if resolve_harness_name() == "langgraph"
+            else None
+        )
+
+        def _build_prompt() -> str:
+            # TASK-ACO-002: Build prompt with loaded protocol and inline context
+            return self._build_autobuild_implementation_prompt(
+                task_id=task_id,
+                mode=mode,
+                documentation_level=documentation_level,
+                turn=turn,
+                requirements=requirements,
+                feedback=feedback,
+                max_turns=max_turns,
+                context=context,
+                scratch_folder=scratch_folder,
+            )
+
+        prompt = _build_prompt()
 
         # TASK-VOPT-001: Log protocol variant and size
         protocol_variant = "medium" if self.timeout_multiplier > 1.0 else "full"
@@ -11187,7 +11219,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # / harness-internal ValueError / SDK import failure) to
         # AgentInvocationError before they reach this caller.
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
-        from guardkit.orchestrator.harness.selector import resolve_harness_name
 
         # TASK-ABSR-MAXT: Complexity-scale max_turns (mirrors _calculate_sdk_timeout).
         # Computed once per invocation so the same value flows into the harness
@@ -11265,10 +11296,6 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         try:
             for _sdk_attempt in range(MAX_SDK_STREAM_RETRIES + 1):
                 collected_output = []
-                # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
-                # file operations from a previous (failed) attempt do not
-                # leak into the successful attempt's result.
-                parser = TaskWorkStreamParser(worktree_root=self.worktree_path)
                 message_count = 0
                 assistant_count = 0
                 tool_count = 0
@@ -11332,6 +11359,28 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     on_native_tool_event=(
                         lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
                     ) if _sdk_debug_dir is not None else None,
+                    scratch_root=scratch_folder,
+                )
+
+                # 3 October 2026: keep the scratch folder only if the
+                # harness's backend really allows it (an older factory, or one
+                # that refused the folder, does not). Otherwise the builder is
+                # not told about it and nothing is left off its file list.
+                if (
+                    scratch_folder is not None
+                    and provided_scratch_root(harness) != scratch_folder
+                ):
+                    logger.warning(
+                        f"[{task_id}] Builder scratch folder not provided by the "
+                        f"harness; the builder is not told about it."
+                    )
+                    scratch_folder = None
+                    prompt = _build_prompt()
+                # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
+                # file operations from a previous (failed) attempt do not
+                # leak into the successful attempt's result.
+                parser = TaskWorkStreamParser(
+                    worktree_root=self.worktree_path, scratch_root=scratch_folder
                 )
 
                 # TASK-HMIG-006 AC-007: surface the resume-intent drop loudly
