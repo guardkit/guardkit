@@ -747,3 +747,31 @@ def test_symlinked_scratch_folder_cannot_hide_a_fabricated_src_claim(
     assert coach_result.quality_gates is None
     assert "src/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
     assert bundle.gathering_status == "partial_honesty_abort"
+
+
+def test_claim_through_a_link_inside_the_scratch_folder_still_aborts(
+    git_worktree: Path,
+) -> None:
+    """``<scratch>/project`` pointing at ``src``: an unwritten file claimed
+    through it in the builder's own words reaches the Coach and is caught."""
+    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+    task_id = "TASK-SCRATCH-LINK"
+    (git_worktree / "src").mkdir()
+    scratch = prepare_builder_scratch_dir(git_worktree)
+    (scratch / "project").symlink_to(git_worktree / "src")
+    claimed = scratch / "project" / "not_written.py"
+
+    _run_builder_turn(
+        git_worktree,
+        task_id,
+        [],
+        final_text=f"Created: {claimed}\n" + _TURN_TEXT,
+    )
+
+    results, report = _records(git_worktree, task_id)
+    assert any("not_written.py" in path for path in results["files_created"])
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert coach_result.quality_gates is None
+    assert "not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+    assert bundle.gathering_status == "partial_honesty_abort"

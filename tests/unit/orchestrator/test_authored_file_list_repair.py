@@ -787,12 +787,14 @@ class TestScratchFolder:
 
     @pytest.mark.asyncio
     async def test_folder_the_harness_does_not_provide_is_neither_named_nor_skipped(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """An older factory, or one that refused the folder: the builder is
-        not told about it and nothing is left off its list."""
+        not told about it and nothing is left off its list. The saved debug
+        copy of the prompt matches what was sent."""
         from guardkit.orchestrator.paths import builder_scratch_dir
 
+        monkeypatch.setenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", "1")
         invoker = _git_invoker(tmp_path)
         script = builder_scratch_dir(invoker.worktree_path) / "verify.py"
         prompts: List[str] = []
@@ -802,6 +804,40 @@ class TestScratchFolder:
 
         assert record["files_created"] == [".git/guardkit-scratch/verify.py"]
         assert "throwaway scripts" not in prompts[0]
+        saved = list(
+            (invoker.worktree_path / ".guardkit" / "autobuild" / "TASK-NO-SCRATCH")
+            .rglob("prompt.txt")
+        )
+        assert len(saved) == 1
+        assert "throwaway scripts" not in saved[0].read_text()
+
+    @pytest.mark.asyncio
+    async def test_symlink_inside_the_scratch_folder_into_the_project_is_listed(
+        self, tmp_path: Path
+    ) -> None:
+        """``<scratch>/project`` pointing at ``src``: a write through it lands
+        in the project, so it is listed as project work."""
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+        invoker = _git_invoker(tmp_path)
+        wt = invoker.worktree_path
+        (wt / "src").mkdir()
+        scratch = prepare_builder_scratch_dir(wt)
+        (scratch / "project").symlink_to(wt / "src")
+        through_link = scratch / "project" / "app.py"
+        events = [
+            _put(through_link),
+            _use("c1", "write_file", through_link),
+            _ok("c1"),
+        ]
+
+        record = await _run(
+            invoker, "TASK-SCRATCH-LINK", events, provides_scratch=scratch
+        )
+
+        assert (wt / "src" / "app.py").exists()
+        assert record["files_created"] == [".git/guardkit-scratch/project/app.py"]
+        assert record["files_authored"] == [".git/guardkit-scratch/project/app.py"]
 
     def test_symlinked_scratch_folder_never_hides_a_project_claim(
         self, tmp_path: Path
