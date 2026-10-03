@@ -1477,12 +1477,23 @@ class TaskWorkStreamParser:
             return False
         if not os.path.isabs(path) and self._worktree_root:
             path = os.path.join(self._worktree_root, path)
-        # Judged by the path as written, never through symlinks, so a
-        # project path such as ``src/app.py`` is never taken for scratch.
-        spelled = os.path.normpath(path)
-        return spelled == self._scratch_root or spelled.startswith(
-            self._scratch_root + os.sep
-        )
+
+        def inside(candidate: str, root: str) -> bool:
+            return candidate == root or candidate.startswith(root + os.sep)
+
+        # Both the path as written and where it really lands (following any
+        # symlink, including one placed inside the scratch folder) must be in
+        # the folder. So a project path such as ``src/app.py`` is never taken
+        # for scratch, and neither is ``<scratch>/link/app.py`` when ``link``
+        # points into the project. If that cannot be worked out, keep it.
+        if not inside(os.path.normpath(path), self._scratch_root):
+            return False
+        try:
+            landed = os.path.realpath(path)
+            real_root = os.path.realpath(self._scratch_root)
+        except (OSError, ValueError):
+            return False
+        return inside(landed, real_root)
 
     def record_tool_request(
         self, tool_use_id: Any, tool_name: str, tool_args: Dict[str, Any]
@@ -11376,6 +11387,18 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                     )
                     scratch_folder = None
                     prompt = _build_prompt()
+                    # Keep the saved debug copy equal to what is sent. This
+                    # only happens on the first attempt, before any event is
+                    # saved, so rewriting the folder loses nothing.
+                    if _sdk_debug_dir is not None:
+                        _sdk_preserve_prompt(
+                            workspace_root=self.worktree_path,
+                            task_id=task_id,
+                            turn=turn,
+                            role="player",
+                            prompt=prompt,
+                            options=None,
+                        )
                 # TASK-FIX-STUB-C: Recreate parser per retry so ToolUseBlock
                 # file operations from a previous (failed) attempt do not
                 # leak into the successful attempt's result.
