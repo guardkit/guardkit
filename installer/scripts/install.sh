@@ -1806,10 +1806,11 @@ setup_pi_integration() {
     local source_revision
     source_revision="$(git -C "$INSTALLER_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
 
-    # Leftovers of interrupted runs (Pi ignores hidden folders, but tidy up).
-    rm -rf "$pi_dir/skills/".guardkit.staging.*
-    local staging="$pi_dir/skills/.guardkit.staging.$$"
-    mkdir -p "$staging"
+    # A uniquely named staging folder of this run only (Pi ignores hidden
+    # folders); nothing else under skills/ is touched.
+    mkdir -p "$pi_dir/skills"
+    local staging
+    staging="$(mktemp -d "$pi_dir/skills/.guardkit.staging.XXXXXX")"
 
     if ! python3 - "$INSTALL_DIR" "$staging" "$adapter_source" "$pi_dir/skills" "$AGENTECFLOW_VERSION" "$source_revision" <<'PY'
 import datetime, hashlib, json, re, sys

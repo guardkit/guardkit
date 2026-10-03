@@ -135,6 +135,7 @@ def test_user_files_in_the_pi_directory_are_preserved(functions, env):
         "APPEND_SYSTEM.md": "mine",
         "prompts/feature-plan.md": "my own prompt",
         "skills/my-skill/SKILL.md": "---\nname: my-skill\ndescription: mine\n---\n",
+        "skills/.guardkit.staging.user/keep.txt": "not GuardKit's",
     }
     for rel, text in user_files.items():
         (pi_dir / rel).parent.mkdir(parents=True, exist_ok=True)
