@@ -33,6 +33,7 @@ Example:
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -837,10 +838,50 @@ def strip_oracle_paths(text: str) -> str:
     return _oracle_path_re().sub(" [<oracle-file>]", text)
 
 
+#: Folder name of the builder's scratch folder inside the worktree's git directory.
+BUILDER_SCRATCH_DIRNAME = "guardkit-scratch"
+
+
+def builder_scratch_dir(worktree: Path) -> Optional[Path]:
+    """The builder's scratch folder for this worktree, outside the project.
+
+    3 October 2026. Builders write throwaway scripts. The factory refuses a
+    write outside the task's worktree, and a script written inside it is part
+    of the project, so a builder that wrote one, ran it and deleted it was
+    held to it as a claimed file (FEAT-D586, FEAT-E592). This folder is
+    neither: it sits in the worktree's own git directory (``.git`` in a plain
+    clone, ``<repo>/.git/worktrees/<name>`` for a linked worktree), which git
+    never stages and which ``git worktree remove`` deletes with the worktree.
+    It is found by reading the worktree's ``.git`` entry, so it is the same
+    wherever the build runs and depends on no temporary-folder setting.
+
+    Returns ``None`` when the worktree is not a git checkout.
+    """
+    dot_git = Path(worktree) / ".git"
+    try:
+        if dot_git.is_dir():
+            git_dir = dot_git
+        elif dot_git.is_file():
+            first_line = dot_git.read_text(encoding="utf-8").splitlines()[0]
+            if not first_line.startswith("gitdir:"):
+                return None
+            git_dir = Path(first_line[len("gitdir:"):].strip())
+            if not git_dir.is_absolute():
+                git_dir = Path(worktree) / git_dir
+        else:
+            return None
+    except (OSError, IndexError, UnicodeDecodeError):
+        return None
+    return Path(os.path.normpath(git_dir)) / BUILDER_SCRATCH_DIRNAME
 
 
 # ============================================================================
 # Public API
 # ============================================================================
 
-__all__ = ["TaskArtifactPaths", "strip_oracle_paths"]
+__all__ = [
+    "BUILDER_SCRATCH_DIRNAME",
+    "TaskArtifactPaths",
+    "builder_scratch_dir",
+    "strip_oracle_paths",
+]

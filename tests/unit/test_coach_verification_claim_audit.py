@@ -710,9 +710,11 @@ def test_fabricated_discrepancy_diagnostic_includes_path_exists_and_no_match(
 ) -> None:
     """When the Player claims a path that is genuinely fabricated (does
     not exist on disk), the discrepancy's ``actual_value`` must report
-    the *checked* facts (``path_exists=False``, ``gitignore_match=no rule
-    matched``, ``tracked=no``) instead of speculating about an
-    unanchored .gitignore rule.
+    the *checked* facts instead of speculating about an unanchored
+    .gitignore rule. For a missing file neither the ignore probe nor the
+    tracked probe runs, so it says ``path_exists=False`` and that the other
+    two were not checked (3 October 2026: it used to say "no rule matched",
+    which read as a finding on a scratch file inside an ignored folder).
 
     AC-002 motivation: the previous "Most common cause: an unanchored
     .gitignore rule" wording sent the J6F1 review chasing hypothesis 1
@@ -730,8 +732,9 @@ def test_fabricated_discrepancy_diagnostic_includes_path_exists_and_no_match(
     assert disc.severity == "critical"
     # The new diagnostic surfaces actual checked facts:
     assert "path_exists=False" in disc.actual_value
-    assert "no rule matched" in disc.actual_value
-    assert "tracked=no" in disc.actual_value
+    assert "gitignore_match=not checked (file missing)" in disc.actual_value
+    assert "tracked=not checked (file missing)" in disc.actual_value
+    assert "no rule matched" not in disc.actual_value
     # And does NOT carry the speculative gitignore-rule guess:
     assert "Most common cause: an unanchored" not in disc.actual_value
 

@@ -470,3 +470,230 @@ def test_j6f1_player_turn1_replay_no_claim_audit_issue(
             f"J6F1 path {p} produced a must_fix audit issue; expected "
             f"normalisation/allowlist to suppress it."
         )
+
+
+# ---------------------------------------------------------------------------
+# 3 October 2026: throwaway scripts (FEAT-E592, FEAT-D586)
+#
+# Through the real path: the builder's tool events are processed by the
+# stream loop, the turn report is built from both the results file and the
+# returned result, and the Coach runs its honesty check and evidence step.
+# The events are the local builder's delivery order: every tool use, then
+# every tool result; a write the factory refused (outside the worktree)
+# comes back with ``is_error=True``. File changes happen before the events
+# arrive, as they do there. In E592 the builder's /tmp script was refused,
+# it wrote the script inside the worktree instead, ran it and deleted it,
+# and the attempt was thrown away. Now it has a scratch folder outside the
+# project and the refused write never reaches the list.
+# ---------------------------------------------------------------------------
+
+
+def _tool_use(call_id: str, name: str, path: Any) -> Any:
+    from guardkit.orchestrator.harness.adapter import ToolUseEvent
+
+    return ToolUseEvent(
+        tool_use_id=call_id,
+        name=name,
+        input={"file_path": str(path), "content": "x = 1\n"},
+    )
+
+
+def _tool_result(call_id: str, is_error: bool = False) -> Any:
+    from guardkit.orchestrator.harness.adapter import ToolResultEvent
+
+    return ToolResultEvent(
+        tool_use_id=call_id,
+        content="Error: refusing to write" if is_error else "Updated file",
+        is_error=is_error,
+    )
+
+
+_TURN_TEXT = "5 tests passed, 0 tests failed\nAll quality gates passed"
+
+
+def _run_builder_turn(
+    worktree: Path, task_id: str, steps: list, final_text: str = _TURN_TEXT
+) -> Any:
+    """Stream processing and report construction, as one builder turn."""
+    import asyncio
+
+    from guardkit.orchestrator.agent_invoker import AgentInvoker
+    from guardkit.orchestrator.harness.adapter import (
+        AssistantMessageEvent,
+        ResultMessageEvent,
+    )
+
+    class LocalReplay:
+        supports_resume = False
+
+        async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+            for step in steps:
+                if callable(step):
+                    step()
+                    continue
+                yield step
+            yield AssistantMessageEvent(text=final_text, raw=None)
+            yield ResultMessageEvent(session_id=None, raw=None)
+
+        async def cancel(self) -> None:
+            return None
+
+    invoker = AgentInvoker(
+        worktree_path=worktree, max_turns_per_agent=30, sdk_timeout_seconds=60
+    )
+    with patch(
+        "guardkit.orchestrator.agent_invoker.select_harness",
+        return_value=LocalReplay(),
+    ):
+        result = asyncio.run(
+            invoker._invoke_task_work_implement(task_id=task_id, mode="standard")
+        )
+    assert result.success is True
+    invoker._create_player_report_from_task_work(task_id, 1, result)
+    return result
+
+
+def _make(path: Path) -> Any:
+    def run() -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x = 1\n")
+
+    return run
+
+
+def _remove(path: Path) -> Any:
+    return lambda: path.unlink()
+
+
+def _e592_steps(worktree: Path, task: str) -> list:
+    """A refused /tmp script, the same script in the scratch folder, run and
+    deleted there, and the real product files."""
+    from guardkit.orchestrator.paths import builder_scratch_dir
+
+    script = builder_scratch_dir(worktree) / f"verify_{task}.py"
+    product = worktree / "src" / "users" / "routes.py"
+    test = worktree / "tests" / "test_routes.py"
+    return [
+        _make(script),
+        _make(product),
+        _make(test),
+        _remove(script),
+        _tool_use("c45", "write_file", f"/tmp/verify_{task}.py"),
+        _tool_use("c46", "write_file", script),
+        _tool_use("c47", "write_file", product),
+        _tool_use("c48", "write_file", test),
+        _tool_result("c45", is_error=True),
+        _tool_result("c46"),
+        _tool_result("c47"),
+        _tool_result("c48"),
+    ]
+
+
+def _coach(worktree: Path, task_id: str) -> tuple:
+    with patch("subprocess.run", side_effect=_selective_run):
+        result = CoachValidator(str(worktree)).validate(task_id, 1, _task())
+        bundle = CoachValidator(str(worktree)).gather_evidence(task_id, 1, _task())
+    return result, bundle
+
+
+def _records(worktree: Path, task_id: str) -> list:
+    base = worktree / ".guardkit" / "autobuild" / task_id
+    return [
+        json.loads((base / "task_work_results.json").read_text()),
+        json.loads((base / "player_turn_1.json").read_text()),
+    ]
+
+
+def _honesty_must_fix(result: Any) -> list:
+    return [
+        i for i in result.issues
+        if i.get("severity") == "must_fix"
+        and i.get("category") in ("honesty", "claim_audit")
+    ]
+
+
+@pytest.mark.parametrize("task", ["e592_002", "e592_003"])
+def test_e592_shape_with_scratch_folder_passes_honesty(
+    git_worktree: Path, task: str
+) -> None:
+    task_id = f"TASK-{task.upper()}"
+    result = _run_builder_turn(git_worktree, task_id, _e592_steps(git_worktree, task))
+
+    # The returned result, the results file and the turn report all agree.
+    for files in [result.output["files_created"]] + [
+        r["files_created"] + r["files_modified"]
+        for r in _records(git_worktree, task_id)
+    ]:
+        assert not any("verify_" in path for path in files), files
+        assert "src/users/routes.py" in files
+
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert _honesty_must_fix(coach_result) == [], coach_result.issues
+    assert coach_result.quality_gates is not None
+    assert bundle.gathering_status != "partial_honesty_abort"
+
+
+def test_fabricated_src_claim_still_aborts(git_worktree: Path) -> None:
+    """A product file claimed in the builder's own words and in a criterion,
+    never written: still caught, scratch folder or not."""
+    task_id = "TASK-E592-003"
+    report = git_worktree / ".guardkit" / "autobuild" / task_id / "player_turn_1.json"
+
+    def builder_writes_its_report() -> None:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(
+            json.dumps(
+                {
+                    "completion_promises": [
+                        {
+                            "criterion_id": "AC-001",
+                            "status": "complete",
+                            "implementation_files": ["src/users/not_written.py"],
+                        }
+                    ]
+                }
+            )
+        )
+
+    _run_builder_turn(
+        git_worktree,
+        task_id,
+        [builder_writes_its_report] + _e592_steps(git_worktree, "e592_003"),
+        final_text="Created: src/users/not_written.py\n" + _TURN_TEXT,
+    )
+
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert coach_result.quality_gates is None
+    assert "src/users/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
+    assert bundle.gathering_status == "partial_honesty_abort"
+
+
+def test_deleted_project_file_still_trips_the_checks_unchanged(
+    git_worktree: Path,
+) -> None:
+    """Unchanged on purpose: a throwaway script written INSIDE the project
+    and deleted stays listed, and so does a tracked file the builder
+    deleted; the existence and claim checks still report them."""
+    task_id = "TASK-E592-OLD-SHAPE"
+    script = git_worktree / ".tmp" / "verify.py"
+    (git_worktree / "a.md").write_text("a\n")
+    subprocess.run(["git", "add", "a.md"], cwd=git_worktree, check=True)
+    subprocess.run(["git", "commit", "-m", "a"], cwd=git_worktree, check=True,
+                   capture_output=True)
+    steps = [
+        _make(script),
+        _remove(script),
+        _remove(git_worktree / "a.md"),
+        _tool_use("c1", "write_file", script),
+        _tool_use("c2", "edit_file", git_worktree / "a.md"),
+        _tool_result("c1"),
+        _tool_result("c2"),
+    ]
+    _run_builder_turn(git_worktree, task_id, steps)
+
+    results, report = _records(git_worktree, task_id)
+    assert ".tmp/verify.py" in results["files_created"]
+    assert "a.md" in results["files_modified"]
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert coach_result.quality_gates is None
+    assert bundle.gathering_status == "partial_honesty_abort"

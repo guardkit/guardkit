@@ -58,16 +58,23 @@ def _make_invoker(tmp_path: Path) -> Any:
     )
 
 
-def _harness_yielding(events: List[Any]) -> Any:
-    """A harness that replays a fixed event sequence, then a terminal result."""
+def _harness_yielding(events: List[Any], final_text: str = _FINAL_TEXT) -> Any:
+    """A harness that replays a fixed event sequence, then a terminal result.
+
+    A callable in the sequence is run instead of yielded, so a replay can
+    make the file a successful write made.
+    """
 
     class ReplayHarness:
         supports_resume = False
 
         async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
             for event in events:
+                if callable(event):
+                    event()
+                    continue
                 yield event
-            yield AssistantMessageEvent(text=_FINAL_TEXT, raw=None)
+            yield AssistantMessageEvent(text=final_text, raw=None)
             yield ResultMessageEvent(session_id=None, raw=None)
 
         async def cancel(self) -> None:
@@ -76,8 +83,10 @@ def _harness_yielding(events: List[Any]) -> Any:
     return ReplayHarness()
 
 
-async def _run(invoker: Any, task_id: str, events: List[Any]) -> dict:
-    harness = _harness_yielding(events)
+async def _run(
+    invoker: Any, task_id: str, events: List[Any], final_text: str = _FINAL_TEXT
+) -> dict:
+    harness = _harness_yielding(events, final_text)
     with patch(
         "guardkit.orchestrator.agent_invoker.select_harness",
         return_value=harness,
@@ -437,4 +446,318 @@ class TestStaleTestAttribution:
                 "tests/test_thing.py", tmp_path, current_task_ids=["TASK-B"]
             )
             == "TASK-A"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Only writes that worked are listed, and scratch files never are
+# (3 October 2026)
+#
+# FEAT-D586 and FEAT-E592 each lost an attempt because the list was filled
+# when the builder ASKED to write: a throwaway script aimed at /tmp was
+# refused (outside the worktree) yet stayed listed, and the honesty check
+# called it fabricated. The local builder delivers every tool use and then
+# every tool result (a refused write is a ToolMessage with status "error",
+# so ``is_error=True``); the hosted builder delivers a typed use per block,
+# the raw message holding the same blocks, and later the results.
+# ---------------------------------------------------------------------------
+
+
+def _git(*args: str, cwd: Path) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    )
+
+
+def _git_invoker(tmp_path: Path) -> Any:
+    """An invoker whose worktree is a real git checkout."""
+    invoker = _make_invoker(tmp_path)
+    _git("init", "--initial-branch=main", cwd=invoker.worktree_path)
+    return invoker
+
+
+def _use(call_id: str, name: str, path: Any) -> ToolUseEvent:
+    return ToolUseEvent(
+        tool_use_id=call_id,
+        name=name,
+        input={"file_path": str(path), "content": "x = 1\n"},
+    )
+
+
+def _ok(call_id: str) -> ToolResultEvent:
+    return ToolResultEvent(tool_use_id=call_id, content="Updated file")
+
+
+def _refused(call_id: str) -> ToolResultEvent:
+    return ToolResultEvent(
+        tool_use_id=call_id,
+        content="Error: refusing to write: outside the worktree.",
+        is_error=True,
+    )
+
+
+def _put(path: Path) -> Any:
+    def run() -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x = 1\n")
+
+    return run
+
+
+class TestOnlyWritesThatWorkedAreListed:
+    @pytest.mark.asyncio
+    async def test_local_refused_write_and_failed_edit_are_not_listed(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path)
+        wt = invoker.worktree_path
+        events = [
+            _put(wt / "src" / "b.py"),
+            _use("c1", "write_file", "/tmp/verify_e592_002.py"),
+            _use("c2", "edit_file", wt / "src" / "a.py"),
+            _use("c3", "write_file", wt / "src" / "b.py"),
+            _refused("c1"),
+            ToolResultEvent(
+                tool_use_id="c2",
+                content="Error: String not found in file",
+                is_error=True,
+            ),
+            _ok("c3"),
+        ]
+
+        record = await _run(invoker, "TASK-LOCAL-REFUSED", events)
+
+        assert record["files_created"] == ["src/b.py"]
+        assert record["files_modified"] == []
+        assert record["files_authored"] == ["src/b.py"]
+        assert record["files_authored_tracking"] == "tracked"
+
+    @pytest.mark.asyncio
+    async def test_failed_write_retried_to_the_same_path_is_listed_once(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path)
+        wt = invoker.worktree_path
+        events = [
+            _use("c1", "write_file", wt / "src" / "retry.py"),
+            _use("c2", "write_file", wt / "src" / "retry.py"),
+            _refused("c1"),
+            _ok("c2"),
+        ]
+
+        record = await _run(invoker, "TASK-RETRY", events)
+
+        assert record["files_created"] == ["src/retry.py"]
+        assert record["files_authored"] == ["src/retry.py"]
+
+    @pytest.mark.asyncio
+    async def test_write_with_no_result_is_kept_as_before(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _make_invoker(tmp_path)
+        events = [_use("c1", "write_file", invoker.worktree_path / "src" / "n.py")]
+
+        record = await _run(invoker, "TASK-UNANSWERED", events)
+
+        assert record["files_created"] == ["src/n.py"]
+        assert record["files_authored"] == ["src/n.py"]
+
+    @pytest.mark.asyncio
+    async def test_hosted_delivery_lists_only_writes_that_worked(
+        self, tmp_path: Path
+    ) -> None:
+        """Through the real SDK harness: the raw message still carries the
+        refused Write and the failed Edit, and neither may reach the list."""
+        claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
+        from claude_agent_sdk import (
+            AssistantMessage,
+            ResultMessage,
+            TextBlock,
+            ToolResultBlock,
+            ToolUseBlock,
+            UserMessage,
+        )
+
+        from guardkit.orchestrator.harness import ClaudeSDKHarness
+
+        invoker = _make_invoker(tmp_path)
+        wt = invoker.worktree_path
+
+        def write(call_id: str, name: str, path: Any) -> Any:
+            return ToolUseBlock(
+                id=call_id, name=name, input={"file_path": str(path), "content": ""}
+            )
+
+        messages = [
+            AssistantMessage(
+                content=[
+                    write("tu-1", "Write", "/tmp/verify_sdk.py"),
+                    write("tu-2", "Edit", wt / "src" / "a.py"),
+                    write("tu-3", "Write", wt / "src" / "b.py"),
+                    write("tu-4", "Write", wt / "src" / "c.py"),
+                ],
+                model="test-model",
+            ),
+            UserMessage(
+                content=[
+                    ToolResultBlock(tool_use_id="tu-1", content="denied", is_error=True),
+                    ToolResultBlock(tool_use_id="tu-2", content="not found", is_error=True),
+                    ToolResultBlock(tool_use_id="tu-3", content="ok"),
+                    ToolResultBlock(tool_use_id="tu-4", content="busy", is_error=True),
+                ]
+            ),
+            # The builder retries the failed write to the same path.
+            AssistantMessage(
+                content=[write("tu-5", "Write", wt / "src" / "c.py")],
+                model="test-model",
+            ),
+            UserMessage(content=[ToolResultBlock(tool_use_id="tu-5", content="ok")]),
+            AssistantMessage(content=[TextBlock(text=_FINAL_TEXT)], model="m"),
+            ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="sess-1",
+                total_cost_usd=0.0,
+            ),
+        ]
+
+        async def fake_query(*args: Any, **kwargs: Any) -> Any:
+            for message in messages:
+                yield message
+
+        harness = ClaudeSDKHarness(
+            sdk_timeout_seconds=60,
+            allowed_tools=["Write", "Edit"],
+            permission_mode="acceptEdits",
+            max_turns=10,
+        )
+        with patch.object(claude_agent_sdk, "query", fake_query), patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=harness,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-HOSTED-REFUSED", mode="standard"
+            )
+
+        assert result.success is True
+        record = json.loads(
+            (
+                wt / ".guardkit" / "autobuild" / "TASK-HOSTED-REFUSED"
+                / "task_work_results.json"
+            ).read_text()
+        )
+        assert record["files_created"] == ["src/b.py", "src/c.py"]
+        assert record["files_modified"] == []
+        assert record["files_authored"] == ["src/b.py", "src/c.py"]
+        # The returned result carries the same lists.
+        assert result.output["files_created"] == ["src/b.py", "src/c.py"]
+        assert "files_modified" not in result.output
+
+
+class TestScratchFolder:
+    def test_found_in_a_plain_checkout_and_a_linked_worktree(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git("init", "--initial-branch=main", cwd=repo)
+        _git("-c", "user.email=t@e", "-c", "user.name=T",
+             "commit", "--allow-empty", "-m", "base", cwd=repo)
+        assert builder_scratch_dir(repo) == repo / ".git" / "guardkit-scratch"
+
+        linked = tmp_path / "worktrees" / "FEAT-X"
+        _git("worktree", "add", str(linked), cwd=repo)
+        scratch = builder_scratch_dir(linked)
+        assert scratch == repo / ".git" / "worktrees" / "FEAT-X" / "guardkit-scratch"
+
+        # Removing the worktree removes its scratch folder too.
+        scratch.mkdir()
+        (scratch / "verify.py").write_text("x = 1\n")
+        _git("worktree", "remove", "--force", str(linked), cwd=repo)
+        assert not scratch.exists()
+
+        assert builder_scratch_dir(tmp_path / "not-a-checkout") is None
+
+    @pytest.mark.asyncio
+    async def test_scratch_writes_and_scratch_claims_are_not_listed(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        invoker = _git_invoker(tmp_path)
+        wt = invoker.worktree_path
+        scratch = builder_scratch_dir(wt)
+        script = scratch / "verify_created_per_day.py"
+        events = [
+            _put(script),
+            _put(wt / "src" / "service.py"),
+            _use("c1", "write_file", script),
+            _use("c2", "edit_file", scratch / "notes.txt"),
+            _use("c3", "write_file", wt / "src" / "service.py"),
+            _ok("c1"),
+            _ok("c2"),
+            _ok("c3"),
+        ]
+
+        record = await _run(
+            invoker,
+            "TASK-SCRATCH",
+            events,
+            # A scratch path named in the builder's own words is harmless too.
+            final_text=f"Created: {script}\n" + _FINAL_TEXT,
+        )
+
+        listed = (
+            set(record["files_created"])
+            | set(record["files_modified"])
+            | set(record["files_authored"])
+        )
+        assert listed == {"src/service.py"}
+
+    def test_dotdot_out_of_the_scratch_folder_is_still_listed(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.agent_invoker import TaskWorkStreamParser
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        _git("init", "--initial-branch=main", cwd=worktree)
+        scratch = builder_scratch_dir(worktree)
+        parser = TaskWorkStreamParser(worktree_root=worktree)
+        parser.record_tool_request(
+            "c1", "write_file", {"file_path": f"{scratch}/../../src/app.py"}
+        )
+        parser.record_tool_result("c1", is_error=False)
+
+        # It lands in the worktree, so it is a project file and stays listed
+        # (spelt as the builder gave it, relative to the worktree).
+        assert parser.to_result()["files_created"] == [
+            ".git/guardkit-scratch/../../src/app.py"
+        ]
+
+    def test_the_builder_is_told_where_the_scratch_folder_is(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        invoker = _git_invoker(tmp_path)
+        prompt = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-SCRATCH", mode="standard", turn=1
+        )
+
+        assert f"Put throwaway scripts in `{builder_scratch_dir(invoker.worktree_path)}`" in prompt
+        assert "{scratch_folder}" not in prompt
+
+        (tmp_path / "plain").mkdir()
+        plain = _make_invoker(tmp_path / "plain")
+        assert "throwaway scripts" not in plain._build_autobuild_implementation_prompt(
+            task_id="TASK-SCRATCH", mode="standard", turn=1
         )

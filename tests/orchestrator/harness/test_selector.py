@@ -1331,6 +1331,33 @@ class TestBuildBackendWithOptionalCap:
         assert result is not None
         assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
 
+    def test_scratch_folder_reaches_a_factory_that_accepts_it(self) -> None:
+        received: dict[str, Any] = {}
+
+        def new_factory(worktree: Any, **kwargs: Any) -> str:
+            received.update(kwargs)
+            return "backend"
+
+        _build_backend_with_optional_cap(
+            new_factory, Path("/tmp/wt"), None, (), Path("/tmp/git/scratch")
+        )
+
+        assert received["scratch_root"] == Path("/tmp/git/scratch")
+
+    def test_stale_factory_runs_without_the_scratch_folder_and_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(
+            logging.WARNING, logger="guardkit.orchestrator.harness.selector"
+        ):
+            result = _build_backend_with_optional_cap(
+                _old_factory_no_cap, Path("/tmp/wt"), None, (), Path("/tmp/s")
+            )
+
+        assert result is not None  # no TypeError
+        warnings = [r.getMessage() for r in caplog.records]
+        assert any("scratch folder" in m for m in warnings)
+
 
 class TestSelectHarnessBackendKwargCompat:
     """End-to-end :func:`select_harness` Shape-2 behaviour (AC-2..AC-5)."""
