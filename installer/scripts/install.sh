@@ -35,17 +35,18 @@ GITHUB_REPO="https://github.com/guardkit/guardkit"
 GITHUB_BRANCH="main"
 INSTALL_METHOD="git-clone"  # Default, updated if running via curl
 
-# Options, in any order:
-#   --test-mode  test mode (unchanged behaviour)
-#   --pi         also install GuardKit's commands for the Pi coding agent
-#                (setup_pi_integration), into ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
+# Test mode configuration
 TEST_MODE=false
+if [ "$1" = "--test-mode" ]; then
+    TEST_MODE=true
+    print_info "Running in test mode"
+fi
+
+# --pi (any position): also install GuardKit's commands for the Pi coding
+# agent (setup_pi_integration), into ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}.
 INSTALL_PI=false
 for arg in "$@"; do
-    case "$arg" in
-        --test-mode) TEST_MODE=true; echo "Running in test mode" ;;
-        --pi) INSTALL_PI=true ;;
-    esac
+    [ "$arg" = "--pi" ] && INSTALL_PI=true
 done
 
 # Function to print colored messages
@@ -1773,55 +1774,76 @@ setup_claude_integration() {
 # after /skill:<name> through verbatim, keeping quoted and repeated arguments.
 # The installer owns <pi-dir>/skills/guardkit/ and nothing else in the Pi
 # directory; guardkit-pi.json in it is the installed identity record.
+pi_skills_dir() {
+    echo "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/guardkit"
+}
+
+# A skills/guardkit folder without GuardKit's identity record belongs to
+# someone else: refuse before the install changes anything.
+check_pi_destination() {
+    local skills_dir
+    skills_dir="$(pi_skills_dir)"
+    if [ -e "$skills_dir" ] && [ ! -f "$skills_dir/guardkit-pi.json" ]; then
+        print_error "$skills_dir exists but was not created by GuardKit (no guardkit-pi.json); nothing was installed"
+        exit 1
+    fi
+}
+
 setup_pi_integration() {
     local pi_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-    local skills_dir="$pi_dir/skills/guardkit"
-    local record_name="guardkit-pi.json"
+    local skills_dir
+    skills_dir="$(pi_skills_dir)"
+    local adapter_source="$INSTALLER_DIR/pi/guardkit-on-pi.md"
 
     print_info "Setting up Pi integration in $pi_dir ..."
+    check_pi_destination
 
-    if [ -e "$skills_dir" ] && [ ! -f "$skills_dir/$record_name" ]; then
-        print_error "$skills_dir exists but was not created by GuardKit (no $record_name); left unchanged"
+    if [ ! -f "$adapter_source" ]; then
+        print_error "Missing $adapter_source"
         return 1
     fi
-
-    if [ ! -f "$INSTALLER_DIR/pi/guardkit-on-pi.md" ]; then
-        print_error "Missing $INSTALLER_DIR/pi/guardkit-on-pi.md"
-        return 1
-    fi
-    mkdir -p "$INSTALL_DIR/pi"
-    cp "$INSTALLER_DIR/pi/guardkit-on-pi.md" "$INSTALL_DIR/pi/guardkit-on-pi.md"
 
     local source_revision
     source_revision="$(git -C "$INSTALLER_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
 
+    # Leftovers of interrupted runs (Pi ignores hidden folders, but tidy up).
+    rm -rf "$pi_dir/skills/".guardkit.staging.*
     local staging="$pi_dir/skills/.guardkit.staging.$$"
-    rm -rf "$staging"
     mkdir -p "$staging"
 
-    if ! python3 - "$INSTALL_DIR" "$staging" "$record_name" "$AGENTECFLOW_VERSION" "$source_revision" <<'PY'
-import datetime, hashlib, json, sys
+    if ! python3 - "$INSTALL_DIR" "$staging" "$adapter_source" "$pi_dir/skills" "$AGENTECFLOW_VERSION" "$source_revision" <<'PY'
+import datetime, hashlib, json, re, sys
 from pathlib import Path
 
-install_dir, staging, record_name, version, revision = sys.argv[1:6]
-install_dir, staging = Path(install_dir), Path(staging)
+install_dir, staging, adapter_source, user_skills, version, revision = sys.argv[1:7]
+install_dir, staging, user_skills = Path(install_dir), Path(staging), Path(user_skills)
 commands_dir = install_dir / "commands"
-adapter = install_dir / "pi" / "guardkit-on-pi.md"
+adapter = install_dir / "pi" / "guardkit-on-pi.md"  # copied here after generation succeeds
 
 def sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 try:
     manifest = json.loads((commands_dir / "MANIFEST.json").read_text()).get("commands", {})
 except (OSError, ValueError):
     manifest = {}
 
+# Names of the user's own Pi skills: Pi keeps the first skill found with a
+# name, so a user skill with a command's name hides that GuardKit wrapper.
+user_names = set()
+for skill in user_skills.rglob("SKILL.md"):
+    parts = skill.relative_to(user_skills).parts
+    if parts[0] == "guardkit" or any(part.startswith(".") for part in parts):
+        continue
+    found = re.search(r"^name:\s*(\S+)", skill.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
+    user_names.add(found.group(1).strip("'\"") if found else skill.parent.name)
+
 record = dict(
     guardkit_version=version,
     source_revision=revision,
     installed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     install_dir=str(install_dir),
-    adapter={"path": str(adapter), "sha256": sha256(adapter)},
+    adapter={"path": str(adapter), "sha256": sha256(adapter_source)},
     commands={},
 )
 for command in sorted(commands_dir.glob("*.md")):
@@ -1858,10 +1880,12 @@ for command in sorted(commands_dir.glob("*.md")):
         entry["manifest_sha256"] = expected
         if expected != digest:
             print(f"WARNING: installed {command.name} differs from MANIFEST.json", file=sys.stderr)
+    if name in user_names:
+        print(f"WARNING: you already have a Pi skill named '{name}'; Pi will use yours, "
+              f"not GuardKit's /skill:{name}", file=sys.stderr)
     record["commands"][name] = entry
 
-(staging / record_name).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-print(len(record["commands"]))
+(staging / "guardkit-pi.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 PY
     then
         rm -rf "$staging"
@@ -1869,6 +1893,8 @@ PY
         return 1
     fi
 
+    mkdir -p "$INSTALL_DIR/pi"
+    cp "$adapter_source" "$INSTALL_DIR/pi/guardkit-on-pi.md"
     rm -rf "$skills_dir"
     mv "$staging" "$skills_dir"
     print_success "Pi integration configured: /skill:<command> in $skills_dir"
@@ -2252,6 +2278,11 @@ main() {
 
     # Ensure we have repository files (download if running via curl)
     ensure_repository_files
+
+    # Refuse --pi before changing anything if its destination is not ours.
+    if [ "$INSTALL_PI" = true ]; then
+        check_pi_destination
+    fi
 
     # Run installation steps
     check_prerequisites
