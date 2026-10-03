@@ -58,17 +58,33 @@ def _make_invoker(tmp_path: Path) -> Any:
     )
 
 
-def _harness_yielding(events: List[Any], final_text: str = _FINAL_TEXT) -> Any:
+def _harness_yielding(
+    events: List[Any],
+    final_text: str = _FINAL_TEXT,
+    provides_scratch: Any = None,
+    prompts: Any = None,
+) -> Any:
     """A harness that replays a fixed event sequence, then a terminal result.
 
     A callable in the sequence is run instead of yielded, so a replay can
-    make the file a successful write made.
+    make the file a successful write made. ``provides_scratch`` stands in for
+    a factory backend that accepted that scratch folder; ``prompts`` collects
+    the prompt the harness was given.
     """
+    from types import SimpleNamespace
 
     class ReplayHarness:
         supports_resume = False
 
+        def __init__(self) -> None:
+            if provides_scratch is not None:
+                self.backend = SimpleNamespace(
+                    default=SimpleNamespace(scratch_root=provides_scratch)
+                )
+
         async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+            if prompts is not None:
+                prompts.append(prompt)
             for event in events:
                 if callable(event):
                     event()
@@ -84,9 +100,14 @@ def _harness_yielding(events: List[Any], final_text: str = _FINAL_TEXT) -> Any:
 
 
 async def _run(
-    invoker: Any, task_id: str, events: List[Any], final_text: str = _FINAL_TEXT
+    invoker: Any,
+    task_id: str,
+    events: List[Any],
+    final_text: str = _FINAL_TEXT,
+    provides_scratch: Any = None,
+    prompts: Any = None,
 ) -> dict:
-    harness = _harness_yielding(events, final_text)
+    harness = _harness_yielding(events, final_text, provides_scratch, prompts)
     with patch(
         "guardkit.orchestrator.agent_invoker.select_harness",
         return_value=harness,
@@ -566,10 +587,11 @@ class TestOnlyWritesThatWorkedAreListed:
 
     @pytest.mark.asyncio
     async def test_hosted_delivery_lists_only_writes_that_worked(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Through the real SDK harness: the raw message still carries the
-        refused Write and the failed Edit, and neither may reach the list."""
+        refused Write and the failed Edit, and neither may reach the list.
+        The hosted builder has no scratch folder, so it is not told of one."""
         claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
         from claude_agent_sdk import (
             AssistantMessage,
@@ -582,8 +604,12 @@ class TestOnlyWritesThatWorkedAreListed:
 
         from guardkit.orchestrator.harness import ClaudeSDKHarness
 
-        invoker = _make_invoker(tmp_path)
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        invoker = _git_invoker(tmp_path)
         wt = invoker.worktree_path
+        prompts: List[str] = []
 
         def write(call_id: str, name: str, path: Any) -> Any:
             return ToolUseBlock(
@@ -627,6 +653,7 @@ class TestOnlyWritesThatWorkedAreListed:
         ]
 
         async def fake_query(*args: Any, **kwargs: Any) -> Any:
+            prompts.append(kwargs.get("prompt"))
             for message in messages:
                 yield message
 
@@ -657,6 +684,8 @@ class TestOnlyWritesThatWorkedAreListed:
         # The returned result carries the same lists.
         assert result.output["files_created"] == ["src/b.py", "src/c.py"]
         assert "files_modified" not in result.output
+        assert "throwaway scripts" not in prompts[0]
+        assert not builder_scratch_dir(wt).exists()
 
 
 class TestScratchFolder:
@@ -685,16 +714,48 @@ class TestScratchFolder:
 
         assert builder_scratch_dir(tmp_path / "not-a-checkout") is None
 
+    def test_prepared_only_when_it_is_a_real_folder_outside_the_project(
+        self, tmp_path: Path
+    ) -> None:
+        import os
+
+        from guardkit.orchestrator.paths import (
+            builder_scratch_dir,
+            prepare_builder_scratch_dir,
+        )
+
+        good = tmp_path / "good"
+        good.mkdir()
+        _git("init", "--initial-branch=main", cwd=good)
+        prepared = prepare_builder_scratch_dir(good)
+        assert prepared == Path(os.path.realpath(builder_scratch_dir(good)))
+        assert prepared.is_dir() and not prepared.is_symlink()
+
+        # A scratch folder that is a symlink into the project is refused.
+        linked = tmp_path / "linked"
+        (linked / "src").mkdir(parents=True)
+        _git("init", "--initial-branch=main", cwd=linked)
+        builder_scratch_dir(linked).symlink_to(linked / "src")
+        assert prepare_builder_scratch_dir(linked) is None
+
+        # So is one whose git folder sits inside the project.
+        odd = tmp_path / "odd"
+        (odd / "src" / "gitdir").mkdir(parents=True)
+        (odd / ".git").write_text("gitdir: src/gitdir\n")
+        assert prepare_builder_scratch_dir(odd) is None
+        assert not (odd / "src" / "gitdir" / "guardkit-scratch").exists()
+
     @pytest.mark.asyncio
     async def test_scratch_writes_and_scratch_claims_are_not_listed(
         self, tmp_path: Path
     ) -> None:
-        from guardkit.orchestrator.paths import builder_scratch_dir
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
         invoker = _git_invoker(tmp_path)
         wt = invoker.worktree_path
-        scratch = builder_scratch_dir(wt)
+        scratch = prepare_builder_scratch_dir(wt)
         script = scratch / "verify_created_per_day.py"
+        prompts: List[str] = []
         events = [
             _put(script),
             _put(wt / "src" / "service.py"),
@@ -712,6 +773,8 @@ class TestScratchFolder:
             events,
             # A scratch path named in the builder's own words is harmless too.
             final_text=f"Created: {script}\n" + _FINAL_TEXT,
+            provides_scratch=scratch,
+            prompts=prompts,
         )
 
         listed = (
@@ -720,18 +783,56 @@ class TestScratchFolder:
             | set(record["files_authored"])
         )
         assert listed == {"src/service.py"}
+        assert f"Put throwaway scripts in `{scratch}`" in prompts[0]
 
-    def test_dotdot_out_of_the_scratch_folder_is_still_listed(
+    @pytest.mark.asyncio
+    async def test_folder_the_harness_does_not_provide_is_neither_named_nor_skipped(
+        self, tmp_path: Path
+    ) -> None:
+        """An older factory, or one that refused the folder: the builder is
+        not told about it and nothing is left off its list."""
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        invoker = _git_invoker(tmp_path)
+        script = builder_scratch_dir(invoker.worktree_path) / "verify.py"
+        prompts: List[str] = []
+        events = [_put(script), _use("c1", "write_file", script), _ok("c1")]
+
+        record = await _run(invoker, "TASK-NO-SCRATCH", events, prompts=prompts)
+
+        assert record["files_created"] == [".git/guardkit-scratch/verify.py"]
+        assert "throwaway scripts" not in prompts[0]
+
+    def test_symlinked_scratch_folder_never_hides_a_project_claim(
         self, tmp_path: Path
     ) -> None:
         from guardkit.orchestrator.agent_invoker import TaskWorkStreamParser
         from guardkit.orchestrator.paths import builder_scratch_dir
 
         worktree = tmp_path / "wt"
-        worktree.mkdir()
+        (worktree / "src").mkdir(parents=True)
         _git("init", "--initial-branch=main", cwd=worktree)
         scratch = builder_scratch_dir(worktree)
-        parser = TaskWorkStreamParser(worktree_root=worktree)
+        scratch.symlink_to(worktree / "src")
+
+        # Even if such a folder were ever passed in, a project path is judged
+        # as written, not through the link.
+        parser = TaskWorkStreamParser(worktree_root=worktree, scratch_root=scratch)
+        parser.parse_message("Created: src/not_written.py")
+
+        assert parser.to_result()["files_created"] == ["src/not_written.py"]
+
+    def test_dotdot_out_of_the_scratch_folder_is_still_listed(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.agent_invoker import TaskWorkStreamParser
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        _git("init", "--initial-branch=main", cwd=worktree)
+        scratch = prepare_builder_scratch_dir(worktree)
+        parser = TaskWorkStreamParser(worktree_root=worktree, scratch_root=scratch)
         parser.record_tool_request(
             "c1", "write_file", {"file_path": f"{scratch}/../../src/app.py"}
         )
@@ -743,21 +844,19 @@ class TestScratchFolder:
             ".git/guardkit-scratch/../../src/app.py"
         ]
 
-    def test_the_builder_is_told_where_the_scratch_folder_is(
+    def test_prompt_names_the_folder_only_when_given_one(
         self, tmp_path: Path
     ) -> None:
-        from guardkit.orchestrator.paths import builder_scratch_dir
-
         invoker = _git_invoker(tmp_path)
-        prompt = invoker._build_autobuild_implementation_prompt(
+        scratch = tmp_path / "scratch"
+
+        given = invoker._build_autobuild_implementation_prompt(
+            task_id="TASK-SCRATCH", mode="standard", turn=1, scratch_folder=scratch
+        )
+        not_given = invoker._build_autobuild_implementation_prompt(
             task_id="TASK-SCRATCH", mode="standard", turn=1
         )
 
-        assert f"Put throwaway scripts in `{builder_scratch_dir(invoker.worktree_path)}`" in prompt
-        assert "{scratch_folder}" not in prompt
-
-        (tmp_path / "plain").mkdir()
-        plain = _make_invoker(tmp_path / "plain")
-        assert "throwaway scripts" not in plain._build_autobuild_implementation_prompt(
-            task_id="TASK-SCRATCH", mode="standard", turn=1
-        )
+        assert f"Put throwaway scripts in `{scratch}`" in given
+        assert "throwaway scripts" not in not_given
+        assert "{scratch_folder}" not in given + not_given

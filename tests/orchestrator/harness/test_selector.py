@@ -1359,6 +1359,36 @@ class TestBuildBackendWithOptionalCap:
         assert any("scratch folder" in m for m in warnings)
 
 
+class TestProvidedScratchRoot:
+    """3 October 2026: the scratch folder counts only when the backend says
+    it allows it."""
+
+    def test_reads_the_folder_the_backend_accepted(self, tmp_path: Path) -> None:
+        from types import SimpleNamespace
+
+        from guardkit.orchestrator.harness.selector import provided_scratch_root
+
+        harness = SimpleNamespace(
+            backend=SimpleNamespace(default=SimpleNamespace(scratch_root=tmp_path))
+        )
+        assert provided_scratch_root(harness) == tmp_path.resolve()
+
+    def test_none_without_a_backend_or_an_accepted_folder(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from guardkit.orchestrator.harness.selector import provided_scratch_root
+
+        assert provided_scratch_root(SimpleNamespace()) is None  # SDK harness
+        refused = SimpleNamespace(
+            backend=SimpleNamespace(default=SimpleNamespace(scratch_root=None))
+        )
+        assert provided_scratch_root(refused) is None
+        old_factory = SimpleNamespace(backend=SimpleNamespace(default=object()))
+        assert provided_scratch_root(old_factory) is None
+        assert provided_scratch_root(MagicMock()) is None
+
+
 class TestSelectHarnessBackendKwargCompat:
     """End-to-end :func:`select_harness` Shape-2 behaviour (AC-2..AC-5)."""
 

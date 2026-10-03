@@ -42,7 +42,6 @@ import yaml
 from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
 from guardkit.orchestrator.m0_fence import enforce_effective_seat
-from guardkit.orchestrator.paths import builder_scratch_dir
 
 logger = logging.getLogger(__name__)
 
@@ -536,6 +535,20 @@ def _build_backend_with_optional_cap(
     return factory(worktree, **kwargs)
 
 
+def provided_scratch_root(harness: Any) -> Path | None:
+    """The scratch folder the harness's file backend really allows, or ``None``.
+
+    3 October 2026. Read back from the factory backend
+    (``PathConfinedBackend.scratch_root``) rather than assumed, so the builder
+    is only told about the folder, and its files only left off the lists,
+    when writes there will work. ``None`` for the SDK harness, an older
+    factory, or a folder the factory refused.
+    """
+    backend = getattr(harness, "backend", None)
+    root = getattr(getattr(backend, "default", None), "scratch_root", None)
+    return Path(os.path.realpath(root)) if isinstance(root, (str, Path)) else None
+
+
 def select_harness(
     env_var: str = "GUARDKIT_HARNESS",
     **harness_kwargs,
@@ -626,6 +639,10 @@ def select_harness(
     # Optional progressive native tool evidence, consumed only by LangGraph.
     # The SDK path already yields each message incrementally.
     on_native_tool_event = harness_kwargs.pop("on_native_tool_event", None)
+    # 3 October 2026: the builder's prepared scratch folder
+    # (``paths.prepare_builder_scratch_dir``). LangGraph Player only; the SDK
+    # harness has no way to allow it and never sees it.
+    scratch_root = harness_kwargs.pop("scratch_root", None)
 
     # Role is consumed by this selector so it never leaks into either
     # concrete constructor. LangGraph Player selects the required dcode route;
@@ -711,9 +728,9 @@ def select_harness(
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         player_config = None
         protected_paths: tuple[str, ...] = ()
-        scratch_root: Path | None = None
+        if harness_role != "player":
+            scratch_root = None
         if harness_role == "player":
-            scratch_root = builder_scratch_dir(Path(cwd))
             if not _factory_accepts_kwarg(LangGraphHarness, "player_config"):
                 raise AgentInvocationError(
                     "The installed guardkitfactory does not provide the required "
@@ -812,6 +829,7 @@ def select_harness(
 
 __all__ = [
     "DEFAULT_HARNESS",
+    "provided_scratch_root",
     "SUPPORTED_HARNESSES",
     "resolve_harness_name",
     "select_harness",

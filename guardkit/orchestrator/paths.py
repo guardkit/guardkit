@@ -875,6 +875,45 @@ def builder_scratch_dir(worktree: Path) -> Optional[Path]:
     return Path(os.path.normpath(git_dir)) / BUILDER_SCRATCH_DIRNAME
 
 
+def prepare_builder_scratch_dir(worktree: Path) -> Optional[Path]:
+    """Create the builder's scratch folder and return it, only if it is safe.
+
+    Safe means: a real folder, not a symlink, and not inside the project
+    (anything under the worktree other than its own ``.git`` folder counts as
+    the project). The same checks as the factory's, so a folder the factory
+    would refuse is never named to the builder or left off its file list.
+    Returns the folder's resolved path, or ``None`` when there is none.
+    """
+    scratch = builder_scratch_dir(worktree)
+    if scratch is None:
+        return None
+    project = Path(os.path.realpath(worktree))
+
+    def inside_project(path: Path) -> bool:
+        return path.is_relative_to(project) and not path.is_relative_to(
+            project / ".git"
+        )
+
+    # Judged before anything is created, so nothing lands in the project.
+    if inside_project(Path(os.path.realpath(scratch.parent)) / scratch.name):
+        logger.warning(f"Builder scratch folder would be inside the project: {scratch}")
+        return None
+    try:
+        if not os.path.lexists(scratch):
+            scratch.mkdir(mode=0o700)
+        if scratch.is_symlink() or not scratch.is_dir():
+            logger.warning(f"Builder scratch folder is not a real folder: {scratch}")
+            return None
+    except OSError as exc:
+        logger.warning(f"Builder scratch folder unavailable at {scratch}: {exc}")
+        return None
+    resolved = Path(os.path.realpath(scratch))
+    if inside_project(resolved):
+        logger.warning(f"Builder scratch folder is inside the project: {resolved}")
+        return None
+    return resolved
+
+
 # ============================================================================
 # Public API
 # ============================================================================
@@ -883,5 +922,6 @@ __all__ = [
     "BUILDER_SCRATCH_DIRNAME",
     "TaskArtifactPaths",
     "builder_scratch_dir",
+    "prepare_builder_scratch_dir",
     "strip_oracle_paths",
 ]

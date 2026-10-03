@@ -512,19 +512,41 @@ _TURN_TEXT = "5 tests passed, 0 tests failed\nAll quality gates passed"
 
 
 def _run_builder_turn(
-    worktree: Path, task_id: str, steps: list, final_text: str = _TURN_TEXT
+    worktree: Path,
+    task_id: str,
+    steps: list,
+    final_text: str = _TURN_TEXT,
+    provides_scratch: Any = True,
 ) -> Any:
-    """Stream processing and report construction, as one builder turn."""
+    """Stream processing and report construction, as one builder turn.
+
+    ``provides_scratch`` stands in for the factory backend having accepted
+    the prepared scratch folder (``backend.default.scratch_root``); a path
+    makes the stand-in report that path instead.
+    """
     import asyncio
+    from types import SimpleNamespace
 
     from guardkit.orchestrator.agent_invoker import AgentInvoker
     from guardkit.orchestrator.harness.adapter import (
         AssistantMessageEvent,
         ResultMessageEvent,
     )
+    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
     class LocalReplay:
         supports_resume = False
+
+        def __init__(self) -> None:
+            scratch = (
+                provides_scratch
+                if isinstance(provides_scratch, Path)
+                else prepare_builder_scratch_dir(worktree)
+            )
+            if provides_scratch and scratch is not None:
+                self.backend = SimpleNamespace(
+                    default=SimpleNamespace(scratch_root=scratch)
+                )
 
         async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
             for step in steps:
@@ -696,4 +718,32 @@ def test_deleted_project_file_still_trips_the_checks_unchanged(
     assert "a.md" in results["files_modified"]
     coach_result, bundle = _coach(git_worktree, task_id)
     assert coach_result.quality_gates is None
+    assert bundle.gathering_status == "partial_honesty_abort"
+
+
+def test_symlinked_scratch_folder_cannot_hide_a_fabricated_src_claim(
+    git_worktree: Path,
+) -> None:
+    """If the scratch folder is a symlink into the project, it is not used
+    at all, and an unwritten src file claimed in the builder's own words is
+    still a critical finding, even with a harness claiming to allow it."""
+    from guardkit.orchestrator.paths import builder_scratch_dir
+
+    task_id = "TASK-SYMLINKED-SCRATCH"
+    (git_worktree / "src").mkdir()
+    builder_scratch_dir(git_worktree).symlink_to(git_worktree / "src")
+
+    _run_builder_turn(
+        git_worktree,
+        task_id,
+        [],
+        final_text="Created: src/not_written.py\n" + _TURN_TEXT,
+        provides_scratch=builder_scratch_dir(git_worktree),
+    )
+
+    results, report = _records(git_worktree, task_id)
+    assert "src/not_written.py" in results["files_created"]
+    coach_result, bundle = _coach(git_worktree, task_id)
+    assert coach_result.quality_gates is None
+    assert "src/not_written.py" in json.dumps(_honesty_must_fix(coach_result))
     assert bundle.gathering_status == "partial_honesty_abort"
