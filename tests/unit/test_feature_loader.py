@@ -1769,14 +1769,18 @@ class TestIntraWaveDependencyValidation:
             ],
             # Wave 1: A,C; Wave 2: B
             # C depends on A which is in same wave → conflict
+            # C also depends on B, which only runs in wave 2 → refused too
+            # (3 October 2026; this was accepted before).
             orchestration=FeatureOrchestration(
                 parallel_groups=[["TASK-A", "TASK-C"], ["TASK-B"]]
             ),
         )
 
         errors = FeatureLoader.validate_parallel_groups(feature)
-        assert len(errors) == 1
+        assert len(errors) == 2
         assert "TASK-C" in errors[0] and "TASK-A" in errors[0]
+        assert "same parallel group" in errors[0]
+        assert errors[1].startswith("Wave 1: TASK-C depends on TASK-B, but TASK-B is in wave 2")
 
     def test_validate_parallel_groups_bidirectional_conflict(self):
         """Test that bidirectional dependencies in same wave are detected."""
@@ -2362,3 +2366,312 @@ class TestValidateFeatureTaskType:
         errors = FeatureLoader.validate_feature(feature, repo_root=tmp_path)
         task_type_errors = [e for e in errors if "invalid task_type" in e]
         assert task_type_errors == []
+
+
+# ============================================================================
+# A dependency placed in a later wave (3 October 2026)
+# ============================================================================
+
+
+class TestDependencyInALaterWave:
+    """The waves must run a task's dependencies first. A dependency placed in
+    a later wave than the task that needs it is refused, like one placed in the
+    same wave."""
+
+    def test_dependency_in_a_later_wave_is_refused(self):
+        feature = Feature(
+            id="FEAT-LATE",
+            name="Late dependency",
+            tasks=[
+                FeatureTask(id="TASK-A", name="A", dependencies=["TASK-B"]),
+                FeatureTask(id="TASK-B", name="B", dependencies=[]),
+            ],
+            orchestration=FeatureOrchestration(parallel_groups=[["TASK-A"], ["TASK-B"]]),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+
+        assert errors == [
+            "Wave 1: TASK-A depends on TASK-B, but TASK-B is in wave 2, which runs "
+            "later. Move TASK-A to a wave after wave 2, or TASK-B to a wave before "
+            "wave 1."
+        ]
+        assert errors[0] in FeatureLoader.validate_feature(feature)
+
+    def test_dependency_in_an_earlier_wave_still_passes(self):
+        feature = Feature(
+            id="FEAT-EARLY",
+            name="Early dependency",
+            tasks=[
+                FeatureTask(id="TASK-A", name="A", dependencies=[]),
+                FeatureTask(id="TASK-B", name="B", dependencies=["TASK-A"]),
+                FeatureTask(id="TASK-C", name="C", dependencies=["TASK-A"]),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[["TASK-A"], ["TASK-B", "TASK-C"]]
+            ),
+        )
+
+        assert FeatureLoader.validate_parallel_groups(feature) == []
+
+
+# ============================================================================
+# A task file that names another task needs an order (3 October 2026)
+# ============================================================================
+
+_TASK_REFERENCE_FIXTURES = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "task_references"
+)
+_FFEC_SENTENCE = (
+    "TASK-FFEC-002's task file refers to TASK-FFEC-003, but neither depends on "
+    "the other, so they can run together or in either order. Add TASK-FFEC-003 "
+    "to its dependencies (and put TASK-FFEC-002 in a later wave than "
+    "TASK-FFEC-003), or remove the reference."
+)
+
+
+def _copy_fixture(name: str, dest: Path) -> Path:
+    import shutil
+
+    shutil.copytree(_TASK_REFERENCE_FIXTURES / name, dest, dirs_exist_ok=True)
+    return dest
+
+
+def _order_tasks(repo: Path, feature_id: str, task_id: str, needs: str, waves):
+    """Declare that ``task_id`` needs ``needs`` and lay out the waves again —
+    the correction the refusal asks for."""
+    path = repo / ".guardkit" / "features" / f"{feature_id}.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for task in data["tasks"]:
+        if task["id"] == task_id:
+            task["dependencies"] = [*task.get("dependencies", []), needs]
+    data["orchestration"]["parallel_groups"] = waves
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def _load_and_validate(repo: Path, feature_id: str):
+    feature = FeatureLoader.load_feature(feature_id, repo_root=repo, validate_paths=False)
+    return FeatureLoader.validate_feature(feature, repo_root=repo)
+
+
+_FFEC_CORRECTED_WAVES = [
+    ["TASK-FFEC-001"],
+    ["TASK-FFEC-003"],
+    ["TASK-FFEC-002"],
+    ["TASK-FFEC-004"],
+]
+
+
+class TestTaskReferencesNeedAnOrder:
+    """FEAT-FFEC (3 October 2026): TASK-FFEC-002's task file needed
+    TASK-FFEC-003's schema, but the plan never said so and both ran in wave 2."""
+
+    def test_the_committed_ffec_plan_is_refused_in_plain_words(self, tmp_path):
+        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
+
+        assert _load_and_validate(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
+
+    def test_the_ffec_plan_passes_once_the_need_is_declared_and_ordered(self, tmp_path):
+        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
+        _order_tasks(repo, "FEAT-FFEC", "TASK-FFEC-002", "TASK-FFEC-003", _FFEC_CORRECTED_WAVES)
+
+        assert _load_and_validate(repo, "FEAT-FFEC") == []
+
+    def test_declaring_the_need_without_moving_the_wave_is_still_refused(self, tmp_path):
+        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
+        _order_tasks(
+            repo,
+            "FEAT-FFEC",
+            "TASK-FFEC-002",
+            "TASK-FFEC-003",
+            [["TASK-FFEC-001"], ["TASK-FFEC-002", "TASK-FFEC-003"], ["TASK-FFEC-004"]],
+        )
+
+        errors = _load_and_validate(repo, "FEAT-FFEC")
+
+        assert len(errors) == 1
+        assert "TASK-FFEC-002 depends on TASK-FFEC-003 but both are in the same" in errors[0]
+
+    def test_a_task_file_moved_along_the_lifecycle_is_still_read(self, tmp_path):
+        """The feature YAML keeps pointing at tasks/backlog/ after the task
+        file has moved on (``design_approved`` here); the check reads it where
+        it is now."""
+        repo = _copy_fixture("ffec_c9c3714c", tmp_path)
+        slug = "get-users-created-per-day"
+        name = "TASK-FFEC-002-add-endpoint-to-router.md"
+        moved = repo / "tasks" / "design_approved" / slug / name
+        moved.parent.mkdir(parents=True)
+        (repo / "tasks" / "backlog" / slug / name).rename(moved)
+
+        assert _load_and_validate(repo, "FEAT-FFEC") == [_FFEC_SENTENCE]
+
+        _order_tasks(repo, "FEAT-FFEC", "TASK-FFEC-002", "TASK-FFEC-003", _FFEC_CORRECTED_WAVES)
+        assert _load_and_validate(repo, "FEAT-FFEC") == []
+
+    def test_a_go_project_is_checked_the_same_way(self, tmp_path):
+        repo = _copy_fixture("go_rate_limiter", tmp_path)
+
+        assert _load_and_validate(repo, "FEAT-G0A7") == [
+            "TASK-G0A7-002's task file refers to TASK-G0A7-003, but neither depends "
+            "on the other, so they can run together or in either order. Add "
+            "TASK-G0A7-003 to its dependencies (and put TASK-G0A7-002 in a later "
+            "wave than TASK-G0A7-003), or remove the reference."
+        ]
+
+        _order_tasks(
+            repo,
+            "FEAT-G0A7",
+            "TASK-G0A7-002",
+            "TASK-G0A7-003",
+            [["TASK-G0A7-001"], ["TASK-G0A7-003"], ["TASK-G0A7-002"]],
+        )
+        assert _load_and_validate(repo, "FEAT-G0A7") == []
+
+    @staticmethod
+    def _feature_with_files(tmp_path, texts, deps, waves):
+        tasks_dir = tmp_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        tasks = []
+        for task_id, text in texts.items():
+            (tasks_dir / f"{task_id}.md").write_text(text, encoding="utf-8")
+            tasks.append(
+                FeatureTask(
+                    id=task_id,
+                    name=task_id,
+                    file_path=Path(f"tasks/backlog/{task_id}.md"),
+                    dependencies=deps.get(task_id, []),
+                )
+            )
+        return Feature(
+            id="FEAT-REF",
+            name="References",
+            tasks=tasks,
+            orchestration=FeatureOrchestration(parallel_groups=waves),
+        )
+
+    def test_a_later_task_that_depends_on_this_one_may_be_named(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "Build the parser. TASK-R-004 adds the tests.",
+                "TASK-R-002": "Use the parser from TASK-R-001.",
+                "TASK-R-004": "Test the parser.",
+            },
+            {"TASK-R-002": ["TASK-R-001"], "TASK-R-004": ["TASK-R-002"]},
+            [["TASK-R-001"], ["TASK-R-002"], ["TASK-R-004"]],
+        )
+
+        # 001 names 004, which waits for it through 002: already ordered.
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
+
+    def test_a_need_met_through_another_task_passes(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "Build the parser.",
+                "TASK-R-002": "Wire the parser in.",
+                "TASK-R-003": "Document the parser written in TASK-R-001.",
+            },
+            {"TASK-R-002": ["TASK-R-001"], "TASK-R-003": ["TASK-R-002"]},
+            [["TASK-R-001"], ["TASK-R-002"], ["TASK-R-003"]],
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
+
+    def test_an_id_that_merely_starts_like_another_is_not_a_reference(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "Build the parser.",
+                "TASK-R-0010": "Unrelated. Mentions TASK-R-00100 and xTASK-R-001.",
+            },
+            {},
+            [["TASK-R-001", "TASK-R-0010"]],
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
+
+    def test_a_task_file_name_counts_as_naming_the_task(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "See tasks/backlog/TASK-R-002-schemas.md for the shape.",
+                "TASK-R-002": "Define the schemas.",
+            },
+            {},
+            [["TASK-R-001", "TASK-R-002"]],
+        )
+
+        errors = FeatureLoader.validate_task_references(feature, tmp_path)
+
+        assert len(errors) == 1
+        assert errors[0].startswith("TASK-R-001's task file refers to TASK-R-002,")
+
+    def test_ids_outside_the_feature_and_its_own_id_are_ignored(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "TASK-R-001 follows the review TASK-REV-R and TASK-OTHER-009.",
+                "TASK-R-002": "Independent work.",
+            },
+            {},
+            [["TASK-R-001", "TASK-R-002"]],
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
+
+    def test_a_missing_task_file_is_left_to_the_missing_file_check(self, tmp_path):
+        feature = Feature(
+            id="FEAT-REF",
+            name="References",
+            tasks=[
+                FeatureTask(id="TASK-R-001", name="a", file_path=Path("tasks/backlog/TASK-R-001.md")),
+                FeatureTask(id="TASK-R-002", name="b", file_path=Path("tasks/backlog/TASK-R-002.md")),
+            ],
+            orchestration=FeatureOrchestration(parallel_groups=[["TASK-R-001", "TASK-R-002"]]),
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == []
+
+    def test_a_reference_kept_apart_only_by_the_waves_is_refused_in_its_own_words(
+        self, tmp_path
+    ):
+        """FEAT-RAG-08 (May 2026): TASK-AIV2-005 used the lock from
+        TASK-AIV2-004 with no declared dependency; only the wave order ran 004
+        first."""
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "Add the file lock.",
+                "TASK-R-002": "Set up the command.",
+                "TASK-R-003": "Run under the lock from TASK-R-001.",
+            },
+            {"TASK-R-003": ["TASK-R-002"]},
+            [["TASK-R-001", "TASK-R-002"], ["TASK-R-003"]],
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == [
+            "TASK-R-003's task file refers to TASK-R-001, but neither depends on "
+            "the other; only the wave order runs TASK-R-001 first. Add TASK-R-001 "
+            "to its dependencies, or remove the reference."
+        ]
+
+    def test_a_reference_to_an_unordered_later_task_names_both_fixes(self, tmp_path):
+        feature = self._feature_with_files(
+            tmp_path,
+            {
+                "TASK-R-001": "Build the parser; TASK-R-002 documents it.",
+                "TASK-R-002": "Write the user guide.",
+            },
+            {},
+            [["TASK-R-001"], ["TASK-R-002"]],
+        )
+
+        assert FeatureLoader.validate_task_references(feature, tmp_path) == [
+            "TASK-R-001's task file refers to TASK-R-002, which runs in a later "
+            "wave, but neither depends on the other. If TASK-R-001 needs "
+            "TASK-R-002's work, add TASK-R-002 to its dependencies and move "
+            "TASK-R-001 to a later wave than TASK-R-002; if TASK-R-002 builds on "
+            "TASK-R-001, add TASK-R-001 to TASK-R-002's dependencies; otherwise "
+            "remove the reference."
+        ]

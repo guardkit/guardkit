@@ -1636,6 +1636,10 @@ class FeatureLoader:
         wave_errors = FeatureLoader.validate_parallel_groups(feature)
         errors.extend(wave_errors)
 
+        # A task file that names another task of this feature needs an order
+        # between the two (FEAT-FFEC, 3 October 2026).
+        errors.extend(FeatureLoader.validate_task_references(feature, repo_root))
+
         # Validate task_type in task file frontmatter (fail-fast on invalid values)
         for task in feature.tasks:
             task_file = repo_root / task.file_path
@@ -1852,6 +1856,13 @@ class FeatureLoader:
             List of validation errors (empty if valid)
         """
         errors = []
+        # The first wave each task appears in. A dependency placed in a LATER
+        # wave than the task that needs it is as wrong as one in the same wave:
+        # the task would start before the work it needs exists.
+        first_wave: Dict[str, int] = {}
+        for wave_num, task_ids in enumerate(feature.orchestration.parallel_groups, 1):
+            for task_id in task_ids:
+                first_wave.setdefault(task_id, wave_num)
         for wave_num, task_ids in enumerate(feature.orchestration.parallel_groups, 1):
             wave_set = set(task_ids)
             for task_id in task_ids:
@@ -1864,7 +1875,161 @@ class FeatureLoader:
                                 f"but both are in the same parallel group. "
                                 f"Move {task_id} to a later wave."
                             )
+                        elif first_wave.get(dep_id, 0) > wave_num:
+                            dep_wave = first_wave[dep_id]
+                            errors.append(
+                                f"Wave {wave_num}: {task_id} depends on {dep_id}, "
+                                f"but {dep_id} is in wave {dep_wave}, which runs "
+                                f"later. Move {task_id} to a wave after wave "
+                                f"{dep_wave}, or {dep_id} to a wave before wave "
+                                f"{wave_num}."
+                            )
         return errors
+
+    @staticmethod
+    def _readable_task_file(repo_root: Path, task: FeatureTask) -> Optional[Path]:
+        """The task's file as it stands now: the pinned ``file_path`` when it is
+        there, otherwise wherever the task has moved in the lifecycle
+        (``backlog`` -> ``design_approved`` -> ...). ``None`` when neither
+        exists; the missing-file check reports that case."""
+        pinned = repo_root / task.file_path
+        if str(task.file_path) not in ("", ".") and pinned.is_file():
+            return pinned
+        return _resolve_task_across_lifecycle(repo_root, task.id)
+
+    @staticmethod
+    def validate_task_references(
+        feature: Feature,
+        repo_root: Optional[Path] = None,
+    ) -> List[str]:
+        """Refuse a task file that names another task of the same feature when
+        neither task depends on the other, directly or through other tasks.
+
+        Measured on FEAT-FFEC (3 October 2026): TASK-FFEC-002's acceptance
+        criteria said "Response shape matches the schema from TASK-FFEC-003",
+        but the plan declared both as depending only on TASK-FFEC-001, so they
+        were scheduled in the same wave. The need was written only in the
+        task's own text, where the scheduler never looks.
+
+        Only the feature's own task IDs are matched, so this works the same for
+        any language or project type. A reference to a task that comes later
+        and depends on this one ("TASK-004 adds the tests") is fine: the two
+        are already ordered.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to validate
+        repo_root : Optional[Path]
+            Repository root the task file paths are relative to (default:
+            current directory)
+
+        Returns
+        -------
+        List[str]
+            One plain sentence per unordered reference (empty if none)
+        """
+        repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
+        task_ids = [t.id for t in feature.tasks if t.id]
+        if len(task_ids) < 2:
+            return []
+        known = set(task_ids)
+        deps = {
+            t.id: [d for d in t.dependencies if d in known] for t in feature.tasks
+        }
+
+        # Everything each task waits for, directly or through other tasks.
+        # Iterative and cycle-safe (a cycle is reported by its own check).
+        upstream: Dict[str, set] = {}
+        for task_id in task_ids:
+            seen: set = set()
+            stack = list(deps.get(task_id, []))
+            while stack:
+                current = stack.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                stack.extend(deps.get(current, []))
+            upstream[task_id] = seen
+
+        # Longest IDs first so TASK-X-0010 is never read as TASK-X-001; an ID
+        # must not run on into more letters, digits or underscores. A trailing
+        # hyphen is allowed, so a file name such as TASK-X-003-schemas.md
+        # still counts as naming TASK-X-003.
+        alternatives = "|".join(
+            re.escape(i) for i in sorted(known, key=len, reverse=True)
+        )
+        id_pattern = re.compile(
+            rf"(?<![A-Za-z0-9_])({alternatives})(?![A-Za-z0-9_])"
+        )
+
+        first_wave: Dict[str, int] = {}
+        for wave_num, wave in enumerate(feature.orchestration.parallel_groups, 1):
+            for wave_task in wave:
+                first_wave.setdefault(wave_task, wave_num)
+
+        errors: List[str] = []
+        for task in feature.tasks:
+            if not task.id:
+                continue
+            task_file = FeatureLoader._readable_task_file(repo_root, task)
+            if task_file is None:
+                continue
+            try:
+                text = task_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            named: List[str] = []
+            for match in id_pattern.finditer(text):
+                other = match.group(1)
+                if other != task.id and other not in named:
+                    named.append(other)
+            for other in named:
+                if other in upstream[task.id] or task.id in upstream.get(other, set()):
+                    continue
+                errors.append(
+                    FeatureLoader._unordered_reference_sentence(
+                        task.id,
+                        other,
+                        first_wave.get(task.id),
+                        first_wave.get(other),
+                    )
+                )
+        return errors
+
+    @staticmethod
+    def _unordered_reference_sentence(
+        task_id: str,
+        other: str,
+        task_wave: Optional[int],
+        other_wave: Optional[int],
+    ) -> str:
+        """The refusal for one unordered reference, worded for where the two
+        tasks sit in the waves today. Every form starts "<task>'s task file
+        refers to <other>", which callers may rely on."""
+        if task_wave is not None and other_wave is not None:
+            if other_wave < task_wave:
+                return (
+                    f"{task_id}'s task file refers to {other}, but neither "
+                    f"depends on the other; only the wave order runs {other} "
+                    f"first. Add {other} to its dependencies, or remove the "
+                    f"reference."
+                )
+            if other_wave > task_wave:
+                return (
+                    f"{task_id}'s task file refers to {other}, which runs in a "
+                    f"later wave, but neither depends on the other. If "
+                    f"{task_id} needs {other}'s work, add {other} to its "
+                    f"dependencies and move {task_id} to a later wave than "
+                    f"{other}; if {other} builds on {task_id}, add {task_id} to "
+                    f"{other}'s dependencies; otherwise remove the reference."
+                )
+        return (
+            f"{task_id}'s task file refers to {other}, but neither depends on "
+            f"the other, so they can run together or in either order. Add "
+            f"{other} to its dependencies (and put {task_id} in a later wave "
+            f"than {other}), or remove the reference."
+        )
 
     @staticmethod
     def check_smoke_gate_final_wave_coverage(feature: Feature) -> Optional[str]:

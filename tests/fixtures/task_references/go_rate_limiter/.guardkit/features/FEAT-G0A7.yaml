@@ -1,0 +1,44 @@
+id: FEAT-G0A7
+name: "Per-client rate limiter"
+description: "Limit each API client to a fixed number of requests per minute"
+status: planned
+complexity: 4
+estimated_tasks: 3
+
+tasks:
+  - id: TASK-G0A7-001
+    name: "Token bucket in internal/ratelimit"
+    file_path: "tasks/backlog/rate-limiter/TASK-G0A7-001-token-bucket.md"
+    complexity: 4
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+
+  - id: TASK-G0A7-002
+    name: "HTTP middleware"
+    file_path: "tasks/backlog/rate-limiter/TASK-G0A7-002-http-middleware.md"
+    complexity: 3
+    dependencies:
+      - TASK-G0A7-001
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+  - id: TASK-G0A7-003
+    name: "Limit configuration"
+    file_path: "tasks/backlog/rate-limiter/TASK-G0A7-003-limit-config.md"
+    complexity: 2
+    dependencies:
+      - TASK-G0A7-001
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 20
+
+orchestration:
+  parallel_groups:
+    - - TASK-G0A7-001
+    - - TASK-G0A7-002
+      - TASK-G0A7-003
+  estimated_duration_minutes: 95
+  recommended_parallel: 2
