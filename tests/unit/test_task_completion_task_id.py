@@ -83,3 +83,17 @@ def test_capture_reports_what_capture_outcome_actually_did(monkeypatch, tmp_path
     for stdout, expected in cases.items():
         monkeypatch.setattr(helper.subprocess, "run", reply(stdout))
         assert helper._capture_outcome_best_effort(task) == expected, stdout
+
+
+def test_capture_that_cannot_start_is_reported_skipped(monkeypatch, tmp_path: Path) -> None:
+    """If capture-outcome cannot be launched, the routine says skipped, never recorded."""
+    import subprocess
+
+    from installer.core.commands.lib import task_completion_helper as helper
+
+    def cannot_start(*args, **kwargs):
+        raise OSError("no such interpreter")
+
+    monkeypatch.setattr(helper.subprocess, "run", cannot_start)
+    status = helper._capture_outcome_best_effort(tmp_path / "TASK-001.md")
+    assert status.startswith("skipped") and status != "recorded"
