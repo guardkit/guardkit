@@ -649,11 +649,11 @@ live in the core (`task-review.md`).
 **Skip Conditions**:
 - `--no-context` flag is set
 
-**Reference**: See `docs/internals/commands-lib/memory-preamble.md` for the shared availability check pattern.
+**Reference**: See `~/.agentecflow/docs/memory-preamble.md` for the shared availability check pattern.
 
 **STEP 1: Check Fleet-Memory Availability (Tier 0 → Tier 1 Fallback)**
 
-Follow the tiered availability check from `docs/internals/commands-lib/memory-preamble.md`:
+Follow the tiered availability check from `~/.agentecflow/docs/memory-preamble.md`:
 
 **Tier 0 — MCP Tools (Preferred)**:
 
@@ -702,7 +702,7 @@ guardkit memory status
 
 Fleet-memory collapses the old paired node+fact searches into a single
 `memory_search` call per concern. The old group_ids map to `payload_types` /
-`domain_tags` (see `docs/internals/commands-lib/memory-preamble.md`):
+`domain_tags` (see `~/.agentecflow/docs/memory-preamble.md`):
 `project_decisions` → `adr` / `["project"]`, `task_outcomes` → `build_outcome` /
 `["task"]`.
 
@@ -713,7 +713,7 @@ Execute three `memory_search` calls to gather review-relevant context:
 ```
 # Query 1: Architecture / project decisions related to review scope
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="architecture decisions related to {task_title} {review_mode}",
   payload_types=["adr", "document"],
   domain_tags=["architecture", "project"],
@@ -722,7 +722,7 @@ mcp__fleet_memory__memory_search(
 
 # Query 2: Past failure patterns and outcomes
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="past failures patterns issues related to {task_description_keywords}",
   payload_types=["build_outcome"],
   domain_tags=["task"],
@@ -731,7 +731,7 @@ mcp__fleet_memory__memory_search(
 
 # Query 3: Similar past reviews and findings
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="previous review findings recommendations for {review_scope_keywords}",
   payload_types=["review_report", "build_outcome"],
   domain_tags=["review", "task"],
@@ -894,16 +894,10 @@ No knowledge context available — reviewing from codebase analysis only.
 
 **IF** `--capture-knowledge` flag is set:
 
-**INVOKE** review knowledge capture session:
-```python
-from guardkit.knowledge.review_knowledge_capture import run_review_capture
-
-result = await run_review_capture(
-    task_context=task_context,
-    review_findings=review_findings,
-    capture_knowledge=True
-)
-```
+**ASK** the knowledge capture questions in the conversation (there is no capture module;
+the questions below are asked directly), then write the answers to fleet-memory as one
+`review_report` payload with identifier `REVIEW_CAPTURE_{safe_task_id}` (see the Phase 4.5 write
+below; `safe_task_id` is the task ID with hyphens replaced by underscores).
 
 **DISPLAY** knowledge capture prompt:
 ```
@@ -947,7 +941,7 @@ Your answer: _
 
 After the interactive capture session completes, persist the captured knowledge to the fleet-memory knowledge store. This step is non-blocking — capture session success is not affected by the fleet-memory write outcome.
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1). Writes require the `mcp__fleet_memory__memory_write_payload` tool (there is no `guardkit memory` write CLI other than `capture-outcome`).
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1). Writes require the `mcp__fleet_memory__memory_write_payload` tool (there is no `guardkit memory` write CLI other than `capture-outcome`).
 
 **IF** `mcp__fleet_memory__memory_write_payload` tool is available in the current session:
 
@@ -959,8 +953,8 @@ Use `mcp__fleet_memory__memory_write_payload` with:
 ```
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "review_report",
-  "project": "guardkit",
-  "identifier": "REVIEW_{task_id}",
+  "project": "<project>",
+  "identifier": "REVIEW_{safe_task_id}",
   "verdict": "Task {task_id} ({title}) - {review_mode} review. Score: {score}/100.\n\nKey findings:\n{findings_summary}\n\nCaptured insights:\n{captured_answers_summary}",
   "domain_tags": ["review"],
   "source_ref": ".claude/reviews/{task_id}-review-report.md"
@@ -982,8 +976,8 @@ If the CLI is not reachable but the MCP tool is, write the outcome via `mcp__fle
 ```
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "build_outcome",
-  "project": "guardkit",
-  "identifier": "REVIEW_OUTCOME_{task_id}",
+  "project": "<project>",
+  "identifier": "REVIEW_OUTCOME_{safe_task_id}",
   "status": "accepted",
   "duration_seconds": 0,
   "domain_tags": ["task"],
@@ -1793,7 +1787,7 @@ async def capture_review_to_memory(task: dict, findings: dict):
         # Check if mcp__fleet_memory__memory_write_payload is available; IF available:
         mcp__fleet_memory__memory_write_payload(payload={
             "payload_type": "review_report",
-            "project": "guardkit",
+            "project": "<project>",
             "identifier": f"REVIEW_{safe_id}",
             "verdict": findings_verdict,
             "domain_tags": ["review"],
@@ -1801,7 +1795,7 @@ async def capture_review_to_memory(task: dict, findings: dict):
         })
         mcp__fleet_memory__memory_write_payload(payload={
             "payload_type": "build_outcome",
-            "project": "guardkit",
+            "project": "<project>",
             "identifier": f"REVIEW_OUTCOME_{safe_id}",
             "status": "accepted",
             "duration_seconds": 0,
@@ -1843,7 +1837,7 @@ When the user selects **[A]ccept** at the Phase 5 decision checkpoint, the LLM m
    ```
    mcp__fleet_memory__memory_write_payload(payload={
      "payload_type": "review_report",
-     "project": "guardkit",
+     "project": "<project>",
      "identifier": "REVIEW_{safe_task_id}",
      "verdict": "{findings_verdict built from review data}",
      "domain_tags": ["review"],
@@ -1855,7 +1849,7 @@ When the user selects **[A]ccept** at the Phase 5 decision checkpoint, the LLM m
    ```
    mcp__fleet_memory__memory_write_payload(payload={
      "payload_type": "build_outcome",
-     "project": "guardkit",
+     "project": "<project>",
      "identifier": "REVIEW_OUTCOME_{safe_task_id}",
      "status": "accepted",
      "duration_seconds": 0,

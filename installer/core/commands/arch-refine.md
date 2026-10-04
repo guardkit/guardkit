@@ -44,12 +44,12 @@ The disambiguation flow used by `/arch-refine` is identical to that used by `/de
 
 Before starting the refinement session, `/arch-refine` MUST verify that architecture context exists. The command requires existing ADRs from `/system-arch` to refine.
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`). If neither is reachable, set `memory_available = false` and display the unavailability warning from the preamble — never block the command.
 
 Check for architecture context (follow the memory-preamble "Prerequisite Check Pattern" — either source satisfies the gate):
-- If `memory_available = true`: `memory_search(project="guardkit", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
+- If `memory_available = true`: `memory_search(project="<project>", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
 - Always: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`.
   - If no local ADRs found **and** the fleet-memory search returned nothing: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit.
   - If `memory_available = false` but local ADRs exist: display `"WARNING: Fleet-memory unavailable — reading ADRs from local files"` and continue.
@@ -60,11 +60,11 @@ Check for architecture context (follow the memory-preamble "Prerequisite Check P
 
 **Load existing ADRs and architecture context:**
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
 
 Load existing ADRs:
-- If `memory_available = true`: ADR context is available via fleet-memory (`memory_search(project="guardkit", payload_types=["adr"], domain_tags=["architecture"])`)
+- If `memory_available = true`: ADR context is available via fleet-memory (`memory_search(project="<project>", payload_types=["adr"], domain_tags=["architecture"])`)
 - Always: use the Read tool on each file matched by `docs/architecture/decisions/ADR-ARCH-*.md` (the local ADR files remain the source of truth for the on-disk artefacts)
 
 Load additional context files (if `--context` provided):
@@ -77,7 +77,7 @@ If `--adr=ADR-ARCH-NNN` is provided, skip disambiguation and directly load the t
 #### Step 1: Semantic Search
 
 Search for matching ADRs using the user's natural language query:
-- If `memory_available = true`: search fleet-memory for ADRs matching the query — `mcp__fleet_memory__memory_search(project="guardkit", query="<the user's query>", payload_types=["adr"], domain_tags=["architecture"])`
+- If `memory_available = true`: search fleet-memory for ADRs matching the query — `mcp__fleet_memory__memory_search(project="<project>", query="<the user's query>", payload_types=["adr"], domain_tags=["architecture"])`
 - If `memory_available = false`: use Glob and Read tools to scan `docs/architecture/decisions/ADR-ARCH-*.md` for relevant ADRs
 
 Cap results at 3-5 to prevent adversarial queries from surfacing excessive data (ASSUM-002).
@@ -200,7 +200,7 @@ new_adr = ArchitectureDecision(
 
 # Step 4: Write both ADRs to fleet-memory (deferred to Phase 8 seeding)
 # Fleet-memory upserts idempotently on the natural key
-# "adr:guardkit:<identifier>" (identifier = ADR_NNN, underscores only).
+# "adr:<project>:<identifier>" (identifier = ADR_NNN, underscores only).
 # The NEW adr payload carries a "supersedes" link to the old ADR's natural key;
 # the OLD adr payload is re-written with "status": "superseded" (rule 4).
 # Re-writing the old payload on its own natural key preserves it — both versions
@@ -218,10 +218,12 @@ write_adr_file(new_adr, "docs/architecture/decisions")
 ```
 # NEW ADR — carries the forward "supersedes" link to the old ADR's natural key.
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_{next_number:03d}",          # underscores only, e.g. ADR_008
   "decision": "<new decision text>", "status": "accepted",
-  "supersedes": ["adr:guardkit:ADR_{existing_number:03d}"],
+  "title": "<title>", "context": "<context>",
+  "consequences": "<consequences>", "alternatives": ["<alternative considered>"],
+  "supersedes": ["adr:<project>:ADR_{existing_number:03d}"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{new-adr-file}.md"
 })
@@ -229,9 +231,12 @@ mcp__fleet_memory__memory_write_payload(payload={
 # OLD ADR — re-written on its own natural key with status "superseded".
 # Idempotent upsert preserves it (both versions coexist and stay searchable).
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_{existing_number:03d}",       # same natural key as before
   "decision": "<existing decision text>", "status": "superseded",
+  # carry the old record's own fields: the re-write replaces the whole record
+  "title": "<its title>", "context": "<its context>",
+  "consequences": "<its consequences>", "alternatives": ["<its alternatives>"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{existing-adr-file}.md"
 })
@@ -242,7 +247,7 @@ mcp__fleet_memory__memory_write_payload(payload={
   payload is re-written with `status: superseded`, not deleted)
 - `superseded_by` field on the old ADR file links forward to the new version
 - `supersedes` field on the new ADR (file and `adr` payload) links backward to the old version
-- Fleet-memory upserts idempotently on the natural key `adr:guardkit:ADR_NNN`;
+- Fleet-memory upserts idempotently on the natural key `adr:<project>:ADR_NNN`;
   re-writing an existing key updates it in place without dropping other ADRs
 - Consumers query the current `status` to identify the current version
 
@@ -255,7 +260,7 @@ Before applying changes, analyse which downstream artefacts are affected and pre
 if memory_available:
     # Search fleet-memory for affected API contracts (design documents)
     affected_contracts = mcp__fleet_memory__memory_search(
-        project="guardkit",
+        project="<project>",
         query=f"references {existing_adr.entity_id}",
         payload_types=["document"],
         domain_tags=["design"],
@@ -264,7 +269,7 @@ if memory_available:
 
     # Search fleet-memory for affected feature specs
     affected_specs = mcp__fleet_memory__memory_search(
-        project="guardkit",
+        project="<project>",
         query=f"depends on {existing_adr.entity_id}",
         payload_types=["document"],
         domain_tags=["design"],
@@ -310,7 +315,7 @@ Your choice [A/R/C]:
 
 ### Phase 5: Staleness Flagging
 
-After user approves the impact, re-write the affected downstream `document` payloads in fleet-memory with a `"status": "stale"` field (and a `stale_reason`) on their own natural keys, so that `/system-design` and other commands can detect and report stale decisions on next run. Fleet-memory upserts idempotently on the natural key `document:guardkit:<identifier>`, so re-writing an affected document updates it in place — no separate node-tagging API is needed.
+After user approves the impact, re-write the affected downstream `document` payloads in fleet-memory with a `"status": "stale"` field (and a `stale_reason`) on their own natural keys, so that `/system-design` and other commands can detect and report stale decisions on next run. Fleet-memory upserts idempotently on the natural key `document:<project>:<identifier>`, so re-writing an affected document updates it in place — no separate node-tagging API is needed.
 
 ```python
 # Re-write affected documents in fleet-memory with status "stale"
@@ -320,7 +325,7 @@ if memory_available and memory_access == "mcp":
         if identifier:
             mcp__fleet_memory__memory_write_payload(payload={
                 "payload_type": "document",
-                "project": "guardkit",
+                "project": "<project>",
                 "identifier": identifier,          # same natural key → updates in place
                 "content": affected.get("content", ""),
                 "status": "stale",
@@ -445,7 +450,7 @@ writer.write_architecture_index(output_dir, system_context, components, concerns
 
 ### Phase 8: Fleet-Memory Seeding
 
-Write the superseded and new ADR payloads to fleet-memory (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern).
+Write the superseded and new ADR payloads to fleet-memory (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern).
 
 **Content sanitisation:** `mcp__fleet_memory__memory_write_payload` accepts typed payloads and handles storage internally — no manual sanitisation step is needed. Map hyphenated ADR ids to underscores (`ADR-ARCH-002` → `ADR_ARCH_002`) so the identifier matches `^[a-zA-Z0-9_]+$`.
 
@@ -454,10 +459,12 @@ If `memory_available` is true, build and display the following payloads, then as
 ```
 # NEW ADR — adr payload, carries the forward "supersedes" link, status "accepted"
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_ARCH_{new_number:03d}",       # underscores only
   "decision": "<new decision text>", "status": "accepted",
-  "supersedes": ["adr:guardkit:ADR_ARCH_{existing_number:03d}"],
+  "title": "<title>", "context": "<context>",
+  "consequences": "<consequences>", "alternatives": ["<alternative considered>"],
+  "supersedes": ["adr:<project>:ADR_ARCH_{existing_number:03d}"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{new-adr-file}.md"
 })
@@ -465,9 +472,12 @@ mcp__fleet_memory__memory_write_payload(payload={
 # OLD ADR — re-written on its own natural key with status "superseded"
 # (idempotent upsert preserves it — both versions coexist and stay searchable)
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_ARCH_{existing_number:03d}",  # same natural key as before
   "decision": "<existing decision text>", "status": "superseded",
+  # carry the old record's own fields: the re-write replaces the whole record
+  "title": "<its title>", "context": "<its context>",
+  "consequences": "<its consequences>", "alternatives": ["<its alternatives>"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{existing-adr-file}.md"
 })
@@ -516,7 +526,7 @@ if not matches:
 
 ### Fleet-Memory Unavailable
 
-When `memory_available = false`, display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`:
+When `memory_available = false`, display the unavailability warning from `~/.agentecflow/docs/memory-preamble.md`:
 
 ```
 ⚠️  Fleet-memory unavailable — continuing without knowledge capture.
@@ -540,10 +550,12 @@ If no: display "Cancelled." and stop. Do not block if no input — default to co
 ```python
 try:
     mcp__fleet_memory__memory_write_payload(payload={
-        "payload_type": "adr", "project": "guardkit",
+        "payload_type": "adr", "project": "<project>",
         "identifier": new_adr.identifier,      # underscores only
         "decision": new_adr.decision, "status": "accepted",
-        "supersedes": [f"adr:guardkit:{existing_adr.identifier}"],
+        "title": new_adr.title, "context": new_adr.context,
+        "consequences": new_adr.consequences, "alternatives": new_adr.alternatives,
+        "supersedes": [f"adr:<project>:{existing_adr.identifier}"],
         "domain_tags": ["architecture"],
         "source_ref": new_adr.source_ref,
     })
@@ -662,7 +674,7 @@ Updated files:
 
 Fleet-memory:
   ✓ ADR-ARCH-002 updated (adr, status: superseded)
-  ✓ ADR-ARCH-008 created (adr, supersedes: adr:guardkit:ADR_ARCH_002)
+  ✓ ADR-ARCH-008 created (adr, supersedes: adr:<project>:ADR_ARCH_002)
   ✓ 5 downstream documents flagged as stale
 
 Next steps:
@@ -757,14 +769,14 @@ if no_questions:
 
 ### Step 2: Check Fleet-Memory Availability and Prerequisite
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`.
 - If reachable: set `memory_available = true` (and `memory_access = "mcp"` or `"cli"`)
 - Otherwise: set `memory_available = false`
 
 Check for architecture context (either source satisfies the gate):
-- If `memory_available = true`: `memory_search(project="guardkit", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
+- If `memory_available = true`: `memory_search(project="<project>", query="architecture decisions", payload_types=["adr"], domain_tags=["architecture"])` — a non-empty result means ADR context exists.
 - Always: use Glob to check for `docs/architecture/decisions/ADR-ARCH-*.md`.
   - If no local files **and** the fleet-memory search returned nothing: display `NO_ARCHITECTURE_CONTEXT_MESSAGE` and exit.
   - If local files exist but `memory_available = false`: display the unavailability warning from the preamble and ask: "Continue? [Y/n]"
@@ -779,7 +791,7 @@ else:
     # Semantic search disambiguation
     if memory_available:
         matches = mcp__fleet_memory__memory_search(
-            project="guardkit", query=query,
+            project="<project>", query=query,
             payload_types=["adr"], domain_tags=["architecture"],
             token_budget=2000,
         )
@@ -853,7 +865,7 @@ write_adr_files(target_adr, new_adr, "docs/architecture/decisions")
 if memory_available and memory_access == "mcp":
     for affected in affected_artefacts:
         mcp__fleet_memory__memory_write_payload(payload={
-            "payload_type": "document", "project": "guardkit",
+            "payload_type": "document", "project": "<project>",
             "identifier": affected.identifier,        # same natural key → updates in place
             "content": affected.content,
             "status": "stale",
@@ -876,23 +888,28 @@ if structure_changed:
 
 **Seed fleet-memory** (if `memory_available` is true):
 
-Build the two `adr` payloads (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern) and offer them for review. `mcp__fleet_memory__memory_write_payload` handles storage internally — no manual sanitisation step is needed. Sanitise hyphens to underscores in the identifier (`ADR-ARCH-002` → `ADR_ARCH_002`).
+Build the two `adr` payloads (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern) and offer them for review. `mcp__fleet_memory__memory_write_payload` handles storage internally — no manual sanitisation step is needed. Sanitise hyphens to underscores in the identifier (`ADR-ARCH-002` → `ADR_ARCH_002`).
 
 ```
 # NEW ADR — status "accepted", forward "supersedes" link to the old ADR's natural key
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_ARCH_{new_number:03d}",
   "decision": "<new decision text>", "status": "accepted",
-  "supersedes": ["adr:guardkit:ADR_ARCH_{target_number:03d}"],
+  "title": "<title>", "context": "<context>",
+  "consequences": "<consequences>", "alternatives": ["<alternative considered>"],
+  "supersedes": ["adr:<project>:ADR_ARCH_{target_number:03d}"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{new-adr-file}.md"})
 
 # OLD ADR — re-written on its own natural key with status "superseded" (preserved, not deleted)
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_ARCH_{target_number:03d}",
   "decision": "<existing decision text>", "status": "superseded",
+  # carry the old record's own fields: the re-write replaces the whole record
+  "title": "<its title>", "context": "<its context>",
+  "consequences": "<its consequences>", "alternatives": ["<its alternatives>"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{target-adr-file}.md"})
 ```
@@ -954,7 +971,7 @@ Suggestions:
 """
 
 MEMORY_UNAVAILABLE_MESSAGE:
-Use the warning template from `docs/internals/commands-lib/memory-preamble.md`. Additional context for architecture refinement:
+Use the warning template from `~/.agentecflow/docs/memory-preamble.md`. Additional context for architecture refinement:
 - Temporal superseding won't be tracked in fleet-memory
 - Staleness flagging won't propagate to downstream documents
 - Impact analysis will be limited to local file scanning

@@ -177,10 +177,11 @@ class TestTemporalSuperseding:
 
     def test_new_payload_carries_supersedes_natural_key(self, spec_content: str):
         """New adr payload must carry a supersedes link to the old ADR's natural key."""
-        # Natural key form: adr:guardkit:ADR_ARCH_NNN (underscores only)
-        assert "adr:guardkit:" in spec_content, (
+        # Natural key form: adr:<project>:ADR_ARCH_NNN (underscores only; <project> is the
+        # project GuardKit's resolver reports, never a hard-coded name)
+        assert "adr:<project>:" in spec_content, (
             "New adr payload must reference the old ADR's fleet-memory natural key "
-            "(adr:guardkit:<identifier>) in its supersedes field"
+            "(adr:<project>:<identifier>) in its supersedes field"
         )
 
     def test_prior_adr_remains_searchable(self, spec_content: str):

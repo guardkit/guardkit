@@ -2,7 +2,7 @@
 
 Shared knowledge-capture pattern for GuardKit command specs.
 
-**Reference from command specs with**: `See: docs/internals/commands-lib/memory-preamble.md`
+**Reference from command specs with**: `See: ~/.agentecflow/docs/memory-preamble.md`
 
 > **FEAT-MEM-09 (2026-07-02):** GuardKit's knowledge-capture backend is **fleet-memory**
 > (a pure-embeddings store). The Graphiti/FalkorDB implementation was **removed** — the
@@ -89,6 +89,23 @@ guardkit memory status
 
 ---
 
+## Which project
+
+Every memory search and write names a project. Use the one GuardKit's own resolver reports for the
+project directory you are working in, never a name copied from an example (examples in command text
+write it as `<project>`):
+
+```bash
+python3 -c 'from pathlib import Path; from guardkit.knowledge.memory_project import resolve_memory_project as r; print(r(Path.cwd()).message)'
+```
+
+If it prints `memory: ON (project=<name>)`, use that `<name>`. If it prints `memory: OFF`, do not
+search or write memory; say so and continue with local files. The project is declared in the
+project's `.guardkit/config.yaml` (`memory: project: <name>`) or handed over in
+`GUARDKIT_MEMORY_PROJECT`; there is no default.
+
+---
+
 ## Payload Model Reference (the write contract)
 
 Fleet-memory stores **typed payloads**. Every write is a dict with a `payload_type` and the
@@ -100,7 +117,7 @@ shared `BasePayload` fields. The seven registered payload types are: `adr`, `rev
 | Field | Value |
 |-------|-------|
 | `payload_type` | one of the seven types |
-| `project` | `"guardkit"` (underscores only — `^[a-zA-Z0-9_]+$`) |
+| `project` | the project GuardKit's resolver reports — see **Which project** below (letters, digits and underscores only — `^[a-zA-Z0-9_]+$`) |
 | `identifier` | stable id, **underscores only** — sanitise hyphens/colons to `_` (e.g. `ADR-007` → `ADR_007`, `user-service` → `user_service`) |
 | `source_ref` | provenance — the artefact's file path or source id |
 | `domain_tags` | list of category tags (drives group-scoped reads) |
@@ -108,7 +125,11 @@ shared `BasePayload` fields. The seven registered payload types are: `adr`, `rev
 The server derives `natural_key = "{payload_type}:{project}:{identifier}"` and upserts
 idempotently on it. Type-specific required fields:
 
-- **`adr`** → `decision` (str), `status` (str, e.g. `"accepted"`).
+- **`adr`** → `decision` (str), `status` (str, e.g. `"accepted"`). Also write the optional
+  `title` (str), `context` (str), `consequences` (str) and `alternatives` (list of str) from the
+  ADR file, so the stored record keeps its reasoning (fleet-memory accepts them from the release
+  that added them; an older service ignores them, and re-writing the same ADR later under the
+  same natural key fills them in).
 - **`document`** → `content` (str, optional but include it — the prose is embedded for
   semantic retrieval AND tagged for group-scoped reads).
 
@@ -117,12 +138,18 @@ consistently so a later search finds what a command wrote):
 
 | Artefact | `payload_type` | `domain_tags` | `identifier` | body |
 |----------|---------------|---------------|--------------|------|
-| ADR (`/system-arch`, `/arch-refine`) | `adr` | `["architecture"]` | `ADR_NNN` | `decision`, `status` |
-| Design Decision Record / DDR (`/system-design`) | `adr` | `["design"]` | `DDR_NNN` | `decision`, `status` |
-| API contract (`/system-design`) | `document` | `["design", "api_contract"]` | `<contract_slug>` | `content` = contract markdown |
-| Data model (`/system-design`) | `document` | `["design", "data_model"]` | `<model_slug>` | `content` = model markdown |
+| ADR (`/system-arch` `ADR_ARCH_NNN`, `/system-plan` `ADR_SP_NNN`, `/arch-refine`) | `adr` | `["architecture"]` | `ADR_ARCH_NNN` / `ADR_SP_NNN` | `decision`, `status`, `title`, `context`, `consequences`, `alternatives` |
+| Design Decision Record / DDR (`/system-design`, `/design-refine`) | `adr` | `["architecture", "design"]` | `DDR_NNN` | `decision`, `status`, `title`, `context`, `consequences`, `alternatives` |
+| API contract (`/system-design`) | `document` | `["architecture", "design", "api_contract"]` | `<contract_slug>` | `content` = contract markdown |
+| Data model (`/system-design`) | `document` | `["architecture", "design", "data_model"]` | `<model_slug>` | `content` = model markdown |
 | Architecture doc (`/system-arch`) | `document` | `["architecture"]` | `<doc_slug>` | `content` = doc markdown |
 | System plan artefact (`/system-plan`) | `document` | `["architecture", "plan"]` | `<slug>` | `content` = plan markdown |
+
+Design records carry the `architecture` tag so the planning commands, which search
+`architecture`, find them: `/feature-plan` (searches `adr` and `document`) finds DDRs, contracts and
+data models; `/feature-spec` currently searches `adr` only, so it finds DDRs but not contracts or
+data models. Widening `/feature-spec` is a separate change made together with specialist-agent's
+pins, because specialist-agent loads that file byte-for-byte.
 
 > This vocabulary aligns with `guardkit/knowledge/fleet_memory_mapping.py` (the authoritative
 > group→payload mapping). ADRs and design decisions are `adr` payloads; contracts, models,
@@ -144,12 +171,16 @@ When the command produces artefacts worth capturing AND `memory_available` is tr
 ```
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "adr",
-  "project": "guardkit",
-  "identifier": "ADR_007",
+  "project": "<project>",
+  "identifier": "ADR_ARCH_007",
+  "title": "CQRS for ordering",
   "decision": "Adopt CQRS for the ordering bounded context",
   "status": "accepted",
+  "context": "Order reads outnumber writes and need different shapes from the write model.",
+  "consequences": "Separate read models to keep in step; simpler, faster queries.",
+  "alternatives": ["Single model with read replicas"],
   "domain_tags": ["architecture"],
-  "source_ref": "docs/architecture/decisions/ADR-007.md"
+  "source_ref": "docs/architecture/decisions/ADR-ARCH-007-cqrs-ordering.md"
 })
 ```
 
@@ -158,15 +189,15 @@ mcp__fleet_memory__memory_write_payload(payload={
 ```
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "document",
-  "project": "guardkit",
+  "project": "<project>",
   "identifier": "ordering_api",
   "content": "<the generated API-contract markdown>",
-  "domain_tags": ["design", "api_contract"],
+  "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/ordering-api.md"
 })
 ```
 
-The tool returns the derived `natural_key` (e.g. `adr:guardkit:ADR_007`) on success. Writes
+The tool returns the derived `natural_key` (e.g. `adr:<project>:ADR_007`) on success. Writes
 are idempotent (content-hash upsert), so re-running a command is safe.
 
 If a write fails or `memory_available` is false, display the warning and continue — the
@@ -180,7 +211,7 @@ artefacts on disk are the primary deliverable; seeding is the optional tail.
 
 ```
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="<what you are looking for>",
   payload_types=["adr", "document"],     # optional filter
   domain_tags=["architecture"],           # optional filter
@@ -209,7 +240,7 @@ the removed `has_architecture_context()` / `SystemPlanGraphiti` prerequisite). C
 sources; either satisfies the prerequisite:
 
 1. **Fleet-memory** (if `memory_available`): search for architecture context —
-   `memory_search(project="guardkit", query="architecture components services bounded contexts",
+   `memory_search(project="<project>", query="architecture components services bounded contexts",
    payload_types=["adr", "document"], domain_tags=["architecture"])`. A non-empty result =
    context exists.
 2. **Filesystem** (always): Glob `docs/architecture/**` and `docs/design/**`. Matching files =
@@ -245,7 +276,7 @@ Replace any Python/Graphiti pseudocode with a reference to the appropriate secti
 ```markdown
 ### Step N: Check Fleet-Memory Availability
 
-Follow `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1:
+Follow `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1:
 check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set
 `memory_available` and `memory_access` accordingly, and degrade to markdown-only if neither.
 ```

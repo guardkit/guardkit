@@ -37,7 +37,7 @@ The command automatically detects the appropriate mode based on whether architec
 
 **Graceful Degradation**: If fleet-memory is unavailable, mode is detected via local file existence and the command runs markdown-only without persistence.
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly. If neither is reachable, set `memory_available = false` and display the unavailability warning — continue without persistence, never block.
 
 **Auto-detect mode via local file existence:**
@@ -53,7 +53,7 @@ Apply user `--mode` override if provided.
 
 **Load existing architecture context and validate prerequisites:**
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available` (and `memory_access`). If neither is reachable, set `memory_available = false` and display the unavailability warning — continue without persistence, never block.
 
 **Detect mode via local file existence:**
@@ -130,11 +130,11 @@ Your choice [C/R/S/A]:
 
 **Fleet-Memory Persistence (after checkpoint):**
 
-If `memory_available` is true, build the domain-model payload (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
+If `memory_available` is true, build the domain-model payload (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
 ```
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "domain_model",
   "content": "<the domain-model.md markdown>",
   "domain_tags": ["architecture"],
@@ -189,11 +189,11 @@ Domain events: DonorCreated, LPAFiled, TransactionFlagged
 
 **Fleet-Memory Persistence:**
 
-If `memory_available` is true, build the components/domain-model payload (see `docs/internals/commands-lib/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
+If `memory_available` is true, build the components/domain-model payload (see `~/.agentecflow/docs/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
 ```
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "domain_model",
   "content": "<the domain-model.md markdown>",
   "domain_tags": ["architecture"],
@@ -302,12 +302,12 @@ Captured 4 concerns:
 
 **Fleet-Memory Persistence:**
 
-If `memory_available` is true, build the architecture-summary payload (see `docs/internals/commands-lib/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
+If `memory_available` is true, build the architecture-summary payload (see `~/.agentecflow/docs/memory-preamble.md`), display it, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write it via the MCP write tool:
 
 ```
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
-  "identifier": "architecture_summary",
+  "payload_type": "document", "project": "<project>",
+  "identifier": "architecture",
   "content": "<the ARCHITECTURE.md markdown>",
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/ARCHITECTURE.md"
@@ -526,7 +526,7 @@ assumptions:
 
 Seed all artefacts into fleet-memory as typed payloads for downstream command consumption.
 
-**Payload Assignments** (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference):
+**Payload Assignments** (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference):
 
 | Entity Type | `payload_type` | `domain_tags` |
 |-------------|----------------|---------------|
@@ -541,7 +541,7 @@ If `memory_available` is true, build one typed payload per artefact, **display**
 ```
 # Domain model / bounded contexts, cross-cutting concerns, assumptions → document / ["architecture"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "domain_model",
   "content": "<the domain-model.md markdown>",
   "domain_tags": ["architecture"],
@@ -549,8 +549,8 @@ mcp__fleet_memory__memory_write_payload(payload={
 
 # Architecture summary → document / ["architecture"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
-  "identifier": "architecture_summary",
+  "payload_type": "document", "project": "<project>",
+  "identifier": "architecture",
   "content": "<the ARCHITECTURE.md markdown>",
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/ARCHITECTURE.md"})
@@ -558,9 +558,11 @@ mcp__fleet_memory__memory_write_payload(payload={
 # Each ADR (including technology-decision ADRs) → adr / ["architecture"]
 # identifier uses underscores only: ADR-ARCH-001 → ADR_ARCH_001
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "ADR_ARCH_001",
   "decision": "<the decision>", "status": "accepted",
+  "title": "<the ADR title>", "context": "<the ADR context>",
+  "consequences": "<the ADR consequences>", "alternatives": ["<alternative considered>"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/ADR-ARCH-001-{slug}.md"})
 ```
@@ -603,7 +605,7 @@ Your choice:
 **Targeted refinement:**
 - Show current state for selected area
 - Ask what's changed conversationally (not full questionnaire)
-- Update fleet-memory payloads — supersession is idempotent on the natural key: re-write the affected artefact's payload with the updated content. For a decision that replaces an earlier one, write the NEW payload with a `"supersedes": ["<natural_key_of_old>"]` field (natural key = `"<payload_type>:guardkit:<identifier>"`, e.g. `"adr:guardkit:ADR_ARCH_001"`) and re-write the OLD payload with `"status": "superseded"`.
+- Update fleet-memory payloads — supersession is idempotent on the natural key: re-write the affected artefact's payload with the updated content. For a decision that replaces an earlier one, write the NEW payload with a `"supersedes": ["<natural_key_of_old>"]` field (natural key = `"<payload_type>:<project>:<identifier>"`, e.g. `"adr:<project>:ADR_ARCH_001"`) and re-write the OLD payload with `"status": "superseded"`.
 - Regenerate affected markdown files and C4 diagrams
 
 ## Error Handling
@@ -627,7 +629,7 @@ if not description or not description.strip():
 
 ### Fleet-Memory Unavailable
 
-Display the standard unavailability warning from `docs/internals/commands-lib/memory-preamble.md`:
+Display the standard unavailability warning from `~/.agentecflow/docs/memory-preamble.md`:
 
 ```
 ⚠️  Fleet-memory unavailable — continuing without knowledge capture.
@@ -927,7 +929,7 @@ if no_questions:
 
 ### Step 2: Check Fleet-Memory Availability
 
-Follow the Tier 0 → Tier 1 check from `docs/internals/commands-lib/memory-preamble.md`:
+Follow the Tier 0 → Tier 1 check from `~/.agentecflow/docs/memory-preamble.md`:
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`.
 - IF reachable: set `memory_available = true` (and `memory_access = "mcp"` or `"cli"`)
 - ELSE: set `memory_available = false`, display the unavailability warning, and ask:
@@ -1000,25 +1002,27 @@ Use the Glob tool to scan `docs/architecture/decisions/ADR-ARCH-*.md` to determi
 
 ### Step 7: Seed to Fleet-Memory
 
-If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), **display** them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note writes require the MCP tools connected and skip.)
+If `memory_available` is true, build one typed payload per artefact (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern), **display** them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. On yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note writes require the MCP tools connected and skip.)
 
 ```
 # Domain model / bounded contexts / cross-cutting concerns → document / ["architecture"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "domain_model",
+  "payload_type": "document", "project": "<project>", "identifier": "domain_model",
   "content": "<the domain-model.md markdown>", "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/domain-model.md"})
 
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "architecture_summary",
+  "payload_type": "document", "project": "<project>", "identifier": "architecture",
   "content": "<the ARCHITECTURE.md markdown>", "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/ARCHITECTURE.md"})
 
 # Each ADR (incl. technology decisions) → adr / ["architecture"]
 # identifier underscores only: ADR-ARCH-001 → ADR_ARCH_001
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit", "identifier": "ADR_ARCH_001",
-  "decision": "<the decision>", "status": "accepted", "domain_tags": ["architecture"],
+  "payload_type": "adr", "project": "<project>", "identifier": "ADR_ARCH_001",
+  "decision": "<the decision>", "status": "accepted",
+  "title": "<the ADR title>", "context": "<the ADR context>",
+  "consequences": "<the ADR consequences>", "alternatives": ["<alternative considered>"], "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/ADR-ARCH-001-{slug}.md"})
 ```
 

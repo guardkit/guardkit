@@ -41,7 +41,7 @@ expansion, and conflicts are defined HERE; other sections and slices point back.
 | `--autobuild-mode` | off | Composite: expands to `--no-questions --skip-arch-review --auto-approve-checkpoint --docs=minimal`; individual sub-flags ignored while set | Phase 6 never auto-completes in this mode |
 | `--auto-approve-checkpoint` | off | Auto-approve Phase 2.8 checkpoint (no human present) | — |
 | `--skip-arch-review` | off | Skip Phase 2.5B architectural review | — |
-| `--complete` | off | Run Phase 6 Finalize on green evidence (DF-018; requires the shared completion routine — until that build lands, report it missing) | never in `--autobuild-mode` or for `operator_handoff` tasks |
+| `--complete` | off | Run Phase 6 Finalize on green evidence (DF-018; uses the shared completion routine, `guardkit task complete`) | never in `--autobuild-mode` or for `operator_handoff` tasks |
 | `--pause` (alias `--no-complete`) | off | Force the Amber pause at IN_REVIEW even when Phase 6 is enabled | — |
 
 Per-flag guides (intensity levels, micro mode, design-first, clarification,
@@ -330,7 +330,7 @@ Tri-state on the Phase 5.5 checkpoint evidence:
 - **Green** (deterministic audit clean + review clean): invoke
   `guardkit task complete TASK-XXX` — the shared atomic completion routine (six
   pre-completion gates → atomic status-flip + file-move → related-file archival →
-  rollup/PM sync → fleet-memory capture-outcome → conductor git-state commit) —
+  fleet-memory capture-outcome → conductor git-state commit) —
   then display the verify-then-record evidence banner;
 - **Amber** (any non-clean audit, review concerns, or `--pause`): stop at
   IN_REVIEW with specifics — today's behavior;

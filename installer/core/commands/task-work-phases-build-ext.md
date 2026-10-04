@@ -686,7 +686,6 @@ Completion routine (shared atomic routine — guardkit task complete):
   Pre-completion gates: 6/6 passed
   Moved: tasks/in_review/ → tasks/completed/{task_id}/ (atomic flip+move)
   Archived: {n} related files
-  Rollup: feature {feature_id} → epic → portfolio; PM sync {sync_status}
   fleet-memory: capture-outcome recorded ({capture_status} — loud on failure)
   Git: conductor state commit {sha}
 Pause here instead next time: --pause (alias --no-complete)

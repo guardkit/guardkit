@@ -655,6 +655,16 @@ install_global_files() {
         cp -r "$INSTALLER_DIR/core/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
         print_success "Installed documentation"
     fi
+
+    # The shared fleet-memory guide every memory-using command reads, installed where
+    # the commands point (~/.agentecflow/docs/memory-preamble.md). Single source:
+    # docs/internals/commands-lib/memory-preamble.md in this repository.
+    if [ -f "$INSTALLER_DIR/../docs/internals/commands-lib/memory-preamble.md" ]; then
+        cp "$INSTALLER_DIR/../docs/internals/commands-lib/memory-preamble.md" "$INSTALL_DIR/docs/memory-preamble.md"
+        print_success "Installed fleet-memory guide (docs/memory-preamble.md)"
+    else
+        print_warning "Fleet-memory guide not found; commands that use memory will miss it"
+    fi
     
     # Copy the initialization script
     if [ -f "$INSTALLER_DIR/scripts/init-project.sh" ]; then
