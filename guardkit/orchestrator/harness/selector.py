@@ -508,6 +508,29 @@ def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None
         )
 
 
+def _declares_required_documents(worktree: Path) -> bool:
+    """Whether ``autobuild.player.required_documents`` is present and non-empty.
+
+    Looked at first, and forgivingly, so that a project which declares no
+    binding documents never meets the Player loader's full validation on the
+    Coach's path: an unreadable, malformed or document-free declaration is
+    simply "nothing declared" here, and the Coach turn stays exactly what it
+    was. Only a project that does declare documents is held to the full
+    checks.
+    """
+
+    try:
+        data = yaml.safe_load(
+            (worktree / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
+        )
+    except Exception:  # noqa: BLE001 — undeclared, by definition, if unreadable
+        return False
+    autobuild = data.get("autobuild") if isinstance(data, dict) else None
+    player = autobuild.get("player") if isinstance(autobuild, dict) else None
+    declared = player.get("required_documents") if isinstance(player, dict) else None
+    return bool(declared)
+
+
 def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
     """Read the project's instructions and binding documents in full.
 
@@ -532,6 +555,8 @@ def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
     :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
     """
 
+    if not _declares_required_documents(worktree):
+        return ()
     inputs = _load_player_project_inputs(worktree)
     if not inputs["required_documents"]:
         return ()
