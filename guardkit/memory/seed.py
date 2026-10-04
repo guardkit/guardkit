@@ -262,13 +262,39 @@ def _sections(text: str) -> tuple[Optional[str], dict[str, str]]:
     return title, sections
 
 
-def _bullets(section: str) -> list[str]:
-    items = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped[:2] in ("- ", "* ") and stripped[2:].strip():
-            items.append(stripped[2:].strip())
-    return items
+_SUBHEADING = re.compile(r"^#{3,6}[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
+
+
+def _alternatives(section: str) -> list[str]:
+    """The alternatives in an "Alternatives Considered" section, each complete.
+
+    * Sub-headed entries (GuardKit's DDR template renders each alternative as
+      ``### <name>`` with Pros/Cons bullets): one entry per sub-heading — its
+      name, then everything under it — plus any prose before the first one.
+    * A flat bullet list (the ADR template's form): one entry per bullet.
+    * Anything else (a table, paragraphs): the whole section as one entry,
+      so nothing written is dropped.
+    """
+    headings = list(_SUBHEADING.finditer(section))
+    if headings:
+        entries = []
+        lead = section[: headings[0].start()].strip()
+        if lead:
+            entries.append(lead)
+        for position, heading in enumerate(headings):
+            end = (
+                headings[position + 1].start()
+                if position + 1 < len(headings)
+                else len(section)
+            )
+            body = section[heading.end():end].strip()
+            name = heading.group("title").strip()
+            entries.append(f"{name}\n{body}" if body else name)
+        return entries
+    lines = [line for line in section.splitlines() if line.strip()]
+    if lines and all(line[:2] in ("- ", "* ") and line[2:].strip() for line in lines):
+        return [line[2:].strip() for line in lines]
+    return [section]
 
 
 def _leading_ids(text: str) -> list[str]:
@@ -316,7 +342,7 @@ def decision_fields(decision_id: str, text: str, project: str) -> dict:
         "alternatives"
     )
     if alternatives_text:
-        fields["alternatives"] = _bullets(alternatives_text) or [alternatives_text]
+        fields["alternatives"] = _alternatives(alternatives_text)
     replaced: list[str] = []
     for line in _SUPERSEDES_LINE.finditer(text):
         replaced.extend(_leading_ids(line.group("rest")))
