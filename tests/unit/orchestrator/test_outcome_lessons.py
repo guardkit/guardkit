@@ -202,3 +202,25 @@ def test_turn_facts_are_read_from_an_orchestrator_turn_record():
 def test_turn_record_without_a_report_gives_no_files():
     record = SimpleNamespace(turn=1, player_result=None, decision="error", feedback=None)
     assert turn_facts_from_record(record).files_changed == []
+
+
+def test_a_working_folder_is_matched_only_where_its_last_segment_ends():
+    from guardkit.orchestrator.outcome_lessons import _strip_working_folders
+
+    folders = ("/x/build",)
+    assert _strip_working_folders("/x/build/a.py", folders) == "a.py"
+    assert _strip_working_folders("ran in /x/build", folders) == "ran in ."
+    assert _strip_working_folders("ran in /x/build.", folders) == "ran in .."
+    assert _strip_working_folders("(/x/build) failed", folders) == "(.) failed"
+    # Sibling folders that merely start with the same characters are left alone.
+    assert _strip_working_folders("/x/build-2/a.py", folders) == "/x/build-2/a.py"
+    assert _strip_working_folders("/x/build2/a.py", folders) == "/x/build2/a.py"
+    assert _strip_working_folders("/x/build.v2/a.py", folders) == "/x/build.v2/a.py"
+
+
+def test_a_worktree_inside_the_repository_is_taken_off_whole():
+    from guardkit.orchestrator.outcome_lessons import _strip_working_folders
+
+    folders = ("/x/repo", "/x/repo/.guardkit/worktrees/FEAT-1")  # shorter one first
+    text = "/x/repo/.guardkit/worktrees/FEAT-1/src/a.py and /x/repo/src/b.py"
+    assert _strip_working_folders(text, folders) == "src/a.py and src/b.py"

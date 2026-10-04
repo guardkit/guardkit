@@ -272,6 +272,45 @@ class TestTheOutcomeParagraph:
         assert len(kwargs["summary"]) <= 500
 
 
+    def test_the_repository_folder_is_stripped_at_the_real_capture(self, orchestrator):
+        """An objection naming a file by its repository path (not under the
+        worktree) keeps the file name and loses the machine path."""
+        from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+        from guardkit.orchestrator.autobuild import TurnRecord
+
+        repo = orchestrator.repo_root
+        orchestrator._active_worktree_path = repo / ".guardkit" / "worktrees" / "FEAT-CAP"
+        player = AgentInvocationResult(
+            task_id="TASK-CAP-021", turn=1, agent_type="player", success=True,
+            report={"files_modified": [f"{repo}/src/app.py"]}, duration_seconds=1.0,
+        )
+        history = [
+            TurnRecord(
+                turn=1, player_result=player, coach_result=None, decision="feedback",
+                feedback=f"- Tests failed in {repo}/tests/test_app.py (see {repo})",
+                timestamp="2026-10-04T00:00:00Z",
+            )
+        ]
+        writer = AsyncMock(return_value=_published("OUT-REPO"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            orchestrator._capture_build_outcome(
+                "TASK-CAP-021",
+                success=False,
+                final_decision="timeout",
+                turn_history=history,
+                task_title="Repository paths",
+                error=f"Timed out running {repo}/scripts/check.sh",
+            )
+
+        lessons = writer.await_args.kwargs["lessons_learned"][0]
+        assert str(repo) not in lessons
+        assert "Reason: Timed out running scripts/check.sh" in lessons
+        assert "Files changed: src/app.py." in lessons
+        assert "turn 1: Tests failed in tests/test_app.py (see .)" in lessons
+
+
 # ============================================================================
 # Loud degrade (the 4c99357d pattern): one plain line, never fatal
 # ============================================================================
