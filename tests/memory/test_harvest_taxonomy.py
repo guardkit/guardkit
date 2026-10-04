@@ -189,11 +189,11 @@ class TestManifestJson:
 
     def test_manifest_json_golden(self):
         """manifest_json() produces exactly the golden manifest."""
-        assert json.loads(manifest_json()) == self.GOLDEN_MANIFEST
+        assert json.loads(manifest_json(project="guardkit")) == self.GOLDEN_MANIFEST
 
     def test_manifest_json_kind_equals_episode_type(self):
         """Every manifest entry keeps the key==episode_type invariant."""
-        manifest = json.loads(manifest_json())
+        manifest = json.loads(manifest_json(project="guardkit"))
         for entry in manifest["entries"]:
             assert entry["kind"] == entry["episode_type"]
 
@@ -283,13 +283,13 @@ class TestNaturalKeyFor:
 
     def test_natural_key_for_basic_format(self):
         """Natural key has correct three-segment format."""
-        key = natural_key_for("docs/adr/001.md", "adr")
+        key = natural_key_for("docs/adr/001.md", "adr", project="guardkit")
         assert key == "guardkit:docs/adr/001.md:adr"
 
     def test_natural_key_for_different_types(self):
         """Natural keys differ by episode_type."""
-        key_adr = natural_key_for("docs/adr/001.md", "adr")
-        key_review = natural_key_for("docs/adr/001.md", "review_report")
+        key_adr = natural_key_for("docs/adr/001.md", "adr", project="guardkit")
+        key_review = natural_key_for("docs/adr/001.md", "review_report", project="guardkit")
 
         assert key_adr == "guardkit:docs/adr/001.md:adr"
         assert key_review == "guardkit:docs/adr/001.md:review_report"
@@ -304,7 +304,7 @@ class TestNaturalKeyFor:
         ]
 
         for path in paths:
-            key = natural_key_for(path, "document")
+            key = natural_key_for(path, "document", project="guardkit")
             assert f":{path}:" in key
 
     def test_natural_key_for_integration_with_derive(self):
@@ -312,7 +312,7 @@ class TestNaturalKeyFor:
         path = "docs/adr/001.md"
         episode_type = "adr"
 
-        key = natural_key_for(path, episode_type)
+        key = natural_key_for(path, episode_type, project="guardkit")
         episode_id = derive_episode_id(key)
 
         assert episode_id.startswith("ep-")
@@ -435,15 +435,15 @@ class TestDeterminism:
         episode_type = "adr"
 
         # First call
-        key_1 = natural_key_for(path, episode_type)
+        key_1 = natural_key_for(path, episode_type, project="guardkit")
         id_1 = derive_episode_id(key_1)
 
         # Second call
-        key_2 = natural_key_for(path, episode_type)
+        key_2 = natural_key_for(path, episode_type, project="guardkit")
         id_2 = derive_episode_id(key_2)
 
         # Third call
-        key_3 = natural_key_for(path, episode_type)
+        key_3 = natural_key_for(path, episode_type, project="guardkit")
         id_3 = derive_episode_id(key_3)
 
         assert key_1 == key_2 == key_3
@@ -466,11 +466,11 @@ class TestDeterminism:
 
         # Run full pipeline twice
         episode_type_1 = episode_type_for(path)
-        key_1 = natural_key_for(path, episode_type_1)
+        key_1 = natural_key_for(path, episode_type_1, project="guardkit")
         id_1 = derive_episode_id(key_1)
 
         episode_type_2 = episode_type_for(path)
-        key_2 = natural_key_for(path, episode_type_2)
+        key_2 = natural_key_for(path, episode_type_2, project="guardkit")
         id_2 = derive_episode_id(key_2)
 
         assert episode_type_1 == episode_type_2
@@ -493,7 +493,7 @@ class TestEdgeCases:
         episode_type = episode_type_for(long_path)
         assert episode_type == "document"
 
-        key = natural_key_for(long_path, episode_type)
+        key = natural_key_for(long_path, episode_type, project="guardkit")
         episode_id = derive_episode_id(key)
         assert episode_id.startswith("ep-")
 
@@ -508,6 +508,6 @@ class TestEdgeCases:
             episode_type = episode_type_for(path)
             if expected_type:
                 assert episode_type == expected_type
-                key = natural_key_for(path, episode_type)
+                key = natural_key_for(path, episode_type, project="guardkit")
                 episode_id = derive_episode_id(key)
                 assert episode_id.startswith("ep-")

@@ -242,11 +242,21 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
+    # Whose memory: the project's own name, never a built-in one (project
+    # initialisation design, 4 October 2026). Memory off refuses the harvest.
+    from guardkit.knowledge.memory_project import resolve_memory_project
+
+    resolution = resolve_memory_project(docs_root)
+    if not resolution.is_on:
+        console.print("Refused: this project has no memory to harvest into.", markup=False)
+        console.print(resolution.message, markup=False)
+        sys.exit(1)
+
     # === Walker Phase ===
     console.print("\n[bold cyan]Walking harvest directories...[/bold cyan]\n")
 
     try:
-        harvest_result = walk_harvest_dirs(docs_root)
+        harvest_result = walk_harvest_dirs(docs_root, resolution.project)
     except Exception as e:
         console.print(f"[red]Walker error:[/red] {e}")
         logger.exception("Walker failed")

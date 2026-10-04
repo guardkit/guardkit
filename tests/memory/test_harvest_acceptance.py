@@ -34,6 +34,15 @@ from guardkit.memory.harvest_walker import walk_harvest_dirs
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _harvest_memory_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The harvest command refuses when memory is off (project initialisation
+    design, 4 October 2026). The throwaway folders here declare nothing, so the
+    name is handed over — and inherited by the CLI subprocesses below."""
+    monkeypatch.delenv("GUARDKIT_FACTORY_LAUNCH", raising=False)
+    monkeypatch.setenv("GUARDKIT_MEMORY_PROJECT", "guardkit")
+
+
 @pytest.fixture
 def temp_docs_root(tmp_path: Path) -> Path:
     """Create a temporary docs structure with all 4 episode types.
@@ -136,7 +145,7 @@ class TestSubjectResolution:
         from guardkit.memory.harvest_publisher import publish_episodes
 
         # Harvest and filter to adr episodes
-        result = walk_harvest_dirs(temp_docs_root)
+        result = walk_harvest_dirs(temp_docs_root, "guardkit")
         adr_episodes = [ep for ep in result.episodes if ep.episode_type == "adr"]
         assert len(adr_episodes) > 0, "Should have at least one adr episode"
 
@@ -155,7 +164,7 @@ class TestSubjectResolution:
         """Review report episodes publish to memory.episode.guardkit.review_report."""
         from guardkit.memory.harvest_publisher import publish_episodes
 
-        result = walk_harvest_dirs(temp_docs_root)
+        result = walk_harvest_dirs(temp_docs_root, "guardkit")
         review_episodes = [
             ep for ep in result.episodes if ep.episode_type == "review_report"
         ]
@@ -173,7 +182,7 @@ class TestSubjectResolution:
         """Feature outcome episodes publish to memory.episode.guardkit.feature_outcome."""
         from guardkit.memory.harvest_publisher import publish_episodes
 
-        result = walk_harvest_dirs(temp_docs_root)
+        result = walk_harvest_dirs(temp_docs_root, "guardkit")
         outcome_episodes = [
             ep for ep in result.episodes if ep.episode_type == "feature_outcome"
         ]
@@ -191,7 +200,7 @@ class TestSubjectResolution:
         """Document episodes publish to memory.episode.guardkit.document."""
         from guardkit.memory.harvest_publisher import publish_episodes
 
-        result = walk_harvest_dirs(temp_docs_root)
+        result = walk_harvest_dirs(temp_docs_root, "guardkit")
         doc_episodes = [
             ep for ep in result.episodes if ep.episode_type == "document"
         ]
@@ -214,11 +223,11 @@ class TestEpisodeIdStability:
     def test_episode_id_stability_same_content(self, temp_docs_root: Path) -> None:
         """Two harvest runs over the same docs produce identical episode_ids."""
         # Run 1
-        result1 = walk_harvest_dirs(temp_docs_root)
+        result1 = walk_harvest_dirs(temp_docs_root, "guardkit")
         episode_ids_1 = {ep.episode_id for ep in result1.episodes}
 
         # Run 2
-        result2 = walk_harvest_dirs(temp_docs_root)
+        result2 = walk_harvest_dirs(temp_docs_root, "guardkit")
         episode_ids_2 = {ep.episode_id for ep in result2.episodes}
 
         # Verify identical sets
@@ -227,7 +236,7 @@ class TestEpisodeIdStability:
 
     def test_episode_id_uniqueness_per_file(self, temp_docs_root: Path) -> None:
         """Each file produces a unique episode_id."""
-        result = walk_harvest_dirs(temp_docs_root)
+        result = walk_harvest_dirs(temp_docs_root, "guardkit")
 
         # Extract all episode IDs
         episode_ids = [ep.episode_id for ep in result.episodes]
@@ -251,7 +260,7 @@ class TestEpisodeIdStability:
         (dir2 / "test.md").write_text(content)
 
         # Harvest
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         # Should have 2 episodes with different IDs
         assert len(result.episodes) == 2
@@ -273,7 +282,7 @@ class TestOversizedRejection:
         """Walker skips >900KB docs and reports path + size."""
         repo_root, oversized_file = temp_docs_root_with_oversized
 
-        result = walk_harvest_dirs(repo_root)
+        result = walk_harvest_dirs(repo_root, "guardkit")
 
         # Should have skipped the oversized file
         assert len(result.skipped_oversized) == 1
@@ -289,7 +298,7 @@ class TestOversizedRejection:
         """Oversized doc rejection doesn't prevent harvesting other docs."""
         repo_root, _ = temp_docs_root_with_oversized
 
-        result = walk_harvest_dirs(repo_root)
+        result = walk_harvest_dirs(repo_root, "guardkit")
 
         # Should still have harvested the normal-sized docs
         assert len(result.episodes) >= 4, "Should harvest normal docs despite oversized skip"
@@ -443,7 +452,7 @@ class TestFullIntegration:
         from guardkit.memory.harvest_publisher import publish_episodes
 
         # Run walker
-        walker_result = walk_harvest_dirs(temp_docs_root)
+        walker_result = walk_harvest_dirs(temp_docs_root, "guardkit")
 
         # Verify walker found all 4 episode types
         episode_types = {ep.episode_type for ep in walker_result.episodes}
