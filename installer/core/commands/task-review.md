@@ -141,11 +141,15 @@ indistinguishable from the ID form.
   findings with evidence, recommendations with rationale, supporting artifacts) written
   to `.claude/reviews/{task_id}-review-report.md`.
 - **Phase 4.5: Knowledge Capture** — only with `--capture-knowledge`: 3-5
-  context-specific questions via `run_review_capture`, insights written to fleet-memory.
+  context-specific questions asked in the conversation, answers written to fleet-memory as a
+  `review_report` (`task-review-ext.md` § Phase 4.5).
 
 ### Phase 5: Human Decision Checkpoint (with Optional Implementation Preferences)
 Present findings to user with decision options:
-- **[A]ccept** - Approve findings, mark task as `REVIEW_COMPLETE`
+- **[A]ccept** - Approve findings, mark task as `REVIEW_COMPLETE`, and write the review to
+  fleet-memory (`review_report` and `build_outcome`; `task-review-ext.md` § Phase 5 Fleet-Memory
+  Write: `capture_review_to_memory`). This write happens on every [A]ccept, with or without
+  `--capture-knowledge`.
 - **[R]evise** - Request deeper analysis on specific areas
 - **[I]mplement** - Create implementation task based on recommendation
   - **[NEW]** Presents implementation preferences questions (Context B)

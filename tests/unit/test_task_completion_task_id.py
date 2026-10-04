@@ -58,3 +58,22 @@ def test_subtask_id_with_and_without_slug(tmp_path: Path) -> None:
 
 def test_prefixed_hash_with_slug(tmp_path: Path) -> None:
     assert _task_id_for(_write(tmp_path / "TASK-TOP-D6C8-process-launch.md", "title: x\n")) == "TASK-TOP-D6C8"
+
+
+def test_capture_reports_not_published(monkeypatch, tmp_path: Path) -> None:
+    """capture-outcome exits 0 when it could not publish; the routine must not say "recorded"."""
+    import subprocess
+
+    from installer.core.commands.lib import task_completion_helper as helper
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 0, stdout="Memory client unavailable - outcome NOT published\n", stderr="")
+
+    monkeypatch.setattr(helper.subprocess, "run", fake_run)
+    assert helper._capture_outcome_best_effort(tmp_path / "TASK-001.md") == "not published"
+
+    def fake_ok(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 0, stdout="Outcome published: OUT-1\n", stderr="")
+
+    monkeypatch.setattr(helper.subprocess, "run", fake_ok)
+    assert helper._capture_outcome_best_effort(tmp_path / "TASK-001.md") == "recorded"
