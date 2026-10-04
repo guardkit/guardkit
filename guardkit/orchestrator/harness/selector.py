@@ -567,6 +567,7 @@ def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
         )
     )
     documents: list[ProjectDocument] = []
+    delivered: set[Path] = set()
     for value in declared:
         try:
             resolved = (worktree / value).resolve(strict=True)
@@ -575,6 +576,11 @@ def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
                 f"The project declares {value!r} for its builds, but there is no "
                 f"such file in the task worktree {worktree}."
             ) from None
+        if resolved in delivered:
+            # The same real file under a second name (CLAUDE.md -> AGENTS.md):
+            # delivered and counted once, under the first name it was found by.
+            continue
+        delivered.add(resolved)
         if not resolved.is_relative_to(root):
             raise AgentInvocationError(
                 f"The project declares {value!r} for its builds, but it points "
