@@ -9,6 +9,8 @@ written for Claude Code are carried out in Pi. It does not change what any comma
 - Read every file you are told to read in full. Long files come back in pages: keep calling `read`
   with `offset` and `limit` until you reach the end. Do not act on a partly read command file.
 - Paths beginning `~/.agentecflow/` are GuardKit's installed files.
+- A reference to `docs/internals/commands-lib/memory-preamble.md` means the installed copy,
+  `~/.agentecflow/docs/memory-preamble.md`.
 
 ## Tools
 
@@ -30,14 +32,24 @@ command itself documents. Never invent the user's answer.
 ## Delegating to another agent
 
 For any other agent delegation, such as `Task(subagent_type="<agent>", prompt=...)` or a command
-telling you to invoke a named agent, run a separate Pi process in the same project directory:
+telling you to invoke a named agent, run a separate Pi process in the same project directory.
+
+1. Find the agent's definition in GuardKit's own order, first match wins:
+   `.claude/agents/<agent>.md` in the project, then `~/.agentecflow/agents/<agent>.md`, then
+   `~/.agentecflow/stack-agents/*/<agent>.md`. If none exists, say so and use
+   `~/.agentecflow/agents/task-manager.md` instead.
+2. Write the prompt to a file, filling in every placeholder. Include what the agent needs that it
+   cannot see: the task file path, the plan path the command names (for example
+   `docs/state/<task id>/implementation_plan.md`) and the previous phase's output. Never ask the
+   agent to wait for a key press or an answer; it cannot get one.
+3. Run it:
 
 ```bash
 pi -p --no-session \
   --model "$PI_PROVIDER/$PI_MODEL" --thinking "$PI_REASONING_LEVEL" \
   --append-system-prompt ~/.agentecflow/pi/guardkit-on-pi.md \
-  --append-system-prompt ~/.agentecflow/agents/<agent>.md \
-  "<the prompt the command gives that agent>" </dev/null
+  --append-system-prompt <the agent definition found in step 1> \
+  @<the prompt file> </dev/null
 ```
 
 - Pi sets `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL` for every shell command, so the agent
@@ -46,8 +58,17 @@ pi -p --no-session \
 - Do not add `-a` or `--no-approve`. The agent uses the project's saved trust decision, the same
   one you are using. If the project has `.agents/skills` or project `.pi` resources and its trust
   decision has not been saved with `/trust`, stop and tell the user to save it first.
-- Use the agent's output as the command describes. If the process fails or the agent file does not
-  exist, say the delegation did not run. Never present your own work as that agent's result.
+- Use the agent's output as the command describes. If the process fails, say the delegation did
+  not run. Never present your own work as that agent's result.
+
+## Claude-only details in command text
+
+- Model names (Haiku, Sonnet, Opus) and cost estimates do not apply in Pi: use the current model
+  and print no cost estimate.
+- Tools from MCP servers other than fleet memory (for example context7 or design-patterns) are
+  usually not configured in Pi. Follow the command's own instruction for continuing without them.
+- A checkpoint or decision with no documented default, in a run where nobody can answer, stops
+  there: report what was done and what is waiting for an answer. Do not choose for the user.
 
 ## Fleet memory
 
