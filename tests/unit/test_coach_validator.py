@@ -5490,19 +5490,13 @@ class _FakeHarness:
     Snapshots ``os.environ`` at ``invoke()`` time and records the kwargs
     so tests can assert on Coach's harness dispatch + env contract.
 
-    Why the snapshot is the right verification mechanism after TASK-HMIG-006.3:
-    pre-migration, Coach passed ``env={**os.environ, "PYTHONPATH": ...}``
-    as a ``ClaudeAgentOptions`` kwarg and tests captured the kwarg
-    directly via a mocked ``CapturingOptions``. Post-migration,
-    ``ClaudeSDKHarness.invoke`` does NOT pass ``env=`` to
-    ``ClaudeAgentOptions`` (sdk_harness.py:252-258); the SDK subprocess
-    inherits the process environment instead. The
-    ``coach_validator._patched_pythonpath`` context manager mutates
-    ``os.environ`` for the scope of ``harness.invoke()``. Asserting on
-    the snapshot at that moment verifies the exact state the SDK
-    subprocess sees, which is what the original AC-003 tests intended.
-    Subprocess inheritance itself is an SDK implementation detail not
-    under test.
+    The snapshot shows what the shared process environment held during
+    ``invoke()``. Since 3 October 2026 (concurrent builds) the Coach no
+    longer swaps ``PYTHONPATH``/``PATH`` into ``os.environ`` there; it hands
+    them to ``select_harness`` as ``env=`` overrides, which
+    ``ClaudeSDKHarness`` passes as ``ClaudeAgentOptions.env``. Tests assert
+    both: the overrides on the ``select_harness`` call, and an unchanged
+    process environment in the snapshot.
     """
 
     def __init__(self, events: Optional[List[Any]] = None) -> None:
@@ -5530,13 +5524,13 @@ class _FakeHarness:
 class TestSdkEnvMerge:
     """Verify _run_tests_via_sdk preserves env contract (TASK-EMB-004).
 
-    TASK-HMIG-006.3 changed the verification mechanism but not the
-    invariant. Pre-migration tests captured ``env=`` from a mocked
-    ``ClaudeAgentOptions``; post-migration tests inspect ``os.environ``
-    at the moment ``harness.invoke()`` is called. See ``_FakeHarness``
-    docstring for the rationale. The asserted contract is unchanged:
-    API keys are inherited, and ``PYTHONPATH`` is prepended with the
-    worktree root.
+    3 October 2026 (concurrent builds): ``PYTHONPATH`` is no longer swapped
+    into ``os.environ`` around ``harness.invoke()`` — parallel wave tasks
+    share that — but handed to ``select_harness`` as ``env=`` overrides,
+    which the SDK merges over the inherited environment for its own
+    subprocess. The asserted contract is unchanged: API keys are inherited
+    (the process environment is left as it is), and ``PYTHONPATH`` is
+    prepended with the worktree root.
     """
 
     def test_sdk_env_inherits_os_environ_keys(self, tmp_worktree, monkeypatch):
@@ -5553,14 +5547,16 @@ class TestSdkEnvMerge:
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
             return_value=fake,
-        ):
+        ) as select:
             asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
 
         assert len(fake.env_snapshots) == 1, "harness.invoke must be called exactly once"
         env = fake.env_snapshots[0]
         assert env.get("ANTHROPIC_API_KEY") == "test-api-key", "API key must be inherited"
         assert env.get("EMBEDDING_PROVIDER") == "openai", "EMBEDDING_PROVIDER must be inherited"
-        assert env.get("PYTHONPATH") == str(tmp_worktree), "PYTHONPATH must be set to worktree root"
+        assert "PYTHONPATH" not in env, "the shared process environment is not changed"
+        overrides = select.call_args.kwargs["env"]
+        assert overrides["PYTHONPATH"] == str(tmp_worktree), "PYTHONPATH must be set to worktree root"
 
     def test_sdk_env_pythonpath_prepends_worktree(self, tmp_worktree, monkeypatch):
         """PYTHONPATH at harness.invoke() time includes the worktree root as a prefix."""
@@ -5574,11 +5570,11 @@ class TestSdkEnvMerge:
         with patch(
             "guardkit.orchestrator.quality_gates.coach_validator.select_harness",
             return_value=fake,
-        ):
+        ) as select:
             asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
 
-        env = fake.env_snapshots[0]
-        pythonpath = env.get("PYTHONPATH", "")
+        assert fake.env_snapshots[0].get("PYTHONPATH") == "/some/existing/path"
+        pythonpath = select.call_args.kwargs["env"].get("PYTHONPATH", "")
         assert str(tmp_worktree) in pythonpath, "worktree path must appear in PYTHONPATH"
         assert "/some/existing/path" in pythonpath, "existing PYTHONPATH must be preserved"
         assert pythonpath.startswith(str(tmp_worktree)), "worktree must have priority (be first)"
@@ -5597,9 +5593,10 @@ class TestSdkEnvMerge:
         ):
             asyncio.run(validator._run_tests_via_sdk("pytest tests/"))
 
-        # After invoke completes the global mutation is reverted.
+        # The process environment is never changed, during or after.
+        assert fake.env_snapshots[0].get("PYTHONPATH") == "/pre-existing"
         assert os.environ.get("PYTHONPATH") == "/pre-existing", (
-            "_patched_pythonpath must restore the pre-call value"
+            "the SDK test run must leave PYTHONPATH as it was"
         )
 
 

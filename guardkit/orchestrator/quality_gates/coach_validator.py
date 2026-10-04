@@ -82,10 +82,13 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
     RuntimeParityResult,
 )
 from guardkit.orchestrator.docker_fixtures import (
+    fixture_owner,
     get_container_name,
     get_env_exports,
+    get_port_command,
     get_start_commands,
     is_known_service,
+    parse_port_output,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
@@ -1740,6 +1743,11 @@ class CoachValidator:
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.task_id = task_id
+        # Service URLs (e.g. DATABASE_URL) of the fixtures THIS validator
+        # started. Given to its own test subprocesses only, never written to
+        # os.environ, so a parallel task's teardown cannot remove them and a
+        # parallel task never sees them (concurrent builds, 2026-10-03).
+        self._fixture_env: Dict[str, str] = {}
         # TS-lane D.1b: THE DECLARATION. Resolved from the pre-turn-1 snapshot
         # so a Player turn cannot rewrite its own test command mid-build. An
         # explicitly-passed declaration (tests, callers that already hold one)
@@ -5733,67 +5741,37 @@ class CoachValidator:
         """
         import asyncio
         import time
-        from contextlib import contextmanager
 
         # ``select_harness``, harness event types, ``AgentInvocationError``,
         # and ``check_assistant_message_error`` are imported at module top
         # (TASK-HMIG-006.3) so ``coach_validator.select_harness`` is a
-        # stable patch target. ``asyncio`` / ``time`` / ``contextmanager``
+        # stable patch target. ``asyncio`` / ``time``
         # remain method-local to preserve the historic lazy-import shape
         # for the rest of the method body.
 
-        @contextmanager
-        def _patched_pythonpath(prepend: str):
-            """Scope PYTHONPATH mutation to harness.invoke() (Step D).
+        def _sdk_env_overrides(prepend: str, venv_bin: Optional[str]) -> Dict[str, str]:
+            """PYTHONPATH/PATH for this one harness call (Step D, TASK-FIX-COACHPYENV).
 
-            ``ClaudeSDKHarness`` does not accept an ``env=`` kwarg
-            (sdk_harness.py:130-158); adding one would widen the
-            harness interface for a Coach-only concern (ISP). Mutating
-            ``os.environ`` in a tight scope lets the SDK subprocess
-            inherit PYTHONPATH naturally. The single-coach-turn-per-
-            worktree invariant makes this process-global side effect
-            acceptable; do not lift this helper to a module-level
-            utility without reconsidering thread-safety.
-            """
-            original = os.environ.get("PYTHONPATH")
-            current = os.environ.get("PYTHONPATH", "")
-            new = f"{prepend}:{current}" if current else prepend
-            os.environ["PYTHONPATH"] = new
-            try:
-                yield
-            finally:
-                if original is None:
-                    os.environ.pop("PYTHONPATH", None)
-                else:
-                    os.environ["PYTHONPATH"] = original
-
-        @contextmanager
-        def _patched_path(venv_bin: Optional[str]):
-            """Scope a venv-bin PATH prepend to harness.invoke (TASK-FIX-COACHPYENV).
-
-            Defence-in-depth companion to the ``-m pytest`` interpreter pin: the
-            SDK harness spawns a Bash subprocess that inherits ``os.environ``, so
-            prepending the bootstrap venv ``bin`` here means even a bare
+            The worktree root is prepended to ``PYTHONPATH`` and, when a
+            bootstrap venv is resolved, its ``bin`` to ``PATH``, so a bare
             ``pytest``/``python`` the tests shell out to resolves inside the
-            bootstrap environment, not the host Python 3.14 framework. No-op when
-            no venv is resolved. Same single-coach-turn-per-worktree invariant as
-            ``_patched_pythonpath`` makes this process-global mutation acceptable.
+            bootstrap environment. These used to be swapped into
+            ``os.environ`` around ``harness.invoke()``; parallel wave tasks run
+            in threads of one process, so another task's swap or restore could
+            leak into this run (or this worktree into theirs). They are now
+            handed to the harness explicitly (``env=``), which the SDK merges
+            over the inherited environment for its own subprocess only.
             """
-            if not venv_bin:
-                yield
-                return
-            original = os.environ.get("PATH")
-            current = os.environ.get("PATH", "")
-            os.environ["PATH"] = (
-                f"{venv_bin}{os.pathsep}{current}" if current else venv_bin
-            )
-            try:
-                yield
-            finally:
-                if original is None:
-                    os.environ.pop("PATH", None)
-                else:
-                    os.environ["PATH"] = original
+            current = os.environ.get("PYTHONPATH", "")
+            overrides = {
+                "PYTHONPATH": f"{prepend}:{current}" if current else prepend
+            }
+            if venv_bin:
+                path = os.environ.get("PATH", "")
+                overrides["PATH"] = (
+                    f"{venv_bin}{os.pathsep}{path}" if path else venv_bin
+                )
+            return overrides
 
         start_time = time.time()
         # TASK-FIX-COACHPYENV: pin the interpreter in the command the Bash tool
@@ -5883,75 +5861,75 @@ class CoachValidator:
                 if self._venv_python is not None
                 else None
             )
-            with _patched_pythonpath(worktree_str), _patched_path(venv_bin):
-                harness = select_harness(
-                    sdk_timeout_seconds=self.test_timeout,
-                    allowed_tools=["Bash"],
-                    permission_mode="bypassPermissions",
-                    max_turns=1,
-                    model=model,
-                    cwd=self.worktree_path,
-                )
+            harness = select_harness(
+                sdk_timeout_seconds=self.test_timeout,
+                allowed_tools=["Bash"],
+                permission_mode="bypassPermissions",
+                max_turns=1,
+                model=model,
+                cwd=self.worktree_path,
+                env=_sdk_env_overrides(worktree_str, venv_bin),
+            )
 
-                async with asyncio.timeout(self.test_timeout):
-                    # TASK-FIX-LGACLOSE: finalise the harness async generator on
-                    # every exit (incl. timeout/cancel) via aclosing() so no
-                    # orphaned async_generator_athrow survives interpreter shutdown.
-                    async with aclosing(
-                        harness.invoke(
-                            prompt=prompt,
-                            role="coach_test",
-                            tools=["Bash"],
-                            cwd=self.worktree_path,
-                            timeout_seconds=self.test_timeout,
-                        )
-                    ) as _harness_stream:
-                        async for event in _harness_stream:
-                            # TASK-HMIG-006.5: record every harness event
-                            # the loop consumes. ``preserve_event`` is a
-                            # no-op when ``_sdk_debug_dir`` is None
-                            # (env var unset), so this is zero-cost in
-                            # production.
-                            _sdk_preserve_event(_sdk_debug_dir, event)
-                            if isinstance(event, AssistantMessageEvent):
-                                # API-error short-circuit mirrors the Player
-                                # dispatch in agent_invoker._invoke_with_role.
-                                # Only the SDK harness sets ``event.raw``;
-                                # other substrates have raw=None and this
-                                # check is a no-op there.
-                                if event.raw is not None:
-                                    err = check_assistant_message_error(event.raw)
-                                    if err:
-                                        api_error = err
-                                        break
-                                collected_text.append(event.text)
-                            elif isinstance(event, ToolResultEvent):
-                                # NOTE (TASK-HMIG-006.3, Architectural review
-                                # Concern 4): the current SDK harness does NOT
-                                # yield ToolResultEvent — sdk_harness.py only
-                                # handles AssistantMessage / ResultMessage /
-                                # ToolUseEvent. On the SDK path bash_is_error
-                                # therefore stays None and the heuristic
-                                # branch below is the effective pass/fail
-                                # determination. This branch is live for any
-                                # future harness that yields ToolResultEvent
-                                # (e.g. a variant that walks UserMessage
-                                # content) and preserves the pre-migration
-                                # tri-state contract:
-                                #   is_error=True  -> bash_is_error=True (tool errored)
-                                #   is_error=False -> bash_is_error=None (heuristic)
-                                # The False->None mapping is intentional:
-                                # is_error=False means "tool ran cleanly" not
-                                # "tests passed", so we let the heuristic
-                                # branch decide from the output text.
-                                content = event.content
-                                if isinstance(content, str):
-                                    bash_output = content
-                                else:
-                                    bash_output = self._extract_content_text(content)
-                                bash_is_error = True if event.is_error else None
-                            elif isinstance(event, ResultMessageEvent):
-                                break
+            async with asyncio.timeout(self.test_timeout):
+                # TASK-FIX-LGACLOSE: finalise the harness async generator on
+                # every exit (incl. timeout/cancel) via aclosing() so no
+                # orphaned async_generator_athrow survives interpreter shutdown.
+                async with aclosing(
+                    harness.invoke(
+                        prompt=prompt,
+                        role="coach_test",
+                        tools=["Bash"],
+                        cwd=self.worktree_path,
+                        timeout_seconds=self.test_timeout,
+                    )
+                ) as _harness_stream:
+                    async for event in _harness_stream:
+                        # TASK-HMIG-006.5: record every harness event
+                        # the loop consumes. ``preserve_event`` is a
+                        # no-op when ``_sdk_debug_dir`` is None
+                        # (env var unset), so this is zero-cost in
+                        # production.
+                        _sdk_preserve_event(_sdk_debug_dir, event)
+                        if isinstance(event, AssistantMessageEvent):
+                            # API-error short-circuit mirrors the Player
+                            # dispatch in agent_invoker._invoke_with_role.
+                            # Only the SDK harness sets ``event.raw``;
+                            # other substrates have raw=None and this
+                            # check is a no-op there.
+                            if event.raw is not None:
+                                err = check_assistant_message_error(event.raw)
+                                if err:
+                                    api_error = err
+                                    break
+                            collected_text.append(event.text)
+                        elif isinstance(event, ToolResultEvent):
+                            # NOTE (TASK-HMIG-006.3, Architectural review
+                            # Concern 4): the current SDK harness does NOT
+                            # yield ToolResultEvent — sdk_harness.py only
+                            # handles AssistantMessage / ResultMessage /
+                            # ToolUseEvent. On the SDK path bash_is_error
+                            # therefore stays None and the heuristic
+                            # branch below is the effective pass/fail
+                            # determination. This branch is live for any
+                            # future harness that yields ToolResultEvent
+                            # (e.g. a variant that walks UserMessage
+                            # content) and preserves the pre-migration
+                            # tri-state contract:
+                            #   is_error=True  -> bash_is_error=True (tool errored)
+                            #   is_error=False -> bash_is_error=None (heuristic)
+                            # The False->None mapping is intentional:
+                            # is_error=False means "tool ran cleanly" not
+                            # "tests passed", so we let the heuristic
+                            # branch decide from the output text.
+                            content = event.content
+                            if isinstance(content, str):
+                                bash_output = content
+                            else:
+                                bash_output = self._extract_content_text(content)
+                            bash_is_error = True if event.is_error else None
+                        elif isinstance(event, ResultMessageEvent):
+                            break
 
             duration = time.time() - start_time
 
@@ -6425,7 +6403,9 @@ class CoachValidator:
             build_venv_env,
         )
 
-        return build_venv_env(self.worktree_path) or dict(os.environ)
+        env = build_venv_env(self.worktree_path) or dict(os.environ)
+        env.update(getattr(self, "_fixture_env", {}))
+        return env
 
     # ------------------------------------------------------------------
     # TASK-ABFIX-011: gated per-test pytest-timeout injection
@@ -7704,23 +7684,35 @@ class CoachValidator:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
-    def _start_infrastructure_containers(self, services: List[str]) -> None:
-        """Start Docker containers for each declared infrastructure service.
+    def _start_infrastructure_containers(self, services: List[str]) -> Dict[str, str]:
+        """Start this task's own Docker container for each declared service.
 
-        Uses recipes from :mod:`guardkit.orchestrator.docker_fixtures`.
-        Unknown services are logged as warnings and skipped.
-        Environment variables (e.g., DATABASE_URL) are set in the current
-        process via :func:`os.environ`.
+        Uses recipes from :mod:`guardkit.orchestrator.docker_fixtures`. The
+        container is named for the build (``GUARDKIT_RUN_OWNER``) and this
+        task, the engine chooses its host port, and the port is read back
+        with ``docker port``. Unknown services are logged as warnings and
+        skipped.
+
+        The service URLs (e.g. ``DATABASE_URL``) are NOT written to
+        :data:`os.environ`: parallel tasks share that, so one task's URL would
+        reach another task's tests and one task's teardown would remove
+        another's. They are kept on this validator and passed explicitly to
+        its test subprocesses (:meth:`_pytest_env`,
+        :meth:`_declared_command_env`).
 
         Args:
             services: List of service names (e.g., ``["postgresql", "redis"]``)
+
+        Returns:
+            The service URLs to give this task's test subprocesses.
         """
+        owner = fixture_owner(self.task_id)
         for service in services:
             if not is_known_service(service):
                 logger.warning("Unknown infrastructure service %r, skipping.", service)
                 continue
             logger.info("Starting Docker container for service: %s", service)
-            commands = get_start_commands(service)
+            commands = get_start_commands(service, owner)
             for cmd in commands:
                 result = subprocess.run(
                     cmd,
@@ -7737,27 +7729,45 @@ class CoachValidator:
                         cmd,
                         result.stderr,
                     )
-            # Set environment variables for test execution
-            env_vars = get_env_exports(service)
+            port_result = subprocess.run(
+                get_port_command(service, owner),
+                cwd=str(self.worktree_path),
+                capture_output=True,
+                text=True,
+            )
+            host_port = parse_port_output(getattr(port_result, "stdout", None))
+            if host_port is None:
+                logger.warning(
+                    "Could not read the published port of %s for service %r; "
+                    "its URL is not set. docker port said: %r",
+                    get_container_name(service, owner),
+                    service,
+                    getattr(port_result, "stderr", ""),
+                )
+                continue
+            env_vars = get_env_exports(service, host_port=host_port)
+            self._fixture_env.update(env_vars)
             for key, value in env_vars.items():
-                os.environ[key] = value
-                logger.info("Set %s=%s", key, value)
+                logger.info("Test environment for %s: %s=%s", self.task_id, key, value)
+        return dict(self._fixture_env)
 
     def _stop_infrastructure_containers(self, services: List[str]) -> None:
-        """Tear down Docker containers for each declared infrastructure service.
+        """Tear down this task's own Docker container for each declared service.
 
         Runs ``docker rm -f -v <container_name>`` for each known service,
         releasing its disposable anonymous volumes. Named volumes are retained.
-        Unknown services are silently skipped. Errors during teardown
-        are logged but do not raise.
+        Only this task's containers are named, so a parallel task's fixtures
+        keep running. Unknown services are silently skipped. Errors during
+        teardown are logged but do not raise.
 
         Args:
             services: List of service names (e.g., ``["postgresql", "redis"]``)
         """
+        owner = fixture_owner(self.task_id)
         for service in services:
             if not is_known_service(service):
                 continue
-            container_name = get_container_name(service)
+            container_name = get_container_name(service, owner)
             logger.info("Stopping Docker container: %s", container_name)
             try:
                 subprocess.run(
@@ -7769,10 +7779,7 @@ class CoachValidator:
                 logger.warning(
                     "Failed to stop container %s: %s", container_name, e
                 )
-            # Clean up environment variables
-            env_vars = get_env_exports(service)
-            for key in env_vars:
-                os.environ.pop(key, None)
+        self._fixture_env.clear()
 
     def validate_requirements(
         self,
@@ -10150,8 +10157,13 @@ class CoachValidator:
         executor**: systemd user units do not source login-shell rc files, and
         an executor that reaches for one is unreproducible and invisible. The
         runtime is a property of the estate, not of the builder.
+
+        The URLs of the test services this validator started are added on top
+        (see :meth:`_start_infrastructure_containers`).
         """
-        return os.environ.copy()
+        env = os.environ.copy()
+        env.update(getattr(self, "_fixture_env", {}))
+        return env
 
     def _describe_detection_absence(self) -> str:
         """Build the actionable message for the deleted pytest default.

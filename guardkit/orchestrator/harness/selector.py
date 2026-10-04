@@ -650,6 +650,13 @@ def select_harness(
     # separate substrate.
     harness_role = harness_kwargs.pop("harness_role", None)
 
+    # 3 October 2026 (concurrent builds): per-call environment overrides for
+    # the SDK subprocess (the Coach's PYTHONPATH/PATH for its test run), so
+    # parallel tasks never swap them in the shared ``os.environ``. SDK only:
+    # the Coach never runs its SDK test path under LangGraph
+    # (``CoachValidator._is_langgraph_harness``), so that branch never sees it.
+    sdk_env = harness_kwargs.pop("env", None)
+
     # ------------------------------------------------------------------
     # THE M0 EFFECTIVE-SEAT FENCE (leg-invocation stage-2 design §3)
     # ------------------------------------------------------------------
@@ -689,6 +696,8 @@ def select_harness(
         # is not installed and the user is on the langgraph path.
         from guardkit.orchestrator.harness.sdk_harness import ClaudeSDKHarness
 
+        if sdk_env is not None:
+            harness_kwargs["env"] = sdk_env
         return ClaudeSDKHarness(**harness_kwargs)
 
     if name == "langgraph":
@@ -725,6 +734,12 @@ def select_harness(
                 "to pass cwd=self.worktree_path."
             )
 
+        if sdk_env is not None:
+            logger.warning(
+                "select_harness(langgraph): env overrides are SDK-only and "
+                "were not applied: %s",
+                sorted(sdk_env),
+            )
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         player_config = None
         protected_paths: tuple[str, ...] = ()
