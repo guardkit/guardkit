@@ -571,28 +571,12 @@ def _declares_required_documents(config_text: str | None) -> bool:
 
 _LINK_MODE = "120000"
 
+#: How many symbolic links one instruction-file path may pass through.
+MAX_LINK_STEPS = 8
 
-def _committed_link_target(
-    path: str, target: str, entries: dict[str, str]
-) -> str | None:
-    """The repository path a committed link points to, if it stays inside the
-    repository and names a regular committed file; else ``None``."""
 
-    if target.startswith("/"):
-        return None
-    parts: list[str] = []
-    for part in [*PurePosixPath(path).parent.parts, *PurePosixPath(target).parts]:
-        if part in ("", "."):
-            continue
-        if part == "..":
-            if not parts:
-                return None
-            parts.pop()
-            continue
-        parts.append(part)
-    resolved = "/".join(parts)
-    mode = entries.get(resolved)
-    return resolved if mode is not None and mode.startswith("100") else None
+class _Absent(Exception):
+    """The path simply is not in the commit (no link involved in the gap)."""
 
 
 def _committed_bytes(repo: Path, path: str, commit: str) -> bytes:
@@ -601,7 +585,93 @@ def _committed_bytes(repo: Path, path: str, commit: str) -> bytes:
     try:
         return blob(repo, path, commit)
     except CommittedContentError as exc:
-        raise AgentInvocationError(str(exc)) from None
+        raise AgentInvocationError(
+            f"Could not read {path} at {commit[:12]}, so the run was refused: {exc}"
+        ) from None
+
+
+def _resolve_committed_path(
+    repo: Path, commit: str, entries: dict[str, str], path: str
+) -> tuple[str, tuple[str, ...]]:
+    """Resolve ``path`` inside the commit the way a filesystem would.
+
+    Every component is checked, so a linked folder (``.claude`` -> ``config``)
+    is followed too, and a chain of links is followed up to
+    :data:`MAX_LINK_STEPS` steps. Returns the resolved repository path of a
+    regular committed file and the links passed through (``(link, target)``
+    text, for the record).
+
+    Raises :class:`_Absent` when a component of the path itself is simply not
+    in the commit; raises :class:`AgentInvocationError` for a link whose
+    target is outside the repository or missing, a loop or a chain longer
+    than the limit, or a result that is not an ordinary file.
+    """
+
+    directories = {
+        "/".join(name.split("/")[:i])
+        for name in entries
+        for i in range(1, name.count("/") + 1)
+    }
+    queue: list[tuple[str, bool]] = [(part, False) for part in path.split("/")]
+    current: list[str] = []
+    steps = 0
+    passed: list[str] = []
+    while queue:
+        part, from_link = queue.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not current:
+                raise AgentInvocationError(
+                    f"The project's instruction file {path!r} leads outside the "
+                    f"repository at {commit[:12]} (through a symbolic link); refused."
+                )
+            current.pop()
+            continue
+        candidate = "/".join([*current, part])
+        mode = entries.get(candidate)
+        if mode == _LINK_MODE:
+            steps += 1
+            if steps > MAX_LINK_STEPS:
+                raise AgentInvocationError(
+                    f"The project's instruction file {path!r} passes through more "
+                    f"than {MAX_LINK_STEPS} symbolic links at {commit[:12]} (a loop, "
+                    "or a chain too long); refused."
+                )
+            target = _committed_bytes(repo, candidate, commit).decode(
+                "utf-8", "replace"
+            )
+            if target.startswith("/"):
+                raise AgentInvocationError(
+                    f"The project's instruction file {path!r} passes through "
+                    f"{candidate}, a symbolic link to {target!r} outside the "
+                    f"repository at {commit[:12]}; refused."
+                )
+            passed.append(f"{candidate} -> {target}")
+            queue = [(token, True) for token in target.split("/")] + queue
+            continue
+        if mode is not None:
+            if queue and any(token not in ("", ".") for token, _ in queue):
+                raise _Absent(path)  # a file used as a folder: not there
+            current.append(part)
+            continue
+        if candidate in directories:
+            current.append(part)
+            continue
+        if from_link:
+            raise AgentInvocationError(
+                f"The project's instruction file {path!r} passes through a "
+                f"symbolic link whose target ({candidate}) is not in the "
+                f"repository at {commit[:12]}; refused."
+            )
+        raise _Absent(path)
+    resolved = "/".join(current)
+    if not entries.get(resolved, "").startswith("100"):
+        raise AgentInvocationError(
+            f"The project's instruction file {path!r} is not an ordinary file at "
+            f"{commit[:12]}; refused."
+        )
+    return resolved, tuple(passed)
 
 
 @dataclass(frozen=True)
@@ -610,8 +680,8 @@ class CommittedProjectDocuments:
 
     commit: str
     documents: tuple[ProjectDocument, ...]
-    #: One plain sentence per instruction file that is a link in the tree,
-    #: saying whether it was followed or skipped, and why.
+    #: One plain sentence per instruction file reached through symbolic links,
+    #: naming the links followed and the file read.
     link_notes: tuple[str, ...] = ()
 
 
@@ -620,128 +690,143 @@ def load_project_documents_at_commit(
 ) -> CommittedProjectDocuments:
     """Read the project's instructions and binding documents at ``commit``.
 
-    Committed content only (``git ls-tree`` / ``git cat-file``, the shared
-    reader ``guardkit.lib.committed_content``), never a working tree: the
-    declaration in ``.guardkit/config.yaml`` and every file it names, as they
-    are in the commit the build started from. The declaration goes through
-    the same parser the Player's does.
+    The design's one reading rule for every role (project initialisation,
+    4 October 2026), so the Coach gets exactly the bytes Forge's planning
+    writers get at the same commit:
 
-    Opt-in: when the declaration at that commit names no binding documents,
-    nothing is read and the result is empty. Otherwise each declared document
-    must be a regular committed file: missing, a symbolic link (or under one),
-    or not UTF-8 text is refused with a plain sentence, and so is a total over
-    :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
-
-    An instruction file (``AGENTS.md``, ``CLAUDE.md``, ``.claude/CLAUDE.md``, or
-    declared) that is a link in the tree is followed only to a regular file
-    inside the repository at that commit, and delivered under its own name;
-    otherwise it is skipped. Either way ``link_notes`` says which. A file
-    reached by two names is delivered and counted once.
+    1. **What, in order:** ``autobuild.player.instructions`` in declared order
+       (a declared one that is missing is refused); then ``AGENTS.md``,
+       ``CLAUDE.md``, ``.claude/CLAUDE.md`` when present and not already
+       included; then ``autobuild.player.required_documents`` in declared
+       order. Nothing is read unless ``required_documents`` is present and
+       non-empty (opt-in); when it is, the ``autobuild.player`` block goes
+       through the Player's own parser and allowed-key list.
+    2. **Bytes:** the raw committed bytes (``git cat-file blob``) through the
+       shared committed-content reader, decoded strictly as UTF-8 (invalid is
+       refused), line endings kept; hash, size and the 48 KiB budget are of the
+       raw bytes, after de-duplication.
+    3. **Links:** a required document must be an ordinary file (a link, or a
+       path under a linked folder, is refused). An instruction file may be a
+       link: it is resolved inside the commit like a filesystem (every
+       component, chains up to 8 steps); a target outside the repository, a
+       missing target or a loop is refused. Files resolving to one target are
+       included once, under the first name; labels keep the declared spelling.
+    4. **Failures:** any failure to read an included file refuses the run.
     """
 
-    from guardkit.lib.committed_content import (
-        CommittedContentError,
-        blob,
-        tree_entries,
-    )
+    from guardkit.lib.committed_content import CommittedContentError, tree_entries
 
     config_rel = ".guardkit/config.yaml"
     where = f"{config_rel} at {commit[:12]}"
     try:
         entries = tree_entries(repo, commit)
-        config_text = (
-            blob(repo, config_rel, commit).decode("utf-8", "replace")
-            if config_rel in entries
-            else None
-        )
     except CommittedContentError as exc:
         raise AgentInvocationError(
             f"Could not read the build's source commit {commit[:12]}: {exc}"
         ) from None
+    config_text = (
+        _committed_bytes(repo, config_rel, commit).decode("utf-8", "replace")
+        if config_rel in entries
+        else None
+    )
     if not _declares_required_documents(config_text):
         return CommittedProjectDocuments(commit=commit, documents=())
 
+    def present(rel: str) -> bool:
+        """A conventional instruction file is present unless simply absent;
+        a broken link still counts as present, and is refused when read."""
+        try:
+            _resolve_committed_path(repo, commit, entries, rel)
+        except _Absent:
+            return False
+        except AgentInvocationError:
+            return True
+        return True
+
     inputs = _parse_player_project_inputs(
-        config_text, config_path=where, has_file=lambda rel: rel in entries
+        config_text, config_path=where, has_file=present
     )
-    required = set(inputs["required_documents"])
-    declared = list(
-        dict.fromkeys(
-            [*inputs["repository_instructions"], *inputs["required_documents"]]
-        )
-    )
+    required = list(inputs["required_documents"])
+    instructions = list(inputs["repository_instructions"])
     documents: list[ProjectDocument] = []
     link_notes: list[str] = []
     delivered: set[str] = set()
-    for value in declared:
-        rel = PurePosixPath(value).as_posix()
-        prefixes = ["/".join(rel.split("/")[:i]) for i in range(1, rel.count("/") + 1)]
-        linked_parent = next((p for p in prefixes if entries.get(p) == _LINK_MODE), None)
-        mode = entries.get(rel)
-        source = rel
-        if mode is None and linked_parent is None:
-            raise AgentInvocationError(
-                f"The project declares {value!r} for its builds, but there is "
-                f"no such file committed at {commit[:12]}."
-            )
-        if value in required:
-            if linked_parent is not None or mode == _LINK_MODE:
-                raise AgentInvocationError(
-                    f"The project declares {value!r} in "
-                    f"autobuild.player.required_documents ({where}), but "
-                    f"{linked_parent or rel} is a symbolic link. A binding document "
-                    "must be an ordinary file in the repository so that every role "
-                    "reads the same bytes; replace the link with the file itself."
-                )
-        elif mode == _LINK_MODE or linked_parent is not None:
-            if linked_parent is not None:
-                link_notes.append(
-                    f"{rel} sits under a symbolic link ({linked_parent}); skipped."
-                )
-                continue
-            target = _committed_bytes(repo, rel, commit).decode("utf-8", "replace").strip()
-            followed = _committed_link_target(rel, target, entries)
-            if followed is None:
-                link_notes.append(
-                    f"{rel} is a symbolic link to {target!r}, which is not a "
-                    "committed file inside the repository; skipped."
-                )
-                continue
-            source = followed
-            link_notes.append(
-                f"{rel} is a symbolic link to {followed}; followed, "
-                + (
-                    "and it is the same file as one already given, so it is "
-                    "delivered once."
-                    if source in delivered
-                    else f"and delivered under the name {rel}."
-                )
-            )
-        if not entries.get(source, "").startswith("100"):
-            raise AgentInvocationError(
-                f"The project declares {value!r} for its builds, but it is not an "
-                f"ordinary file at {commit[:12]}."
-            )
+
+    def deliver(label: str, source: str) -> None:
         if source in delivered:
-            # The same committed file under a second name: delivered once.
-            continue
+            return  # one target, included once, under the first name
         delivered.add(source)
         data = _committed_bytes(repo, source, commit)
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             raise AgentInvocationError(
-                f"The project declares {value!r} for its builds, but it is not "
-                "UTF-8 text."
+                f"The project declares {label!r} for its builds, but it is not "
+                f"valid UTF-8 text at {commit[:12]}; refused."
             ) from None
         documents.append(
             ProjectDocument(
-                path=value,
+                path=label,
                 sha256=hashlib.sha256(data).hexdigest(),
                 text=text,
                 size=len(data),
             )
         )
+
+    for label in instructions:
+        rel = PurePosixPath(label).as_posix()
+        try:
+            source, passed = _resolve_committed_path(repo, commit, entries, rel)
+        except _Absent:
+            raise AgentInvocationError(
+                f"The project declares the instruction file {label!r} in "
+                f"autobuild.player.instructions ({where}), but it is not in the "
+                "repository at that commit; refused."
+            ) from None
+        if passed:
+            link_notes.append(
+                f"{label} was read from {source} through "
+                + ", ".join(passed)
+                + (
+                    "; the same file as one already given, so included once."
+                    if source in delivered
+                    else "."
+                )
+            )
+        deliver(label, source)
+
+    for label in required:
+        rel = PurePosixPath(label).as_posix()
+        parts = rel.split("/")
+        linked = next(
+            (
+                "/".join(parts[:i])
+                for i in range(1, len(parts) + 1)
+                if entries.get("/".join(parts[:i])) == _LINK_MODE
+            ),
+            None,
+        )
+        if linked is not None:
+            raise AgentInvocationError(
+                f"The project declares {label!r} in "
+                f"autobuild.player.required_documents ({where}), but {linked} is "
+                "a symbolic link. A binding document must be an ordinary file in "
+                "the repository so that every role reads the same bytes; replace "
+                "the link with the file itself."
+            )
+        mode = entries.get(rel)
+        if mode is None:
+            raise AgentInvocationError(
+                f"The project declares {label!r} for its builds, but there is no "
+                f"such file committed at {commit[:12]}."
+            )
+        if mode not in ("100644", "100755"):
+            raise AgentInvocationError(
+                f"The project declares {label!r} for its builds, but it is not an "
+                f"ordinary file at {commit[:12]} (mode {mode})."
+            )
+        deliver(label, rel)
+
     check_project_documents_budget(documents)
     return CommittedProjectDocuments(
         commit=commit, documents=tuple(documents), link_notes=tuple(link_notes)

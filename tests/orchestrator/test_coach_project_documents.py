@@ -110,8 +110,12 @@ def _write_project(
     _git(root, "checkout", "-q", "-b", "autobuild/work")
 
 
+def _captured(root: Path):
+    return load_project_documents_at_commit(root, _git(root, "rev-parse", "HEAD").strip())
+
+
 def _load(root: Path) -> tuple[ProjectDocument, ...]:
-    return load_project_documents_at_commit(root, _git(root, "rev-parse", "HEAD").strip()).documents
+    return _captured(root).documents
 
 
 MISSION = (
@@ -207,46 +211,114 @@ class TestLoadAtCommit:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
         (tmp_path / "CLAUDE.md").symlink_to("AGENTS.md")
         _player_commits(tmp_path)
-        captured = load_project_documents_at_commit(
-            tmp_path, _git(tmp_path, "rev-parse", "HEAD").strip()
-        )
+        captured = _captured(tmp_path)
         assert [d.path for d in captured.documents] == ["AGENTS.md", "docs/mission.md"]
         assert sum(d.size for d in captured.documents) == (
             (tmp_path / "AGENTS.md").stat().st_size + len(MISSION.encode())
         )
         assert captured.link_notes == (
-            "CLAUDE.md is a symbolic link to AGENTS.md; followed, and it is the "
-            "same file as one already given, so it is delivered once.",
+            "CLAUDE.md was read from AGENTS.md through CLAUDE.md -> AGENTS.md; the "
+            "same file as one already given, so included once.",
         )
 
-    def test_instruction_link_inside_the_repository_is_followed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_instruction_link_chain_is_followed(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION}, agents_md=None)
         (tmp_path / "docs" / "agents-guide.md").write_text("# Guide\n")
-        (tmp_path / "AGENTS.md").symlink_to("docs/agents-guide.md")
+        (tmp_path / "docs" / "step.md").symlink_to("agents-guide.md")
+        (tmp_path / "AGENTS.md").symlink_to("docs/step.md")
         _player_commits(tmp_path)
-        captured = load_project_documents_at_commit(
-            tmp_path, _git(tmp_path, "rev-parse", "HEAD").strip()
-        )
+        captured = _captured(tmp_path)
         assert [(d.path, d.text) for d in captured.documents][0] == ("AGENTS.md", "# Guide\n")
-        assert "followed, and delivered under the name AGENTS.md" in captured.link_notes[0]
+        assert captured.link_notes == (
+            "AGENTS.md was read from docs/agents-guide.md through AGENTS.md -> "
+            "docs/step.md, docs/step.md -> agents-guide.md.",
+        )
 
-    @pytest.mark.parametrize("target", ["../outside.md", "/etc/hostname", "docs/missing.md"])
-    def test_instruction_link_elsewhere_is_skipped_and_said(
-        self, tmp_path: Path, target: str
+    def test_linked_folder_is_followed_and_labelled_as_declared(
+        self, tmp_path: Path
+    ) -> None:
+        _write_project(tmp_path, documents={"docs/mission.md": MISSION})
+        (tmp_path / "config" / "claude").mkdir(parents=True)
+        (tmp_path / "config" / "claude" / "CLAUDE.md").write_text("# Shared Claude notes\n")
+        (tmp_path / ".claude").symlink_to("config/claude", target_is_directory=True)
+        _player_commits(tmp_path)
+        captured = _captured(tmp_path)
+        assert [d.path for d in captured.documents] == [
+            "AGENTS.md", ".claude/CLAUDE.md", "docs/mission.md",
+        ]
+        assert captured.documents[1].text == "# Shared Claude notes\n"
+        # A linked folder that exists but lacks the file: simply absent, not
+        # refused. (A linked folder whose target is gone is a missing target.)
+        (tmp_path / "config" / "claude" / "README.md").write_text("other\n")
+        (tmp_path / "config" / "claude" / "CLAUDE.md").unlink()
+        _player_commits(tmp_path)
+        assert [d.path for d in _captured(tmp_path).documents] == ["AGENTS.md", "docs/mission.md"]
+
+    @pytest.mark.parametrize(
+        "make,expected",
+        [
+            (lambda r: (r / "AGENTS.md").symlink_to("../outside.md"), "leads outside the repository"),
+            (lambda r: (r / "AGENTS.md").symlink_to("/etc/hostname"), "outside the repository"),
+            (lambda r: (r / "AGENTS.md").symlink_to("docs/missing.md"), "is not in the repository"),
+            (lambda r: ((r / "AGENTS.md").symlink_to("CLAUDE.md"),
+                        (r / "CLAUDE.md").symlink_to("AGENTS.md")), "more than 8 symbolic links"),
+            (lambda r: (r / ".claude").symlink_to("../elsewhere", target_is_directory=True),
+             "leads outside the repository"),
+        ],
+        ids=["outside-relative", "outside-absolute", "missing-target", "loop", "linked-folder-outside"],
+    )
+    def test_broken_instruction_links_are_refused(
+        self, tmp_path: Path, make: Any, expected: str
     ) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION}, agents_md=None)
-        (tmp_path / "AGENTS.md").symlink_to(target)
+        make(tmp_path)
         _player_commits(tmp_path)
-        captured = load_project_documents_at_commit(
-            tmp_path, _git(tmp_path, "rev-parse", "HEAD").strip()
+        with pytest.raises(AgentInvocationError, match=expected):
+            _load(tmp_path)
+
+    def test_declared_instruction_missing_is_refused(self, tmp_path: Path) -> None:
+        _write_project(tmp_path, documents={"docs/mission.md": MISSION})
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    instructions:\n      - docs/RULES.md\n"
+            "    required_documents:\n      - docs/mission.md\n"
         )
-        assert [d.path for d in captured.documents] == ["docs/mission.md"]
-        assert captured.link_notes == (
-            f"AGENTS.md is a symbolic link to {target!r}, which is not a committed "
-            "file inside the repository; skipped.",
+        _player_commits(tmp_path)
+        with pytest.raises(AgentInvocationError, match="docs/RULES.md"):
+            _load(tmp_path)
+
+    def test_order_declared_instructions_then_conventional_then_required(
+        self, tmp_path: Path
+    ) -> None:
+        _write_project(tmp_path, documents={"docs/mission.md": MISSION, "AGENTS.md": "# A\n"},
+                       agents_md=None)
+        (tmp_path / "docs" / "RULES.md").write_text("# Rules\n")
+        (tmp_path / "CLAUDE.md").write_text("# C\n")
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    instructions:\n      - docs/RULES.md\n"
+            "    required_documents:\n      - docs/mission.md\n      - AGENTS.md\n"
         )
+        _player_commits(tmp_path)
+        # AGENTS.md is both a conventional instruction and a required document:
+        # included once, at its first place.
+        assert [d.path for d in _load(tmp_path)] == [
+            "docs/RULES.md", "AGENTS.md", "CLAUDE.md", "docs/mission.md",
+        ]
+
+    def test_raw_bytes_crlf_kept(self, tmp_path: Path) -> None:
+        crlf = "Status: accepted\r\n\r\n# Mission\r\nLine two.\r\n"
+        _write_project(tmp_path, documents={"docs/mission.md": "x"})
+        (tmp_path / "docs" / "mission.md").write_bytes(crlf.encode())
+        _player_commits(tmp_path)
+        mission = next(d for d in _load(tmp_path) if d.path == "docs/mission.md")
+        assert mission.text == crlf
+        assert mission.sha256 == _sha(crlf.encode()) and mission.size == len(crlf.encode())
+
+    def test_invalid_utf8_refused(self, tmp_path: Path) -> None:
+        _write_project(tmp_path, documents={"docs/mission.md": "x"})
+        (tmp_path / "docs" / "mission.md").write_bytes(b"caf\xe9 latin-1\n")
+        _player_commits(tmp_path)
+        with pytest.raises(AgentInvocationError, match="not valid UTF-8"):
+            _load(tmp_path)
 
     def test_missing_declared_document_refused(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
@@ -1044,3 +1116,60 @@ class TestLegacyCoach:
         root, result, _ = self._legacy(tmp_path, monkeypatch, {})
         assert result.success is True
         assert not list(root.rglob("coach_project_documents_*.json"))
+
+
+class TestReadingRuleAtTheCoachCapture:
+    """The design's one reading rule, exercised through the Coach capture."""
+
+    def _capture(self, tmp_path: Path, build: Any):
+        root = tmp_path / "wt"
+        _write_project(root, documents={"docs/mission.md": MISSION}, agents_md=None)
+        build(root)
+        _commit_start(root)
+        orch = _orchestrator(tmp_path, _real_signature_mock())
+        refusal = orch._capture_coach_project_documents("TASK-PD-090", _worktree(root))
+        return refusal, orch._captured_coach_documents().get("TASK-PD-090")
+
+    def test_chain_link(self, tmp_path: Path) -> None:
+        def build(r: Path) -> None:
+            (r / "docs" / "guide.md").write_text("# Guide\n")
+            (r / "docs" / "hop.md").symlink_to("guide.md")
+            (r / "AGENTS.md").symlink_to("docs/hop.md")
+
+        refusal, docs = self._capture(tmp_path, build)
+        assert refusal is None
+        assert (docs[0].path, docs[0].text) == ("AGENTS.md", "# Guide\n")
+        assert "AGENTS.md -> docs/hop.md, docs/hop.md -> guide.md" in docs[0].captured_from
+
+    def test_linked_folder(self, tmp_path: Path) -> None:
+        def build(r: Path) -> None:
+            (r / "shared").mkdir()
+            (r / "shared" / "CLAUDE.md").write_text("# Shared\n")
+            (r / ".claude").symlink_to("shared", target_is_directory=True)
+
+        refusal, docs = self._capture(tmp_path, build)
+        assert refusal is None
+        assert [(d.path, d.text) for d in docs][0] == (".claude/CLAUDE.md", "# Shared\n")
+
+    def test_outside_repo_refused(self, tmp_path: Path) -> None:
+        refusal, docs = self._capture(
+            tmp_path, lambda r: (r / "CLAUDE.md").symlink_to("../../outside.md")
+        )
+        assert refusal and "leads outside the repository" in refusal
+        assert docs is None
+
+    def test_crlf_kept(self, tmp_path: Path) -> None:
+        crlf = b"Status: accepted\r\n\r\nLine two.\r\n"
+        refusal, docs = self._capture(
+            tmp_path, lambda r: (r / "docs" / "mission.md").write_bytes(crlf)
+        )
+        assert refusal is None
+        mission = next(d for d in docs if d.path == "docs/mission.md")
+        assert mission.text.encode() == crlf and mission.sha256 == _sha(crlf)
+
+    def test_invalid_utf8_refused(self, tmp_path: Path) -> None:
+        refusal, docs = self._capture(
+            tmp_path, lambda r: (r / "docs" / "mission.md").write_bytes(b"\xff\xfe bad\n")
+        )
+        assert refusal and "not valid UTF-8" in refusal
+        assert docs is None
