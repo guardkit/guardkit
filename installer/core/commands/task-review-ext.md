@@ -898,7 +898,8 @@ No knowledge context available — reviewing from codebase analysis only.
 the questions below are asked directly), then write the answers to fleet-memory as one
 `review_report` payload with identifier `REVIEW_CAPTURE_{safe_task_id}` — the same fields as the
 Phase 4.5 write below, but this identifier, so it does not replace the review's own
-`REVIEW_{safe_task_id}` record (`safe_task_id` is the task ID with hyphens replaced by underscores).
+`REVIEW_{safe_task_id}` record (`safe_task_id` is the task ID with every character other than a
+letter, digit or underscore replaced by `_`, so `TASK-E01-A3F2.1` becomes `TASK_E01_A3F2_1`).
 
 **DISPLAY** knowledge capture prompt:
 ```
@@ -1725,6 +1726,9 @@ def handle_decision_checkpoint(findings: dict, task: dict, flags: dict):
 **Phase 5 Fleet-Memory Write: `capture_review_to_memory`**
 
 ```python
+import re
+
+
 async def capture_review_to_memory(task: dict, findings: dict):
     """Write review findings and outcome to the fleet-memory knowledge store.
 
@@ -1744,7 +1748,9 @@ async def capture_review_to_memory(task: dict, findings: dict):
     """
     task_id = task.get("task_id", task.get("id", "unknown"))
     # Sanitise the task id for the payload identifier (underscores only)
-    safe_id = task_id.replace("-", "_").replace(":", "_").lstrip("@")
+    # fleet-memory identifiers allow only letters, digits and underscores: replace every
+    # other character (hyphens, colons, subtask dots), e.g. TASK-E01-A3F2.1 → TASK_E01_A3F2_1.
+    safe_id = re.sub(r"[^A-Za-z0-9_]", "_", task_id.lstrip("@"))
     title = task.get("title", "")
     review_mode = findings.get("mode", findings.get("review_mode", "unknown"))
     score = findings.get("score", "N/A")
@@ -1830,7 +1836,7 @@ async def capture_review_to_memory(task: dict, findings: dict):
 
 When the user selects **[A]ccept** at the Phase 5 decision checkpoint, the LLM must:
 
-1. **Check if `mcp__fleet_memory__memory_write_payload` tool is available** in the current session's tool list (sanitise `{task_id}` to underscores only for the `identifier`)
+1. **Check if `mcp__fleet_memory__memory_write_payload` tool is available** in the current session's tool list (`safe_task_id` = `{task_id}` with every character other than a letter, digit or underscore replaced by `_`, e.g. `TASK-E01-A3F2.1` → `TASK_E01_A3F2_1`)
 
 2. **IF the MCP write tool is available** — execute two `mcp__fleet_memory__memory_write_payload` calls:
 
