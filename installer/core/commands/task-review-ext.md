@@ -896,8 +896,9 @@ No knowledge context available — reviewing from codebase analysis only.
 
 **ASK** the knowledge capture questions in the conversation (there is no capture module;
 the questions below are asked directly), then write the answers to fleet-memory as one
-`review_report` payload with identifier `REVIEW_CAPTURE_{safe_task_id}` (see the Phase 4.5 write
-below; `safe_task_id` is the task ID with hyphens replaced by underscores).
+`review_report` payload with identifier `REVIEW_CAPTURE_{safe_task_id}` — the same fields as the
+Phase 4.5 write below, but this identifier, so it does not replace the review's own
+`REVIEW_{safe_task_id}` record (`safe_task_id` is the task ID with hyphens replaced by underscores).
 
 **DISPLAY** knowledge capture prompt:
 ```

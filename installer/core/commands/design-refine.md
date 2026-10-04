@@ -219,7 +219,7 @@ writer.write_ddr(new_ddr, output_dir)       # Write new DDR
 
 print(f"\n✓ {selected_ddr.entity_id} → superseded")
 print(f"✓ {new_ddr.entity_id} created (supersedes {selected_ddr.entity_id})")
-print(f"✓ Prior DDR remains queryable via fleet-memory search (domain_tags=[design])")
+print(f"✓ Prior DDR remains queryable via fleet-memory search (domain_tags=[architecture,design])")
 ```
 
 **Superseding Confirmation:**
@@ -297,7 +297,7 @@ regenerate_openapi_section(updated_contract, output_dir / "openapi.yaml")
 validate_openapi_spec(output_dir / "openapi.yaml")
 
 # Seeding to fleet-memory is deferred to Phase 7 — the updated contract is written as a
-# document payload (domain_tags=["design","api_contract"]), idempotently upserted on its
+# document payload (domain_tags=["architecture","design","api_contract"]), idempotently upserted on its
 # natural key (document:<project>:<contract_slug>).
 print(f"✓ {updated_contract.entity_id} written — will re-seed to fleet-memory in Phase 7")
 ```
@@ -333,7 +333,7 @@ approval = input("\n[A]pprove | [R]evise | [C]ancel: ")
 if approval.lower() == "a":
     writer.write_data_model(updated_model, output_dir)
     # Seeding to fleet-memory is deferred to Phase 7 — the updated model is written as a
-    # document payload (domain_tags=["design","data_model"]), idempotently upserted on its
+    # document payload (domain_tags=["architecture","design","data_model"]), idempotently upserted on its
     # natural key (document:<project>:<model_slug>).
 ```
 
@@ -555,7 +555,7 @@ mcp__fleet_memory__memory_write_payload(payload={
   "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/<contract-slug>.md"})
 
-# Updated data model(s) → document payload, domain_tags ["design","data_model"]
+# Updated data model(s) → document payload, domain_tags ["architecture","design","data_model"]
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "document", "project": "<project>",
   "identifier": "<model_slug>",
@@ -598,8 +598,8 @@ Quality Checks:
   ⚠️ 2 feature specs flagged as potentially stale
 
 Fleet-memory:
-  ✓ 3 design artefacts seeded (adr/document, domain_tags=[design])
-  ✓ 1 API contract seeded (document, domain_tags=[design,api_contract])
+  ✓ 3 design artefacts seeded (adr/document, domain_tags=[architecture,design])
+  ✓ 1 API contract seeded (document, domain_tags=[architecture,design,api_contract])
 
 Updated: docs/design/
   ├── openapi.yaml (regenerated)
@@ -1117,7 +1117,7 @@ mcp__fleet_memory__memory_write_payload(payload={
   "content": "<updated contract markdown>", "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/<contract-slug>.md"})
 
-# Changed data model → document / ["design","data_model"]
+# Changed data model → document / ["architecture","design","data_model"]
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "document", "project": "<project>", "identifier": "<model_slug>",
   "content": "<updated data-model markdown>", "domain_tags": ["architecture", "design", "data_model"],

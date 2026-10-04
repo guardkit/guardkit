@@ -90,13 +90,15 @@ print("    [L]ayered — Traditional layered architecture")
 print("    [D]omain-Driven Design — Bounded contexts, aggregates, domain events")
 print("    [E]vent-Driven — Event-based communication")
 print("    [N]ot sure — Let questions guide the choice")
-methodology = input("Your choice [M/L/D/E/N]: ").lower()
+choice = input("Your choice [M/L/D/E/N]: ").lower()
+# The writer and the rest of this command use full names ("ddd" selects bounded contexts).
+methodology = {"m": "modular", "l": "layered", "d": "ddd", "e": "event-driven"}.get(choice, "modular")
 
 # Store in answers
 answers["q5_methodology"] = methodology
 
 # Category 2: Adapt questions based on methodology (no helper module: decide from the answer)
-if methodology == "d":
+if methodology == "ddd":
     # Ask DDD-specific questions (bounded contexts, aggregates, domain events)
     pass
 else:
@@ -203,7 +205,7 @@ Affected components:
   ℹ️ Compliance — audit logging of notifications sent
 
 Conflicts with existing ADRs:
-  ⚠️ ADR-003: "Use synchronous HTTP for all inter-service communication"
+  ⚠️ ADR-SP-003: "Use synchronous HTTP for all inter-service communication"
       → Real-time notifications require async/WebSocket
 
 Architectural implications:
@@ -324,7 +326,7 @@ Created: {output_dir}/
   ├── crosscutting-concerns.md
   └── decisions/
       ├── ADR-SP-001.md
-      ├── ADR-002-{slug}.md
+      ├── ADR-SP-002.md
       └── ...
 
 Fleet-memory:
@@ -699,8 +701,8 @@ Created: docs/architecture/
   ├── crosscutting-concerns.md
   └── decisions/
       ├── ADR-SP-001.md
-      ├── ADR-002-event-sourcing.md
-      └── ADR-003-cqrs-pattern.md
+      ├── ADR-SP-002.md
+      └── ADR-SP-003.md
 ```
 
 ### Example 3: Review Mode
@@ -723,7 +725,7 @@ Affected components:
   ⚠️ Financial Oversight — alerts on anomalies
 
 Conflicts:
-  ⚠️ ADR-003: "Synchronous HTTP only"
+  ⚠️ ADR-SP-003: "Synchronous HTTP only"
       → Notifications need async/WebSocket
 
 Options:
