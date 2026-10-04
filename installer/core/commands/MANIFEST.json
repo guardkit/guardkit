@@ -70,8 +70,8 @@
       "source_commit": "f8b86eb3"
     },
     "task-complete.md": {
-      "sha256": "1c755614046dbb50982b15550f58afc832e61c10f9ad9254729158dc31ca0fcd",
-      "source_commit": "3c0995b4"
+      "sha256": "bc2c6a61103ea3ce81bfbad8463ba32c22337339e7a6fff5816c4a0e714eab25",
+      "source_commit": "63388cce"
     },
     "task-create.md": {
       "sha256": "10fed07e5fac8606cb04921577ddabaa8fcd8fc86bc684ce4a2fdb413782d13a",
@@ -82,8 +82,8 @@
       "source_commit": "3ab86632"
     },
     "task-review.md": {
-      "sha256": "5ba0300bc2df517830117b86fc45306795d7a32ef1772c445897ea4b1446f207",
-      "source_commit": "965faf6c"
+      "sha256": "874e97e2929708cb05680f4bf6cdcaa48adbd7e92a2050a228fdea216043bac8",
+      "source_commit": "63388cce"
     },
     "task-status.md": {
       "sha256": "6e51431090810b81a3247dd911842d93a97887abc96728e63d5b406f79a1e521",
