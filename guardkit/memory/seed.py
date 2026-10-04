@@ -42,7 +42,6 @@ import fnmatch
 import hashlib
 import json
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -50,6 +49,7 @@ from typing import Any, Awaitable, Callable, Optional
 import yaml
 
 from guardkit.knowledge.fleet_memory_mapping import resolve as resolve_group
+from guardkit.lib import committed_content
 from guardkit.knowledge.fleet_memory_payloads import (
     build_memory_episode,
     sanitize_identifier,
@@ -105,8 +105,10 @@ READ_BACK_ATTEMPTS = 5
 READ_BACK_DELAY_SECONDS = 1.0
 
 
-class SeedRefused(Exception):
-    """The whole run is refused before anything is written; the message says why."""
+#: The whole run is refused before anything is written; the message says why.
+#: The same class the shared committed-content reader raises, so a git failure
+#: inside it is a refusal of the run too.
+SeedRefused = committed_content.CommittedContentError
 
 
 @dataclass(frozen=True)
@@ -163,77 +165,14 @@ class SeedResult:
 
 
 # ---------------------------------------------------------------------------
-# Git, at HEAD only
+# Git, at HEAD only — the shared committed-content reader
 # ---------------------------------------------------------------------------
 
-
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    # Literal pathspecs: a declared path is a file name, never a git pattern.
-    return subprocess.run(
-        ["git", "--literal-pathspecs", "-C", str(repo), *args],
-        capture_output=True,
-        timeout=60,
-    )
-
-
-def _git_text(repo: Path, *args: str) -> str:
-    result = _git(repo, *args)
-    if result.returncode != 0:
-        raise SeedRefused(
-            f"git {' '.join(args)} failed in {repo}: "
-            f"{result.stderr.decode('utf-8', 'replace').strip()}"
-        )
-    return result.stdout.decode("utf-8")
-
-
-def _tree_entries(repo: Path) -> dict[str, str]:
-    """Every file at HEAD, by path, with its tree mode (``100644``, ``120000``…)."""
-    out = _git(repo, "ls-tree", "-r", "-z", "HEAD")
-    if out.returncode != 0:
-        raise SeedRefused(
-            f"Could not list the files at HEAD in {repo}: "
-            f"{out.stderr.decode('utf-8', 'replace').strip()}"
-        )
-    entries: dict[str, str] = {}
-    for record in out.stdout.decode("utf-8").split("\0"):
-        if not record:
-            continue
-        meta, _, path = record.partition("\t")
-        entries[path] = meta.split(" ", 1)[0]
-    return entries
-
-
-def _changed_paths(repo: Path, paths: list[str]) -> set[str]:
-    """Which of ``paths`` differ from HEAD in the index or the working tree."""
-    if not paths:
-        return set()
-    out = _git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--", *paths)
-    if out.returncode != 0:
-        raise SeedRefused(
-            f"Could not check {repo} for uncommitted changes: "
-            f"{out.stderr.decode('utf-8', 'replace').strip()}"
-        )
-    changed: set[str] = set()
-    records = out.stdout.decode("utf-8").split("\0")
-    index = 0
-    while index < len(records):
-        record = records[index]
-        index += 1
-        if len(record) < 4:
-            continue
-        changed.add(record[3:])
-        if record[0] in "RC":  # a rename names its source next
-            if index < len(records):
-                changed.add(records[index])
-            index += 1
-    return changed
-
-
-def _blob(repo: Path, path: str) -> bytes:
-    out = _git(repo, "cat-file", "blob", f"HEAD:{path}")
-    if out.returncode != 0:
-        raise SeedRefused(f"Could not read {path} at HEAD in {repo}.")
-    return out.stdout
+_git = committed_content.git
+_git_text = committed_content.git_text
+_tree_entries = committed_content.tree_entries
+_changed_paths = committed_content.changed_paths
+_blob = committed_content.blob
 
 
 # ---------------------------------------------------------------------------
