@@ -379,6 +379,38 @@ class TestPlan:
             f"{DECISIONS}/ADR-ARCH-002-split-reporting.md",
         ]
 
+    def test_dot_slash_spelling_is_the_same_file(self, tmp_path: Path) -> None:
+        """R5: ./docs/mission.md and docs/mission.md are one file, one identity."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        plain = _repo(tmp_path / "a", {"docs/mission.md": MISSION})
+        dotted = _repo(tmp_path / "b", {
+            ".guardkit/config.yaml": (
+                "memory:\n  project: alpha\n  seed_documents:\n"
+                "    - ./docs/mission.md\n    - docs//mission.md\n    - docs/mission.md\n"
+            ),
+            "docs/mission.md": MISSION,
+        })
+        one = plan_seed(plain, "alpha").items
+        other = plan_seed(dotted, "alpha")
+        assert other.refusals == []
+        assert len(other.items) == 1  # de-duplicated, not a collision
+        assert other.items[0].path == "docs/mission.md"
+        assert other.items[0].natural_key == one[0].natural_key == "document:alpha:docs_mission_md"
+        assert other.items[0].payload["content"] == one[0].payload["content"]
+        assert other.items[0].source_ref.split("@")[0] == "docs/mission.md"
+        assert other.items[0].source_ref.split("#")[1] == one[0].source_ref.split("#")[1]
+
+    def test_missing_dot_slash_entry_keeps_its_declared_spelling(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path, {
+            ".guardkit/config.yaml": "memory:\n  project: alpha\n  seed_documents:\n    - ./docs/gone.md\n",
+            "docs/mission.md": MISSION,
+        })
+        assert plan_seed(repo, "alpha").refusals == [
+            "./docs/gone.md: declared, but not committed at HEAD (missing, deleted or "
+            "never added). Nothing in memory is removed."
+        ]
+
     def test_two_projects_stay_separate(self, tmp_path: Path, memory: Memory) -> None:
         repo = _repo(tmp_path, {"docs/mission.md": MISSION})
         _seed(repo, "alpha", memory.client("alpha"))

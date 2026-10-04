@@ -43,7 +43,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Awaitable, Callable, Optional
 
 import yaml
@@ -401,20 +401,25 @@ def plan_seed(repo: Path, project: str) -> SeedPlan:
 
     paths: list[str] = []
     for entry in declared:
+        # Repository-relative lookup path, normalised the way the Coach's
+        # reader does (``./docs/x.md`` and ``docs//x.md`` are ``docs/x.md``),
+        # so one file has one identity whichever way it is spelled. Messages
+        # keep the declared spelling.
+        rel = PurePosixPath(entry).as_posix()
         if _is_pattern(entry):
-            matched = sorted(p for p in entries if fnmatch.fnmatchcase(p, entry))
+            matched = sorted(p for p in entries if fnmatch.fnmatchcase(p, rel))
             if not matched:
                 plan.refusals.append(
                     f"{entry}: the pattern matches no file committed at HEAD."
                 )
             paths.extend(p for p in matched if p not in paths)
-        elif entry not in entries:
+        elif rel not in entries:
             plan.refusals.append(
                 f"{entry}: declared, but not committed at HEAD (missing, deleted or "
                 "never added). Nothing in memory is removed."
             )
-        elif entry not in paths:
-            paths.append(entry)
+        elif rel not in paths:
+            paths.append(rel)
 
     changed = _changed_paths(repo, paths)
     for path in paths:
