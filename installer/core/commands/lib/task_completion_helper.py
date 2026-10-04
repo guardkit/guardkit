@@ -15,6 +15,7 @@ Created: 2025-11-27
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -500,6 +501,26 @@ def _commit_git_state_best_effort(task_id: str) -> str:
         return f"skipped ({exc})"
 
 
+_TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+)*)")
+
+
+def _task_id_for(task_path: Path) -> str:
+    """Return a task's ID from its frontmatter, else from its file name's TASK-… prefix."""
+    try:
+        try:
+            from installer.core.commands.lib.task_utils import read_task_file
+        except ImportError:
+            from task_utils import read_task_file
+        frontmatter, _ = read_task_file(task_path)
+        declared = str(frontmatter.get("id", "") or "").strip()
+    except Exception:
+        declared = ""
+    if declared:
+        return declared
+    match = _TASK_ID_PREFIX.match(task_path.stem)
+    return match.group(1) if match else task_path.stem
+
+
 def complete_task(
     task_id_or_path: str,
     update_metadata: bool = True,
@@ -566,8 +587,9 @@ def complete_task(
     logger.info(f"🔍 Finding task: {task_id_or_path}")
     task_path = find_task_file(task_id_or_path)
 
-    # Extract task ID from filename (handles both TASK-001 and TASK-TEST-001 formats)
-    task_id = task_path.stem  # Use full stem (filename without extension)
+    # The task's ID: its frontmatter `id`, else the upper-case TASK-… prefix of the
+    # file name (descriptive names such as TASK-045-add-login.md carry a slug).
+    task_id = _task_id_for(task_path)
     logger.info(f"📋 Task ID: {task_id}")
     logger.info(f"📁 Current path: {task_path}")
 
