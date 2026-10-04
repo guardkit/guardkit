@@ -111,6 +111,7 @@ and the known-failure ledger sweep is clean (WS2-B2).
 The routine runs `guardkit memory capture-outcome --from-task-file <moved-file>
 --success` as a best-effort, non-blocking step (loud log on failure). Task
 completion MUST succeed even if the fleet-memory write fails. If the routine reports
+`memory off`, the project has not declared a memory project: write nothing. If it reports
 the outcome `not published` or `failed` and `mcp__fleet_memory__memory_write_payload`
 is available, write the outcome with it instead: a `build_outcome` payload for the
 resolved `<project>` with `identifier` `OUTCOME_{safe_task_id}` (every character other

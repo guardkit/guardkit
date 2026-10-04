@@ -482,12 +482,14 @@ def _capture_outcome_best_effort(new_task_path: Path, *, success: bool = True) -
             (proc.stderr or "").strip()[:400],
         )
         return f"failed (exit {proc.returncode})"
-    # The CLI exits 0 when it could not publish (no memory client or store): say so.
-    if "NOT published" in (proc.stdout or ""):
-        logger.warning(
-            "⚠️  fleet-memory capture-outcome did not publish — outcome NOT captured: %s",
-            (proc.stdout or "").strip()[-400:],
-        )
+    # The CLI exits 0 in several cases that write nothing; only its success line means
+    # recorded. Rich may wrap long lines, so match on the output with whitespace collapsed.
+    output = " ".join((proc.stdout or "").split())
+    if "Nothing was written" in output:
+        logger.warning("⚠️  fleet-memory is off for this project — outcome NOT captured: %s", output[-400:])
+        return "memory off"
+    if "published to memory as" not in output:
+        logger.warning("⚠️  fleet-memory capture-outcome did not publish — outcome NOT captured: %s", output[-400:])
         return "not published"
     logger.info("✅ fleet-memory capture-outcome recorded for %s", new_task_path.name)
     return "recorded"
