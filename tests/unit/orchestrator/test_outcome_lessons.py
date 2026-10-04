@@ -224,3 +224,14 @@ def test_a_worktree_inside_the_repository_is_taken_off_whole():
     folders = ("/x/repo", "/x/repo/.guardkit/worktrees/FEAT-1")  # shorter one first
     text = "/x/repo/.guardkit/worktrees/FEAT-1/src/a.py and /x/repo/src/b.py"
     assert _strip_working_folders(text, folders) == "src/a.py and src/b.py"
+
+
+def test_title_and_requirements_lose_the_working_folder_before_the_cut():
+    text = _compose(
+        title=f"Fix {WORKTREE}/src/a.py",
+        requirements=f"Update {WORKTREE}/src/b.py " + "w" * 200,
+    )
+    assert WORKTREE not in text and "/srv/build" not in text
+    assert text.startswith('TASK-AB12-002 "Fix src/a.py" (feature FEAT-AB12)')
+    asked = text.split("The task asked: ", 1)[1].split(" Files changed:")[0]
+    assert asked.startswith("Update src/b.py ") and len(asked) == 150

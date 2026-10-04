@@ -519,7 +519,6 @@ class AutoBuildContextLoader:
                 phase=TaskPhase.IMPLEMENT,
                 collect_metrics=True,
             )
-            memory = self._memory_report(context, reads_before)
 
             # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
@@ -546,6 +545,11 @@ class AutoBuildContextLoader:
                         logger.debug("[TurnState] No turn continuation available for turn %d", turn_number)
                 except Exception as e:
                     logger.warning("[TurnState] Failed to load turn continuation context: %s", e)
+
+            # Counted only now: on later turns the continuation above can fall
+            # back to a memory search of its own, and this turn's line must
+            # count it (and its failure) too.
+            memory = self._memory_report(context, reads_before)
 
             # Build result
             result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
@@ -648,7 +652,6 @@ class AutoBuildContextLoader:
                 phase=TaskPhase.IMPLEMENT,
                 collect_metrics=True,
             )
-            memory = self._memory_report(context, reads_before)
 
             # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
@@ -674,6 +677,9 @@ class AutoBuildContextLoader:
                         logger.debug("[TurnState] No turn continuation available for turn %d", turn_number)
                 except Exception as e:
                     logger.warning("[TurnState] Failed to load turn continuation context: %s", e)
+
+            # Counted after the continuation, as on the Player path.
+            memory = self._memory_report(context, reads_before)
 
             # Build result with Coach-specific formatting
             result = self._build_result(context, actor="coach", turn_continuation=turn_continuation)

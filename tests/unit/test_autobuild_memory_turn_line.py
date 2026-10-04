@@ -275,11 +275,66 @@ def test_a_successful_empty_search(tmp_path, memory, caplog):
 
     _, lines = two_turns_both_roles(orchestrator, tmp_path, caplog)
 
+    # Turn 2 has no local turn-state file here, so loading the previous turn
+    # falls back to one more memory search, and the line counts it.
     assert lines == [
-        ("INFO", f"[Memory] {role} {TASK} turn {turn}: searched: 7 completed, 0 failed; 0 above the line (0.50), 0 delivered.")
-        for turn in (1, 2)
+        ("INFO", f"[Memory] {role} {TASK} turn {turn}: searched: {reads} completed, 0 failed; 0 above the line (0.50), 0 delivered.")
+        for turn, reads in ((1, 7), (2, 8))
         for role in ("builder", "reviewer")
     ]
+
+
+def _reported_reads(line: str) -> int:
+    counts = line.split("searched: ", 1)[1].split(";", 1)[0]  # "8 completed, 0 failed"
+    completed, failed = (int(part.split()[0]) for part in counts.split(", "))
+    return completed + failed
+
+
+def test_each_line_counts_exactly_the_store_calls_of_its_own_call(tmp_path, memory, caplog):
+    """Reported reads equal the real store calls, call by call, on both turns."""
+    orchestrator, _ = build(tmp_path)
+    calls = []
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=AUTOBUILD):
+        for turn in (1, 2):
+            before = len(memory.searches)
+            builder_turn(orchestrator, turn)
+            calls.append(len(memory.searches) - before)
+            before = len(memory.searches)
+            reviewer_turn(orchestrator, turn, tmp_path)
+            calls.append(len(memory.searches) - before)
+
+    lines = memory_lines(caplog)
+    assert calls == [7, 7, 8, 8]
+    assert [_reported_reads(text) for _, text in lines] == calls
+
+
+def test_a_failure_only_in_the_previous_turn_lookup_is_reported(tmp_path, memory, caplog):
+    """Turn 2's fallback search for the previous turn's state fails, and only
+    it. The line says so for each role, and each role's own failure is counted
+    once, in its own line, not hidden from the next."""
+
+    def continuation_broken(request):
+        if request["query"].startswith("turn_state "):
+            raise RuntimeError("turn-state lookup failed")
+        return []
+
+    memory.answer = continuation_broken
+    orchestrator, invoker = build(tmp_path)
+
+    _, lines = two_turns_both_roles(orchestrator, tmp_path, caplog)
+
+    ok = "searched: 7 completed, 0 failed; 0 above the line (0.50), 0 delivered."
+    broken = "searched: 7 completed, 1 failed; 0 above the line (0.50), 0 delivered."
+    assert lines == [
+        ("INFO", f"[Memory] builder {TASK} turn 1: {ok}"),
+        ("INFO", f"[Memory] reviewer {TASK} turn 1: {ok}"),
+        ("WARNING", f"[Memory] builder {TASK} turn 2: {broken}"),
+        ("WARNING", f"[Memory] reviewer {TASK} turn 2: {broken}"),
+    ]
+    # Fail-open: the builder still ran on both turns.
+    assert invoker.invoke_player.await_count == 2
+    assert sum(r["query"].startswith("turn_state ") for r in memory.searches) == 2
 
 
 def test_everything_below_the_line(tmp_path, memory, caplog):
