@@ -483,12 +483,19 @@ PROJECT_DOCUMENTS_BUDGET_BYTES = 48 * 1024
 
 @dataclass(frozen=True)
 class ProjectDocument:
-    """One project document as it was read: its declared path, hash and text."""
+    """One project document as it was read: its declared path, hash and text.
+
+    ``worktree_sha256`` is set only on a Coach turn whose task worktree copy no
+    longer matches the text captured at task start: the copy's current hash,
+    or ``"missing"``. The Coach is still given the captured text; the field
+    exists so the turn record can say the copy changed.
+    """
 
     path: str
     sha256: str
     text: str
     size: int
+    worktree_sha256: str | None = None
 
 
 def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None:
