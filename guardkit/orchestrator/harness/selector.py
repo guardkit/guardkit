@@ -28,12 +28,14 @@ when a typo is introduced.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import logging
 import os
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -390,6 +392,7 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         field="autobuild.player.required_documents",
         config_path=config_path,
     )
+    _refuse_linked_required_documents(worktree, required_documents, config_path)
     instructions = list(
         _player_path_list(
             player.get("instructions"),
@@ -437,6 +440,135 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         "protected_paths": protected_paths,
         "required_documents": required_documents,
     }
+
+
+def _refuse_linked_required_documents(
+    worktree: Path, documents: tuple[str, ...], config_path: Path
+) -> None:
+    """Refuse a declared binding document that is, or sits under, a symbolic link.
+
+    Project initialisation design, 4 October 2026: the declared documents bind
+    every role (Player, Coach, spec writer, plan writer), and the planning
+    writers read them from the commit, where a link is only its target's name.
+    So a binding document must be an ordinary file, and every reader refuses a
+    link rather than following it. Each part of the declared path is checked
+    without following links (``lstat``). A path that does not exist is left to
+    the reader that needs it, which says so in its own words.
+    """
+
+    for value in documents:
+        current = worktree
+        for part in Path(value).parts:
+            current = current / part
+            if current.is_symlink():
+                raise AgentInvocationError(
+                    f"The project declares {value!r} in "
+                    f"autobuild.player.required_documents ({config_path}), but "
+                    f"{current.relative_to(worktree).as_posix()} is a symbolic link. "
+                    "A binding document must be an ordinary file in the repository "
+                    "so that every role reads the same bytes; replace the link with "
+                    "the file itself."
+                )
+
+
+#: The most project-document text, in bytes, that may be given in full to a
+#: role that receives it inside its prompt (the Coach): the repository's
+#: instructions plus the declared binding documents together. About 12,000
+#: tokens. One constant for GuardKit; Forge keeps its own for the planning
+#: writers. Over the limit the turn is refused rather than given a shortened
+#: document, because a binding document silently cut short is worse than a
+#: refusal.
+PROJECT_DOCUMENTS_BUDGET_BYTES = 48 * 1024
+
+
+@dataclass(frozen=True)
+class ProjectDocument:
+    """One project document as it was read: its declared path, hash and text."""
+
+    path: str
+    sha256: str
+    text: str
+    size: int
+
+
+def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None:
+    """Refuse, naming every file and its size, when the documents exceed the budget."""
+
+    total = sum(document.size for document in documents)
+    if total > PROJECT_DOCUMENTS_BUDGET_BYTES:
+        sizes = ", ".join(
+            f"{document.path} ({document.size} bytes)" for document in documents
+        )
+        raise AgentInvocationError(
+            f"The project's instructions and binding documents come to {total} "
+            f"bytes, over the {PROJECT_DOCUMENTS_BUDGET_BYTES}-byte limit for "
+            f"documents given to the Coach in full: {sizes}. A binding document "
+            "is never cut short, so the Coach was not run; shorten the documents "
+            "or declare fewer in autobuild.player.required_documents."
+        )
+
+
+def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
+    """Read the project's instructions and binding documents in full.
+
+    The same declaration the Player is given (``_load_player_project_inputs``:
+    the repository instructions ``AGENTS.md``/``CLAUDE.md``/``.claude/CLAUDE.md``
+    and ``autobuild.player.instructions``, then
+    ``autobuild.player.required_documents``), read from the task worktree for
+    the roles that receive document text in their prompt. No second parser:
+    the declaration is read once, by the Player's own loader.
+
+    Returns an empty tuple when the project declares nothing and has no
+    instruction files. Raises :class:`AgentInvocationError` with a plain
+    sentence when a document is missing, outside the worktree, not an ordinary
+    file, not UTF-8 text, a symbolic link (declared documents), or when the
+    total exceeds :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
+    """
+
+    inputs = _load_player_project_inputs(worktree)
+    root = worktree.resolve()
+    declared = list(
+        dict.fromkeys(
+            [*inputs["repository_instructions"], *inputs["required_documents"]]
+        )
+    )
+    documents: list[ProjectDocument] = []
+    for value in declared:
+        try:
+            resolved = (worktree / value).resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise AgentInvocationError(
+                f"The project declares {value!r} for its builds, but there is no "
+                f"such file in the task worktree {worktree}."
+            ) from None
+        if not resolved.is_relative_to(root):
+            raise AgentInvocationError(
+                f"The project declares {value!r} for its builds, but it points "
+                f"outside the task worktree {worktree}."
+            )
+        if not resolved.is_file():
+            raise AgentInvocationError(
+                f"The project declares {value!r} for its builds, but it is not an "
+                "ordinary file."
+            )
+        data = resolved.read_bytes()
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise AgentInvocationError(
+                f"The project declares {value!r} for its builds, but it is not "
+                "UTF-8 text."
+            ) from None
+        documents.append(
+            ProjectDocument(
+                path=value,
+                sha256=hashlib.sha256(data).hexdigest(),
+                text=text,
+                size=len(data),
+            )
+        )
+    check_project_documents_budget(documents)
+    return tuple(documents)
 
 
 def _factory_accepts_kwarg(factory: Callable[..., Any], name: str) -> bool:
