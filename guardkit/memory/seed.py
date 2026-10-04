@@ -88,6 +88,15 @@ _SUPERSEDES_LINE = re.compile(
     r"^[ \t]*(?:>[ \t]*)?(?:\*\*Supersedes:\*\*|\*\*Supersedes\*\*:|Supersedes:)(?P<rest>.*)$",
     re.MULTILINE | re.IGNORECASE,
 )
+#: The leading run of decision ids in a Supersedes entry, separated by commas,
+#: spaces, "and" or "&", optionally in back-quotes. It stops at the first other
+#: text, so ``ADR-ARCH-001 (see also DDR-007)`` supersedes ADR-ARCH-001 only.
+_ID_TOKEN = rf"`?(?:{DECISION_ID.pattern})`?(?!\w)"
+_ID_RUN = re.compile(
+    rf"^\s*{_ID_TOKEN}(?:\s*(?:,\s*)?(?:(?:and|&)\s+)?{_ID_TOKEN})*",
+    re.IGNORECASE,
+)
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<item>.*)$")
 _HEADING = re.compile(r"^(?P<level>#{1,6})[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
 
 #: How long to keep looking for a just-published record before saying it is
@@ -323,6 +332,26 @@ def _bullets(section: str) -> list[str]:
     return items
 
 
+def _leading_ids(text: str) -> list[str]:
+    """The decision ids at the very start of ``text``, before any other words."""
+    run = _ID_RUN.match(text.replace("**", ""))
+    return DECISION_ID.findall(run.group(0)) if run else []
+
+
+def _supersedes_section_ids(section: str) -> list[str]:
+    """Ids from a ``## Supersedes`` section: its first line and its list items,
+    each read only for the ids it starts with."""
+    lines = [line for line in section.splitlines() if line.strip()]
+    ids: list[str] = []
+    for position, line in enumerate(lines):
+        item = _LIST_ITEM.match(line)
+        if item is not None:
+            ids.extend(_leading_ids(item.group("item")))
+        elif position == 0:
+            ids.extend(_leading_ids(line))
+    return ids
+
+
 def decision_fields(decision_id: str, text: str, project: str) -> dict:
     """Title, status, context, decision, consequences, alternatives and supersedes."""
     status_match = _STATUS_LINE.search(text)
@@ -351,9 +380,9 @@ def decision_fields(decision_id: str, text: str, project: str) -> dict:
         fields["alternatives"] = _bullets(alternatives_text) or [alternatives_text]
     replaced: list[str] = []
     for line in _SUPERSEDES_LINE.finditer(text):
-        replaced.extend(DECISION_ID.findall(line.group("rest")))
+        replaced.extend(_leading_ids(line.group("rest")))
     if sections.get("supersedes"):
-        replaced.extend(DECISION_ID.findall(sections["supersedes"]))
+        replaced.extend(_supersedes_section_ids(sections["supersedes"]))
     keys = []
     for other in replaced:
         key = f"adr:{project}:{sanitize_identifier(other)}"
