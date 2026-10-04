@@ -505,26 +505,45 @@ async def publish_and_confirm(
     attempts: Optional[int] = None,
     delay_seconds: Optional[float] = None,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+    on_result: Optional[Callable[[SeedResult], Any]] = None,
 ) -> list[SeedResult]:
-    """Write each planned record, then read it back before calling it stored."""
+    """Write each planned record, then read it back before calling it stored.
+
+    Every file gets a result, in order, even when something fails part-way:
+    a write or a read that raises is reported for that file and the run goes
+    on. ``on_result`` is called with each result as soon as it is known (the
+    command prints it), so nothing already done is lost from the output.
+    """
     attempts = READ_BACK_ATTEMPTS if attempts is None else attempts
     delay_seconds = READ_BACK_DELAY_SECONDS if delay_seconds is None else delay_seconds
     results: list[SeedResult] = []
     for item in plan.items:
-        key = await client.add_episode(
-            name=item.name,
-            episode_body=item.episode_body,
-            group_id=item.group_id,
-            source="guardkit-seed",
-            dedup_token=item.dedup_token,
-        )
-        if key is None:
-            results.append(
-                SeedResult(item.path, item.natural_key, "not published",
-                           detail="the bus and the door both refused or were unreachable")
+        try:
+            key = await client.add_episode(
+                name=item.name,
+                episode_body=item.episode_body,
+                group_id=item.group_id,
+                source="guardkit-seed",
+                dedup_token=item.dedup_token,
             )
-            continue
-        results.append(await _confirm(item, client, attempts, delay_seconds, sleep))
+        except Exception as exc:  # noqa: BLE001 — reported per file, run goes on
+            key = None
+            detail = f"the write failed ({type(exc).__name__}: {exc})"
+        else:
+            detail = "the bus and the door both refused or were unreachable"
+        if key is None:
+            result = SeedResult(item.path, item.natural_key, "not published", detail=detail)
+        else:
+            try:
+                result = await _confirm(item, client, attempts, delay_seconds, sleep)
+            except Exception as exc:  # noqa: BLE001 — reported per file, run goes on
+                result = SeedResult(
+                    item.path, item.natural_key, "published, not confirmed",
+                    detail=f"reading it back failed ({type(exc).__name__}: {exc})",
+                )
+        results.append(result)
+        if on_result is not None:
+            on_result(result)
     return results
 
 

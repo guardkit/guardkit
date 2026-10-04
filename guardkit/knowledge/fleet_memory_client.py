@@ -983,10 +983,17 @@ class FleetMemoryClient:
         from fleet_memory.writer.identity import record_identity
 
         natural_key = f"{payload_type}:{self.config.project}:{identifier}"
-        item = await self._store.aget(
-            ("fleet_memory", self.config.project, payload_type),
-            str(record_identity(natural_key)),
-        )
+        try:
+            item = await self._store.aget(
+                ("fleet_memory", self.config.project, payload_type),
+                str(record_identity(natural_key)),
+            )
+        except Exception as exc:  # noqa: BLE001 — CancelledError is not an Exception
+            # A timeout, a dropped connection or any other failure of the read
+            # itself is "could not look", never "not there".
+            raise MemoryReadUnavailable(
+                f"reading the record back failed ({type(exc).__name__}: {exc})"
+            ) from exc
         if item is None:
             return None
         value = item.value if isinstance(item.value, dict) else {}

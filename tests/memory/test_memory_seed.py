@@ -671,3 +671,63 @@ class TestCommand:
         result = CliRunner().invoke(memory_cli, ["seed", "--repo", str(repo)])
         assert result.exit_code == 1
         assert "published, not confirmed" in result.output
+
+
+class TestReadBackFailures:
+    """R3: a failing store read is "published, not confirmed", per file."""
+
+    def _flaky_store(self, memory: Memory, fail_on: set[str], exc: BaseException):
+        """The client's view of the store: reads of ``fail_on`` keys raise."""
+
+        class FlakyStore:
+            async def aget(self, namespace, key):
+                for natural_key in fail_on:
+                    if key == str(record_identity(natural_key)):
+                        raise exc
+                return await memory.store.aget(namespace, key)
+
+        return FlakyStore()
+
+    @pytest.mark.parametrize("exc", [TimeoutError("read timed out"), ConnectionError("reset")])
+    def test_read_failure_is_reported_not_raised(
+        self, tmp_path: Path, memory: Memory, exc: BaseException
+    ) -> None:
+        repo = _repo(tmp_path, {"docs/a.md": "one\n", "docs/b.md": "two\n"})
+        client = memory.client("alpha")
+        client._store = self._flaky_store(memory, {"document:alpha:docs_a_md"}, exc)
+        _, results = _seed(repo, "alpha", client)
+        assert [(r.path, r.status) for r in results] == [
+            ("docs/a.md", "published, not confirmed"),
+            ("docs/b.md", "stored"),
+        ]
+        assert type(exc).__name__ in results[0].detail
+        assert len(memory.published) == 2  # both were published
+
+    def test_cancellation_is_not_swallowed(self, tmp_path: Path, memory: Memory) -> None:
+        repo = _repo(tmp_path, {"docs/a.md": "one\n"})
+        client = memory.client("alpha")
+        client._store = self._flaky_store(
+            memory, {"document:alpha:docs_a_md"}, asyncio.CancelledError()
+        )
+        with pytest.raises(asyncio.CancelledError):
+            _seed(repo, "alpha", client)
+
+    def test_command_prints_every_file_and_exits_non_zero(
+        self, tmp_path: Path, memory: Memory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = _repo(tmp_path, {"docs/a.md": "one\n", "docs/b.md": "two\n"})
+        client = memory.client("alpha")
+        client._store = self._flaky_store(
+            memory, {"document:alpha:docs_a_md"}, TimeoutError("read timed out")
+        )
+        monkeypatch.setattr("guardkit.cli.memory.get_memory_client", lambda: client)
+        monkeypatch.setattr("guardkit.memory.seed.READ_BACK_DELAY_SECONDS", 0)
+        result = CliRunner().invoke(memory_cli, ["seed", "--repo", str(repo)])
+        assert result.exit_code == 1
+        output = " ".join(result.output.split())  # the console wraps long lines
+        assert (
+            "docs/a.md → document:alpha:docs_a_md: published, not confirmed — reading "
+            "the record back failed (TimeoutError: read timed out)"
+        ) in output
+        assert "docs/b.md → document:alpha:docs_b_md: stored (version 1)" in output
+        assert "1 of 2 records confirmed stored." in output
