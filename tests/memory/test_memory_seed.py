@@ -257,6 +257,41 @@ class TestPlan:
         assert item.payload["status"] == "Proposed"
         assert item.payload["supersedes"] == ["adr:alpha:ADR_ARCH_001"]
 
+    @pytest.mark.parametrize(
+        "line,expected",
+        [
+            ("Supersedes: ADR-ARCH-001 (see also DDR-007)", ["ADR_ARCH_001"]),
+            ("**Supersedes:** ADR-ARCH-001, ADR-SP-002 and DDR-003; see ADR-ARCH-009",
+             ["ADR_ARCH_001", "ADR_SP_002", "DDR_003"]),
+            ("> Supersedes: `ADR-ARCH-001`", ["ADR_ARCH_001"]),
+            ("Supersedes: ADR-ARCH-001-modular-monolith.md", ["ADR_ARCH_001"]),
+            ("Supersedes: nothing yet, but compare ADR-ARCH-001", []),
+        ],
+    )
+    def test_supersedes_line_takes_only_the_leading_ids(
+        self, line: str, expected: list[str]
+    ) -> None:
+        from guardkit.memory.seed import decision_fields
+
+        text = f"# ADR-ARCH-005: Later\n\nStatus: accepted\n{line}\n\n## Decision\n\nD.\n"
+        fields = decision_fields("ADR-ARCH-005", text, "alpha")
+        assert fields.get("supersedes", []) == [f"adr:alpha:{i}" for i in expected]
+
+    def test_supersedes_heading_reads_first_line_and_list_items_only(self) -> None:
+        from guardkit.memory.seed import decision_fields
+
+        text = (
+            "# DDR-010: Later\n\n> Status: Accepted\n\n## Supersedes\n\n"
+            "DDR-001 (the first draft)\n"
+            "Unlike DDR-008, this keeps the queue.\n"
+            "- DDR-002 and DDR-003, both retired\n"
+            "- related: DDR-009\n\n## Decision\n\nD.\n"
+        )
+        fields = decision_fields("DDR-010", text, "alpha")
+        assert fields["supersedes"] == [
+            "adr:alpha:DDR_001", "adr:alpha:DDR_002", "adr:alpha:DDR_003",
+        ]
+
     def test_ddr_and_files_without_a_status_line(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path, {
             "docs/design/decisions/DDR-001.md": "# DDR-001: Strict validation\n\n> Status: Accepted\n\n## Decision\n\nValidate at start.\n",
