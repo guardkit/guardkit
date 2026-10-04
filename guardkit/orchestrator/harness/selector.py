@@ -683,6 +683,8 @@ class CommittedProjectDocuments:
     #: One plain sentence per instruction file reached through symbolic links,
     #: naming the links followed and the file read.
     link_notes: tuple[str, ...] = ()
+    #: SHA-256 of the committed .guardkit/config.yaml the list came from.
+    declaration_sha256: str | None = None
 
 
 def load_project_documents_at_commit(
@@ -724,10 +726,11 @@ def load_project_documents_at_commit(
         raise AgentInvocationError(
             f"Could not read the build's source commit {commit[:12]}: {exc}"
         ) from None
+    config_bytes = (
+        _committed_bytes(repo, config_rel, commit) if config_rel in entries else None
+    )
     config_text = (
-        _committed_bytes(repo, config_rel, commit).decode("utf-8", "replace")
-        if config_rel in entries
-        else None
+        config_bytes.decode("utf-8", "replace") if config_bytes is not None else None
     )
     if not _declares_required_documents(config_text):
         return CommittedProjectDocuments(commit=commit, documents=())
@@ -829,7 +832,10 @@ def load_project_documents_at_commit(
 
     check_project_documents_budget(documents)
     return CommittedProjectDocuments(
-        commit=commit, documents=tuple(documents), link_notes=tuple(link_notes)
+        commit=commit,
+        documents=tuple(documents),
+        link_notes=tuple(link_notes),
+        declaration_sha256=hashlib.sha256(config_bytes or b"").hexdigest(),
     )
 
 

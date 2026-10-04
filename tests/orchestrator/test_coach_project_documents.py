@@ -1173,3 +1173,119 @@ class TestReadingRuleAtTheCoachCapture:
         )
         assert refusal and "not valid UTF-8" in refusal
         assert docs is None
+
+
+class TestSnapshotIsTheBuildsIdentity:
+    """Codex round 2, R1: once a build has a snapshot, a resume reuses it."""
+
+    def _two_branch_repo(self, tmp_path: Path) -> tuple[Path, Path]:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q", "-b", "main")
+        (repo / ".gitignore").write_text(".guardkit/autobuild-private/\n.guardkit/worktrees/\n")
+        (repo / "docs").mkdir()
+        (repo / "docs" / "mission.md").write_text("DOCUMENTS B (main)\n")
+        (repo / ".guardkit").mkdir()
+        (repo / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    required_documents:\n      - docs/mission.md\n"
+        )
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "main: documents B")
+        _git(repo, "checkout", "-q", "-b", "release")
+        (repo / "docs" / "mission.md").write_text(MISSION)  # documents A
+        (repo / "docs" / "tech.md").write_text(TECH)
+        (repo / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    required_documents:\n"
+            "      - docs/mission.md\n      - docs/tech.md\n"
+        )
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "release: documents A")
+        _git(repo, "checkout", "-q", "main")
+        wt = repo / ".guardkit" / "worktrees" / "FEAT-PD"
+        _git(repo, "worktree", "add", "-q", "-b", "autobuild/FEAT-PD", str(wt), "release")
+        return repo, wt
+
+    def test_resume_from_a_main_checkout_keeps_the_release_capture(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _no_env(monkeypatch)
+        repo, wt = self._two_branch_repo(tmp_path)
+        release_commit = _git(repo, "rev-parse", "release").strip()
+        main_commit = _git(repo, "rev-parse", "main").strip()
+
+        # Started with --base-branch release.
+        started = _worktree(wt)
+        started.base_branch = "release"
+        first = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        assert first._capture_coach_project_documents("TASK-1", started, new_build=True) is None
+        snapshot = AutoBuildOrchestrator._coach_documents_snapshot_path(wt)
+        before = snapshot.read_bytes()
+        recorded = json.loads(before)
+        assert recorded["commit"] == release_commit
+        assert recorded["declaration_sha256"] == _sha(
+            _git(repo, "show", "release:.guardkit/config.yaml").encode()
+        )
+
+        # Resumed from a main checkout without --base-branch (reconstructed as main).
+        resumed = _worktree(wt)
+        resumed.base_branch = "main"
+        invoker = _invoker(wt)
+        again = _orchestrator(tmp_path, invoker.invoke_coach, repo_root=repo)
+        with patch(
+            "guardkit.orchestrator.harness.selector.load_project_documents_at_commit",
+            side_effect=AssertionError("the build's snapshot must be reused"),
+        ):
+            assert again._capture_coach_project_documents("TASK-2", resumed, resume=True) is None
+        assert snapshot.read_bytes() == before  # never replaced
+        docs = again._captured_coach_documents()["TASK-2"]
+        assert [(d.path, d.sha256) for d in docs] == [
+            (item["path"], item["sha256"]) for item in recorded["documents"]
+        ]
+        prompt = _coach_prompt(again, invoker, resumed, "TASK-2")
+        assert MISSION in prompt and TECH in prompt
+        assert "DOCUMENTS B" not in prompt
+        note = _record(wt, "TASK-2", 1)["captured_from"][0]
+        assert (
+            f"this invocation's source revision is {main_commit[:12]} (where the "
+            f"worktree branched from main), not the build's {release_commit[:12]}; "
+            "the build's original capture was used"
+        ) in note
+        assert snapshot.read_bytes() == before
+
+    def test_a_new_build_does_not_reuse_an_older_snapshot(self, tmp_path: Path) -> None:
+        repo, wt = self._two_branch_repo(tmp_path)
+        started = _worktree(wt)
+        started.base_branch = "release"
+        orch = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        orch._capture_coach_project_documents("TASK-1", started, new_build=True)
+        snapshot = AutoBuildOrchestrator._coach_documents_snapshot_path(wt)
+        stale = json.loads(snapshot.read_text())
+        stale["commit"] = "0" * 40
+        snapshot.write_text(json.dumps(stale))
+        # A new build (this orchestrator made the worktree, or a new feature
+        # worktree was made) discards it and captures its own.
+        fresh = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        assert fresh._capture_coach_project_documents("TASK-1", started, new_build=True) is None
+        assert json.loads(snapshot.read_text())["commit"] == _git(repo, "rev-parse", "release").strip()
+
+    def test_feature_orchestrator_discards_on_a_new_worktree(self, tmp_path: Path) -> None:
+        from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+        repo, wt = self._two_branch_repo(tmp_path)
+        snapshot = AutoBuildOrchestrator._coach_documents_snapshot_path(wt)
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text('{"commit": "an older build"}')
+        feature_orch = MagicMock()
+        feature_orch._worktree_manager.create.return_value = Worktree(
+            task_id="FEAT-PD", branch_name="autobuild/FEAT-PD", path=wt, base_branch="release",
+        )
+        # Only the worktree creation matters here; what follows it (saving the
+        # feature's state) needs a real feature and is not under test.
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            FeatureOrchestrator._create_new_worktree(
+                feature_orch, MagicMock(), "FEAT-PD", "release"
+            )
+        feature_orch._worktree_manager.create.assert_called_once()
+        assert not snapshot.exists()
