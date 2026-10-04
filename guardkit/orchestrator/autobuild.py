@@ -2996,10 +2996,11 @@ class AutoBuildOrchestrator:
                     )
 
             # Project initialisation design, review fixes (4 October 2026):
-            # the Coach's binding documents are captured once, here, from the
-            # canonical repo_root (not the worktree Players edit), before the
-            # pre-loop phase and the Player's first turn. A declaration that
-            # cannot be given whole stops the task before any model call.
+            # the Coach's binding documents are captured once per build, here,
+            # from the committed content of the commit the build started from
+            # (not the caller's checkout, not the worktree Players edit), before
+            # the pre-loop phase and the Player's first turn. A declaration
+            # that cannot be given whole stops the task before any model call.
             documents_refusal = self._capture_coach_project_documents(
                 task_id, worktree, resume=bool(self.resume and task_file_path)
             )
@@ -8601,9 +8602,9 @@ class AutoBuildOrchestrator:
 
         # Project initialisation design (4 October 2026): when the project
         # declares binding documents, the Coach judges the turn against them
-        # and the project's own instructions — the set captured once at task
-        # start from repo_root (see _capture_coach_project_documents for what
-        # that does and does not protect). A project that declares none is
+        # and the project's own instructions — the set captured once per build
+        # from the build's source commit (see _capture_coach_project_documents).
+        # A project that declares none is
         # untouched (opt-in). A direct caller that skipped the task-start
         # capture gets the capture here, with the same refusals.
         try:
@@ -8745,98 +8746,132 @@ class AutoBuildOrchestrator:
             project_documents=project_documents,
         )
 
-    def _load_coach_project_documents(self, root: Path) -> tuple:
-        """The project's instructions and binding documents, read from ``root``.
-
-        ``load_project_documents`` is the selector's loader built on the
-        Player's own declaration reader. Opt-in: returns ``()`` when the
-        project declares no binding documents, and the Coach turn is then
-        exactly what it was before. Raises ``AgentInvocationError`` with a
-        plain sentence when a declared document cannot be given whole.
-        """
-        from guardkit.orchestrator.harness.selector import load_project_documents
-
-        return load_project_documents(Path(root))
-
-    #: The captured set, kept per task in the orchestrator-private directory
-    #: so a resumed task reloads the text it started with.
+    #: The captured set, kept once per BUILD (keyed by the worktree's name: the
+    #: task id for a single task, the feature id for a feature) in the
+    #: orchestrator-private directory, so every task of a feature and any
+    #: resume reuse the same commit and text.
     _COACH_DOCUMENTS_SNAPSHOT = "coach_project_documents_start.json"
 
     def _captured_coach_documents(self) -> Dict[str, tuple]:
         return self.__dict__.setdefault("_coach_project_documents", {})
 
+    @staticmethod
+    def _build_source_commit(worktree: Worktree) -> Tuple[str, str]:
+        """The commit this build started from, and how it was found.
+
+        The fork point of the worktree's HEAD and the base branch it was made
+        from (``--base-branch``, not the caller's checkout): stable for the
+        whole build, whatever the Players commit on the worktree branch. Falls
+        back to HEAD, and says so, when the base branch cannot be resolved.
+        Raises ``CommittedContentError`` when the worktree is not a git
+        checkout.
+        """
+        from guardkit.lib.committed_content import CommittedContentError, git_text
+
+        path = Path(worktree.path)
+        head = git_text(path, "rev-parse", "--verify", "HEAD^{commit}").strip()
+        base = getattr(worktree, "base_branch", None) or ""
+        try:
+            fork = git_text(path, "merge-base", head, base).strip()
+            return fork, f"where the worktree branched from {base}"
+        except CommittedContentError:
+            return head, (
+                f"the worktree's HEAD; the base branch {base!r} could not be "
+                "resolved"
+            )
+
     def _capture_coach_project_documents(
         self, task_id: str, worktree: Worktree, *, resume: bool = False
     ) -> Optional[str]:
-        """Capture the Coach's binding documents once, at task start.
+        """Capture the Coach's binding documents once per build, from its commit.
 
-        Review fixes (independent coach, 4 October 2026). The declaration and
-        the documents are read from the canonical ``repo_root`` — the same tree
-        ``_snapshot_toolchain_declaration`` reads, and in the factory the outer
-        checkout at the admitted commit — not from the task or feature
-        worktree the Players edit. So in feature mode, where every task shares
-        one worktree, a later task is not judged against documents an earlier
-        task's Player changed. Where ``repo_root`` IS the worktree (a run with
-        no separate worktree) that protection does not exist, and the turn
-        record says so instead of claiming it.
+        Review fixes (4 October 2026). The declaration and every document and
+        instruction file are read from the COMMITTED content of the commit the
+        build started from — the fork point of the worktree and its base
+        branch — through the same committed-content reader the seed command
+        uses. Not the caller's checkout (which may be on another branch) and
+        not the worktree the Players edit: so the Coach's text is the text the
+        Player saw at the start, and in feature mode, where every task shares
+        one worktree, a later task is not judged against an earlier task's
+        edits. The capture is kept once per build and reused by every task and
+        any resume while the build's commit is unchanged.
 
-        Read before the pre-loop phase and the Player's first turn, so the
+        Done before the pre-loop phase and the Player's first turn, so the
         budget, symbolic-link and missing-file checks stop a broken or
         over-budget declaration before any model call. Opt-in is unchanged: a
         project that declares nothing captures nothing.
-
-        A resumed task reloads the snapshot written at its original start.
 
         Returns ``None`` when the task may proceed, else the refusal sentence.
         """
         from dataclasses import replace as _replace
 
-        from guardkit.orchestrator.harness.selector import ProjectDocument
+        from guardkit.lib.committed_content import CommittedContentError
+        from guardkit.orchestrator.harness.selector import (
+            ProjectDocument,
+            _declares_required_documents,
+            load_project_documents_at_commit,
+        )
+        from guardkit.orchestrator.paths import TaskArtifactPaths
 
         path = getattr(worktree, "path", None)
-        snapshot = None
-        same_directory = False
-        if isinstance(path, (str, os.PathLike)):
-            from guardkit.orchestrator.paths import TaskArtifactPaths
-
-            snapshot = TaskArtifactPaths.private_artifact_path(
-                task_id, self._COACH_DOCUMENTS_SNAPSHOT, Path(path)
-            )
+        if not isinstance(path, (str, os.PathLike)):
+            # Only a test double has no real path; a Worktree always does.
+            self._captured_coach_documents()[task_id] = ()
+            return None
+        path = Path(path)
+        try:
+            commit, how = self._build_source_commit(worktree)
+        except (CommittedContentError, OSError) as exc:
+            config = path / ".guardkit" / "config.yaml"
             try:
-                same_directory = (
-                    Path(path).resolve() == Path(self.repo_root).resolve()
+                text = config.read_text(encoding="utf-8")
+            except OSError:
+                text = None
+            if _declares_required_documents(text):
+                return (
+                    "The project declares binding documents, but the commit this "
+                    f"build started from could not be found ({exc}), so they "
+                    "cannot be read as committed; the task was not started."
                 )
-            except (OSError, RuntimeError):
-                same_directory = False
-        if resume and snapshot is not None and snapshot.is_file():
+            self._captured_coach_documents()[task_id] = ()
+            return None
+
+        snapshot = TaskArtifactPaths.private_artifact_path(
+            path.name, self._COACH_DOCUMENTS_SNAPSHOT, path
+        )
+        if snapshot.is_file():
             try:
                 raw = json.loads(snapshot.read_text(encoding="utf-8"))
-                documents = tuple(ProjectDocument(**item) for item in raw["documents"])
-                if all(
-                    hashlib.sha256(d.text.encode("utf-8")).hexdigest() == d.sha256
-                    for d in documents
-                ):
-                    self._captured_coach_documents()[task_id] = documents
-                    return None
-                logger.warning(
-                    "Coach documents snapshot for %s does not match its own "
-                    "hashes; capturing again from the repository root", task_id,
-                )
+                if raw.get("commit") == commit:
+                    documents = tuple(
+                        ProjectDocument(**item) for item in raw["documents"]
+                    )
+                    if all(
+                        hashlib.sha256(d.text.encode("utf-8")).hexdigest() == d.sha256
+                        for d in documents
+                    ):
+                        self._captured_coach_documents()[task_id] = documents
+                        return None
+                    logger.warning(
+                        "Coach documents snapshot for %s does not match its own "
+                        "hashes; reading the commit again", path.name,
+                    )
             except Exception as exc:  # noqa: BLE001 — fall back to a fresh capture
                 logger.warning(
                     "Could not reload the Coach documents snapshot for %s (%s); "
-                    "capturing again from the repository root", task_id, exc,
+                    "reading the commit again", path.name, exc,
                 )
+
         try:
-            documents = self._load_coach_project_documents(Path(self.repo_root))
+            captured = load_project_documents_at_commit(path, commit)
         except AgentInvocationError as exc:
             return str(exc)
+        documents = captured.documents
         if documents:
-            when = "at task start"
+            when = "when the build started"
             if resume:
-                # A resumed task with no usable task-start snapshot (it began
-                # before documents were declared, or the snapshot was lost):
-                # the set is captured now, and the record says so.
+                # A resumed task with no usable snapshot (the build began before
+                # documents were declared, or the snapshot was lost).
                 when = "at resume, not at task start (no task-start snapshot was found)"
                 logger.warning(
                     "Task %s resumed with binding documents declared but no "
@@ -8844,43 +8879,39 @@ class AutoBuildOrchestrator:
                     task_id,
                 )
             captured_from = (
-                f"the task worktree {when}; it is the same directory as the "
-                "repository root, so edits made there before the capture are "
-                "not excluded"
-                if same_directory
-                else f"the repository root {when}, separate from the task "
-                "worktree the Player edits"
+                f"the committed content of {commit[:12]} ({how}), read {when}"
             )
+            if captured.link_notes:
+                captured_from += "; " + " ".join(captured.link_notes)
             documents = tuple(
                 _replace(d, captured_from=captured_from) for d in documents
             )
         self._captured_coach_documents()[task_id] = documents
-        if snapshot is not None:
-            try:
-                if documents:
-                    snapshot.parent.mkdir(parents=True, exist_ok=True)
-                    snapshot.write_text(
-                        json.dumps(
-                            {
-                                "task_id": task_id,
-                                "documents": [
-                                    {"path": d.path, "sha256": d.sha256,
-                                     "text": d.text, "size": d.size,
-                                     "captured_from": d.captured_from}
-                                    for d in documents
-                                ],
-                            },
-                            indent=2,
-                        ),
-                        encoding="utf-8",
-                    )
-                elif snapshot.exists():
-                    snapshot.unlink()  # an earlier run's set must not be reloaded
-            except OSError as exc:
-                logger.warning(
-                    "Could not keep the Coach documents snapshot for %s (%s); a "
-                    "resume will capture again", task_id, exc,
+        try:
+            if documents:
+                snapshot.parent.mkdir(parents=True, exist_ok=True)
+                snapshot.write_text(
+                    json.dumps(
+                        {
+                            "commit": commit,
+                            "documents": [
+                                {"path": d.path, "sha256": d.sha256,
+                                 "text": d.text, "size": d.size,
+                                 "captured_from": d.captured_from}
+                                for d in documents
+                            ],
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
                 )
+            elif snapshot.exists():
+                snapshot.unlink()  # an earlier build's set must not be reloaded
+        except OSError as exc:
+            logger.warning(
+                "Could not keep the Coach documents snapshot for %s (%s); the next "
+                "task or a resume will read the commit again", path.name, exc,
+            )
         return None
 
     def _coach_documents_for_turn(self, task_id: str, worktree: Worktree) -> tuple:

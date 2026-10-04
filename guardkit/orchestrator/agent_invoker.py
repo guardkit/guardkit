@@ -2871,7 +2871,7 @@ class AgentInvoker:
                 the prompt omits the per-criterion section (pre-COACHBFULL
                 behaviour).
             project_documents: Optional project instructions and binding
-                documents (``harness.selector.load_project_documents``: path,
+                documents (``harness.selector.load_project_documents_at_commit``: path,
                 SHA-256 and full text each), rendered as their own
                 ``## Project documents`` section beside the requirements. The
                 section is never trimmed; if it would not reach the model whole,
