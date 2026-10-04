@@ -112,8 +112,11 @@ The routine runs `guardkit memory capture-outcome --from-task-file <moved-file>
 --success` as a best-effort, non-blocking step (loud log on failure). Task
 completion MUST succeed even if the fleet-memory write fails. If the routine reports
 `memory off`, the project has not declared a memory project: write nothing. If it reports
-the outcome `not published` or `failed` and `mcp__fleet_memory__memory_write_payload`
-is available, write the outcome with it instead: a `build_outcome` payload for the
+the outcome `not published`, `failed (…)` or `skipped (…)` (anything except `recorded`
+and `memory off`) and `mcp__fleet_memory__memory_write_payload` is available, first
+confirm memory is on with the resolver in `~/.agentecflow/docs/memory-preamble.md`
+(§ Which project; write nothing if it reports `memory: OFF`), then write the outcome
+with the MCP tool instead: a `build_outcome` payload for the
 resolved `<project>` with `identifier` `OUTCOME_{safe_task_id}` (every character other
 than a letter, digit or underscore replaced by `_`), `status` `"success"`,
 `duration_seconds` (an integer, `0` when unknown), `task_id`, a short `lessons` summary
