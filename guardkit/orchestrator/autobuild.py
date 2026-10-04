@@ -8832,12 +8832,23 @@ class AutoBuildOrchestrator:
         except AgentInvocationError as exc:
             return str(exc)
         if documents:
+            when = "at task start"
+            if resume:
+                # A resumed task with no usable task-start snapshot (it began
+                # before documents were declared, or the snapshot was lost):
+                # the set is captured now, and the record says so.
+                when = "at resume, not at task start (no task-start snapshot was found)"
+                logger.warning(
+                    "Task %s resumed with binding documents declared but no "
+                    "task-start snapshot of them; capturing them now, at resume.",
+                    task_id,
+                )
             captured_from = (
-                "the task worktree at task start; it is the same directory as "
-                "the repository root, so edits made there before this task "
-                "started are not excluded"
+                f"the task worktree {when}; it is the same directory as the "
+                "repository root, so edits made there before the capture are "
+                "not excluded"
                 if same_directory
-                else "the repository root at task start, separate from the task "
+                else f"the repository root {when}, separate from the task "
                 "worktree the Player edits"
             )
             documents = tuple(
