@@ -8311,7 +8311,6 @@ class AutoBuildOrchestrator:
                             feature_id=self._feature_id or "",
                             turn_number=turn,
                             description=requirements,
-                            tech_stack="python",  # TODO: Detect from task
                             complexity=5,  # TODO: Get from task metadata
                             previous_feedback=feedback,
                         )
@@ -8573,7 +8572,6 @@ class AutoBuildOrchestrator:
                         feature_id=self._feature_id or "",
                         turn_number=turn,
                         description=requirements,
-                        tech_stack="python",  # TODO: Detect from task
                         complexity=5,  # TODO: Get from task metadata
                         player_report=player_report,
                     )
