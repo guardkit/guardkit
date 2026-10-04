@@ -434,6 +434,15 @@ def _what_actually_failed(exc: BaseException) -> str:
     return "; ".join(leaves) if leaves else f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
+class MemoryReadUnavailable(RuntimeError):
+    """There is no route to read a stored record back here; the message says why.
+
+    Raised by :meth:`FleetMemoryClient.read_record` so a caller can say
+    "published, not confirmed" in plain words instead of reading a missing
+    route as a missing record.
+    """
+
+
 class FleetMemoryClient:
     supports_document_source_tags = True
 
@@ -925,6 +934,76 @@ class FleetMemoryClient:
             )
             self.reads["failed"] += 1
             return []
+
+    async def read_record(
+        self, payload_type: str, identifier: str
+    ) -> Optional[dict[str, Any]]:
+        """Read one stored record back by type and identifier, in this memory.
+
+        Project initialisation design, 4 October 2026: publishing is not
+        storing, so ``guardkit memory seed`` reads each record back before it
+        says "stored". This is an exact read, not a search: the store key is
+        fleet-memory's own ``record_identity`` of the natural key
+        ``"<payload_type>:<project>:<identifier>"``, in the namespace its writer
+        uses (``("fleet_memory", project, payload_type)``), through this
+        client's existing store connection.
+
+        Returns ``None`` when no record is stored under that key, else a dict
+        with ``natural_key``, ``version``, ``source_ref`` (from the stored
+        payload) and the stored ``value``. Raises :class:`MemoryReadUnavailable`
+        when there is no route to read it here — no memory name, reads switched
+        off, fleet-memory's reader not installed (an MCP-only setup), or the
+        store could not be opened — so the caller never mistakes "cannot look"
+        for "not there".
+        """
+        if not self.config.project:
+            raise MemoryReadUnavailable(
+                "this build has no memory name, so there is nothing to read back from"
+            )
+        if not self.config.enabled:
+            raise MemoryReadUnavailable(
+                "reading from memory is switched off here (FLEET_MEMORY_ENABLED is "
+                "not true), so the record cannot be read back"
+            )
+        if not self._read_available:
+            raise MemoryReadUnavailable(
+                "fleet-memory's reader is not installed here (for example an "
+                "MCP-only setup), so the record cannot be read back"
+            )
+        if (
+            self._store is None
+            or (
+                self._store_loop is not None
+                and self._store_loop is not _running_loop()
+            )
+        ) and not await self.initialize():
+            raise MemoryReadUnavailable(
+                "the memory store could not be opened, so the record cannot be read back"
+            )
+        from fleet_memory.writer.identity import record_identity
+
+        natural_key = f"{payload_type}:{self.config.project}:{identifier}"
+        item = await self._store.aget(
+            ("fleet_memory", self.config.project, payload_type),
+            str(record_identity(natural_key)),
+        )
+        if item is None:
+            return None
+        value = item.value if isinstance(item.value, dict) else {}
+        stored: Any = value.get("content")
+        if isinstance(stored, str):
+            try:
+                stored = json.loads(stored)
+            except ValueError:
+                stored = {}
+        if not isinstance(stored, dict):
+            stored = {}
+        return {
+            "natural_key": value.get("natural_key") or natural_key,
+            "version": value.get("version"),
+            "source_ref": stored.get("source_ref"),
+            "value": value,
+        }
 
     async def add_episode(
         self,
