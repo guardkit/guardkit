@@ -29,6 +29,16 @@ from guardkit.memory.harvest_walker import HarvestResult
 from guardkit.memory.harvest_publisher import PublishSummary
 
 
+@pytest.fixture(autouse=True)
+def _harvest_memory_name(monkeypatch):
+    """The harvest files under the resolved project and refuses when memory is
+    off (project initialisation design, 4 October 2026). These tests use
+    throwaway folders with no declaration, so the name is handed over the way
+    a caller that knows it does."""
+    monkeypatch.delenv("GUARDKIT_FACTORY_LAUNCH", raising=False)
+    monkeypatch.setenv("GUARDKIT_MEMORY_PROJECT", "guardkit")
+
+
 class TestMemoryHarvestCommand:
     """Test guardkit memory harvest command."""
 

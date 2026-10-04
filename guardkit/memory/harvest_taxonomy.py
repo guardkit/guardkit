@@ -106,24 +106,31 @@ def derive_episode_id(natural_key: str) -> str:
     return f"ep-{hash_bytes.hex()[:16]}"
 
 
-def natural_key_for(repo_relative_path: str, episode_type: str) -> str:
-    """Construct natural key from repo-relative path and episode type.
+def natural_key_for(repo_relative_path: str, episode_type: str, *, project: str) -> str:
+    """Construct natural key from project, repo-relative path and episode type.
 
     The natural key is a three-segment colon-separated identifier:
-    "guardkit:{repo_relative_path}:{episode_type}"
+    "{project}:{repo_relative_path}:{episode_type}"
+
+    ``project`` is the memory the harvest writes to, resolved by
+    ``resolve_memory_project`` (project initialisation design, 4 October 2026).
+    It used to be the literal ``"guardkit"``, so any project's harvest was filed
+    under GuardKit's name; GuardKit's own repository declares
+    ``memory.project: guardkit``, so its keys are unchanged.
 
     Args:
         repo_relative_path: Path relative to repository root
         episode_type: Episode type from HARVEST_MAP (e.g., "adr", "review_report")
+        project: The memory name the harvest writes under
 
     Returns:
         Three-segment natural key for episode_id derivation
 
     Example:
-        >>> natural_key_for("docs/adr/001-decision.md", "adr")
+        >>> natural_key_for("docs/adr/001-decision.md", "adr", project="guardkit")
         'guardkit:docs/adr/001-decision.md:adr'
     """
-    return f"guardkit:{repo_relative_path}:{episode_type}"
+    return f"{project}:{repo_relative_path}:{episode_type}"
 
 
 def episode_type_for(repo_relative_path: str) -> str | None:
@@ -169,7 +176,7 @@ def episode_type_for(repo_relative_path: str) -> str | None:
     return longest_match[0] if longest_match else None
 
 
-def manifest_json() -> str:
+def manifest_json(*, project: str) -> str:
     """Serialize HARVEST_MAP as the corpus manifest consumed by fleet-memory.
 
     One rule mints the claim and the thing claimed: this manifest is derived from
@@ -177,6 +184,10 @@ def manifest_json() -> str:
     reindex) can never drift between the two repos. fleet-memory's reindex pipeline
     loads this JSON (FLEET_MEMORY_CORPUS_MANIFEST) and walks ONLY owner=="reindex"
     directories.
+
+    Args:
+        project: The memory name the manifest is for (the resolved project; it
+            used to be the literal ``"guardkit"``).
 
     Returns:
         JSON document with schema_version, project, and one entry per HARVEST_MAP
@@ -187,7 +198,7 @@ def manifest_json() -> str:
     """
     manifest = {
         "schema_version": 1,
-        "project": "guardkit",
+        "project": project,
         "entries": [
             {
                 "kind": key,
@@ -240,6 +251,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.json:
-        print(manifest_json())
+        import sys
+        from pathlib import Path
+
+        from guardkit.knowledge.memory_project import resolve_memory_project
+
+        resolution = resolve_memory_project(Path.cwd())
+        if not resolution.is_on:
+            print(resolution.message, file=sys.stderr)
+            sys.exit(1)
+        print(manifest_json(project=resolution.project))
     else:
         parser.print_help()

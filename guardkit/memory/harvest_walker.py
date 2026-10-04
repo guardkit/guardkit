@@ -98,6 +98,7 @@ def _build_episode(
     file_path: Path,
     repo_root: Path,
     episode_type: str,
+    project: str,
 ) -> MemoryEpisodeV1 | None:
     """Build MemoryEpisodeV1 for a single file.
 
@@ -105,6 +106,7 @@ def _build_episode(
         file_path: Absolute path to the markdown file.
         repo_root: Repository root directory.
         episode_type: Episode type from taxonomy mapping.
+        project: The memory name the episode is filed under.
 
     Returns:
         MemoryEpisodeV1 instance, or None if body is empty.
@@ -132,7 +134,7 @@ def _build_episode(
     source_ref = str(relative_path).replace("\\", "/")
 
     # Derive episode_id from natural key
-    natural_key = natural_key_for(source_ref, episode_type)
+    natural_key = natural_key_for(source_ref, episode_type, project=project)
     episode_id = derive_episode_id(natural_key)
 
     # Extract name from file stem
@@ -144,7 +146,7 @@ def _build_episode(
     # Build episode
     return MemoryEpisodeV1(
         episode_id=episode_id,
-        project_id="guardkit",  # Literal - no hyphens (DLQ poison)
+        project_id=project,  # the resolved memory name (letters, digits, underscores)
         episode_type=episode_type,
         content_format="markdown",
         body=body,
@@ -155,7 +157,7 @@ def _build_episode(
     )
 
 
-def walk_harvest_dirs(repo_root: Path | str) -> HarvestResult:
+def walk_harvest_dirs(repo_root: Path | str, project: str) -> HarvestResult:
     """Walk harvest directories and build MemoryEpisodeV1 episodes.
 
     Enumerates all *.md files under HARVEST_MAP directories, maps each to its
@@ -164,12 +166,15 @@ def walk_harvest_dirs(repo_root: Path | str) -> HarvestResult:
 
     Args:
         repo_root: Path to repository root directory. Can be Path or string.
+        project: The memory name every episode is filed under — the project
+            ``resolve_memory_project`` resolved (it used to be the literal
+            ``"guardkit"`` for every repository).
 
     Returns:
         HarvestResult with episodes, skip reports, and statistics.
 
     Example:
-        >>> result = walk_harvest_dirs(Path("/path/to/guardkit"))
+        >>> result = walk_harvest_dirs(Path("/path/to/guardkit"), "guardkit")
         >>> print(f"Harvested {len(result.episodes)} episodes")
         >>> print(f"Skipped {result.skipped_empty} empty docs")
         >>> print(f"Counts: {result.counts_per_type}")
@@ -215,7 +220,7 @@ def walk_harvest_dirs(repo_root: Path | str) -> HarvestResult:
 
             # Build episode
             try:
-                episode = _build_episode(md_file, repo_root, episode_type)
+                episode = _build_episode(md_file, repo_root, episode_type, project)
 
                 if episode is None:
                     # Empty body - filtered out

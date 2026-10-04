@@ -42,7 +42,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/code-review/review-x.md").write_text("# Review X\nContent")
         (tmp_path / "docs/guides/guide-y.md").write_text("# Guide Y\nContent")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         # Find episodes by type
         adr_episodes = [e for e in result.episodes if e.episode_type == "adr"]
@@ -62,7 +62,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr/whitespace.md").write_text("   \n\t  \n   ")
         (tmp_path / "docs/adr/valid.md").write_text("# Real content")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         # Should only have 1 valid episode
         assert len(result.episodes) == 1
@@ -81,7 +81,7 @@ class TestHarvestWalker:
         # Create a normal-sized doc
         (tmp_path / "docs/adr/normal.md").write_text("# Normal content")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         # Should have 1 episode (normal) and 1 skipped (oversized)
         assert len(result.episodes) == 1
@@ -92,11 +92,12 @@ class TestHarvestWalker:
         assert size > MAX_EPISODE_BODY_BYTES
 
     def test_project_id_literal_guardkit(self, tmp_path: Path) -> None:
-        """project_id is the literal 'guardkit' with underscores only."""
+        """project_id is the project the harvest was given (GuardKit's own:
+        'guardkit'), underscores only."""
         (tmp_path / "docs/adr").mkdir(parents=True)
         (tmp_path / "docs/adr/test.md").write_text("# Test")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.episodes) == 1
         episode = result.episodes[0]
@@ -117,7 +118,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/code-review/review-a.md").write_text("# Review A")
         (tmp_path / "docs/code-review/review-b.md").write_text("# Review B")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert result.counts_per_type["adr"] == 3
         assert result.counts_per_type["review_report"] == 2
@@ -129,7 +130,7 @@ class TestHarvestWalker:
         test_path = tmp_path / "docs/adr/001-test.md"
         test_path.write_text("# Test Decision\n\nSome content here.")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.episodes) == 1
         episode = result.episodes[0]
@@ -156,7 +157,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr/simple.md").write_text("# Content")
         (tmp_path / "docs/adr/multi-word-name.md").write_text("# Content")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         names = sorted([e.name for e in result.episodes])
         assert names == ["001-decision", "multi-word-name", "simple"]
@@ -166,7 +167,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr").mkdir(parents=True)
         (tmp_path / "docs/adr/test.md").write_text("# Test")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         episode = result.episodes[0]
         assert isinstance(episode.occurred_at, datetime)
@@ -181,7 +182,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr/test.md").write_text("# Test")
 
         # Should complete without any network calls
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
         assert len(result.episodes) == 1
 
     def test_relative_path_in_source_ref(self, tmp_path: Path) -> None:
@@ -189,7 +190,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr").mkdir(parents=True)
         (tmp_path / "docs/adr/test.md").write_text("# Test")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         episode = result.episodes[0]
         # Should be relative like "docs/adr/test.md", not absolute
@@ -202,8 +203,8 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr/test.md").write_text("# Test")
 
         # Walk twice
-        result1 = walk_harvest_dirs(tmp_path)
-        result2 = walk_harvest_dirs(tmp_path)
+        result1 = walk_harvest_dirs(tmp_path, "guardkit")
+        result2 = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert result1.episodes[0].episode_id == result2.episodes[0].episode_id
 
@@ -215,7 +216,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/adr/readme.txt").write_text("Not markdown")
         (tmp_path / "docs/adr/data.json").write_text("{}")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.episodes) == 1
         assert result.episodes[0].source_ref.endswith("valid.md")
@@ -229,7 +230,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/code-review/2024/nested.md").write_text("# Nested")
         (tmp_path / "docs/code-review/2024/q1/deep.md").write_text("# Deep")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.episodes) == 3
         # All should have review_report type
@@ -245,7 +246,7 @@ class TestHarvestWalker:
         (tmp_path / "docs/code-review/test2.md").write_text("# Test 2")
         (tmp_path / "docs/guides/test3.md").write_text("# Test 3")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert all(e.content_format == "markdown" for e in result.episodes)
 
@@ -267,7 +268,7 @@ class TestHarvestWalker:
         )
         (tmp_path / "docs/adr/001-decision.md").write_text("# ADR 001")
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         # Only the ADR is harvested; nothing from tasks/completed
         assert len(result.episodes) == 1
@@ -279,7 +280,7 @@ class TestHarvestWalker:
 
     def test_empty_repo_returns_empty_result(self, tmp_path: Path) -> None:
         """Walking an empty repo returns empty episodes list."""
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.episodes) == 0
         assert result.skipped_empty == 0
@@ -293,7 +294,7 @@ class TestHarvestWalker:
         oversized_content = "x" * (MAX_EPISODE_BODY_BYTES + 100)
         (tmp_path / "docs/adr/huge.md").write_text(oversized_content)
 
-        result = walk_harvest_dirs(tmp_path)
+        result = walk_harvest_dirs(tmp_path, "guardkit")
 
         assert len(result.skipped_oversized) == 1
         path, _ = result.skipped_oversized[0]
