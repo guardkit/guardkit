@@ -26,8 +26,8 @@
       "source_commit": "1b89804d"
     },
     "arch-refine.md": {
-      "sha256": "52de432449b5e16569b1d207023b796b538d8b6f988cd7f3d035018da891cbbb",
-      "source_commit": "7669f84e"
+      "sha256": "40929520d9d299b20cbfb2fc76d86ea26d8f935fe4edaa53380f9069db4745db",
+      "source_commit": "73039892"
     },
     "context-switch.md": {
       "sha256": "dd5a01daeb835042dd0addaf21a9b5f9dba55aca2ab5afa3638fd0153b392a52",
@@ -62,12 +62,12 @@
       "source_commit": "3c0995b4"
     },
     "system-design.md": {
-      "sha256": "9bd6df9a953f0ed92bc568fb3a2df7ccdcaa03e437e77a59b6a7a33551566ec3",
-      "source_commit": "3c0995b4"
+      "sha256": "3cd39167db90bb71a0646d909bfeb3406421ed31abdc9bc9112dcdbd9e24eee3",
+      "source_commit": "73039892"
     },
     "system-plan.md": {
-      "sha256": "e8196f986fc4f8bd787436e61b88e0e4b4557f09aeb6d0c43ab90eb3f2e56de1",
-      "source_commit": "7669f84e"
+      "sha256": "7ad319ce56742990ff3bed2619c6beb954d3bdf2bd29569a438da43233e00f47",
+      "source_commit": "73039892"
     },
     "task-complete.md": {
       "sha256": "1c755614046dbb50982b15550f58afc832e61c10f9ad9254729158dc31ca0fcd",
