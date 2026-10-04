@@ -92,7 +92,7 @@ print("    [E]vent-Driven — Event-based communication")
 print("    [N]ot sure — Let questions guide the choice")
 choice = input("Your choice [M/L/D/E/N]: ").lower()
 # The writer and the rest of this command use full names ("ddd" selects bounded contexts).
-methodology = {"m": "modular", "l": "layered", "d": "ddd", "e": "event-driven"}.get(choice, "modular")
+methodology = {"m": "modular", "l": "layered", "d": "ddd", "e": "event_driven", "n": "undecided"}.get(choice, "undecided")
 
 # Store in answers
 answers["q5_methodology"] = methodology

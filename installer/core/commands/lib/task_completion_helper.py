@@ -501,6 +501,8 @@ def _commit_git_state_best_effort(task_id: str) -> str:
         return f"skipped ({exc})"
 
 
+# Without a frontmatter id this is a best guess: an all-capitals or all-digit slug word
+# (TASK-045-API-setup) is indistinguishable from an ID segment. Declare `id` to be exact.
 _TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+(?=-|$))*)")
 
 

@@ -1182,19 +1182,19 @@ for bc in bounded_contexts:
 If `memory_available` is true, build one typed payload per artefact (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern):
 
 ```
-# For each API contract file generated → document / ["design","api_contract"]
+# For each API contract file generated → document / ["architecture","design","api_contract"]
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "document", "project": "<project>", "identifier": "<contract_slug>",
   "content": "<contract markdown>", "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/<contract-slug>.md"})
 
-# For each data model file generated → document / ["design","data_model"]
+# For each data model file generated → document / ["architecture","design","data_model"]
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "document", "project": "<project>", "identifier": "<model_slug>",
   "content": "<data-model markdown>", "domain_tags": ["architecture", "design", "data_model"],
   "source_ref": "docs/design/models/<model-slug>.md"})
 
-# For each DDR captured → adr / ["design"]
+# For each DDR captured → adr / ["architecture","design"]
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "adr", "project": "<project>", "identifier": "DDR_{NNN}",
   "decision": "<the decision>", "status": "accepted",

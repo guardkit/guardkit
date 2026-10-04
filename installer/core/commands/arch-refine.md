@@ -219,11 +219,11 @@ write_adr_file(new_adr, "docs/architecture/decisions")
 # NEW ADR — carries the forward "supersedes" link to the old ADR's natural key.
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "adr", "project": "<project>",
-  "identifier": "ADR_{next_number:03d}",          # underscores only, e.g. ADR_008
+  "identifier": "ADR_ARCH_{next_number:03d}",     # underscores only, e.g. ADR_ARCH_008
   "decision": "<new decision text>", "status": "accepted",
   "title": "<title>", "context": "<context>",
   "consequences": "<consequences>", "alternatives": ["<alternative considered>"],
-  "supersedes": ["adr:<project>:ADR_{existing_number:03d}"],
+  "supersedes": ["adr:<project>:ADR_ARCH_{existing_number:03d}"],
   "domain_tags": ["architecture"],
   "source_ref": "docs/architecture/decisions/{new-adr-file}.md"
 })
@@ -232,7 +232,7 @@ mcp__fleet_memory__memory_write_payload(payload={
 # Idempotent upsert preserves it (both versions coexist and stay searchable).
 mcp__fleet_memory__memory_write_payload(payload={
   "payload_type": "adr", "project": "<project>",
-  "identifier": "ADR_{existing_number:03d}",       # same natural key as before
+  "identifier": "ADR_ARCH_{existing_number:03d}",  # same natural key as before
   "decision": "<existing decision text>", "status": "superseded",
   # carry the old record's own fields: the re-write replaces the whole record
   "title": "<its title>", "context": "<its context>",
@@ -551,14 +551,14 @@ If no: display "Cancelled." and stop. Do not block if no input — default to co
 try:
     mcp__fleet_memory__memory_write_payload(payload={
         "payload_type": "adr", "project": "<project>",
-        "identifier": new_adr.identifier,      # underscores only
+        "identifier": f"ADR_ARCH_{new_adr.number:03d}",  # underscores only
         "decision": new_adr.decision, "status": "accepted",
         "title": new_adr.title, "context": new_adr.context,
         "consequences": "; ".join(new_adr.consequences),  # a list on the entity, one string here
         "alternatives": new_adr.alternatives_considered,
-        "supersedes": [f"adr:<project>:{existing_adr.identifier}"],
+        "supersedes": [f"adr:<project>:ADR_ARCH_{existing_adr.number:03d}"],
         "domain_tags": ["architecture"],
-        "source_ref": new_adr.source_ref,
+        "source_ref": new_adr_path,  # the decisions/ADR-ARCH-NNN-*.md file just written
     })
 except Exception:
     print("WARNING: Fleet-memory write failed during refinement session")
