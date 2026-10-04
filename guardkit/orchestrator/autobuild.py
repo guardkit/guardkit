@@ -8881,6 +8881,29 @@ class AutoBuildOrchestrator:
             )
         return tuple(marked)
 
+    #: What the legacy Coach's turn record says when it decided without them.
+    LEGACY_DOCUMENTS_NOTE = "declared documents not used by the legacy Coach"
+
+    def _note_documents_unused_by_legacy_coach(
+        self, task_id: str, turn: int, worktree: Worktree, project_documents: tuple
+    ) -> None:
+        """Warn, and write the turn record, when GUARDKIT_COACH_LEGACY=1 decided
+        a turn of a project that declares binding documents."""
+        from guardkit.orchestrator.agent_invoker import (
+            write_coach_project_documents_record,
+        )
+
+        logger.warning(
+            "Coach turn %s for %s: the project declares binding documents, but the "
+            "legacy rule-based Coach (GUARDKIT_COACH_LEGACY=1) decided this turn "
+            "and cannot use them.",
+            turn, task_id,
+        )
+        write_coach_project_documents_record(
+            Path(worktree.path), task_id, turn, project_documents,
+            note=self.LEGACY_DOCUMENTS_NOTE,
+        )
+
     def _coach_documents_unsupported(self, project_documents: tuple) -> Optional[str]:
         """A refusal sentence when documents exist and the invoker cannot take them.
 
@@ -9051,6 +9074,14 @@ class AutoBuildOrchestrator:
 
             duration = time.time() - start_time
             decision_path = validator.save_decision(validation_result)
+
+            if project_documents:
+                # The rule-based validator decided this turn and cannot read
+                # documents, so the declared ones were not used. Said out loud
+                # and recorded, never silently skipped (review fix 3).
+                self._note_documents_unused_by_legacy_coach(
+                    task_id, turn, worktree, project_documents
+                )
 
             if player_report.get("command_results") and decision_path.exists():
                 try:
