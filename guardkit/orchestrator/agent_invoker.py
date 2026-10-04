@@ -996,6 +996,9 @@ def write_coach_project_documents_record(
         "total_bytes": sum(d.size for d in documents),
         "budget_bytes": PROJECT_DOCUMENTS_BUDGET_BYTES,
         "section_sha256": section_sha256,
+        "captured_from": sorted(
+            {d.captured_from for d in documents if getattr(d, "captured_from", None)}
+        ),
         "changed_since_task_start": [
             {
                 "path": d.path,

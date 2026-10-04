@@ -427,13 +427,17 @@ def _worktree(path: Path) -> Worktree:
     return worktree
 
 
-def _orchestrator(tmp_path: Path, invoke_coach: Any) -> AutoBuildOrchestrator:
+def _orchestrator(
+    tmp_path: Path, invoke_coach: Any, repo_root: Optional[Path] = None
+) -> AutoBuildOrchestrator:
+    """An orchestrator whose canonical repo_root is ``repo_root`` (default: the
+    task worktree itself, a run with no separate worktree)."""
     manager = MagicMock()
     manager.worktrees_dir = tmp_path / "worktrees"
     invoker = MagicMock()
     invoker.invoke_coach = invoke_coach
     return AutoBuildOrchestrator(
-        repo_root=tmp_path / "repo",
+        repo_root=repo_root or tmp_path / "wt",
         max_turns=3,
         worktree_manager=manager,
         agent_invoker=invoker,
@@ -592,10 +596,12 @@ class TestCapturedAtTaskStart:
         monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        repo = tmp_path / "repo"
+        _write_project(repo, documents={"docs/mission.md": MISSION})
         root = tmp_path / "wt"
         _write_project(root, documents={"docs/mission.md": MISSION})
         invoker = _invoker(root)
-        orch = _orchestrator(tmp_path, invoker.invoke_coach)
+        orch = _orchestrator(tmp_path, invoker.invoke_coach, repo_root=repo)
         worktree = _worktree(root)
         assert orch._capture_coach_project_documents("TASK-PD-010", worktree) is None
         captured_sha = _sha(MISSION.encode())
@@ -624,6 +630,10 @@ class TestCapturedAtTaskStart:
                 "captured_sha256": captured_sha,
                 "worktree_sha256": _sha(edited.encode()),
             }
+        ]
+        assert record["captured_from"] == [
+            "the repository root at task start, separate from the task worktree "
+            "the Player edits"
         ]
 
     def test_deleted_document_is_noted_not_refused(self, tmp_path: Path) -> None:
@@ -682,7 +692,7 @@ def _orchestrate(tmp_path: Path, root: Path):
 
     gates.execute = execute
     orch = AutoBuildOrchestrator(
-        repo_root=tmp_path / "repo",
+        repo_root=root,
         max_turns=3,
         worktree_manager=manager,
         agent_invoker=invoker,
@@ -771,3 +781,76 @@ class TestLegacyCoach:
         root, result, _ = self._legacy(tmp_path, monkeypatch, {})
         assert result.success is True
         assert not list(root.rglob("coach_project_documents_*.json"))
+
+
+class TestCapturedFromRepoRoot:
+    """Review re-check (4 October 2026): feature mode shares one worktree."""
+
+    def test_feature_mode_task_b_is_not_judged_against_task_a_edits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        repo = tmp_path / "repo"  # the canonical checkout Players never write
+        _write_project(repo, documents={"docs/mission.md": MISSION})
+        shared = tmp_path / "feature-wt"  # one worktree for every task
+        _write_project(shared, documents={"docs/mission.md": MISSION})
+        worktree = _worktree(shared)
+
+        # Task A starts, then its Player edits the binding document.
+        task_a = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        assert task_a._capture_coach_project_documents("TASK-A", worktree) is None
+        edited = MISSION + "EDITED BY TASK A's PLAYER.\n"
+        (shared / "docs" / "mission.md").write_text(edited)
+
+        # Task B starts fresh in the same worktree (feature mode: resume=False).
+        invoker = _invoker(shared)
+        task_b = _orchestrator(tmp_path, invoker.invoke_coach, repo_root=repo)
+        assert task_b._capture_coach_project_documents("TASK-B", worktree) is None
+        prompts: list[str] = []
+
+        async def capture(**kwargs: Any) -> None:
+            prompts.append(kwargs["prompt"])
+            raise RuntimeError("stop-after-capture")
+
+        with patch("guardkit.orchestrator.autobuild.CoachValidator") as validator_class, \
+                patch.object(invoker, "_invoke_with_role", side_effect=capture):
+            validator = MagicMock()
+            validator.gather_evidence.return_value = _bundle()
+            validator_class.return_value = validator
+            task_b._produce_spec_conformance_leg = MagicMock(return_value=None)  # type: ignore[method-assign]
+            task_b._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
+            task_b._direct_mode_evidence_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
+            task_b._invoke_coach_safely(
+                task_id="TASK-B", turn=1, requirements="reqs",
+                player_report={"files_modified": []}, worktree=worktree,
+            )
+
+        assert MISSION in prompts[0]
+        assert "EDITED BY TASK A" not in prompts[0]
+        record = _record(shared, "TASK-B", 1)
+        assert record["changed_since_task_start"] == [
+            {
+                "path": "docs/mission.md",
+                "captured_sha256": _sha(MISSION.encode()),
+                "worktree_sha256": _sha(edited.encode()),
+            }
+        ]
+        # A feature re-run re-captures from repo_root too, not from the edited worktree.
+        again = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        again._capture_coach_project_documents("TASK-B", worktree)
+        docs = again._coach_documents_for_turn("TASK-B", worktree)
+        assert next(d for d in docs if d.path == "docs/mission.md").text == MISSION
+
+    def test_same_directory_is_said_not_claimed(self, tmp_path: Path) -> None:
+        root = tmp_path / "wt"
+        _write_project(root, documents={"docs/mission.md": MISSION})
+        orch = _orchestrator(tmp_path, _real_signature_mock(), repo_root=root)
+        orch._capture_coach_project_documents("TASK-PD-040", _worktree(root))
+        docs = orch._coach_documents_for_turn("TASK-PD-040", _worktree(root))
+        assert {d.captured_from for d in docs} == {
+            "the task worktree at task start; it is the same directory as the "
+            "repository root, so edits made there before this task started are "
+            "not excluded"
+        }

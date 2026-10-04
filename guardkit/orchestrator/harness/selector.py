@@ -488,7 +488,8 @@ class ProjectDocument:
     ``worktree_sha256`` is set only on a Coach turn whose task worktree copy no
     longer matches the text captured at task start: the copy's current hash,
     or ``"missing"``. The Coach is still given the captured text; the field
-    exists so the turn record can say the copy changed.
+    exists so the turn record can say the copy changed. ``captured_from`` says,
+    in a sentence, where and when the text was captured.
     """
 
     path: str
@@ -496,6 +497,7 @@ class ProjectDocument:
     text: str
     size: int
     worktree_sha256: str | None = None
+    captured_from: str | None = None
 
 
 def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None:
