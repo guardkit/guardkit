@@ -724,6 +724,41 @@ class TestTaskStartRefusal:
         invoker.invoke_coach.assert_not_called()
         assert pre_loop_calls == []  # no planning model call either
 
+    def test_refusal_summary_names_files_sizes_and_limit(self, tmp_path: Path) -> None:
+        root = tmp_path / "wt"
+        big = "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES + 1)
+        _write_project(root, documents={"docs/big.md": big})
+        orch = _orchestrator(tmp_path, _real_signature_mock(), repo_root=root)
+        refusal = orch._capture_coach_project_documents("TASK-PD-050", _worktree(root))
+        assert refusal is not None
+        orch._project_documents_refusal = refusal
+        summary = orch._build_summary_details([], "configuration_error")
+        message = orch._build_error_message("configuration_error", [])
+        for text in (summary, message):
+            assert f"docs/big.md ({len(big)} bytes)" in text
+            assert str(PROJECT_DOCUMENTS_BUDGET_BYTES) in text
+            assert "task_type" not in text
+            assert "unknown configuration error" not in text
+        # An ordinary configuration error still reads as before.
+        plain = _orchestrator(tmp_path, _real_signature_mock(), repo_root=root)
+        assert "unknown configuration error" in plain._build_summary_details(
+            [], "configuration_error"
+        )
+
+    def test_orchestrate_summary_carries_the_refusal(self, tmp_path: Path) -> None:
+        root = tmp_path / "wt"
+        _write_project(root, documents={"docs/big.md": "x" * (PROJECT_DOCUMENTS_BUDGET_BYTES + 1)})
+        with patch.object(
+            AutoBuildOrchestrator, "_build_summary_details",
+            autospec=True, side_effect=AutoBuildOrchestrator._build_summary_details,
+        ) as summary:
+            result, _, _ = _orchestrate(tmp_path, root)
+        assert result.final_decision == "configuration_error"
+        rendered = [
+            AutoBuildOrchestrator._build_summary_details(*c.args) for c in summary.call_args_list
+        ]
+        assert rendered and all("docs/big.md" in r for r in rendered)
+
     def test_linked_declared_document_stops_before_the_player_runs(
         self, tmp_path: Path
     ) -> None:
