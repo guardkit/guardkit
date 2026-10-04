@@ -303,6 +303,31 @@ class RetrievedContext:
         return json.dumps(item, default=str)
 
 
+def _outcome_as_paragraph(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Give a stored build outcome to the builder as its paragraph, not its record.
+
+    PASS ON THE PARAGRAPH (2026-10-04). A retrieved outcome is the store's
+    whole record as escaped JSON. It reached the prompt like that, and it was
+    costed like that too: the fixed fields alone used about 220 of the 418-644
+    tokens the outcomes share gets, so at most one outcome fitted. The record's
+    ``lessons`` paragraph is the part written for a later build to read. So an
+    outcome with a non-empty ``lessons`` becomes ``{"content": <lessons>,
+    "uuid", "score"}``: ``_format_item`` prints ``content`` as it is, and
+    ``_estimate_tokens`` costs the paragraph alone. Anything else is left
+    exactly as it came.
+    """
+    if not isinstance(item, dict) or not isinstance(item.get("fact"), str):
+        return item
+    try:
+        record = json.loads(item["fact"])
+    except ValueError:
+        return item
+    lessons = record.get("lessons") if isinstance(record, dict) else None
+    if not isinstance(lessons, str) or not lessons.strip():
+        return item
+    return {"content": lessons, "uuid": item.get("uuid"), "score": item.get("score", 1.0)}
+
+
 class JobContextRetriever:
     """Retrieves job-specific context from the memory backend.
 
@@ -1034,6 +1059,9 @@ class JobContextRetriever:
             # Handle None or empty results
             if not results:
                 return [], 0
+
+            if category == "similar_outcomes" and group_ids == ["task_outcomes"]:
+                results = [_outcome_as_paragraph(item) for item in results]
 
             # Filter by relevance threshold and collect metrics
             filtered = []
