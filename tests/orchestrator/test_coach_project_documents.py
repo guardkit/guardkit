@@ -886,6 +886,46 @@ class TestCapturedFromRepoRoot:
         docs = orch._coach_documents_for_turn("TASK-PD-040", _worktree(root))
         assert {d.captured_from for d in docs} == {
             "the task worktree at task start; it is the same directory as the "
-            "repository root, so edits made there before this task started are "
+            "repository root, so edits made there before the capture are "
             "not excluded"
+        }
+
+
+class TestResumeWithoutSnapshot:
+    def test_captured_at_resume_is_warned_and_recorded(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        repo = tmp_path / "repo"
+        _write_project(repo, documents={"docs/mission.md": MISSION})
+        root = tmp_path / "wt"
+        _write_project(root, documents={"docs/mission.md": MISSION})
+        orch = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        # No task-start snapshot exists (the task began before documents were declared).
+        assert orch._capture_coach_project_documents(
+            "TASK-PD-060", _worktree(root), resume=True
+        ) is None
+        assert any("capturing them now, at resume" in r.getMessage() for r in caplog.records)
+        docs = orch._coach_documents_for_turn("TASK-PD-060", _worktree(root))
+        from guardkit.orchestrator.agent_invoker import write_coach_project_documents_record
+
+        write_coach_project_documents_record(root, "TASK-PD-060", 3, docs, section_sha256="x")
+        assert _record(root, "TASK-PD-060", 3)["captured_from"] == [
+            "the repository root at resume, not at task start (no task-start "
+            "snapshot was found), separate from the task worktree the Player edits"
+        ]
+
+    def test_resume_with_a_snapshot_is_not_noted(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        _write_project(repo, documents={"docs/mission.md": MISSION})
+        root = tmp_path / "wt"
+        _write_project(root, documents={"docs/mission.md": MISSION})
+        _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)._capture_coach_project_documents(
+            "TASK-PD-061", _worktree(root)
+        )
+        resumed = _orchestrator(tmp_path, _real_signature_mock(), repo_root=repo)
+        resumed._capture_coach_project_documents("TASK-PD-061", _worktree(root), resume=True)
+        docs = resumed._coach_documents_for_turn("TASK-PD-061", _worktree(root))
+        assert {d.captured_from for d in docs} == {
+            "the repository root at task start, separate from the task worktree "
+            "the Player edits"
         }
