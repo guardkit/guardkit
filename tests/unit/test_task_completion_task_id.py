@@ -39,3 +39,8 @@ def test_plain_id_file_name_unchanged(tmp_path: Path) -> None:
 def test_frontmatter_id_is_read_not_guessed(tmp_path: Path) -> None:
     task = _write(tmp_path / "TASK-045-renamed-file.md", "id: TASK-099\ntitle: x\n")
     assert _task_id_for(task) == "TASK-099"
+
+
+def test_slug_starting_with_digits_is_not_absorbed(tmp_path: Path) -> None:
+    task = _write(tmp_path / "TASK-045-2fa-setup.md", "title: x\n")
+    assert _task_id_for(task) == "TASK-045"

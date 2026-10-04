@@ -501,7 +501,7 @@ def _commit_git_state_best_effort(task_id: str) -> str:
         return f"skipped ({exc})"
 
 
-_TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+)*)")
+_TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+(?=-|$))*)")
 
 
 def _task_id_for(task_path: Path) -> str:

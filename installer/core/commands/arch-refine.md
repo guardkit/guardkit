@@ -554,7 +554,8 @@ try:
         "identifier": new_adr.identifier,      # underscores only
         "decision": new_adr.decision, "status": "accepted",
         "title": new_adr.title, "context": new_adr.context,
-        "consequences": new_adr.consequences, "alternatives": new_adr.alternatives,
+        "consequences": "; ".join(new_adr.consequences),  # a list on the entity, one string here
+        "alternatives": new_adr.alternatives_considered,
         "supersedes": [f"adr:<project>:{existing_adr.identifier}"],
         "domain_tags": ["architecture"],
         "source_ref": new_adr.source_ref,
