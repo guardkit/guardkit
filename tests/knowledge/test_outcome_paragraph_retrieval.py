@@ -129,3 +129,15 @@ async def test_the_prompt_shows_the_paragraph_as_plain_text():
     outcomes = outcomes.split("\n\n", 1)[0]
     assert outcomes == f"- {LESSONS}"
 
+
+@pytest.mark.asyncio
+async def test_a_failed_category_query_is_counted():
+    client = MagicMock()
+    client.search = AsyncMock(side_effect=RuntimeError("store down"))
+    retriever = JobContextRetriever(client, cache_ttl=0)
+    items, tokens = await retriever._query_category(
+        "query", ["task_outcomes"], 2000, 0.5, category="similar_outcomes"
+    )
+    assert (items, tokens) == ([], 0)
+    await retriever._query_turn_states("FEAT-AB12", "TASK-AB12-001", 500, 0.5)
+    assert retriever.failed_reads == 2

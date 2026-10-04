@@ -441,6 +441,10 @@ class JobContextRetriever:
         self.relevant_pattern_document_tags = relevant_pattern_document_tags
         # Cache: Dict[cache_key, Tuple[RetrievedContext, timestamp]]
         self._cache: Dict[str, Tuple[RetrievedContext, float]] = {}
+        # Category queries that failed here, in the except branches below.
+        # Together with the memory client's own ``reads`` counter this lets
+        # the per-turn memory line tell a failed read from an empty one.
+        self.failed_reads: int = 0
 
     def _generate_cache_key(
         self,
@@ -1081,6 +1085,7 @@ class JobContextRetriever:
             return trimmed, tokens_used
 
         except Exception as e:
+            self.failed_reads += 1
             logger.warning(
                 "[Memory] Category '%s' query failed: %s", category, e
             )
@@ -1149,6 +1154,7 @@ class JobContextRetriever:
             return trimmed, tokens_used
 
         except Exception as e:
+            self.failed_reads += 1
             logger.warning(
                 "[Memory] turn_states query failed (feature=%s, task=%s): %s",
                 feature_id,

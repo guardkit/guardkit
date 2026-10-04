@@ -134,6 +134,51 @@ def _load_relevant_pattern_document_tags(
 
 
 @dataclass
+class MemoryReadReport:
+    """What a memory search did on one turn, for the orchestrator's one line.
+
+    SAY WHAT HAPPENED, NOT "NOTHING CAME BACK" (2026-10-04). An empty result
+    used to be reported as "either nothing on record or retrieval failed",
+    because a failed read, a cached result and a search that found nothing
+    all looked the same here. These figures tell them apart:
+
+    - completed / failed: memory reads made during this turn's retrieval,
+      from the memory client's ``reads`` counter and the retriever's own
+      failed category queries.
+    - above_line: items that scored at or above the relevance line, before
+      the token budget trimmed them.
+    - delivered: items actually in the context handed over.
+    - error: set when the retrieval itself raised.
+    """
+
+    completed: int = 0
+    failed: int = 0
+    above_line: int = 0
+    delivered: int = 0
+    line: float = 0.5
+    error: Optional[str] = None
+
+    def describe(self) -> str:
+        """The part of the per-turn line after "<role> <task> turn <n>: "."""
+        if self.error is not None:
+            return f"searched: failed ({self.error})."
+        return (
+            f"searched: {self.completed} completed, {self.failed} failed; "
+            f"{self.above_line} above the line ({self.line:.2f}), "
+            f"{self.delivered} delivered."
+        )
+
+    @property
+    def needs_attention(self) -> bool:
+        """A read failed, or records passed the line and none was delivered."""
+        return (
+            self.error is not None
+            or self.failed > 0
+            or (self.above_line > 0 and self.delivered == 0)
+        )
+
+
+@dataclass
 class AutoBuildContextResult:
     """Result from AutoBuild context loading.
 
@@ -144,6 +189,8 @@ class AutoBuildContextResult:
         budget_total: Total budget available
         categories_populated: List of category names with content
         verbose_details: Extra details for --verbose flag
+        memory: What the memory search did this turn; None when no search
+            was attempted (no memory client)
     """
 
     context: RetrievedContext
@@ -152,6 +199,7 @@ class AutoBuildContextResult:
     budget_total: int
     categories_populated: List[str]
     verbose_details: Optional[str] = None
+    memory: Optional[MemoryReadReport] = None
 
 
 def format_pattern_block(
@@ -365,6 +413,13 @@ class AutoBuildContextLoader:
         if self._retriever is None and self.graphiti is not None:
             self._retriever = JobContextRetriever(
                 self.graphiti,
+                # No five-minute cache for per-turn reads (2026-10-04). A
+                # cached result carries no record of whether its searches
+                # failed, so the per-turn memory line would describe an
+                # earlier call. Its key also ignored role and turn, so a
+                # reviewer could be handed the builder's result. The cost is
+                # at most one repeat search, about half a second.
+                cache_ttl=0,
                 relevant_pattern_document_tags=(
                     # The project's declaration, out of the SAME copy the
                     # memory name is settled from (see ``declaration_root``).
@@ -440,13 +495,16 @@ class AutoBuildContextLoader:
             previous_feedback=previous_feedback,
         )
 
+        reads_before = self._read_counts()
         try:
-            # Retrieve context
+            # Retrieve context. Quality figures are always collected: the
+            # per-turn memory line needs the count above the line.
             context = await self.retriever.retrieve(
                 task=task,
                 phase=TaskPhase.IMPLEMENT,
-                collect_metrics=self.verbose,
+                collect_metrics=True,
             )
+            memory = self._memory_report(context, reads_before)
 
             # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
@@ -476,6 +534,7 @@ class AutoBuildContextLoader:
 
             # Build result
             result = self._build_result(context, actor="player", turn_continuation=turn_continuation)
+            result.memory = memory
 
             # Append template pattern context (TASK-TPL-004)
             self._append_template_patterns(
@@ -497,25 +556,10 @@ class AutoBuildContextLoader:
                 result.budget_used,
                 result.budget_total,
             )
-            if not result.categories_populated:
-                # SILENCE IS NOT AN EMPTY MEMORY (2026-09-13). A retrieval that
-                # failed inside the client is caught down there and comes back
-                # here as a successful result with nothing in it, so the line
-                # above reads "0 categories" and a build runs with the builder
-                # and the reviewer having no memory at all. FEAT-19C4 did that
-                # for all five of its turns while 22 event-loop errors went by
-                # in the log unattached to any consequence. So the consequence
-                # is said out loud, once, where the operator is already reading.
-                logger.warning(
-                    "[Memory] the builder is working with NO memory this turn "
-                    "(%s, turn %s): nothing was retrieved. Either there is "
-                    "genuinely nothing on record for this task, or retrieval "
-                    "failed inside the memory client — check the log above for "
-                    "an error from fleet-memory before reading this as an "
-                    "empty memory.",
-                    task_id,
-                    turn_number,
-                )
+            # SILENCE IS NOT AN EMPTY MEMORY (2026-09-13). An empty result used
+            # to be followed here by a warning that could only say "nothing on
+            # record, or retrieval failed". Since 2026-10-04 ``result.memory``
+            # says which, and the orchestrator writes it as one line per turn.
             return result
 
         except Exception as e:
@@ -525,6 +569,7 @@ class AutoBuildContextLoader:
                 task_id, context_duration, e,
             )
             result = self._empty_result(task_id)
+            result.memory = self._memory_report(None, reads_before, error=e)
             self._append_template_patterns(
                 result, tech_stack=tech_stack, file_path_hints=file_path_hints
             )
@@ -579,13 +624,15 @@ class AutoBuildContextLoader:
             has_previous_turns=turn_number > 1,
         )
 
+        reads_before = self._read_counts()
         try:
-            # Retrieve context
+            # Retrieve context (quality figures always collected; see Player).
             context = await self.retriever.retrieve(
                 task=task,
                 phase=TaskPhase.IMPLEMENT,
-                collect_metrics=self.verbose,
+                collect_metrics=True,
             )
+            memory = self._memory_report(context, reads_before)
 
             # Load turn continuation context for turn > 1 (TASK-RFX-5FED: local files first)
             turn_continuation = None
@@ -614,6 +661,7 @@ class AutoBuildContextLoader:
 
             # Build result with Coach-specific formatting
             result = self._build_result(context, actor="coach", turn_continuation=turn_continuation)
+            result.memory = memory
 
             # Log coach context categories
             logger.info("[Memory] Coach context categories: %s", result.categories_populated)
@@ -628,19 +676,8 @@ class AutoBuildContextLoader:
                 result.budget_used,
                 result.budget_total,
             )
-            if not result.categories_populated:
-                # See the same guard on the Player path above: a retrieval that
-                # failed inside the client reads here as an empty memory.
-                logger.warning(
-                    "[Memory] the reviewer is working with NO memory this turn "
-                    "(%s, turn %s): nothing was retrieved. Either there is "
-                    "genuinely nothing on record for this task, or retrieval "
-                    "failed inside the memory client — check the log above for "
-                    "an error from fleet-memory before reading this as an "
-                    "empty memory.",
-                    task_id,
-                    turn_number,
-                )
+            # What memory did is in ``result.memory``; the orchestrator writes
+            # it as one line per turn (see the Player path above).
             return result
 
         except Exception as e:
@@ -649,7 +686,61 @@ class AutoBuildContextLoader:
                 "Failed to retrieve Coach context for %s after %.1fs: %s",
                 task_id, context_duration, e,
             )
-            return self._empty_result(task_id)
+            result = self._empty_result(task_id)
+            result.memory = self._memory_report(None, reads_before, error=e)
+            return result
+
+    def _read_counts(self) -> tuple:
+        """Memory reads so far: (completed, failed), from client and retriever."""
+        completed = failed = 0
+        reads = getattr(self.graphiti, "reads", None)
+        if isinstance(reads, dict):
+            completed = int(reads.get("completed", 0))
+            failed = int(reads.get("failed", 0))
+        retriever_failed = getattr(self._retriever, "failed_reads", 0)
+        if isinstance(retriever_failed, int):
+            failed += retriever_failed
+        return completed, failed
+
+    def _memory_report(
+        self,
+        context: Optional[RetrievedContext],
+        reads_before: tuple,
+        error: Optional[BaseException] = None,
+    ) -> MemoryReadReport:
+        """Sum up this turn's memory search for the orchestrator's line."""
+        completed, failed = self._read_counts()
+        report = MemoryReadReport(
+            completed=completed - reads_before[0],
+            failed=failed - reads_before[1],
+        )
+        line = getattr(
+            getattr(self._retriever, "relevance_config", None),
+            "autobuild_threshold",
+            None,
+        )
+        if isinstance(line, (int, float)):
+            report.line = float(line)
+        if error is not None:
+            report.error = str(error).strip() or type(error).__name__
+            return report
+        metrics = getattr(context, "quality_metrics", None)
+        above = getattr(metrics, "items_above_threshold", 0)
+        report.above_line = above if isinstance(above, int) else 0
+        report.delivered = sum(
+            len(items)
+            for items in (
+                getattr(context, name, None)
+                for name in (
+                    "feature_context", "similar_outcomes", "relevant_patterns",
+                    "architecture_context", "warnings", "domain_knowledge",
+                    "role_constraints", "quality_gate_configs", "turn_states",
+                    "implementation_modes",
+                )
+            )
+            if isinstance(items, list)
+        )
+        return report
 
     def _resolve_file_path_hints(self, task_id: str) -> Optional[List[str]]:
         """Resolve the task's planned target files as pattern-selection hints.
