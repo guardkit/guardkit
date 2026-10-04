@@ -425,9 +425,13 @@ def seed(repo: Path | None, dry_run: bool):
         )
         sys.exit(1)
 
-    results = asyncio.run(publish_and_confirm(plan, client))
-    for result in results:
-        console.print(result.line(), markup=False)
+    # Each file's result is printed as soon as it is known, so a failure part
+    # way through never hides what was already written.
+    results = asyncio.run(
+        publish_and_confirm(
+            plan, client, on_result=lambda r: console.print(r.line(), markup=False)
+        )
+    )
     confirmed = sum(1 for result in results if result.confirmed)
     console.print(
         f"{confirmed} of {len(results)} records confirmed stored.", markup=False
