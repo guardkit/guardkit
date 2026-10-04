@@ -141,6 +141,23 @@ class TestLoadProjectDocuments:
         # No configuration at all, too.
         assert load_project_documents(tmp_path / "absent") == ()
 
+    @pytest.mark.parametrize(
+        "config",
+        [
+            "autobuild:\n  player:\n    unknown_key: 1\n",  # the Player loader refuses this
+            "autobuild:\n  player: [not, a, mapping]\n",
+            "autobuild: {player: {required_documents: []}, : bad\n",  # not YAML
+        ],
+    )
+    def test_undeclared_project_never_meets_the_full_validation(
+        self, tmp_path: Path, config: str
+    ) -> None:
+        """Opt-in exactness: nothing declared means no new refusal, even when
+        the rest of the declaration is something the Player loader rejects."""
+        _write_project(tmp_path, documents={})
+        (tmp_path / ".guardkit" / "config.yaml").write_text(config)
+        assert load_project_documents(tmp_path) == ()
+
     def test_missing_declared_document_refused(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
         (tmp_path / "docs" / "mission.md").unlink()
