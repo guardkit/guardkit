@@ -1444,6 +1444,9 @@ class FeatureOrchestrator:
                 base_branch=base_branch,
             )
             console.print(f"[green]✓[/green] Created shared worktree: {worktree.path}")
+            # A new feature worktree is a new build: an older build's capture
+            # of the Coach's binding documents (same name) must not be reused.
+            AutoBuildOrchestrator.discard_coach_documents_snapshot(worktree.path)
         except WorktreeCreationError as e:
             raise FeatureOrchestrationError(
                 f"Failed to create worktree for {feature_id}: {e}"

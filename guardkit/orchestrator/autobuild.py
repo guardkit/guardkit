@@ -3002,7 +3002,12 @@ class AutoBuildOrchestrator:
             # the pre-loop phase and the Player's first turn. A declaration
             # that cannot be given whole stops the task before any model call.
             documents_refusal = self._capture_coach_project_documents(
-                task_id, worktree, resume=bool(self.resume and task_file_path)
+                task_id,
+                worktree,
+                resume=bool(self.resume and task_file_path),
+                # This orchestrator made the worktree itself: a new build.
+                new_build=not (self.resume and task_file_path)
+                and self._existing_worktree is None,
             )
             if documents_refusal is not None:
                 self._project_documents_refusal = documents_refusal
@@ -8780,8 +8785,91 @@ class AutoBuildOrchestrator:
                 "resolved"
             )
 
+    @classmethod
+    def _coach_documents_snapshot_path(cls, worktree_path: Path) -> Path:
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        worktree_path = Path(worktree_path)
+        return TaskArtifactPaths.private_artifact_path(
+            worktree_path.name, cls._COACH_DOCUMENTS_SNAPSHOT, worktree_path
+        )
+
+    @classmethod
+    def discard_coach_documents_snapshot(cls, worktree_path: Path) -> None:
+        """Forget an earlier build's capture when a NEW build's worktree is made.
+
+        The snapshot is the identity of the build it was captured for; a new
+        worktree is a new build, so an older snapshot under the same name
+        (kept in the main checkout's private directory) must not be reused.
+        """
+        try:
+            snapshot = cls._coach_documents_snapshot_path(Path(worktree_path))
+            if snapshot.exists():
+                snapshot.unlink()
+        except (OSError, TypeError) as exc:
+            logger.warning(
+                "Could not clear an earlier Coach documents snapshot for %s (%s)",
+                worktree_path, exc,
+            )
+
+    def _reuse_coach_documents_snapshot(
+        self, task_id: str, worktree: Worktree, snapshot: Path
+    ) -> Optional[tuple]:
+        """The build's own capture, unchanged, or ``None`` if it cannot be read.
+
+        Codex review round 2, R1: once a build has a snapshot, that snapshot
+        IS the build's commit, declaration and documents. A resumed or later
+        task reuses it whatever base branch this invocation was given, and
+        never replaces it. If the source revision computed now differs, the
+        original is still used and the difference is noted in the turn record.
+        """
+        from dataclasses import replace as _replace
+
+        from guardkit.lib.committed_content import CommittedContentError
+        from guardkit.orchestrator.harness.selector import ProjectDocument
+
+        try:
+            raw = json.loads(snapshot.read_text(encoding="utf-8"))
+            commit = raw["commit"]
+            documents = tuple(ProjectDocument(**item) for item in raw["documents"])
+        except Exception as exc:  # noqa: BLE001 — unreadable: capture again
+            logger.warning(
+                "The Coach documents snapshot %s could not be read (%s); reading "
+                "the build's commit again", snapshot, exc,
+            )
+            return None
+        if not all(
+            hashlib.sha256(d.text.encode("utf-8")).hexdigest() == d.sha256
+            for d in documents
+        ):
+            logger.warning(
+                "The Coach documents snapshot %s does not match its own hashes; "
+                "reading the build's commit again", snapshot,
+            )
+            return None
+        try:
+            now, how = self._build_source_commit(worktree)
+        except (CommittedContentError, OSError):
+            now, how = None, ""
+        if now is not None and now != commit:
+            note = (
+                f"this invocation's source revision is {now[:12]} ({how}), not "
+                f"the build's {commit[:12]}; the build's original capture was used"
+            )
+            logger.warning("Task %s: %s.", task_id, note)
+            documents = tuple(
+                _replace(d, captured_from=f"{d.captured_from}; {note}")
+                for d in documents
+            )
+        return documents
+
     def _capture_coach_project_documents(
-        self, task_id: str, worktree: Worktree, *, resume: bool = False
+        self,
+        task_id: str,
+        worktree: Worktree,
+        *,
+        resume: bool = False,
+        new_build: bool = False,
     ) -> Optional[str]:
         """Capture the Coach's binding documents once per build, from its commit.
 
@@ -8789,12 +8877,15 @@ class AutoBuildOrchestrator:
         instruction file are read from the COMMITTED content of the commit the
         build started from — the fork point of the worktree and its base
         branch — through the same committed-content reader the seed command
-        uses. Not the caller's checkout (which may be on another branch) and
-        not the worktree the Players edit: so the Coach's text is the text the
-        Player saw at the start, and in feature mode, where every task shares
-        one worktree, a later task is not judged against an earlier task's
-        edits. The capture is kept once per build and reused by every task and
-        any resume while the build's commit is unchanged.
+        uses (the design's one reading rule). Not the caller's checkout and not
+        the worktree the Players edit.
+
+        The capture is kept once per build. Once it exists it is the build's
+        identity: every later task of a feature and any resume reuse it as it
+        is, whatever base branch that invocation supplies, and it is never
+        replaced. ``new_build`` (this orchestrator made the worktree itself, or
+        a new feature worktree was made) discards an older build's snapshot
+        first.
 
         Done before the pre-loop phase and the Player's first turn, so the
         budget, symbolic-link and missing-file checks stop a broken or
@@ -8807,11 +8898,9 @@ class AutoBuildOrchestrator:
 
         from guardkit.lib.committed_content import CommittedContentError
         from guardkit.orchestrator.harness.selector import (
-            ProjectDocument,
             _declares_required_documents,
             load_project_documents_at_commit,
         )
-        from guardkit.orchestrator.paths import TaskArtifactPaths
 
         path = getattr(worktree, "path", None)
         if not isinstance(path, (str, os.PathLike)):
@@ -8819,6 +8908,15 @@ class AutoBuildOrchestrator:
             self._captured_coach_documents()[task_id] = ()
             return None
         path = Path(path)
+        snapshot = self._coach_documents_snapshot_path(path)
+        if new_build:
+            self.discard_coach_documents_snapshot(path)
+        elif snapshot.is_file():
+            reused = self._reuse_coach_documents_snapshot(task_id, worktree, snapshot)
+            if reused is not None:
+                self._captured_coach_documents()[task_id] = reused
+                return None
+
         try:
             commit, how = self._build_source_commit(worktree)
         except (CommittedContentError, OSError) as exc:
@@ -8835,32 +8933,6 @@ class AutoBuildOrchestrator:
                 )
             self._captured_coach_documents()[task_id] = ()
             return None
-
-        snapshot = TaskArtifactPaths.private_artifact_path(
-            path.name, self._COACH_DOCUMENTS_SNAPSHOT, path
-        )
-        if snapshot.is_file():
-            try:
-                raw = json.loads(snapshot.read_text(encoding="utf-8"))
-                if raw.get("commit") == commit:
-                    documents = tuple(
-                        ProjectDocument(**item) for item in raw["documents"]
-                    )
-                    if all(
-                        hashlib.sha256(d.text.encode("utf-8")).hexdigest() == d.sha256
-                        for d in documents
-                    ):
-                        self._captured_coach_documents()[task_id] = documents
-                        return None
-                    logger.warning(
-                        "Coach documents snapshot for %s does not match its own "
-                        "hashes; reading the commit again", path.name,
-                    )
-            except Exception as exc:  # noqa: BLE001 — fall back to a fresh capture
-                logger.warning(
-                    "Could not reload the Coach documents snapshot for %s (%s); "
-                    "reading the commit again", path.name, exc,
-                )
 
         try:
             captured = load_project_documents_at_commit(path, commit)
@@ -8894,6 +8966,8 @@ class AutoBuildOrchestrator:
                     json.dumps(
                         {
                             "commit": commit,
+                            "base_branch": getattr(worktree, "base_branch", None),
+                            "declaration_sha256": captured.declaration_sha256,
                             "documents": [
                                 {"path": d.path, "sha256": d.sha256,
                                  "text": d.text, "size": d.size,
@@ -8906,7 +8980,7 @@ class AutoBuildOrchestrator:
                     encoding="utf-8",
                 )
             elif snapshot.exists():
-                snapshot.unlink()  # an earlier build's set must not be reloaded
+                snapshot.unlink()  # an unreadable earlier snapshot must not linger
         except OSError as exc:
             logger.warning(
                 "Could not keep the Coach documents snapshot for %s (%s); the next "
