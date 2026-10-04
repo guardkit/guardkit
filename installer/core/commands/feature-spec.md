@@ -85,11 +85,11 @@ If `--stack` is provided, use that value regardless of auto-detection.
 - API definitions: `src/api/`, `openapi.yaml`, `schema.graphql`, or equivalent
 - Configuration files for limits/thresholds (e.g., `settings.py`, `config.ts`, `.env.example`)
 
-**1c. Fleet-memory context** — if fleet-memory is available (see `docs/internals/commands-lib/memory-preamble.md`), search for:
+**1c. Fleet-memory context** — if fleet-memory is available (see `~/.agentecflow/docs/memory-preamble.md`; its "Which project" section says how to find `<project>`, and to skip memory when it reports `memory: OFF`), search for:
 
-- ADRs — `memory_search(payload_types=["adr"], domain_tags=["architecture"])`
-- Domain warnings from past implementations — `memory_search(payload_types=["warning"])`
-- Feature outcomes for related areas — `memory_search(payload_types=["build_outcome"], domain_tags=["task"])`
+- Design decisions, contracts and data models — `memory_search(project="<project>", payload_types=["adr", "document"], domain_tags=["architecture"])`
+- Domain warnings from past implementations — `memory_search(project="<project>", payload_types=["warning"])`
+- Feature outcomes for related areas — `memory_search(project="<project>", payload_types=["build_outcome"], domain_tags=["task"])`
 
 **1d. Read --context files** — read all files passed via `--context` in order.
 
