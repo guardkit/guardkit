@@ -784,7 +784,7 @@ class TestContextLoaderInitialization:
 class TestContextSkipLogging:
     """Test INFO log emission when enable_context=True but context_loader is None."""
 
-    def test_player_logs_info_when_context_enabled_but_loader_none(
+    def test_player_logs_the_reason_when_context_enabled_but_loader_none(
         self,
         mock_worktree_manager,
         mock_agent_invoker,
@@ -793,7 +793,7 @@ class TestContextSkipLogging:
         """
         Given enable_context=True and context_loader=None
         When _invoke_player_safely is called
-        Then an INFO log 'Player context retrieval skipped' is emitted.
+        Then the per-turn memory line says why, at WARNING.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
@@ -825,11 +825,13 @@ class TestContextSkipLogging:
                 requirements="Test requirements",
                 feedback=None,
             )
-            mock_logger.info.assert_any_call(
-                "Player context retrieval skipped: no factory or loader for TASK-TEST-001"
+            # One memory line per turn, with the reason (2026-10-04).
+            mock_logger.warning.assert_any_call(
+                "[Memory] builder TASK-TEST-001 turn 1: unavailable "
+                "(the memory client could not be loaded)."
             )
 
-    def test_coach_logs_info_when_context_enabled_but_loader_none(
+    def test_coach_logs_the_reason_when_context_enabled_but_loader_none(
         self,
         mock_worktree_manager,
         mock_agent_invoker,
@@ -838,7 +840,7 @@ class TestContextSkipLogging:
         """
         Given enable_context=True and context_loader=None
         When _invoke_coach_safely is called
-        Then an INFO log 'Coach context retrieval skipped' is emitted.
+        Then the per-turn memory line says why, at WARNING.
         """
         from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 
@@ -875,8 +877,10 @@ class TestContextSkipLogging:
                 player_report={"summary": "test"},
                 worktree=mock_worktree,
             )
-            mock_logger.info.assert_any_call(
-                "Coach context retrieval skipped: no factory or loader for TASK-TEST-001"
+            # One memory line per turn, with the reason (2026-10-04).
+            mock_logger.warning.assert_any_call(
+                "[Memory] reviewer TASK-TEST-001 turn 1: unavailable "
+                "(the memory client could not be loaded)."
             )
 
     def test_no_log_when_context_disabled(
@@ -1332,7 +1336,7 @@ class TestContextStatusTracking:
         cs = orchestrator._last_player_context_status
         assert cs is not None
         assert cs.status == "skipped"
-        assert cs.reason == "no factory or loader"
+        assert cs.reason == "the memory client could not be loaded"
 
     def test_player_context_status_failed_on_exception(
         self,
