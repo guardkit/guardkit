@@ -3004,6 +3004,7 @@ class AutoBuildOrchestrator:
                 task_id, worktree, resume=bool(self.resume and task_file_path)
             )
             if documents_refusal is not None:
+                self._project_documents_refusal = documents_refusal
                 logger.error(
                     "Task %s stopped before any model call: %s",
                     task_id, documents_refusal,
@@ -10998,6 +10999,18 @@ class AutoBuildOrchestrator:
             config_turn = next(
                 (t for t in reversed(turn_history) if t.is_configuration_error), None
             )
+            documents_refusal = getattr(self, "_project_documents_refusal", None)
+            if config_turn is None and documents_refusal:
+                # Stopped at task start by the binding-documents check: say
+                # which files, their sizes and the limit, not a task_type hint.
+                return (
+                    f"Stopped before any model call: the project's binding "
+                    f"documents could not be given to the Coach whole.\n"
+                    f"Detail: {documents_refusal}\n"
+                    f"Action: fix autobuild.player.required_documents or the "
+                    f"documents it names, then retry.\n"
+                    f"Worktree preserved for inspection."
+                )
             detail = config_turn.feedback if config_turn and config_turn.feedback else "unknown configuration error"
             return (
                 f"Configuration error detected — loop exited immediately.\n"
@@ -11125,6 +11138,9 @@ class AutoBuildOrchestrator:
                     f"Configuration error: {config_turn.feedback}. "
                     f"Fix the task_type in the task .md file and retry."
                 )
+            documents_refusal = getattr(self, "_project_documents_refusal", None)
+            if documents_refusal:
+                return f"Stopped before any model call: {documents_refusal}"
             return "Configuration error in task file — fix task_type and retry"
 
         elif final_decision == "pre_loop_blocked":
