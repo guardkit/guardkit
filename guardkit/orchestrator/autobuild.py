@@ -2995,6 +2995,47 @@ class AutoBuildOrchestrator:
                         recovery_count=self.recovery_count,
                     )
 
+            # Project initialisation design, review fix (4 October 2026): the
+            # Coach's binding documents are captured once, here, before the
+            # pre-loop phase and the Player's first turn. A declaration that
+            # cannot be given whole stops the task before any model call.
+            documents_refusal = self._capture_coach_project_documents(
+                task_id, worktree, resume=bool(self.resume and task_file_path)
+            )
+            if documents_refusal is not None:
+                logger.error(
+                    "Task %s stopped before any model call: %s",
+                    task_id, documents_refusal,
+                )
+                self._emit_task_failed(task_id, "configuration_error")
+                self._capture_build_outcome(
+                    task_id,
+                    success=False,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                    task_title=task_title,
+                    requirements=requirements,
+                    error=documents_refusal,
+                )
+                self._finalize_phase(
+                    worktree=worktree,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                )
+                if task_file_path:
+                    self._save_state(task_file_path, worktree, "blocked")
+                return OrchestrationResult(
+                    task_id=task_id,
+                    success=False,
+                    total_turns=0,
+                    final_decision="configuration_error",
+                    turn_history=[],
+                    worktree=worktree,
+                    error=documents_refusal,
+                    ablation_mode=self.ablation_mode,
+                    recovery_count=self.recovery_count,
+                )
+
             # Phase 2: Pre-Loop Quality Gates (if enabled)
             if self.enable_pre_loop and not self.resume:
                 try:
@@ -8558,13 +8599,13 @@ class AutoBuildOrchestrator:
 
         # Project initialisation design (4 October 2026): when the project
         # declares binding documents, the Coach judges the turn against them
-        # and the project's own instructions, read from the task worktree with
-        # the Player's own loader. A project that declares none is untouched
-        # (opt-in, coordinator decision the same day). A document
-        # that is missing, a link, or over the inline budget refuses the turn
-        # here, before anything reaches a model.
+        # and the project's own instructions — the set captured once at task
+        # start, before the Player's first turn, so the Player cannot change
+        # what it is judged against. A project that declares none is untouched
+        # (opt-in). A direct caller that skipped the task-start capture gets
+        # the capture here, with the same refusals.
         try:
-            project_documents = self._load_coach_project_documents(worktree)
+            project_documents = self._coach_documents_for_turn(task_id, worktree)
         except AgentInvocationError as exc:
             logger.error("Coach turn %s for %s refused: %s", turn, task_id, exc)
             return AgentInvocationResult(
@@ -8720,6 +8761,125 @@ class AutoBuildOrchestrator:
         from guardkit.orchestrator.harness.selector import load_project_documents
 
         return load_project_documents(Path(path))
+
+    #: The captured set, kept in the orchestrator-private directory so a
+    #: resumed task is judged against the same text (Player-unreachable).
+    _COACH_DOCUMENTS_SNAPSHOT = "coach_project_documents_start.json"
+
+    def _captured_coach_documents(self) -> Dict[str, tuple]:
+        return self.__dict__.setdefault("_coach_project_documents", {})
+
+    def _capture_coach_project_documents(
+        self, task_id: str, worktree: Worktree, *, resume: bool = False
+    ) -> Optional[str]:
+        """Capture the Coach's binding documents once, at task start.
+
+        Review fix (independent coach, 4 October 2026): the Coach must not
+        judge against documents the Player could have changed, so the set is
+        read here — after the worktree exists, before the pre-loop phase and
+        the Player's first turn — and that captured text is what every Coach
+        turn of this task receives. The budget, symbolic-link and missing-file
+        checks therefore run here too: a broken or over-budget declaration
+        stops the task before any model call. Opt-in is unchanged; a project
+        that declares nothing captures nothing.
+
+        A resumed task reloads the snapshot written at its original start.
+
+        Returns ``None`` when the task may proceed, else the refusal sentence.
+        """
+        from guardkit.orchestrator.harness.selector import ProjectDocument
+
+        path = getattr(worktree, "path", None)
+        snapshot = None
+        if isinstance(path, (str, os.PathLike)):
+            from guardkit.orchestrator.paths import TaskArtifactPaths
+
+            snapshot = TaskArtifactPaths.private_artifact_path(
+                task_id, self._COACH_DOCUMENTS_SNAPSHOT, Path(path)
+            )
+        if resume and snapshot is not None and snapshot.is_file():
+            try:
+                raw = json.loads(snapshot.read_text(encoding="utf-8"))
+                documents = tuple(ProjectDocument(**item) for item in raw["documents"])
+                if all(
+                    hashlib.sha256(d.text.encode("utf-8")).hexdigest() == d.sha256
+                    for d in documents
+                ):
+                    self._captured_coach_documents()[task_id] = documents
+                    return None
+                logger.warning(
+                    "Coach documents snapshot for %s does not match its own "
+                    "hashes; capturing again from the worktree", task_id,
+                )
+            except Exception as exc:  # noqa: BLE001 — fall back to a fresh capture
+                logger.warning(
+                    "Could not reload the Coach documents snapshot for %s (%s); "
+                    "capturing again from the worktree", task_id, exc,
+                )
+        try:
+            documents = self._load_coach_project_documents(worktree)
+        except AgentInvocationError as exc:
+            return str(exc)
+        self._captured_coach_documents()[task_id] = documents
+        if snapshot is not None:
+            try:
+                if documents:
+                    snapshot.parent.mkdir(parents=True, exist_ok=True)
+                    snapshot.write_text(
+                        json.dumps(
+                            {
+                                "task_id": task_id,
+                                "documents": [
+                                    {"path": d.path, "sha256": d.sha256,
+                                     "text": d.text, "size": d.size}
+                                    for d in documents
+                                ],
+                            },
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                elif snapshot.exists():
+                    snapshot.unlink()  # an earlier run's set must not be reloaded
+            except OSError as exc:
+                logger.warning(
+                    "Could not keep the Coach documents snapshot for %s (%s); a "
+                    "resume will capture again", task_id, exc,
+                )
+        return None
+
+    def _coach_documents_for_turn(self, task_id: str, worktree: Worktree) -> tuple:
+        """The captured set for this task, each marked if its worktree copy changed.
+
+        The Coach always gets the captured text. A document whose worktree copy
+        now differs (or is gone) carries the copy's hash in
+        ``worktree_sha256`` so the turn record says so; the turn is not refused.
+        Raises ``AgentInvocationError`` only when no capture exists yet and the
+        capture made now fails.
+        """
+        from dataclasses import replace as _replace
+
+        captured = self._captured_coach_documents().get(task_id)
+        if captured is None:
+            refusal = self._capture_coach_project_documents(task_id, worktree)
+            if refusal is not None:
+                raise AgentInvocationError(refusal)
+            captured = self._captured_coach_documents()[task_id]
+        if not captured:
+            return ()
+        root = Path(worktree.path)
+        marked = []
+        for document in captured:
+            try:
+                current = hashlib.sha256((root / document.path).read_bytes()).hexdigest()
+            except OSError:
+                current = "missing"
+            marked.append(
+                document
+                if current == document.sha256
+                else _replace(document, worktree_sha256=current)
+            )
+        return tuple(marked)
 
     def _coach_documents_unsupported(self, project_documents: tuple) -> Optional[str]:
         """A refusal sentence when documents exist and the invoker cannot take them.

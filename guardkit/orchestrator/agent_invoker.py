@@ -962,6 +962,65 @@ SDK_MAX_TURNS_FLOOR = 150
 _COACH_SYNTHESIS_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
 
 
+def write_coach_project_documents_record(
+    worktree_path: Path,
+    task_id: str,
+    turn: int,
+    documents: Sequence["ProjectDocument"],
+    *,
+    section_sha256: Optional[str] = None,
+    refused: Optional[str] = None,
+    note: Optional[str] = None,
+) -> None:
+    """Write what the Coach was given beside ``coach_turn_N.json``.
+
+    ``coach_project_documents_turn_N.json`` in the orchestrator-private
+    directory: each document's path, SHA-256 and size as captured at task
+    start, the hash of the section actually sent (``None`` when nothing was
+    sent), any document whose worktree copy changed since task start, the
+    refusal sentence if the turn was refused, and a note when the documents
+    were declared but not used. Best-effort, like the evidence bundle beside
+    it: a failed write is logged and never blocks the turn.
+    """
+    from guardkit.orchestrator.harness.selector import (
+        PROJECT_DOCUMENTS_BUDGET_BYTES,
+    )
+
+    record = {
+        "task_id": task_id,
+        "turn": turn,
+        "documents": [
+            {"path": d.path, "sha256": d.sha256, "bytes": d.size}
+            for d in documents
+        ],
+        "total_bytes": sum(d.size for d in documents),
+        "budget_bytes": PROJECT_DOCUMENTS_BUDGET_BYTES,
+        "section_sha256": section_sha256,
+        "changed_since_task_start": [
+            {
+                "path": d.path,
+                "captured_sha256": d.sha256,
+                "worktree_sha256": d.worktree_sha256,
+            }
+            for d in documents
+            if getattr(d, "worktree_sha256", None)
+        ],
+        "refused": refused,
+        "note": note,
+    }
+    try:
+        record_path = TaskArtifactPaths.private_artifact_path(
+            task_id, f"coach_project_documents_turn_{turn}.json", worktree_path
+        )
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — a record never blocks the turn
+        logger.warning(
+            "Could not record the Coach's project documents for %s turn %s: %s",
+            task_id, turn, exc,
+        )
+
+
 def _sha256_text(text: str) -> str:
     """SHA-256 of ``text`` as UTF-8, in hex (the Coach documents-section check)."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -4261,41 +4320,11 @@ Turn: {turn}
         section_sha256: Optional[str] = None,
         refused: Optional[str] = None,
     ) -> None:
-        """Write what the Coach was given beside ``coach_turn_N.json``.
-
-        ``coach_project_documents_turn_N.json`` in the orchestrator-private
-        directory: each document's path, SHA-256 and size, the hash of the
-        section actually sent (``None`` when the turn was refused), and the
-        refusal sentence if there was one. Best-effort, like the evidence
-        bundle beside it: a failed write is logged and never blocks the turn.
-        """
-        from guardkit.orchestrator.harness.selector import (
-            PROJECT_DOCUMENTS_BUDGET_BYTES,
+        """Write the turn record (see :func:`write_coach_project_documents_record`)."""
+        write_coach_project_documents_record(
+            self.worktree_path, task_id, turn, documents,
+            section_sha256=section_sha256, refused=refused,
         )
-
-        record = {
-            "task_id": task_id,
-            "turn": turn,
-            "documents": [
-                {"path": d.path, "sha256": d.sha256, "bytes": d.size}
-                for d in documents
-            ],
-            "total_bytes": sum(d.size for d in documents),
-            "budget_bytes": PROJECT_DOCUMENTS_BUDGET_BYTES,
-            "section_sha256": section_sha256,
-            "refused": refused,
-        }
-        try:
-            record_path = TaskArtifactPaths.private_artifact_path(
-                task_id, f"coach_project_documents_turn_{turn}.json", self.worktree_path
-            )
-            record_path.parent.mkdir(parents=True, exist_ok=True)
-            record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-        except Exception as exc:  # noqa: BLE001 — a record never blocks the turn
-            logger.warning(
-                "Could not record the Coach's project documents for %s turn %s: %s",
-                task_id, turn, exc,
-            )
 
     def _refuse_coach_turn_for_documents(
         self,
