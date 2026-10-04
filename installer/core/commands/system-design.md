@@ -43,22 +43,22 @@ Designs API contracts, data models, and multi-protocol surfaces per bounded cont
 
 ## Fleet-Memory Integration Reference
 
-When fleet-memory is available, `/system-design` captures and reads design knowledge via the tool-native patterns in `docs/internals/commands-lib/memory-preamble.md`:
+When fleet-memory is available, `/system-design` captures and reads design knowledge via the tool-native patterns in `~/.agentecflow/docs/memory-preamble.md`:
 
 - **Availability**: Tier 0 (`mcp__fleet_memory__*` tools in-session) → Tier 1 (`guardkit memory status`) → markdown-only fallback
 - **Prerequisite check**: search fleet-memory for architecture context (`payload_types=["adr","document"]`, `domain_tags=["architecture"]`) and/or Glob `docs/architecture/**` — either source satisfies the gate
 - **Context loading**: `mcp__fleet_memory__memory_search` with `domain_tags=["architecture"]` for bounded contexts and structural decisions
 - **Design seeding**: `mcp__fleet_memory__memory_write_payload` per the memory-preamble mapping table:
-  - DDRs → `adr` payload, `domain_tags=["design"]`
-  - API contracts → `document` payload, `domain_tags=["design","api_contract"]`
-  - Data models → `document` payload, `domain_tags=["design","data_model"]`
+  - DDRs → `adr` payload, `domain_tags=["architecture","design"]`
+  - API contracts → `document` payload, `domain_tags=["architecture","design","api_contract"]`
+  - Data models → `document` payload, `domain_tags=["architecture","design","data_model"]`
 - **Contradiction detection**: search `payload_types=["adr"]` (`domain_tags=["architecture","design"]`) to detect conflicts with existing decisions
 
 ## Prerequisite Gate
 
 Before starting the interactive session, `/system-design` MUST verify that architecture context exists. This ensures the design phase builds on established structural decisions rather than assumptions.
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly. If neither is reachable, set `memory_available = false` and display the unavailability warning — do **not** block the command.
 
@@ -79,10 +79,10 @@ Use the Glob tool to search for `docs/architecture/*.md`.
 
 Use the Read tool to read files from `docs/architecture/`:
 - Read all `docs/architecture/*.md` files to extract bounded contexts, technology choices, and structural decisions
-- Read any `docs/architecture/ADR-*.md` files to collect existing architecture decisions — store as `existing_adrs` for contradiction detection in Phase 2
+- Read any `docs/architecture/decisions/ADR-*.md` files to collect existing architecture decisions — store as `existing_adrs` for contradiction detection in Phase 2
 - Apply the `--focus` filter if specified to limit to one bounded context
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else `guardkit memory status`. Set `memory_available`. If unavailable, display the unavailability warning and continue with markdown artefacts only.
 
@@ -373,7 +373,7 @@ print(f"\n✓ {decision.entity_id} captured. Continuing...")
 **Before finalising design artefacts, check proposed contracts against existing ADRs:**
 
 ```python
-# existing_adrs were loaded from docs/architecture/ADR-*.md in Phase 0
+# existing_adrs were loaded from docs/architecture/decisions/ADR-*.md in Phase 0
 # Check each contract against existing ADRs
 contradictions = []
 for contract in all_contracts:
@@ -646,38 +646,40 @@ if openapi_path.exists():
 
 **Seed design artefacts into fleet-memory (if available):**
 
-If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. If yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note that writes require the MCP tools connected and skip.)
+If `memory_available` is true, build one typed payload per artefact (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern), display them, and ask: `"Seed these to fleet-memory now? [Y/n]"`. If yes and `memory_access = "mcp"`, write each via `mcp__fleet_memory__memory_write_payload`. (If `memory_access = "cli"`, note that writes require the MCP tools connected and skip.)
 
 ```
-# API contracts → document payload, domain_tags ["design","api_contract"]
+# API contracts → document payload, domain_tags ["architecture","design","api_contract"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "<contract_slug>",              # underscores only
   "content": "<contract markdown>",
-  "domain_tags": ["design", "api_contract"],
+  "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/<contract-slug>.md"
 })
 
-# Data models → document payload, domain_tags ["design","data_model"]
+# Data models → document payload, domain_tags ["architecture","design","data_model"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "<model_slug>",
   "content": "<data-model markdown>",
-  "domain_tags": ["design", "data_model"],
+  "domain_tags": ["architecture", "design", "data_model"],
   "source_ref": "docs/design/models/<model-slug>.md"
 })
 
-# Design decisions / DDRs → adr payload, domain_tags ["design"]
+# Design decisions / DDRs → adr payload, domain_tags ["architecture","design"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
+  "payload_type": "adr", "project": "<project>",
   "identifier": "DDR_{NNN}",
   "decision": "<the decision>", "status": "accepted",
-  "domain_tags": ["design"],
+  "title": "<the DDR title>", "context": "<the DDR context>",
+  "consequences": "<the DDR consequences>", "alternatives": ["<alternative considered>"],
+  "domain_tags": ["architecture", "design"],
   "source_ref": "docs/design/decisions/DDR-{NNN}.md"
 })
 ```
 
-If fleet-memory is unavailable, display the standard warning from `docs/internals/commands-lib/memory-preamble.md` and continue:
+If fleet-memory is unavailable, display the standard warning from `~/.agentecflow/docs/memory-preamble.md` and continue:
 
 ```
 ⚠️  Fleet-memory unavailable — artefacts written to markdown only.
@@ -714,9 +716,9 @@ Created: docs/design/
       └── ...
 
 Fleet-memory:
-  ✓ {len(all_contracts)} API contracts seeded (document, domain_tags=[design,api_contract])
-  ✓ {len(all_models)} data models seeded (document, domain_tags=[design,data_model])
-  ✓ {len(all_decisions)} DDRs seeded (adr, domain_tags=[design])
+  ✓ {len(all_contracts)} API contracts seeded (document, domain_tags=[architecture,design,api_contract])
+  ✓ {len(all_models)} data models seeded (document, domain_tags=[architecture,design,data_model])
+  ✓ {len(all_decisions)} DDRs seeded (adr, domain_tags=[architecture,design])
 
 Next steps:
   1. Review: docs/design/openapi.yaml
@@ -757,7 +759,7 @@ next_number = scan_next_ddr_number(decisions_dir)
 
 ### Fleet-Memory Unavailable
 
-Follow the unavailability pattern from `docs/internals/commands-lib/memory-preamble.md` — **do not block the command**.
+Follow the unavailability pattern from `~/.agentecflow/docs/memory-preamble.md` — **do not block the command**.
 
 Display the standard warning and continue:
 
@@ -1082,7 +1084,7 @@ When the user runs `/system-design`, you MUST execute these steps in order:
 
 ### Step 1: Prerequisite Check
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available = true` if reachable, otherwise `false` — display the unavailability warning and continue.
 
@@ -1099,7 +1101,7 @@ Use the Glob tool to search for `docs/architecture/*.md`.
 
 Use the Read tool to read all `docs/architecture/*.md` files. Extract:
 - Bounded contexts (names, descriptions, responsibilities)
-- Existing ADRs from `docs/architecture/ADR-*.md` — store as `existing_adrs`
+- Existing ADRs from `docs/architecture/decisions/ADR-*.md` — store as `existing_adrs`
 
 Apply the `--focus` filter if specified.
 
@@ -1177,25 +1179,27 @@ for bc in bounded_contexts:
 
 ### Step 8: Fleet-Memory Seeding
 
-If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern):
+If `memory_available` is true, build one typed payload per artefact (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern):
 
 ```
 # For each API contract file generated → document / ["design","api_contract"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "<contract_slug>",
-  "content": "<contract markdown>", "domain_tags": ["design", "api_contract"],
+  "payload_type": "document", "project": "<project>", "identifier": "<contract_slug>",
+  "content": "<contract markdown>", "domain_tags": ["architecture", "design", "api_contract"],
   "source_ref": "docs/design/contracts/<contract-slug>.md"})
 
 # For each data model file generated → document / ["design","data_model"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "<model_slug>",
-  "content": "<data-model markdown>", "domain_tags": ["design", "data_model"],
+  "payload_type": "document", "project": "<project>", "identifier": "<model_slug>",
+  "content": "<data-model markdown>", "domain_tags": ["architecture", "design", "data_model"],
   "source_ref": "docs/design/models/<model-slug>.md"})
 
 # For each DDR captured → adr / ["design"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit", "identifier": "DDR_{NNN}",
-  "decision": "<the decision>", "status": "accepted", "domain_tags": ["design"],
+  "payload_type": "adr", "project": "<project>", "identifier": "DDR_{NNN}",
+  "decision": "<the decision>", "status": "accepted",
+  "title": "<the DDR title>", "context": "<the DDR context>",
+  "consequences": "<the DDR consequences>", "alternatives": ["<alternative considered>"], "domain_tags": ["architecture", "design"],
   "source_ref": "docs/design/decisions/DDR-{NNN}.md"})
 ```
 

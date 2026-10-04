@@ -366,7 +366,7 @@ task-work performs no fleet-memory writes.
 **STEP 0: Check for MCP Tools (Preferred Path — Zero Overhead)**
 
 Check whether `mcp__fleet_memory__memory_search` is available in the current session
-(see `docs/internals/commands-lib/memory-preamble.md` Tier 0).
+(see `~/.agentecflow/docs/memory-preamble.md` Tier 0).
 
 **IMPORTANT — Deferred tools**: In Claude Code sessions, MCP tools are often
 listed in the system reminder as "deferred" (loadable via `ToolSearch`) rather
@@ -394,7 +394,7 @@ payload-type/domain-tag filters do the group scoping.)
 
 ```
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="{task_title} {key_terms_from_description}",
   payload_types=["adr", "document", "build_outcome"],
   domain_tags=["project", "architecture", "task"],
@@ -440,7 +440,7 @@ SET task_context["memory_context"] = None
 
 **STEP 1: Check Fleet-Memory Availability via CLI (Fallback)**
 
-Check store reachability (see `docs/internals/commands-lib/memory-preamble.md` Tier 1):
+Check store reachability (see `~/.agentecflow/docs/memory-preamble.md` Tier 1):
 
 ```bash
 guardkit memory status
@@ -499,7 +499,7 @@ Store the access method alongside the context:
 **ERROR HANDLING**:
 
 All fleet-memory operations follow the graceful degradation pattern
-(see `docs/internals/commands-lib/memory-preamble.md`):
+(see `~/.agentecflow/docs/memory-preamble.md`):
 
 1. **Tier 0 — MCP** (preferred): Direct `memory_search` call with zero CLI overhead.
    If the MCP tool is not in the session, fall through to Tier 1.

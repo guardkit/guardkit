@@ -40,17 +40,17 @@ The command automatically detects the appropriate mode based on existing archite
 
 ### Phase 0: Context Loading (All Modes)
 
-**Check fleet-memory availability** (see `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1):
+**Check fleet-memory availability** (see `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1):
 
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
 
 - **IF** the fleet-memory MCP tools are in-session: set `memory_available = true`, `memory_access = "mcp"`
 - **IF** `guardkit memory status` reports `REACHABLE`: set `memory_available = true`, `memory_access = "cli"`
-- **IF** neither is reachable: set `memory_available = false`, display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`, continue without persistence — never block
+- **IF** neither is reachable: set `memory_available = false`, display the unavailability warning from `~/.agentecflow/docs/memory-preamble.md`, continue without persistence — never block
 
 **Auto-detect mode** (if not overridden by `--mode` flag):
 
-- **IF** architecture context exists — either a fleet-memory search (`memory_search(project="guardkit", query="architecture components services bounded contexts", payload_types=["adr","document"], domain_tags=["architecture"])`) returns a non-empty result, **OR** `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `detected_mode = "refine"`
+- **IF** architecture context exists — either a fleet-memory search (`memory_search(project="<project>", query="architecture components services bounded contexts", payload_types=["adr","document"], domain_tags=["architecture"])`) returns a non-empty result, **OR** `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `detected_mode = "refine"`
 - **ELSE**: set `detected_mode = "setup"`
 
 **Apply user override**: use `--mode` flag value if provided, otherwise use `detected_mode`
@@ -82,10 +82,6 @@ Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. S
 **Question Adaptation:**
 
 ```python
-from guardkit.planning.question_adapter import SetupQuestionAdapter
-
-adapter = SetupQuestionAdapter()
-
 # Category 1: Always ask methodology selection
 print("Category 1: Domain & Methodology Discovery")
 print("Q5. What architectural methodology best fits this project?")
@@ -99,8 +95,8 @@ methodology = input("Your choice [M/L/D/E/N]: ").lower()
 # Store in answers
 answers["q5_methodology"] = methodology
 
-# Category 2: Adapt questions based on methodology
-if adapter.should_ask_ddd_questions(answers):
+# Category 2: Adapt questions based on methodology (no helper module: decide from the answer)
+if methodology == "d":
     # Ask DDD-specific questions (bounded contexts, aggregates, domain events)
     pass
 else:
@@ -143,12 +139,12 @@ Consequences: [Ask user - can list multiple]
 Status: [A]ccepted / [P]roposed / [D]eprecated / [S]uperseded
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ ADR-001 captured. Continuing to next category...
+✓ ADR-SP-001 captured. Continuing to next category...
 ```
 
 **Fleet-Memory Persistence (after session completes):**
 
-If `memory_available` is true, seed the generated markdown artefacts to fleet-memory via `mcp__fleet_memory__memory_write_payload` (see Step 6 and `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern). The interactive session takes priority — do not interrupt categories for seeding. Batch seeding happens after all artefacts are written to `docs/architecture/`.
+If `memory_available` is true, seed the generated markdown artefacts to fleet-memory via `mcp__fleet_memory__memory_write_payload` (see Step 6 and `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern). The interactive session takes priority — do not interrupt categories for seeding. Batch seeding happens after all artefacts are written to `docs/architecture/`.
 
 #### Refine Mode Flow
 
@@ -253,30 +249,55 @@ Launching /feature-plan...
 **Generate markdown artefacts using ArchitectureWriter:**
 
 ```python
+from guardkit.knowledge.entities.architecture_context import ArchitectureDecision
+from guardkit.knowledge.entities.component import ComponentDef
+from guardkit.knowledge.entities.crosscutting import CrosscuttingConcernDef
+from guardkit.knowledge.entities.system_context import SystemContextDef
 from guardkit.planning.architecture_writer import ArchitectureWriter
 
 writer = ArchitectureWriter()
 
-# Collect all captured data
-system = {
-    "name": project_name,
-    "purpose": system_purpose,
-    "methodology": methodology,
-    "users": users,
-}
+# The writer takes these typed entities (plain dictionaries fail). Carry every
+# captured field through, so each ADR keeps its context, consequences and
+# alternatives; ADR files are written as decisions/ADR-SP-NNN.md.
+system = SystemContextDef(
+    name=project_name,
+    purpose=system_purpose,
+    methodology=methodology,
+    external_systems=external_systems,
+)
 
 components = [
-    {"name": c.name, "description": c.description, "responsibilities": c.responsibilities}
+    ComponentDef(
+        name=c.name,
+        description=c.description,
+        responsibilities=c.responsibilities,
+        dependencies=c.dependencies,
+    )
     for c in captured_components
 ]
 
 concerns = [
-    {"name": cc.name, "category": cc.category, "description": cc.description}
+    CrosscuttingConcernDef(
+        name=cc.name,
+        description=cc.description,
+        applies_to=cc.applies_to,
+        implementation_notes=cc.implementation_notes,
+    )
     for cc in captured_concerns
 ]
 
 decisions = [
-    {"number": adr.number, "title": adr.title, "status": adr.status}
+    ArchitectureDecision(
+        number=adr.number,
+        title=adr.title,
+        status=adr.status,
+        context=adr.context,
+        decision=adr.decision,
+        consequences=adr.consequences,
+        alternatives_considered=adr.alternatives_considered,
+        related_components=adr.related_components,
+    )
     for adr in captured_adrs
 ]
 
@@ -302,7 +323,7 @@ Created: {output_dir}/
   ├── components.md (or bounded-contexts.md for DDD)
   ├── crosscutting-concerns.md
   └── decisions/
-      ├── ADR-001-{slug}.md
+      ├── ADR-SP-001.md
       ├── ADR-002-{slug}.md
       └── ...
 
@@ -392,12 +413,12 @@ _Look for: circular dependencies, components with too many inbound arrows (high 
 
 **Seed generated artefacts to fleet-memory (if available):**
 
-If `memory_available` is true, build one typed payload per artefact (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern). Architecture prose docs → `document` payloads; ADRs → `adr` payloads. Identifiers use **underscores only** (sanitise hyphens/colons, e.g. `ADR-001` → `ADR_001`).
+If `memory_available` is true, build one typed payload per artefact (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern). Architecture prose docs → `document` payloads; ADRs → `adr` payloads. Identifiers use **underscores only** (sanitise hyphens/colons, e.g. `ADR-SP-001` → `ADR_SP_001`).
 
 ```
 # Architecture prose docs → document payload, domain_tags ["architecture","plan"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "architecture",                 # underscores only
   "content": "<ARCHITECTURE.md markdown>",
   "domain_tags": ["architecture", "plan"],
@@ -405,7 +426,7 @@ mcp__fleet_memory__memory_write_payload(payload={
 })
 
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "system_context",
   "content": "<system-context.md markdown>",
   "domain_tags": ["architecture", "plan"],
@@ -413,7 +434,7 @@ mcp__fleet_memory__memory_write_payload(payload={
 })
 
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit",
+  "payload_type": "document", "project": "<project>",
   "identifier": "components",
   "content": "<components.md markdown>",
   "domain_tags": ["architecture", "plan"],
@@ -422,11 +443,13 @@ mcp__fleet_memory__memory_write_payload(payload={
 
 # Each ADR → adr payload, domain_tags ["architecture"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit",
-  "identifier": "ADR_001",
+  "payload_type": "adr", "project": "<project>",
+  "identifier": "ADR_SP_001",
   "decision": "<the ADR decision>", "status": "accepted",
+  "title": "<the ADR title>", "context": "<the ADR context>",
+  "consequences": "<the ADR consequences>", "alternatives": ["<alternative considered>"],
   "domain_tags": ["architecture"],
-  "source_ref": "docs/architecture/decisions/ADR-001-{slug}.md"
+  "source_ref": "docs/architecture/decisions/ADR-SP-001.md"
 })
 ```
 
@@ -434,7 +457,7 @@ Ask the user: `"Seed these to fleet-memory now? [Y/n]"`
 
 If yes and `memory_access = "mcp"`, write each via the `mcp__fleet_memory__memory_write_payload` tool. Display: `✓ All architecture artefacts seeded to fleet-memory`. If `memory_access = "cli"`, note that writes require the fleet-memory MCP tools connected and skip (artefacts remain on disk).
 
-If `memory_available` is false, skip seeding and display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`.
+If `memory_available` is false, skip seeding and display the unavailability warning from `~/.agentecflow/docs/memory-preamble.md`.
 
 ## Methodology-Specific Question Gating
 
@@ -529,7 +552,7 @@ for context_file in context_files:
 
 ### Fleet-Memory Unavailable
 
-If `memory_available` is false (detected via the Tier 0 → Tier 1 check in Phase 0 — see `docs/internals/commands-lib/memory-preamble.md`), display the standard unavailability warning from `docs/internals/commands-lib/memory-preamble.md` and continue. Architecture planning proceeds normally — markdown artefacts are still generated, but won't be queryable by `/feature-plan` or AutoBuild coach.
+If `memory_available` is false (detected via the Tier 0 → Tier 1 check in Phase 0 — see `~/.agentecflow/docs/memory-preamble.md`), display the standard unavailability warning from `~/.agentecflow/docs/memory-preamble.md` and continue. Architecture planning proceeds normally — markdown artefacts are still generated, but won't be queryable by `/feature-plan` or AutoBuild coach.
 
 ### Empty Answers
 
@@ -607,7 +630,7 @@ Created: docs/architecture/
   ├── components.md
   ├── crosscutting-concerns.md
   └── decisions/
-      └── ADR-001-use-click-for-cli.md
+      └── ADR-SP-001.md
 
 Fleet-memory:
   ✓ 5 components persisted
@@ -661,7 +684,7 @@ Domain events: DonorCreated, LPAFiled, TransactionFlagged
 Title: Use anti-corruption layer for Moneyhub integration
 [... capture ADR ...]
 
-✓ ADR-001 captured. Continuing to Category 3...
+✓ ADR-SP-001 captured. Continuing to Category 3...
 
 [Continue through remaining categories...]
 
@@ -675,7 +698,7 @@ Created: docs/architecture/
   ├── bounded-contexts.md (DDD variant)
   ├── crosscutting-concerns.md
   └── decisions/
-      ├── ADR-001-moneyhub-acl.md
+      ├── ADR-SP-001.md
       ├── ADR-002-event-sourcing.md
       └── ADR-003-cqrs-pattern.md
 ```
@@ -737,19 +760,19 @@ context_files = flags.get("context", [])
 
 ### Step 2: Check Fleet-Memory Availability
 
-Follow the Tier 0 → Tier 1 check from `docs/internals/commands-lib/memory-preamble.md`:
+Follow the Tier 0 → Tier 1 check from `~/.agentecflow/docs/memory-preamble.md`:
 
 Check for the `mcp__fleet_memory__*` tools; else run `guardkit memory status`. Set `memory_available` (and `memory_access`) accordingly.
 
 - **IF** the fleet-memory MCP tools are in-session: set `memory_available = true`, `memory_access = "mcp"`
 - **IF** `guardkit memory status` reports `REACHABLE`: set `memory_available = true`, `memory_access = "cli"`
-- **IF** neither is reachable: set `memory_available = false`, display the unavailability warning from `docs/internals/commands-lib/memory-preamble.md`, continue without persistence — never block
+- **IF** neither is reachable: set `memory_available = false`, display the unavailability warning from `~/.agentecflow/docs/memory-preamble.md`, continue without persistence — never block
 
 ### Step 3: Auto-Detect Mode (if not specified)
 
 If `--mode` flag was not provided, detect mode from existing architecture context (fleet-memory and/or the file system):
 
-- **IF** architecture context exists — either a fleet-memory search (`memory_search(project="guardkit", query="architecture components services bounded contexts", payload_types=["adr","document"], domain_tags=["architecture"])`) returns a non-empty result, **OR** `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `mode = "refine"`
+- **IF** architecture context exists — either a fleet-memory search (`memory_search(project="<project>", query="architecture components services bounded contexts", payload_types=["adr","document"], domain_tags=["architecture"])`) returns a non-empty result, **OR** `docs/architecture/ARCHITECTURE.md` exists (use Glob): set `mode = "refine"`
 - **ELSE**: set `mode = "setup"`
 
 If `--mode` flag was provided, use it directly.
@@ -862,29 +885,55 @@ Your choice:
 ### Step 5: Generate Markdown Artefacts
 
 ```python
+from guardkit.knowledge.entities.architecture_context import ArchitectureDecision
+from guardkit.knowledge.entities.component import ComponentDef
+from guardkit.knowledge.entities.crosscutting import CrosscuttingConcernDef
+from guardkit.knowledge.entities.system_context import SystemContextDef
 from guardkit.planning.architecture_writer import ArchitectureWriter
 
 writer = ArchitectureWriter()
 
-# Prepare data
-system = {
-    "name": description,
-    "purpose": answers.get("q1_purpose"),
-    "methodology": answers.get("q5_methodology"),
-}
+# The writer takes these typed entities (plain dictionaries fail). Carry every
+# captured field through, so each ADR keeps its context, consequences and
+# alternatives; ADR files are written as decisions/ADR-SP-NNN.md.
+system = SystemContextDef(
+    name=description,
+    purpose=answers.get("q1_purpose"),
+    methodology=answers.get("q5_methodology"),
+    external_systems=external_systems,
+)
 
 components = [
-    {"name": c.name, "description": c.description}
+    ComponentDef(
+        name=c.name,
+        description=c.description,
+        responsibilities=c.responsibilities,
+        dependencies=c.dependencies,
+    )
     for c in captured_components
 ]
 
 concerns = [
-    {"name": cc.name, "category": cc.category}
+    CrosscuttingConcernDef(
+        name=cc.name,
+        description=cc.description,
+        applies_to=cc.applies_to,
+        implementation_notes=cc.implementation_notes,
+    )
     for cc in captured_concerns
 ]
 
 decisions = [
-    {"number": adr.number, "title": adr.title}
+    ArchitectureDecision(
+        number=adr.number,
+        title=adr.title,
+        status=adr.status,
+        context=adr.context,
+        decision=adr.decision,
+        consequences=adr.consequences,
+        alternatives_considered=adr.alternatives_considered,
+        related_components=adr.related_components,
+    )
     for adr in captured_adrs
 ]
 
@@ -922,34 +971,36 @@ print(f"      └── ... {len(decisions)} ADRs")
 
 ### Step 6: Seed to Fleet-Memory (if available)
 
-If `memory_available` is true, build one typed payload per artefact written to `docs/architecture/` (see `docs/internals/commands-lib/memory-preamble.md` — Payload Model Reference + Seeding Pattern). Architecture prose docs → `document` payloads (`domain_tags=["architecture","plan"]`); ADRs → `adr` payloads (`domain_tags=["architecture"]`). Identifiers use **underscores only** (sanitise hyphens/colons, e.g. `ADR-001` → `ADR_001`).
+If `memory_available` is true, build one typed payload per artefact written to `docs/architecture/` (see `~/.agentecflow/docs/memory-preamble.md` — Payload Model Reference + Seeding Pattern). Architecture prose docs → `document` payloads (`domain_tags=["architecture","plan"]`); ADRs → `adr` payloads (`domain_tags=["architecture"]`). Identifiers use **underscores only** (sanitise hyphens/colons, e.g. `ADR-SP-001` → `ADR_SP_001`).
 
 ```
 # Architecture prose docs → document payload, domain_tags ["architecture","plan"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "architecture",
+  "payload_type": "document", "project": "<project>", "identifier": "architecture",
   "content": "<ARCHITECTURE.md markdown>", "domain_tags": ["architecture", "plan"],
   "source_ref": "docs/architecture/ARCHITECTURE.md"})
 
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "system_context",
+  "payload_type": "document", "project": "<project>", "identifier": "system_context",
   "content": "<system-context.md markdown>", "domain_tags": ["architecture", "plan"],
   "source_ref": "docs/architecture/system-context.md"})
 
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "document", "project": "guardkit", "identifier": "components",
+  "payload_type": "document", "project": "<project>", "identifier": "components",
   "content": "<components.md markdown>", "domain_tags": ["architecture", "plan"],
   "source_ref": "docs/architecture/components.md"})
 # For DDD methodology, use identifier "bounded_contexts" and content from bounded-contexts.md
 
 # Each ADR from docs/architecture/decisions/ → adr payload, domain_tags ["architecture"]
 mcp__fleet_memory__memory_write_payload(payload={
-  "payload_type": "adr", "project": "guardkit", "identifier": "ADR_001",
-  "decision": "<the ADR decision>", "status": "accepted", "domain_tags": ["architecture"],
-  "source_ref": "docs/architecture/decisions/ADR-001-{slug}.md"})
+  "payload_type": "adr", "project": "<project>", "identifier": "ADR_SP_001",
+  "decision": "<the ADR decision>", "status": "accepted",
+  "title": "<the ADR title>", "context": "<the ADR context>",
+  "consequences": "<the ADR consequences>", "alternatives": ["<alternative considered>"], "domain_tags": ["architecture"],
+  "source_ref": "docs/architecture/decisions/ADR-SP-001.md"})
 ```
 
-**Refine-mode supersession**: when refining an existing decision, write the NEW payload with a `"supersedes": ["<natural_key_of_old>"]` field (natural key = `"<payload_type>:guardkit:<identifier>"`, e.g. `"adr:guardkit:ADR_003"`), and re-write the OLD payload with `"status": "superseded"`. Fleet-memory upserts idempotently on the natural key — there is no separate stale-node tagging.
+**Refine-mode supersession**: when refining an existing decision, write the NEW payload with a `"supersedes": ["<natural_key_of_old>"]` field (natural key = `"<payload_type>:<project>:<identifier>"`, e.g. `"adr:<project>:ADR_SP_003"`), and re-write the OLD payload with `"status": "superseded"`. Fleet-memory upserts idempotently on the natural key — there is no separate stale-node tagging.
 
 Ask the user: `"Seed these to fleet-memory now? [Y/n]"`
 
@@ -978,7 +1029,7 @@ DO NOT:
 
 ### Error Handling
 
-- **Fleet-memory unavailable**: If `memory_available` is false (from the Step 2 Tier 0 → Tier 1 check), display the standard warning from `docs/internals/commands-lib/memory-preamble.md` and continue. Do not block the session.
+- **Fleet-memory unavailable**: If `memory_available` is false (from the Step 2 Tier 0 → Tier 1 check), display the standard warning from `~/.agentecflow/docs/memory-preamble.md` and continue. Do not block the session.
 
 - **Empty answer**: If the user provides an empty answer, use `[To be defined]` as a placeholder and continue.
 

@@ -2,14 +2,15 @@
 format_version: 1
 ---
 
-# Task Complete - Finalize Task with Feature/Epic Progress Rollup
+# Task Complete - Finalize a Task
 
 Finalize a task through the **shared atomic completion routine** — the single
 completion path also used by task-work § Phase 6 (Green) and, post-merge, by
 feature-complete. This slash command is a **thin wrapper** over
 `guardkit task complete`; it validates the pre-completion gates, then delegates
-the mechanical finalize (atomic status-flip + move, archival, rollup, PM sync,
-fleet-memory capture-outcome, conductor git-state commit) to the CLI.
+the mechanical finalize (atomic status-flip + move, archival, fleet-memory
+capture-outcome, conductor git-state commit) to the CLI. It does not roll progress up to
+features, epics or portfolios and does not sync external PM tools.
 
 > **Demotion note (task-complete-demotion-scope §7, Phase 1, 2026-07-10):** the
 > file-move + status-flip that used to be hand-rolled bash here is now the ONE
@@ -29,11 +30,6 @@ fleet-memory capture-outcome, conductor git-state commit) to the CLI.
 # Complete a task (normal path — from IN_REVIEW)
 /task-complete TASK-045
 
-# Complete without triggering rollup (batch operations)
-/task-complete TASK-045 --no-rollup
-
-# Force sync to external PM tools
-/task-complete TASK-045 --force-sync
 ```
 
 ## Completion Validation Process
@@ -90,10 +86,9 @@ This single command carries, in order:
 1. Pre-completion carve-out gates + fail-closed `qa.enforce_tier1` (when on);
 2. **Atomic status-flip + file-move** into `tasks/completed/YYYY-MM/`;
 3. Related-file archival;
-4. Feature → Epic → Portfolio rollup + external PM sync (`--no-rollup` honoured);
-5. fleet-memory `capture-outcome` (the learning flywheel's write path —
+4. fleet-memory `capture-outcome` (the learning flywheel's write path —
    best-effort, **loud on failure**);
-6. Conductor git-state commit (`docs/state/{task_id}/`; non-blocking).
+5. Conductor git-state commit (`docs/state/{task_id}/`; non-blocking).
 
 Carve-outs enforced by the routine / `guardkit task complete`:
 
@@ -118,7 +113,7 @@ The routine runs `guardkit memory capture-outcome --from-task-file <moved-file>
 completion MUST succeed even if the fleet-memory write fails. If the task
 recorded **architectural decisions**, capture each as an `adr` payload via
 `mcp__fleet_memory__memory_write_payload` (MCP write tool required — the CLI only
-writes `build_outcome`). See `docs/internals/commands-lib/memory-preamble.md`.
+writes `build_outcome`). See `~/.agentecflow/docs/memory-preamble.md`.
 
 ## Git State Commit (Conductor Support)
 
