@@ -501,13 +501,18 @@ def _commit_git_state_best_effort(task_id: str) -> str:
         return f"skipped ({exc})"
 
 
-# Without a frontmatter id this is a best guess: an all-capitals or all-digit slug word
-# (TASK-045-API-setup) is indistinguishable from an ID segment. Declare `id` to be exact.
-_TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+(?=-|$))*)")
+# Legacy names such as TASK-045-add-login.md or TASK-TEST-001-x.md: upper-case segments.
+_LEGACY_TASK_ID_PREFIX = re.compile(r"^(TASK-[A-Z0-9]+(?:-[A-Z0-9]+(?=-|$))*)")
 
 
 def _task_id_for(task_path: Path) -> str:
-    """Return a task's ID from its frontmatter, else from its file name's TASK-… prefix."""
+    """Return a task's ID from its frontmatter, else from its file name.
+
+    Without a frontmatter ``id`` the file name is a best guess: the longest leading
+    part GuardKit's own ID check accepts (TASK-a3f2, TASK-E01-A3F2.1, TASK-FIX-a3f8),
+    else the legacy upper-case form (TASK-045). A slug word that happens to look like
+    an ID part (TASK-045-beef-...) cannot be told apart; declare ``id`` to be exact.
+    """
     try:
         try:
             from installer.core.commands.lib.task_utils import read_task_file
@@ -519,8 +524,22 @@ def _task_id_for(task_path: Path) -> str:
         declared = ""
     if declared:
         return declared
-    match = _TASK_ID_PREFIX.match(task_path.stem)
-    return match.group(1) if match else task_path.stem
+    try:
+        from installer.core.lib.id_generator import validate_task_id
+    except ImportError:
+        try:
+            from id_generator import validate_task_id
+        except ImportError:
+            validate_task_id = None
+    stem = task_path.stem
+    if validate_task_id is not None:
+        parts = stem.split("-")
+        for end in range(len(parts), 1, -1):
+            candidate = "-".join(parts[:end])
+            if validate_task_id(candidate):
+                return candidate
+    match = _LEGACY_TASK_ID_PREFIX.match(stem)
+    return match.group(1) if match else stem
 
 
 def complete_task(

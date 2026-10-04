@@ -267,6 +267,7 @@ system = SystemContextDef(
     purpose=system_purpose,
     methodology=methodology,
     external_systems=external_systems,
+    bounded_contexts=bounded_contexts,  # DDD: the contexts named in Q6d (empty otherwise)
 )
 
 components = [
@@ -275,6 +276,10 @@ components = [
         description=c.description,
         responsibilities=c.responsibilities,
         dependencies=c.dependencies,
+        methodology=system.methodology,
+        aggregate_roots=c.aggregate_roots,      # DDD: Q7d
+        domain_events=c.domain_events,          # DDD: Q9d
+        context_mapping=c.context_mapping,      # DDD: Q8d (shared kernel / ACL), or None
     )
     for c in captured_components
 ]
@@ -903,6 +908,7 @@ system = SystemContextDef(
     purpose=answers.get("q1_purpose"),
     methodology=answers.get("q5_methodology"),
     external_systems=external_systems,
+    bounded_contexts=bounded_contexts,  # DDD: the contexts named in Q6d (empty otherwise)
 )
 
 components = [
@@ -911,6 +917,10 @@ components = [
         description=c.description,
         responsibilities=c.responsibilities,
         dependencies=c.dependencies,
+        methodology=system.methodology,
+        aggregate_roots=c.aggregate_roots,      # DDD: Q7d
+        domain_events=c.domain_events,          # DDD: Q9d
+        context_mapping=c.context_mapping,      # DDD: Q8d (shared kernel / ACL), or None
     )
     for c in captured_components
 ]
