@@ -51,11 +51,11 @@
     },
     "feature-plan.md": {
       "sha256": "0cf5bf8515f9cd5aa9ee620d3d95a27a7d789a2bfbf5e6fa42038e8fb596c51c",
-      "source_commit": "044b74ed"
+      "source_commit": "d5c76380"
     },
     "feature-spec.md": {
       "sha256": "32c1b7fecf14913927cd6d950edb04c332a3821b1538e48e3f5da9ab77c56aec",
-      "source_commit": "d78e7ae1"
+      "source_commit": "d5c76380"
     },
     "system-arch.md": {
       "sha256": "ff877ebd36a7de13669c16e71584f7e77c57ed4a917c486e9d40a7897388c7ee",
