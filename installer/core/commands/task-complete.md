@@ -110,7 +110,15 @@ and the known-failure ledger sweep is clean (WS2-B2).
 
 The routine runs `guardkit memory capture-outcome --from-task-file <moved-file>
 --success` as a best-effort, non-blocking step (loud log on failure). Task
-completion MUST succeed even if the fleet-memory write fails. If the task
+completion MUST succeed even if the fleet-memory write fails. If the routine reports
+the outcome `not published` or `failed` and `mcp__fleet_memory__memory_write_payload`
+is available, write the outcome with it instead: a `build_outcome` payload for the
+resolved `<project>` with `identifier` `OUTCOME_{safe_task_id}` (every character other
+than a letter, digit or underscore replaced by `_`), `status` `"success"`,
+`duration_seconds` (an integer, `0` when unknown), `task_id`, a short `lessons` summary
+from the task file, `domain_tags` `["task"]` and `source_ref` the completed task file
+path. Say which path recorded it, and never claim it was recorded without the returned
+key. If the task
 recorded **architectural decisions**, capture each as an `adr` payload via
 `mcp__fleet_memory__memory_write_payload` (MCP write tool required — the CLI only
 writes `build_outcome`). See `~/.agentecflow/docs/memory-preamble.md`.
