@@ -589,7 +589,7 @@ class JobContextRetriever:
                 domain_knowledge=0.05,
             )
             description = task.get("description", "")
-            tech_stack = task.get("tech_stack", "python")
+            tech_stack = task.get("tech_stack", "")
 
         # Determine relevance threshold using RelevanceConfig (TASK-GR6-011)
         try:
@@ -824,7 +824,7 @@ class JobContextRetriever:
                 domain_knowledge=0.05,
             )
             description = task.get("description", "")
-            tech_stack = task.get("tech_stack", "python")
+            tech_stack = task.get("tech_stack", "")
 
         # Determine relevance threshold
         try:

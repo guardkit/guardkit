@@ -24,7 +24,6 @@ Example:
         feature_id="FEAT-GR6",
         turn_number=1,
         description="Implement OAuth2 flow",
-        tech_stack="python",
     )
 
     # Get Coach context for validation
@@ -349,7 +348,6 @@ class AutoBuildContextLoader:
             feature_id="FEAT-GR6",
             turn_number=2,
             description="Implement OAuth2",
-            tech_stack="python",
             previous_feedback="Add tests for edge cases",
         )
 
@@ -434,7 +432,7 @@ class AutoBuildContextLoader:
         feature_id: str,
         turn_number: int,
         description: str,
-        tech_stack: str = "python",
+        tech_stack: str = "",
         complexity: int = 5,
         previous_feedback: Optional[str] = None,
         acceptance_criteria: Optional[List[str]] = None,
@@ -453,7 +451,8 @@ class AutoBuildContextLoader:
             feature_id: Feature identifier (e.g., "FEAT-GR6")
             turn_number: Current turn number (1-indexed)
             description: Task description for context queries
-            tech_stack: Technology stack (default: "python")
+            tech_stack: Technology stack, if the caller knows one (default: none).
+                Template patterns take it from the project's manifest.
             complexity: Task complexity 1-10 (default: 5)
             previous_feedback: Optional feedback from previous Coach turn
             acceptance_criteria: Optional list of acceptance criteria
@@ -581,7 +580,7 @@ class AutoBuildContextLoader:
         feature_id: str,
         turn_number: int,
         description: str,
-        tech_stack: str = "python",
+        tech_stack: str = "",
         complexity: int = 5,
         player_report: Optional[Dict[str, Any]] = None,
     ) -> AutoBuildContextResult:
@@ -597,7 +596,8 @@ class AutoBuildContextLoader:
             feature_id: Feature identifier (e.g., "FEAT-GR6")
             turn_number: Current turn number (1-indexed)
             description: Task description for context queries
-            tech_stack: Technology stack (default: "python")
+            tech_stack: Technology stack, if the caller knows one (default: none).
+                Template patterns take it from the project's manifest.
             complexity: Task complexity 1-10 (default: 5)
             player_report: Optional Player report from current turn
 
@@ -779,7 +779,7 @@ class AutoBuildContextLoader:
     def _append_template_patterns(
         self,
         result: AutoBuildContextResult,
-        tech_stack: str = "python",
+        tech_stack: str = "",
         file_path_hints: Optional[List[str]] = None,
     ) -> None:
         """Load template patterns and append to result prompt_text.
@@ -818,10 +818,11 @@ class AutoBuildContextLoader:
                 )
                 return
 
-            # Select relevant patterns
+            # Select relevant patterns. The stack is the project's own, from
+            # its manifest (2026-10-04); every build used to pass "python".
             tpl_ctx = select_patterns(
                 tpl_ctx,
-                tech_stack=tech_stack,
+                tech_stack=tpl_ctx.tech_stack or tech_stack,
                 file_path_hints=file_path_hints or [],
             )
 
