@@ -36,7 +36,7 @@ import tempfile
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -337,7 +337,40 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
     config_path = worktree / ".guardkit" / "config.yaml"
     if config_path.exists():
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            text = config_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            raise AgentInvocationError(
+                f"Could not read Player project configuration {config_path}: {exc}"
+            ) from exc
+    else:
+        text = None
+    inputs = _parse_player_project_inputs(
+        text,
+        config_path=config_path,
+        has_file=lambda rel: (worktree / rel).is_file(),
+    )
+    _refuse_linked_required_documents(
+        worktree, inputs["required_documents"], config_path
+    )
+    return inputs
+
+
+def _parse_player_project_inputs(
+    text: str | None,
+    *,
+    config_path: Path | str,
+    has_file: Callable[[str], bool],
+) -> dict[str, Any]:
+    """Parse the project's declaration from its text — the one parser.
+
+    Used for the Player (the worktree file) and for the Coach's capture (the
+    same file at the build's source commit). ``has_file`` says whether a
+    conventional instruction file exists in that source.
+    """
+
+    if text is not None:
+        try:
+            data = yaml.safe_load(text)
         except Exception as exc:
             raise AgentInvocationError(
                 f"Could not read Player project configuration {config_path}: {exc}"
@@ -392,7 +425,6 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         field="autobuild.player.required_documents",
         config_path=config_path,
     )
-    _refuse_linked_required_documents(worktree, required_documents, config_path)
     instructions = list(
         _player_path_list(
             player.get("instructions"),
@@ -401,7 +433,7 @@ def _load_player_project_inputs(worktree: Path) -> dict[str, Any]:
         )
     )
     for conventional in ("AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"):
-        if (worktree / conventional).is_file() and conventional not in instructions:
+        if has_file(conventional) and conventional not in instructions:
             instructions.append(conventional)
 
     declared_commands: list[tuple[str, str]] = []
@@ -517,21 +549,18 @@ def check_project_documents_budget(documents: Sequence[ProjectDocument]) -> None
         )
 
 
-def _declares_required_documents(worktree: Path) -> bool:
+def _declares_required_documents(config_text: str | None) -> bool:
     """Whether ``autobuild.player.required_documents`` is present and non-empty.
 
     Looked at first, and forgivingly, so that a project which declares no
-    binding documents never meets the Player loader's full validation on the
-    Coach's path: an unreadable, malformed or document-free declaration is
-    simply "nothing declared" here, and the Coach turn stays exactly what it
-    was. Only a project that does declare documents is held to the full
-    checks.
+    binding documents never meets the full declaration checks on the Coach's
+    path: an unreadable, malformed or document-free declaration is simply
+    "nothing declared" here, and the Coach turn stays exactly what it was.
+    Only a project that does declare documents is held to the full checks.
     """
 
     try:
-        data = yaml.safe_load(
-            (worktree / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
-        )
+        data = yaml.safe_load(config_text) if config_text is not None else None
     except Exception:  # noqa: BLE001 — undeclared, by definition, if unreadable
         return False
     autobuild = data.get("autobuild") if isinstance(data, dict) else None
@@ -540,67 +569,164 @@ def _declares_required_documents(worktree: Path) -> bool:
     return bool(declared)
 
 
-def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
-    """Read the project's instructions and binding documents in full.
+_LINK_MODE = "120000"
 
-    The same declaration the Player is given (``_load_player_project_inputs``:
-    the repository instructions ``AGENTS.md``/``CLAUDE.md``/``.claude/CLAUDE.md``
-    and ``autobuild.player.instructions``, then
-    ``autobuild.player.required_documents``), read from the task worktree for
-    the roles that receive document text in their prompt. No second parser:
-    the declaration is read once, by the Player's own loader.
 
-    Opt-in (coordinator decision, 4 October 2026): only a project that
-    declares binding documents (a non-empty
-    ``autobuild.player.required_documents``) has anything delivered. A project
-    that declares none gets an empty tuple — not even its instruction files —
-    so its Coach prompt, turn and records stay exactly as they were. An
-    existing project's ``CLAUDE.md`` was written for other readers and must not
-    start reaching the Coach without the project choosing it.
+def _committed_link_target(
+    path: str, target: str, entries: dict[str, str]
+) -> str | None:
+    """The repository path a committed link points to, if it stays inside the
+    repository and names a regular committed file; else ``None``."""
 
-    Raises :class:`AgentInvocationError` with a plain sentence when a document
-    is missing, outside the worktree, not an ordinary file, not UTF-8 text, a
-    symbolic link (declared documents), or when the total exceeds
+    if target.startswith("/"):
+        return None
+    parts: list[str] = []
+    for part in [*PurePosixPath(path).parent.parts, *PurePosixPath(target).parts]:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not parts:
+                return None
+            parts.pop()
+            continue
+        parts.append(part)
+    resolved = "/".join(parts)
+    mode = entries.get(resolved)
+    return resolved if mode is not None and mode.startswith("100") else None
+
+
+def _committed_bytes(repo: Path, path: str, commit: str) -> bytes:
+    from guardkit.lib.committed_content import CommittedContentError, blob
+
+    try:
+        return blob(repo, path, commit)
+    except CommittedContentError as exc:
+        raise AgentInvocationError(str(exc)) from None
+
+
+@dataclass(frozen=True)
+class CommittedProjectDocuments:
+    """The Coach's binding documents as committed at one commit."""
+
+    commit: str
+    documents: tuple[ProjectDocument, ...]
+    #: One plain sentence per instruction file that is a link in the tree,
+    #: saying whether it was followed or skipped, and why.
+    link_notes: tuple[str, ...] = ()
+
+
+def load_project_documents_at_commit(
+    repo: Path, commit: str
+) -> CommittedProjectDocuments:
+    """Read the project's instructions and binding documents at ``commit``.
+
+    Committed content only (``git ls-tree`` / ``git cat-file``, the shared
+    reader ``guardkit.lib.committed_content``), never a working tree: the
+    declaration in ``.guardkit/config.yaml`` and every file it names, as they
+    are in the commit the build started from. The declaration goes through
+    the same parser the Player's does.
+
+    Opt-in: when the declaration at that commit names no binding documents,
+    nothing is read and the result is empty. Otherwise each declared document
+    must be a regular committed file: missing, a symbolic link (or under one),
+    or not UTF-8 text is refused with a plain sentence, and so is a total over
     :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
+
+    An instruction file (``AGENTS.md``, ``CLAUDE.md``, ``.claude/CLAUDE.md``, or
+    declared) that is a link in the tree is followed only to a regular file
+    inside the repository at that commit, and delivered under its own name;
+    otherwise it is skipped. Either way ``link_notes`` says which. A file
+    reached by two names is delivered and counted once.
     """
 
-    if not _declares_required_documents(worktree):
-        return ()
-    inputs = _load_player_project_inputs(worktree)
-    if not inputs["required_documents"]:
-        return ()
-    root = worktree.resolve()
+    from guardkit.lib.committed_content import (
+        CommittedContentError,
+        blob,
+        tree_entries,
+    )
+
+    config_rel = ".guardkit/config.yaml"
+    where = f"{config_rel} at {commit[:12]}"
+    try:
+        entries = tree_entries(repo, commit)
+        config_text = (
+            blob(repo, config_rel, commit).decode("utf-8", "replace")
+            if config_rel in entries
+            else None
+        )
+    except CommittedContentError as exc:
+        raise AgentInvocationError(
+            f"Could not read the build's source commit {commit[:12]}: {exc}"
+        ) from None
+    if not _declares_required_documents(config_text):
+        return CommittedProjectDocuments(commit=commit, documents=())
+
+    inputs = _parse_player_project_inputs(
+        config_text, config_path=where, has_file=lambda rel: rel in entries
+    )
+    required = set(inputs["required_documents"])
     declared = list(
         dict.fromkeys(
             [*inputs["repository_instructions"], *inputs["required_documents"]]
         )
     )
     documents: list[ProjectDocument] = []
-    delivered: set[Path] = set()
+    link_notes: list[str] = []
+    delivered: set[str] = set()
     for value in declared:
-        try:
-            resolved = (worktree / value).resolve(strict=True)
-        except (OSError, RuntimeError):
+        rel = PurePosixPath(value).as_posix()
+        prefixes = ["/".join(rel.split("/")[:i]) for i in range(1, rel.count("/") + 1)]
+        linked_parent = next((p for p in prefixes if entries.get(p) == _LINK_MODE), None)
+        mode = entries.get(rel)
+        source = rel
+        if mode is None and linked_parent is None:
             raise AgentInvocationError(
-                f"The project declares {value!r} for its builds, but there is no "
-                f"such file in the task worktree {worktree}."
-            ) from None
-        if resolved in delivered:
-            # The same real file under a second name (CLAUDE.md -> AGENTS.md):
-            # delivered and counted once, under the first name it was found by.
-            continue
-        delivered.add(resolved)
-        if not resolved.is_relative_to(root):
-            raise AgentInvocationError(
-                f"The project declares {value!r} for its builds, but it points "
-                f"outside the task worktree {worktree}."
+                f"The project declares {value!r} for its builds, but there is "
+                f"no such file committed at {commit[:12]}."
             )
-        if not resolved.is_file():
+        if value in required:
+            if linked_parent is not None or mode == _LINK_MODE:
+                raise AgentInvocationError(
+                    f"The project declares {value!r} in "
+                    f"autobuild.player.required_documents ({where}), but "
+                    f"{linked_parent or rel} is a symbolic link. A binding document "
+                    "must be an ordinary file in the repository so that every role "
+                    "reads the same bytes; replace the link with the file itself."
+                )
+        elif mode == _LINK_MODE or linked_parent is not None:
+            if linked_parent is not None:
+                link_notes.append(
+                    f"{rel} sits under a symbolic link ({linked_parent}); skipped."
+                )
+                continue
+            target = _committed_bytes(repo, rel, commit).decode("utf-8", "replace").strip()
+            followed = _committed_link_target(rel, target, entries)
+            if followed is None:
+                link_notes.append(
+                    f"{rel} is a symbolic link to {target!r}, which is not a "
+                    "committed file inside the repository; skipped."
+                )
+                continue
+            source = followed
+            link_notes.append(
+                f"{rel} is a symbolic link to {followed}; followed, "
+                + (
+                    "and it is the same file as one already given, so it is "
+                    "delivered once."
+                    if source in delivered
+                    else f"and delivered under the name {rel}."
+                )
+            )
+        if not entries.get(source, "").startswith("100"):
             raise AgentInvocationError(
                 f"The project declares {value!r} for its builds, but it is not an "
-                "ordinary file."
+                f"ordinary file at {commit[:12]}."
             )
-        data = resolved.read_bytes()
+        if source in delivered:
+            # The same committed file under a second name: delivered once.
+            continue
+        delivered.add(source)
+        data = _committed_bytes(repo, source, commit)
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -617,7 +743,9 @@ def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
             )
         )
     check_project_documents_budget(documents)
-    return tuple(documents)
+    return CommittedProjectDocuments(
+        commit=commit, documents=tuple(documents), link_notes=tuple(link_notes)
+    )
 
 
 def _factory_accepts_kwarg(factory: Callable[..., Any], name: str) -> bool:
