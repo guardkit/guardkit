@@ -258,7 +258,7 @@ class TaskAnalyzer:
         # Extract basic info with safe defaults
         task_id = self._safe_get(task, "id", "")
         description = self._safe_get(task, "description", "")
-        tech_stack = self._safe_get(task, "tech_stack", "python")
+        tech_stack = self._safe_get(task, "tech_stack", "")  # no language is assumed
 
         # Classify task type
         task_type = self._classify_task_type(task)

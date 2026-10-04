@@ -1265,7 +1265,7 @@ class TestEdgeCasesAndErrorHandling:
         # Should use defaults
         assert result.task_id == ""
         assert result.description == ""
-        assert result.tech_stack == "python"  # Default
+        assert result.tech_stack == ""  # Default: no language is assumed
         assert result.complexity == 5  # Default
 
     @pytest.mark.asyncio
@@ -1289,7 +1289,7 @@ class TestEdgeCasesAndErrorHandling:
         # Should handle None gracefully
         assert result.task_id == ""
         assert result.description == ""
-        assert result.tech_stack == "python"  # Default
+        assert result.tech_stack == ""  # Default: no language is assumed
 
     @pytest.mark.asyncio
     async def test_case_insensitive_task_type(self):

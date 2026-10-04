@@ -478,6 +478,15 @@ class FleetMemoryClient:
         # asyncpg store connection to the consumer's event loop (loop-affinity). The
         # autobuild per-thread block (autobuild.py:5265-5267) initializes it there.
         self._pending_init: bool = False
+        # HOW MANY READS REALLY HAPPENED (2026-10-04). A failed read comes back
+        # as an empty list, exactly like a search that found nothing, so the
+        # per-turn memory line could not tell the two apart. "completed": the
+        # store search returned, with or without results. "failed": a failed
+        # lazy connection, a search error, or a refused request. A read that
+        # is skipped on purpose (memory off, retired group, the retrieval arm
+        # set to off) counts as neither. Each thread has its own client, so a
+        # plain dict is enough.
+        self.reads: dict[str, int] = {"completed": 0, "failed": 0}
 
     @property
     def enabled(self) -> bool:
@@ -705,6 +714,7 @@ class FleetMemoryClient:
         if not self.config.enabled:
             return []
         if not self._memory_named("search memory"):
+            self.reads["failed"] += 1
             return []
         if self.config.retrieval_arm == "off":
             # Retrieval ablation arm gate (FEAT-ABL-001 / TASK-ABL1-003): mirror
@@ -715,6 +725,7 @@ class FleetMemoryClient:
             return []
         if not self._read_available:
             logger.debug("fleet_memory.retrieval unavailable, returning empty")
+            self.reads["failed"] += 1
             return []
 
         from guardkit.knowledge.fleet_memory_mapping import resolve
@@ -727,6 +738,7 @@ class FleetMemoryClient:
             logger.warning(
                 "Fleet-memory invalid document source tag scope; returning empty"
             )
+            self.reads["failed"] += 1
             return []
         declared_tags = tuple(document_source_tags or ())
         invalid_declared_tags = any(
@@ -742,6 +754,7 @@ class FleetMemoryClient:
             logger.warning(
                 "Fleet-memory invalid document source tag scope; returning empty"
             )
+            self.reads["failed"] += 1
             return []
 
         # An explicitly scoped read must never degrade into a whole-corpus
@@ -782,6 +795,7 @@ class FleetMemoryClient:
                 and self._store_loop is not _running_loop()
             )
         ) and not await self.initialize():
+            self.reads["failed"] += 1
             return []
 
         try:
@@ -860,11 +874,14 @@ class FleetMemoryClient:
             # own token allocation instead of accepting or dropping one large block.
             limit = max(0, num_results)
             if limit == 0:
+                self.reads["completed"] += 1
                 return []
             if declared_tags:
-                return _declared_rule_section_hits(
+                section_hits = _declared_rule_section_hits(
                     results, query, declared_tags, limit
                 )
+                self.reads["completed"] += 1
+                return section_hits
 
             hits: list[dict[str, Any]] = []
             for item in results:
@@ -891,6 +908,7 @@ class FleetMemoryClient:
                 if len(hits) >= limit:
                     break
 
+            self.reads["completed"] += 1
             return hits
 
         except Exception as e:
@@ -905,6 +923,7 @@ class FleetMemoryClient:
                 e,
                 exc_info=True,
             )
+            self.reads["failed"] += 1
             return []
 
     async def add_episode(
