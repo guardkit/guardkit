@@ -31,7 +31,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -124,8 +124,19 @@ class TestLoadProjectDocuments:
             *player["required_documents"],
         ]
 
-    def test_nothing_declared_and_no_instructions_gives_nothing(self, tmp_path: Path) -> None:
-        _write_project(tmp_path, documents={}, agents_md=None)
+    def test_nothing_declared_gives_nothing_even_with_instruction_files(
+        self, tmp_path: Path
+    ) -> None:
+        # Opt-in: instruction files alone are never delivered.
+        _write_project(tmp_path, documents={})
+        (tmp_path / "CLAUDE.md").write_text("# Written for Claude sessions\n")
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "CLAUDE.md").write_text("# More\n")
+        assert load_project_documents(tmp_path) == ()
+        # An explicitly empty list is the same as none.
+        (tmp_path / ".guardkit" / "config.yaml").write_text(
+            "autobuild:\n  player:\n    required_documents: []\n"
+        )
         assert load_project_documents(tmp_path) == ()
         # No configuration at all, too.
         assert load_project_documents(tmp_path / "absent") == ()
@@ -446,15 +457,62 @@ class TestInvokeCoachSafely:
         assert [d.path for d in passed] == ["AGENTS.md", "docs/mission.md"]
         assert passed[1].sha256 == _sha((root / "docs" / "mission.md").read_bytes())
 
-    def test_nothing_to_give_passes_nothing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("declaration", ["autobuild: {}\n", None,
+                                             "autobuild:\n  player:\n    required_documents: []\n"])
+    def test_no_declaration_is_todays_turn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declaration: Optional[str]
     ) -> None:
+        """Opt-in: instruction files present, nothing declared → today's call."""
         monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
         root = tmp_path / "wt"
-        _write_project(root, documents={}, agents_md=None)
+        _write_project(root, documents={})  # writes AGENTS.md
+        (root / "CLAUDE.md").write_text("# Written for Claude sessions\n")
+        config = root / ".guardkit" / "config.yaml"
+        if declaration is None:
+            config.unlink()
+        else:
+            config.write_text(declaration)
         invoke = _real_signature_mock()
         _call(_orchestrator(tmp_path, invoke), _worktree(root))
-        assert "project_documents" not in invoke.call_args.kwargs
+        # Exactly the keyword set the base commit passed.
+        assert set(invoke.call_args.kwargs) == {
+            "task_id", "turn", "requirements", "player_report", "remaining_budget",
+            "evidence_bundle", "behavioural_oracle_declaration",
+        }
+        assert not list(root.rglob("coach_project_documents_turn_*.json"))
+
+    def test_no_declaration_prompt_is_byte_identical(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The real invoker under the orchestrator, AGENTS.md present, nothing
+        declared: the prompt the harness receives equals the one built by a
+        direct call that never mentions project documents (today's call)."""
+        monkeypatch.delenv("GUARDKIT_COACH_LEGACY", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
+        monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
+        root = tmp_path / "wt"
+        _write_project(root, documents={})
+        invoker = _invoker(root)
+        captured: list[str] = []
+
+        async def capture(**kwargs: Any) -> None:
+            captured.append(kwargs["prompt"])
+            raise RuntimeError("stop-after-capture")
+
+        orch = _orchestrator(tmp_path, invoker.invoke_coach)
+        with patch.object(invoker, "_invoke_with_role", side_effect=capture):
+            _call(orch, _worktree(root))
+            asyncio.run(
+                invoker.invoke_coach(
+                    task_id="TASK-PD-010", turn=1, requirements="reqs",
+                    player_report={"files_modified": []}, evidence_bundle=_bundle(),
+                )
+            )
+        assert len(captured) == 2
+        assert captured[0] == captured[1]
+        assert "## Project documents" not in captured[0]
+        assert "Run the root check" not in captured[0]  # AGENTS.md not delivered
+        assert not list(root.rglob("coach_project_documents_turn_*.json"))
 
     def test_unloadable_documents_refuse_before_anything_runs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

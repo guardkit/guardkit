@@ -8556,9 +8556,11 @@ class AutoBuildOrchestrator:
         context_prompt = ""
         self._last_coach_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
 
-        # Project initialisation design (4 October 2026): the Coach judges the
-        # turn against the project's own instructions and binding documents,
-        # read from the task worktree with the Player's own loader. A document
+        # Project initialisation design (4 October 2026): when the project
+        # declares binding documents, the Coach judges the turn against them
+        # and the project's own instructions, read from the task worktree with
+        # the Player's own loader. A project that declares none is untouched
+        # (opt-in, coordinator decision the same day). A document
         # that is missing, a link, or over the inline budget refuses the turn
         # here, before anything reaches a model.
         try:
@@ -8705,8 +8707,9 @@ class AutoBuildOrchestrator:
 
         Read from the task worktree by ``load_project_documents``, the
         selector's loader built on the Player's own declaration reader, so the
-        Coach and the Player are given the same files. Returns ``()`` when the
-        project has none. Raises ``AgentInvocationError`` with a plain sentence
+        Coach and the Player are given the same files. Opt-in: returns ``()``
+        when the project declares no binding documents, and the Coach turn is
+        then exactly what it was before. Raises ``AgentInvocationError`` with a plain sentence
         when a declared document cannot be given whole.
         """
         path = getattr(worktree, "path", None)
