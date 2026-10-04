@@ -935,11 +935,11 @@ Return ClarificationContext with review preferences."""
 **Skip Conditions**:
 - `--no-context` flag is set
 
-**See**: `docs/internals/commands-lib/memory-preamble.md` for availability check tiers
+**See**: `~/.agentecflow/docs/memory-preamble.md` for availability check tiers and "Which project"
 
 **STEP 1: Check Fleet-Memory Availability (MCP-First — Tier 0 → Tier 1)**
 
-Follow `docs/internals/commands-lib/memory-preamble.md` Tier 0 → Tier 1: check
+Follow `~/.agentecflow/docs/memory-preamble.md` Tier 0 → Tier 1: check
 for the `mcp__fleet_memory__*` tools (immediate tool list AND the deferred-tool
 list in system reminders — deferred tools are loadable via `ToolSearch`; if
 present there, load their schemas first with
@@ -969,7 +969,7 @@ by `payload_types` / `domain_tags`):
 ```
 # Similar features
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="{feature_description}",
   payload_types=["document"],
   domain_tags=["feature", "spec"],
@@ -978,7 +978,7 @@ mcp__fleet_memory__memory_search(
 
 # Architecture context
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="{feature_description}",
   payload_types=["adr", "document"],
   domain_tags=["architecture"],
@@ -987,7 +987,7 @@ mcp__fleet_memory__memory_search(
 
 # Past outcomes
 mcp__fleet_memory__memory_search(
-  project="guardkit",
+  project="<project>",
   query="{feature_description}",
   payload_types=["build_outcome"],
   domain_tags=["task"],

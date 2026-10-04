@@ -1,7 +1,7 @@
 """DF-011 seam guard: the packaged template BYTES must not change.
 
 The specialist-agent Session C loader pins the two planning-command templates by
-sha256 content hash (feature-spec.md 3c758966… — bumped 2026-09-07 with the concurrency-as-one-caller rule, IN the same commit; feature-plan.md 20a30611… — bumped 2026-08-18 with the home-choosing rule, IN the same commit) and
+sha256 content hash (feature-spec.md 32c1b7fe… and feature-plan.md 0cf5bf85… — both bumped 2026-10-04 with the memory-search project fix, IN the same commit) and
 refuses any unpinned version. DF-011's packaging change (hatch force-include
 installer/core -> guardkit/_installer_core + importlib.resources resolution) is a
 DISTRIBUTION change only — it must not alter a single byte of those files, or the
@@ -41,13 +41,24 @@ PINNED_TEMPLATES = {
         # and check it against that pins.py before changing this line. If the
         # two DISAGREE the seam is genuinely broken and a pin bump here is the
         # wrong fix — re-pin the specialist first.
-        "ef5ec5bb8b50cdd663236a4115f1778ab5542750fad13ceabc6bb54ca847ed65"
+        #
+        # 2026-10-04: ef5ec5bb... -> 32c1b7fe..., moved together with
+        # specialist-agent's pin. Step 1c now searches design records
+        # (contracts and data models) as well as decisions, names the memory
+        # project, and points at the installed memory guide. Instruction text
+        # only; still 957 lines.
+        "32c1b7fecf14913927cd6d950edb04c332a3821b1538e48e3f5da9ab77c56aec"
     ),
     "installer/core/commands/feature-plan.md": (
         # 2026-10-04: mirror corrected to specialist-agent's current pin (pins.py, re-pinned
         # 2026-10-03 for guardkit 044b74ed). The file has not changed since; only this mirror
         # was stale (it still held the 2026-08-17 value 20a30611...).
-        "f83a6a9d5129de12e92d36d4a810990e414218e11ae2efed83b6a766d870badf"
+        #
+        # 2026-10-04: f83a6a9d... -> 0cf5bf85..., moved together with
+        # specialist-agent's pin. The memory searches name the memory project
+        # instead of "guardkit", and the guide is the installed copy.
+        # Instruction text only; still 3017 lines.
+        "0cf5bf8515f9cd5aa9ee620d3d95a27a7d789a2bfbf5e6fa42038e8fb596c51c"
     ),
 }
 
