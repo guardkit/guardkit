@@ -26,8 +26,8 @@
       "source_commit": "1b89804d"
     },
     "arch-refine.md": {
-      "sha256": "a28f4570411bd3fc5dce73239c83401e8597b7fb7fbecedb781732dff9ecb628",
-      "source_commit": "3c0995b4"
+      "sha256": "52de432449b5e16569b1d207023b796b538d8b6f988cd7f3d035018da891cbbb",
+      "source_commit": "7669f84e"
     },
     "context-switch.md": {
       "sha256": "dd5a01daeb835042dd0addaf21a9b5f9dba55aca2ab5afa3638fd0153b392a52",
@@ -38,8 +38,8 @@
       "source_commit": "e421eff5"
     },
     "design-refine.md": {
-      "sha256": "3fcb91a1029104fd846f116ac3abf83b1d0ff497dfde3e49d48edf3ba53ce84d",
-      "source_commit": "3c0995b4"
+      "sha256": "84f89db581ba031cf635ddccf378b0de48cbd1c579b3eac074c3231430d4f5a2",
+      "source_commit": "7669f84e"
     },
     "feature-build.md": {
       "sha256": "580e4f92328b9fd40672c4e9452d6984c3471f8518ddb7bc0ebf48597a492ad8",
@@ -66,8 +66,8 @@
       "source_commit": "3c0995b4"
     },
     "system-plan.md": {
-      "sha256": "581f69618c07de32b535da5808d6fbae7bb0e07566436274d6e1d20ae2130a89",
-      "source_commit": "3c0995b4"
+      "sha256": "e8196f986fc4f8bd787436e61b88e0e4b4557f09aeb6d0c43ab90eb3f2e56de1",
+      "source_commit": "7669f84e"
     },
     "task-complete.md": {
       "sha256": "1c755614046dbb50982b15550f58afc832e61c10f9ad9254729158dc31ca0fcd",
@@ -78,8 +78,8 @@
       "source_commit": "1b89804d"
     },
     "task-review-ext.md": {
-      "sha256": "b5e0cc23b5df4860526d36ded7929fb605cf1b8a287be40cc1d01a01d14d94a8",
-      "source_commit": "3c0995b4"
+      "sha256": "dfc52c5cdd8ccb11427176e37a3d2a3c9ac67c49c1de4314d9e2ad3b9bcc4a29",
+      "source_commit": "7669f84e"
     },
     "task-review.md": {
       "sha256": "5ba0300bc2df517830117b86fc45306795d7a32ef1772c445897ea4b1446f207",
