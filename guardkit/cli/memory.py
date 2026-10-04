@@ -3,6 +3,7 @@
 Commands:
 - memory harvest: Harvest documentation episodes and publish to NATS
 - memory harvest --dry-run: Preview harvest without NATS connection
+- memory seed: Copy the project's accepted documents into its own memory
 
 Example:
     $ guardkit memory harvest
@@ -321,6 +322,107 @@ def harvest(dry_run: bool, docs_root: Path | None, env_file: Path | None):
 
     # Exit 0 on success (including when oversized docs were skipped)
     sys.exit(0)
+
+
+# ============================================================================
+# Seed Command (project initialisation design, 4 October 2026)
+# ============================================================================
+
+
+@memory.command("seed")
+@click.option(
+    "--repo",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="The project's repository (default: the one this folder is in).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be written, and anything refused; write nothing.",
+)
+def seed(repo: Path | None, dry_run: bool):
+    """Copy the project's accepted documents into its own memory.
+
+    Reads the documents the project names — memory.seed_documents in
+    .guardkit/config.yaml, else autobuild.player.required_documents — from the
+    commit at HEAD, and writes one record per file under the project's own
+    memory name: decision records (ADR-…-NNN, DDR-NNN files with a status line)
+    under their decision id, other documents under their path. Re-running with
+    nothing changed writes nothing new. Each record is read back before it is
+    reported as stored.
+
+    Exits non-zero when anything was refused or could not be confirmed.
+
+    Examples:
+        guardkit memory seed --dry-run
+        guardkit memory seed --repo /path/to/project
+    """
+    if _MEMORY_IMPORT_ERROR is not None:
+        _memory_extra_missing(_MEMORY_IMPORT_ERROR)
+
+    from guardkit.knowledge.fleet_memory_client import configure_memory_project
+    from guardkit.memory.seed import (
+        SeedRefused,
+        plan_lines,
+        plan_seed,
+        publish_and_confirm,
+    )
+
+    try:
+        repo = (repo or _find_repo_root()).resolve()
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    resolution = configure_memory_project(repo)
+    if not resolution.is_on:
+        console.print(
+            "Refused: this project has no memory to seed into.", markup=False
+        )
+        console.print(resolution.message, markup=False)
+        sys.exit(1)
+
+    try:
+        plan = plan_seed(repo, resolution.project)
+    except SeedRefused as e:
+        console.print(f"Refused: {e}", markup=False)
+        sys.exit(1)
+
+    for line in plan_lines(plan):
+        console.print(line, markup=False)
+    for refusal in plan.refusals:
+        console.print(f"Refused: {refusal}", markup=False)
+    if plan.refusals:
+        console.print("Nothing was written.", markup=False)
+        sys.exit(1)
+    if not plan.items:
+        console.print(
+            "Nothing to seed: the project names no documents in "
+            "memory.seed_documents or autobuild.player.required_documents.",
+            markup=False,
+        )
+        sys.exit(0)
+    if dry_run:
+        console.print("Dry run: nothing was written.", markup=False)
+        sys.exit(0)
+
+    client = get_memory_client()
+    if client is None:
+        console.print(
+            "Refused: no memory client is available here, so nothing was written.",
+            markup=False,
+        )
+        sys.exit(1)
+
+    results = asyncio.run(publish_and_confirm(plan, client))
+    for result in results:
+        console.print(result.line(), markup=False)
+    confirmed = sum(1 for result in results if result.confirmed)
+    console.print(
+        f"{confirmed} of {len(results)} records confirmed stored.", markup=False
+    )
+    sys.exit(0 if confirmed == len(results) else 1)
 
 
 # ============================================================================

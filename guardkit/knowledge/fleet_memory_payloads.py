@@ -119,15 +119,74 @@ def _build_outcome(data: dict, name: str) -> tuple[dict, str, Optional[str], Opt
     return body, task_id, source_ref, _parse_dt(data.get("completed_at"))
 
 
+def _explicit_source_ref(data: dict) -> Optional[str]:
+    """The caller's own provenance, when it supplies one (a non-empty string).
+
+    A body that names its own ``source_ref`` is a whole record from a caller
+    that knows exactly where it came from — today ``guardkit memory seed``,
+    which reads it from a commit. Only such a body has the fuller fields below
+    carried into its payload. No earlier caller supplies ``source_ref``, so
+    their payloads are exactly what they were; several of them (ADRService,
+    the design-decision entities) do send ``consequences`` as a list and
+    ``supersedes`` as a bare id, which the service would refuse.
+    """
+    value = data.get("source_ref")
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _string_list(value: Any) -> Optional[list[str]]:
+    """``value`` as a list of non-empty strings, or ``None`` if it is not one."""
+    if isinstance(value, list) and value and all(
+        isinstance(item, str) and item for item in value
+    ):
+        return list(value)
+    return None
+
+
 def _build_adr(data: dict, name: str) -> tuple[dict, str, Optional[str], Optional[datetime]]:
-    """``adrs``/``project_decisions``/``architecture_decisions`` → ``adr`` payload."""
+    """``adrs``/``project_decisions``/``architecture_decisions`` → ``adr`` payload.
+
+    With an explicit ``source_ref`` (project initialisation design, 4 October
+    2026) the record also carries ``title``, ``context``, ``consequences`` and
+    ``alternatives`` as fleet-memory's ``ADRPayload`` declares them, so
+    re-writing a decision the commands wrote keeps its reasoning instead of
+    reducing it to decision and status. Without one, the payload is unchanged.
+    """
     adr_id = data.get("id") or _extract(name, r"ADR-\d+|DECISION-[\w-]+") or name
     body = {
         "decision": data.get("decision") or data.get("title") or "(no decision recorded)",
         "status": data.get("status") or "accepted",
     }
-    source_ref = data.get("source_task_id") or adr_id
-    return body, adr_id, source_ref, _parse_dt(data.get("created_at"))
+    explicit = _explicit_source_ref(data)
+    if explicit is None:
+        source_ref = data.get("source_task_id") or adr_id
+        return body, adr_id, source_ref, _parse_dt(data.get("created_at"))
+    for key in ("title", "context", "consequences"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            body[key] = value
+    alternatives = _string_list(data.get("alternatives"))
+    if alternatives is not None:
+        body["alternatives"] = alternatives
+    return body, adr_id, explicit, _parse_dt(data.get("created_at"))
+
+
+def _build_document(data: dict, name: str) -> tuple[dict, str, Optional[str], Optional[datetime]]:
+    """A ``document`` with explicit provenance → typed ``document`` payload.
+
+    Used only for a body that supplies its own ``source_ref`` (see
+    :func:`_explicit_source_ref`); every other document keeps the prose path.
+    The full text travels in ``content``, which fleet-memory embeds, and the
+    record keeps its ``domain_tags`` so category-scoped reads find it.
+    """
+    ident = data.get("id") or name
+    body: dict = {}
+    content = data.get("content")
+    if isinstance(content, str):
+        body["content"] = content
+    return body, ident, _explicit_source_ref(data), _parse_dt(data.get("created_at"))
 
 
 def _build_warning(data: dict, name: str) -> tuple[dict, str, Optional[str], Optional[datetime]]:
@@ -148,13 +207,21 @@ def _build_warning(data: dict, name: str) -> tuple[dict, str, Optional[str], Opt
 
 
 # payload_type → type-specific body builder. Types with no builder (e.g. ``document``,
-# ``seed_module``) fall back to the prose/chunk path, which is the right home for raw
-# document text (DocumentPayload declares no prose field, so a JSON-typed document would
-# embed only structural metadata).
+# ``seed_module``) fall back to the prose/chunk path. (That comment once said a typed
+# document would embed only metadata; DocumentPayload has since gained ``content``, which
+# is embedded, so a document WITH explicit provenance takes the typed path through
+# ``_PROVENANCED_BODY_BUILDERS`` below and keeps its ``domain_tags``.)
 _BODY_BUILDERS: dict[str, Callable[[dict, str], tuple]] = {
     "build_outcome": _build_outcome,
     "adr": _build_adr,
     "warning": _build_warning,
+}
+
+# Builders used only when the body supplies its own ``source_ref``. A
+# ``document`` without one keeps the prose path above, exactly as before, so
+# the existing document writers (turn states, specs, …) are unaffected.
+_PROVENANCED_BODY_BUILDERS: dict[str, Callable[[dict, str], tuple]] = {
+    "document": _build_document,
 }
 
 
@@ -205,7 +272,10 @@ def build_memory_episode(
 
     data = _parse_episode_body(episode_body)
     payload_type = mapping.payload_type
+    explicit_source_ref = _explicit_source_ref(data)
     builder = _BODY_BUILDERS.get(payload_type)
+    if builder is None and explicit_source_ref is not None:
+        builder = _PROVENANCED_BODY_BUILDERS.get(payload_type)
 
     if builder is None:
         return _build_prose_episode(mapping, name, episode_body, source, data, project)
@@ -225,6 +295,17 @@ def build_memory_episode(
         "domain_tags": list(mapping.domain_tags),
         **type_fields,
     }
+    if explicit_source_ref is not None:
+        # A whole record with its own provenance may also name its own
+        # categories and the records it replaces (natural keys,
+        # ``"<type>:<project>:<identifier>"``), using the writer's existing
+        # supersession. Bodies without a ``source_ref`` never reach here.
+        domain_tags = _string_list(data.get("domain_tags"))
+        if domain_tags is not None:
+            body["domain_tags"] = domain_tags
+        supersedes = _string_list(data.get("supersedes"))
+        if supersedes is not None:
+            body["supersedes"] = supersedes
 
     return MemoryEpisodeV1(
         episode_id=natural_key,  # deterministic → Nats-Msg-Id dedup; mirrors relay uuid5 input
