@@ -191,6 +191,10 @@ from guardkit.knowledge.entities.outcome import OutcomeType
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+from guardkit.orchestrator.outcome_lessons import (
+    compose_outcome_lessons,
+    turn_facts_from_record,
+)
 
 # Import MCP design extractor for Phase 0 (TASK-DM-003)
 from guardkit.orchestrator.mcp_design_extractor import (
@@ -3236,14 +3240,20 @@ class AutoBuildOrchestrator:
         A plain crash (nothing recorded before it) reads exactly as it always
         did: nothing is invented to name.
         """
-        reason = f"Orchestration crashed: {type(exc).__name__}: {exc}"
+        return (
+            f"Orchestration crashed: {type(exc).__name__}: {exc}"
+            + self._superseded_terminal_note()
+        )
+
+    def _superseded_terminal_note(self) -> str:
+        """The clause naming the terminal a crash overtakes, or "" if none."""
         superseded = self._last_captured_terminal
-        if superseded:
-            reason += (
-                f" — this build crashed after the '{superseded}' terminal had "
-                f"already been recorded, so this record supersedes that one."
-            )
-        return reason
+        if not superseded:
+            return ""
+        return (
+            f" — this build crashed after the '{superseded}' terminal had "
+            f"already been recorded, so this record supersedes that one."
+        )
 
     def _check_qa_pass_bar_precondition(self, task_id: str):
         """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
@@ -7955,7 +7965,8 @@ class AutoBuildOrchestrator:
         becomes ``review_cycles`` (each turn is one coach review). Test counts
         are deliberately NOT sent as ``tests_written``: the turn record carries
         tests *run*, which is a different number, and a wrong number in memory
-        is worse than an absent one. The one-sentence outcome is sent twice, as
+        is worse than an absent one. The outcome paragraph (see
+        ``outcome_lessons.compose_outcome_lessons``) is sent twice, as
         ``summary`` and as the single ``lessons_learned`` line, because the
         writer's build_outcome payload drops ``summary`` and keeps ``lessons``.
 
@@ -7989,6 +8000,11 @@ class AutoBuildOrchestrator:
             # terminal already reached?", which is true whether or not the
             # broker was up. "crashed" itself is never recorded here — a crash
             # cannot supersede itself.
+            # Read before it is updated below: a crash names the terminal it
+            # overtook (see _crash_outcome_reason).
+            supersedes_note = (
+                self._superseded_terminal_note() if final_decision == "crashed" else ""
+            )
             if final_decision != "crashed":
                 self._last_captured_terminal = final_decision
 
@@ -8018,24 +8034,47 @@ class AutoBuildOrchestrator:
                 )
 
             title = (task_title or "").strip() or task_id
-            repo_name = self.repo_root.name
+            feature_id = self._extract_feature_id(task_id)
 
-            if success:
-                summary = (
-                    f"AutoBuild finished {task_id} in {repo_name}: the coach "
-                    f"approved the work after {turn_count} turn(s)."
+            # WHAT A LATER BUILD CAN USE (2026-10-04). The old sentence said
+            # only that the task finished, and named the build's working
+            # folder as if it were the repository. It never scored close
+            # enough to any later task to be handed to its builder. This
+            # paragraph carries the facts already in hand here: title,
+            # feature, how it ended and why, what was asked, the files
+            # changed and what the reviewer objected to. It is capped at 500
+            # characters and never names the working folder.
+            working_folders = [
+                str(folder)
+                for folder in (
+                    getattr(self, "_active_worktree_path", None),
+                    self.repo_root,
                 )
+                if folder
+            ]
+            # The reason is cut to 120 characters in the paragraph, which
+            # would cut off a crash's note about the terminal it supersedes.
+            # So that note becomes its own sentence, and the reason is the
+            # crash alone.
+            paragraph_error = error
+            if supersedes_note and error and error.endswith(supersedes_note):
+                paragraph_error = error[: -len(supersedes_note)]
+            summary = compose_outcome_lessons(
+                task_id=task_id,
+                title=task_title,
+                feature_id=feature_id,
+                success=success,
+                final_decision=final_decision,
+                error=paragraph_error,
+                requirements=requirements,
+                turns=[turn_facts_from_record(t) for t in turns],
+                working_folders=working_folders,
+                supersedes=self._last_captured_terminal if supersedes_note else None,
+            )
+            if success:
                 problems: Optional[List[str]] = None
             else:
-                summary = (
-                    f"AutoBuild stopped {task_id} in {repo_name} without "
-                    f"approval after {turn_count} turn(s); it ended at "
-                    f"'{final_decision}'."
-                )
-                if error:
-                    summary += f" Reported reason: {error}"
                 problems = [error] if error else [f"Build ended at '{final_decision}'."]
-            summary = summary[:2000]
 
             async def _write() -> OutcomeCapture:
                 return await asyncio.wait_for(
@@ -8063,7 +8102,7 @@ class AutoBuildOrchestrator:
                         started_at=started_at,
                         completed_at=completed_at,
                         duration_minutes=duration_minutes,
-                        feature_id=self._extract_feature_id(task_id),
+                        feature_id=feature_id,
                     ),
                     timeout=OUTCOME_CAPTURE_TIMEOUT_SECONDS,
                 )
