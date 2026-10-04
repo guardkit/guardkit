@@ -44,7 +44,10 @@ PINNED_TEMPLATES = {
         "ef5ec5bb8b50cdd663236a4115f1778ab5542750fad13ceabc6bb54ca847ed65"
     ),
     "installer/core/commands/feature-plan.md": (
-        "20a3061159b6a3324c0bdeea230989e81dd823a2d220db5410a46144932678e3"  # 2026-08-17: routing-law widening + template note (guardkit d324f255)
+        # 2026-10-04: mirror corrected to specialist-agent's current pin (pins.py, re-pinned
+        # 2026-10-03 for guardkit 044b74ed). The file has not changed since; only this mirror
+        # was stale (it still held the 2026-08-17 value 20a30611...).
+        "f83a6a9d5129de12e92d36d4a810990e414218e11ae2efed83b6a766d870badf"
     ),
 }
 
