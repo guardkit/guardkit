@@ -518,14 +518,23 @@ def load_project_documents(worktree: Path) -> tuple[ProjectDocument, ...]:
     the roles that receive document text in their prompt. No second parser:
     the declaration is read once, by the Player's own loader.
 
-    Returns an empty tuple when the project declares nothing and has no
-    instruction files. Raises :class:`AgentInvocationError` with a plain
-    sentence when a document is missing, outside the worktree, not an ordinary
-    file, not UTF-8 text, a symbolic link (declared documents), or when the
-    total exceeds :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
+    Opt-in (coordinator decision, 4 October 2026): only a project that
+    declares binding documents (a non-empty
+    ``autobuild.player.required_documents``) has anything delivered. A project
+    that declares none gets an empty tuple — not even its instruction files —
+    so its Coach prompt, turn and records stay exactly as they were. An
+    existing project's ``CLAUDE.md`` was written for other readers and must not
+    start reaching the Coach without the project choosing it.
+
+    Raises :class:`AgentInvocationError` with a plain sentence when a document
+    is missing, outside the worktree, not an ordinary file, not UTF-8 text, a
+    symbolic link (declared documents), or when the total exceeds
+    :data:`PROJECT_DOCUMENTS_BUDGET_BYTES`.
     """
 
     inputs = _load_player_project_inputs(worktree)
+    if not inputs["required_documents"]:
+        return ()
     root = worktree.resolve()
     declared = list(
         dict.fromkeys(
