@@ -2995,8 +2995,9 @@ class AutoBuildOrchestrator:
                         recovery_count=self.recovery_count,
                     )
 
-            # Project initialisation design, review fix (4 October 2026): the
-            # Coach's binding documents are captured once, here, before the
+            # Project initialisation design, review fixes (4 October 2026):
+            # the Coach's binding documents are captured once, here, from the
+            # canonical repo_root (not the worktree Players edit), before the
             # pre-loop phase and the Player's first turn. A declaration that
             # cannot be given whole stops the task before any model call.
             documents_refusal = self._capture_coach_project_documents(
@@ -8600,10 +8601,10 @@ class AutoBuildOrchestrator:
         # Project initialisation design (4 October 2026): when the project
         # declares binding documents, the Coach judges the turn against them
         # and the project's own instructions — the set captured once at task
-        # start, before the Player's first turn, so the Player cannot change
-        # what it is judged against. A project that declares none is untouched
-        # (opt-in). A direct caller that skipped the task-start capture gets
-        # the capture here, with the same refusals.
+        # start from repo_root (see _capture_coach_project_documents for what
+        # that does and does not protect). A project that declares none is
+        # untouched (opt-in). A direct caller that skipped the task-start
+        # capture gets the capture here, with the same refusals.
         try:
             project_documents = self._coach_documents_for_turn(task_id, worktree)
         except AgentInvocationError as exc:
@@ -8743,27 +8744,21 @@ class AutoBuildOrchestrator:
             project_documents=project_documents,
         )
 
-    def _load_coach_project_documents(self, worktree: Worktree) -> tuple:
-        """The project's instructions and binding documents for the Coach.
+    def _load_coach_project_documents(self, root: Path) -> tuple:
+        """The project's instructions and binding documents, read from ``root``.
 
-        Read from the task worktree by ``load_project_documents``, the
-        selector's loader built on the Player's own declaration reader, so the
-        Coach and the Player are given the same files. Opt-in: returns ``()``
-        when the project declares no binding documents, and the Coach turn is
-        then exactly what it was before. Raises ``AgentInvocationError`` with a plain sentence
-        when a declared document cannot be given whole.
+        ``load_project_documents`` is the selector's loader built on the
+        Player's own declaration reader. Opt-in: returns ``()`` when the
+        project declares no binding documents, and the Coach turn is then
+        exactly what it was before. Raises ``AgentInvocationError`` with a
+        plain sentence when a declared document cannot be given whole.
         """
-        path = getattr(worktree, "path", None)
-        if not isinstance(path, (str, os.PathLike)):
-            # Only a test double has no real path; a Worktree always does.
-            logger.debug("Coach project documents: worktree has no path; none loaded")
-            return ()
         from guardkit.orchestrator.harness.selector import load_project_documents
 
-        return load_project_documents(Path(path))
+        return load_project_documents(Path(root))
 
-    #: The captured set, kept in the orchestrator-private directory so a
-    #: resumed task is judged against the same text (Player-unreachable).
+    #: The captured set, kept per task in the orchestrator-private directory
+    #: so a resumed task reloads the text it started with.
     _COACH_DOCUMENTS_SNAPSHOT = "coach_project_documents_start.json"
 
     def _captured_coach_documents(self) -> Dict[str, tuple]:
@@ -8774,29 +8769,44 @@ class AutoBuildOrchestrator:
     ) -> Optional[str]:
         """Capture the Coach's binding documents once, at task start.
 
-        Review fix (independent coach, 4 October 2026): the Coach must not
-        judge against documents the Player could have changed, so the set is
-        read here — after the worktree exists, before the pre-loop phase and
-        the Player's first turn — and that captured text is what every Coach
-        turn of this task receives. The budget, symbolic-link and missing-file
-        checks therefore run here too: a broken or over-budget declaration
-        stops the task before any model call. Opt-in is unchanged; a project
-        that declares nothing captures nothing.
+        Review fixes (independent coach, 4 October 2026). The declaration and
+        the documents are read from the canonical ``repo_root`` — the same tree
+        ``_snapshot_toolchain_declaration`` reads, and in the factory the outer
+        checkout at the admitted commit — not from the task or feature
+        worktree the Players edit. So in feature mode, where every task shares
+        one worktree, a later task is not judged against documents an earlier
+        task's Player changed. Where ``repo_root`` IS the worktree (a run with
+        no separate worktree) that protection does not exist, and the turn
+        record says so instead of claiming it.
+
+        Read before the pre-loop phase and the Player's first turn, so the
+        budget, symbolic-link and missing-file checks stop a broken or
+        over-budget declaration before any model call. Opt-in is unchanged: a
+        project that declares nothing captures nothing.
 
         A resumed task reloads the snapshot written at its original start.
 
         Returns ``None`` when the task may proceed, else the refusal sentence.
         """
+        from dataclasses import replace as _replace
+
         from guardkit.orchestrator.harness.selector import ProjectDocument
 
         path = getattr(worktree, "path", None)
         snapshot = None
+        same_directory = False
         if isinstance(path, (str, os.PathLike)):
             from guardkit.orchestrator.paths import TaskArtifactPaths
 
             snapshot = TaskArtifactPaths.private_artifact_path(
                 task_id, self._COACH_DOCUMENTS_SNAPSHOT, Path(path)
             )
+            try:
+                same_directory = (
+                    Path(path).resolve() == Path(self.repo_root).resolve()
+                )
+            except (OSError, RuntimeError):
+                same_directory = False
         if resume and snapshot is not None and snapshot.is_file():
             try:
                 raw = json.loads(snapshot.read_text(encoding="utf-8"))
@@ -8809,17 +8819,29 @@ class AutoBuildOrchestrator:
                     return None
                 logger.warning(
                     "Coach documents snapshot for %s does not match its own "
-                    "hashes; capturing again from the worktree", task_id,
+                    "hashes; capturing again from the repository root", task_id,
                 )
             except Exception as exc:  # noqa: BLE001 — fall back to a fresh capture
                 logger.warning(
                     "Could not reload the Coach documents snapshot for %s (%s); "
-                    "capturing again from the worktree", task_id, exc,
+                    "capturing again from the repository root", task_id, exc,
                 )
         try:
-            documents = self._load_coach_project_documents(worktree)
+            documents = self._load_coach_project_documents(Path(self.repo_root))
         except AgentInvocationError as exc:
             return str(exc)
+        if documents:
+            captured_from = (
+                "the task worktree at task start; it is the same directory as "
+                "the repository root, so edits made there before this task "
+                "started are not excluded"
+                if same_directory
+                else "the repository root at task start, separate from the task "
+                "worktree the Player edits"
+            )
+            documents = tuple(
+                _replace(d, captured_from=captured_from) for d in documents
+            )
         self._captured_coach_documents()[task_id] = documents
         if snapshot is not None:
             try:
@@ -8831,7 +8853,8 @@ class AutoBuildOrchestrator:
                                 "task_id": task_id,
                                 "documents": [
                                     {"path": d.path, "sha256": d.sha256,
-                                     "text": d.text, "size": d.size}
+                                     "text": d.text, "size": d.size,
+                                     "captured_from": d.captured_from}
                                     for d in documents
                                 ],
                             },
