@@ -8556,6 +8556,25 @@ class AutoBuildOrchestrator:
         context_prompt = ""
         self._last_coach_context_status = None  # Reset per invocation (TASK-FIX-GCW5)
 
+        # Project initialisation design (4 October 2026): the Coach judges the
+        # turn against the project's own instructions and binding documents,
+        # read from the task worktree with the Player's own loader. A document
+        # that is missing, a link, or over the inline budget refuses the turn
+        # here, before anything reaches a model.
+        try:
+            project_documents = self._load_coach_project_documents(worktree)
+        except AgentInvocationError as exc:
+            logger.error("Coach turn %s for %s refused: %s", turn, task_id, exc)
+            return AgentInvocationResult(
+                task_id=task_id,
+                turn=turn,
+                agent_type="coach",
+                success=False,
+                report={},
+                duration_seconds=time.time() - start_time,
+                error=str(exc),
+            )
+
         # Create event loop if needed (required for thread-local loader creation too)
         try:
             loop = asyncio.get_event_loop()
@@ -8657,6 +8676,7 @@ class AutoBuildOrchestrator:
                 start_time=start_time,
                 behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
                 component=component,  # per-component seam
+                project_documents=project_documents,
             )
 
         return self._invoke_coach_primary(
@@ -8677,6 +8697,47 @@ class AutoBuildOrchestrator:
             start_time=start_time,
             behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
             component=component,  # per-component seam
+            project_documents=project_documents,
+        )
+
+    def _load_coach_project_documents(self, worktree: Worktree) -> tuple:
+        """The project's instructions and binding documents for the Coach.
+
+        Read from the task worktree by ``load_project_documents``, the
+        selector's loader built on the Player's own declaration reader, so the
+        Coach and the Player are given the same files. Returns ``()`` when the
+        project has none. Raises ``AgentInvocationError`` with a plain sentence
+        when a declared document cannot be given whole.
+        """
+        path = getattr(worktree, "path", None)
+        if not isinstance(path, (str, os.PathLike)):
+            # Only a test double has no real path; a Worktree always does.
+            logger.debug("Coach project documents: worktree has no path; none loaded")
+            return ()
+        from guardkit.orchestrator.harness.selector import load_project_documents
+
+        return load_project_documents(Path(path))
+
+    def _coach_documents_unsupported(self, project_documents: tuple) -> Optional[str]:
+        """A refusal sentence when documents exist and the invoker cannot take them.
+
+        A declared binding document is never dropped silently — the same rule
+        the Player follows for ``required_documents``.
+        """
+        if not project_documents:
+            return None
+        import inspect as _inspect
+
+        try:
+            parameters = _inspect.signature(self._agent_invoker.invoke_coach).parameters
+        except Exception:  # noqa: BLE001 — cannot inspect: cannot prove support
+            parameters = {}
+        if "project_documents" in parameters:
+            return None
+        return (
+            "The project has binding documents for the Coach, but this Coach "
+            "invoker cannot take them, so the Coach was not run; a declared "
+            "document is never dropped."
         )
 
     def _invoke_coach_legacy(
@@ -8701,6 +8762,7 @@ class AutoBuildOrchestrator:
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
+        project_documents: tuple = (),
     ) -> AgentInvocationResult:
         """Legacy Coach flow: CoachValidator decides, LLM Coach is exception fallback.
 
@@ -8862,6 +8924,20 @@ class AutoBuildOrchestrator:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
 
+                unsupported = self._coach_documents_unsupported(project_documents)
+                if unsupported is not None:
+                    return AgentInvocationResult(
+                        task_id=task_id,
+                        turn=turn,
+                        agent_type="coach",
+                        success=False,
+                        report={},
+                        duration_seconds=time.time() - start_time,
+                        error=unsupported,
+                    )
+                fallback_kwargs: Dict[str, Any] = {}
+                if project_documents:
+                    fallback_kwargs["project_documents"] = project_documents
                 return loop.run_until_complete(
                     self._agent_invoker.invoke_coach(
                         task_id=task_id,
@@ -8869,6 +8945,7 @@ class AutoBuildOrchestrator:
                         requirements=requirements,
                         player_report=player_report,
                         remaining_budget=remaining_budget,
+                        **fallback_kwargs,
                     )
                 )
 
@@ -8917,6 +8994,7 @@ class AutoBuildOrchestrator:
         # test that calls this path by hand) keeps its current signature.
         behavioural_oracle: Optional[Any] = None,
         component: Optional[str] = None,  # per-component seam
+        project_documents: tuple = (),
     ) -> AgentInvocationResult:
         """Primary Coach flow (TASK-HMIG-008R): LLM Coach is the decision-maker.
 
@@ -9158,6 +9236,21 @@ class AutoBuildOrchestrator:
                     invoke_kwargs["behavioural_oracle_declaration"] = oracle_declaration
                 if "coach_context" in _sig.parameters and context_prompt:
                     invoke_kwargs["coach_context"] = context_prompt
+                # Project initialisation design (4 October 2026): the
+                # project's binding documents, never dropped silently.
+                if project_documents:
+                    unsupported = self._coach_documents_unsupported(project_documents)
+                    if unsupported is not None:
+                        return AgentInvocationResult(
+                            task_id=task_id,
+                            turn=turn,
+                            agent_type="coach",
+                            success=False,
+                            report={},
+                            duration_seconds=time.time() - start_time,
+                            error=unsupported,
+                        )
+                    invoke_kwargs["project_documents"] = project_documents
                 # TASK-ARCH-COACHBFULL (AC-4 / AC-1): thread structured ACs into
                 # the Coach prompt so the synthesis verdict can populate
                 # criteria_verification per AC (the run-19 empty-array fix) and

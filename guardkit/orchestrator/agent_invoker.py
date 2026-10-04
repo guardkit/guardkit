@@ -2,6 +2,7 @@
 
 import asyncio
 from copy import deepcopy
+import hashlib
 import json
 import logging
 import os
@@ -13,7 +14,7 @@ from contextlib import aclosing, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 from guardkit.orchestrator.permissive_double_advisory import (
     coach_advisory_text as permissive_double_advisory_text,
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from guardkit.orchestrator.quality_gates.coach_evidence import (
         CoachEvidenceBundle,
     )
+    from guardkit.orchestrator.harness.selector import ProjectDocument
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -958,6 +960,11 @@ SDK_MAX_TURNS_FLOOR = 150
 # GBNF verdict grammar (llama.cpp hard-rejects grammar+tools) and (b) avoid the
 # run-18 tool-parse HTTP 500.
 _COACH_SYNTHESIS_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _sha256_text(text: str) -> str:
+    """SHA-256 of ``text`` as UTF-8, in hex (the Coach documents-section check)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _coach_synthesis_enabled() -> bool:
@@ -2760,6 +2767,7 @@ class AgentInvoker:
         behavioural_oracle_declaration: Optional[Dict[str, Any]] = None,
         coach_context: Optional[str] = None,
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
+        project_documents: Optional[Sequence["ProjectDocument"]] = None,
     ) -> AgentInvocationResult:
         """Invoke Coach agent via Claude Agents SDK with honesty verification.
 
@@ -2800,6 +2808,15 @@ class AgentInvoker:
                 explicit per-AC checklist to investigate against. When ``None``
                 the prompt omits the per-criterion section (pre-COACHBFULL
                 behaviour).
+            project_documents: Optional project instructions and binding
+                documents (``harness.selector.load_project_documents``: path,
+                SHA-256 and full text each), rendered as their own
+                ``## Project documents`` section beside the requirements. The
+                section is never trimmed; if it would not reach the model whole,
+                or the documents exceed the inline budget, the turn is refused
+                before any model call. The paths, hashes and the hash of the
+                section actually sent are recorded beside ``coach_turn_N.json``.
+                ``None`` or empty gives today's prompt unchanged.
 
         Returns:
             AgentInvocationResult with Coach's decision
@@ -2818,6 +2835,23 @@ class AgentInvoker:
         self.sdk_timeout_seconds = effective_timeout
 
         try:
+            # Project initialisation design (4 October 2026): the project's
+            # binding documents travel to the Coach whole or not at all. Over
+            # the inline budget the turn is refused here, before the Phase-A
+            # gather or the verdict call reaches any model.
+            documents = tuple(project_documents or ())
+            if documents:
+                from guardkit.orchestrator.harness.selector import (
+                    check_project_documents_budget,
+                )
+
+                try:
+                    check_project_documents_budget(documents)
+                except AgentInvocationError as exc:
+                    return self._refuse_coach_turn_for_documents(
+                        task_id, turn, start_time, documents, str(exc)
+                    )
+
             # TASK-HMIG-008R Part C: honesty channel unification.
             # When evidence_bundle is provided (autobuild primary path),
             # use the bundle's pre-computed HonestyVerification — it was
@@ -2896,7 +2930,35 @@ class AgentInvoker:
                 coach_context=coach_context,
                 synthesis=synthesis_enabled,
                 gather_findings=gather_findings,
+                project_documents=documents,
             )
+
+            # The documents section must reach the model byte for byte: the
+            # synthesis trimmer protects it, and this check proves it after
+            # trimming, by hash, before the model is called.
+            if documents:
+                section = self._render_project_documents_section(documents)
+                section_sha256 = _sha256_text(section)
+                start = prompt.find(section)
+                sent_sha256 = (
+                    _sha256_text(prompt[start:start + len(section)])
+                    if start != -1
+                    else None
+                )
+                if sent_sha256 != section_sha256:
+                    return self._refuse_coach_turn_for_documents(
+                        task_id,
+                        turn,
+                        start_time,
+                        documents,
+                        "The project's binding documents could not be kept whole "
+                        "in the Coach prompt (the prompt limit would have cut "
+                        "them), so the Coach was not run; shorten the documents, "
+                        "or the task's requirements, so the prompt fits.",
+                    )
+                self._record_coach_project_documents(
+                    task_id, turn, documents, section_sha256=section_sha256
+                )
 
             # Invoke the Coach. In both paths return_events=True so the typed
             # HarnessEvent stream comes back for coach_output_parser
@@ -3742,6 +3804,7 @@ Follow the report format specified in your agent definition.
         coach_context: Optional[str] = None,
         synthesis: bool = False,
         gather_findings: Optional[str] = None,
+        project_documents: Optional[Sequence["ProjectDocument"]] = None,
     ) -> str:
         """Build prompt for Coach agent invocation with promise verification.
 
@@ -3787,6 +3850,12 @@ Follow the report format specified in your agent definition.
                 toolless synthesis grounds its per-AC verdict on what the
                 tool-using gather pass actually found on disk. ``None`` (the
                 default, and the B-min path) omits the section entirely.
+            project_documents: Optional project instructions and binding
+                documents, rendered in full as a ``## Project documents``
+                section directly after the requirements and acceptance
+                criteria. The synthesis trimmer treats the section as
+                protected. ``None`` or empty omits it, so the prompt is exactly
+                what it was before the section existed.
 
         Returns:
             Formatted prompt string for Coach agent
@@ -3896,6 +3965,13 @@ that criterion is NOT satisfied for approval purposes.
             for criterion in acceptance_criteria:
                 criteria_lines.append(f"- **{criterion['id']}**: {criterion['text']}")
             criteria_section = "\n".join(criteria_lines) + "\n"
+
+        # Project initialisation design (4 October 2026): the project's own
+        # instructions and binding documents, whole, beside the requirements
+        # they bind — verdict-bearing, so never in the trailing coach_context.
+        project_documents_section = self._render_project_documents_section(
+            project_documents
+        )
 
         # Build criteria verification example (legacy only — v4 uses findings[])
         verification_example = ""
@@ -4125,7 +4201,7 @@ Turn: {turn}
 {synthesis_banner}## Original Requirements
 
 {requirements}
-{criteria_section}
+{criteria_section}{project_documents_section}
 ## Player's Report
 
 {json.dumps(player_report, indent=2)}
@@ -4136,9 +4212,113 @@ Turn: {turn}
         # TASK-SELFFIX-003: enforce the overall synthesis-prompt budget.
         # Only applies to the synthesis path (toolless Coach verdict).
         if synthesis:
-            prompt = self._trim_synthesis_prompt(prompt)
+            prompt = self._trim_synthesis_prompt(
+                prompt, protected_section=project_documents_section
+            )
 
         return prompt
+
+    # ------------------------------------------------------------------
+    # Project documents in the Coach prompt (project initialisation design,
+    # 4 October 2026). The Player reads the project's binding documents with
+    # its tools; the synthesis Coach has no tools, so it is given their text.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _render_project_documents_section(
+        documents: Optional[Sequence["ProjectDocument"]],
+    ) -> str:
+        """Render the ``## Project documents`` section, or ``""`` for none."""
+        if not documents:
+            return ""
+        lines = [
+            "",
+            "## Project documents",
+            "",
+            "The project declares these documents as binding for its builds: "
+            "its own instructions, then its binding documents. Judge the "
+            "Player's work against them as well as against the requirements "
+            "above. Each is given in full as read from the task worktree; the "
+            "sha256 is of its exact bytes.",
+            "",
+        ]
+        for document in documents:
+            path = str(document.path).replace('"', "&quot;")
+            text = document.text if document.text.endswith("\n") else document.text + "\n"
+            lines.append(
+                f'<project_document path="{path}" sha256="{document.sha256}">\n'
+                f"{text}</project_document>"
+            )
+            lines.append("")
+        return "\n".join(lines)
+
+    def _record_coach_project_documents(
+        self,
+        task_id: str,
+        turn: int,
+        documents: Sequence["ProjectDocument"],
+        *,
+        section_sha256: Optional[str] = None,
+        refused: Optional[str] = None,
+    ) -> None:
+        """Write what the Coach was given beside ``coach_turn_N.json``.
+
+        ``coach_project_documents_turn_N.json`` in the orchestrator-private
+        directory: each document's path, SHA-256 and size, the hash of the
+        section actually sent (``None`` when the turn was refused), and the
+        refusal sentence if there was one. Best-effort, like the evidence
+        bundle beside it: a failed write is logged and never blocks the turn.
+        """
+        from guardkit.orchestrator.harness.selector import (
+            PROJECT_DOCUMENTS_BUDGET_BYTES,
+        )
+
+        record = {
+            "task_id": task_id,
+            "turn": turn,
+            "documents": [
+                {"path": d.path, "sha256": d.sha256, "bytes": d.size}
+                for d in documents
+            ],
+            "total_bytes": sum(d.size for d in documents),
+            "budget_bytes": PROJECT_DOCUMENTS_BUDGET_BYTES,
+            "section_sha256": section_sha256,
+            "refused": refused,
+        }
+        try:
+            record_path = TaskArtifactPaths.private_artifact_path(
+                task_id, f"coach_project_documents_turn_{turn}.json", self.worktree_path
+            )
+            record_path.parent.mkdir(parents=True, exist_ok=True)
+            record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — a record never blocks the turn
+            logger.warning(
+                "Could not record the Coach's project documents for %s turn %s: %s",
+                task_id, turn, exc,
+            )
+
+    def _refuse_coach_turn_for_documents(
+        self,
+        task_id: str,
+        turn: int,
+        start_time: float,
+        documents: Sequence["ProjectDocument"],
+        sentence: str,
+    ) -> AgentInvocationResult:
+        """Refuse the Coach turn before any model call, in one plain sentence."""
+        logger.error("[%s] Coach turn %s refused: %s", task_id, turn, sentence)
+        self._record_coach_project_documents(
+            task_id, turn, documents, refused=sentence
+        )
+        return AgentInvocationResult(
+            task_id=task_id,
+            turn=turn,
+            agent_type="coach",
+            success=False,
+            report={},
+            duration_seconds=time.time() - start_time,
+            error=sentence,
+        )
 
     # ------------------------------------------------------------------
     # TASK-HMIG-008R Part C — Coach prompt rendering helpers.
@@ -4232,10 +4412,46 @@ Turn: {turn}
         "<evidence_bundle>",
         "## Deterministic Evidence Bundle",
         "<absence_of_failure_guards>",
+        "## Project documents",
     )
 
+    # Stands in for the protected project-documents section while the rest of
+    # the prompt is trimmed, so no trimming step can see, search or cut it.
+    _PROTECTED_SECTION_PLACEHOLDER = "\x00[guardkit: project documents]\x00"
+
     @classmethod
-    def _trim_synthesis_prompt(cls, prompt: str) -> str:
+    def _trim_synthesis_prompt(cls, prompt: str, protected_section: str = "") -> str:
+        """Enforce the synthesis-prompt budget, never touching ``protected_section``.
+
+        ``protected_section`` is the rendered ``## Project documents`` section
+        (project initialisation design, 4 October 2026). While the rest of the
+        prompt is trimmed it is replaced by a short placeholder, with the
+        budget reduced by its length, so no step — including the last-resort
+        tail cut — can cut inside it or mistake text inside a document for a
+        prompt section. It is then put back unchanged. If the placeholder
+        itself does not survive (only possible when the head of the prompt
+        alone overflows), the section is absent and the caller's hash check
+        refuses the turn; nothing is ever sent with a document cut short.
+        """
+        budget = cls._COACH_SYNTHESIS_MAX_CHARS
+        if not protected_section or protected_section not in prompt:
+            return cls._trim_synthesis_prompt_within(prompt, budget)
+        if len(prompt) <= budget:
+            return prompt
+        placeholder = cls._PROTECTED_SECTION_PLACEHOLDER
+        head, _, tail = prompt.partition(protected_section)
+        remaining = budget - len(protected_section) + len(placeholder)
+        if remaining <= len(placeholder):
+            # No room for anything but the documents: trim without them, so
+            # the caller sees the section missing and refuses the turn.
+            return cls._trim_synthesis_prompt_within(head + tail, budget)
+        trimmed = cls._trim_synthesis_prompt_within(head + placeholder + tail, remaining)
+        if placeholder not in trimmed:
+            return trimmed
+        return trimmed.replace(placeholder, protected_section, 1)
+
+    @classmethod
+    def _trim_synthesis_prompt_within(cls, prompt: str, budget: int) -> str:
         """Enforce the overall synthesis-prompt character budget.
 
         When ``synthesis=True`` the Coach receives the full rendered prompt
@@ -4245,9 +4461,10 @@ Turn: {turn}
         discrepancies: 20) but the *total* rendered prompt can still exceed
         the model's crash-tested window.
 
-        This method enforces a hard ceiling at
-        ``GUARDKIT_COACH_SYNTHESIS_MAX_CHARS`` (default 300,000 chars ≈ 85k
-        tokens). If the prompt is within budget it returns unchanged. If it
+        This method enforces a hard ceiling of ``budget`` characters
+        (``GUARDKIT_COACH_SYNTHESIS_MAX_CHARS``, default 300,000 chars ≈ 85k
+        tokens, less any protected section ``_trim_synthesis_prompt`` set
+        aside). If the prompt is within budget it returns unchanged. If it
         exceeds the budget it trims low-signal content first — raw output
         tails, large JSON sections — and NEVER the verdict-bearing fields
         (requirements, acceptance criteria, honesty, stub_scan,
@@ -4260,13 +4477,14 @@ Turn: {turn}
         ----------
         prompt : str
             The fully-rendered synthesis prompt string.
+        budget : int
+            The character ceiling for ``prompt``.
 
         Returns
         -------
         str
             The prompt, trimmed to budget if necessary.
         """
-        budget = cls._COACH_SYNTHESIS_MAX_CHARS
         prompt_len = len(prompt)
 
         if prompt_len <= budget:
