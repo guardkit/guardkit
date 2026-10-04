@@ -125,8 +125,15 @@ class TestCaptureOnSuccessTerminal:
         assert kwargs["problems_encountered"] is None
         assert kwargs["feature_id"] == "FEAT-CAP"
         assert kwargs["completed_at"] is not None
-        # The repo the build ran in is named in the summary a gate reads back.
-        assert orchestrator.repo_root.name in kwargs["summary"]
+        # The paragraph names the task, its title and feature, and how it
+        # ended. It never names the build's working folder (2026-10-04: the
+        # old sentence named it, wrongly, as the repository).
+        assert kwargs["summary"].startswith(
+            'TASK-CAP-001 "Wire capture into autobuild" (feature FEAT-CAP): '
+            "approved by the reviewer on turn 2."
+        )
+        assert "The task asked: Fire the outcome write at the terminal" in kwargs["summary"]
+        assert orchestrator.repo_root.name not in kwargs["summary"]
         # The writer's build_outcome payload drops `summary` and keeps
         # `lessons`, so the same sentence must ride there too.
         assert kwargs["lessons_learned"] == [kwargs["summary"]]
@@ -211,6 +218,126 @@ class TestCaptureOnFailureTerminal:
 
         problems = writer.await_args.kwargs["problems_encountered"]
         assert problems and "pre_loop_blocked" in problems[0]
+
+
+class TestTheOutcomeParagraph:
+    """The capture passes the useful paragraph as ``lessons_learned`` (2026-10-04)."""
+
+    def test_real_turn_records_become_the_stored_paragraph(self, orchestrator):
+        from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+        from guardkit.orchestrator.autobuild import TurnRecord
+
+        worktree = orchestrator.repo_root / ".guardkit" / "worktrees" / "FEAT-CAP"
+        orchestrator._active_worktree_path = worktree
+
+        def turn(n, files, decision, feedback):
+            player = AgentInvocationResult(
+                task_id="TASK-CAP-020", turn=n, agent_type="player", success=True,
+                report={"files_modified": files, "files_created": ["/tmp/scratch.py"]},
+                duration_seconds=1.0,
+            )
+            return TurnRecord(
+                turn=n, player_result=player, coach_result=None,
+                decision=decision, feedback=feedback, timestamp="2026-10-04T00:00:00Z",
+            )
+
+        history = [
+            turn(1, [f"{worktree}/src/users/crud.py"], "feedback",
+                 f"- Player claimed file {worktree}/src/users/missing.py. Actual: absent"),
+            turn(2, ["src/users/crud.py", "tests/users/test_crud.py"], "approve", None),
+        ]
+        writer = AsyncMock(return_value=_published("OUT-PARA"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            orchestrator._capture_build_outcome(
+                "TASK-CAP-020",
+                success=True,
+                final_decision="approved",
+                turn_history=history,
+                task_title="Add the count query",
+                requirements="Count active users.\n\n## Acceptance\n- it counts",
+            )
+
+        kwargs = writer.await_args.kwargs
+        assert kwargs["lessons_learned"] == [kwargs["summary"]]
+        assert kwargs["summary"] == (
+            'TASK-CAP-020 "Add the count query" (feature FEAT-CAP): approved by '
+            "the reviewer on turn 2. The task asked: Count active users. Files "
+            "changed: src/users/crud.py, tests/users/test_crud.py. Reviewer "
+            "objections: turn 1: Player claimed file src/users/missing.py. "
+            "Actual: absent. Approved on turn 2 after these objections."
+        )
+        assert str(orchestrator.repo_root) not in kwargs["summary"]
+        assert len(kwargs["summary"]) <= 500
+
+
+    def test_the_repository_folder_is_stripped_at_the_real_capture(self, orchestrator):
+        """An objection naming a file by its repository path (not under the
+        worktree) keeps the file name and loses the machine path."""
+        from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+        from guardkit.orchestrator.autobuild import TurnRecord
+
+        repo = orchestrator.repo_root
+        orchestrator._active_worktree_path = repo / ".guardkit" / "worktrees" / "FEAT-CAP"
+        player = AgentInvocationResult(
+            task_id="TASK-CAP-021", turn=1, agent_type="player", success=True,
+            report={"files_modified": [f"{repo}/src/app.py"]}, duration_seconds=1.0,
+        )
+        history = [
+            TurnRecord(
+                turn=1, player_result=player, coach_result=None, decision="feedback",
+                feedback=f"- Tests failed in {repo}/tests/test_app.py (see {repo})",
+                timestamp="2026-10-04T00:00:00Z",
+            )
+        ]
+        writer = AsyncMock(return_value=_published("OUT-REPO"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            orchestrator._capture_build_outcome(
+                "TASK-CAP-021",
+                success=False,
+                final_decision="timeout",
+                turn_history=history,
+                task_title="Repository paths",
+                error=f"Timed out running {repo}/scripts/check.sh",
+            )
+
+        lessons = writer.await_args.kwargs["lessons_learned"][0]
+        assert str(repo) not in lessons
+        assert "Reason: Timed out running scripts/check.sh" in lessons
+        assert "Files changed: src/app.py." in lessons
+        assert "turn 1: Tests failed in tests/test_app.py (see .)" in lessons
+
+
+    def test_working_folders_are_stripped_from_title_and_requirements(self, orchestrator):
+        """A task that names files by their full path keeps the file names
+        and loses the machine path, in the title and in what it asked."""
+        repo = orchestrator.repo_root
+        worktree = repo / ".guardkit" / "worktrees" / "FEAT-CAP"
+        orchestrator._active_worktree_path = worktree
+        writer = AsyncMock(return_value=_published("OUT-ASKED"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            orchestrator._capture_build_outcome(
+                "TASK-CAP-022",
+                success=True,
+                final_decision="approved",
+                turn_history=[],
+                task_title=f"Fix {worktree}/src/a.py",
+                requirements=(
+                    f"Update {worktree}/src/b.py and {repo}/docs/c.md.\n\n"
+                    f"Then check {repo}/tests."
+                ),
+            )
+
+        lessons = writer.await_args.kwargs["lessons_learned"][0]
+        assert str(repo) not in lessons
+        assert str(worktree) not in lessons
+        assert lessons.startswith('TASK-CAP-022 "Fix src/a.py" (feature FEAT-CAP)')
+        assert "The task asked: Update src/b.py and docs/c.md." in lessons
 
 
 # ============================================================================

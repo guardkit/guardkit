@@ -79,6 +79,10 @@ class TemplatePatternContext:
         selected_files: Populated by the selector (TASK-TPL-003).
         prompt_block: Formatted for injection; populated by wiring (TASK-TPL-004).
         warnings: Graceful-degradation messages collected during loading.
+        tech_stack: The manifest's own ``language`` and ``frameworks`` names,
+            space-separated, or "" when it declares none. This is what the
+            selector's stack fallback should use (2026-10-04): before, every
+            build passed a hard-coded ``"python"``.
     """
 
     template_name: Optional[str]
@@ -87,6 +91,7 @@ class TemplatePatternContext:
     selected_files: List[Path] = field(default_factory=list)
     prompt_block: str = ""
     warnings: List[str] = field(default_factory=list)
+    tech_stack: str = ""
 
 
 def _make_degraded_context(warning: str) -> TemplatePatternContext:
@@ -104,6 +109,25 @@ def _make_degraded_context(warning: str) -> TemplatePatternContext:
         available_files=[],
         warnings=[warning],
     )
+
+
+def _manifest_tech_stack(data: dict) -> str:
+    """The language and framework names the project's manifest declares.
+
+    Returns them space-separated (for example "Python FastAPI SQLAlchemy"), or
+    "" when the manifest declares neither. No language is assumed.
+    """
+    words: List[str] = []
+    language = data.get("language")
+    if isinstance(language, str) and language.strip():
+        words.append(language.strip())
+    frameworks = data.get("frameworks")
+    if isinstance(frameworks, list):
+        for framework in frameworks:
+            name = framework.get("name") if isinstance(framework, dict) else framework
+            if isinstance(name, str) and name.strip():
+                words.append(name.strip())
+    return " ".join(words)
 
 
 def load_template_patterns(manifest_path: Path) -> TemplatePatternContext:
@@ -154,6 +178,8 @@ def load_template_patterns(manifest_path: Path) -> TemplatePatternContext:
         logger.warning(msg)
         return _make_degraded_context(msg)
 
+    tech_stack = _manifest_tech_stack(data)
+
     # --- Resolve template directory -------------------------------------------
     template_dir = resolve_template_source_dir(template_name)
     if template_dir is None:
@@ -166,6 +192,7 @@ def load_template_patterns(manifest_path: Path) -> TemplatePatternContext:
             template_dir=None,
             available_files=[],
             warnings=[msg],
+            tech_stack=tech_stack,
         )
 
     # --- Enumerate .template files --------------------------------------------
@@ -187,6 +214,7 @@ def load_template_patterns(manifest_path: Path) -> TemplatePatternContext:
         template_dir=template_dir,
         available_files=available_files,
         warnings=warnings,
+        tech_stack=tech_stack,
     )
 
 

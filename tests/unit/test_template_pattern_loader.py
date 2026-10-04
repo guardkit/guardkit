@@ -159,6 +159,7 @@ class TestTemplatePatternContext:
             "selected_files",
             "prompt_block",
             "warnings",
+            "tech_stack",
         }
         assert field_names == expected
 

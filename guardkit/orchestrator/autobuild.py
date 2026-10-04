@@ -191,6 +191,10 @@ from guardkit.knowledge.entities.outcome import OutcomeType
 
 # Import AutoBuild context loader for job-specific context (TASK-GR6-006)
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+from guardkit.orchestrator.outcome_lessons import (
+    compose_outcome_lessons,
+    turn_facts_from_record,
+)
 
 # Import MCP design extractor for Phase 0 (TASK-DM-003)
 from guardkit.orchestrator.mcp_design_extractor import (
@@ -2564,6 +2568,11 @@ class AutoBuildOrchestrator:
         self._factory: Optional[Any] = None
         # TASK-ACR-005: Store event loop reference with each loader for proper cleanup
         self._thread_loaders: Dict[int, Tuple[Optional[AutoBuildContextLoader], asyncio.AbstractEventLoop]] = {}
+        # Why a thread has no loader, kept beside the None loader above so the
+        # per-turn memory line can say it on every turn (2026-10-04): a pair
+        # of (state, reason), e.g. ("skipped at start-up", "the memory store
+        # connection failed").
+        self._thread_loader_skips: Dict[int, Tuple[str, str]] = {}
         # TASK-GLF-002: Suppress memory operations during shutdown
         self._shutting_down: bool = False
 
@@ -3236,14 +3245,20 @@ class AutoBuildOrchestrator:
         A plain crash (nothing recorded before it) reads exactly as it always
         did: nothing is invented to name.
         """
-        reason = f"Orchestration crashed: {type(exc).__name__}: {exc}"
+        return (
+            f"Orchestration crashed: {type(exc).__name__}: {exc}"
+            + self._superseded_terminal_note()
+        )
+
+    def _superseded_terminal_note(self) -> str:
+        """The clause naming the terminal a crash overtakes, or "" if none."""
         superseded = self._last_captured_terminal
-        if superseded:
-            reason += (
-                f" — this build crashed after the '{superseded}' terminal had "
-                f"already been recorded, so this record supersedes that one."
-            )
-        return reason
+        if not superseded:
+            return ""
+        return (
+            f" — this build crashed after the '{superseded}' terminal had "
+            f"already been recorded, so this record supersedes that one."
+        )
 
     def _check_qa_pass_bar_precondition(self, task_id: str):
         """WS2 B2: task-start pinned-pass-bar precondition (flag-gated).
@@ -7720,10 +7735,21 @@ class AutoBuildOrchestrator:
 
         # TASK-GLF-003: Get client from factory (may be pending-init) and
         # initialize on the consumer's event loop so FalkorDB Locks are affine.
+        connection_failed = ("skipped at start-up", "the memory store connection failed")
         try:
             client = self._factory.get_thread_client()
             if client is None:
                 self._thread_loaders[thread_id] = (None, loop)
+                # The factory gives no client when memory is off or the build
+                # has no memory name; its own config says which.
+                config = getattr(self._factory, "config", None)
+                if config is not None and not getattr(config, "enabled", True):
+                    skip = ("off", "FLEET_MEMORY_ENABLED is not set")
+                elif config is not None and not getattr(config, "project", "x"):
+                    skip = ("unavailable", "this build has no memory name")
+                else:
+                    skip = ("unavailable", "no memory client for this thread")
+                self._note_loader_skip(thread_id, skip)
                 logger.info(f"Per-thread memory client not available for thread {thread_id}")
                 return None
 
@@ -7733,6 +7759,7 @@ class AutoBuildOrchestrator:
                 client._pending_init = False
                 if not success:
                     self._thread_loaders[thread_id] = (None, loop)
+                    self._note_loader_skip(thread_id, connection_failed)
                     logger.info(f"Per-thread memory client init failed for thread {thread_id}")
                     return None
             elif not client.is_initialized:
@@ -7740,6 +7767,7 @@ class AutoBuildOrchestrator:
                 success = loop.run_until_complete(client.initialize())
                 if not success:
                     self._thread_loaders[thread_id] = (None, loop)
+                    self._note_loader_skip(thread_id, connection_failed)
                     logger.info(f"Per-thread memory client init failed for thread {thread_id}")
                     return None
 
@@ -7760,8 +7788,74 @@ class AutoBuildOrchestrator:
             return loader
         except Exception as e:
             self._thread_loaders[thread_id] = (None, loop)
+            self._note_loader_skip(
+                thread_id,
+                ("skipped at start-up", f"setting up the memory reader failed: {e}"),
+            )
             logger.warning(f"Error creating per-thread context loader: {e}")
             return None
+
+    def _note_loader_skip(self, thread_id: int, skip: Tuple[str, str]) -> None:
+        """Keep why this thread has no loader, for every later turn's line."""
+        if getattr(self, "_thread_loader_skips", None) is None:
+            self._thread_loader_skips = {}
+        self._thread_loader_skips[thread_id] = skip
+
+    def _memory_skip(self) -> Tuple[str, str]:
+        """Why this turn has no memory loader: (state, reason)."""
+        if not self.enable_context:
+            return ("off", "context retrieval is turned off for this build")
+        if self._factory is None:
+            return ("unavailable", "the memory client could not be loaded")
+        return (getattr(self, "_thread_loader_skips", None) or {}).get(
+            threading.get_ident(),
+            ("unavailable", "no memory reader for this thread"),
+        )
+
+    def _log_memory_turn(
+        self,
+        role: str,
+        task_id: str,
+        turn: int,
+        *,
+        result: Any = None,
+        skip: Optional[Tuple[str, str]] = None,
+        failure: Optional[BaseException] = None,
+    ) -> None:
+        """Write the one memory line for this role and turn (2026-10-04).
+
+        ONE HONEST LINE PER TURN. It replaces the old "NO memory ... either
+        nothing on record or retrieval failed" warning, which could not tell
+        those apart, and the "no factory or loader" line, which lost the
+        reason. It says one of four things:
+
+        - off (why), at INFO;
+        - unavailable (why), at WARNING;
+        - skipped at start-up (why), at WARNING;
+        - searched: N completed, M failed; K above the line, D delivered.
+          WARNING if a search failed, or if records passed the line and none
+          was delivered; otherwise INFO.
+
+        Never raises: memory reporting must not stop a build.
+        """
+        try:
+            prefix = f"[Memory] {role} {task_id} turn {turn}: "
+            if failure is not None:
+                detail = str(failure).strip() or type(failure).__name__
+                text, warn = f"searched: failed ({detail}).", True
+            elif skip is not None:
+                state, reason = skip
+                text, warn = f"{state} ({reason}).", state != "off"
+            else:
+                memory = getattr(result, "memory", None)
+                if memory is None:
+                    text = "unavailable (the memory reader has no client)."
+                    warn = True
+                else:
+                    text, warn = memory.describe(), memory.needs_attention
+            (logger.warning if warn else logger.info)(prefix + text)
+        except Exception as exc:  # pragma: no cover - reporting must never raise
+            logger.debug(f"Could not write the memory line for {task_id}: {exc}")
 
     def _cleanup_thread_loaders(self) -> None:
         """Close all per-thread memory clients (TASK-FIX-GTP2, TASK-ACR-005, TASK-ACR-006).
@@ -7799,6 +7893,8 @@ class AutoBuildOrchestrator:
             except Exception as e:
                 logger.warning(f"Error closing per-thread memory client for thread {thread_id}: {e}")
         self._thread_loaders.clear()
+        if getattr(self, "_thread_loader_skips", None):
+            self._thread_loader_skips.clear()
 
     # ========================================================================
     # Instrumentation Helpers (TASK-INST-004)
@@ -7955,7 +8051,8 @@ class AutoBuildOrchestrator:
         becomes ``review_cycles`` (each turn is one coach review). Test counts
         are deliberately NOT sent as ``tests_written``: the turn record carries
         tests *run*, which is a different number, and a wrong number in memory
-        is worse than an absent one. The one-sentence outcome is sent twice, as
+        is worse than an absent one. The outcome paragraph (see
+        ``outcome_lessons.compose_outcome_lessons``) is sent twice, as
         ``summary`` and as the single ``lessons_learned`` line, because the
         writer's build_outcome payload drops ``summary`` and keeps ``lessons``.
 
@@ -7989,6 +8086,11 @@ class AutoBuildOrchestrator:
             # terminal already reached?", which is true whether or not the
             # broker was up. "crashed" itself is never recorded here — a crash
             # cannot supersede itself.
+            # Read before it is updated below: a crash names the terminal it
+            # overtook (see _crash_outcome_reason).
+            supersedes_note = (
+                self._superseded_terminal_note() if final_decision == "crashed" else ""
+            )
             if final_decision != "crashed":
                 self._last_captured_terminal = final_decision
 
@@ -8018,24 +8120,47 @@ class AutoBuildOrchestrator:
                 )
 
             title = (task_title or "").strip() or task_id
-            repo_name = self.repo_root.name
+            feature_id = self._extract_feature_id(task_id)
 
-            if success:
-                summary = (
-                    f"AutoBuild finished {task_id} in {repo_name}: the coach "
-                    f"approved the work after {turn_count} turn(s)."
+            # WHAT A LATER BUILD CAN USE (2026-10-04). The old sentence said
+            # only that the task finished, and named the build's working
+            # folder as if it were the repository. It never scored close
+            # enough to any later task to be handed to its builder. This
+            # paragraph carries the facts already in hand here: title,
+            # feature, how it ended and why, what was asked, the files
+            # changed and what the reviewer objected to. It is capped at 500
+            # characters and never names the working folder.
+            working_folders = [
+                str(folder)
+                for folder in (
+                    getattr(self, "_active_worktree_path", None),
+                    self.repo_root,
                 )
+                if folder
+            ]
+            # The reason is cut to 120 characters in the paragraph, which
+            # would cut off a crash's note about the terminal it supersedes.
+            # So that note becomes its own sentence, and the reason is the
+            # crash alone.
+            paragraph_error = error
+            if supersedes_note and error and error.endswith(supersedes_note):
+                paragraph_error = error[: -len(supersedes_note)]
+            summary = compose_outcome_lessons(
+                task_id=task_id,
+                title=task_title,
+                feature_id=feature_id,
+                success=success,
+                final_decision=final_decision,
+                error=paragraph_error,
+                requirements=requirements,
+                turns=[turn_facts_from_record(t) for t in turns],
+                working_folders=working_folders,
+                supersedes=self._last_captured_terminal if supersedes_note else None,
+            )
+            if success:
                 problems: Optional[List[str]] = None
             else:
-                summary = (
-                    f"AutoBuild stopped {task_id} in {repo_name} without "
-                    f"approval after {turn_count} turn(s); it ended at "
-                    f"'{final_decision}'."
-                )
-                if error:
-                    summary += f" Reported reason: {error}"
                 problems = [error] if error else [f"Build ended at '{final_decision}'."]
-            summary = summary[:2000]
 
             async def _write() -> OutcomeCapture:
                 return await asyncio.wait_for(
@@ -8063,7 +8188,7 @@ class AutoBuildOrchestrator:
                         started_at=started_at,
                         completed_at=completed_at,
                         duration_minutes=duration_minutes,
-                        feature_id=self._extract_feature_id(task_id),
+                        feature_id=feature_id,
                     ),
                     timeout=OUTCOME_CAPTURE_TIMEOUT_SECONDS,
                 )
@@ -8186,12 +8311,12 @@ class AutoBuildOrchestrator:
                             feature_id=self._feature_id or "",
                             turn_number=turn,
                             description=requirements,
-                            tech_stack="python",  # TODO: Detect from task
                             complexity=5,  # TODO: Get from task metadata
                             previous_feedback=feedback,
                         )
                     )
                     context_prompt = context_result.prompt_text
+                    self._log_memory_turn("builder", task_id, turn, result=context_result)
 
                     # Record context status for progress display (TASK-FIX-GCW5)
                     self._last_player_context_status = ContextStatus(
@@ -8213,16 +8338,19 @@ class AutoBuildOrchestrator:
                 except Exception as e:
                     # Graceful degradation - continue without context
                     logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
+                    self._log_memory_turn("builder", task_id, turn, failure=e)
                     context_prompt = ""
                     self._last_player_context_status = ContextStatus(
                         status="failed", reason=str(e)
                     )
             elif self.enable_context:
-                logger.info(f"Player context retrieval skipped: no factory or loader for {task_id}")
+                skip = self._memory_skip()
+                self._log_memory_turn("builder", task_id, turn, skip=skip)
                 self._last_player_context_status = ContextStatus(
-                    status="skipped", reason="no factory or loader"
+                    status="skipped", reason=skip[1]
                 )
             else:
+                self._log_memory_turn("builder", task_id, turn, skip=self._memory_skip())
                 self._last_player_context_status = ContextStatus(status="disabled")
 
             result = loop.run_until_complete(
@@ -8444,12 +8572,12 @@ class AutoBuildOrchestrator:
                         feature_id=self._feature_id or "",
                         turn_number=turn,
                         description=requirements,
-                        tech_stack="python",  # TODO: Detect from task
                         complexity=5,  # TODO: Get from task metadata
                         player_report=player_report,
                     )
                 )
                 context_prompt = context_result.prompt_text
+                self._log_memory_turn("reviewer", task_id, turn, result=context_result)
 
                 # Record context status for progress display (TASK-FIX-GCW5)
                 self._last_coach_context_status = ContextStatus(
@@ -8471,16 +8599,19 @@ class AutoBuildOrchestrator:
             except Exception as e:
                 # Graceful degradation - continue without context
                 logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")
+                self._log_memory_turn("reviewer", task_id, turn, failure=e)
                 context_prompt = ""
                 self._last_coach_context_status = ContextStatus(
                     status="failed", reason=str(e)
                 )
         elif self.enable_context:
-            logger.info(f"Coach context retrieval skipped: no factory or loader for {task_id}")
+            skip = self._memory_skip()
+            self._log_memory_turn("reviewer", task_id, turn, skip=skip)
             self._last_coach_context_status = ContextStatus(
-                status="skipped", reason="no factory or loader"
+                status="skipped", reason=skip[1]
             )
         else:
+            self._log_memory_turn("reviewer", task_id, turn, skip=self._memory_skip())
             self._last_coach_context_status = ContextStatus(status="disabled")
 
         # TASK-HMIG-008R Part B (Revision 3): branch on GUARDKIT_COACH_LEGACY.
