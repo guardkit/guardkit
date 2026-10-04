@@ -44,3 +44,17 @@ def test_frontmatter_id_is_read_not_guessed(tmp_path: Path) -> None:
 def test_slug_starting_with_digits_is_not_absorbed(tmp_path: Path) -> None:
     task = _write(tmp_path / "TASK-045-2fa-setup.md", "title: x\n")
     assert _task_id_for(task) == "TASK-045"
+
+
+def test_lowercase_hash_id(tmp_path: Path) -> None:
+    assert _task_id_for(_write(tmp_path / "TASK-FIX-a3f8.md", "title: x\n")) == "TASK-FIX-a3f8"
+    assert _task_id_for(_write(tmp_path / "TASK-a3f2-add-login.md", "title: x\n")) == "TASK-a3f2"
+
+
+def test_subtask_id_with_and_without_slug(tmp_path: Path) -> None:
+    assert _task_id_for(_write(tmp_path / "TASK-E01-A3F2.1.md", "title: x\n")) == "TASK-E01-A3F2.1"
+    assert _task_id_for(_write(tmp_path / "TASK-E01-a3f2.1-split-parser.md", "title: x\n")) == "TASK-E01-a3f2.1"
+
+
+def test_prefixed_hash_with_slug(tmp_path: Path) -> None:
+    assert _task_id_for(_write(tmp_path / "TASK-TOP-D6C8-process-launch.md", "title: x\n")) == "TASK-TOP-D6C8"
