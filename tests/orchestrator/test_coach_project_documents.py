@@ -727,3 +727,47 @@ class TestTaskStartRefusal:
         assert result.final_decision == "configuration_error"
         assert "symbolic link" in result.error
         invoker.invoke_player.assert_not_called()
+
+
+class TestLegacyCoach:
+    """Review fix 3: GUARDKIT_COACH_LEGACY=1 says it did not use the documents."""
+
+    def _legacy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, documents):
+        monkeypatch.setenv("GUARDKIT_COACH_LEGACY", "1")
+        root = tmp_path / "wt"
+        _write_project(root, documents=documents)
+        invoke = _real_signature_mock()
+        orch = _orchestrator(tmp_path, invoke)
+        orch._evidence_repo_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
+        orch._direct_mode_evidence_gate = MagicMock(return_value=None)  # type: ignore[method-assign]
+        with patch("guardkit.orchestrator.autobuild.CoachValidator") as validator_class:
+            validator = MagicMock()
+            validator.validate.return_value.to_dict.return_value = {"decision": "approve"}
+            validator.save_decision.return_value = tmp_path / "absent.json"
+            validator_class.return_value = validator
+            result = orch._invoke_coach_safely(
+                task_id="TASK-PD-030", turn=1, requirements="reqs",
+                player_report={"files_modified": []}, worktree=_worktree(root),
+            )
+        return root, result, invoke
+
+    def test_declared_documents_unused_is_warned_and_recorded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        root, result, invoke = self._legacy(
+            tmp_path, monkeypatch, {"docs/mission.md": MISSION}
+        )
+        assert result.success is True
+        invoke.assert_not_awaited()
+        record = _record(root, "TASK-PD-030", 1)
+        assert record["note"] == "declared documents not used by the legacy Coach"
+        assert record["section_sha256"] is None
+        assert [d["path"] for d in record["documents"]] == ["AGENTS.md", "docs/mission.md"]
+        assert any("legacy rule-based Coach" in r.getMessage() for r in caplog.records)
+
+    def test_undeclared_project_writes_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, result, _ = self._legacy(tmp_path, monkeypatch, {})
+        assert result.success is True
+        assert not list(root.rglob("coach_project_documents_*.json"))
