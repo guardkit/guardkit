@@ -345,3 +345,30 @@ def test_a_retrieval_that_raises_says_searched_failed(tmp_path, memory, caplog):
     assert lines[1] == ("WARNING", f"[Memory] reviewer {TASK} turn 1: searched: failed (analyzer blew up).")
     assert len(lines) == 4
     assert invoker.invoke_player.await_count == 2
+
+
+def test_delivered_and_populated_categories_read_one_list():
+    """Every list category of the retrieved context is in the shared list, so
+    the 'delivered' count and the populated-category list cannot drift apart."""
+    import dataclasses
+    import typing
+
+    from guardkit.knowledge.autobuild_context_loader import (
+        CONTEXT_CATEGORIES,
+        AutoBuildContextLoader,
+    )
+    from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+    list_fields = [
+        f.name
+        for f in dataclasses.fields(RetrievedContext)
+        if typing.get_origin(typing.get_type_hints(RetrievedContext)[f.name]) is list
+    ]
+    assert list(CONTEXT_CATEGORIES) == list_fields
+
+    context = RetrievedContext("TASK-AB12-001", 0, 0, *[[] for _ in range(6)])
+    for name in CONTEXT_CATEGORIES:
+        setattr(context, name, [{"content": name}])
+    loader = AutoBuildContextLoader(graphiti=None)
+    assert loader._get_populated_categories(context) == list(CONTEXT_CATEGORIES)
+    assert loader._memory_report(context, (0, 0)).delivered == len(CONTEXT_CATEGORIES)

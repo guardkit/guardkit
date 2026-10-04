@@ -59,6 +59,22 @@ logger = logging.getLogger(__name__)
 _SOURCE_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MAX_RELEVANT_PATTERN_DOCUMENT_TAGS = 8
 
+# Every category of retrieved context, in prompt order. The populated-category
+# list and the per-turn "delivered" count both read this one list, so a
+# category added later cannot drop out of one of them unnoticed.
+CONTEXT_CATEGORIES = (
+    "feature_context",
+    "similar_outcomes",
+    "relevant_patterns",
+    "architecture_context",
+    "warnings",
+    "domain_knowledge",
+    "role_constraints",
+    "quality_gate_configs",
+    "turn_states",
+    "implementation_modes",
+)
+
 
 def _load_relevant_pattern_document_tags(
     worktree_path: Optional[Path],
@@ -729,15 +745,7 @@ class AutoBuildContextLoader:
         report.above_line = above if isinstance(above, int) else 0
         report.delivered = sum(
             len(items)
-            for items in (
-                getattr(context, name, None)
-                for name in (
-                    "feature_context", "similar_outcomes", "relevant_patterns",
-                    "architecture_context", "warnings", "domain_knowledge",
-                    "role_constraints", "quality_gate_configs", "turn_states",
-                    "implementation_modes",
-                )
-            )
+            for items in (getattr(context, name, None) for name in CONTEXT_CATEGORIES)
             if isinstance(items, list)
         )
         return report
@@ -960,30 +968,7 @@ class AutoBuildContextLoader:
         Returns:
             List of category names that have content
         """
-        categories = []
-
-        if context.feature_context:
-            categories.append("feature_context")
-        if context.similar_outcomes:
-            categories.append("similar_outcomes")
-        if context.relevant_patterns:
-            categories.append("relevant_patterns")
-        if context.architecture_context:
-            categories.append("architecture_context")
-        if context.warnings:
-            categories.append("warnings")
-        if context.domain_knowledge:
-            categories.append("domain_knowledge")
-        if context.role_constraints:
-            categories.append("role_constraints")
-        if context.quality_gate_configs:
-            categories.append("quality_gate_configs")
-        if context.turn_states:
-            categories.append("turn_states")
-        if context.implementation_modes:
-            categories.append("implementation_modes")
-
-        return categories
+        return [name for name in CONTEXT_CATEGORIES if getattr(context, name)]
 
     def _format_verbose_details(
         self,

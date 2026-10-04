@@ -80,11 +80,24 @@ def turn_facts_from_record(record: Any) -> TurnFacts:
 
 
 def _strip_working_folders(text: str, working_folders: Sequence[str]) -> str:
-    """Take every working-folder prefix off, so no machine path is stored."""
-    for folder in working_folders:
-        folder = str(folder).rstrip("/")
-        if folder:
-            text = text.replace(folder + "/", "").replace(folder, ".")
+    """Take every working-folder prefix off, so no machine path is stored.
+
+    A folder matches only where its last path segment ends: "/x/build" is
+    taken off "/x/build/a" (leaving "a") and stands alone as ".", but
+    "/x/build-2/a" and "/x/build.v2" are other folders and are left alone.
+    The longest folder goes first, so a worktree inside the repository is
+    taken off whole rather than leaving its inner part behind.
+    """
+    folders = sorted(
+        {str(folder).rstrip("/") for folder in working_folders} - {""},
+        key=len,
+        reverse=True,
+    )
+    for folder in folders:
+        pattern = re.escape(folder) + r"(?:/|(?![\w-]|\.[\w-]))"
+        text = re.sub(
+            pattern, lambda m: "" if m.group(0).endswith("/") else ".", text
+        )
     return text
 
 
