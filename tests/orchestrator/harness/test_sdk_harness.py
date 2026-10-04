@@ -854,6 +854,26 @@ class TestConstructorPlumbing:
         opts = captured["options"]
         assert list(getattr(opts, "setting_sources", [])) == ["user", "project"]
 
+    @pytest.mark.asyncio
+    async def test_env_overrides_forwarded_to_options(self, tmp_path):
+        """Per-call env overrides reach ClaudeAgentOptions.env (concurrent builds).
+
+        The Coach's SDK test run hands PYTHONPATH/PATH here instead of
+        swapping them into the shared os.environ.
+        """
+        captured: dict = {}
+
+        def capture(**kwargs):
+            captured["options"] = kwargs.get("options")
+            return RecordingAsyncGen([("yield", _result_msg())])
+
+        harness = _make_harness(env={"PYTHONPATH": "/wt"})
+
+        with patch.object(claude_agent_sdk, "query", side_effect=capture):
+            await _drain(harness, tmp_path)
+
+        assert dict(getattr(captured["options"], "env", {})) == {"PYTHONPATH": "/wt"}
+
 
 # ----------------------------------------------------------------------
 # Cooperative cancellation (TASK-FIX-CTOUT01)
