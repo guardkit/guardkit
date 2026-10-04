@@ -22,8 +22,9 @@ Rules, all from the reviewed design and its measurement on real builds:
 - At most two distinct reviewer objections: the first line of each turn's
   feedback, at most 110 characters, with the turns it came up on.
 - The failure reason at most 120 characters.
-- The build's working folder is never named. Its prefix is taken off file
-  names and objections, so no machine path is stored.
+- The build's working folder is never named. Its prefix is taken off the
+  title, the requirements, file names, objections and the reason, so no
+  machine path is stored.
 - A crash after an earlier outcome of the same build was recorded says which
   one it supersedes, in its own sentence, so the 120-character reason cap
   never cuts that off.
@@ -160,7 +161,10 @@ def compose_outcome_lessons(
     """
     turns = list(turns)
     count = len(turns)
-    title = (title or "").strip()
+    # The title and the requirements can name a file by its full path too,
+    # so the working folder comes off them as well, before any cut.
+    title = _strip_working_folders((title or "").strip(), working_folders)
+    requirements = _strip_working_folders(requirements or "", working_folders)
     head = task_id + (f' "{title}"' if title else "")
     if feature_id:
         head += f" (feature {feature_id})"
@@ -183,7 +187,7 @@ def compose_outcome_lessons(
             reason = _strip_working_folders(str(error), working_folders)
             parts.append(f"Reason: {reason[:MAX_REASON_CHARS]}")
 
-    if requirements and requirements.strip():
+    if requirements.strip():
         parts.append(
             f"The task asked: {_first_paragraph(requirements)[:MAX_REQUIREMENTS_CHARS]}"
         )

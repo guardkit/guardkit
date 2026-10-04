@@ -311,6 +311,35 @@ class TestTheOutcomeParagraph:
         assert "turn 1: Tests failed in tests/test_app.py (see .)" in lessons
 
 
+    def test_working_folders_are_stripped_from_title_and_requirements(self, orchestrator):
+        """A task that names files by their full path keeps the file names
+        and loses the machine path, in the title and in what it asked."""
+        repo = orchestrator.repo_root
+        worktree = repo / ".guardkit" / "worktrees" / "FEAT-CAP"
+        orchestrator._active_worktree_path = worktree
+        writer = AsyncMock(return_value=_published("OUT-ASKED"))
+
+        with patch(f"{AUTOBUILD_LOGGER}.get_memory_client", return_value=_memory_on()), \
+             patch(f"{AUTOBUILD_LOGGER}.capture_task_outcome_verified", writer):
+            orchestrator._capture_build_outcome(
+                "TASK-CAP-022",
+                success=True,
+                final_decision="approved",
+                turn_history=[],
+                task_title=f"Fix {worktree}/src/a.py",
+                requirements=(
+                    f"Update {worktree}/src/b.py and {repo}/docs/c.md.\n\n"
+                    f"Then check {repo}/tests."
+                ),
+            )
+
+        lessons = writer.await_args.kwargs["lessons_learned"][0]
+        assert str(repo) not in lessons
+        assert str(worktree) not in lessons
+        assert lessons.startswith('TASK-CAP-022 "Fix src/a.py" (feature FEAT-CAP)')
+        assert "The task asked: Update src/b.py and docs/c.md." in lessons
+
+
 # ============================================================================
 # Loud degrade (the 4c99357d pattern): one plain line, never fatal
 # ============================================================================
