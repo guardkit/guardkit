@@ -158,6 +158,18 @@ class TestLoadProjectDocuments:
         (tmp_path / ".guardkit" / "config.yaml").write_text(config)
         assert load_project_documents(tmp_path) == ()
 
+    def test_instruction_link_to_the_same_file_is_delivered_once(
+        self, tmp_path: Path
+    ) -> None:
+        _write_project(tmp_path, documents={"docs/mission.md": MISSION})
+        (tmp_path / "CLAUDE.md").symlink_to("AGENTS.md")
+        docs = load_project_documents(tmp_path)
+        assert [d.path for d in docs] == ["AGENTS.md", "docs/mission.md"]
+        # Counted once against the budget too.
+        assert sum(d.size for d in docs) == (
+            (tmp_path / "AGENTS.md").stat().st_size + len(MISSION.encode())
+        )
+
     def test_missing_declared_document_refused(self, tmp_path: Path) -> None:
         _write_project(tmp_path, documents={"docs/mission.md": MISSION})
         (tmp_path / "docs" / "mission.md").unlink()
