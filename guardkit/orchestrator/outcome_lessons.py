@@ -13,7 +13,7 @@ asked to do, the files it changed and what the reviewer objected to. This
 module writes those facts as one plain paragraph, at most 500 characters,
 into the ``lessons`` field: the field the store searches and keeps.
 
-Rules, all from the reviewed design (memory-usefulness-design.md):
+Rules, all from the reviewed design and its measurement on real builds:
 
 - Only facts already held at the seam. Nothing is guessed or added.
 - The first paragraph of the requirements, at most 150 characters.
