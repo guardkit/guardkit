@@ -292,6 +292,61 @@ class TestPlan:
             "adr:alpha:DDR_001", "adr:alpha:DDR_002", "adr:alpha:DDR_003",
         ]
 
+    def test_ddr_template_alternatives_keep_names_and_reasons(self) -> None:
+        """R2: GuardKit's own DDR template renders each alternative as a
+        sub-heading with Pros/Cons bullets; both names and their reasons survive."""
+        from jinja2 import Environment, PackageLoader, select_autoescape
+
+        from guardkit.memory.seed import decision_fields
+
+        env = Environment(
+            loader=PackageLoader("guardkit", "templates"),
+            autoescape=select_autoescape(["html", "xml"]),
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        text = env.get_template("ddr.md.j2").render(ddr={
+            "id": "DDR-001",
+            "title": "Use PostgreSQL for Order Storage",
+            "status": "accepted",
+            "date": "2026-03-01",
+            "context": "Need a reliable RDBMS.",
+            "decision": "Use PostgreSQL 16.",
+            "rationale": "ACID and pgvector.",
+            "alternatives_considered": [
+                {"name": "MongoDB", "pros": "Flexible schema",
+                 "cons": "Weaker transactional guarantees"},
+                {"name": "CockroachDB", "pros": "Distributed SQL",
+                 "cons": "Higher operational complexity"},
+            ],
+            "consequences": ["Strong transactional guarantees"],
+        })
+        alternatives = decision_fields("DDR-001", text, "alpha")["alternatives"]
+        assert len(alternatives) == 2
+        assert alternatives[0].startswith("MongoDB\n")
+        assert "Flexible schema" in alternatives[0] and "Weaker transactional" in alternatives[0]
+        assert alternatives[1].startswith("CockroachDB\n")
+        assert "Distributed SQL" in alternatives[1] and "Higher operational" in alternatives[1]
+
+    @pytest.mark.parametrize(
+        "section,expected",
+        [
+            ("- Microservices\n- Event-driven\n", ["Microservices", "Event-driven"]),
+            ("| Pattern | Why rejected |\n|---|---|\n| DDD | Too heavy |\n",
+             ["| Pattern | Why rejected |\n|---|---|\n| DDD | Too heavy |"]),
+            ("We looked at two options.\n- Microservices\n- Queues\n",
+             ["We looked at two options.\n- Microservices\n- Queues"]),
+        ],
+    )
+    def test_alternatives_other_shapes_lose_nothing(self, section: str, expected: list[str]) -> None:
+        from guardkit.memory.seed import decision_fields
+
+        text = (
+            "# ADR-ARCH-004: Shape\n\nStatus: accepted\n\n## Decision\n\nD.\n\n"
+            f"## Alternatives Considered\n\n{section}\n## Consequences\n\nC.\n"
+        )
+        assert decision_fields("ADR-ARCH-004", text, "alpha")["alternatives"] == expected
+
     def test_ddr_and_files_without_a_status_line(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path, {
             "docs/design/decisions/DDR-001.md": "# DDR-001: Strict validation\n\n> Status: Accepted\n\n## Decision\n\nValidate at start.\n",
