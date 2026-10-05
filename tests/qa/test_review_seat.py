@@ -30,8 +30,9 @@ from guardkit.qa.formats.review_findings import ReviewFindings
 from guardkit.qa.review_seat import (
     ALLOWED_SEATS,
     DEFAULT_BASE_URL,
-    DEFAULT_SEAT,
     REVIEW_SEAT_ENV,
+    REVIEW_SEAT_MODEL_ENV,
+    SEAT_NOT_CONFIGURED_ERROR,
     ReviewOutcome,
     ReviewSeatError,
     _await_free_slot,
@@ -64,10 +65,18 @@ index 1111111..2222222 100644
 """
 
 
+#: The seat named in the environment the suite was started in, read before any
+#: fixture changes it. The real-seat smoke runs only when one is named: there is
+#: no built-in seat (2026-10-05), so a plain test run never loads a model.
+_LIVE_SEAT = os.environ.get(REVIEW_SEAT_MODEL_ENV, "").strip()
+
+
 @pytest.fixture(autouse=True)
 def _clear_flag_env(monkeypatch: pytest.MonkeyPatch):
-    """Every test starts with the flag env unset — the flag defaults OFF."""
+    """Every test starts with the flag env unset — the flag defaults OFF — and
+    an allowed seat named, so the offline tests below exercise the seat path."""
     monkeypatch.delenv(REVIEW_SEAT_ENV, raising=False)
+    monkeypatch.setenv(REVIEW_SEAT_MODEL_ENV, ALLOWED_SEATS[0])
 
 
 @pytest.fixture
@@ -507,6 +516,51 @@ class TestAdvisoryNeverRaises:
         assert outcome.error is not None
         assert "could not be parsed" in outcome.error
 
+    @pytest.mark.parametrize("unset", ["delete", "empty", "blank"])
+    def test_no_seat_named_is_not_configured_and_no_call_is_made(
+        self, tmp_path: Path, payload, monkeypatch: pytest.MonkeyPatch, unset: str
+    ):
+        """2026-10-05: there is no built-in seat. The old one named a retired
+        local model. With the flag ON but no seat named, neither the seat nor
+        the probe is touched and the outcome names why."""
+        _config(tmp_path, review_seat=True)
+        if unset == "delete":
+            monkeypatch.delenv(REVIEW_SEAT_MODEL_ENV, raising=False)
+        else:
+            monkeypatch.setenv(REVIEW_SEAT_MODEL_ENV, "" if unset == "empty" else "  ")
+        seat, probe = _SpySeat(_seat_json([])), _SpyProbe()
+        outcome = run_advisory_review(tmp_path, payload, seat_call=seat, running_probe=probe)
+        assert outcome.enabled is True
+        assert outcome.record is None
+        assert outcome.blocking is False
+        assert outcome.error == SEAT_NOT_CONFIGURED_ERROR
+        assert outcome.error == (
+            "review seat model not configured (GUARDKIT_REVIEW_SEAT_MODEL unset); "
+            "no model call made"
+        )
+        assert seat.calls == 0 and probe.calls == 0
+
+    def test_seat_named_in_the_environment_is_the_one_asked(
+        self, tmp_path: Path, payload, monkeypatch: pytest.MonkeyPatch
+    ):
+        _config(tmp_path, review_seat=True)
+        monkeypatch.setenv(REVIEW_SEAT_MODEL_ENV, ALLOWED_SEATS[1])
+        seat = _SpySeat(_seat_json([]))
+        outcome = run_advisory_review(tmp_path, payload, seat_call=seat, running_probe=_SpyProbe())
+        assert outcome.error is None and outcome.record is not None
+        assert seat.calls == 1 and seat.last[2] == ALLOWED_SEATS[1]
+
+    def test_an_explicit_seat_beats_the_environment(
+        self, tmp_path: Path, payload, monkeypatch: pytest.MonkeyPatch
+    ):
+        _config(tmp_path, review_seat=True)
+        monkeypatch.setenv(REVIEW_SEAT_MODEL_ENV, ALLOWED_SEATS[1])
+        seat = _SpySeat(_seat_json([]))
+        run_advisory_review(
+            tmp_path, payload, model=ALLOWED_SEATS[0], seat_call=seat, running_probe=_SpyProbe()
+        )
+        assert seat.last[2] == ALLOWED_SEATS[0]
+
     def test_off_policy_seat_is_refused_not_raised(self, tmp_path: Path, payload):
         _config(tmp_path, review_seat=True)
         outcome = run_advisory_review(
@@ -646,6 +700,8 @@ def test_real_seat_smoke(tmp_path: Path, payload, monkeypatch: pytest.MonkeyPatc
     record OR a NAMED error (an unrunnable/unparseable seat is a finding, never a
     faked green). It never asserts specific findings (model output varies).
     """
+    if not _LIVE_SEAT:
+        pytest.skip(f"{REVIEW_SEAT_MODEL_ENV} unset — no seat named, no model call")
     probe = _default_running_probe(DEFAULT_BASE_URL)
     running = probe()
     if running is None:
@@ -656,7 +712,7 @@ def test_real_seat_smoke(tmp_path: Path, payload, monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setenv(REVIEW_SEAT_ENV, "1")
     outcome = run_advisory_review(
-        tmp_path, payload, model=DEFAULT_SEAT, write=True
+        tmp_path, payload, model=_LIVE_SEAT, write=True
     )
 
     assert outcome.enabled is True

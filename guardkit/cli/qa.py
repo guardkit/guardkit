@@ -836,7 +836,10 @@ def probe_boundaries(
     "--seat",
     "model",
     default=None,
-    help="Local reviewer seat (qwen36-workhorse | gemma4-coach; default: workhorse).",
+    help=(
+        "Local reviewer seat (qwen36-workhorse | gemma4-coach). Default: "
+        "GUARDKIT_REVIEW_SEAT_MODEL; with neither set, no model is called."
+    ),
 )
 @click.option(
     "--write/--no-write",
@@ -899,7 +902,6 @@ def review(
         ingest_working_tree,
     )
     from guardkit.qa.review_seat import (
-        DEFAULT_SEAT,
         is_review_seat_enabled,
         run_advisory_review,
     )
@@ -940,8 +942,6 @@ def review(
         )
         sys.exit(2)
 
-    seat = model or DEFAULT_SEAT
-
     # Flag-gate FIRST: default-OFF ⇒ a provable no-op (no git, no seat). The
     # coordinator opts in per run with GUARDKIT_QA_REVIEW_SEAT=1 (or the repo's
     # qa.review_seat), mirroring qa.enforce_tier1.
@@ -974,7 +974,7 @@ def review(
         sys.exit(2)
 
     outcome = run_advisory_review(
-        Path(repo_root), payload, model=seat, write=write
+        Path(repo_root), payload, model=model, write=write
     )
     _display_review_outcome(outcome, as_json=as_json)
     # Advisory: ALWAYS exit 0. A seat outage / parse failure is a named result,
