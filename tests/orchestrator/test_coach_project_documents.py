@@ -1,6 +1,6 @@
 """The Coach is given the project's binding documents (project initialisation, 4 October 2026).
 
-Design: ai-transition ``docs/source-material/project-initialisation-2026-10-04/design.md``,
+Design: project initialisation design, 4 October 2026,
 Part 3 "Coach (new, GuardKit)" and the round-1/round-2 dispositions R2 and R7,
 plus the independent coach's and Codex's review fixes the same day.
 

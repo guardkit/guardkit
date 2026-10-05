@@ -1,7 +1,6 @@
 """Copy a project's accepted documents into its own memory: ``guardkit memory seed``.
 
-Project initialisation design, 4 October 2026 (ai-transition
-``docs/source-material/project-initialisation-2026-10-04/design.md``, Part 5).
+Project initialisation design, 4 October 2026, Part 5.
 
 A person or session runs this after accepting documents. It reads what the
 project declares from the commit at ``HEAD`` — never the working tree — and
