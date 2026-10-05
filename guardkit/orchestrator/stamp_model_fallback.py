@@ -42,7 +42,8 @@ the same, and two of his weekend sentences stopped without anyone knowing which
 it was. Now every call ends in ONE outcome, :class:`ModelOutcome`, whose
 ``status`` is one of exactly five words:
 
-``not_configured``    no endpoint is set; the model was never asked.
+``not_configured``    no endpoint, or no model name, is set; the model was
+                      never asked.
 ``asked_and_failed``  the call was made and raised. The detail is one clause
                       with the exception type and message, the HTTP status
                       when there is one, and the endpoint's host and port —
@@ -81,17 +82,19 @@ built-in default: with neither set (or either set to an empty value) the model
 is NOT configured, it is never called, and the behaviour is exactly today's —
 refuse loud.
 
-``GUARDKIT_STAMP_MODEL`` — the model name to ask. Through the router the name
-is an alias, ``workhorse``, which LiteLLM maps to the coder. The built-in
-default stays ``qwen36-workhorse`` (llama-swap's own name for that seat) so a
-box with nothing set behaves as it always did; the live value is set by the
-environment — forge-prod sets ``GUARDKIT_STAMP_MODEL=workhorse`` at the
-go-live of the 2026-09-06 lane, through its settings of record, never a
-plaintext file.
+``GUARDKIT_STAMP_MODEL`` — the model name to ask (through the router, an alias
+such as ``workhorse``). Like the address, there is deliberately NO built-in
+default (since 2026-10-05): with it unset or empty the model is NOT configured,
+it is never called, and the outcome is ``not_configured`` with the reason
+"stamp model not configured (GUARDKIT_STAMP_MODEL unset); no model call made".
+The old built-in name pointed at a retired local model; a caller that forgot
+to pass the variable through silently asked for it, and loading it on a shared
+machine once ran the GPU out of memory. The caller sets the name it wants.
 
 ``GUARDKIT_STAMP_MODEL_TIMEOUT_S`` — seconds to wait for the answer. Default
-15, clamped to 1–60 so a hung endpoint can never stall a planning run. An
-unreadable value falls back to the default with a warning.
+60, clamped to 1–60 so a hung endpoint can never stall a planning run (the
+orchestrator gives the whole check 120 s). An unreadable value falls back to
+the default with a warning.
 
 ``OPENAI_API_KEY`` — the key sent with the call. When it is set and not blank
 that value is sent; otherwise the placeholder ``not-needed`` the estate's
@@ -142,27 +145,22 @@ MODEL_URL_FALLBACK_ENV = "OPENAI_BASE_URL"
 #: 2026-09-06). NOT a default: nothing is assumed.
 EXAMPLE_ENDPOINT = "http://localhost:4000/v1"
 
-#: The model name to ask.
+#: The model name to ask. No built-in default (2026-10-05): unset or empty
+#: means the model is not configured and is never called.
 MODEL_NAME_ENV = "GUARDKIT_STAMP_MODEL"
-#: The built-in default is llama-swap's own name for the workhorse seat, kept so
-#: a box with nothing set behaves as it always did. The live value is set by the
-#: environment: forge-prod sets GUARDKIT_STAMP_MODEL=workhorse (the router's
-#: alias for the coder) at the go-live of the 2026-09-06 lane.
-DEFAULT_MODEL_NAME = "qwen36-workhorse"
 
 #: How long to wait for the answer (seconds).
 MODEL_TIMEOUT_ENV = "GUARDKIT_STAMP_MODEL_TIMEOUT_S"
 MODEL_MAX_TOKENS_ENV = "GUARDKIT_STAMP_MODEL_MAX_TOKENS"
-DEFAULT_TIMEOUT_S = 180.0
-#: Long, deliberately. The estate serves one model at a time and swaps them in on
-#: demand, so the first call after a swap waits for a 35-billion-parameter model to
-#: load — about a minute and a half on this box. A 15 second timeout (the first
-#: value here) never once reached a cold model: every call timed out, every title
-#: stayed refused, and the whole mechanism would have looked safe while doing
-#: nothing. Measured 2026-08-31. One stamp decision per feature, inside a planning
-#: run that already takes fifteen minutes, is worth the wait.
 MIN_TIMEOUT_S = 1.0
 MAX_TIMEOUT_S = 60.0
+#: The wait when the variable is unset: the top of the clamp, so an unset value
+#: waits no longer than any value a caller could set, and stays well inside the
+#: 120 s the orchestrator allows the whole stamp check (it was 180 s, which
+#: outlasted that limit). Long enough for a warm model; a caller whose model is
+#: loaded on demand should keep it loaded or expect a cold call to time out
+#: (the titles then stay refused, the safe outcome).
+DEFAULT_TIMEOUT_S = MAX_TIMEOUT_S
 
 #: One word per title, so the reply is tiny. Kept small on purpose: a model
 #: that starts writing prose runs out of room and its answer is rejected.
@@ -692,14 +690,35 @@ class ConfiguredAsker:
         return content
 
 
+def _model_name(model_name: Optional[str] = None) -> str:
+    """The model to ask: ``model_name`` when given, else ``GUARDKIT_STAMP_MODEL``,
+    else "" — NOT configured. There is no built-in name."""
+    return (model_name or os.environ.get(MODEL_NAME_ENV, "") or "").strip()
+
+
+def not_configured_detail(model_name: Optional[str] = None) -> str:
+    """Why the environment's model call cannot be built — the ``detail`` of a
+    ``not_configured`` outcome. The address is checked first, then the model
+    name; "" when both are set."""
+    if not _endpoint():
+        return (
+            f"no model endpoint is configured (set {MODEL_URL_ENV}, or "
+            f"{MODEL_URL_FALLBACK_ENV}, to something like {EXAMPLE_ENDPOINT})"
+        )
+    if not _model_name(model_name):
+        return f"stamp model not configured ({MODEL_NAME_ENV} unset); no model call made"
+    return ""
+
+
 def build_default_asker(model_name: Optional[str] = None) -> Optional[ConfiguredAsker]:
     """The environment's model call (a :class:`ConfiguredAsker`, which also
-    names its endpoint and model), or ``None`` when no endpoint is configured
-    (in which case the model is never asked and the titles stay refused)."""
+    names its endpoint and model), or ``None`` when no endpoint or no model
+    name is configured (in which case the model is never asked and the titles
+    stay refused; :func:`not_configured_detail` says which)."""
     base = _endpoint()
-    if not base:
+    model = _model_name(model_name)
+    if not base or not model:
         return None
-    model = (model_name or os.environ.get(MODEL_NAME_ENV, "") or DEFAULT_MODEL_NAME).strip()
     return ConfiguredAsker(base, model, _timeout_seconds())
 
 
@@ -719,7 +738,7 @@ def decide_refused_titles_with_outcome(
     ``({title: word} for every one it decided, what the call ended in)``.
 
     Never raises. An empty dict means "keep the refusal exactly as it was" —
-    which is what happens for every failure: no endpoint configured, an
+    which is what happens for every failure: no endpoint or model configured, an
     endpoint that cannot be reached, a timeout, an HTTP error, a malformed
     reply, or an answer that is not one allowed word per title. The outcome
     says WHICH of those it was (``not_configured`` / ``asked_and_failed`` /
@@ -752,11 +771,7 @@ def decide_refused_titles_with_outcome(
 
     asker = ask_model or build_default_asker()
     if asker is None:
-        outcome = ModelOutcome(
-            OUTCOME_NOT_CONFIGURED,
-            f"no model endpoint is configured (set {MODEL_URL_ENV}, or "
-            f"{MODEL_URL_FALLBACK_ENV}, to something like {EXAMPLE_ENDPOINT})",
-        )
+        outcome = ModelOutcome(OUTCOME_NOT_CONFIGURED, not_configured_detail())
         logger.warning("%s", outcome_line(outcome, len(wanted), feature_id))
         return {}, outcome
 
@@ -825,7 +840,6 @@ __all__ = [
     "MODEL_URL_ENV",
     "MODEL_URL_FALLBACK_ENV",
     "MODEL_NAME_ENV",
-    "DEFAULT_MODEL_NAME",
     "MODEL_TIMEOUT_ENV",
     "DEFAULT_TIMEOUT_S",
     "EXAMPLE_ENDPOINT",
@@ -854,6 +868,7 @@ __all__ = [
     "failure_detail",
     "outcome_line",
     "build_default_asker",
+    "not_configured_detail",
     "decide_refused_titles",
     "decide_refused_titles_with_outcome",
 ]

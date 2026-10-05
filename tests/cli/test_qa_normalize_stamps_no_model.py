@@ -34,6 +34,7 @@ from click.testing import CliRunner
 
 from guardkit.cli.main import cli
 from guardkit.orchestrator.stamp_model_fallback import (
+    MODEL_NAME_ENV,
     MODEL_TIMEOUT_ENV,
     MODEL_URL_ENV,
     MODEL_URL_FALLBACK_ENV,
@@ -237,6 +238,7 @@ def test_without_no_model_the_same_run_asks_the_endpoint(tmp_path: Path, monkeyp
     """The flag is the whole difference: the same command without it reaches
     for the configured endpoint (and, here, is refused by it)."""
     monkeypatch.setenv(MODEL_URL_ENV, "http://127.0.0.1:9/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
     monkeypatch.setenv(MODEL_TIMEOUT_ENV, "1")
     calls: List[str] = []
 
@@ -314,6 +316,7 @@ def test_the_real_cli_without_no_model_does_connect(tmp_path: Path):
         env = dict(os.environ)
         env[MODEL_URL_ENV] = model.url
         env.pop(MODEL_URL_FALLBACK_ENV, None)
+        env[MODEL_NAME_ENV] = "a-stamp-model"
         env[MODEL_TIMEOUT_ENV] = "1"
         proc = _run_real_cli(repo, env)
         connections = model.connections
@@ -325,3 +328,31 @@ def test_the_real_cli_without_no_model_does_connect(tmp_path: Path):
     assert payload["model_outcome"]["endpoint"] == f"127.0.0.1:{model.port}"
     assert payload["refused"] == TITLES
     assert "switched off" not in proc.stderr
+
+
+def test_the_real_cli_without_a_model_name_makes_no_network_attempt(tmp_path: Path):
+    """2026-10-05: there is no built-in model name. With the address set but
+    ``GUARDKIT_STAMP_MODEL`` unset, the real command never connects; the JSON
+    says ``not_configured`` with the reason, and the titles stay refused."""
+    repo = _repo(tmp_path, TITLES)
+    with _Listener() as model:
+        env = dict(os.environ)
+        env[MODEL_URL_ENV] = model.url
+        env.pop(MODEL_URL_FALLBACK_ENV, None)
+        env.pop(MODEL_NAME_ENV, None)
+        env[MODEL_TIMEOUT_ENV] = "1"
+        proc = _run_real_cli(repo, env)
+        connections = model.connections
+
+    assert proc.returncode == 3, proc.stderr
+    assert connections == 0
+    payload = json.loads(proc.stdout[proc.stdout.index("{") :])
+    assert payload["model_outcome"] == {
+        "status": "not_configured",
+        "detail": "stamp model not configured (GUARDKIT_STAMP_MODEL unset); no model call made",
+        "endpoint": "",
+        "model": "",
+    }
+    assert payload["refused"] == TITLES
+    assert payload["model_stamped"] == [] and payload["stamped"] == {}
+    assert "stamp model not configured (GUARDKIT_STAMP_MODEL unset); no model call made" in proc.stderr

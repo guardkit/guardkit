@@ -1762,8 +1762,9 @@ def normalize_feature(
     ask_model
         THE MODEL FALLBACK's call — ``(prompt) -> answer text``. Default
         ``None`` builds it from the environment (``GUARDKIT_STAMP_MODEL_URL``
-        / ``OPENAI_BASE_URL``; see ``stamp_model_fallback``), and with no
-        endpoint configured the model is never asked and the refusal stands.
+        / ``OPENAI_BASE_URL``, and ``GUARDKIT_STAMP_MODEL`` for the model
+        name; see ``stamp_model_fallback``), and with no endpoint or no model
+        name configured the model is never asked and the refusal stands.
         Tests inject a fake so nothing reaches the network. Whatever the call
         ends in is recorded on the result as ``model_outcome``.
     use_model
