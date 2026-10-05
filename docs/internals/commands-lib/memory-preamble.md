@@ -145,11 +145,8 @@ consistently so a later search finds what a command wrote):
 | Architecture doc (`/system-arch`) | `document` | `["architecture"]` | `<doc_slug>` | `content` = doc markdown |
 | System plan artefact (`/system-plan`) | `document` | `["architecture", "plan"]` | `<slug>` | `content` = plan markdown |
 
-Design records carry the `architecture` tag so the planning commands, which search
-`architecture`, find them: `/feature-plan` (searches `adr` and `document`) finds DDRs, contracts and
-data models; `/feature-spec` currently searches `adr` only, so it finds DDRs but not contracts or
-data models. Widening `/feature-spec` is a separate change made together with specialist-agent's
-pins, because specialist-agent loads that file byte-for-byte.
+Design records carry the `architecture` tag, and both planning commands search `architecture` for
+`adr` and `document` payloads, so both find DDRs, contracts and data models.
 
 > This vocabulary aligns with `guardkit/knowledge/fleet_memory_mapping.py` (the authoritative
 > group→payload mapping). ADRs and design decisions are `adr` payloads; contracts, models,
