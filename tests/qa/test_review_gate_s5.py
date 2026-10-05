@@ -35,7 +35,10 @@ from guardkit.qa.diff_ingest import DiffIngestError, ReviewPayload, parse_unifie
 from guardkit.qa.formats import validate_instance
 from guardkit.qa.formats.review_findings import ReviewFindings
 from guardkit.qa.review_seat import (
+    ALLOWED_SEATS,
     REVIEW_SEAT_ENV,
+    REVIEW_SEAT_MODEL_ENV,
+    SEAT_NOT_CONFIGURED_ERROR,
     ReviewOutcome,
     default_merge_candidate_payload,
     run_review_gate_step,
@@ -90,8 +93,10 @@ def _payload() -> ReviewPayload:
 
 @pytest.fixture(autouse=True)
 def _flag_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force the review-seat flag OFF unless a test sets it — no ambient env leak."""
+    """Force the review-seat flag OFF unless a test sets it — no ambient env leak —
+    and name an allowed seat (there is no built-in one since 2026-10-05)."""
     monkeypatch.setenv(REVIEW_SEAT_ENV, "0")
+    monkeypatch.setenv(REVIEW_SEAT_MODEL_ENV, ALLOWED_SEATS[0])
 
 
 def _flag_on(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -416,3 +421,78 @@ def test_cli_head_without_base_exit_two(
     )
     assert result.exit_code == 2
     assert "--head requires --base" in result.output
+
+
+# ===========================================================================
+# 9. No seat named (2026-10-05) — no built-in seat, so no model call.
+# ===========================================================================
+
+
+def test_gate_step_with_no_seat_named_makes_no_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _flag_on(monkeypatch)
+    monkeypatch.delenv(REVIEW_SEAT_MODEL_ENV, raising=False)
+    calls = {"seat": 0, "probe": 0}
+
+    def seat_call(_s: str, _u: str, _m: str) -> str:  # pragma: no cover - must not run
+        calls["seat"] += 1
+        return SEAT_JSON
+
+    def probe():  # pragma: no cover - must not run
+        calls["probe"] += 1
+        return []
+
+    outcome = run_review_gate_step(
+        tmp_path,
+        payload_factory=_payload,
+        write=True,
+        seat_call=seat_call,
+        running_probe=probe,
+    )
+    assert outcome.enabled is True
+    assert outcome.blocking is False
+    assert outcome.record is None
+    assert outcome.error == SEAT_NOT_CONFIGURED_ERROR
+    assert calls == {"seat": 0, "probe": 0}
+
+
+def test_cli_with_no_seat_named_reports_it_and_makes_no_call(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _flag_on(monkeypatch)
+    monkeypatch.delenv(REVIEW_SEAT_MODEL_ENV, raising=False)
+
+    def _forbidden(*_a, **_k):  # pragma: no cover - must not run
+        raise AssertionError("no seat call or probe may be built without a seat")
+
+    monkeypatch.setattr("guardkit.qa.review_seat._default_seat_call", _forbidden)
+    monkeypatch.setattr("guardkit.qa.review_seat._default_running_probe", _forbidden)
+    result = CliRunner().invoke(
+        qa, ["review", "--repo", str(repo), "--commit", "HEAD", "--no-write"]
+    )
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.replace("│", " ").split())
+    assert "review seat model not configured (GUARDKIT_REVIEW_SEAT_MODEL unset); no model call made" in flat
+
+
+def test_cli_seat_option_is_passed_through(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _flag_on(monkeypatch)
+    monkeypatch.delenv(REVIEW_SEAT_MODEL_ENV, raising=False)
+    seen = []
+    monkeypatch.setattr(
+        "guardkit.qa.review_seat._default_seat_call",
+        lambda *a, **k: (lambda _s, _u, m: seen.append(m) or SEAT_JSON),
+    )
+    monkeypatch.setattr(
+        "guardkit.qa.review_seat._default_running_probe",
+        lambda _base: _idle_probe(),
+    )
+    result = CliRunner().invoke(
+        qa,
+        ["review", "--repo", str(repo), "--commit", "HEAD", "--no-write", "--seat", ALLOWED_SEATS[1]],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen == [ALLOWED_SEATS[1]]

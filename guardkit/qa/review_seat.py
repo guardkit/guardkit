@@ -35,7 +35,10 @@ Four invariants this stage pins:
 
 - **Local seats only, single-slot-checked (DF-001 + the ``-np 1`` law).** Every
   seat call goes to llama-swap (``localhost:9000``, OpenAI-compatible); the
-  allowed seats are ``qwen36-workhorse`` / ``gemma4-coach``. Before a call the
+  allowed seats are ``qwen36-workhorse`` / ``gemma4-coach``. There is no
+  built-in seat (2026-10-05): the caller names one, or
+  ``GUARDKIT_REVIEW_SEAT_MODEL`` does; with neither, the review is a named
+  "not configured" error and no model is called. Before a call the
   emitter probes ``/running`` and, if a factory drive is mid-generation on the
   single slot, WAITS (bounded) rather than colliding. Calls are bounded
   (``temperature=0.0``, capped tokens, a timeout).
@@ -105,7 +108,9 @@ __all__ = [
     "REVIEW_SEAT_MAX_CHARS",
     "is_review_seat_enabled",
     "ALLOWED_SEATS",
-    "DEFAULT_SEAT",
+    "REVIEW_SEAT_MODEL_ENV",
+    "SEAT_NOT_CONFIGURED_ERROR",
+    "resolve_seat_model",
     "DEFAULT_BASE_URL",
     "CANONICAL_DIMENSIONS",
     "SeatCall",
@@ -186,8 +191,22 @@ def is_review_seat_enabled(repo_root: Path) -> bool:
 #: The only seats this lane may call (the options paper's operator-cost note 2).
 ALLOWED_SEATS = ("qwen36-workhorse", "gemma4-coach")
 
-#: Default reviewer seat — the general workhorse (131072 ctx) reads diffs best.
-DEFAULT_SEAT = "qwen36-workhorse"
+#: The seat to ask when the caller names none. There is deliberately NO built-in
+#: seat (2026-10-05): the old one named a retired local model, and loading it on
+#: a shared machine can run the GPU out of memory. Unset or empty means the
+#: review seat is not configured and no model is called.
+REVIEW_SEAT_MODEL_ENV = "GUARDKIT_REVIEW_SEAT_MODEL"
+
+#: The named error a review returns when no seat is configured.
+SEAT_NOT_CONFIGURED_ERROR = (
+    f"review seat model not configured ({REVIEW_SEAT_MODEL_ENV} unset); no model call made"
+)
+
+
+def resolve_seat_model(model: Optional[str] = None) -> str:
+    """The seat to ask: ``model`` when given, else ``GUARDKIT_REVIEW_SEAT_MODEL``,
+    else "" (not configured). There is no built-in seat."""
+    return (model or os.environ.get(REVIEW_SEAT_MODEL_ENV, "") or "").strip()
 
 #: llama-swap OpenAI-compatible base URL (the ``/v1`` root) — the last resort,
 #: after a caller's own value, ``GUARDKIT_REVIEW_SEAT_URL`` and ``OPENAI_BASE_URL``.
@@ -234,6 +253,9 @@ _VALID_SEVERITIES = ("critical", "high", "medium", "low")
 # Bounded-call defaults.
 _DEFAULT_TEMPERATURE = 0.0
 _DEFAULT_MAX_TOKENS = 4096
+#: Left at 180 s (reviewed 2026-10-05): unlike the stamp check, no caller here
+#: has a 120 s limit, and a review reads up to ~85k tokens of diff and may write
+#: 4096 tokens back, which a local model cannot do in 60 s.
 _DEFAULT_TIMEOUT_S = 180.0
 
 # Single-slot guard.
@@ -909,7 +931,7 @@ def run_advisory_review(
     payload: ReviewPayload,
     *,
     review_id: Optional[str] = None,
-    model: str = DEFAULT_SEAT,
+    model: Optional[str] = None,
     base_url: Optional[str] = None,
     repo_context: Optional[str] = None,
     write: bool = False,
@@ -930,13 +952,20 @@ def run_advisory_review(
     Advisory contract: this NEVER raises and NEVER returns ``blocking=True``. A
     seat outage or parse failure returns an outcome with ``record=None`` and a
     named ``error``. When the flag is OFF neither ``seat_call`` nor
-    ``running_probe`` is ever invoked (the provable no-op).
+    ``running_probe`` is ever invoked (the provable no-op). ``model`` falls back
+    to ``GUARDKIT_REVIEW_SEAT_MODEL``; with neither set the outcome is the named
+    error :data:`SEAT_NOT_CONFIGURED_ERROR` and neither edge is invoked either.
     """
     if not is_review_seat_enabled(repo_root):
         return ReviewOutcome(
             enabled=False,
             notes=("review seat flag OFF (qa.review_seat) — no-op, no seat call",),
         )
+
+    model = resolve_seat_model(model)
+    if not model:
+        # No seat named and no built-in one: name it, never call, never raise.
+        return ReviewOutcome(enabled=True, error=SEAT_NOT_CONFIGURED_ERROR)
 
     if model not in ALLOWED_SEATS:
         # Refuse an off-policy seat, but advisory: name it, never raise.
@@ -1064,7 +1093,7 @@ def run_review_gate_step(
     *,
     payload_factory: Optional[PayloadFactory] = None,
     review_id: Optional[str] = None,
-    model: str = DEFAULT_SEAT,
+    model: Optional[str] = None,
     base_url: Optional[str] = None,
     write: bool = True,
     route: Optional[FindingRouter] = None,
