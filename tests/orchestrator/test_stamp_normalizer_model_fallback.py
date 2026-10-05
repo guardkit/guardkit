@@ -38,7 +38,6 @@ from click.testing import CliRunner
 
 from guardkit.orchestrator.stamp_model_fallback import (
     OFFERABLE_HOMES,
-    DEFAULT_MODEL_NAME,
     DEFAULT_TIMEOUT_S,
     MAX_TIMEOUT_S,
     MODEL_NAME_ENV,
@@ -517,27 +516,26 @@ def test_the_cli_json_carries_the_model_decided_titles_and_the_stderr_echo(tmp_p
 # ---------------------------------------------------------------------------
 
 
-def test_the_timeout_is_bounded_but_long_enough_to_reach_a_cold_model():
-    """Two things have to be true at once, and the first draft only had one.
+def test_the_unset_timeout_fits_inside_the_orchestrators_limit(monkeypatch):
+    """2026-10-05: the unset default was 180 s, longer than the 120 s the
+    orchestrator gives the whole stamp check, and outside the 1-60 s clamp that
+    applies to a set value. It is now the top of that clamp."""
+    assert DEFAULT_TIMEOUT_S <= 60.0
+    assert DEFAULT_TIMEOUT_S == MAX_TIMEOUT_S
+    monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
+    from guardkit.orchestrator.stamp_model_fallback import _timeout_seconds
 
-    A hung endpoint must not stall a planning run indefinitely — hence an upper
-    bound. But the estate serves one model at a time and swaps them in on demand,
-    so the first call after a swap waits about ninety seconds for a 35-billion
-    parameter model to load. The original 10-20 second window was inside the
-    bound and never once reached a cold model: every live call timed out and
-    every title stayed refused, so the fallback would have looked safe and done
-    nothing. Measured 2026-08-31.
-    """
-    assert DEFAULT_TIMEOUT_S >= 120.0, "must outlast a cold model load"
-    assert DEFAULT_TIMEOUT_S <= 300.0, "must still be bounded"
+    assert _timeout_seconds() <= 60.0
 
 
-def test_the_endpoint_falls_back_to_openai_base_url_and_the_model_name_has_a_default(monkeypatch):
+def test_the_endpoint_falls_back_to_openai_base_url_and_the_model_name_has_no_default(monkeypatch):
     monkeypatch.delenv(MODEL_URL_ENV, raising=False)
     monkeypatch.setenv(MODEL_URL_FALLBACK_ENV, "http://localhost:9000/v1")
     monkeypatch.delenv(MODEL_NAME_ENV, raising=False)
-    assert build_default_asker() is not None
-    assert DEFAULT_MODEL_NAME == "qwen36-workhorse"
+    assert build_default_asker() is None
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    asker = build_default_asker()
+    assert asker is not None and asker.model == "a-stamp-model"
 
 
 def test_completions_url_is_built_once_and_is_not_doubled():
@@ -585,7 +583,7 @@ def test_the_default_call_posts_the_prompt_to_the_endpoint_with_a_timeout(monkey
         return _Response()
 
     monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:9000/v1")
-    monkeypatch.setenv(MODEL_NAME_ENV, "qwen36-workhorse")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
     monkeypatch.setenv(MODEL_TIMEOUT_ENV, "12")
     monkeypatch.setattr(fallback.urllib.request, "urlopen", _fake_urlopen)
 
@@ -595,7 +593,7 @@ def test_the_default_call_posts_the_prompt_to_the_endpoint_with_a_timeout(monkey
     assert seen["url"] == "http://localhost:9000/v1/chat/completions"
     assert seen["timeout"] == 12.0
     body = seen["body"]
-    assert body["model"] == "qwen36-workhorse"
+    assert body["model"] == "a-stamp-model"
     assert body["temperature"] == 0.0
     assert body["messages"] == [{"role": "user", "content": "the prompt"}]
 
@@ -614,6 +612,7 @@ def test_a_reply_without_an_answer_is_a_malformed_reply_not_a_stamp(monkeypatch)
             return False
 
     monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:9000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
     monkeypatch.setattr(fallback.urllib.request, "urlopen", lambda *a, **k: _Response())
 
     asker = build_default_asker()

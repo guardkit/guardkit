@@ -38,7 +38,6 @@ from click.testing import CliRunner
 import guardkit.orchestrator.stamp_model_fallback as smf
 from guardkit.lib.client_env import API_KEY_ENV
 from guardkit.orchestrator.stamp_model_fallback import (
-    DEFAULT_MODEL_NAME,
     EXAMPLE_ENDPOINT,
     MAX_DETAIL_CHARS,
     MODEL_NAME_ENV,
@@ -483,23 +482,95 @@ def test_the_configured_asker_names_its_endpoint_and_model_and_never_the_key(mon
     assert key not in json.dumps(ModelOutcome(OUTCOME_ASKED_AND_FAILED, "x", asker.endpoint, asker.model).to_dict())
 
 
-def test_the_configured_asker_defaults_the_model_name_when_the_variable_is_unset(monkeypatch):
+MODEL_NOT_CONFIGURED_DETAIL = (
+    "stamp model not configured (GUARDKIT_STAMP_MODEL unset); no model call made"
+)
+
+
+@pytest.mark.parametrize("unset", ["delete", "empty", "blank"])
+def test_no_model_name_is_not_configured_and_no_call_is_made(caplog, monkeypatch, unset):
+    """2026-10-05: there is no built-in model name. The old one named a retired
+    local model, and a caller that forgot to pass the variable through asked
+    for it on every plan. With the address set but no name, nothing is sent and
+    the outcome says why, exactly as when no address is set."""
     monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:4000/v1")
+    if unset == "delete":
+        monkeypatch.delenv(MODEL_NAME_ENV, raising=False)
+    else:
+        monkeypatch.setenv(MODEL_NAME_ENV, "" if unset == "empty" else "   ")
+
+    def _no_network(*_a, **_k):
+        raise AssertionError("no HTTP call may be made without a model name")
+
+    monkeypatch.setattr(smf.urllib.request, "urlopen", _no_network)
+    assert build_default_asker() is None
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        decided, outcome = decide_refused_titles_with_outcome(TITLES, feature_id="FEAT-X")
+
+    assert decided == {}
+    assert outcome == ModelOutcome(OUTCOME_NOT_CONFIGURED, MODEL_NOT_CONFIGURED_DETAIL, "", "")
+    line = outcome_line(outcome, 2, "FEAT-X")
+    assert line == (
+        "STAMP NORMALIZER: feature FEAT-X — the model fallback was not asked about "
+        f"2 title(s) no rule could decide: {MODEL_NOT_CONFIGURED_DETAIL}. "
+        f"{OUTCOME_REFUSED_TAIL}"
+    )
+    assert [r.getMessage() for r in caplog.records if r.name == LOGGER] == [line]
+
+
+def test_a_set_model_name_is_asked_through_the_transport(monkeypatch):
+    """The other side: with the name set, the call is made (urlopen faked)."""
+    seen = {}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            body = {"choices": [{"message": {"content": "hurl\nhurl"}}]}
+            return json.dumps(body).encode("utf-8")
+
+    def _fake_urlopen(request, timeout=None):
+        seen["model"] = json.loads(request.data.decode("utf-8"))["model"]
+        seen["timeout"] = timeout
+        return _Response()
+
+    monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:4000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    monkeypatch.delenv(smf.MODEL_TIMEOUT_ENV, raising=False)
+    monkeypatch.setattr(smf.urllib.request, "urlopen", _fake_urlopen)
+
+    decided, outcome = decide_refused_titles_with_outcome(TITLES)
+    assert outcome.status == OUTCOME_DECIDED
+    assert outcome.model == "a-stamp-model"
+    assert decided == {title: "hurl" for title in TITLES}
+    assert seen == {"model": "a-stamp-model", "timeout": smf.DEFAULT_TIMEOUT_S}
+
+
+def test_no_endpoint_is_reported_before_no_model_name(monkeypatch):
+    """With neither set, the address is what to fix first; the reason is the
+    endpoint one, unchanged."""
+    monkeypatch.delenv(MODEL_URL_ENV, raising=False)
+    monkeypatch.delenv(MODEL_URL_FALLBACK_ENV, raising=False)
     monkeypatch.delenv(MODEL_NAME_ENV, raising=False)
-    asker = build_default_asker()
-    assert asker is not None
-    assert asker.model == DEFAULT_MODEL_NAME == "qwen36-workhorse"
+    _decided, outcome = decide_refused_titles_with_outcome(TITLES)
+    assert outcome.detail == NOT_CONFIGURED_DETAIL
 
 
 def test_the_example_endpoint_and_the_docstrings_point_at_the_router():
     """Rule 17 of the 2026-09-06 spec: the example and the words move to the
-    LiteLLM router; the built-in default model name stays, and the docstring
-    says the live value is set by forge-prod's environment."""
+    LiteLLM router. Since 2026-10-05 there is no built-in model name at all,
+    and the docstring says so."""
     assert EXAMPLE_ENDPOINT == "http://localhost:4000/v1"
-    assert DEFAULT_MODEL_NAME == "qwen36-workhorse"
+    assert not hasattr(smf, "DEFAULT_MODEL_NAME")
     doc = smf.__doc__ or ""
     assert "http://localhost:4000/v1" in doc
-    assert "GUARDKIT_STAMP_MODEL=workhorse" in doc
+    assert "(GUARDKIT_STAMP_MODEL unset); no model call made" in " ".join(doc.split())
+    assert "qwen36-workhorse" not in doc
     assert "2026-09-06" in doc
     assert "http://localhost:9000/v1" not in doc  # only mentioned as history, by port
 

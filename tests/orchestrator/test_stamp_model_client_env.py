@@ -29,6 +29,9 @@ def clean_env(monkeypatch):
     test can reach a live model; these tests set it deliberately instead.)"""
     for name in (API_KEY_ENV, BASE_URL_ENV, smf.MODEL_URL_ENV):
         monkeypatch.delenv(name, raising=False)
+    # The model name has no built-in default (2026-10-05); the address tests
+    # below are about the address, so they name a model.
+    monkeypatch.setenv(smf.MODEL_NAME_ENV, "a-stamp-model")
 
 
 @pytest.fixture
