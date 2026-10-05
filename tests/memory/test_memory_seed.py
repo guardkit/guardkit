@@ -1,7 +1,7 @@
 """``guardkit memory seed`` (project initialisation design, 4 October 2026, Part 5).
 
-Design: ai-transition ``docs/source-material/project-initialisation-2026-10-04/design.md``
-Part 5 and dispositions R4, R5 and R6.
+Design: project initialisation design, 4 October 2026, Part 5 and review
+dispositions R4, R5 and R6.
 
 No live service is touched. Each test builds a real git repository in a
 temporary folder. Publishing goes through the real ``FleetMemoryClient.add_episode``
