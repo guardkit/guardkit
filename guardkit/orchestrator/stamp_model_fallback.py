@@ -92,9 +92,25 @@ to pass the variable through silently asked for it, and loading it on a shared
 machine once ran the GPU out of memory. The caller sets the name it wants.
 
 ``GUARDKIT_STAMP_MODEL_TIMEOUT_S`` — seconds to wait for the answer. Default
-60, clamped to 1–60 so a hung endpoint can never stall a planning run (the
-orchestrator gives the whole check 120 s). An unreadable value falls back to
-the default with a warning.
+60, clamped to 1–110 so a hung endpoint can never stall a planning run (the
+orchestrator gives the whole check 120 s, and the check needs a few seconds of
+its own around the call). An unreadable value falls back to the default with a
+warning. A value outside the clamp is cut, and the cut is said out loud
+(2026-10-06): a warning when the call is built, and a timeout's detail names
+the wait that was actually used and the value that was asked for. Before that
+the cap was 60 s and a configured 90 was cut to 60 without a word, so the card
+said "no answer came back in time" with nothing saying the wait was not the
+one the operator had set.
+
+``GUARDKIT_STAMP_MODEL_EXTRA_BODY`` — optional, a JSON object of extra fields
+sent in the request body alongside the prompt (2026-10-06). Nothing is sent
+when it is unset. It exists so an operator can pass whatever their serving
+stack needs without this module knowing about any model: for example
+``{"chat_template_kwargs": {"enable_thinking": false}}`` turns a reasoning
+model's thinking off on a vLLM server. This module never decides that from a
+model name. It may not replace ``model`` or ``messages`` (those keys are
+dropped with a warning); a value that is not a JSON object is ignored with a
+warning and the call is made without it.
 
 ``OPENAI_API_KEY`` — the key sent with the call. When it is set and not blank
 that value is sent; otherwise the placeholder ``not-needed`` the estate's
@@ -152,15 +168,30 @@ MODEL_NAME_ENV = "GUARDKIT_STAMP_MODEL"
 #: How long to wait for the answer (seconds).
 MODEL_TIMEOUT_ENV = "GUARDKIT_STAMP_MODEL_TIMEOUT_S"
 MODEL_MAX_TOKENS_ENV = "GUARDKIT_STAMP_MODEL_MAX_TOKENS"
+#: Extra request-body fields, a JSON object the operator sets (2026-10-06).
+MODEL_EXTRA_BODY_ENV = "GUARDKIT_STAMP_MODEL_EXTRA_BODY"
+#: Fields the extra body may never replace: the prompt and the model asked are
+#: this module's to set.
+PROTECTED_BODY_KEYS = ("model", "messages")
 MIN_TIMEOUT_S = 1.0
-MAX_TIMEOUT_S = 60.0
-#: The wait when the variable is unset: the top of the clamp, so an unset value
-#: waits no longer than any value a caller could set, and stays well inside the
-#: 120 s the orchestrator allows the whole stamp check (it was 180 s, which
-#: outlasted that limit). Long enough for a warm model; a caller whose model is
-#: loaded on demand should keep it loaded or expect a cold call to time out
-#: (the titles then stay refused, the safe outcome).
-DEFAULT_TIMEOUT_S = MAX_TIMEOUT_S
+#: The longest wait a caller may set. The orchestrator stops the whole stamp
+#: check at 120 s; the check spends a few seconds of its own around the call
+#: (starting, reading the feature, writing the stamps), so the call itself may
+#: use at most 110 s and the check still ends with its own plain line rather
+#: than being killed from outside. Raised from 60 s on 2026-10-06: a configured
+#: 90 s was being cut to 60 s without a word.
+MAX_TIMEOUT_S = 110.0
+#: The orchestrator's limit for the whole stamp check, quoted in the warning
+#: when a configured wait is cut. Not enforced here.
+ORCHESTRATOR_CHECK_LIMIT_S = 120.0
+#: The wait when the variable is unset. Well inside the 120 s the orchestrator
+#: allows the whole stamp check (it was once 180 s, which outlasted that limit).
+#: Long enough for a warm model that does not think out loud; a caller whose
+#: model is loaded on demand, or thinks first, should set a longer wait (up to
+#: :data:`MAX_TIMEOUT_S`) or turn the thinking off with
+#: ``GUARDKIT_STAMP_MODEL_EXTRA_BODY``. A call that times out leaves the titles
+#: refused, the safe outcome.
+DEFAULT_TIMEOUT_S = 60.0
 
 #: One word per title, so the reply is tiny. Kept small on purpose: a model
 #: that starts writing prose runs out of room and its answer is rejected.
@@ -606,10 +637,15 @@ def _endpoint() -> str:
     )
 
 
-def _timeout_seconds() -> float:
+def _timeout_setting() -> Tuple[float, str]:
+    """``(seconds to wait, note)``. The note is "" when the wait is the one the
+    operator set (or the default, when nothing is set); otherwise it is one
+    plain clause saying what was asked for and what is used instead, and the
+    same words are logged once as a warning. A timeout's detail repeats the
+    note, so a cut wait can never again look like the operator's own value."""
     raw = os.environ.get(MODEL_TIMEOUT_ENV, "").strip()
     if not raw:
-        return DEFAULT_TIMEOUT_S
+        return DEFAULT_TIMEOUT_S, ""
     try:
         value = float(raw)
     except ValueError:
@@ -619,8 +655,66 @@ def _timeout_seconds() -> float:
             raw,
             DEFAULT_TIMEOUT_S,
         )
-        return DEFAULT_TIMEOUT_S
-    return max(MIN_TIMEOUT_S, min(MAX_TIMEOUT_S, value))
+        return DEFAULT_TIMEOUT_S, f"{MODEL_TIMEOUT_ENV}={raw!r} is not a number, so the default was used"
+    used = max(MIN_TIMEOUT_S, min(MAX_TIMEOUT_S, value))
+    if used == value:
+        return used, ""
+    if value > MAX_TIMEOUT_S:
+        why = (
+            f"the longest this check may wait, because the orchestrator stops the "
+            f"whole stamp check at {ORCHESTRATOR_CHECK_LIMIT_S:g} s"
+        )
+    else:
+        why = "the shortest wait allowed"
+    note = f"{MODEL_TIMEOUT_ENV} asked for {value:g} s and was cut to {used:g} s, {why}"
+    logger.warning("STAMP NORMALIZER: %s", note)
+    return used, note
+
+
+def _timeout_seconds() -> float:
+    """The wait the call will use, in seconds (see :func:`_timeout_setting`)."""
+    return _timeout_setting()[0]
+
+
+def _extra_body() -> Dict[str, object]:
+    """The operator's extra request-body fields from
+    ``GUARDKIT_STAMP_MODEL_EXTRA_BODY``, or ``{}``. Never decided from a model
+    name: only what the operator wrote is sent. A value that is not a JSON
+    object is ignored with a warning; ``model`` and ``messages`` are dropped
+    with a warning (the extra body may not change what is asked, or of whom).
+    The value itself is never logged — only its key names — in case an operator
+    puts something private in it."""
+    raw = os.environ.get(MODEL_EXTRA_BODY_ENV, "").strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = None
+    if not isinstance(value, dict):
+        logger.warning(
+            "STAMP NORMALIZER: %s is not a JSON object — the call is made without it",
+            MODEL_EXTRA_BODY_ENV,
+        )
+        return {}
+    dropped = [key for key in PROTECTED_BODY_KEYS if key in value]
+    if dropped:
+        logger.warning(
+            "STAMP NORMALIZER: %s may not set %s — %s dropped, the rest is sent",
+            MODEL_EXTRA_BODY_ENV,
+            " or ".join(PROTECTED_BODY_KEYS),
+            ", ".join(dropped),
+        )
+    return {key: item for key, item in value.items() if key not in PROTECTED_BODY_KEYS}
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """A read or connect that ran out of time, however urllib wrapped it."""
+    if isinstance(exc, TimeoutError):  # socket.timeout is TimeoutError since 3.10
+        return True
+    if isinstance(exc, urllib.error.URLError) and isinstance(getattr(exc, "reason", None), TimeoutError):
+        return True
+    return False
 
 
 def completions_url(base_url: str) -> str:
@@ -639,21 +733,40 @@ class ConfiguredAsker:
     outcome of the call can name them (2026-09-06). The error messages it
     raises name the endpoint the same way, never the full URL."""
 
-    def __init__(self, base_url: str, model: str, timeout: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout: float,
+        *,
+        extra_body: Optional[Dict[str, object]] = None,
+        timeout_note: str = "",
+    ) -> None:
         self._url = completions_url(base_url)
         self.endpoint = endpoint_label(base_url)
         self.model = model
         self.timeout = timeout
+        #: The operator's extra request fields (``GUARDKIT_STAMP_MODEL_EXTRA_BODY``),
+        #: protected keys already removed.
+        self.extra_body: Dict[str, object] = {
+            key: value
+            for key, value in (extra_body or {}).items()
+            if key not in PROTECTED_BODY_KEYS
+        }
+        #: Why the wait is not the one the operator set, or "" when it is.
+        self.timeout_note = timeout_note
 
     def __call__(self, prompt: str) -> str:
-        body = json.dumps(
-            {
-                "model": self.model,
-                "temperature": 0.0,
-                "max_tokens": int(os.environ.get(MODEL_MAX_TOKENS_ENV, "") or MAX_ANSWER_TOKENS),
-                "messages": [{"role": "user", "content": prompt}],
-            }
-        ).encode("utf-8")
+        fields: Dict[str, object] = {
+            "temperature": 0.0,
+            "max_tokens": int(os.environ.get(MODEL_MAX_TOKENS_ENV, "") or MAX_ANSWER_TOKENS),
+        }
+        # The operator's fields may change the sampling (max_tokens included)
+        # and add what their server needs; the model and the prompt are ours.
+        fields.update(self.extra_body)
+        fields["model"] = self.model
+        fields["messages"] = [{"role": "user", "content": prompt}]
+        body = json.dumps(fields).encode("utf-8")
         request = urllib.request.Request(
             self._url,
             data=body,
@@ -666,8 +779,18 @@ class ConfiguredAsker:
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001 — only a timeout is re-worded
+            if not _is_timeout(exc):
+                raise
+            # Say how long was waited, and whether that was the operator's own
+            # value: "timed out" alone hid a 90 s setting cut to 60 s.
+            raise TimeoutError(
+                f"no answer within {self.timeout:g} s"
+                + (f"; {self.timeout_note}" if self.timeout_note else "")
+            ) from exc
         where = self.endpoint or "the endpoint"
         choices = payload.get("choices") if isinstance(payload, dict) else None
         if not isinstance(choices, list) or not choices:
@@ -719,7 +842,8 @@ def build_default_asker(model_name: Optional[str] = None) -> Optional[Configured
     model = _model_name(model_name)
     if not base or not model:
         return None
-    return ConfiguredAsker(base, model, _timeout_seconds())
+    timeout, note = _timeout_setting()
+    return ConfiguredAsker(base, model, timeout, extra_body=_extra_body(), timeout_note=note)
 
 
 # ---------------------------------------------------------------------------
@@ -841,7 +965,9 @@ __all__ = [
     "MODEL_URL_FALLBACK_ENV",
     "MODEL_NAME_ENV",
     "MODEL_TIMEOUT_ENV",
+    "MODEL_EXTRA_BODY_ENV",
     "DEFAULT_TIMEOUT_S",
+    "MAX_TIMEOUT_S",
     "EXAMPLE_ENDPOINT",
     "MAX_ANSWER_TOKENS",
     "MODEL_RULE",
