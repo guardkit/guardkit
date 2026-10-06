@@ -261,6 +261,51 @@ def test_the_prompt_carries_the_closed_list_the_rules_and_the_titles():
     assert "operator only for work a person has to do by hand" in prompt
 
 
+# --- the one project fact the model is told (2026-10-06) ----------------------
+# Measured on the Spark with its thinking off: five HTTP titles of an HTTP
+# service came back probe:bus without a line about the project, hurl with one.
+# R9 needs "the repo has an HTTP surface", which no title can show.
+
+
+def test_the_prompt_without_the_surface_fact_is_unchanged():
+    from guardkit.orchestrator.stamp_model_fallback import HTTP_SURFACE_LINE, NO_HTTP_SURFACE_LINE
+
+    prompt = build_prompt(REFUSED_THIS_WEEK)
+    assert HTTP_SURFACE_LINE not in prompt and NO_HTTP_SURFACE_LINE not in prompt
+    assert "HTTP surface (it" not in prompt
+
+
+@pytest.mark.parametrize("has_http", [True, False])
+def test_the_surface_fact_is_one_line_just_before_the_titles(has_http):
+    from guardkit.orchestrator.stamp_model_fallback import HTTP_SURFACE_LINE, NO_HTTP_SURFACE_LINE
+
+    prompt = build_prompt(REFUSED_THIS_WEEK, repo_has_http_surface=has_http)
+    line = HTTP_SURFACE_LINE if has_http else NO_HTTP_SURFACE_LINE
+    other = NO_HTTP_SURFACE_LINE if has_http else HTTP_SURFACE_LINE
+    assert prompt.count(line) == 1 and other not in prompt
+    assert f"{line}\n\nDecide the way to prove each of these 4 scenario title(s):" in prompt
+    assert prompt.replace(f"\n{line}\n", "") == build_prompt(REFUSED_THIS_WEEK)
+
+
+@pytest.mark.parametrize("http", [True, False])
+def test_the_normalizer_tells_the_model_what_r9_saw(tmp_path: Path, http: bool):
+    """The fact comes from the structural detector R9 uses (a hurl gate here),
+    not from any text the spec writer wrote."""
+    from guardkit.orchestrator.stamp_model_fallback import HTTP_SURFACE_LINE, NO_HTTP_SURFACE_LINE
+
+    titles = REFUSED_THIS_WEEK[:2]  # clause (h) misses both, with or without a surface
+    fake = FakeModel(_answers("hurl", "hurl"))
+    repo = _repo(tmp_path, titles, http=http)
+    normalize_feature(_yaml_path(repo), None, repo, ask_model=fake)
+    assert fake.calls == 1
+    if http:
+        assert HTTP_SURFACE_LINE in fake.prompts[0]
+        assert NO_HTTP_SURFACE_LINE not in fake.prompts[0]
+    else:
+        assert NO_HTTP_SURFACE_LINE in fake.prompts[0]
+        assert HTTP_SURFACE_LINE not in fake.prompts[0]
+
+
 def test_the_rule_summary_is_read_from_the_rules_module_and_cannot_drift():
     """The summary the model is given is derived from the rules module's own
     docstring — and every row's home is what the rule really returns."""
