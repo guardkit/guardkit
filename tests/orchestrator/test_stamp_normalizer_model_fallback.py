@@ -518,14 +518,124 @@ def test_the_cli_json_carries_the_model_decided_titles_and_the_stderr_echo(tmp_p
 
 def test_the_unset_timeout_fits_inside_the_orchestrators_limit(monkeypatch):
     """2026-10-05: the unset default was 180 s, longer than the 120 s the
-    orchestrator gives the whole stamp check, and outside the 1-60 s clamp that
-    applies to a set value. It is now the top of that clamp."""
-    assert DEFAULT_TIMEOUT_S <= 60.0
-    assert DEFAULT_TIMEOUT_S == MAX_TIMEOUT_S
+    orchestrator gives the whole stamp check. It is 60 s, inside the clamp."""
+    assert DEFAULT_TIMEOUT_S == 60.0
+    assert DEFAULT_TIMEOUT_S <= MAX_TIMEOUT_S
     monkeypatch.delenv(MODEL_TIMEOUT_ENV, raising=False)
     from guardkit.orchestrator.stamp_model_fallback import _timeout_seconds
 
-    assert _timeout_seconds() <= 60.0
+    assert _timeout_seconds() == 60.0
+
+
+def test_the_longest_wait_leaves_room_inside_the_orchestrators_120_s():
+    """2026-10-06: the cap was 60 s, so a configured 90 s was cut to 60 s and a
+    reasoning model could never answer. The cap is now 110 s: longer than any
+    value the estate sets today, and still short of the 120 s after which the
+    orchestrator kills the whole check from outside."""
+    from guardkit.orchestrator.stamp_model_fallback import ORCHESTRATOR_CHECK_LIMIT_S
+
+    assert MAX_TIMEOUT_S == 110.0
+    assert 90.0 < MAX_TIMEOUT_S < ORCHESTRATOR_CHECK_LIMIT_S == 120.0
+
+
+def test_a_configured_90_s_is_used_as_set_and_says_nothing(monkeypatch, caplog):
+    """The sandbox settings file's 90 s — cut to 60 s without a word before
+    2026-10-06 — is now used exactly, with no warning."""
+    from guardkit.orchestrator.stamp_model_fallback import _timeout_setting
+
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "90")
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_model_fallback"):
+        assert _timeout_setting() == (90.0, "")
+    assert caplog.records == []
+
+
+def test_a_wait_longer_than_the_cap_is_cut_out_loud(monkeypatch, caplog):
+    from guardkit.orchestrator.stamp_model_fallback import _timeout_setting
+
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "300")
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_model_fallback"):
+        seconds, note = _timeout_setting()
+    assert seconds == MAX_TIMEOUT_S
+    assert note == (
+        "GUARDKIT_STAMP_MODEL_TIMEOUT_S asked for 300 s and was cut to 110 s, the "
+        "longest this check may wait, because the orchestrator stops the whole "
+        "stamp check at 120 s"
+    )
+    assert [r.getMessage() for r in caplog.records] == [f"STAMP NORMALIZER: {note}"]
+
+
+def test_a_wait_below_the_floor_is_cut_out_loud(monkeypatch, caplog):
+    from guardkit.orchestrator.stamp_model_fallback import _timeout_setting
+
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "0")
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_model_fallback"):
+        seconds, note = _timeout_setting()
+    assert seconds == 1.0
+    assert "asked for 0 s and was cut to 1 s, the shortest wait allowed" in note
+    assert len(caplog.records) == 1
+
+
+def _timing_out_urlopen(exc: BaseException):
+    def _fake(request, timeout=None):
+        raise exc
+
+    return _fake
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [TimeoutError("timed out"), urllib.error.URLError(TimeoutError("timed out"))],
+    ids=["read-timeout", "connect-timeout"],
+)
+def test_a_timeout_names_the_wait_used_and_the_cut(monkeypatch, raised):
+    """The detail the card and the receipts carry names how long was waited
+    and that the operator's own value was cut — the 2026-10-06 report read
+    "timed out" while the configured 90 s had silently become 60 s. The detail
+    still contains ``TimeoutError``, which is what forge's card reader matches
+    to say "no answer came back in time"."""
+    from guardkit.orchestrator import stamp_model_fallback as fallback
+    from guardkit.orchestrator.stamp_model_fallback import decide_refused_titles_with_outcome
+
+    monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:4000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "300")
+    monkeypatch.setattr(fallback.urllib.request, "urlopen", _timing_out_urlopen(raised))
+
+    decided, outcome = decide_refused_titles_with_outcome(["a title"])
+    assert decided == {}
+    assert outcome.status == "asked_and_failed"
+    assert outcome.detail == (
+        "TimeoutError from localhost:4000 (no answer within 110 s; "
+        "GUARDKIT_STAMP_MODEL_TIMEOUT_S asked for 300 s and was cut to 110 s, the "
+        "longest this check may wait, because the orchestrator stops the whole "
+        "stamp check at 120 s)"
+    )
+
+
+def test_a_timeout_at_the_operators_own_value_says_only_the_wait(monkeypatch):
+    from guardkit.orchestrator import stamp_model_fallback as fallback
+    from guardkit.orchestrator.stamp_model_fallback import decide_refused_titles_with_outcome
+
+    monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:4000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    monkeypatch.setenv(MODEL_TIMEOUT_ENV, "90")
+    monkeypatch.setattr(fallback.urllib.request, "urlopen", _timing_out_urlopen(TimeoutError("timed out")))
+
+    _, outcome = decide_refused_titles_with_outcome(["a title"])
+    assert outcome.detail == "TimeoutError from localhost:4000 (no answer within 90 s)"
+
+
+def test_a_failure_that_is_not_a_timeout_is_reported_as_before(monkeypatch):
+    from guardkit.orchestrator import stamp_model_fallback as fallback
+    from guardkit.orchestrator.stamp_model_fallback import decide_refused_titles_with_outcome
+
+    monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:4000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    boom = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+    monkeypatch.setattr(fallback.urllib.request, "urlopen", _timing_out_urlopen(boom))
+
+    _, outcome = decide_refused_titles_with_outcome(["a title"])
+    assert outcome.detail == "URLError from localhost:4000 ([Errno 111] Connection refused)"
 
 
 def test_the_endpoint_falls_back_to_openai_base_url_and_the_model_name_has_no_default(monkeypatch):
@@ -596,6 +706,108 @@ def test_the_default_call_posts_the_prompt_to_the_endpoint_with_a_timeout(monkey
     assert body["model"] == "a-stamp-model"
     assert body["temperature"] == 0.0
     assert body["messages"] == [{"role": "user", "content": "the prompt"}]
+    # Nothing extra is sent unless the operator asks for it.
+    assert set(body) == {"model", "temperature", "max_tokens", "messages"}
+
+
+def _capture_body(monkeypatch) -> Dict[str, object]:
+    """Fake the socket and keep the request body the asker sent."""
+    from guardkit.orchestrator import stamp_model_fallback as fallback
+
+    seen: Dict[str, object] = {}
+
+    class _Response:
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"role": "assistant", "content": "hurl\n"}}]}
+            ).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _fake_urlopen(request, timeout=None):
+        seen["body"] = json.loads(request.data.decode("utf-8"))
+        return _Response()
+
+    monkeypatch.setenv(MODEL_URL_ENV, "http://localhost:9000/v1")
+    monkeypatch.setenv(MODEL_NAME_ENV, "a-stamp-model")
+    monkeypatch.setattr(fallback.urllib.request, "urlopen", _fake_urlopen)
+    return seen
+
+
+def test_the_operators_extra_body_is_sent_with_the_request(monkeypatch):
+    """2026-10-06: the operator can turn a reasoning model's thinking off (or
+    pass anything else their server needs) without this module knowing about
+    any model. Thinking on, the Spark's model took 293 s to answer five titles;
+    with its thinking off it answered in under 4 s."""
+    from guardkit.orchestrator.stamp_model_fallback import MODEL_EXTRA_BODY_ENV
+
+    seen = _capture_body(monkeypatch)
+    monkeypatch.setenv(
+        MODEL_EXTRA_BODY_ENV,
+        '{"chat_template_kwargs": {"enable_thinking": false}, "max_tokens": 1024}',
+    )
+    asker = build_default_asker()
+    assert asker is not None
+    assert asker("the prompt") == "hurl\n"
+    body = seen["body"]
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert body["max_tokens"] == 1024  # the operator may set the answer allowance
+    assert body["model"] == "a-stamp-model"
+    assert body["messages"] == [{"role": "user", "content": "the prompt"}]
+
+
+def test_the_extra_body_cannot_change_the_model_or_the_prompt(monkeypatch, caplog):
+    from guardkit.orchestrator.stamp_model_fallback import MODEL_EXTRA_BODY_ENV
+
+    seen = _capture_body(monkeypatch)
+    monkeypatch.setenv(
+        MODEL_EXTRA_BODY_ENV,
+        '{"model": "another", "messages": [], "top_p": 0.5}',
+    )
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_model_fallback"):
+        asker = build_default_asker()
+    assert asker is not None
+    asker("the prompt")
+    body = seen["body"]
+    assert body["model"] == "a-stamp-model"
+    assert body["messages"] == [{"role": "user", "content": "the prompt"}]
+    assert body["top_p"] == 0.5
+    assert any("may not set model or messages" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1, 2]", '"a string"', "{broken"])
+def test_an_extra_body_that_is_not_a_json_object_is_ignored_out_loud(monkeypatch, caplog, raw):
+    from guardkit.orchestrator.stamp_model_fallback import MODEL_EXTRA_BODY_ENV
+
+    seen = _capture_body(monkeypatch)
+    monkeypatch.setenv(MODEL_EXTRA_BODY_ENV, raw)
+    with caplog.at_level(logging.WARNING, logger="guardkit.orchestrator.stamp_model_fallback"):
+        asker = build_default_asker()
+    assert asker is not None
+    asker("the prompt")
+    assert set(seen["body"]) == {"model", "temperature", "max_tokens", "messages"}
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("is not a JSON object" in m for m in messages)
+    assert not any(raw in m for m in messages)  # the value itself is never logged
+
+
+def test_no_model_name_ever_switches_the_thinking_off_by_itself(monkeypatch):
+    """Backend-neutral: the request for a model whose name says "qwen" or
+    "thinking" is exactly the request for any other model."""
+    from guardkit.orchestrator.stamp_model_fallback import MODEL_EXTRA_BODY_ENV
+
+    seen = _capture_body(monkeypatch)
+    monkeypatch.delenv(MODEL_EXTRA_BODY_ENV, raising=False)
+    monkeypatch.setenv(MODEL_NAME_ENV, "qwen3.8-flash-next-thinking")
+    asker = build_default_asker()
+    assert asker is not None
+    asker("the prompt")
+    assert "chat_template_kwargs" not in seen["body"]
+    assert set(seen["body"]) == {"model", "temperature", "max_tokens", "messages"}
 
 
 def test_a_reply_without_an_answer_is_a_malformed_reply_not_a_stamp(monkeypatch):
