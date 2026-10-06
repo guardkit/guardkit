@@ -527,17 +527,26 @@ OFFERABLE_HOMES = tuple(h for h in VERIFIER_HOMES if h != "toolchain")
 
 #: The one fact about the project the model is told, when the caller knows it
 #: (2026-10-06). R9 decides ``hurl`` only when the repo has an HTTP surface,
-#: and the titles alone cannot say whether it does. Measured on the Spark with
-#: thinking off: without a line like this the model answered ``probe:bus`` for
-#: five HTTP titles of an HTTP service, and ``hurl`` with it. The fact comes
-#: from the same structural detector R9 uses, never from free text.
+#: and the titles alone cannot say whether it does. The fact comes from the
+#: same structural detector R9 uses, never from free text. Measured on the
+#: Spark's Qwen with thinking off, with these exact lines: api_test's five
+#: min_count titles were ``probe:bus`` x5 with no line and ``hurl`` x5 with
+#: it (4 of 4 calls); "Concurrent deactivation requests for the same user"
+#: went ``probe:bus`` 2 of 2 with the first sentence alone and ``hurl`` 1 of 2
+#: with the second added, so it is still not reliable; five refused titles
+#: from fleet-gateway (no HTTP surface) got no ``hurl`` at all.
+#: Both lines say only what the detector knows: whether it found an HTTP
+#: surface. Neither says anything about message buses, processes or anything
+#: else the build system has not checked.
 HTTP_SURFACE_LINE = (
-    "About the project these scenarios belong to: it HAS an HTTP surface (it "
-    "answers HTTP requests), which is the condition R9 names."
+    "About the project these scenarios belong to: the build system found that "
+    "it HAS an HTTP surface (it answers HTTP requests), which is the condition "
+    "R9 names. So a scenario about requests it receives, or what it answers to "
+    "them, is proved with hurl, unless another rule above clearly fits better."
 )
 NO_HTTP_SURFACE_LINE = (
-    "About the project these scenarios belong to: it has NO HTTP surface (it "
-    "answers no HTTP requests), so hurl cannot prove its scenarios."
+    "About the project these scenarios belong to: the build system found NO "
+    "HTTP surface in it, so R9's condition is not met and hurl does not apply."
 )
 
 
