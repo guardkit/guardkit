@@ -611,13 +611,19 @@ def test_no_refusal_means_no_outcome_in_the_result_or_the_json(tmp_path: Path):
 
 
 def test_a_decided_outcome_rides_the_result_beside_the_model_stamped_titles(tmp_path: Path):
+    # The fixture repo has no HTTP surface, so the fake answers a word other
+    # than hurl (the 2026-10-06 safety net refuses hurl there).
     repo = _repo(tmp_path, TITLES)
-    result = normalize_feature(_yaml_path(repo), None, repo, ask_model=FakeAsker("hurl\nhurl\n"))
+    result = normalize_feature(
+        _yaml_path(repo), None, repo, ask_model=FakeAsker("probe:process\nprobe:process\n")
+    )
     assert result.model_stamped == TITLES
     assert result.model_outcome is not None
     assert result.model_outcome["status"] == "decided"
     assert result.model_outcome["detail"].startswith("decided all 2 of them: ")
-    assert yaml.safe_load(_yaml_path(repo).read_text())["scenarios"][TITLES[0]] == {"verifier": "hurl"}
+    assert yaml.safe_load(_yaml_path(repo).read_text())["scenarios"][TITLES[0]] == {
+        "verifier": "probe:process"
+    }
 
 
 def test_the_cli_json_carries_model_outcome(tmp_path: Path, monkeypatch):
@@ -821,7 +827,8 @@ def test_the_normalizer_with_the_model_off_keeps_the_refusal_a_fake_would_have_d
     assert result.to_dict()["model_outcome"] == SWITCHED_OFF_OUTCOME
     assert _lines(caplog) == [SWITCHED_OFF_LINE]
 
-    on = FakeAsker("hurl\nhurl\n", endpoint="localhost:4000", model="workhorse")
+    # No HTTP surface in the fixture, so not hurl (the 2026-10-06 safety net).
+    on = FakeAsker("probe:process\nprobe:process\n", endpoint="localhost:4000", model="workhorse")
     result = normalize_feature(_yaml_path(repo), None, repo, dry_run=True, ask_model=on)
     assert on.calls == 1
     assert result.refused == [] and result.model_stamped == TITLES
