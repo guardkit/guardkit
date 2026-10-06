@@ -287,6 +287,67 @@ def test_the_surface_fact_is_one_line_just_before_the_titles(has_http):
     assert prompt.replace(f"\n{line}\n", "") == build_prompt(REFUSED_THIS_WEEK)
 
 
+# --- each refused scenario's own steps (2026-10-06) ---------------------------
+# A title alone left "Concurrent deactivation requests for the same user" a coin
+# flip between hurl and probe:bus with thinking off; with its steps it was hurl
+# on 4 of 4 calls on the Spark's Qwen and 4 of 4 on Gemma.
+
+
+def test_without_steps_the_prompt_is_unchanged():
+    assert build_prompt(REFUSED_THIS_WEEK, scenario_steps=None) == build_prompt(REFUSED_THIS_WEEK)
+    assert build_prompt(REFUSED_THIS_WEEK, scenario_steps={}) == build_prompt(REFUSED_THIS_WEEK)
+
+
+def test_each_title_is_followed_by_its_own_steps():
+    steps = {
+        REFUSED_THIS_WEEK[0]: "Given the service is running\nWhen two requests arrive\nThen both agree",
+        REFUSED_THIS_WEEK[1]: "When a deactivation is sent twice\nThen the second is a conflict",
+    }
+    prompt = build_prompt(REFUSED_THIS_WEEK[:3], scenario_steps=steps)
+    assert "Each title is followed by the scenario's own steps" in prompt
+    assert (
+        f"  1. {REFUSED_THIS_WEEK[0]}\n"
+        "       Given the service is running\n"
+        "       When two requests arrive\n"
+        "       Then both agree\n"
+        f"  2. {REFUSED_THIS_WEEK[1]}\n"
+        "       When a deactivation is sent twice\n"
+        "       Then the second is a conflict\n"
+        f"  3. {REFUSED_THIS_WEEK[2]}\n"
+        "\nAnswer with exactly 3 line(s)"
+    ) in prompt
+
+
+def test_long_steps_are_capped_and_the_cut_is_counted():
+    from guardkit.orchestrator.stamp_model_fallback import (
+        MAX_STEP_CHARS_PER_SCENARIO,
+        MAX_STEP_LINES_PER_SCENARIO,
+    )
+
+    many = "\n".join(f"| row {n} |" for n in range(MAX_STEP_LINES_PER_SCENARIO + 8))
+    prompt = build_prompt(["a title"], scenario_steps={"a title": many})
+    assert f"| row {MAX_STEP_LINES_PER_SCENARIO - 1} |" in prompt
+    assert f"| row {MAX_STEP_LINES_PER_SCENARIO} |" not in prompt
+    assert "(… 8 more line(s) not shown)" in prompt
+
+    wide = "\n".join("Then " + "x" * 300 for _ in range(5))
+    prompt = build_prompt(["a title"], scenario_steps={"a title": wide})
+    shown = [line for line in prompt.splitlines() if line.startswith("       Then ")]
+    assert sum(len(line.strip()) for line in shown) <= MAX_STEP_CHARS_PER_SCENARIO
+    assert f"(… {5 - len(shown)} more line(s) not shown)" in prompt
+
+
+def test_the_normalizer_passes_the_same_steps_the_rules_read(tmp_path: Path):
+    fake = FakeModel(_answers("hurl", "hurl", "hurl", "hurl"))
+    repo = _repo(tmp_path, REFUSED_THIS_WEEK, include_rule_decided=True)
+    normalize_feature(_yaml_path(repo), None, repo, ask_model=fake)
+    prompt = fake.prompts[0]
+    for title in REFUSED_THIS_WEEK:
+        assert f". {title}\n       Given the service is running\n" in prompt
+    # A rule-decided scenario's steps never reach the model either.
+    assert "Given the database is unavailable" not in prompt
+
+
 @pytest.mark.parametrize("http", [True, False])
 def test_the_normalizer_tells_the_model_what_r9_saw(tmp_path: Path, http: bool):
     """The fact comes from the structural detector R9 uses (a hurl gate here),

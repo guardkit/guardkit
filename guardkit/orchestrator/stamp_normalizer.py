@@ -1879,11 +1879,13 @@ def normalize_feature(
     )
 
     seen: set = set()
+    steps_by_title: Dict[str, str] = {}
     for block in scenarios:
         title = block.title
         if title in seen:
             continue  # duplicate title in the file: first occurrence classifies
         seen.add(title)
+        steps_by_title[title] = block.steps_text
         if title in existing_titles:
             result.already_stamped.append(title)
             # (2) RULED 2026-08-18: still CLASSIFY the stamped title; a
@@ -1948,6 +1950,10 @@ def normalize_feature(
             # The structural fact R9 used above (2026-10-06): the model cannot
             # tell from a title whether the repo answers HTTP requests.
             repo_has_http_surface=has_http,
+            # Each refused scenario's own steps, the same text the rules read
+            # (first occurrence of a title, as above) — 2026-10-06: a title
+            # alone left the model guessing.
+            scenario_steps=steps_by_title,
         )
         result.model_outcome = model_outcome.to_dict()
         for title in list(result.refused):
