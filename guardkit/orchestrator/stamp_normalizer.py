@@ -1941,7 +1941,13 @@ def normalize_feature(
     # JSON and forge's card can say the same thing the line says.
     if result.refused:
         decided_by_model, model_outcome = decide_refused_titles_with_outcome(
-            result.refused, ask_model=ask_model, feature_id=feature_id, use_model=use_model
+            result.refused,
+            ask_model=ask_model,
+            feature_id=feature_id,
+            use_model=use_model,
+            # The structural fact R9 used above (2026-10-06): the model cannot
+            # tell from a title whether the repo answers HTTP requests.
+            repo_has_http_surface=has_http,
         )
         result.model_outcome = model_outcome.to_dict()
         for title in list(result.refused):

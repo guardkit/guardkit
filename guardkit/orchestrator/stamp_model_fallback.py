@@ -525,10 +525,34 @@ def rule_table(doc: Optional[str] = None) -> List[RuleSummary]:
 OFFERABLE_HOMES = tuple(h for h in VERIFIER_HOMES if h != "toolchain")
 
 
-def build_prompt(titles: Sequence[str], *, rules: Optional[Sequence[RuleSummary]] = None) -> str:
+#: The one fact about the project the model is told, when the caller knows it
+#: (2026-10-06). R9 decides ``hurl`` only when the repo has an HTTP surface,
+#: and the titles alone cannot say whether it does. Measured on the Spark with
+#: thinking off: without a line like this the model answered ``probe:bus`` for
+#: five HTTP titles of an HTTP service, and ``hurl`` with it. The fact comes
+#: from the same structural detector R9 uses, never from free text.
+HTTP_SURFACE_LINE = (
+    "About the project these scenarios belong to: it HAS an HTTP surface (it "
+    "answers HTTP requests), which is the condition R9 names."
+)
+NO_HTTP_SURFACE_LINE = (
+    "About the project these scenarios belong to: it has NO HTTP surface (it "
+    "answers no HTTP requests), so hurl cannot prove its scenarios."
+)
+
+
+def build_prompt(
+    titles: Sequence[str],
+    *,
+    rules: Optional[Sequence[RuleSummary]] = None,
+    repo_has_http_surface: Optional[bool] = None,
+) -> str:
     """The exact text sent to the model: the closed list, the rules' own
     summary as the rationale for what each word means, the refused titles, and
-    the instruction to answer one word per title."""
+    the instruction to answer one word per title. When the caller knows
+    whether the repo has an HTTP surface (``repo_has_http_surface`` not
+    ``None``), one line says so before the titles; ``None`` leaves the prompt
+    exactly as it was before 2026-10-06."""
     table = list(rules) if rules is not None else rule_table()
     count = len(titles)
     lines: List[str] = [
@@ -547,6 +571,8 @@ def build_prompt(titles: Sequence[str], *, rules: Optional[Sequence[RuleSummary]
     ]
     for entry in table:
         lines.append(f"  {entry.rule} -> {entry.home}: {entry.description}")
+    if repo_has_http_surface is not None:
+        lines += ["", HTTP_SURFACE_LINE if repo_has_http_surface else NO_HTTP_SURFACE_LINE]
     lines += [
         "",
         f"Decide the way to prove each of these {count} scenario title(s):",
@@ -857,6 +883,7 @@ def decide_refused_titles_with_outcome(
     ask_model: Optional[ModelAsker] = None,
     feature_id: str = "",
     use_model: bool = True,
+    repo_has_http_surface: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], ModelOutcome]:
     """Ask the model about titles NO RULE COULD DECIDE, and return
     ``({title: word} for every one it decided, what the call ended in)``.
@@ -877,6 +904,9 @@ def decide_refused_titles_with_outcome(
     a configured endpoint makes no difference. forge uses this on a run's
     first stamping so a refusal reaches the machine's rewrite round; the
     model is asked on the second stamping, about what is still refused.
+
+    ``repo_has_http_surface`` (2026-10-06) is the structural fact R9 uses;
+    when given, the prompt says it in one line (:func:`build_prompt`).
 
     All or nothing: a single bad word rejects the whole answer, so a model can
     only ever turn a refusal into a word from the closed list.
@@ -904,7 +934,7 @@ def decide_refused_titles_with_outcome(
     model = str(getattr(asker, "model", "") or "")
 
     try:
-        prompt = build_prompt(wanted)
+        prompt = build_prompt(wanted, repo_has_http_surface=repo_has_http_surface)
         raw = asker(prompt)
     except Exception as exc:  # noqa: BLE001 — every failure is the old behaviour
         # Describing the failure must never itself fail (2026-09-06: an
@@ -946,6 +976,7 @@ def decide_refused_titles(
     ask_model: Optional[ModelAsker] = None,
     feature_id: str = "",
     use_model: bool = True,
+    repo_has_http_surface: Optional[bool] = None,
 ) -> Dict[str, str]:
     """Ask the model about titles NO RULE COULD DECIDE, and return
     ``{title: word}`` for every one it decided — the contract every caller has
@@ -953,9 +984,14 @@ def decide_refused_titles(
     failure, with the one plain line logged. Callers that need to know WHICH
     failure it was use :func:`decide_refused_titles_with_outcome`.
     ``use_model=False`` keeps the refusal without asking (see there).
+    ``repo_has_http_surface`` is passed to :func:`build_prompt`.
     """
     decided, _outcome = decide_refused_titles_with_outcome(
-        titles, ask_model=ask_model, feature_id=feature_id, use_model=use_model
+        titles,
+        ask_model=ask_model,
+        feature_id=feature_id,
+        use_model=use_model,
+        repo_has_http_surface=repo_has_http_surface,
     )
     return decided
 
@@ -988,6 +1024,8 @@ __all__ = [
     "RuleSummary",
     "rule_table",
     "build_prompt",
+    "HTTP_SURFACE_LINE",
+    "NO_HTTP_SURFACE_LINE",
     "parse_answer",
     "completions_url",
     "endpoint_label",
