@@ -56,6 +56,15 @@ _STEP_KEYWORD_RE = re.compile(r"^(\s*)(Given|When|Then|And|But)\s+\S")
 # alone there.
 _STAR_STEP_RE = re.compile(r"^(\s*)\* +\S")
 
+# A step with a keyword and no text (``Given `` or ``* `` and nothing else).
+# The parser accepts it, and it may carry a doc-string. It is recognised only
+# when a doc-string follows it; otherwise it is handled as it always was.
+_EMPTY_STEP_RE = re.compile(r"^\s*(Given|When|Then|And|But|\*) \s*$")
+
+# A line that opens a doc-string for the parser (three single quotes are not
+# a Gherkin delimiter, so they are not included here).
+_PARSER_DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```)")
+
 # Structural keywords end any step block. This is the full English set from
 # gherkin-official's own keyword list: feature (Feature, Business Need,
 # Ability), rule, background, scenario (Scenario, Example), scenario outline
@@ -81,7 +90,8 @@ _TABLE_ROW_RE = re.compile(r"^\s*\|")
 # comment, tag or table row. Three single quotes are NOT a Gherkin delimiter
 # (gherkin-official reads such a line as ordinary text); they have always been
 # honoured here, so that is left unchanged. A backtick line opens a doc-string
-# only straight after a step, as in the parser; in a description it is text.
+# only straight after a step in a Background or scenario body, as in the
+# parser; in a description it is text, even after a line that looks like a step.
 _DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```|''')")
 
 
@@ -92,6 +102,19 @@ class FeatureSpecGherkinError(Exception):
 def _line_indent(line: str) -> int:
     """Return the count of leading whitespace characters."""
     return len(line) - len(line.lstrip())
+
+
+def _docstring_follows(lines: List[str]) -> List[bool]:
+    """For each line, whether the next line after it that is not blank and
+    not a comment opens a doc-string (three double quotes or backticks)."""
+    follows = [False] * len(lines)
+    next_opens = False
+    for index in range(len(lines) - 1, -1, -1):
+        follows[index] = next_opens
+        body = lines[index].rstrip("\r\n")
+        if body.strip() and not _COMMENT_RE.match(body):
+            next_opens = bool(_PARSER_DOCSTRING_DELIMITER_RE.match(body))
+    return follows
 
 
 def collapse_multi_line_steps(text: str) -> str:
@@ -123,14 +146,19 @@ def collapse_multi_line_steps(text: str) -> str:
     # step; False in Feature, Rule and Examples descriptions.
     in_step_section = False
 
-    # True straight after a step line or its continuation (blank lines and
-    # comments keep it). The parser opens a doc-string only there; anywhere
-    # else a delimiter line is ordinary description text. Applied to the
-    # backtick delimiter only, so the older handling of the quote delimiters
-    # is unchanged.
+    # True straight after a step line or its continuation in a Background or
+    # scenario body (blank lines and comments keep it). The parser opens a
+    # doc-string only there; anywhere else, including after step-looking text
+    # in a Feature, Rule or Examples description, a delimiter line is ordinary
+    # text. Applied to the backtick delimiter only, so the older handling of
+    # the quote delimiters is unchanged.
     after_step = False
 
-    for line in lines:
+    # For each line: does the next line that counts for the parser (skipping
+    # blank lines and comments) open a doc-string?
+    docstring_follows = _docstring_follows(lines)
+
+    for index, line in enumerate(lines):
         body = line.rstrip("\r\n")
 
         # --- Doc-string handling ---------------------------------------
@@ -187,12 +215,23 @@ def collapse_multi_line_steps(text: str) -> str:
             in_step_section = m_struct.group(1) in _STEP_SECTION_KEYWORDS
             continue
 
+        # --- Empty step (keyword, no text) carrying a doc-string ---------
+        if (
+            in_step_section
+            and docstring_follows[index]
+            and _EMPTY_STEP_RE.match(body)
+        ):
+            result.append(line)
+            pending_idx = -1
+            after_step = True
+            continue
+
         # --- Step keyword (Given/When/Then/And/But, or * in a step body) -
         m_step = _STEP_KEYWORD_RE.match(body)
         if not m_step and in_step_section:
             m_step = _STAR_STEP_RE.match(body)
         if m_step:
-            after_step = True
+            after_step = in_step_section
             result.append(line)
             pending_idx = len(result) - 1
             pending_indent = len(m_step.group(1))
@@ -205,7 +244,7 @@ def collapse_multi_line_steps(text: str) -> str:
             prior_body = prior.rstrip("\r\n")
             line_ending = prior[len(prior_body):]
             result[pending_idx] = f"{prior_body} {cont}{line_ending}"
-            after_step = True
+            after_step = in_step_section
             continue
 
         # --- Anything else: feature description, etc. -----------------
