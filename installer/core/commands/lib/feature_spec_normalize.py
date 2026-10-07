@@ -49,15 +49,39 @@ __all__ = [
 # canonical capitalisation).
 _STEP_KEYWORD_RE = re.compile(r"^(\s*)(Given|When|Then|And|But)\s+\S")
 
-# Structural keywords end any step block.
+# Gherkin also accepts ``* `` (a star then a space) as a step keyword. It is
+# only treated as a step inside a Background or scenario, where the parser
+# reads it as one; in a Feature, Rule or Examples description the parser reads
+# a ``* `` line as ordinary text (for example a bullet point), so it is left
+# alone there.
+_STAR_STEP_RE = re.compile(r"^(\s*)\* +\S")
+
+# Structural keywords end any step block. This is the full English set from
+# gherkin-official's own keyword list: feature (Feature, Business Need,
+# Ability), rule, background, scenario (Scenario, Example), scenario outline
+# (Scenario Outline, Scenario Template) and examples (Examples, Scenarios).
 _STRUCTURAL_KEYWORD_RE = re.compile(
-    r"^\s*(Feature|Background|Scenario Outline|Scenario|Rule|Examples)\s*:"
+    r"^\s*(Feature|Business Need|Ability|Background|Scenario Outline"
+    r"|Scenario Template|Scenario|Example|Rule|Examples|Scenarios)\s*:"
+)
+
+# Headers whose body is a list of steps (where ``* `` is a step keyword).
+_STEP_SECTION_KEYWORDS = frozenset(
+    {"Background", "Scenario", "Example", "Scenario Outline", "Scenario Template"}
 )
 
 _COMMENT_RE = re.compile(r"^\s*#")
 _TAG_RE = re.compile(r"^\s*@")
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
-_DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|''')")
+# Doc-string delimiters. Gherkin accepts three double quotes and three
+# backticks; the opening delimiter may be followed by a content type (for
+# example three backticks then ``json``), and the doc-string is closed by a
+# line starting with the same delimiter that opened it. Everything in between
+# is kept verbatim: never joined onto a step and never read as a keyword,
+# comment, tag or table row. Three single quotes are NOT a Gherkin delimiter
+# (gherkin-official reads such a line as ordinary text); they have always been
+# honoured here, so that is left unchanged.
+_DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```|''')")
 
 
 class FeatureSpecGherkinError(Exception):
@@ -93,6 +117,10 @@ def collapse_multi_line_steps(text: str) -> str:
     # extended by a continuation. -1 means "not currently inside a step".
     pending_idx = -1
     pending_indent = -1
+
+    # True while inside a Background or scenario body, where ``* `` starts a
+    # step; False in Feature, Rule and Examples descriptions.
+    in_step_section = False
 
     for line in lines:
         body = line.rstrip("\r\n")
@@ -140,13 +168,17 @@ def collapse_multi_line_steps(text: str) -> str:
             continue
 
         # --- Structural keyword (Feature/Background/Scenario/...) ------
-        if _STRUCTURAL_KEYWORD_RE.match(body):
+        m_struct = _STRUCTURAL_KEYWORD_RE.match(body)
+        if m_struct:
             result.append(line)
             pending_idx = -1
+            in_step_section = m_struct.group(1) in _STEP_SECTION_KEYWORDS
             continue
 
-        # --- Step keyword (Given/When/Then/And/But) --------------------
+        # --- Step keyword (Given/When/Then/And/But, or * in a step body) -
         m_step = _STEP_KEYWORD_RE.match(body)
+        if not m_step and in_step_section:
+            m_step = _STAR_STEP_RE.match(body)
         if m_step:
             result.append(line)
             pending_idx = len(result) - 1
