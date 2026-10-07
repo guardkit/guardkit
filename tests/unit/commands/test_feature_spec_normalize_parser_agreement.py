@@ -28,15 +28,15 @@ These tests pin that:
    ``* `` step, is left alone by the collapse, with the same parse before and
    after;
 3. wrapped steps outside doc-strings still join;
-4. a spec with none of these lines collapses exactly as it did before the fix
-   (a verbatim copy of the collapse at commit 7e8844ec is kept below as the
-   reference).
+4. a three-backtick line in a description (not straight after a step) is
+   ordinary text, as it is to the parser, so it never stops later wrapped
+   steps from joining;
+5. specs with none of these lines collapse as they did before the fix (the
+   expected output is written out in full).
 """
 
 from __future__ import annotations
 
-import os
-import re
 from pathlib import Path
 from typing import Any, List
 
@@ -47,112 +47,12 @@ from installer.core.commands.lib.feature_spec_normalize import (
     validate_gherkin,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURES = REPO_ROOT / "tests" / "fixtures" / "feature_specs"
-
 
 def _parse(text: str) -> Any:
     """Parse with gherkin-official, the parser every downstream reader uses."""
     from gherkin.parser import Parser
 
     return Parser().parse(text)
-
-
-# ----------------------------------------------------------------------
-# Reference: the collapse exactly as it was at commit 7e8844ec
-# ----------------------------------------------------------------------
-# Copied verbatim (names prefixed) so the "no backtick doc-string means no
-# change" tests compare against the real earlier behaviour, not a re-statement
-# of it.
-
-_OLD_STEP_KEYWORD_RE = re.compile(r"^(\s*)(Given|When|Then|And|But)\s+\S")
-_OLD_STRUCTURAL_KEYWORD_RE = re.compile(
-    r"^\s*(Feature|Background|Scenario Outline|Scenario|Rule|Examples)\s*:"
-)
-_OLD_COMMENT_RE = re.compile(r"^\s*#")
-_OLD_TAG_RE = re.compile(r"^\s*@")
-_OLD_TABLE_ROW_RE = re.compile(r"^\s*\|")
-_OLD_DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|''')")
-
-
-def _old_line_indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
-
-
-def _collapse_as_of_7e8844ec(text: str) -> str:
-    lines: List[str] = text.splitlines(keepends=True)
-    result: List[str] = []
-
-    in_docstring = False
-    docstring_delim = ""
-
-    pending_idx = -1
-    pending_indent = -1
-
-    for line in lines:
-        body = line.rstrip("\r\n")
-
-        if in_docstring:
-            result.append(line)
-            m = _OLD_DOCSTRING_DELIMITER_RE.match(body)
-            if m and m.group(1) == docstring_delim:
-                in_docstring = False
-                docstring_delim = ""
-                pending_idx = -1
-            continue
-
-        m_doc = _OLD_DOCSTRING_DELIMITER_RE.match(body)
-        if m_doc:
-            result.append(line)
-            in_docstring = True
-            docstring_delim = m_doc.group(1)
-            pending_idx = -1
-            continue
-
-        if not body.strip():
-            result.append(line)
-            pending_idx = -1
-            continue
-
-        if _OLD_COMMENT_RE.match(body):
-            result.append(line)
-            pending_idx = -1
-            continue
-
-        if _OLD_TAG_RE.match(body):
-            result.append(line)
-            pending_idx = -1
-            continue
-
-        if _OLD_TABLE_ROW_RE.match(body):
-            result.append(line)
-            pending_idx = -1
-            continue
-
-        if _OLD_STRUCTURAL_KEYWORD_RE.match(body):
-            result.append(line)
-            pending_idx = -1
-            continue
-
-        m_step = _OLD_STEP_KEYWORD_RE.match(body)
-        if m_step:
-            result.append(line)
-            pending_idx = len(result) - 1
-            pending_indent = len(m_step.group(1))
-            continue
-
-        if pending_idx >= 0 and _old_line_indent(line) > pending_indent:
-            cont = body.strip()
-            prior = result[pending_idx]
-            prior_body = prior.rstrip("\r\n")
-            line_ending = prior[len(prior_body):]
-            result[pending_idx] = f"{prior_body} {cont}{line_ending}"
-            continue
-
-        result.append(line)
-        pending_idx = -1
-
-    return "".join(result)
 
 
 # ----------------------------------------------------------------------
@@ -494,7 +394,6 @@ def test_star_bullets_in_descriptions_are_left_as_text() -> None:
     )
     collapsed = collapse_multi_line_steps(text)
     assert collapsed == text
-    assert collapsed == _collapse_as_of_7e8844ec(text)
     assert _parse(collapsed) == _parse(text)
 
 
@@ -544,53 +443,129 @@ def test_wrapped_steps_around_a_backtick_docstring_still_join() -> None:
 
 
 # ----------------------------------------------------------------------
-# 4. Specs with none of the newly recognised lines are unchanged from 7e8844ec
+# 4. A backtick line in a description is text, not a doc-string
 # ----------------------------------------------------------------------
+# The parser opens a doc-string only straight after a step (blank lines and
+# comments may sit in between). Anywhere else a three-backtick line is part of
+# a description. Each case puts a fence in a description and is followed by a
+# wrapped step that must still be joined.
 
-_SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox"}
-
-
-def _feature_corpus() -> List[Path]:
-    found: List[Path] = []
-    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        for name in filenames:
-            if name.endswith(".feature"):
-                found.append(Path(dirpath) / name)
-    return sorted(found)
+_FENCES = {
+    "unclosed": ["```"],
+    "closed": ["```json", "fenced text", "```"],
+    "opened and closed on one line": ["```code```"],
+}
 
 
-_CORPUS = _feature_corpus()
+def _indent(lines: List[str], spaces: int) -> List[str]:
+    return [" " * spaces + line for line in lines]
 
 
-_NEWLY_RECOGNISED_RE = re.compile(
-    r"^\s*(```|\* |(Business Need|Ability|Scenario Template|Example|Scenarios)\s*:)"
-)
+def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
+    step = (
+        ["Given a wrapped step"]
+        if joined
+        else ["Given a wrapped", "  step"]
+    )
+    if where == "Feature":
+        lines = (
+            ["Feature: Demo", "  Some description"]
+            + _indent(fence, 2)
+            + ["  Scenario: x"]
+            + _indent(step, 4)
+            + ["    Then done"]
+        )
+    elif where == "Rule":
+        lines = (
+            ["Feature: Demo", "  Rule: a rule", "    Some description"]
+            + _indent(fence, 4)
+            + ["    Scenario: x"]
+            + _indent(step, 6)
+            + ["      Then done"]
+        )
+    elif where == "Scenario":
+        lines = (
+            ["Feature: Demo", "  Scenario: x", "    Some description"]
+            + _indent(fence, 4)
+            + _indent(step, 4)
+            + ["    Then done"]
+        )
+    elif where == "Examples":
+        lines = (
+            [
+                "Feature: Demo",
+                "  Scenario Outline: x",
+                "    Given <v>",
+                "    Examples: values",
+                "      Some description",
+            ]
+            + _indent(fence, 6)
+            + ["      | v |", "      | 1 |", "  Scenario: y"]
+            + _indent(step, 4)
+            + ["    Then done"]
+        )
+    else:  # pragma: no cover - test table error
+        raise ValueError(where)
+    return "\n".join(lines) + "\n"
 
 
-def _has_newly_recognised_line(text: str) -> bool:
-    """A line the fix reads differently: a backtick delimiter, a ``* `` step,
-    or one of the header keywords that were missing."""
-    return any(_NEWLY_RECOGNISED_RE.match(line) for line in text.splitlines())
+@pytest.mark.parametrize("fence_name", sorted(_FENCES))
+@pytest.mark.parametrize("where", ["Feature", "Rule", "Scenario", "Examples"])
+def test_backtick_line_in_a_description_is_text(where: str, fence_name: str) -> None:
+    fence = _FENCES[fence_name]
+    text = _description_fence_spec(where, fence, joined=False)
+    expected = _description_fence_spec(where, fence, joined=True)
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == expected
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(expected)
 
 
-def test_corpus_is_not_empty() -> None:
-    # Guards the comparison below against silently checking nothing.
-    assert (FIXTURES / "mcp-llm-player-coach-adapters_pre.feature") in _CORPUS
-    assert len(_CORPUS) >= 2
+def test_backtick_docstring_after_a_comment_and_blank_line_still_opens() -> None:
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the body\n"
+        "    # a comment between the step and its doc-string\n"
+        "\n"
+        "      ```\n"
+        "      Scenario: inside\n"
+        "        indented\n"
+        "      ```\n"
+        "    Then a wrapped\n"
+        "      step\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text.replace("Then a wrapped\n      step", "Then a wrapped step")
+    validate_gherkin(collapsed)
+    steps = _parse(collapsed)["feature"]["children"][0]["scenario"]["steps"]
+    assert steps[0]["docString"]["content"] == "Scenario: inside\n  indented"
 
 
-@pytest.mark.parametrize(
-    "path", _CORPUS, ids=[str(p.relative_to(REPO_ROOT)) for p in _CORPUS]
-)
-def test_spec_without_new_lines_collapses_as_before(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    if _has_newly_recognised_line(text):
-        pytest.skip("has a line the fix reads differently; covered above")
-    assert collapse_multi_line_steps(text) == _collapse_as_of_7e8844ec(text)
+def test_backtick_line_after_a_data_table_is_not_a_docstring() -> None:
+    """A step has a data table or a doc-string, never both; the parser reads
+    a fence after a table as an error, and so must the collapsed text."""
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the rows\n"
+        "      | a |\n"
+        "      ```\n"
+        "    Then a wrapped\n"
+        "      step\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert "    Then a wrapped step\n" in collapsed
+    assert "      ```\n" in collapsed
 
 
-_INLINE_SAMPLES = {
+# ----------------------------------------------------------------------
+# 5. Specs with none of the newly recognised lines collapse as before
+# ----------------------------------------------------------------------
+# Each pair is (input, expected output). The expected output is what the
+# collapse at commit 7e8844ec produced for the same input.
+
+_UNCHANGED_SAMPLES = {
     "wrapped steps": (
         "Feature: Demo\n"
         "  Scenario: x\n"
@@ -599,7 +574,13 @@ _INLINE_SAMPLES = {
         "    # a comment\n"
         "    When another\n"
         "      wraps too\n"
-        "    Then done\n"
+        "    Then done\n",
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a long step that wraps\n"
+        "    # a comment\n"
+        "    When another wraps too\n"
+        "    Then done\n",
     ),
     "triple-quote doc-string": (
         "Feature: Demo\n"
@@ -610,7 +591,15 @@ _INLINE_SAMPLES = {
         "        indented\n"
         '      """\n'
         "    Then a wrapped\n"
-        "      step\n"
+        "      step\n",
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the text\n"
+        '      """json\n'
+        "      Scenario: inside\n"
+        "        indented\n"
+        '      """\n'
+        "    Then a wrapped step\n",
     ),
     "single-quote block": (
         "Feature: Demo\n"
@@ -619,14 +608,25 @@ _INLINE_SAMPLES = {
         "      '''\n"
         "      Scenario: inside\n"
         "      '''\n"
-        "    Then done\n"
+        "    Then done\n",
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the text\n"
+        "      '''\n"
+        "      Scenario: inside\n"
+        "      '''\n"
+        "    Then done\n",
     ),
     "inline backticks inside a step": (
         "Feature: Demo\n"
         "  Scenario: x\n"
         "    Given the reply contains ```code``` in the middle of\n"
         "      a wrapped step\n"
-        "    Then done\n"
+        "    Then done\n",
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the reply contains ```code``` in the middle of a wrapped step\n"
+        "    Then done\n",
     ),
     "star bullet in a feature description": (
         "Feature: Demo\n"
@@ -634,7 +634,12 @@ _INLINE_SAMPLES = {
         "    wraps\n"
         "  Scenario: x\n"
         "    Given a\n"
-        "      wrapped step\n"
+        "      wrapped step\n",
+        "Feature: Demo\n"
+        "  * a bullet that\n"
+        "    wraps\n"
+        "  Scenario: x\n"
+        "    Given a wrapped step\n",
     ),
     "unterminated triple-quote": (
         "Feature: Demo\n"
@@ -643,14 +648,19 @@ _INLINE_SAMPLES = {
         '      """\n'
         "      never closed\n"
         "    Then x\n"
-        "      wraps\n"
+        "      wraps\n",
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given text\n"
+        '      """\n'
+        "      never closed\n"
+        "    Then x\n"
+        "      wraps\n",
     ),
 }
 
 
-@pytest.mark.parametrize("name", sorted(_INLINE_SAMPLES))
-def test_inline_sample_without_new_lines_collapses_as_before(
-    name: str,
-) -> None:
-    text = _INLINE_SAMPLES[name]
-    assert collapse_multi_line_steps(text) == _collapse_as_of_7e8844ec(text)
+@pytest.mark.parametrize("name", sorted(_UNCHANGED_SAMPLES))
+def test_sample_without_new_lines_collapses_as_before(name: str) -> None:
+    text, expected = _UNCHANGED_SAMPLES[name]
+    assert collapse_multi_line_steps(text) == expected

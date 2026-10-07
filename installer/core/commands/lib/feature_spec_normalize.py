@@ -80,7 +80,8 @@ _TABLE_ROW_RE = re.compile(r"^\s*\|")
 # is kept verbatim: never joined onto a step and never read as a keyword,
 # comment, tag or table row. Three single quotes are NOT a Gherkin delimiter
 # (gherkin-official reads such a line as ordinary text); they have always been
-# honoured here, so that is left unchanged.
+# honoured here, so that is left unchanged. A backtick line opens a doc-string
+# only straight after a step, as in the parser; in a description it is text.
 _DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```|''')")
 
 
@@ -122,6 +123,13 @@ def collapse_multi_line_steps(text: str) -> str:
     # step; False in Feature, Rule and Examples descriptions.
     in_step_section = False
 
+    # True straight after a step line or its continuation (blank lines and
+    # comments keep it). The parser opens a doc-string only there; anywhere
+    # else a delimiter line is ordinary description text. Applied to the
+    # backtick delimiter only, so the older handling of the quote delimiters
+    # is unchanged.
+    after_step = False
+
     for line in lines:
         body = line.rstrip("\r\n")
 
@@ -136,12 +144,16 @@ def collapse_multi_line_steps(text: str) -> str:
             continue
 
         m_doc = _DOCSTRING_DELIMITER_RE.match(body)
-        if m_doc:
+        if m_doc and (after_step or m_doc.group(1) != "```"):
             result.append(line)
             in_docstring = True
             docstring_delim = m_doc.group(1)
             pending_idx = -1
+            after_step = False
             continue
+
+        if body.strip() and not _COMMENT_RE.match(body):
+            after_step = False
 
         # --- Empty line ------------------------------------------------
         if not body.strip():
@@ -180,6 +192,7 @@ def collapse_multi_line_steps(text: str) -> str:
         if not m_step and in_step_section:
             m_step = _STAR_STEP_RE.match(body)
         if m_step:
+            after_step = True
             result.append(line)
             pending_idx = len(result) - 1
             pending_indent = len(m_step.group(1))
@@ -192,6 +205,7 @@ def collapse_multi_line_steps(text: str) -> str:
             prior_body = prior.rstrip("\r\n")
             line_ending = prior[len(prior_body):]
             result[pending_idx] = f"{prior_body} {cont}{line_ending}"
+            after_step = True
             continue
 
         # --- Anything else: feature description, etc. -----------------
