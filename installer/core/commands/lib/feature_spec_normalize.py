@@ -56,10 +56,14 @@ _STEP_KEYWORD_RE = re.compile(r"^(\s*)(Given|When|Then|And|But)\s+\S")
 # alone there.
 _STAR_STEP_RE = re.compile(r"^(\s*)\* +\S")
 
-# A step with a keyword and no text (``Given `` or ``* `` and nothing else).
-# The parser accepts it, and it may carry a doc-string. It is recognised only
-# when a doc-string follows it; otherwise it is handled as it always was.
-_EMPTY_STEP_RE = re.compile(r"^\s*(Given|When|Then|And|But|\*) \s*$")
+# The two patterns above decide which lines are joined, and are kept as they
+# always were. Whether a line is a step that can carry a doc-string is decided
+# the way gherkin-official's token matcher decides it: the line, with leading
+# whitespace removed, starts with one of the English step keywords INCLUDING
+# its trailing space; the rest may be anything, empty included. These are the
+# step keywords in the parser's own English keyword list (a unit test checks
+# they still match it).
+_PARSER_STEP_KEYWORDS = ("Given ", "When ", "Then ", "And ", "But ", "* ")
 
 # A line that opens a doc-string for the parser (three single quotes are not
 # a Gherkin delimiter, so they are not included here).
@@ -102,6 +106,12 @@ class FeatureSpecGherkinError(Exception):
 def _line_indent(line: str) -> int:
     """Return the count of leading whitespace characters."""
     return len(line) - len(line.lstrip())
+
+
+def _is_parser_step(body: str) -> bool:
+    """Whether the gherkin parser reads ``body`` as a step line (in a place
+    where steps are allowed)."""
+    return body.lstrip().startswith(_PARSER_STEP_KEYWORDS)
 
 
 def _docstring_follows(lines: List[str]) -> List[bool]:
@@ -153,6 +163,11 @@ def collapse_multi_line_steps(text: str) -> str:
     # text. Applied to the backtick delimiter only, so the older handling of
     # the quote delimiters is unchanged.
     after_step = False
+
+    # Whether the step that continuations are currently joined onto is a
+    # parser step in a Background or scenario body (so that a doc-string may
+    # follow it and its continuations).
+    pending_is_step = False
 
     # For each line: does the next line that counts for the parser (skipping
     # blank lines and comments) open a doc-string?
@@ -215,23 +230,25 @@ def collapse_multi_line_steps(text: str) -> str:
             in_step_section = m_struct.group(1) in _STEP_SECTION_KEYWORDS
             continue
 
-        # --- Empty step (keyword, no text) carrying a doc-string ---------
-        if (
-            in_step_section
-            and docstring_follows[index]
-            and _EMPTY_STEP_RE.match(body)
-        ):
+        # --- Step keyword (Given/When/Then/And/But, or * in a step body) -
+        m_step = _STEP_KEYWORD_RE.match(body)
+        if not m_step and in_step_section:
+            m_step = _STAR_STEP_RE.match(body)
+        is_parser_step = in_step_section and _is_parser_step(body)
+
+        # --- A parser step the joining patterns miss, carrying a doc-string
+        # (for example ``Given `` with no text, or ``* `` then a tab). It is
+        # kept as its own line; without a doc-string after it, it is handled
+        # as it always was.
+        if not m_step and is_parser_step and docstring_follows[index]:
             result.append(line)
             pending_idx = -1
             after_step = True
             continue
 
-        # --- Step keyword (Given/When/Then/And/But, or * in a step body) -
-        m_step = _STEP_KEYWORD_RE.match(body)
-        if not m_step and in_step_section:
-            m_step = _STAR_STEP_RE.match(body)
         if m_step:
-            after_step = in_step_section
+            pending_is_step = is_parser_step
+            after_step = pending_is_step
             result.append(line)
             pending_idx = len(result) - 1
             pending_indent = len(m_step.group(1))
@@ -244,7 +261,7 @@ def collapse_multi_line_steps(text: str) -> str:
             prior_body = prior.rstrip("\r\n")
             line_ending = prior[len(prior_body):]
             result[pending_idx] = f"{prior_body} {cont}{line_ending}"
-            after_step = in_step_section
+            after_step = pending_is_step
             continue
 
         # --- Anything else: feature description, etc. -----------------
