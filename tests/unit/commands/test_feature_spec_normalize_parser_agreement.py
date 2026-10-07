@@ -544,7 +544,11 @@ def test_backtick_docstring_after_a_comment_and_blank_line_still_opens() -> None
 
 def test_backtick_line_after_a_data_table_is_not_a_docstring() -> None:
     """A step has a data table or a doc-string, never both; the parser reads
-    a fence after a table as an error, and so must the collapsed text."""
+    a fence after a table as an error, and so must the collapsed text. The
+    collapse still joins the wrapped step after it, so the only error left is
+    the fence itself."""
+    from gherkin.errors import CompositeParserException
+
     text = (
         "Feature: Demo\n"
         "  Scenario: x\n"
@@ -555,8 +559,24 @@ def test_backtick_line_after_a_data_table_is_not_a_docstring() -> None:
         "      step\n"
     )
     collapsed = collapse_multi_line_steps(text)
-    assert "    Then a wrapped step\n" in collapsed
-    assert "      ```\n" in collapsed
+    assert collapsed == (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the rows\n"
+        "      | a |\n"
+        "      ```\n"
+        "    Then a wrapped step\n"
+    )
+
+    def error_lines(spec: str) -> List[int]:
+        with pytest.raises(CompositeParserException) as raised:
+            _parse(spec)
+        return [error.location["line"] for error in raised.value.errors]
+
+    # The original is refused at the fence (line 5) and at the wrapped
+    # continuation (line 7); the collapsed text only at the fence.
+    assert error_lines(text) == [5, 7]
+    assert error_lines(collapsed) == [5]
 
 
 # ----------------------------------------------------------------------
