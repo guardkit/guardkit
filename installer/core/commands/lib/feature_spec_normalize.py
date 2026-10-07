@@ -65,10 +65,6 @@ _STAR_STEP_RE = re.compile(r"^(\s*)\* +\S")
 # they still match it).
 _PARSER_STEP_KEYWORDS = ("Given ", "When ", "Then ", "And ", "But ", "* ")
 
-# A line that opens a doc-string for the parser (three single quotes are not
-# a Gherkin delimiter, so they are not included here).
-_PARSER_DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```)")
-
 # Structural keywords end any step block. This is the full English set from
 # gherkin-official's own keyword list: feature (Feature, Business Need,
 # Ability), rule, background, scenario (Scenario, Example), scenario outline
@@ -93,9 +89,10 @@ _TABLE_ROW_RE = re.compile(r"^\s*\|")
 # is kept verbatim: never joined onto a step and never read as a keyword,
 # comment, tag or table row. Three single quotes are NOT a Gherkin delimiter
 # (gherkin-official reads such a line as ordinary text); they have always been
-# honoured here, so that is left unchanged. A backtick line opens a doc-string
-# only straight after a step in a Background or scenario body, as in the
-# parser; in a description it is text, even after a line that looks like a step.
+# honoured after a step here, so that is left unchanged. A delimiter line opens
+# a doc-string only straight after a step in a Background or scenario body, as
+# in the parser; in a description it is text, even after a line that looks like
+# a step.
 _DOCSTRING_DELIMITER_RE = re.compile(r"^\s*(\"\"\"|```|''')")
 
 
@@ -114,17 +111,17 @@ def _is_parser_step(body: str) -> bool:
     return body.lstrip().startswith(_PARSER_STEP_KEYWORDS)
 
 
-def _docstring_follows(lines: List[str]) -> List[bool]:
-    """For each line, whether the next line after it that is not blank and
-    not a comment opens a doc-string (three double quotes or backticks)."""
-    follows = [False] * len(lines)
-    next_opens = False
-    for index in range(len(lines) - 1, -1, -1):
-        follows[index] = next_opens
-        body = lines[index].rstrip("\r\n")
-        if body.strip() and not _COMMENT_RE.match(body):
-            next_opens = bool(_PARSER_DOCSTRING_DELIMITER_RE.match(body))
-    return follows
+def _split_lines(text: str) -> List[str]:
+    """Split ``text`` into lines the way the gherkin parser does: on ``\n``
+    only, keeping each line's ending. A ``\r`` before the ``\n`` stays with
+    the line (the parser ignores it too). Unlike ``str.splitlines`` this does
+    not break on a lone carriage return, form feed, U+2028 or similar
+    characters, which the parser reads as part of the line."""
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
 
 
 def collapse_multi_line_steps(text: str) -> str:
@@ -141,7 +138,7 @@ def collapse_multi_line_steps(text: str) -> str:
         step wrapped onto a single line. Doc-strings, table rows, comments,
         tags, and structural keywords are preserved verbatim.
     """
-    lines: List[str] = text.splitlines(keepends=True)
+    lines: List[str] = _split_lines(text)
     result: List[str] = []
 
     in_docstring = False
@@ -160,8 +157,7 @@ def collapse_multi_line_steps(text: str) -> str:
     # scenario body (blank lines and comments keep it). The parser opens a
     # doc-string only there; anywhere else, including after step-looking text
     # in a Feature, Rule or Examples description, a delimiter line is ordinary
-    # text. Applied to the backtick delimiter only, so the older handling of
-    # the quote delimiters is unchanged.
+    # text. This applies to every delimiter.
     after_step = False
 
     # Whether the step that continuations are currently joined onto is a
@@ -169,11 +165,7 @@ def collapse_multi_line_steps(text: str) -> str:
     # follow it and its continuations).
     pending_is_step = False
 
-    # For each line: does the next line that counts for the parser (skipping
-    # blank lines and comments) open a doc-string?
-    docstring_follows = _docstring_follows(lines)
-
-    for index, line in enumerate(lines):
+    for line in lines:
         body = line.rstrip("\r\n")
 
         # --- Doc-string handling ---------------------------------------
@@ -187,7 +179,7 @@ def collapse_multi_line_steps(text: str) -> str:
             continue
 
         m_doc = _DOCSTRING_DELIMITER_RE.match(body)
-        if m_doc and (after_step or m_doc.group(1) != "```"):
+        if m_doc and after_step:
             result.append(line)
             in_docstring = True
             docstring_delim = m_doc.group(1)
@@ -236,11 +228,11 @@ def collapse_multi_line_steps(text: str) -> str:
             m_step = _STAR_STEP_RE.match(body)
         is_parser_step = in_step_section and _is_parser_step(body)
 
-        # --- A parser step the joining patterns miss, carrying a doc-string
-        # (for example ``Given `` with no text, or ``* `` then a tab). It is
-        # kept as its own line; without a doc-string after it, it is handled
-        # as it always was.
-        if not m_step and is_parser_step and docstring_follows[index]:
+        # --- A parser step the joining patterns miss (for example ``Given ``
+        # or ``* `` with no text, or ``* `` then a tab and text). The parser
+        # reads it as a step of its own, so it is never joined onto the step
+        # above; it is kept as its own line and may carry a doc-string.
+        if not m_step and is_parser_step:
             result.append(line)
             pending_idx = -1
             after_step = True

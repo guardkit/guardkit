@@ -712,25 +712,183 @@ def test_deeper_empty_step_with_a_docstring_is_not_joined() -> None:
     assert _parse(collapsed) == _parse(text)
 
 
-def test_empty_step_without_a_docstring_is_handled_as_before() -> None:
-    """With no doc-string after it, an empty step keeps the older handling:
-    joined when indented under a step, left alone otherwise."""
+def test_empty_step_without_a_docstring_is_its_own_step() -> None:
+    """An empty step is a step of its own to the parser, so it is never
+    joined onto the step above, even when indented under it. (Before, it
+    was joined when indented under a step.)"""
     text = (
         "Feature: Demo\n"
         "  Scenario: x\n"
         "    Given a first step\n"
         "      And \n"
+        "      * \n"
         "    Then \n"
         "    And a wrapped\n"
         "      step\n"
     )
-    assert collapse_multi_line_steps(text) == (
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
         "Feature: Demo\n"
         "  Scenario: x\n"
-        "    Given a first step And\n"
+        "    Given a first step\n"
+        "      And \n"
+        "      * \n"
         "    Then \n"
         "    And a wrapped step\n"
     )
+    steps = _parse(collapsed)["feature"]["children"][0]["scenario"]["steps"]
+    assert [(s["keyword"], s["text"]) for s in steps] == [
+        ("Given ", "a first step"),
+        ("And ", ""),
+        ("* ", ""),
+        ("Then ", ""),
+        ("And ", "a wrapped step"),
+    ]
+
+
+@pytest.mark.parametrize("line", ["* \tbody", "*  \tbody", "* \u00a0body", "And "])
+def test_parser_step_under_a_step_is_not_joined(line: str) -> None:
+    """A line the parser reads as a step (here ones the joining patterns do
+    not recognise) is never joined onto the step above it."""
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a first step\n"
+        f"      {line}\n"
+        "    Then done\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(text)
+    steps = _parse(collapsed)["feature"]["children"][0]["scenario"]["steps"]
+    assert len(steps) == 3
+
+
+# ----------------------------------------------------------------------
+# A stray quote delimiter in a description is text
+# ----------------------------------------------------------------------
+# The parser opens a doc-string only after a step, whatever the delimiter. A
+# stray quote line in a description used to start doc-string mode in the
+# collapse; a later real doc-string's opening line then ended it, and the real
+# content was read as structure and joined.
+
+
+@pytest.mark.parametrize("where", ["Feature", "Scenario"])
+@pytest.mark.parametrize(
+    "stray, delimiter",
+    [('"""', '"""'), ('"""json', '"""'), ("'''", "```"), ("```", '"""')],
+)
+def test_stray_delimiter_in_a_description_does_not_disturb_a_real_docstring(
+    where: str, stray: str, delimiter: str
+) -> None:
+    if where == "Feature":
+        head = ["Feature: Demo", "  Some description", f"  {stray}", "  Scenario: x"]
+    else:
+        head = ["Feature: Demo", "  Scenario: x", "    Some description", f"    {stray}"]
+    # A stray three-single-quote line ends at the next such line, so the real
+    # doc-string carries one for that case.
+    marker = ["      '''"] if stray == "'''" else []
+    lines = head + [
+        "    Given the body",
+        f"      {delimiter}",
+        *marker,
+        "      Given payload",
+        "        wrapped",
+        "      Scenario: inside",
+        f"      {delimiter}",
+        "    Then done",
+    ]
+    text = "\n".join(lines) + "\n"
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(text)
+    scenario = _parse(collapsed)["feature"]["children"][0]["scenario"]
+    content = "Given payload\n  wrapped\nScenario: inside"
+    if marker:
+        content = "'''\n" + content
+    assert scenario["steps"][0]["docString"]["content"] == content
+
+
+# ----------------------------------------------------------------------
+# Lines are split on "\n" only, as the parser splits them
+# ----------------------------------------------------------------------
+
+_INLINE_BREAKS = {
+    "lone carriage return": "\r",
+    "form feed": "\x0c",
+    "line separator U+2028": "\u2028",
+    "next line U+0085": "\x85",
+    "file separator U+001C": "\x1c",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_INLINE_BREAKS))
+def test_unicode_line_break_inside_a_docstring_does_not_close_it(name: str) -> None:
+    sep = _INLINE_BREAKS[name]
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given the body\n"
+        "      ```\n"
+        f"      text{sep}```\n"
+        "      Given payload\n"
+        "        wrapped\n"
+        "      ```\n"
+        "    Then done\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(text)
+
+
+@pytest.mark.parametrize("name", sorted(_INLINE_BREAKS))
+def test_unicode_line_break_inside_a_step_keeps_the_step_whole(name: str) -> None:
+    sep = _INLINE_BREAKS[name]
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        f"    Given a{sep}b step that\n"
+        "      wraps\n"
+        "    Then done\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        f"    Given a{sep}b step that wraps\n"
+        "    Then done\n"
+    )
+    validate_gherkin(collapsed)
+
+
+def test_crlf_and_missing_final_newline_are_kept() -> None:
+    text = (
+        "Feature: Demo\r\n"
+        "  Scenario: x\r\n"
+        "    Given a step that\r\n"
+        "      wraps\r\n"
+        "    Then the body\r\n"
+        '      """\r\n'
+        "      Given payload\r\n"
+        "        wrapped\r\n"
+        '      """'
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
+        "Feature: Demo\r\n"
+        "  Scenario: x\r\n"
+        "    Given a step that wraps\r\n"
+        "    Then the body\r\n"
+        '      """\r\n'
+        "      Given payload\r\n"
+        "        wrapped\r\n"
+        '      """'
+    )
+    validate_gherkin(collapsed)
+    assert collapse_multi_line_steps("") == ""
 
 
 def test_empty_step_looking_line_in_a_description_does_not_open_a_docstring() -> None:
