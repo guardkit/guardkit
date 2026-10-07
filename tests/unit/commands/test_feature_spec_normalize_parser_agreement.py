@@ -205,6 +205,8 @@ def test_structural_keyword_list_matches_gherkin_official() -> None:
         for keyword in english[kind]
     }
     assert step_keywords == {"Given ", "When ", "Then ", "And ", "But ", "* "}
+    # The keywords the collapse uses to decide doc-string eligibility.
+    assert set(mod._PARSER_STEP_KEYWORDS) == step_keywords
 
 
 # Each spec has an indented header straight under a step, at a deeper indent
@@ -495,6 +497,13 @@ def _description_fence_spec(
             + _indent(step, 4)
             + ["    Then done"]
         )
+    elif where == "Background":
+        lines = (
+            ["Feature: Demo", "  Background:", "    " + description]
+            + _indent(fence, 4)
+            + _indent(step, 4)
+            + ["    Then done"]
+        )
     elif where == "Examples":
         lines = (
             [
@@ -546,6 +555,54 @@ def test_backtick_line_after_step_looking_description_is_text(
     assert collapsed == expected
     validate_gherkin(collapsed)
     assert _parse(collapsed) == _parse(expected)
+
+
+# In a Scenario or Background description, a keyword followed by a tab is
+# not a step to the parser, which needs the keyword's trailing space.
+
+
+@pytest.mark.parametrize("fence_name", sorted(_FENCES))
+@pytest.mark.parametrize("where", ["Scenario", "Background"])
+@pytest.mark.parametrize(
+    "description", ["Given\tcontext", "When\t\tcontext", "*\tcontext"]
+)
+def test_backtick_line_after_keyword_and_tab_description_is_text(
+    where: str, fence_name: str, description: str
+) -> None:
+    fence = _FENCES[fence_name]
+    text = _description_fence_spec(where, fence, False, description)
+    expected = _description_fence_spec(where, fence, True, description)
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == expected
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(expected)
+    first = _parse(expected)["feature"]["children"][0]
+    section = first.get("scenario") or first["background"]
+    assert description in section["description"]
+    assert [s["text"] for s in section["steps"]] == ["a wrapped step", "done"]
+
+
+def test_backtick_line_after_wrapped_keyword_and_tab_description_is_text() -> None:
+    """The joining patterns still join a wrapped line onto ``Given<tab>...``
+    as they always did; the fence after it stays text."""
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given\tcontext\n"
+        "      that wraps\n"
+        "    ```\n"
+        "    Given a wrapped\n"
+        "      step\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given\tcontext that wraps\n"
+        "    ```\n"
+        "    Given a wrapped step\n"
+    )
+    validate_gherkin(collapsed)
 
 
 def test_backtick_line_after_wrapped_step_looking_description_is_text() -> None:
@@ -609,6 +666,33 @@ def test_docstring_after_an_empty_step_is_kept(
     assert steps[1]["docString"]["content"] == (
         "Given payload\n  wrapped\nScenario: inside"
     )
+
+
+@pytest.mark.parametrize("delimiter_name", sorted(_DELIMITERS))
+@pytest.mark.parametrize("keyword", ["* \t", "*  \t", "Given \t", "And  \t"])
+def test_docstring_after_a_step_with_a_tab_before_its_text_is_kept(
+    keyword: str, delimiter_name: str
+) -> None:
+    """``* `` then a tab then text is a step to the parser (the keyword is
+    ``* `` and the text is trimmed), and may carry a doc-string."""
+    delimiter = _DELIMITERS[delimiter_name]
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        f"    {keyword}body\n"
+        f"      {delimiter}\n"
+        "      Given payload\n"
+        "        wrapped\n"
+        f"      {delimiter}\n"
+        "    Then done\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(text)
+    steps = _parse(collapsed)["feature"]["children"][0]["scenario"]["steps"]
+    assert steps[0]["text"] == "body"
+    assert steps[0]["docString"]["content"] == "Given payload\n  wrapped"
 
 
 def test_deeper_empty_step_with_a_docstring_is_not_joined() -> None:
