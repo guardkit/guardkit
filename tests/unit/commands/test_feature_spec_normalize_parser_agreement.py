@@ -461,7 +461,12 @@ def _indent(lines: List[str], spaces: int) -> List[str]:
     return [" " * spaces + line for line in lines]
 
 
-def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
+def _description_fence_spec(
+    where: str,
+    fence: List[str],
+    joined: bool,
+    description: str = "Some description",
+) -> str:
     step = (
         ["Given a wrapped step"]
         if joined
@@ -469,7 +474,7 @@ def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
     )
     if where == "Feature":
         lines = (
-            ["Feature: Demo", "  Some description"]
+            ["Feature: Demo", "  " + description]
             + _indent(fence, 2)
             + ["  Scenario: x"]
             + _indent(step, 4)
@@ -477,7 +482,7 @@ def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
         )
     elif where == "Rule":
         lines = (
-            ["Feature: Demo", "  Rule: a rule", "    Some description"]
+            ["Feature: Demo", "  Rule: a rule", "    " + description]
             + _indent(fence, 4)
             + ["    Scenario: x"]
             + _indent(step, 6)
@@ -485,7 +490,7 @@ def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
         )
     elif where == "Scenario":
         lines = (
-            ["Feature: Demo", "  Scenario: x", "    Some description"]
+            ["Feature: Demo", "  Scenario: x", "    " + description]
             + _indent(fence, 4)
             + _indent(step, 4)
             + ["    Then done"]
@@ -497,7 +502,7 @@ def _description_fence_spec(where: str, fence: List[str], joined: bool) -> str:
                 "  Scenario Outline: x",
                 "    Given <v>",
                 "    Examples: values",
-                "      Some description",
+                "      " + description,
             ]
             + _indent(fence, 6)
             + ["      | v |", "      | 1 |", "  Scenario: y"]
@@ -519,6 +524,149 @@ def test_backtick_line_in_a_description_is_text(where: str, fence_name: str) -> 
     assert collapsed == expected
     validate_gherkin(collapsed)
     assert _parse(collapsed) == _parse(expected)
+
+
+# A description line that looks like a step is still description text to
+# the parser in a Feature, Rule or Examples description (in a scenario it
+# would be a real step), so a fence after it is text too.
+
+
+@pytest.mark.parametrize("fence_name", sorted(_FENCES))
+@pytest.mark.parametrize("where", ["Feature", "Rule", "Examples"])
+@pytest.mark.parametrize(
+    "description", ["Given some context", "And then more", "But not this"]
+)
+def test_backtick_line_after_step_looking_description_is_text(
+    where: str, fence_name: str, description: str
+) -> None:
+    fence = _FENCES[fence_name]
+    text = _description_fence_spec(where, fence, False, description)
+    expected = _description_fence_spec(where, fence, True, description)
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == expected
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(expected)
+
+
+def test_backtick_line_after_wrapped_step_looking_description_is_text() -> None:
+    """A wrapped step-looking description line is joined as it always was,
+    and the fence after it is still text."""
+    text = (
+        "Feature: Demo\n"
+        "  Given some context\n"
+        "    that wraps\n"
+        "  ```\n"
+        "  Scenario: x\n"
+        "    Given a wrapped\n"
+        "      step\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
+        "Feature: Demo\n"
+        "  Given some context that wraps\n"
+        "  ```\n"
+        "  Scenario: x\n"
+        "    Given a wrapped step\n"
+    )
+    validate_gherkin(collapsed)
+
+
+# ----------------------------------------------------------------------
+# A doc-string after an empty step (keyword, no text)
+# ----------------------------------------------------------------------
+# The parser accepts ``Given `` or ``* `` with nothing after it as a step, and
+# that step may carry a doc-string.
+
+_DELIMITERS = {"backticks": "```", "double quotes": '"""'}
+
+
+@pytest.mark.parametrize("delimiter_name", sorted(_DELIMITERS))
+@pytest.mark.parametrize("keyword", ["Given ", "When  ", "And ", "* "])
+@pytest.mark.parametrize("between", ["", "    # a comment\n\n"])
+def test_docstring_after_an_empty_step_is_kept(
+    keyword: str, delimiter_name: str, between: str
+) -> None:
+    delimiter = _DELIMITERS[delimiter_name]
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a first step\n"
+        f"    {keyword}\n"
+        f"{between}"
+        f"      {delimiter}\n"
+        "      Given payload\n"
+        "        wrapped\n"
+        "      Scenario: inside\n"
+        f"      {delimiter}\n"
+        "    Then done\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    validate_gherkin(collapsed)
+    assert _parse(collapsed) == _parse(text)
+    steps = _parse(collapsed)["feature"]["children"][0]["scenario"]["steps"]
+    assert steps[1]["text"] == ""
+    assert steps[1]["docString"]["content"] == (
+        "Given payload\n  wrapped\nScenario: inside"
+    )
+
+
+def test_deeper_empty_step_with_a_docstring_is_not_joined() -> None:
+    """An empty step indented under another step is its own step to the
+    parser when a doc-string follows, so it is not joined."""
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a first step\n"
+        "      And \n"
+        "      ```\n"
+        "      payload\n"
+        "      ```\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == text
+    assert _parse(collapsed) == _parse(text)
+
+
+def test_empty_step_without_a_docstring_is_handled_as_before() -> None:
+    """With no doc-string after it, an empty step keeps the older handling:
+    joined when indented under a step, left alone otherwise."""
+    text = (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a first step\n"
+        "      And \n"
+        "    Then \n"
+        "    And a wrapped\n"
+        "      step\n"
+    )
+    assert collapse_multi_line_steps(text) == (
+        "Feature: Demo\n"
+        "  Scenario: x\n"
+        "    Given a first step And\n"
+        "    Then \n"
+        "    And a wrapped step\n"
+    )
+
+
+def test_empty_step_looking_line_in_a_description_does_not_open_a_docstring() -> None:
+    text = (
+        "Feature: Demo\n"
+        "  Given \n"
+        "  ```\n"
+        "  Scenario: x\n"
+        "    Given a wrapped\n"
+        "      step\n"
+    )
+    collapsed = collapse_multi_line_steps(text)
+    assert collapsed == (
+        "Feature: Demo\n"
+        "  Given \n"
+        "  ```\n"
+        "  Scenario: x\n"
+        "    Given a wrapped step\n"
+    )
+    validate_gherkin(collapsed)
 
 
 def test_backtick_docstring_after_a_comment_and_blank_line_still_opens() -> None:
