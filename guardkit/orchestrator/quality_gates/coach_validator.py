@@ -65,6 +65,12 @@ from guardkit.orchestrator.coach_verification import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResult
+from guardkit.orchestrator.failing_test_feedback import (
+    FAILING_TESTS_SHOWN,
+    QG_FAILING_TESTS,
+    QG_FAILURE_SUMMARY,
+    describe_failing_tests,
+)
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
     StackTestProfile,
     classify_absent_for_stack,
@@ -11811,14 +11817,38 @@ class CoachValidator:
                     },
                 })
             else:
+                # Name the failing tests (8 October 2026, build FEAT-895D):
+                # "tests did not pass" alone left the Player guessing for
+                # three turns. The names and the one-line account are what
+                # the test phase itself reported, copied into quality_gates
+                # by the specialist-record merge; nothing is parsed here.
+                failing_tests = quality_gates.get(QG_FAILING_TESTS)
+                if not isinstance(failing_tests, list):
+                    failing_tests = []
+                failing_tests = [str(n) for n in failing_tests if n]
+                failure_summary = quality_gates.get(QG_FAILURE_SUMMARY)
+                if not isinstance(failure_summary, str):
+                    failure_summary = ""
+                named = describe_failing_tests(failing_tests, failure_summary)
+                description = "Tests did not pass during task-work execution"
+                if named:
+                    description = f"{description}. {named}"
+                details: Dict[str, Any] = {
+                    "failed_count": tests_failed_count,
+                    "total_count": tests_passed_count + tests_failed_count,
+                }
+                if failing_tests:
+                    details["failing_tests"] = failing_tests[
+                        :FAILING_TESTS_SHOWN
+                    ]
+                    details["failing_test_count"] = len(failing_tests)
+                if failure_summary:
+                    details["failure_summary"] = failure_summary
                 issues.append({
                     "severity": "must_fix",
                     "category": "test_failure",
-                    "description": "Tests did not pass during task-work execution",
-                    "details": {
-                        "failed_count": tests_failed_count,
-                        "total_count": tests_passed_count + tests_failed_count,
-                    },
+                    "description": description,
+                    "details": details,
                 })
 
         if gates.coverage_required and gates.coverage_met is None:

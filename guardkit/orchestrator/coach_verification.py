@@ -647,16 +647,30 @@ class CoachVerifier:
         """
         # TASK-FIX-SPECVIOL01: partition claims by provenance.
         #   * authored_claims — files the Player says it wrote
-        #     (files_created / files_modified / tests_written /
-        #     completion_promises[*].implementation_files). These must show
-        #     up in the would-be-staged set or something is wrong.
-        #   * run_claims — completion_promises[*].test_file names tests the
-        #     Player *ran*, not files it authored. An existing, tracked,
-        #     unmodified test file legitimately produces no staged change,
-        #     so auditing run-claims against the would-be-staged set
+        #     (files_created / files_modified / tests_written). These must
+        #     show up in the would-be-staged set or something is wrong.
+        #   * run_claims — files the Player NAMES without saying it wrote
+        #     them: completion_promises[*].test_file (tests it ran) and
+        #     completion_promises[*].implementation_files (the files it
+        #     cites as evidence that a criterion is met). An existing,
+        #     tracked, unmodified file legitimately produces no staged
+        #     change, so auditing these against the would-be-staged set
         #     misattributes protocol noise as Player dishonesty (the
         #     path-string-mismatch-is-not-dishonesty meta-class; FEAT-C332
         #     run-2 turn-1 false-red).
+        #
+        # implementation_files moved from authored to cited on 8 October
+        # 2026. A checklist entry cites the files that satisfy a criterion,
+        # and those are often files an earlier task wrote or files the
+        # Player only read: in build FEAT-895D the Player changed one file
+        # and cited four more it had not touched, and each produced a
+        # "claimed but git shows no change" warning on every turn, crowding
+        # the real failure out of its feedback. That record appeared in
+        # about half of all receipt folders. The top-level files_created /
+        # files_modified lists are the Player's claim of what it wrote, and
+        # they are still audited exactly as before. A cited file must still
+        # exist (_verify_completion_promises_files_exist), and a cited file
+        # that is missing, untracked or ignored is still reported below.
         authored_claims: set[str] = set()
         run_claims: set[str] = set()
         for key in ("files_created", "files_modified", "tests_written"):
@@ -668,7 +682,7 @@ class CoachVerifier:
                 continue
             for entry in promise.get("implementation_files") or []:
                 if entry:
-                    authored_claims.add(self._normalize_claimed_path(str(entry)))
+                    run_claims.add(self._normalize_claimed_path(str(entry)))
             test_file = promise.get("test_file")
             if test_file:
                 # Players routinely emit a comma-joined list in this
@@ -852,10 +866,12 @@ class CoachVerifier:
                 )
             elif classification == "tracked_unmodified":
                 if path in run_claims and path not in authored_claims:
-                    # TASK-FIX-SPECVIOL01: a run-claim (test_file) on an
-                    # existing tracked test file. No staged change is the
-                    # *expected* outcome of running a test — zero signal,
-                    # not a Player-honesty observation. Emit nothing.
+                    # TASK-FIX-SPECVIOL01: a file the Player named without
+                    # claiming to have written it (a test it ran, or a file
+                    # it cited as evidence for a criterion) on an existing
+                    # tracked file. No staged change is the *expected*
+                    # outcome — zero signal, not a Player-honesty
+                    # observation. Emit nothing.
                     continue
                 if self._differs_from_task_base(path):
                     # The file IS this task's work: it differs from where the
