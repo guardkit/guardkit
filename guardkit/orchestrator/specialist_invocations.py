@@ -33,6 +33,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
+from guardkit.orchestrator.baseline import failing_node_ids
+from guardkit.orchestrator.failing_test_feedback import (
+    FAILING_TESTS_BASIS_NEW,
+    FAILING_TESTS_BASIS_OBSERVED,
+    FAILING_TESTS_RECORDED,
+    PHASE_4_FAILING_TESTS,
+    PHASE_4_FAILING_TESTS_BASIS,
+    PHASE_4_FAILING_TESTS_TOTAL,
+)
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 
 if TYPE_CHECKING:
@@ -1626,6 +1635,20 @@ def _run_deterministic_phase_4(
     else:
         error = f"tests failed (deterministic Phase 4): {summary[:160]}"
 
+    # WHICH TESTS FAILED, for the Player's feedback (8 October 2026). With a
+    # comparison, the newly failing ones (the ones charged). Without one —
+    # nothing on record about the base, or a run of the task's own tests —
+    # every failing test the run reported, read by the same extraction the
+    # comparison itself uses (``baseline.failing_node_ids``), so no second
+    # parser exists. A stack whose output that extraction cannot read gives
+    # an empty list, and the feedback then says the names could not be read.
+    if comparison is not None:
+        failing_names = list(comparison.new_failures)
+        failing_basis = FAILING_TESTS_BASIS_NEW
+    else:
+        failing_names = failing_node_ids(result.raw_output)
+        failing_basis = FAILING_TESTS_BASIS_OBSERVED
+
     return {
         "status": "failed",
         "duration_seconds": duration,
@@ -1655,6 +1678,9 @@ def _run_deterministic_phase_4(
         "new_failing_tests": (
             list(comparison.new_failures) if comparison else []
         ),
+        PHASE_4_FAILING_TESTS: failing_names[:FAILING_TESTS_RECORDED],
+        PHASE_4_FAILING_TESTS_TOTAL: len(failing_names),
+        PHASE_4_FAILING_TESTS_BASIS: failing_basis,
         "stale_base_entries": (
             list(comparison.stale_base_entries) if comparison else []
         ),

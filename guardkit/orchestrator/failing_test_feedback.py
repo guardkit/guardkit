@@ -8,12 +8,17 @@ first three issues, all of them honesty warnings, so even that line was lost.
 The coder's ``must_fix`` list for the next turn was empty.
 
 This module is the small contract that carries the names through, shared by
-the three places that touch them, so none of them has its own copy:
+the places that touch them, so none of them has its own copy:
 
+* The deterministic test phase (``specialist_invocations``) records the
+  failing tests it saw in its phase-4 record: the newly failing ones when it
+  compared the run with the base, otherwise every failing one, read by the
+  same extraction the comparison uses. It records how many there were, and
+  which of the two lists it is (:data:`FAILING_TESTS_BASIS_NEW` or
+  :data:`FAILING_TESTS_BASIS_OBSERVED`).
 * ``AgentInvoker._inject_specialist_records_into_task_work_results`` copies
-  the names the test phase reported, and its one-line account of the failure,
-  into ``task_work_results.json`` under :data:`QG_FAILING_TESTS` and
-  :data:`QG_FAILURE_SUMMARY`.
+  the names, their total and basis, and the test phase's one-line account of
+  the failure, into ``task_work_results.json`` (the ``QG_*`` keys).
 * ``CoachValidator._feedback_from_gates`` puts them into the ``must_fix``
   test-failure issue, through :func:`describe_failing_tests`.
 * :func:`phase_4_ran_and_failed` is the one test, used by the merge, of
@@ -26,7 +31,8 @@ the three places that touch them, so none of them has its own copy:
   file's ``must_fix`` list with :func:`must_fix_items`.
 
 Tool-agnostic by design: nothing here parses test output. The names are
-whatever the test phase already reported, in its own words.
+whatever the test phase already reported, in its own words, and when it could
+read none the feedback says so.
 """
 
 from __future__ import annotations
@@ -35,7 +41,28 @@ from typing import List, Optional, Sequence
 
 # Keys in task_work_results.json's ``quality_gates`` block.
 QG_FAILING_TESTS = "failing_tests"
+QG_FAILING_TESTS_TOTAL = "failing_tests_total"
+QG_FAILING_TESTS_BASIS = "failing_tests_basis"
 QG_FAILURE_SUMMARY = "failure_summary"
+
+# Keys the test phase's own record (specialist_results.json, phase_4) carries
+# when its run failed: the failing tests it saw, how many in all, and which
+# ones they are (FAILING_TESTS_BASIS_*). The record uses the same key names.
+PHASE_4_FAILING_TESTS = QG_FAILING_TESTS
+PHASE_4_FAILING_TESTS_TOTAL = QG_FAILING_TESTS_TOTAL
+PHASE_4_FAILING_TESTS_BASIS = QG_FAILING_TESTS_BASIS
+
+# Which failing tests a record names.
+# * NEW: the run was compared with what was already failing before the build
+#   started, and these are the ones that were not (the ones charged).
+# * OBSERVED: no such comparison was made (nothing was on record about the
+#   base, or the run was of the task's own tests), so these are every failing
+#   test the run reported.
+FAILING_TESTS_BASIS_NEW = "new since the base"
+FAILING_TESTS_BASIS_OBSERVED = "observed"
+
+# How many names the test phase's record keeps; the total is always kept.
+FAILING_TESTS_RECORDED = 50
 
 # How many names the feedback shows; the full count is always said.
 FAILING_TESTS_SHOWN = 10
@@ -79,23 +106,43 @@ def phase_4_ran_and_failed(block: object) -> bool:
 def describe_failing_tests(
     failing_tests: Optional[Sequence[str]],
     failure_summary: Optional[str],
+    *,
+    total: Optional[int] = None,
+    basis: Optional[str] = None,
+    test_phase_failed: bool = False,
 ) -> str:
     """The words added to a test-failure issue, or ``""`` when there are none.
 
     Names the first :data:`FAILING_TESTS_SHOWN` failing tests and says how many
-    there are in all, then the test phase's own one-line account of the
-    failure. Either part is left out when the test phase did not report it.
+    there are in all (``total`` when the record kept fewer names than it saw),
+    then the test phase's own one-line account of the failure. With
+    ``basis`` :data:`FAILING_TESTS_BASIS_NEW` the tests are called newly
+    failing. When the test phase ran and failed but named no test
+    (``test_phase_failed`` with no names), it says so, rather than saying
+    nothing: the test tool's output was not one the factory reads names from.
     """
     names = [str(n) for n in (failing_tests or []) if n]
     parts: List[str] = []
     if names:
         shown = names[:FAILING_TESTS_SHOWN]
-        count = len(names)
+        count = max(len(names), total if isinstance(total, int) else 0)
         noun = "test" if count == 1 else "tests"
-        text = f"{count} failing {noun}: " + "; ".join(shown)
+        if basis == FAILING_TESTS_BASIS_NEW:
+            label = (
+                f"{count} newly failing {noun} (not failing before this "
+                f"build started)"
+            )
+        else:
+            label = f"{count} failing {noun}"
+        text = f"{label}: " + "; ".join(shown)
         if count > len(shown):
             text += f"; and {count - len(shown)} more"
         parts.append(text + ".")
+    elif test_phase_failed:
+        parts.append(
+            "The test run did not name its failing tests in a form the "
+            "factory can read, so none are listed here."
+        )
     summary = " ".join(str(failure_summary or "").split())
     if summary:
         parts.append(f"What the test run said: {summary[:FAILURE_SUMMARY_LIMIT]}")
