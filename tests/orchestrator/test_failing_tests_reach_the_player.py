@@ -39,6 +39,7 @@ from guardkit.orchestrator.coach_narrative_reconciler import DETERMINISTIC_SOURC
 from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_SHOWN,
+    FAILING_TESTS_TEXT_BUDGET,
     MUST_FIX_ITEM_LIMIT,
     MUST_FIX_MARKER,
     QG_FAILING_TESTS,
@@ -149,8 +150,8 @@ class TestTheWording:
     def test_one_name_and_the_failure_line(self) -> None:
         text = describe_failing_tests([FAILING], "AssertionError: a != b")
         assert text == (
-            f"1 failing test: {FAILING}. "
-            "What the test run said: AssertionError: a != b"
+            "What the test run said: AssertionError: a != b. "
+            f"1 failing test: {FAILING}."
         )
 
     def test_names_are_bounded_and_the_full_count_is_said(self) -> None:
@@ -273,8 +274,12 @@ class TestTheNamesReachTheGate:
         issue = next(i for i in feedback.issues if i["category"] == "test_failure")
         assert issue["severity"] == "must_fix"
         assert issue["description"].startswith(
-            "Tests did not pass during task-work execution. 1 newly failing "
-            "test (not failing before this build started): "
+            "Tests did not pass during task-work execution. "
+            "What the test run said: Error detail: "
+        )
+        assert issue["description"].endswith(
+            "1 newly failing test (not failing before this build started): "
+            f"{FAILING}."
         )
         assert FAILING in issue["description"]
         assert "AssertionError" in issue["description"]
@@ -799,8 +804,9 @@ def test_with_no_baseline_every_failing_test_is_named(tmp_path: Path) -> None:
 
     _, _, must_fix = _next_turn_must_fix(worktree, results_path)
     assert must_fix[0].startswith(
-        "Tests did not pass during task-work execution. 2 failing tests: "
+        "Tests did not pass during task-work execution. What the test run said: "
     )
+    assert "2 failing tests: " in must_fix[0]
     assert _NEW in must_fix[0] and _INHERITED in must_fix[0]
 
 
@@ -850,3 +856,58 @@ def test_a_tool_whose_output_names_no_test_is_said_so(tmp_path: Path) -> None:
 
     _, _, must_fix = _next_turn_must_fix(worktree, results_path)
     assert "did not name its failing tests" in must_fix[0]
+
+
+def test_long_test_names_never_push_out_the_failure_line(tmp_path: Path) -> None:
+    """External review R3. Ten 220-character test IDs used to come before
+    the failure line, and the 2,000-character read-back cut the item in the
+    middle of a name, dropping the failure line altogether. Through the real
+    gate feedback, feedback text and read-back: the failure line is kept,
+    every listed name is whole, and the ones left out are counted."""
+    stem = "tests/test_long.py::TestAVeryLongClassName::test_"
+    names = [
+        f"{stem}{i:02d}_" + "x" * (220 - len(stem) - 3) for i in range(10)
+    ]
+    assert all(len(n) == 220 for n in names)
+    validator = CoachValidator(str(tmp_path), task_id=TASK_ID)
+    results = {
+        "task_id": TASK_ID,
+        "quality_gates": {
+            "tests_passing": False, "tests_passed": 3, "tests_failed": 10,
+            "coverage_met": True, "all_passed": False,
+            "failing_tests": names,
+            "failing_tests_total": 10,
+            "failing_tests_basis": "observed",
+            "failure_summary": "AssertionError: expected 200, got 500",
+            "test_phase_ran_and_failed": True,
+        },
+    }
+    gates = validator.verify_quality_gates(
+        results, profile=get_profile(TaskType.FEATURE)
+    )
+    report = validator._feedback_from_gates(
+        TASK_ID, 1, gates, results, task_type="feature"
+    ).to_dict()
+    text = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)._extract_feedback(
+        report
+    )
+    written = json.loads(
+        AgentInvoker(worktree_path=tmp_path)
+        ._write_coach_feedback(TASK_ID, 2, text)
+        .read_text()
+    )
+    item = written["must_fix"][0]["issue"]
+
+    assert len(item) <= MUST_FIX_ITEM_LIMIT
+    assert item.startswith(
+        "Tests did not pass during task-work execution. What the test run "
+        "said: AssertionError: expected 200, got 500. 10 failing tests: "
+    )
+    listed_part = item.split("10 failing tests: ", 1)[1]
+    assert listed_part.endswith(" more.")
+    listed, _, omitted = listed_part.rpartition("; and ")
+    listed_names = listed.split("; ")
+    assert 0 < len(listed_names) < 10
+    assert all(n in names for n in listed_names), "a name was cut"
+    assert omitted == f"{10 - len(listed_names)} more."
+    assert FAILING_TESTS_TEXT_BUDGET < MUST_FIX_ITEM_LIMIT

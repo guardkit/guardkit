@@ -82,6 +82,11 @@ QG_TEST_PHASE_RAN_AND_FAILED = "test_phase_ran_and_failed"
 # The longest a must-fix item read back from the feedback text may be.
 MUST_FIX_ITEM_LIMIT = 2000
 
+# How long the failure line plus the failing test names may be, leaving room
+# inside MUST_FIX_ITEM_LIMIT for the issue's own opening words ("Tests did not
+# pass during task-work execution. ").
+FAILING_TESTS_TEXT_BUDGET = MUST_FIX_ITEM_LIMIT - 200
+
 # Starts each must-fix line of the feedback text the Player is given.
 MUST_FIX_MARKER = "MUST FIX: "
 
@@ -110,21 +115,33 @@ def describe_failing_tests(
     total: Optional[int] = None,
     basis: Optional[str] = None,
     test_phase_failed: bool = False,
+    budget: Optional[int] = None,
 ) -> str:
     """The words added to a test-failure issue, or ``""`` when there are none.
 
-    Names the first :data:`FAILING_TESTS_SHOWN` failing tests and says how many
-    there are in all (``total`` when the record kept fewer names than it saw),
-    then the test phase's own one-line account of the failure. With
+    The test phase's own one-line account of the failure comes FIRST, so it
+    is never the part that is lost. Then the failing tests: as many WHOLE
+    names as fit in ``budget`` characters (default
+    :data:`FAILING_TESTS_TEXT_BUDGET`, which leaves room for the issue's own
+    opening words inside :data:`MUST_FIX_ITEM_LIMIT`), at most
+    :data:`FAILING_TESTS_SHOWN`, then how many were left out. A name is never
+    cut in half (external review, 8 October 2026: ten long test names used to
+    push the failure line out of the must-fix item and end it mid-name).
+    The count is ``total`` when the record kept fewer names than it saw. With
     ``basis`` :data:`FAILING_TESTS_BASIS_NEW` the tests are called newly
     failing. When the test phase ran and failed but named no test
     (``test_phase_failed`` with no names), it says so, rather than saying
     nothing: the test tool's output was not one the factory reads names from.
     """
+    limit = FAILING_TESTS_TEXT_BUDGET if budget is None else budget
     names = [str(n) for n in (failing_tests or []) if n]
     parts: List[str] = []
+    summary = " ".join(str(failure_summary or "").split())[:FAILURE_SUMMARY_LIMIT]
+    if summary:
+        if not summary.endswith((".", "!", "?")):
+            summary += "."
+        parts.append(f"What the test run said: {summary}")
     if names:
-        shown = names[:FAILING_TESTS_SHOWN]
         count = max(len(names), total if isinstance(total, int) else 0)
         noun = "test" if count == 1 else "tests"
         if basis == FAILING_TESTS_BASIS_NEW:
@@ -134,18 +151,28 @@ def describe_failing_tests(
             )
         else:
             label = f"{count} failing {noun}"
-        text = f"{label}: " + "; ".join(shown)
-        if count > len(shown):
-            text += f"; and {count - len(shown)} more"
-        parts.append(text + ".")
+        used = len(" ".join(parts)) + (1 if parts else 0)
+        # Room kept for the worst-case ending, "; and <count> more."
+        reserve = len(f"; and {count} more.")
+        shown: List[str] = []
+        for name in names[:FAILING_TESTS_SHOWN]:
+            candidate = f"{label}: " + "; ".join(shown + [name])
+            if used + len(candidate) + reserve > limit:
+                break
+            shown.append(name)
+        if shown:
+            text = f"{label}: " + "; ".join(shown)
+            if count > len(shown):
+                text += f"; and {count - len(shown)} more"
+            text += "."
+        else:
+            text = f"{label}; their names are too long to list here."
+        parts.append(text)
     elif test_phase_failed:
         parts.append(
             "The test run did not name its failing tests in a form the "
             "factory can read, so none are listed here."
         )
-    summary = " ".join(str(failure_summary or "").split())
-    if summary:
-        parts.append(f"What the test run said: {summary[:FAILURE_SUMMARY_LIMIT]}")
     return " ".join(parts)
 
 
