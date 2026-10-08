@@ -78,7 +78,10 @@ from guardkit.orchestrator.agent_invoker import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
-from guardkit.orchestrator.failing_test_feedback import MUST_FIX_MARKER
+from guardkit.orchestrator.failing_test_feedback import (
+    MUST_FIX_MARKER,
+    SUGGESTION_MARKER,
+)
 from guardkit.orchestrator.phase_specialists import (
     detect_stack_template,
     render_missing_phase_list,
@@ -161,6 +164,15 @@ from guardkit.orchestrator.state_detection import (
 from guardkit.orchestrator.state_tracker import (
     MultiLayeredStateTracker,
     WorkState,
+)
+from guardkit.orchestrator.synthetic_report import (
+    PLAYER_TIMED_OUT_CATEGORY,
+    SHARED_WORKING_COPY_FIELD,
+    mark_shared_working_copy,
+    player_timed_out_issue,
+    player_timeout_from_error,
+    player_timeout_from_report,
+    timeout_seconds_text,
 )
 
 # Import worktree checkpoint management for context pollution mitigation
@@ -843,6 +855,34 @@ def _feedback_issue_is_must_fix(issue: Dict[str, Any]) -> bool:
     """
     advisory, severity_rank = _feedback_issue_rank(issue)
     return advisory == 0 and severity_rank <= 1
+
+
+def _player_turn_error(turn_record: "TurnRecord") -> Optional[str]:
+    """The error a failed coder turn ended with, or ``None``.
+
+    A turn whose work was rebuilt from git carries no error of its own; its
+    original error is kept in the rebuilt report's ``_recovery_metadata``.
+    """
+    result = getattr(turn_record, "player_result", None)
+    if result is None:
+        return None
+    if getattr(result, "error", None):
+        return result.error
+    report = getattr(result, "report", None) or {}
+    metadata = report.get("_recovery_metadata") if isinstance(report, dict) else None
+    if isinstance(metadata, dict):
+        return metadata.get("original_error") or metadata.get("detection_method")
+    return None
+
+
+def _player_turn_timeout(turn_record: "TurnRecord") -> Optional[Dict[str, Any]]:
+    """The timeout fields of a coder turn that ran out of time, or ``None``."""
+    result = getattr(turn_record, "player_result", None)
+    if result is None:
+        return None
+    return player_timeout_from_report(
+        getattr(result, "report", None)
+    ) or player_timeout_from_error(getattr(result, "error", None))
 
 
 def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
@@ -3691,6 +3731,12 @@ class AutoBuildOrchestrator:
                 if self._progress_logger and self._agent_invoker:
                     self._agent_invoker.set_progress_logger(self._progress_logger)
 
+                # Tasks in a wave of several share this working copy; a report
+                # the invoker builds from git must then not count as this
+                # task's evidence (FEAT-2C42).
+                if self._agent_invoker is not None:
+                    self._agent_invoker.shared_working_copy = self.wave_size > 1
+
                 return worktree
 
             # Create isolated worktree (normal mode)
@@ -6333,6 +6379,10 @@ class AutoBuildOrchestrator:
                 acceptance_criteria=acceptance_criteria,
                 task_type=task_type,
                 worktree_path=worktree.path,
+                player_timeout=(
+                    player_timeout_from_report(player_report)
+                    or player_timeout_from_error(original_error)
+                ),
             )
 
             # Ensure task_id is populated in report (TASK-ACR-001)
@@ -6373,6 +6423,7 @@ class AutoBuildOrchestrator:
         acceptance_criteria: Optional[List[str]] = None,
         task_type: Optional[str] = None,
         worktree_path: Optional[Path] = None,
+        player_timeout: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Build synthetic Player report from detected work state.
@@ -6396,12 +6447,27 @@ class AutoBuildOrchestrator:
         worktree_path : Optional[Path]
             Worktree root path for content-based requirements inference
             (TASK-FIX-ASPF-006).
+        player_timeout : Optional[Dict[str, Any]]
+            When the Player's turn ran out of time: ``timed_out`` and its
+            timings. Kept in ``_recovery_metadata`` so the evidence gate and
+            the final summary can say the turn ran out of time.
 
         Returns
         -------
         Dict[str, Any]
             Synthetic Player report
         """
+        # Tasks in the same wave share one working copy, so git's changes may
+        # include another task's files (build FEAT-2C42, 8 October 2026: a
+        # rebuilt report credited one task with its neighbour's files). Git
+        # cannot tell whose change is whose, so in a wave of several tasks the
+        # rebuilt report keeps its file lists but carries no promises and no
+        # inferred requirements, and says why: it is never counted as this
+        # task's evidence.
+        shared_working_copy = self.wave_size > 1
+        if shared_working_copy:
+            acceptance_criteria = None
+
         # Determine promise generation strategy
         has_criteria = acceptance_criteria and len(acceptance_criteria) > 0
         should_generate_file_promises = (
@@ -6476,6 +6542,8 @@ class AutoBuildOrchestrator:
                     else 0
                 ),
                 "timestamp": work_state.timestamp,
+                "original_error": original_error,
+                **(player_timeout or {}),
             },
             worktree_path=worktree_path,
         )
@@ -6495,6 +6563,15 @@ class AutoBuildOrchestrator:
                     f"Generated {len(git_promises)} git-analysis promises "
                     f"for {task_type} task synthetic report"
                 )
+
+        if shared_working_copy:
+            mark_shared_working_copy(report)
+            logger.warning(
+                f"[Turn {work_state.turn_number}] Rebuilt report comes from "
+                f"the working copy shared by {self.wave_size} tasks in this "
+                f"wave; it may include their files, so it is not counted as "
+                f"this task's evidence."
+            )
 
         return report
 
@@ -9230,6 +9307,7 @@ class AutoBuildOrchestrator:
                 start_time,
                 acceptance_criteria=acceptance_criteria,
                 task_type=task_type,
+                player_report=player_report,
             )
             if direct_gate_result is not None:
                 return direct_gate_result
@@ -9570,6 +9648,7 @@ class AutoBuildOrchestrator:
             start_time,
             acceptance_criteria=acceptance_criteria,
             task_type=task_type,
+            player_report=player_report,
         )
         if direct_gate_result is not None:
             return direct_gate_result
@@ -9863,6 +9942,7 @@ class AutoBuildOrchestrator:
         *,
         acceptance_criteria: Optional[List[str]],
         task_type: Optional[str],
+        player_report: Optional[Dict[str, Any]] = None,
     ) -> Optional[AgentInvocationResult]:
         """Deterministic direct-mode verification gate (TASK-FIX-DIRECTFG01).
 
@@ -9893,6 +9973,13 @@ class AutoBuildOrchestrator:
         Non-blocking advisories (e.g. non-Python bin-entries) are logged but do
         not block — they ride alongside the synthetic feedback only when some
         ``must_fix`` issue already fired.
+
+        When the gate blocks and ``player_report`` shows why the coder left no
+        report of its own, the feedback says so first, as a must-fix issue
+        with a suggestion (build FEAT-2C42, 8 October 2026): the turn ran out
+        of time, or it ended without a report in a working copy other tasks
+        share. Before this, 27 of 31 blocks came straight after a timeout and
+        the feedback never mentioned it.
         """
         # AC5 guard: only direct mode (quality_gates_relaxed) is ever gated.
         # This flag is written ONLY by agent_invoker._write_direct_mode_results;
@@ -10089,9 +10176,19 @@ class AutoBuildOrchestrator:
             "and runnable registered producers:\n"
             f"{detail_lines}"
         )
+        # Said first, as its own issue with a suggestion, so the Player reads
+        # why it has no report before the criteria it could not be credited.
+        leading_issues = self._why_no_player_report_issues(
+            task_id, turn, player_report
+        )
         logger.warning(
-            "Direct-mode evidence gate blocks %s turn %s:\n%s",
-            task_id, turn, rationale,
+            "Direct-mode evidence gate blocks %s turn %s:\n%s%s",
+            task_id, turn,
+            "".join(
+                f"[{issue['category']}] {issue['description']}\n"
+                for issue in leading_issues
+            ),
+            rationale,
         )
         return self._emit_synthetic_coach_feedback(
             task_id=task_id,
@@ -10105,7 +10202,33 @@ class AutoBuildOrchestrator:
             # not invoked on this path at all).
             requirements=gate_req_validation,
             category="direct_mode_gate",
+            leading_issues=leading_issues,
         )
+
+    @staticmethod
+    def _why_no_player_report_issues(
+        task_id: str,
+        turn: int,
+        player_report: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Must-fix issues explaining why this turn has no coder report.
+
+        One issue at most: the turn ran out of time (with its timings), or,
+        failing that, it ended without a report in a working copy other
+        tasks share. Empty when the coder wrote its own report.
+        """
+        if not isinstance(player_report, dict):
+            return []
+        timeout = player_timeout_from_report(player_report)
+        if timeout:
+            return [player_timed_out_issue(task_id, turn, timeout)]
+        if player_report.get(SHARED_WORKING_COPY_FIELD):
+            from guardkit.orchestrator.synthetic_report import (
+                player_no_own_report_issue,
+            )
+
+            return [player_no_own_report_issue(task_id, turn)]
+        return []
 
     # R1 DE-WIRE (Rich 08-14): _bdd_authoring_sweep_gate
     # (TASK-AB-BDDAUTHOR01) removed — the factory no longer executes
@@ -10130,6 +10253,10 @@ class AutoBuildOrchestrator:
         # other call site keeps today's byte-identical report.
         requirements: Optional["RequirementsValidation"] = None,
         category: str = "coach_primary_exception",
+        # FEAT-2C42 (8 October 2026): issues placed before the blocking one,
+        # each with its own suggestion. Only ``_direct_mode_evidence_gate``
+        # passes them; every other caller keeps today's single issue.
+        leading_issues: Optional[List[Dict[str, Any]]] = None,
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -10203,11 +10330,12 @@ class AutoBuildOrchestrator:
                 "criteria_results": criteria_results_block
             },
             "issues": [
+                *(dict(issue) for issue in (leading_issues or [])),
                 {
                     "severity": "must_fix",
                     "category": category,
                     "description": rationale,
-                }
+                },
             ],
             "rationale": rationale,
             "context_used": None,
@@ -10551,7 +10679,13 @@ class AutoBuildOrchestrator:
                 suggestion = issue.get("suggestion", "")
                 test_output = issue.get("test_output", "")
 
-                if suggestion:
+                if suggestion and _feedback_issue_is_must_fix(issue):
+                    # On its own marked line, so the feedback file keeps it
+                    # as this must-fix item's suggestion (FEAT-2C42).
+                    feedback_lines.append(
+                        f"- {desc}\n  {SUGGESTION_MARKER}{suggestion}"
+                    )
+                elif suggestion:
                     feedback_lines.append(f"- {desc}: {suggestion}")
                 elif test_output:
                     # Use test output as the actionable detail
@@ -10884,16 +11018,54 @@ class AutoBuildOrchestrator:
             ]
             first_turn = player_error_turns[0] if player_error_turns else None
             first_error = (
-                first_turn.player_result.error
-                if first_turn and first_turn.player_result and first_turn.player_result.error
-                else (
-                    first_turn.player_result.report.get("_recovery_metadata", {}).get(
-                        "detection_method"
-                    ) if first_turn and first_turn.player_result else None
-                ) or "unavailable"
-            )
+                _player_turn_error(first_turn) if first_turn else None
+            ) or "unavailable"
             affected_turns = ", ".join(str(tr.turn) for tr in player_error_turns)
             n_failed = len(player_error_turns)
+            # Build FEAT-2C42 (8 October 2026): every failed turn had run out
+            # of time, yet this summary blamed "player_report" and pointed at
+            # sign-in and SDK checks that do not apply to a local model. When
+            # a turn ran out of time, say so, show the timings, and leave the
+            # sign-in and SDK checks out.
+            timed_out = {
+                tr.turn: _player_turn_timeout(tr) for tr in player_error_turns
+            }
+            if any(timed_out.values()):
+                lines = []
+                for tr in player_error_turns:
+                    details = timed_out[tr.turn]
+                    if details:
+                        allowed = details.get("timeout_seconds")
+                        ran = details.get("elapsed_seconds")
+                        timing = ", ".join(
+                            part for part in (
+                                f"allowed {allowed} s" if allowed else "",
+                                f"ran {ran} s" if ran else "",
+                            ) if part
+                        )
+                        lines.append(
+                            f"  turn {tr.turn}: ran out of time before "
+                            f"writing its report"
+                            f"{f' ({timing})' if timing else ''}"
+                        )
+                    else:
+                        lines.append(
+                            f"  turn {tr.turn}: "
+                            f"{_player_turn_error(tr) or 'no report written'}"
+                        )
+                n_timed_out = sum(1 for d in timed_out.values() if d)
+                return (
+                    f"Player-invocation stall detected after "
+                    f"{len(turn_history)} turn(s).\n"
+                    f"The coder ran out of time on {n_timed_out} of "
+                    f"{n_failed} turn(s) without a report of its own "
+                    f"(turns: {affected_turns}). It was still working when "
+                    f"its time ran out.\n"
+                    f"Timings:\n" + "\n".join(lines) + "\n"
+                    f"Worktree preserved for inspection.\n"
+                    f"Suggested action: give each turn more time, or split "
+                    f"the task so a turn can finish and write its report."
+                )
             return (
                 f"Player-invocation stall detected after {len(turn_history)} turn(s).\n"
                 f"Player failed {n_failed}\u00d7 at the SDK layer before producing "
