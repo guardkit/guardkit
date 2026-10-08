@@ -16,6 +16,10 @@ the three places that touch them, so none of them has its own copy:
   :data:`QG_FAILURE_SUMMARY`.
 * ``CoachValidator._feedback_from_gates`` puts them into the ``must_fix``
   test-failure issue, through :func:`describe_failing_tests`.
+* :func:`phase_4_ran_and_failed` is the one test, used by the merge, of
+  whether the test phase produced evidence (a failure) or did not run at all.
+  The merge marks a ran-and-failed record with :data:`RAN_AND_FAILED`, and the
+  Coach then does not call it a missing-evidence ("substrate") failure.
 * ``AutoBuildOrchestrator._extract_feedback`` writes must-fix issues first,
   each starting with :data:`MUST_FIX_MARKER`, and
   ``AgentInvoker._parse_coach_feedback`` reads them back into the feedback
@@ -39,8 +43,29 @@ FAILING_TESTS_SHOWN = 10
 # How long the one-line account of the failure may be.
 FAILURE_SUMMARY_LIMIT = 240
 
+# Set on the orchestrator's phase-4 record in agent_invocations when the test
+# phase ran and tests failed.
+RAN_AND_FAILED = "ran_and_failed"
+
 # Starts each must-fix line of the feedback text the Player is given.
 MUST_FIX_MARKER = "MUST FIX: "
+
+
+def phase_4_ran_and_failed(block: object) -> bool:
+    """Did the test phase run the tests and see at least one fail?
+
+    True only for a ``failed`` phase-4 record that is not an absent signal and
+    reports a positive count of failing tests. That is evidence about the
+    code — the opposite of a test phase that hung, crashed or ran nothing,
+    which reports ``failed`` with no failing tests and is an absent signal
+    about the code. Reads only the counts the test phase itself wrote.
+    """
+    if not isinstance(block, dict):
+        return False
+    if block.get("status") != "failed" or block.get("signal_absent"):
+        return False
+    failed = block.get("tests_failed")
+    return isinstance(failed, int) and not isinstance(failed, bool) and failed > 0
 
 
 def describe_failing_tests(

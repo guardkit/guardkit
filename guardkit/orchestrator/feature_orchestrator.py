@@ -130,6 +130,7 @@ GUARD_MISSING_CHECK_FILE_REASON = (
 from guardkit.orchestrator.baseline import (
     SOURCE_FEATURE_SMOKE,
     SOURCE_REPOSITORY_TEST,
+    SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED,
     BaselineResult,
     baseline_measured_here,
     feature_baseline_path,
@@ -4992,7 +4993,11 @@ The detailed specifications are in the task markdown file.
            gates charged it to the task for three turns.
         2. **The feature's own smoke command** otherwise. With no declared
            command the gates run the task's own tests, so the smoke command
-           is the best measure there is of the base.
+           is the best measure there is of the base. The smoke command is
+           also the fallback when the declared command runs but its output
+           cannot be read (a runner this probe cannot read test results
+           from); :meth:`_run_baseline_probe` does that, and records the
+           reason in the record's source.
 
         Until 8 October 2026 the order was the other way round (the smoke
         command first, and the declared command only when there was no smoke
@@ -5261,36 +5266,44 @@ The detailed specifications are in the task markdown file.
                 )
             return
         probe_config, source = resolved
-        try:
-            smoke_result = run_smoke_gate(
-                probe_config,
-                cwd=worktree.path,
-                wave_number=0,
-                venv_python=self._bootstrap_venv_python,
-            )
-        except Exception as exc:  # noqa: BLE001 — probe is best-effort/report-only
-            logger.warning(
-                "Baseline probe could not run '%s' in %s: %s "
-                "(continuing; probe is report-only).",
-                probe_config.command, worktree.path, exc,
-            )
-            return
 
-        combined = f"{smoke_result.stdout or ''}\n{smoke_result.stderr or ''}"
-        result = probe_baseline_result(
-            command=smoke_result.command,
-            expected_exit=probe_config.expected_exit,
-            passed=smoke_result.passed,
-            exit_code=smoke_result.exit_code,
-            output=combined,
-            timestamp=now_isoformat(),
-            source=source,
-            # The stamp that makes this record claimable later: it says which
-            # directory was measured, in facts a commit cannot carry. Without
-            # it a resumed build cannot tell its own measurement from one that
-            # was checked out with the code.
-            measured_in=worktree_identity(worktree.path),
-        )
+        def _measure(config: SmokeGates, measured_source: str):
+            """Run one command over the worktree; ``None`` if it cannot run."""
+            try:
+                run = run_smoke_gate(
+                    config,
+                    cwd=worktree.path,
+                    wave_number=0,
+                    venv_python=self._bootstrap_venv_python,
+                )
+            except Exception as exc:  # noqa: BLE001 — probe is best-effort/report-only
+                logger.warning(
+                    "Baseline probe could not run '%s' in %s: %s "
+                    "(continuing; probe is report-only).",
+                    config.command, worktree.path, exc,
+                )
+                return None
+            output = f"{run.stdout or ''}\n{run.stderr or ''}"
+            record = probe_baseline_result(
+                command=run.command,
+                expected_exit=config.expected_exit,
+                passed=run.passed,
+                exit_code=run.exit_code,
+                output=output,
+                timestamp=now_isoformat(),
+                source=measured_source,
+                # The stamp that makes this record claimable later: it says
+                # which directory was measured, in facts a commit cannot
+                # carry. Without it a resumed build cannot tell its own
+                # measurement from one that was checked out with the code.
+                measured_in=worktree_identity(worktree.path),
+            )
+            return run, record, output
+
+        measured = _measure(probe_config, source)
+        if measured is None:
+            return
+        smoke_result, result, combined = measured
 
         # A run that measured NOTHING must not be written down as a measured
         # base, because a record here is what the Coach subtracts and what
@@ -5316,16 +5329,42 @@ The detailed specifications are in the task markdown file.
                     "test — so either it never ran the tests, or its output "
                     "is not one this probe can read test names out of"
                 )
+            smoke = getattr(feature, "smoke_gates", None)
+            if smoke_result.timed_out or smoke is None:
+                logger.warning(
+                    "Baseline probe: '%s' did not measure the base of %s "
+                    "(%s). Nothing is recorded by this probe.%s The probe is "
+                    "report-only; the build carries on.",
+                    probe_config.command,
+                    worktree.path,
+                    why,
+                    _what_downstream_will_read(worktree.path),
+                )
+                return
+            # THE DECLARED COMMAND RAN BUT ITS OUTPUT COULD NOT BE READ, and
+            # the feature has a smoke command (8 October 2026). Measure the
+            # base with the smoke command instead, exactly as the probe did
+            # before the declared command came first, and say so in the
+            # record. This matters most for a project whose test runner
+            # prints nothing this probe can read (any non-pytest stack):
+            # without it such a project would get no record at all, and the
+            # finish re-check would have no command to re-run. A timeout is
+            # not this case — the declared suite did not finish, which is a
+            # different problem, and stays recorded as nothing.
             logger.warning(
                 "Baseline probe: '%s' did not measure the base of %s (%s). "
-                "Nothing is recorded by this probe.%s The probe is "
-                "report-only; the build carries on.",
+                "Measuring it with the feature's smoke command '%s' instead, "
+                "and recording that this is what measured it.",
                 probe_config.command,
                 worktree.path,
                 why,
-                _what_downstream_will_read(worktree.path),
+                (smoke.command or "").strip(),
             )
-            return
+            measured = _measure(smoke, SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED)
+            if measured is None:
+                return
+            smoke_result, result, combined = measured
+            source = SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
 
         self._measured_baseline = result
 

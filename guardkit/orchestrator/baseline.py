@@ -86,12 +86,18 @@ _BASELINE_FILENAME = "baseline.json"
 
 # WHERE THE PROBE'S COMMAND CAME FROM, in the words a person reads.
 #
-# Two, and only two, so anyone opening baseline.json months later knows what
-# the numbers mean: the feature said how to smoke itself, or the repository
-# said how its tests are run. The probe records one of these strings verbatim;
-# nothing parses them, so they are free to stay plain English.
+# Three, so anyone opening baseline.json months later knows what the numbers
+# mean: the feature said how to smoke itself, or the repository said how its
+# tests are run, or the repository said so but its command's output could not
+# be read and the feature's smoke command measured the base instead. The probe
+# records one of these strings verbatim; nothing parses them, so they are free
+# to stay plain English.
 SOURCE_FEATURE_SMOKE = "the feature's smoke command"
 SOURCE_REPOSITORY_TEST = "the repository's declared test command"
+SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED = (
+    "the feature's smoke command, because the declared command's output "
+    "could not be read"
+)
 
 
 # HOW WE TELL "WE MEASURED THIS" FROM "THIS WAS LYING ABOUT IN THE TREE".

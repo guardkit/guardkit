@@ -69,6 +69,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_SHOWN,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
+    RAN_AND_FAILED,
     describe_failing_tests,
 )
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
@@ -4822,6 +4823,13 @@ class CoachValidator:
             if inv.get("source") != "orchestrator":
                 continue
             if inv.get("status") != "failed":
+                continue
+            if inv.get(RAN_AND_FAILED) is True:
+                # The specialist ran the tests and some failed (8 October
+                # 2026). That is evidence about the code, carried to the
+                # Player as the must-fix test-failure issue with the failing
+                # tests named; calling it "did not produce evidence ... not a
+                # Player issue" told the Player the opposite.
                 continue
             error = inv.get("error")
             if not error:
