@@ -1215,3 +1215,143 @@ class TestEarlyReturnsKeepTheTimeoutNote:
         ):
             record = _run_turn(orch, worktree, recovered=None)
         assert record.feedback == REINSTALL_TEXT
+
+
+# ---------------------------------------------------------------------------
+# Coach check 2: fresh-start (perspective reset) turns keep the timeout note
+# ---------------------------------------------------------------------------
+
+
+def _timed_out_turn_record(orch, worktree: Path, turn: int) -> TurnRecord:
+    """A real turn: the direct-mode coder ran out of time, recovery found
+    its work, and the model reviewer gave ordinary feedback."""
+    orch._agent_invoker.invoke_player.return_value = _timed_out_player()
+    recovered = AgentInvocationResult(
+        task_id=TASK_A, turn=turn, agent_type="player", success=True,
+        report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+    )
+    with patch.object(orch, "_attempt_state_recovery", return_value=recovered), \
+            patch.object(orch, "_invoke_coach_safely", return_value=_reviewer_feedback()):
+        return orch._execute_turn(
+            turn=turn, task_id=TASK_A, requirements="Document the endpoint",
+            worktree=_FakeWorktree(worktree), previous_feedback=None,
+        )
+
+
+def _plain_feedback_record(turn: int, text: str) -> TurnRecord:
+    return TurnRecord(
+        turn=turn,
+        player_result=AgentInvocationResult(
+            task_id=TASK_A, turn=turn, agent_type="player", success=True,
+            report={"task_id": TASK_A, "files_modified": [f"docs/page{turn}.md"],
+                    "files_created": [], "tests_written": []},
+            duration_seconds=600.0,
+        ),
+        coach_result=_reviewer_feedback(),
+        decision="feedback",
+        feedback=text,
+        timestamp="2026-10-08T08:00:00Z",
+        files_changed_this_turn=1,
+    )
+
+
+def _approve_record(turn: int) -> TurnRecord:
+    return TurnRecord(
+        turn=turn,
+        player_result=AgentInvocationResult(
+            task_id=TASK_A, turn=turn, agent_type="player", success=True,
+            report={"task_id": TASK_A}, duration_seconds=600.0,
+        ),
+        coach_result=None, decision="approve", feedback=None,
+        timestamp="2026-10-08T09:00:00Z", files_changed_this_turn=1,
+    )
+
+
+def _run_loop(orch, worktree: Path, scripted: Dict[int, TurnRecord], start_turn=1):
+    """Run the real turn loop with scripted turns; return the feedback each
+    turn was given."""
+    given: Dict[int, Optional[str]] = {}
+
+    def fake_execute_turn(*, turn, previous_feedback, **_):
+        given[turn] = previous_feedback
+        return scripted[turn]
+
+    with patch.object(orch, "_execute_turn", side_effect=fake_execute_turn):
+        orch._loop_phase(
+            task_id=TASK_A, requirements="Document the endpoint",
+            acceptance_criteria=CRITERIA, worktree=_FakeWorktree(worktree),
+            start_turn=start_turn,
+        )
+    return given
+
+
+class TestFreshStartTurnKeepsTheTimeoutNote:
+    def test_timeout_on_turn_2_reaches_reset_turn_3(self, worktree: Path) -> None:
+        orch, _ = _mocked_orchestrator(worktree)
+        assert 3 in orch.perspective_reset_turns  # the live default
+        turn2 = _timed_out_turn_record(orch, worktree, 2)
+        assert turn2.timeout_note
+        given = _run_loop(orch, worktree, {
+            1: _plain_feedback_record(1, "- MUST FIX: add the 404 response"),
+            2: turn2,
+            3: _approve_record(3),
+        })
+
+        # Turn 2 had the full review feedback; turn 3 (reset) only the timeout.
+        assert given[3] == turn2.timeout_note
+        must_fix = _invoker(worktree)._parse_coach_feedback(given[3], 3)["must_fix"]
+        assert len(must_fix) == 1
+        assert "ran out of time after 2340 s" in must_fix[0]["issue"]
+        assert "player_turn_2.json" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
+        assert "404" not in given[3]  # the review content is still dropped
+
+    def test_reset_without_a_timeout_still_clears(self, worktree: Path) -> None:
+        orch, _ = _mocked_orchestrator(worktree)
+        given = _run_loop(orch, worktree, {
+            1: _plain_feedback_record(1, "- MUST FIX: add the 404 response"),
+            2: _plain_feedback_record(2, "- MUST FIX: add the 204 response"),
+            3: _approve_record(3),
+        })
+        assert given[2] == "- MUST FIX: add the 404 response"
+        assert given[3] is None
+
+    def test_resumed_run_landing_on_the_reset_turn(self, worktree: Path) -> None:
+        first, _ = _mocked_orchestrator(worktree)
+        turn2 = _timed_out_turn_record(first, worktree, 2)
+        first._turn_history = [
+            _plain_feedback_record(1, "- MUST FIX: add the 404 response"), turn2,
+        ]
+        saved = first._serialize_turn_history()
+
+        resumed, _ = _mocked_orchestrator(worktree)
+        resumed.resume = True
+        resumed._turn_history = resumed._deserialize_turn_history(saved)
+        given = _run_loop(resumed, worktree, {3: _approve_record(3)}, start_turn=3)
+
+        must_fix = _invoker(worktree)._parse_coach_feedback(given[3], 3)["must_fix"]
+        assert len(must_fix) == 1
+        assert "ran out of time after 2340 s" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
+        assert "404" not in given[3]
+
+    def test_overridden_task_work_approval_keeps_its_note(self, worktree: Path) -> None:
+        """The reviewer's own timeout issue made the extra note unnecessary
+        on that turn, but the record still keeps it for a reset turn."""
+        orch, _ = _task_work_orchestrator(worktree)
+        approval = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="coach", success=True,
+            report={"decision": "approve", "issues": [], "rationale": "Met."},
+            duration_seconds=1.0,
+        )
+        with patch.object(orch, "_attempt_state_recovery", return_value=_recovered_task_work()), \
+                patch.object(orch, "_invoke_coach_safely", return_value=approval):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+        assert record.timeout_note
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.timeout_note, 3)["must_fix"]
+        assert len(must_fix) == 1
+        assert "task-work Player attempt timed out" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"]

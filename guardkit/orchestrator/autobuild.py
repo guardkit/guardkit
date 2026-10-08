@@ -2260,6 +2260,11 @@ class TurnRecord:
     # never read as zero: an absent measurement can neither stall a task nor
     # complete one.
     files_changed_this_turn: Optional[int] = None
+    # FEAT-2C42 (8 October 2026): when this turn's Player ran out of time,
+    # the timeout must-fix on its own, as feedback text. A fresh-start
+    # (perspective reset) turn drops all review feedback but keeps this: it is
+    # a fact about how the turn ran, not review content. ``None`` otherwise.
+    timeout_note: Optional[str] = None
 
 
 @dataclass
@@ -4474,7 +4479,18 @@ class AutoBuildOrchestrator:
                 # Check if perspective should be reset to prevent anchoring bias
                 # When reset triggered, Player receives only original requirements (no feedback)
                 if self._should_reset_perspective(turn):
-                    previous_feedback = None
+                    # All review feedback is dropped, as before, except the
+                    # previous turn's timeout must-fix: a timeout is a fact
+                    # about how that turn ran, not review content that could
+                    # anchor the Player (FEAT-2C42: TASK-2C42-003 timed out
+                    # on turn 2 and turn 3 was a reset turn). On a resumed
+                    # run the history is the saved one, so this holds there
+                    # too.
+                    previous_feedback = (
+                        getattr(turn_history[-1], "timeout_note", None)
+                        if turn_history
+                        else None
+                    )
                     # TASK-RFX-B20B: Also clear session to avoid carrying
                     # prior context that perspective reset is meant to discard
                     if self._agent_invoker is not None:
@@ -5280,6 +5296,9 @@ class AutoBuildOrchestrator:
                     logger.warning(
                         f"CancelledError caught for {task_id} (recovered: False)"
                     )
+                no_work_feedback = self._feedback_after_turn_without_work(
+                    task_id, turn, player_result
+                )
                 return TurnRecord(
                     turn=turn,
                     player_result=player_result,
@@ -5289,8 +5308,11 @@ class AutoBuildOrchestrator:
                     # error, but it says what happened as one plain must-fix,
                     # so the next turn (a resumed run starts from this
                     # feedback) is not told nothing.
-                    feedback=self._feedback_after_turn_without_work(
-                        task_id, turn, player_result
+                    feedback=no_work_feedback,
+                    timeout_note=(
+                        no_work_feedback
+                        if _player_result_timeout(player_result)
+                        else None
                     ),
                     timestamp=timestamp,
                     player_context_status=player_context_status,
@@ -5713,6 +5735,9 @@ class AutoBuildOrchestrator:
                     sdk_max_turns=getattr(player_result, 'sdk_max_turns', None),
                     sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                     command_results=tuple(command_exec_results) if command_exec_results else None,
+                    timeout_note=self._player_timeout_feedback(
+                        task_id, turn, player_result, recovered_failure_error
+                    ) or None,
                 )
         else:
             # No cancellation: pass the caller-provided remaining budget to Coach
@@ -5797,6 +5822,7 @@ class AutoBuildOrchestrator:
                 sdk_ceiling_hit=getattr(player_result, 'sdk_ceiling_hit', None),
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
+                timeout_note=timeout_note or None,
             )
 
         self._progress_display.start_turn(turn, "Coach Validation")
@@ -5907,6 +5933,9 @@ class AutoBuildOrchestrator:
                 # time: keep that must-fix, so a resumed next turn is still
                 # told (FEAT-2C42 review, 8 October 2026). None otherwise.
                 feedback=self._player_timeout_feedback(
+                    task_id, turn, player_result, recovered_failure_error
+                ) or None,
+                timeout_note=self._player_timeout_feedback(
                     task_id, turn, player_result, recovered_failure_error
                 ) or None,
                 timestamp=timestamp,
@@ -6027,6 +6056,12 @@ class AutoBuildOrchestrator:
                 is_configuration_error=is_config_error,
                 command_results=tuple(command_exec_results) if command_exec_results else None,
                 files_changed_this_turn=files_changed_this_turn,
+                # Asked without the reviewer's report, so it is there even
+                # when the reviewer's own timeout issue made the note above
+                # unnecessary (the overridden approval).
+                timeout_note=self._player_timeout_feedback(
+                    task_id, turn, player_result, recovered_failure_error
+                ) or None,
             )
 
     def _finalize_phase(
@@ -11880,6 +11915,11 @@ class AutoBuildOrchestrator:
                 "player_summary": player_summary,
                 "player_success": record.player_result.success,
                 "coach_success": record.coach_result.success if record.coach_result else False,
+                # FEAT-2C42: kept so a resumed run landing on a fresh-start
+                # turn still passes the timeout must-fix on.
+                "timeout_note": scrub_for_publication(
+                    getattr(record, "timeout_note", None)
+                ),
             })
         return serialized
 
@@ -11936,6 +11976,7 @@ class AutoBuildOrchestrator:
                 decision=turn_data.get("decision", "feedback"),
                 feedback=turn_data.get("feedback"),
                 timestamp=turn_data.get("timestamp", ""),
+                timeout_note=turn_data.get("timeout_note"),
             )
             records.append(record)
 
