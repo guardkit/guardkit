@@ -79,6 +79,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     FAILURE_SUMMARY_LIMIT,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
+    QG_TEST_PHASE_RAN_AND_FAILED,
     RAN_AND_FAILED,
     must_fix_items,
     phase_4_ran_and_failed,
@@ -13019,9 +13020,11 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 qg[QG_FAILURE_SUMMARY] = (
                     " ".join(str(line).split())[:FAILURE_SUMMARY_LIMIT]
                 )
+                qg[QG_TEST_PHASE_RAN_AND_FAILED] = True
             else:
                 qg.pop(QG_FAILING_TESTS, None)
                 qg.pop(QG_FAILURE_SUMMARY, None)
+                qg.pop(QG_TEST_PHASE_RAN_AND_FAILED, None)
             task_work_data["quality_gates"] = qg
 
         try:

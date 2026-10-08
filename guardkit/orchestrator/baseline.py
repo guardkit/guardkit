@@ -19,7 +19,8 @@ pre-decided with B2):
   the feature's own smoke command. A repair with no smoke command still gets a
   measured base from the declared command (the ruling of 2026-09-10). That
   declaration is read from the repository root, never from the copy inside the
-  worktree, because the worktree copy is a file the model can rewrite. Record the result, and which command measured it, to
+  worktree, because the worktree copy is a file the model can rewrite. Record
+  the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
   red. Report-only — it NEVER blocks the run.
 

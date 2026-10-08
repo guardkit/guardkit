@@ -69,6 +69,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_SHOWN,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
+    QG_TEST_PHASE_RAN_AND_FAILED,
     RAN_AND_FAILED,
     describe_failing_tests,
 )
@@ -11888,6 +11889,24 @@ class CoachValidator:
                     "coverage_receipt": gates.coverage_receipt,
                 },
             })
+        elif (
+            gates.coverage_required
+            and not gates.coverage_met
+            and quality_gates.get(QG_TEST_PHASE_RAN_AND_FAILED) is True
+            and gates.coverage_receipt is None
+        ):
+            # The test phase ran and tests failed (8 October 2026). Coverage
+            # cannot be judged from a failed run, and the merge marks
+            # coverage as not met whenever a failed test phase meets a report
+            # that claimed everything passed, so a "Coverage threshold not
+            # met" must-fix here would send the Player after a problem it may
+            # not have; build FEAT-895D's feedback would have carried one.
+            # The failing-test must-fix above is the reason. The gate itself
+            # is unchanged: coverage_met stays False and the turn still fails.
+            # A coverage measured by the project's own declared coverage
+            # command (a receipt) is a real measurement and is still reported
+            # by the branch below.
+            pass
         elif gates.coverage_required and not gates.coverage_met:
             reported_line_coverage = (
                 quality_gates["line_coverage"]
