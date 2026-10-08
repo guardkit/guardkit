@@ -1672,6 +1672,42 @@ async def test_execute_wave_parallel_executes_concurrently(temp_repo, parallel_f
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("max_parallel, expected", [(1, False), (None, True)])
+async def test_execute_wave_parallel_says_whether_tasks_share_the_working_copy(
+    temp_repo, parallel_feature, mock_worktree, mock_worktree_manager,
+    max_parallel, expected,
+):
+    """FEAT-2C42 follow-up: a wave of two run one task at a time does not
+    share the working copy; run together, it does. Decided from the wave's
+    resolved concurrency, not from the number of tasks in it."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        max_parallel=max_parallel,
+    )
+    seen = {}
+
+    def mock_execute_task(task, feature, worktree, **kwargs):
+        seen[task.id] = (kwargs.get("wave_size"), kwargs.get("shares_working_copy"))
+        return TaskExecutionResult(
+            task_id=task.id, success=True, total_turns=1, final_decision="approved"
+        )
+
+    # The two tasks declare different areas, so only max_parallel decides.
+    disjoint = {"TASK-P-001": ["src/widgets/"], "TASK-P-002": ["docs/"]}
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task), \
+            patch.object(orchestrator, '_wave_task_paths', return_value=disjoint):
+        await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+    assert seen == {
+        "TASK-P-001": (2, expected),
+        "TASK-P-002": (2, expected),
+    }
+
+
+@pytest.mark.asyncio
 async def test_execute_wave_parallel_all_tasks_complete_before_return(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
     """Test that all tasks in wave complete before wave result is returned."""
     orchestrator = FeatureOrchestrator(

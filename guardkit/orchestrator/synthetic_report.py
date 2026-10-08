@@ -272,6 +272,59 @@ def player_no_report_no_changes_issue(
     }
 
 
+#: Category of the must-fix issue for a task-work attempt that failed (ran
+#: out of time, or otherwise) after which nothing was found in the working
+#: copy. Task-work wording: a task-work attempt does not write the report
+#: file itself, so the direct-mode advice about it does not apply.
+TASK_WORK_NO_CHANGES_CATEGORY = "task_work_attempt_no_changes"
+
+
+def task_work_no_changes_issue(
+    task_id: str,
+    turn: int,
+    timeout: Optional[Dict[str, Any]],
+    error: Optional[str],
+) -> Dict[str, Any]:
+    """The must-fix issue for a task-work attempt after which recovery found
+    no changes: a timeout with its timings, or the error it failed with."""
+    if timeout:
+        allowed = timeout.get("timeout_seconds")
+        ran = timeout.get("elapsed_seconds")
+        timing = ", ".join(
+            part for part in (
+                f"allowed {allowed} s" if allowed else "",
+                f"ran {ran} s" if ran else "",
+            ) if part
+        )
+        description = (
+            "Your last task-work attempt ran out of time"
+            f"{f' ({timing})' if timing else ''}, and the factory found no "
+            "changes in the working copy"
+        )
+        suggestion = (
+            "Start with the smallest change that meets the acceptance "
+            "criteria, so the attempt can finish its phases in the time "
+            "allowed."
+        )
+    else:
+        quoted = " ".join(str(error or "").split())[:_ERROR_QUOTE_LIMIT]
+        description = (
+            "Your last task-work attempt failed, and the factory found no "
+            "changes in the working copy"
+            + (f". The attempt failed with: {quoted}" if quoted else "")
+        )
+        suggestion = (
+            "Make the changes the task asks for; the error above says where "
+            "the last attempt stopped."
+        )
+    return {
+        "severity": "must_fix",
+        "category": TASK_WORK_NO_CHANGES_CATEGORY,
+        "description": description,
+        "suggestion": suggestion,
+    }
+
+
 def completion_promise_suggestion(turn: int) -> str:
     """The suggestion for criteria that have no matching completion promise.
 
