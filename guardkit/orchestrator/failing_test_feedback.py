@@ -37,7 +37,7 @@ read none the feedback says so.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 # Keys in task_work_results.json's ``quality_gates`` block.
 QG_FAILING_TESTS = "failing_tests"
@@ -89,6 +89,12 @@ FAILING_TESTS_TEXT_BUDGET = MUST_FIX_ITEM_LIMIT - 200
 
 # Starts each must-fix line of the feedback text the Player is given.
 MUST_FIX_MARKER = "MUST FIX: "
+
+# Starts the line under a must-fix item that says how to fix it. The feedback
+# file reads it back into the item's ``suggestion``, so a must-fix issue that
+# came with a suggestion does not reach the Player with an empty one (build
+# FEAT-2C42, 8 October 2026).
+SUGGESTION_MARKER = "How to fix: "
 
 
 def phase_4_ran_and_failed(block: object) -> bool:
@@ -216,3 +222,22 @@ def must_fix_items(feedback_text: str) -> List[str]:
     if current is not None:
         _close()
     return items
+
+
+def split_must_fix_item(item: str) -> Tuple[str, str]:
+    """Split a must-fix item read by :func:`must_fix_items` into its issue
+    and its suggestion.
+
+    The suggestion is the text after the first line starting with
+    :data:`SUGGESTION_MARKER`; the issue is everything before it. An item
+    with no such line is all issue, with an empty suggestion.
+    """
+    lines = (item or "").split("\n")
+    for index, line in enumerate(lines):
+        if index and line.startswith(SUGGESTION_MARKER):
+            issue = "\n".join(lines[:index]).strip()
+            suggestion = "\n".join(
+                [line[len(SUGGESTION_MARKER):]] + lines[index + 1:]
+            ).strip()
+            return issue, suggestion
+    return (item or "").strip(), ""

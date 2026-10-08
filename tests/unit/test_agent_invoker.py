@@ -8112,34 +8112,34 @@ class TestCalculateSDKTimeout:
         assert timeout == min(expected, MAX_SDK_TIMEOUT)
 
     def test_direct_mode_complexity_5(self, worktree_path):
-        """Direct mode with complexity 5 gets 1.0 * 1.5 = 1.5x."""
+        """Direct mode with complexity 5 gets 1.5 * 1.5 = 2.25x, as task-work does."""
         invoker = AgentInvoker(worktree_path=worktree_path)
         _create_task_file(worktree_path, "TASK-T-004", mode="direct", complexity=5)
 
         timeout = invoker._calculate_sdk_timeout("TASK-T-004")
 
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.5)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
         assert timeout == expected
 
     def test_direct_mode_complexity_1(self, worktree_path):
-        """Direct mode with complexity 1 gets 1.0 * 1.1 = 1.1x."""
+        """Direct mode with complexity 1 gets 1.5 * 1.1 = 1.65x."""
         invoker = AgentInvoker(worktree_path=worktree_path)
         _create_task_file(worktree_path, "TASK-T-005", mode="direct", complexity=1)
 
         timeout = invoker._calculate_sdk_timeout("TASK-T-005")
 
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.1)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.1)
         assert timeout == expected
 
     def test_direct_mode_unchanged_at_complexity_0(self, worktree_path):
-        """Direct mode with default complexity returns base * 1.0 * 1.5 (clamped to 1)."""
+        """Direct mode with complexity 0 is clamped to 1: base * 1.5 * 1.1."""
         invoker = AgentInvoker(worktree_path=worktree_path)
         # Complexity 0 gets clamped to 1
         _create_task_file(worktree_path, "TASK-T-006", mode="direct", complexity=0)
 
         timeout = invoker._calculate_sdk_timeout("TASK-T-006")
 
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.1)  # clamped to min 1
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.1)  # clamped to min 1
         assert timeout == expected
 
     def test_cap_at_max_timeout(self, worktree_path):
@@ -8190,8 +8190,8 @@ class TestCalculateSDKTimeout:
 
         timeout = invoker._calculate_sdk_timeout("TASK-T-009")
 
-        # mode=direct (1.0x), complexity defaults to 5 (1.5x)
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.5)
+        # mode=direct (1.5x), complexity defaults to 5 (1.5x)
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
         assert timeout == expected
 
     def test_missing_mode_defaults_to_task_work(self, worktree_path):
@@ -8218,8 +8218,8 @@ class TestCalculateSDKTimeout:
 
         timeout = invoker._calculate_sdk_timeout("TASK-T-011")
 
-        # complexity clamped to 10 → 2.0x
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 2.0)
+        # complexity clamped to 10 → 2.0x; direct mode is 1.5x (FEAT-2C42)
+        expected = min(int(DEFAULT_SDK_TIMEOUT * 1.5 * 2.0), MAX_SDK_TIMEOUT)
         assert timeout == expected
 
     def test_default_value_explicit_still_runs_dynamic(self, worktree_path):

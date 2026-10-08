@@ -89,6 +89,12 @@ from guardkit.orchestrator.failing_test_feedback import (
     RAN_AND_FAILED,
     must_fix_items,
     phase_4_ran_and_failed,
+    split_must_fix_item,
+)
+from guardkit.orchestrator.synthetic_report import (
+    SHARED_WORKING_COPY_FIELD,
+    mark_shared_working_copy,
+    player_timeout_details,
 )
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
@@ -2133,6 +2139,11 @@ class AgentInvoker:
         # progressing run. ``0.0`` until the first invocation resets it.
         self._last_activity_monotonic: float = 0.0
         self._baseline_commit: Optional[str] = None
+        # True when other tasks in the same wave are changing this working
+        # copy at the same time. Set by the orchestrator. A report this
+        # invoker builds from git is then marked as shared and carries no
+        # evidence for the task (build FEAT-2C42, 8 October 2026).
+        self.shared_working_copy: bool = False
         # TASK-AB-XREPOEV01: declared sibling repos whose writes count as task
         # evidence (default empty -> undeclared sibling-repo writes stay
         # invisible, AC-003). Per-repo HEAD baselines are recorded alongside
@@ -6925,7 +6936,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except Exception as e:
             logger.warning(f"Git change detection failed for synthetic report: {e}")
 
-        return build_synthetic_report(
+        # Other tasks in this wave change the same working copy, so git's
+        # list may hold their files: build no promises or inferred
+        # requirements from it, and say so.
+        shared = bool(getattr(self, "shared_working_copy", False))
+        report = build_synthetic_report(
             task_id=task_id,
             turn=turn,
             files_modified=files_modified,
@@ -6935,10 +6950,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             test_count=0,
             implementation_notes=implementation_notes,
             concerns=[],
-            acceptance_criteria=acceptance_criteria,
+            acceptance_criteria=None if shared else acceptance_criteria,
             task_type=task_type,
             worktree_path=self.worktree_path,
         )
+        if shared:
+            mark_shared_working_copy(report)
+        return report
 
     def _find_task_file(self, task_id: str) -> Optional[Path]:
         """Find task file in standard task directories.
@@ -10166,10 +10184,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # must-fix reason and the list was empty for three turns). Text
             # with no marked line gives an empty list, as before.
             for item in must_fix_items(feedback):
+                issue_text, suggestion = split_must_fix_item(item)
                 structured["must_fix"].append({
-                    "issue": item,
+                    "issue": issue_text,
                     "location": "",
-                    "suggestion": "",
+                    "suggestion": suggestion,
                     "type": "must_fix",
                 })
 
@@ -10478,8 +10497,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             mode = "task-work"
             complexity = 5
 
-        # Mode multiplier
-        if mode == "task-work":
+        # Mode multiplier. Direct mode gets the same 1.5x as task-work
+        # (8 October 2026): measured since 1 October, 31% of direct-mode
+        # turns ran out of time at 1.0x before writing their report, and the
+        # turns that finished took up to 2304 s against a 2160-2340 s
+        # allowance. The finite cap and the remaining-budget cap below still
+        # apply, so a turn never outlasts the task's own budget.
+        if mode in ("task-work", "direct"):
             mode_multiplier = 1.5
         else:
             mode_multiplier = 1.0
@@ -10762,6 +10786,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             duration = time.time() - start_time
             error_report = {"task_id": task_id, "turn": turn}
             error_msg = f"SDK timeout: {str(e)}"
+            # The turn ran out of time before the coder wrote its own report.
+            # Say so in fields, not only in the error text, so the state
+            # tracker, the evidence gate's feedback and the final summary can
+            # all tell a timeout apart from other failures (build FEAT-2C42,
+            # 8 October 2026).
+            timeout_details = player_timeout_details(
+                self.sdk_timeout_seconds, duration
+            )
             self._write_direct_mode_results(
                 task_id,
                 error_report,
@@ -10775,13 +10807,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 error_report,
                 success=False,
                 error=error_msg,
+                failure_details=timeout_details,
             )
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
                 agent_type="player",
                 success=False,
-                report={},
+                report=dict(timeout_details),
                 duration_seconds=duration,
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
                 session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
@@ -10916,6 +10949,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         player_report: Dict[str, Any],
         success: bool = True,
         error: Optional[str] = None,
+        failure_details: Optional[Dict[str, Any]] = None,
     ) -> Path:
         """Write player_turn_N.json for direct mode orchestrator compatibility.
 
@@ -10933,6 +10967,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             player_report: Player's report from SDK invocation
             success: Whether Player invocation succeeded
             error: Error message if success=False
+            failure_details: Extra fields saying why the turn failed (for a
+                timeout: ``timed_out``, ``timeout_seconds``,
+                ``elapsed_seconds``). Written only when ``success`` is False.
 
         Returns:
             Path to the written player report file
@@ -10971,11 +11008,17 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # Propagate _synthetic flag (mirrors _write_direct_mode_results pattern)
         if player_report.get("_synthetic"):
             report["_synthetic"] = True
+        # A report built from a working copy other tasks were also changing
+        # says so, so nothing downstream counts it as this task's evidence.
+        if player_report.get(SHARED_WORKING_COPY_FIELD):
+            report[SHARED_WORKING_COPY_FIELD] = True
 
         # Add error info if failed
         if not success and error:
             report["error"] = error
             report["success"] = False
+            if failure_details:
+                report.update(failure_details)
         else:
             report["success"] = True
 

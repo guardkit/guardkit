@@ -507,7 +507,7 @@ class TestSDKTimeoutCalculation:
 
     Formula: effective_timeout = base * mode_multiplier * complexity_multiplier
     Where:
-      mode_multiplier = 1.5 (task-work) | 1.0 (direct/other)
+      mode_multiplier = 1.5 (task-work, direct) | 1.0 (other)
       complexity_multiplier = 1.0 + (complexity / 10.0)
     Cap: MAX_SDK_TIMEOUT (3600s when the base is unconfigured)
     """
@@ -590,26 +590,26 @@ class TestSDKTimeoutCalculation:
         assert timeout == expected
         assert timeout == 2700
 
-    def test_direct_mode_multiplier_1x(self, worktree_path):
-        """Non-task-work modes use 1.0x multiplier."""
+    def test_direct_mode_multiplier_matches_task_work(self, worktree_path):
+        """Direct mode uses the same 1.5x multiplier as task-work (FEAT-2C42)."""
         invoker = AgentInvoker(worktree_path=worktree_path)
         create_task_file(worktree_path, "TASK-001", complexity=5, mode="direct")
 
         timeout = invoker._calculate_sdk_timeout("TASK-001")
 
-        # 1200 * 1.0 * 1.5 = 1800
-        expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.5)
+        # 1200 * 1.5 * 1.5 = 2700
+        expected = int(DEFAULT_SDK_TIMEOUT * 1.5 * 1.5)
         assert timeout == expected
-        assert timeout == 1800
+        assert timeout == 2700
 
     def test_complexity_1_multiplier_1_1x(self, worktree_path):
         """Complexity 1 produces 1.1x multiplier."""
         invoker = AgentInvoker(worktree_path=worktree_path)
-        create_task_file(worktree_path, "TASK-001", complexity=1, mode="direct")
+        create_task_file(worktree_path, "TASK-001", complexity=1, mode="bdd")
 
         timeout = invoker._calculate_sdk_timeout("TASK-001")
 
-        # 1200 * 1.0 * 1.1 = 1320
+        # 1200 * 1.0 * 1.1 = 1320 (a 1.0x mode, so only complexity scales)
         expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 1.1)
         assert timeout == expected
         assert timeout == 1320
@@ -617,11 +617,11 @@ class TestSDKTimeoutCalculation:
     def test_complexity_10_multiplier_2x(self, worktree_path):
         """Complexity 10 produces 2.0x multiplier."""
         invoker = AgentInvoker(worktree_path=worktree_path)
-        create_task_file(worktree_path, "TASK-001", complexity=10, mode="direct")
+        create_task_file(worktree_path, "TASK-001", complexity=10, mode="bdd")
 
         timeout = invoker._calculate_sdk_timeout("TASK-001")
 
-        # 1200 * 1.0 * 2.0 = 2400
+        # 1200 * 1.0 * 2.0 = 2400 (a 1.0x mode, so only complexity scales)
         expected = int(DEFAULT_SDK_TIMEOUT * 1.0 * 2.0)
         assert timeout == expected
         assert timeout == 2400

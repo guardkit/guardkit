@@ -46,6 +46,7 @@ from guardkit.orchestrator.state_detection import (
     detect_git_changes,
     detect_test_results,
 )
+from guardkit.orchestrator.synthetic_report import is_failure_placeholder
 
 logger = logging.getLogger(__name__)
 
@@ -296,14 +297,30 @@ class MultiLayeredStateTracker(StateTracker):
         try:
             with open(report_path, "r") as f:
                 report = json.load(f)
-            logger.info(f"Loaded Player report from {report_path}")
-            return report
         except json.JSONDecodeError as e:
             logger.warning(f"Invalid JSON in Player report: {e}")
             return None
         except Exception as e:
             logger.warning(f"Failed to load Player report: {e}")
             return None
+
+        # The factory writes this file itself when the turn failed before the
+        # coder wrote one (it ran out of time, or the call failed): success
+        # false, an error, and empty file lists. It says nothing about what
+        # was changed, so it is not the Player's report. Treat it as missing
+        # and measure the changes from git instead. Build FEAT-2C42
+        # (8 October 2026) logged "0 files created, 0 files modified" from
+        # this file while git showed four changed files.
+        if is_failure_placeholder(report):
+            logger.info(
+                f"Ignoring {report_path.name}: written by the factory after "
+                f"the turn failed ({report.get('error')}), not by the Player. "
+                f"Measuring the turn's changes from git instead."
+            )
+            return None
+
+        logger.info(f"Loaded Player report from {report_path}")
+        return report
 
     def _synthesize_state(
         self,
@@ -328,8 +345,10 @@ class MultiLayeredStateTracker(StateTracker):
         Returns:
             WorkState if any work detected, None otherwise
         """
-        # Case 1: Player report available (highest fidelity)
-        if player_report:
+        # Case 1: Player report available (highest fidelity). The factory's
+        # own placeholder for a failed turn is not a Player report (see
+        # _load_player_report), whichever way it arrives here.
+        if player_report and not is_failure_placeholder(player_report):
             return self._state_from_player_report(
                 turn=turn,
                 player_report=player_report,

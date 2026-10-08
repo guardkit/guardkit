@@ -53,6 +53,189 @@ _STOPWORDS: FrozenSet[str] = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Failed turns and shared working copies (build FEAT-2C42, 8 October 2026)
+# ---------------------------------------------------------------------------
+
+#: Report field set on a report built from a working copy that other tasks in
+#: the same wave were changing at the same time. Such a report may list their
+#: files, so it is never counted as evidence for this task.
+SHARED_WORKING_COPY_FIELD = "_shared_working_copy"
+
+SHARED_WORKING_COPY_CONCERN = (
+    "This report was built by the factory from the working copy that other "
+    "tasks in the same wave are also changing, so it may include their work. "
+    "It is not counted as evidence that this task met its acceptance criteria."
+)
+
+#: Category of the must-fix issue that tells the coder its last turn ran out
+#: of time before it wrote its report.
+PLAYER_TIMED_OUT_CATEGORY = "player_turn_timed_out"
+
+_TIMEOUT_SECONDS_IN_ERROR = re.compile(
+    r"(?:timeout after|exceeded)\s+(\d+)\s*s\b", re.IGNORECASE
+)
+
+
+def player_timeout_details(
+    timeout_seconds: Any, elapsed_seconds: Any
+) -> Dict[str, Any]:
+    """The fields that say a coder turn ran out of time, and its timings."""
+    details: Dict[str, Any] = {"timed_out": True}
+    try:
+        details["timeout_seconds"] = int(timeout_seconds)
+    except (TypeError, ValueError):
+        pass
+    try:
+        details["elapsed_seconds"] = int(round(float(elapsed_seconds)))
+    except (TypeError, ValueError):
+        pass
+    return details
+
+
+def is_failure_placeholder(report: Any) -> bool:
+    """Is this the report the factory wrote because the coder wrote none?
+
+    When a turn fails before the coder writes ``player_turn_N.json`` (it ran
+    out of time, or the call failed), the factory writes one in its place with
+    ``success: false``, an ``error`` and empty file lists. That file says
+    nothing about what the coder changed, so it must never be read as the
+    coder's report.
+    """
+    return (
+        isinstance(report, dict)
+        and report.get("success") is False
+        and bool(report.get("error"))
+    )
+
+
+def player_timeout_from_report(report: Any) -> Optional[Dict[str, Any]]:
+    """The timeout fields carried by a coder result or report, if any.
+
+    Looks at the report itself (the placeholder, or the failed result's
+    report) and at ``_recovery_metadata`` (a report rebuilt from git after
+    the failure). Falls back to the timings in an error message such as
+    ``"SDK timeout after 2340s"`` when no fields were written.
+    Returns ``None`` when nothing says the turn ran out of time.
+    """
+    if not isinstance(report, dict):
+        return None
+    for source in (report, report.get("_recovery_metadata")):
+        if isinstance(source, dict) and source.get("timed_out") is True:
+            return {
+                key: source[key]
+                for key in ("timed_out", "timeout_seconds", "elapsed_seconds")
+                if key in source
+            }
+    metadata = report.get("_recovery_metadata")
+    for text in (
+        report.get("error"),
+        metadata.get("original_error") if isinstance(metadata, dict) else None,
+    ):
+        details = player_timeout_from_error(text)
+        if details:
+            return details
+    return None
+
+
+def player_timeout_from_error(error: Any) -> Optional[Dict[str, Any]]:
+    """Timeout fields read from an error message, or ``None``.
+
+    Only the factory's own words for a turn that ran out of its time count
+    ("SDK timeout after 2340s", "exceeded 2340s timeout"); an error that
+    merely mentions a timeout, such as a network read timeout, does not.
+    """
+    if not isinstance(error, str):
+        return None
+    match = _TIMEOUT_SECONDS_IN_ERROR.search(error)
+    if match is None and not error.startswith("SDK timeout"):
+        return None
+    details: Dict[str, Any] = {"timed_out": True}
+    if match:
+        details["timeout_seconds"] = int(match.group(1))
+    return details
+
+
+def timeout_seconds_text(details: Dict[str, Any]) -> str:
+    """The time the turn was allowed, for a message: ``"2340 s"`` or ``""``.
+
+    The allowance rather than the measured run time, so the same timeout
+    gives the same words on every turn (the stall checks compare feedback
+    text from turn to turn). Falls back to the measured time.
+    """
+    seconds = details.get("timeout_seconds") or details.get("elapsed_seconds")
+    return f"{seconds} s" if seconds else ""
+
+
+def player_timed_out_issue(
+    task_id: str, turn: int, details: Dict[str, Any]
+) -> Dict[str, Any]:
+    """The must-fix issue telling the coder its last turn ran out of time."""
+    after = timeout_seconds_text(details)
+    report_name = f"player_turn_{turn}.json"
+    return {
+        "severity": "must_fix",
+        "category": PLAYER_TIMED_OUT_CATEGORY,
+        "description": (
+            f"Your last turn ran out of time"
+            f"{f' after {after}' if after else ''} before writing its "
+            f"report ({report_name})"
+        ),
+        "location": f".guardkit/autobuild/{task_id}/{report_name}",
+        "suggestion": (
+            "Write the report as soon as the work is done, before any long "
+            "test run."
+        ),
+        "details": dict(details),
+    }
+
+
+#: Category of the must-fix issue that tells the coder its last turn ended
+#: without its own report while other tasks were changing the same working
+#: copy, so the factory could not tell its changes from theirs.
+PLAYER_NO_OWN_REPORT_CATEGORY = "player_turn_no_own_report"
+
+
+def player_no_own_report_issue(task_id: str, turn: int) -> Dict[str, Any]:
+    """The must-fix issue for a turn that ended without the coder's report
+    in a working copy other tasks share."""
+    report_name = f"player_turn_{turn}.json"
+    return {
+        "severity": "must_fix",
+        "category": PLAYER_NO_OWN_REPORT_CATEGORY,
+        "description": (
+            f"Your last turn ended without writing its report ({report_name}). "
+            f"Other tasks are changing the same working copy, so the factory "
+            f"cannot tell which changes are yours and has not counted any of "
+            f"them for this task"
+        ),
+        "location": f".guardkit/autobuild/{task_id}/{report_name}",
+        "suggestion": (
+            "Write the report as soon as the work is done, listing the files "
+            "you changed and a completion promise for each acceptance "
+            "criterion."
+        ),
+    }
+
+
+def mark_shared_working_copy(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Mark a git-built report as coming from a shared working copy.
+
+    Removes everything in it that would count as this task's evidence
+    (completion promises and inferred requirements) and says why in its
+    concerns. The file lists are kept, so a reader can still see what the
+    working copy held.
+    """
+    report[SHARED_WORKING_COPY_FIELD] = True
+    report.pop("completion_promises", None)
+    report["requirements_addressed"] = []
+    concerns = list(report.get("concerns") or [])
+    if SHARED_WORKING_COPY_CONCERN not in concerns:
+        concerns.append(SHARED_WORKING_COPY_CONCERN)
+    report["concerns"] = concerns
+    return report
+
+
 def build_synthetic_report(
     task_id: str,
     turn: int,
