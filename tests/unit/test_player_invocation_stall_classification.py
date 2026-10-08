@@ -295,8 +295,15 @@ class TestPlayerInvocationStalled:
 class TestSummaryHintBranches:
     """AC5 — three distinct summary-hint branches must render correctly."""
 
-    def test_player_invocation_stall_hint_quotes_first_turn_error(self):
-        """AC2: quote the first-turn error; suggest env checks, not task changes."""
+    def test_player_invocation_stall_hint_quotes_first_turn_error(self, monkeypatch):
+        """AC2: quote the first-turn error; suggest env checks, not task changes.
+
+        The sign-in and claude-agent-sdk checks are only suggested on a run
+        configured for Anthropic through claude-agent-sdk (FEAT-2C42), so this
+        test configures one.
+        """
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
         orch = _make_orchestrator()
         original_error = "SDK API error: 500 Internal Server Error (turn 1)"
         history = [

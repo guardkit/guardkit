@@ -38,6 +38,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -84,6 +85,25 @@ def resolve_harness_name(env_var: str = "GUARDKIT_HARNESS") -> str:
         variable name instead of the process-wide one.
     """
     return os.environ.get(env_var, DEFAULT_HARNESS).lower()
+
+
+def is_anthropic_sdk_run(env_var: str = "GUARDKIT_HARNESS") -> bool:
+    """Does this process call Anthropic through the claude-agent-sdk harness?
+
+    True only when the configured harness is ``sdk`` AND
+    ``ANTHROPIC_BASE_URL`` is unset or names an ``anthropic.com`` host. Any
+    other harness, or the SDK pointed at another server (a local model
+    server, for example), is not an Anthropic SDK run, so advice about
+    ``claude`` sign-in or the claude-agent-sdk package does not apply to it.
+    Decided from configuration only, never from a run's symptoms.
+    """
+    if resolve_harness_name(env_var) != "sdk":
+        return False
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    if not base_url:
+        return True
+    host = (urlparse(base_url).hostname or "").lower()
+    return host == "anthropic.com" or host.endswith(".anthropic.com")
 
 
 def _translate_kwargs_for_langgraph(harness_kwargs: dict[str, Any]) -> dict[str, Any]:
