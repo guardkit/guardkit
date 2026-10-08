@@ -78,6 +78,7 @@ from guardkit.orchestrator.agent_invoker import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
+from guardkit.orchestrator.failing_test_feedback import MUST_FIX_MARKER
 from guardkit.orchestrator.phase_specialists import (
     detect_stack_template,
     render_missing_phase_list,
@@ -785,6 +786,63 @@ def _extract_environment_stall_signal(
         ):
             return issue
     return None
+
+
+# LANE-WF: the v4 contract emits every Coach finding at the CONSTANT
+# severity "major" (coach_output_parser._adapt_v4_to_internal) — a
+# rejection reason. It was absent from this map, so it scored the
+# unknown-severity default (99) and lost to any advisory riding along,
+# which is how build FEAT-STV1-20260801195639 showed
+# "Feedback: Deterministic honesty record (claim_audit_unmodified,
+# severity=should_fix) ..." as the operator-visible reason for five
+# turns whose actual blocker was a failing spec_conformance rule.
+_FEEDBACK_SEVERITY_ORDER: Dict[str, int] = {
+    "must_fix": 0,
+    "critical": 0,
+    "major": 1,
+    "should_fix": 2,
+    "minor": 3,
+    "warning": 4,
+}
+
+
+def _feedback_issue_rank(issue: Dict[str, Any]) -> Tuple[int, int]:
+    """(advisory-last, severity) — a warning never headlines a turn.
+
+    A deterministic honesty record that is NOT ``must_fix`` is, by
+    construction, never the reason the turn was rejected
+    (``coach_narrative_reconciler``: only ``critical`` records are
+    turn-rejecting). It must never outrank a real finding, whatever severity
+    vocabulary that finding uses. Used for the operator's one-line summary
+    and for the order of the feedback the Player is given.
+    """
+    from guardkit.orchestrator.coach_narrative_reconciler import (
+        DETERMINISTIC_SOURCE,
+    )
+
+    severity = issue.get("severity", "warning")
+    details = issue.get("details")
+    is_advisory_record = (
+        isinstance(details, dict)
+        and details.get("source") == DETERMINISTIC_SOURCE
+        and severity != "must_fix"
+    )
+    return (
+        1 if is_advisory_record else 0,
+        _FEEDBACK_SEVERITY_ORDER.get(severity, 99),
+    )
+
+
+def _feedback_issue_is_must_fix(issue: Dict[str, Any]) -> bool:
+    """Whether an issue is a reason the turn was rejected.
+
+    The same line the feedback file has always drawn between its must_fix and
+    should_fix lists (must_fix, critical and major severities), with the
+    advisory honesty records kept out as :func:`_feedback_issue_rank` keeps
+    them out.
+    """
+    advisory, severity_rank = _feedback_issue_rank(issue)
+    return advisory == 0 and severity_rank <= 1
 
 
 def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
@@ -10462,10 +10520,25 @@ class AutoBuildOrchestrator:
         if not issues:
             return coach_report.get("rationale", "No specific feedback provided")
 
+        # The reasons the turn was rejected come first, then the rest, each
+        # group in the order the Coach gave it (8 October 2026). Before this
+        # the first three issues were taken in report order, and in build
+        # FEAT-895D all three were honesty warnings, so the failing test,
+        # the one must-fix reason, was cut as "... and N more issues" on
+        # every turn. Must-fix issues are marked with MUST_FIX_MARKER so the
+        # feedback file can list them under must_fix
+        # (AgentInvoker._parse_coach_feedback).
+        ordered = sorted(
+            (issue for issue in issues if isinstance(issue, dict)),
+            key=_feedback_issue_rank,
+        )
+
         # Build feedback from issues
         feedback_lines = []
-        for issue in issues[:3]:  # Limit to top 3 issues
+        for issue in ordered[:3]:  # Limit to top 3 issues
             desc = issue.get("description", "")
+            if _feedback_issue_is_must_fix(issue):
+                desc = f"{MUST_FIX_MARKER}{desc}"
             missing = issue.get("missing_criteria", [])
 
             if missing:
@@ -10486,8 +10559,8 @@ class AutoBuildOrchestrator:
                 else:
                     feedback_lines.append(f"- {desc}")
 
-        if len(issues) > 3:
-            feedback_lines.append(f"... and {len(issues) - 3} more issues")
+        if len(ordered) > 3:
+            feedback_lines.append(f"... and {len(ordered) - 3} more issues")
 
         return "\n".join(feedback_lines)
 
@@ -10507,9 +10580,10 @@ class AutoBuildOrchestrator:
 
         This method reads ``coach_report["issues"]`` directly, picks the
         highest-severity issue (must_fix > should_fix > warning), and uses its
-        ``description`` field for the summary.  ``_extract_feedback`` is
-        intentionally left unchanged — the Player still receives the full,
-        untruncated feedback text.
+        ``description`` field for the summary.  ``_extract_feedback`` builds
+        the Player's text separately, ordered by the same rank
+        (:func:`_feedback_issue_rank`), so this one-line summary and the
+        first issue the Player reads agree.
 
         Parameters
         ----------
@@ -10524,51 +10598,9 @@ class AutoBuildOrchestrator:
         str
             Operator-visible summary string, e.g. ``"Feedback: Plan audit …"``.
         """
-        # LANE-WF: the v4 contract emits every Coach finding at the CONSTANT
-        # severity "major" (coach_output_parser._adapt_v4_to_internal) — a
-        # rejection reason. It was absent from this map, so it scored the
-        # unknown-severity default (99) and lost to any advisory riding along,
-        # which is how build FEAT-STV1-20260801195639 showed
-        # "Feedback: Deterministic honesty record (claim_audit_unmodified,
-        # severity=should_fix) ..." as the operator-visible reason for five
-        # turns whose actual blocker was a failing spec_conformance rule.
-        severity_order: Dict[str, int] = {
-            "must_fix": 0,
-            "critical": 0,
-            "major": 1,
-            "should_fix": 2,
-            "minor": 3,
-            "warning": 4,
-        }
-
-        def _rank(issue: Dict[str, Any]) -> Tuple[int, int]:
-            """(advisory-last, severity) — a warning never headlines a turn.
-
-            A deterministic honesty record that is NOT ``must_fix`` is, by
-            construction, never the reason the turn was rejected
-            (``coach_narrative_reconciler``: only ``critical`` records are
-            turn-rejecting). It must never outrank a real finding in the
-            operator log, whatever severity vocabulary that finding uses.
-            """
-            from guardkit.orchestrator.coach_narrative_reconciler import (
-                DETERMINISTIC_SOURCE,
-            )
-
-            severity = issue.get("severity", "warning")
-            details = issue.get("details")
-            is_advisory_record = (
-                isinstance(details, dict)
-                and details.get("source") == DETERMINISTIC_SOURCE
-                and severity != "must_fix"
-            )
-            return (
-                1 if is_advisory_record else 0,
-                severity_order.get(severity, 99),
-            )
-
         issues = coach_report.get("issues") or []
         if issues:
-            primary = min(issues, key=_rank)
+            primary = min(issues, key=_feedback_issue_rank)
             description = primary.get("description", "") or ""
             if description:
                 if len(description) > 80:

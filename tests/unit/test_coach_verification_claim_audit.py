@@ -279,6 +279,103 @@ def test_completion_promise_implementation_files_audited(
     ]
 
 
+def test_files_cited_as_evidence_are_not_claimed_as_written(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """The FEAT-895D shape (8 October 2026).
+
+    The Player changed one file and said so in ``files_modified``. In its
+    acceptance-criteria checklist it also cited four files it had only read
+    (an earlier task wrote them) as evidence that a criterion was met. Only
+    what it reports as created or modified is a claim that it wrote
+    something; the cited files must not produce "claimed but git shows no
+    change" warnings.
+    """
+    for rel in (
+        "src/items/router.py",
+        "src/items/crud.py",
+        "src/items/schemas.py",
+        "src/items/errors.py",
+        "src/db/session.py",
+    ):
+        path = git_worktree / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# base\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "earlier task", cwd=git_worktree)
+    # This turn's real change.
+    (git_worktree / "src/items/router.py").write_text("# base\n# new route\n")
+
+    report: Dict[str, Any] = {
+        "files_modified": ["src/items/router.py"],
+        "files_created": [],
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "status": "complete",
+                "implementation_files": ["src/items/router.py"],
+                "test_file": None,
+            },
+            {
+                "criterion_id": "AC-002",
+                "status": "complete",
+                "implementation_files": [
+                    "src/items/router.py",
+                    "src/items/schemas.py",
+                ],
+                "test_file": None,
+            },
+            {
+                "criterion_id": "AC-003",
+                "status": "complete",
+                "implementation_files": [
+                    "src/items/router.py",
+                    "src/items/crud.py",
+                    "src/db/session.py",
+                ],
+                "test_file": None,
+            },
+            {
+                "criterion_id": "AC-004",
+                "status": "complete",
+                "implementation_files": [
+                    "src/items/router.py",
+                    "src/items/errors.py",
+                ],
+                "test_file": None,
+            },
+        ],
+    }
+
+    assert verifier._verify_claims_were_staged(report) == []
+
+
+def test_a_file_reported_as_modified_but_unchanged_is_still_recorded(
+    git_worktree: Path, verifier: CoachVerifier
+) -> None:
+    """The other half: citing a file as evidence does not excuse a false
+    ``files_modified`` claim on it. The top-level list is still audited."""
+    (git_worktree / "src").mkdir()
+    (git_worktree / "src/crud.py").write_text("# base\n")
+    _git("add", "-A", cwd=git_worktree)
+    _git("commit", "-m", "earlier task", cwd=git_worktree)
+
+    report: Dict[str, Any] = {
+        "files_modified": ["src/crud.py"],
+        "completion_promises": [
+            {
+                "criterion_id": "AC-001",
+                "status": "complete",
+                "implementation_files": ["src/crud.py"],
+            }
+        ],
+    }
+
+    discrepancies = verifier._verify_claims_were_staged(report)
+    assert [d.claim_type for d in discrepancies] == ["claim_audit_unmodified"]
+    assert "src/crud.py" in discrepancies[0].player_claim
+
+
 # ---------------------------------------------------------------------------
 # Path-normalization: leading ./ and trailing /
 # ---------------------------------------------------------------------------

@@ -75,6 +75,12 @@ from guardkit.orchestrator.coach_narrative_reconciler import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
+from guardkit.orchestrator.failing_test_feedback import (
+    FAILURE_SUMMARY_LIMIT,
+    QG_FAILING_TESTS,
+    QG_FAILURE_SUMMARY,
+    must_fix_items,
+)
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
     CriterionVerification,
@@ -7441,7 +7447,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         task and integer turn, when its nested issue/result shapes match the
         source renderer, both skipped downstream legs remain ``None``, and its
         five serialized quality-gate values exactly match the typed bundle
-        gates. A missing, malformed, stale, or mismatched payload retains the
+        gates (the renderer's two coverage fields, ``coverage_relaxed_by`` and
+        ``coverage_receipt``, may also be present and must then equal the
+        bundle's). A missing, malformed, stale, or mismatched payload retains the
         generic fail-closed behaviour below.
 
         Fail-open rules (this guard must not fire on evidence-less legacy
@@ -7557,14 +7565,32 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     and validation_results["independent_tests"] is None
                     and validation_results["requirements"] is None
                 )
+                # The two coverage fields the renderer has written since
+                # 19 September 2026 (B9 Lane C). They are optional here so a
+                # payload rendered before them still matches, and when present
+                # they must equal the bundle's own values. Before 8 October
+                # 2026 the key set had to be exactly the five gate fields, so
+                # every real payload (which carries these two) was refused and
+                # the Player got the model's narrative instead of the gate's
+                # own feedback: build FEAT-895D's coder was never told which
+                # test failed.
+                coverage_fields = ("coverage_relaxed_by", "coverage_receipt")
                 gates_match = (
                     validation_shape_matches
                     and isinstance(serialized_gates, dict)
-                    and set(serialized_gates) == set(gate_fields)
+                    and set(gate_fields) <= set(serialized_gates)
+                    and set(serialized_gates)
+                    <= set(gate_fields) | set(coverage_fields)
                     and all(
                         serialized_gates[field]
                         is getattr(gates, field, object())
                         for field in gate_fields
+                    )
+                    and all(
+                        serialized_gates[field]
+                        == getattr(gates, field, object())
+                        for field in coverage_fields
+                        if field in serialized_gates
                     )
                 )
                 issues = candidate.get("issues")
@@ -10111,8 +10137,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     "suggestion": issue.get("suggestion", ""),
                     "type": issue.get("type", "unknown"),
                 }
-                # Categorize by severity
-                if issue.get("severity") in ["critical", "major"]:
+                # Categorize by severity. "must_fix" is the severity the
+                # quality gates themselves use; it was missing here, so a
+                # gate's own must-fix issue was filed as should-fix.
+                if issue.get("severity") in ["must_fix", "critical", "major"]:
                     structured["must_fix"].append(issue_entry)
                 else:
                     structured["should_fix"].append(issue_entry)
@@ -10121,6 +10149,20 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             # Plain text feedback - store as summary
             structured["feedback_summary"] = feedback
             structured["raw_feedback"] = feedback
+            # The text is what AutoBuildOrchestrator._extract_feedback wrote,
+            # and it starts each must-fix issue with MUST_FIX_MARKER. Read
+            # those back into must_fix, so the list the Player is told to
+            # address is not empty when the turn failed for a must-fix reason
+            # (build FEAT-895D, 8 October 2026: a failing test was the only
+            # must-fix reason and the list was empty for three turns). Text
+            # with no marked line gives an empty list, as before.
+            for item in must_fix_items(feedback):
+                structured["must_fix"].append({
+                    "issue": item,
+                    "location": "",
+                    "suggestion": "",
+                    "type": "must_fix",
+                })
 
         return structured
 
@@ -12941,6 +12983,41 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
                 qg["coverage_met"] = False
             qg["reconciled_from_specialist"] = True
+            task_work_data["quality_gates"] = qg
+
+        # WHICH TESTS FAILED, carried to the feedback (8 October 2026). When
+        # the test phase ran and failed, the names of the failing tests the
+        # test phase itself reported, and its own one-line account of the
+        # failure, are copied beside the gate's counts, so the feedback the
+        # Player gets next turn can name them. Build FEAT-895D lost three
+        # turns because the Player was told only "tests did not pass": the
+        # name sat in specialist_results.json and never reached it. Nothing
+        # here parses test output; it copies what the test phase already
+        # wrote. Every other outcome (passed, absent, skipped, no record)
+        # removes both fields so a name from an earlier turn never lingers.
+        qg = task_work_data.get("quality_gates")
+        if isinstance(qg, dict):
+            ran_and_failed = (
+                isinstance(phase_4_block, dict)
+                and phase_4_block.get("status") == "failed"
+                and not phase_4_block.get("signal_absent")
+            )
+            if ran_and_failed:
+                named = phase_4_block.get("new_failing_tests")
+                qg[QG_FAILING_TESTS] = (
+                    [str(n) for n in named if n]
+                    if isinstance(named, list)
+                    else []
+                )
+                line = phase_4_block.get("output_summary") or ""
+                if not isinstance(line, str) or not line.strip():
+                    line = phase_4_block.get("error") or ""
+                qg[QG_FAILURE_SUMMARY] = (
+                    " ".join(str(line).split())[:FAILURE_SUMMARY_LIMIT]
+                )
+            else:
+                qg.pop(QG_FAILING_TESTS, None)
+                qg.pop(QG_FAILURE_SUMMARY, None)
             task_work_data["quality_gates"] = qg
 
         try:

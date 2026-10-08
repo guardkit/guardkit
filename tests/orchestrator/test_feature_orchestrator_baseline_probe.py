@@ -5,10 +5,12 @@ baseline.json, and warns (report-only) when the base suite is already red — so
 a pre-existing failure is a wave-0 warning, never attributed to the first
 task's Coach.
 
-Which suite it runs is Rich's ruling of 2026-09-10: the feature's own smoke
-command when it declares one, and otherwise the repository's declared test
-command, so a repair — which declares no smoke command — measures its base
-too. With neither, nothing runs and nothing is written, exactly as before.
+Which suite it runs: the repository's declared test command when it declares
+one, because that is what the quality gates run and the base must cover at
+least that (8 October 2026, build FEAT-895D); otherwise the feature's own smoke
+command. A repair, which declares no smoke command, still measures its base
+with the declared command (the ruling of 2026-09-10). With neither, nothing
+runs and nothing is written, exactly as before.
 
 Three rules these tests pin, because all three decide what the Coach and the
 work leg subtract before charging a task with a failure:
@@ -228,16 +230,16 @@ def _smoke_result(command, passed=True, exit_code=0, stdout=""):
     )
 
 
-def test_feature_smoke_command_still_runs_exactly_as_today(tmp_path, monkeypatch):
-    """A feature that declares a smoke command is untouched by the ruling.
+def test_feature_smoke_command_runs_when_nothing_is_declared(
+    tmp_path, monkeypatch
+):
+    """With no declared test command, the feature's smoke command measures.
 
-    Same command, same expected exit, same timeout, same working directory —
-    and the repository's declaration is not consulted at all, even when one is
-    sitting right there.
+    Same command, same expected exit, same timeout, same working directory as
+    before the order changed: the smoke command is the fallback.
     """
     wt = tmp_path / "wt"
     wt.mkdir()
-    _declare_test_command(tmp_path, "the-repository-command-that-must-not-run")
     orch = _orchestrator(tmp_path)
     smoke_command = _pytest_command("test_slice.py")
     feature = _feature(smoke_command)
@@ -253,6 +255,91 @@ def test_feature_smoke_command_still_runs_exactly_as_today(tmp_path, monkeypatch
     assert calls[0]["wave_number"] == 0
     assert orch._measured_baseline is not None
     assert orch._measured_baseline.source == SOURCE_FEATURE_SMOKE
+
+
+def test_declared_command_measures_the_base_even_when_a_smoke_command_exists(
+    tmp_path, monkeypatch
+):
+    """Both declared: the base is measured with what the gates run.
+
+    The gates run the repository's declared command, so the base must cover
+    at least that. The smoke command is not run, and the record says the
+    declared command measured it.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "qa/run-suite.sh")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("set -e\npytest tests/users -x -q\n")
+
+    calls = _recording_runner(
+        monkeypatch,
+        _smoke_result(
+            "qa/run-suite.sh",
+            passed=False,
+            exit_code=1,
+            stdout=(
+                "FAILED tests/test_settings.py::TestDefaults::test_default_address"
+                " - AssertionError\n1 failed, 40 passed in 2.00s\n"
+            ),
+        ),
+    )
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert [c["command"] for c in calls] == ["qa/run-suite.sh"]
+    assert calls[0]["timeout"] == _BASELINE_DECLARED_SUITE_TIMEOUT
+    baseline = orch._measured_baseline
+    assert baseline is not None
+    assert baseline.source == SOURCE_REPOSITORY_TEST
+    assert baseline.failing_node_ids == [
+        "tests/test_settings.py::TestDefaults::test_default_address"
+    ]
+    loaded = read_baseline_from_worktree(wt)
+    assert loaded is not None
+    assert loaded.command == "qa/run-suite.sh"
+    assert loaded.source == SOURCE_REPOSITORY_TEST
+
+
+def test_a_failure_outside_the_smoke_folder_is_forgiven_not_charged(
+    tmp_path,
+):
+    """The FEAT-895D shape, end to end through the real probe and real pytest.
+
+    The feature's smoke command selects one folder; the repository's declared
+    command runs the whole suite; a test outside the smoke folder is already
+    failing on the base. The base must name that test, so the gates subtract
+    it instead of charging the first task that runs the whole suite.
+    """
+    wt = tmp_path / "wt"
+    (wt / "tests" / "users").mkdir(parents=True)
+    (wt / "tests" / "users" / "test_users.py").write_text(
+        "def test_users_ok():\n    assert True\n"
+    )
+    (wt / "tests" / "test_settings.py").write_text(
+        "def test_default_address():\n    assert 'a' == 'b'\n"
+    )
+    _declare_test_command(tmp_path, _pytest_command("tests"))
+    orch = _orchestrator(tmp_path)
+    feature = _feature(_pytest_command("tests/users -x"))
+
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    baseline = read_baseline_from_worktree(wt)
+    assert baseline is not None
+    assert baseline.source == SOURCE_REPOSITORY_TEST
+    assert baseline.passed is False
+    failing = "tests/test_settings.py::test_default_address"
+    assert baseline.failing_node_ids == [failing]
+
+    # What the gates then charge a task for: nothing, because the one failure
+    # the whole suite shows was already failing on the base.
+    charged = compute_charged_failures(
+        observed_node_ids=[failing],
+        baseline_node_ids=baseline.failing_node_ids,
+        ledger_ids=set(),
+        authored_test_files=[],
+    )
+    assert charged == []
 
 
 def test_no_smoke_command_runs_the_repository_declaration(tmp_path, caplog):

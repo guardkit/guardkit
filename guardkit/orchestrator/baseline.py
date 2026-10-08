@@ -11,12 +11,15 @@ never a substitute for the human-curated F2 ledger (WS3 §3 composition rule,
 pre-decided with B2):
 
 * **Item 1 — baseline-green probe.** Run the suite once at worktree setup
-  (after bootstrap, before wave 1) — the feature's own smoke command when it
-  declares one, otherwise the repository's declared test command (Rich's
-  ruling, 2026-09-10, so a repair with no smoke command still gets a measured
-  base). That declaration is read from the repository root, never from the
-  copy inside the worktree, because the worktree copy is a file the model can
-  rewrite. Record the result, and which command measured it, to
+  (after bootstrap, before wave 1) — the repository's declared test command
+  when it declares one, because that is the command the quality gates run and
+  the base must cover at least what they judge (8 October 2026: a base
+  measured with a feature's narrower smoke command missed a test that was
+  already failing elsewhere, and the gates charged it to a task); otherwise
+  the feature's own smoke command. A repair with no smoke command still gets a
+  measured base from the declared command (the ruling of 2026-09-10). That
+  declaration is read from the repository root, never from the copy inside the
+  worktree, because the worktree copy is a file the model can rewrite. Record the result, and which command measured it, to
   ``.guardkit/autobuild/<feature>/baseline.json``. Emit a wave-0 WARNING when
   red. Report-only — it NEVER blocks the run.
 

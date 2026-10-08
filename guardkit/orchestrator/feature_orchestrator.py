@@ -4978,14 +4978,29 @@ The detailed specifications are in the task markdown file.
 
         Two answers, in this order:
 
-        1. **The feature's own smoke command**, when it declares one. This is
-           first because it always was, and a feature that has said how to
-           smoke itself has said it for a reason.
-        2. **The repository's declared test command** otherwise — Rich's
-           ruling of 2026-09-10. A fix journey's feature declares no smoke
-           command, so until now a repair never measured its base at all, and
-           the work leg's "zero net-new failures" verdict had nothing to
-           subtract against.
+        1. **The repository's declared test command**, when it declares one.
+           It comes first because it is the command the quality gates run
+           (the deterministic test phase and the Coach both run the declared
+           command when there is one), and the baseline is what those gates
+           subtract. A baseline must cover at least what the gates run: a
+           narrower command cannot see a test elsewhere in the suite that was
+           already failing, so its green record reads as "nothing was
+           failing" and that old failure is charged to the first task whose
+           gate runs the whole suite. Build FEAT-895D (7 October 2026) failed
+           that way: the base was measured with the feature's smoke command
+           (one test folder), a test outside it was already failing, and the
+           gates charged it to the task for three turns.
+        2. **The feature's own smoke command** otherwise. With no declared
+           command the gates run the task's own tests, so the smoke command
+           is the best measure there is of the base.
+
+        Until 8 October 2026 the order was the other way round (the smoke
+        command first, and the declared command only when there was no smoke
+        command — the 2026-09-10 ruling that gave a repair, which declares no
+        smoke command, a measured base). That ruling still holds: a feature
+        with no smoke command still measures its base with the declared
+        command. Only a feature that declares both changes, and it now
+        measures with the command its gates run.
 
         With neither, this returns ``None`` and the probe is skipped exactly
         as it always was — a repository that declares nothing behaves byte for
@@ -5027,12 +5042,21 @@ The detailed specifications are in the task markdown file.
         the caller simply skips.
         """
         smoke = getattr(feature, "smoke_gates", None)
-        if smoke is not None:
-            return smoke, SOURCE_FEATURE_SMOKE
         try:
             declared = declared_toolchain_test_command(self.repo_root)
             if not declared:
+                if smoke is not None:
+                    return smoke, SOURCE_FEATURE_SMOKE
                 return None
+            if smoke is not None and (smoke.command or "").strip() != declared:
+                logger.info(
+                    "Baseline probe: measuring the base with the repository's "
+                    "declared test command (%s), the one the quality gates "
+                    "run, not the feature's smoke command (%s), so the base "
+                    "covers everything the gates will judge.",
+                    declared,
+                    (smoke.command or "").strip(),
+                )
             return (
                 SmokeGates(
                     # Inert on this path: the probe runs once before wave 1,
@@ -5053,6 +5077,8 @@ The detailed specifications are in the task markdown file.
                 "base of %s: %s (continuing; the probe is report-only).",
                 self.repo_root, exc,
             )
+            if smoke is not None:
+                return smoke, SOURCE_FEATURE_SMOKE
             return None
 
     def _run_baseline_probe(
@@ -5072,9 +5098,9 @@ The detailed specifications are in the task markdown file.
         nothing else, because a build that cannot measure its base must still
         be able to run.
 
-        WHICH COMMAND. The feature's smoke command when it declares one
-        (today's behaviour, unchanged, and still first); otherwise the
-        repository's own declared test command. See
+        WHICH COMMAND. The repository's own declared test command when it
+        declares one, because that is what the quality gates run and the base
+        must cover at least that; otherwise the feature's smoke command. See
         :meth:`_resolve_baseline_probe`.
 
         MEASURED ONCE PER WORKTREE, NEVER TWICE — BUT ONLY WHAT THIS BUILD
