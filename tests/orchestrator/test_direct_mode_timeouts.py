@@ -138,9 +138,12 @@ def _write_player_report(worktree: Path, task_id: str, turn: int, report: Dict) 
     (report_dir / f"player_turn_{turn}.json").write_text(json.dumps(report))
 
 
-def _orchestrator(repo_root: Path, wave_size: int = 1) -> AutoBuildOrchestrator:
+def _orchestrator(
+    repo_root: Path, wave_size: int = 1, shares_working_copy: bool = False
+) -> AutoBuildOrchestrator:
     return AutoBuildOrchestrator(
-        repo_root=repo_root, enable_pre_loop=False, wave_size=wave_size
+        repo_root=repo_root, enable_pre_loop=False, wave_size=wave_size,
+        shares_working_copy=shares_working_copy,
     )
 
 
@@ -460,8 +463,10 @@ class TestSharedWorkingCopyIsNotEvidence:
     FILES_MODIFIED = ["docs/widgets.md"]
     FILES_CREATED = ["docs/remove-widget.md", "tests/test_widget_docs.py"]
 
-    def test_rebuilt_report_in_a_wave_carries_no_evidence(self, worktree: Path) -> None:
-        orch = _orchestrator(worktree, wave_size=2)
+    def test_rebuilt_report_in_a_concurrent_wave_carries_no_evidence(
+        self, worktree: Path
+    ) -> None:
+        orch = _orchestrator(worktree, wave_size=2, shares_working_copy=True)
         report = orch._build_synthetic_report(
             _work_state(self.FILES_MODIFIED, self.FILES_CREATED),
             "SDK timeout after 2160s: Agent invocation exceeded 2160s timeout",
@@ -494,7 +499,7 @@ class TestSharedWorkingCopyIsNotEvidence:
     ) -> None:
         (worktree / "docs" / "widgets.md").write_text("# Widgets\n\nRemove.\n")
         _write_player_report(worktree, TASK_B, 1, _placeholder(TASK_B, 1, 2160))
-        orch = _orchestrator(worktree, wave_size=2)
+        orch = _orchestrator(worktree, wave_size=2, shares_working_copy=True)
         with patch(
             "guardkit.orchestrator.state_tracker.detect_test_results",
             return_value=None,
@@ -536,13 +541,73 @@ class TestSharedWorkingCopyIsNotEvidence:
         path = invoker._write_player_report_for_direct_mode(TASK_A, 2, report)
         assert json.loads(path.read_text())[SHARED_WORKING_COPY_FIELD] is True
 
-    def test_orchestrator_tells_the_invoker_about_the_wave(self, worktree: Path) -> None:
+    @pytest.mark.parametrize("shares", [True, False])
+    def test_orchestrator_tells_the_invoker_about_the_wave(
+        self, worktree: Path, shares: bool
+    ) -> None:
         orch = AutoBuildOrchestrator(
             repo_root=worktree, enable_pre_loop=False, wave_size=2,
+            shares_working_copy=shares,
             existing_worktree=_FakeWorktree(worktree),
         )
         orch._setup_phase(TASK_A, "main")
-        assert orch._agent_invoker.shared_working_copy is True
+        assert orch._agent_invoker.shared_working_copy is shares
+
+
+class TestWaveRunOneAtATimeKeepsItsCredit:
+    """Coach finding, 8 October 2026: a wave of two run one task at a time
+    (max_parallel 1, or tasks on the same area) is not a shared working copy.
+    Each task measures git from its own starting commit, so its rebuilt
+    report keeps its promises and requirements (as build FEAT-DB3D's wave 2
+    did: 2 promises and 3 requirements on a turn with no coder report)."""
+
+    def test_recovery_rebuilt_report_keeps_promises(self, worktree: Path) -> None:
+        orch = _orchestrator(worktree, wave_size=2, shares_working_copy=False)
+        report = orch._build_synthetic_report(
+            _work_state(["docs/widgets.md"], ["docs/remove-widget.md"]),
+            "SDK timeout after 2160s: Agent invocation exceeded 2160s timeout",
+            acceptance_criteria=CRITERIA,
+            task_type="documentation",
+            worktree_path=worktree,
+        )
+        assert SHARED_WORKING_COPY_FIELD not in report
+        assert report.get("completion_promises")
+
+    def test_invoker_rebuilt_report_keeps_requirements(self, worktree: Path) -> None:
+        _create_task_file(worktree, TASK_A, complexity=3)
+        (worktree / "docs" / "widgets.md").write_text(
+            "# Widgets\n\nThis page describes the remove-widget endpoint.\n"
+            "It lists the 204 and 404 responses.\n"
+        )
+
+        def build(shared: bool) -> Dict[str, Any]:
+            invoker = _invoker(worktree)
+            invoker.shared_working_copy = shared
+            return invoker._create_synthetic_direct_mode_report(
+                TASK_A, 5, acceptance_criteria=CRITERIA, task_type="documentation"
+            )
+
+        alone = build(False)
+        assert SHARED_WORKING_COPY_FIELD not in alone
+        # The text-matching fallback's list is kept.
+        assert alone["requirements_addressed"]
+        # The same tree, really shared, carries none.
+        assert build(True)["requirements_addressed"] == []
+
+    @pytest.mark.parametrize(
+        "tasks_to_run, max_parallel, expected",
+        [
+            (2, 1, False),     # one at a time
+            (2, None, True),   # unlimited
+            (2, 0, True),      # zero means unlimited
+            (3, 2, True),
+            (1, None, False),  # only one task actually runs
+        ],
+    )
+    def test_concurrency_rule(self, tasks_to_run, max_parallel, expected) -> None:
+        from guardkit.orchestrator.parallel_strategy import tasks_run_at_the_same_time
+
+        assert tasks_run_at_the_same_time(tasks_to_run, max_parallel) is expected
 
 
 class TestTimeoutWordsAreNarrow:
@@ -844,3 +909,88 @@ class TestGateItemKeepsItsDetails:
         assert "AC-011" not in item["issue"]
         assert "and 20 more" in item["issue"]
         assert item["suggestion"]
+
+
+# ---------------------------------------------------------------------------
+# Coach finding 2: task-work turns get task-work wording, said once
+# ---------------------------------------------------------------------------
+
+TASK_WORK_TIMEOUT = "task-work execution exceeded 4050s timeout"
+
+
+def _task_work_orchestrator(worktree: Path) -> tuple:
+    orch, invoker = _mocked_orchestrator(worktree)
+    invoker._get_implementation_mode.return_value = "task-work"
+    invoker.invoke_player.return_value = AgentInvocationResult(
+        task_id=TASK_A, turn=2, agent_type="player", success=False,
+        report={}, duration_seconds=4050.0, error=TASK_WORK_TIMEOUT,
+    )
+    return orch, invoker
+
+
+class TestTaskWorkTimeoutWording:
+    def test_partial_work_and_reviewer_feedback_say_it_once(
+        self, worktree: Path
+    ) -> None:
+        orch, _ = _task_work_orchestrator(worktree)
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="player", success=True,
+            report={
+                "task_id": TASK_A, "_synthetic": True,
+                "files_modified": ["docs/widgets.md"], "files_created": [],
+                "tests_written": [],
+                "_recovery_metadata": {
+                    "detection_method": "git_test_detection",
+                    "original_error": TASK_WORK_TIMEOUT,
+                    "timed_out": True, "timeout_seconds": 4050,
+                },
+            },
+            duration_seconds=0.0,
+        )
+        with patch.object(orch, "_attempt_state_recovery", return_value=recovered), \
+                patch.object(orch, "_invoke_coach_safely", return_value=_reviewer_feedback()):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "feedback"
+        assert record.feedback.count("timed out") + record.feedback.count(
+            "ran out of time"
+        ) == 1
+        assert "The task-work Player attempt timed out" in record.feedback
+        assert "player_turn_" not in record.feedback
+        assert "before any long test run" not in record.feedback
+
+    def test_nothing_recovered_gets_task_work_wording(self, worktree: Path) -> None:
+        orch, _ = _task_work_orchestrator(worktree)
+        with patch.object(orch, "_attempt_state_recovery", return_value=None):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "error"
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 3)["must_fix"]
+        assert len(must_fix) == 1
+        assert "task-work attempt ran out of time (allowed 4050 s)" in must_fix[0]["issue"]
+        assert "found no changes" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"]
+        assert "player_turn_" not in record.feedback
+        assert "before any long test run" not in record.feedback
+
+    def test_task_work_other_failure_with_nothing_recovered(self, worktree: Path) -> None:
+        orch, invoker = _task_work_orchestrator(worktree)
+        invoker.invoke_player.return_value = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="player", success=False,
+            report={}, duration_seconds=30.0, error="task-work exited with code 1",
+        )
+        with patch.object(orch, "_attempt_state_recovery", return_value=None):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 3)["must_fix"]
+        assert "task-work attempt failed" in must_fix[0]["issue"]
+        assert "task-work exited with code 1" in must_fix[0]["issue"]
+        assert "player_turn_" not in record.feedback

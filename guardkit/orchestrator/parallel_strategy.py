@@ -697,6 +697,23 @@ def resolve_max_parallel(
     return config.static_value
 
 
+def tasks_run_at_the_same_time(
+    tasks_to_run: int, max_parallel: Optional[int]
+) -> bool:
+    """Will two or more of a wave's tasks run at the same time?
+
+    ``tasks_to_run`` is how many of the wave's tasks are actually started;
+    ``max_parallel`` is the limit :func:`resolve_max_parallel` resolved for
+    the wave (``None`` or ``<= 0`` means unlimited, as in
+    :func:`bound_concurrency`). A wave run one task at a time — a limit of
+    1, or a single task to run — never has two tasks changing the shared
+    working copy at once.
+    """
+    if tasks_to_run < 2:
+        return False
+    return max_parallel is None or max_parallel <= 0 or max_parallel > 1
+
+
 def bound_concurrency(
     coros: Sequence[Awaitable],
     max_parallel: Optional[int],

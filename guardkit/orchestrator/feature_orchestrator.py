@@ -181,6 +181,7 @@ from guardkit.orchestrator.parallel_strategy import (
     bound_concurrency,
     collect_wave_task_paths,
     resolve_max_parallel,
+    tasks_run_at_the_same_time,
 )
 from guardkit.worktrees import (
     WorktreeManager,
@@ -4252,6 +4253,9 @@ The detailed specifications are in the task markdown file.
         """
         results = []
         tasks_to_execute = []
+        # (task, timeout, keyword arguments) for each task to run, turned
+        # into calls once the wave's real concurrency is known.
+        queued_calls: List[Tuple[Any, Any, Dict[str, Any]]] = []
         task_id_mapping = []  # Track which task_id corresponds to which async task
         cancellation_events: Dict[str, threading.Event] = {}  # Per-task cancellation (TASK-ASF-007)
         timeout_events: Dict[str, threading.Event] = {}  # Per-task feature-level timeout (TASK-ABFIX-006)
@@ -4392,28 +4396,28 @@ The detailed specifications are in the task markdown file.
 
             elapsed_at_queue = time.monotonic() - wave_start_time
             task_budget = max(0.0, effective_task_timeout - elapsed_at_queue)
-            tasks_to_execute.append(
-                asyncio.wait_for(
-                    asyncio.to_thread(
-                        self._execute_task, task, feature, worktree,
-                        cancellation_event=cancel_event,
-                        timeout_event=timeout_event,
-                        time_budget_seconds=task_budget,
-                        wave_size=len(task_ids),
-                        effective_task_timeout=effective_task_timeout,
-                        wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
-                        wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
-                        seed_feedback=seed_feedback,  # TASK-AB-COACHRUNPARITY01 (arm a)
-                        smoke_command=smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
-                        smoke_expected_exit=smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
-                    ),
-                    timeout=effective_task_timeout,
-                )
-            )
+            # The call is built after the loop, once it is known whether the
+            # tasks of this wave will really run at the same time.
+            queued_calls.append((
+                task,
+                effective_task_timeout,
+                dict(
+                    cancellation_event=cancel_event,
+                    timeout_event=timeout_event,
+                    time_budget_seconds=task_budget,
+                    wave_size=len(task_ids),
+                    effective_task_timeout=effective_task_timeout,
+                    wave_changed_files=wave_changed_files,  # TASK-FIX-A7B2
+                    wave_files_lock=wave_files_lock,  # TASK-FIX-A7B2
+                    seed_feedback=seed_feedback,  # TASK-AB-COACHRUNPARITY01 (arm a)
+                    smoke_command=smoke_command,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                    smoke_expected_exit=smoke_expected_exit,  # TASK-AB-COACHRUNPARITY01 (arm b)
+                ),
+            ))
             task_id_mapping.append(task_id)
 
         # Execute all tasks in parallel if any, respecting max_parallel limit
-        if tasks_to_execute:
+        if queued_calls:
             # TASK-VRF-006: Resolve max_parallel via strategy (supports static/dynamic/per-wave)
             effective_max_parallel = resolve_max_parallel(
                 self._parallel_config,
@@ -4426,6 +4430,26 @@ The detailed specifications are in the task markdown file.
                     wave_number, task_ids, feature, worktree
                 ),
             )
+
+            # Do this wave's tasks really change the working copy at the
+            # same time? Only then can git not tell their changes apart
+            # (FEAT-2C42). A wave of several tasks run one at a time
+            # (max_parallel 1, or tasks on the same area) is not shared:
+            # each task measures from its own starting commit.
+            shares_working_copy = tasks_run_at_the_same_time(
+                len(queued_calls), effective_max_parallel
+            )
+            tasks_to_execute = [
+                asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._execute_task, task, feature, worktree,
+                        shares_working_copy=shares_working_copy,
+                        **call_kwargs,
+                    ),
+                    timeout=call_timeout,
+                )
+                for task, call_timeout, call_kwargs in queued_calls
+            ]
 
             # Apply concurrency bound if max_parallel is set.
             # TASK-FIX-MAXPARALLEL01: extracted to parallel_strategy.bound_concurrency
@@ -5698,6 +5722,7 @@ The detailed specifications are in the task markdown file.
         seed_feedback: Optional[str] = None,
         smoke_command: Optional[str] = None,
         smoke_expected_exit: int = 0,
+        shares_working_copy: bool = False,
     ) -> TaskExecutionResult:
         """
         Execute single task using AutoBuildOrchestrator with shared worktree.
@@ -5787,6 +5812,9 @@ The detailed specifications are in the task markdown file.
                 ),
                 timeout_multiplier=self.timeout_multiplier,  # TASK-FIX-VL05
                 wave_size=wave_size,  # Parallel wave context for Coach isolation (TASK-ABFIX-005)
+                # FEAT-2C42: True only when other tasks of the wave change
+                # the working copy at the same time as this one.
+                shares_working_copy=shares_working_copy,
                 emitter=self._emitter,  # Forward emitter to task orchestrator (TASK-INST-013)
                 progress_logger=progress_logger,  # TASK-FIX-OBS2: Per-task progress logging
                 venv_python=self._bootstrap_venv_python,  # TASK-FIX-7A05

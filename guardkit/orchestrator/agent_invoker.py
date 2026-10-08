@@ -10335,7 +10335,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         Task-work mode is structurally superior for non-trivial tasks:
         - Natural generator exhaustion (no cancel scope race condition)
-        - 1.5x SDK timeout multiplier
+        - 1.5x SDK timeout multiplier (direct mode has had the same since
+          FEAT-2C42, 8 October 2026)
         - Agent-written reports with real completion_promises
         - Rich stream parsing with tool use tracking
 
@@ -10451,7 +10452,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         """Calculate dynamic SDK timeout based on task characteristics.
 
         Adjusts the base timeout using:
-        - Implementation mode multiplier (task-work=1.5x, direct=1.0x)
+        - Implementation mode multiplier (task-work and direct 1.5x, any
+          other mode 1.0x; direct was 1.0x before FEAT-2C42, 8 October 2026)
         - Complexity multiplier (1.0 + complexity/10.0, range 1.1x-2.0x)
 
         If the caller marks the timeout as an explicit CLI/task override,

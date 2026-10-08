@@ -172,6 +172,7 @@ from guardkit.orchestrator.synthetic_report import (
     mark_shared_working_copy,
     player_no_report_no_changes_issue,
     player_timed_out_issue,
+    task_work_no_changes_issue,
     player_timeout_from_error,
     player_timeout_from_report,
 )
@@ -2419,6 +2420,7 @@ class AutoBuildOrchestrator:
         task_timeout: Optional[int] = None,
         timeout_multiplier: Optional[float] = None,
         wave_size: int = 1,
+        shares_working_copy: bool = False,
         emitter: Optional[Any] = None,
         progress_logger: Optional[Any] = None,
         venv_python: Optional[str] = None,
@@ -2509,6 +2511,14 @@ class AutoBuildOrchestrator:
             Number of tasks executing in parallel in the current wave (default: 1).
             Passed through to CoachValidator to enable test isolation and lenient
             failure classification in parallel waves (TASK-ABFIX-005).
+        shares_working_copy : bool, optional
+            True when other tasks of this wave change the same working copy at
+            the same time as this one (default: False). Set by the feature
+            orchestrator from the wave's real concurrency, not from its size:
+            a wave run one task at a time is not shared, because each task
+            measures git's changes from its own starting commit. When True, a
+            report rebuilt from git is never counted as this task's evidence
+            (FEAT-2C42).
         emitter : Optional[EventEmitter], optional
             EventEmitter for lifecycle event instrumentation (default: NullEmitter).
             When provided, lifecycle events (task.started, task.completed,
@@ -2655,6 +2665,7 @@ class AutoBuildOrchestrator:
         # "Unknown error occurred" (TASK-FIX-TBXMSG01).
         self._timeout_budget_remaining: Optional[float] = None
         self.wave_size: int = max(1, int(wave_size))  # Parallel wave context (TASK-ABFIX-005)
+        self.shares_working_copy: bool = bool(shares_working_copy)  # FEAT-2C42
         # TASK-FIX-A7B2: Wave-shared map of per-task file edits, populated as
         # each Player finishes. Coach reads peer entries (everyone but self) to
         # detect source-file contention and refuse the TASK-ABFIX-005
@@ -3748,11 +3759,11 @@ class AutoBuildOrchestrator:
                 if self._progress_logger and self._agent_invoker:
                     self._agent_invoker.set_progress_logger(self._progress_logger)
 
-                # Tasks in a wave of several share this working copy; a report
-                # the invoker builds from git must then not count as this
-                # task's evidence (FEAT-2C42).
+                # When other tasks of this wave change the working copy at the
+                # same time, a report the invoker builds from git must not
+                # count as this task's evidence (FEAT-2C42).
                 if self._agent_invoker is not None:
-                    self._agent_invoker.shared_working_copy = self.wave_size > 1
+                    self._agent_invoker.shared_working_copy = self.shares_working_copy
 
                 return worktree
 
@@ -5961,8 +5972,16 @@ class AutoBuildOrchestrator:
             # whatever decided the feedback (the evidence gate or the model
             # reviewer), the next turn is told so first, as a must-fix with
             # a suggestion.
-            timeout_note = self._timeout_note_for_feedback(
-                task_id, turn, player_result, coach_result.report
+            # Direct-mode turns only: a task-work timeout already has its own
+            # line below (recovered_failure_error), and this note's advice
+            # about writing player_turn_N.json is direct-mode advice.
+            timeout_note = (
+                self._timeout_note_for_feedback(
+                    task_id, turn, player_result, coach_result.report
+                )
+                if not recovered_failure_error
+                and self._implementation_mode(task_id) == "direct"
+                else ""
             )
             if timeout_note:
                 feedback_text = f"{timeout_note}\n\n{feedback_text}"
@@ -6489,14 +6508,15 @@ class AutoBuildOrchestrator:
         Dict[str, Any]
             Synthetic Player report
         """
-        # Tasks in the same wave share one working copy, so git's changes may
-        # include another task's files (build FEAT-2C42, 8 October 2026: a
-        # rebuilt report credited one task with its neighbour's files). Git
-        # cannot tell whose change is whose, so in a wave of several tasks the
-        # rebuilt report keeps its file lists but carries no promises and no
-        # inferred requirements, and says why: it is never counted as this
-        # task's evidence.
-        shared_working_copy = self.wave_size > 1
+        # Tasks that run at the same time in one wave share one working copy,
+        # so git's changes may include another task's files (build FEAT-2C42,
+        # 8 October 2026: a rebuilt report credited one task with its
+        # neighbour's files). Git cannot tell whose change is whose, so then
+        # the rebuilt report keeps its file lists but carries no promises and
+        # no inferred requirements, and says why: it is never counted as this
+        # task's evidence. A wave run one task at a time is not shared and
+        # keeps its evidence.
+        shared_working_copy = self.shares_working_copy
         if shared_working_copy:
             acceptance_criteria = None
 
@@ -6600,8 +6620,8 @@ class AutoBuildOrchestrator:
             mark_shared_working_copy(report)
             logger.warning(
                 f"[Turn {work_state.turn_number}] Rebuilt report comes from "
-                f"the working copy shared by {self.wave_size} tasks in this "
-                f"wave; it may include their files, so it is not counted as "
+                f"the working copy other tasks in this wave were changing at "
+                f"the same time; it may include their files, so it is not counted as "
                 f"this task's evidence."
             )
 
@@ -10279,6 +10299,17 @@ class AutoBuildOrchestrator:
             return [player_no_own_report_issue(task_id, turn)]
         return []
 
+    def _implementation_mode(self, task_id: str) -> Optional[str]:
+        """The task's implementation mode ("direct" or "task-work"), or
+        ``None`` when it cannot be read."""
+        if self._agent_invoker is None:
+            return None
+        try:
+            mode = self._agent_invoker._get_implementation_mode(task_id)
+        except Exception:  # noqa: BLE001 — wording only; never fail a turn
+            return None
+        return mode if isinstance(mode, str) else None
+
     def _timeout_note_for_feedback(
         self,
         task_id: str,
@@ -10314,9 +10345,17 @@ class AutoBuildOrchestrator:
         player_result: Optional[AgentInvocationResult],
     ) -> str:
         """One plain must-fix for a failed turn after which recovery found
-        nothing: a timeout with its timings, or no report and no changes."""
+        nothing: a timeout with its timings, or no report and no changes.
+
+        A task-work attempt gets task-work wording: it does not write
+        player_turn_N.json itself, so the direct-mode advice does not apply.
+        """
         details = _player_result_timeout(player_result)
-        if details:
+        if self._implementation_mode(task_id) == "task-work":
+            issue = task_work_no_changes_issue(
+                task_id, turn, details, getattr(player_result, "error", None)
+            )
+        elif details:
             issue = player_timed_out_issue(
                 task_id, turn, details, nothing_found=True
             )
