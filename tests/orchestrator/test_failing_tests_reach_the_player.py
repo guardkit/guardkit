@@ -34,6 +34,7 @@ from guardkit.orchestrator.coach_narrative_reconciler import DETERMINISTIC_SOURC
 from guardkit.orchestrator.coach_verification import HonestyVerification
 from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_SHOWN,
+    MUST_FIX_ITEM_LIMIT,
     MUST_FIX_MARKER,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
@@ -168,6 +169,30 @@ class TestTheWording:
 
     def test_unmarked_text_gives_no_items(self) -> None:
         assert must_fix_items("- Edge case not covered") == []
+
+    def test_multi_line_failure_text_is_kept_whole_and_bounded(self) -> None:
+        """Test output under a must-fix issue is often several lines, only
+        the first of them indented; all of it belongs to the item."""
+        text = (
+            f"- {MUST_FIX_MARKER}Test failure in the items area:\n"
+            "  >       assert response.status_code == 404\n"
+            "E       assert 500 == 404\n"
+            "E        +  where 500 = <Response>.status_code\n"
+            "- an advisory\n"
+            f"- {MUST_FIX_MARKER}" + "x" * 5000 + "\n"
+            "\n"
+            "Command failures this turn: none worth reporting"
+        )
+        items = must_fix_items(text)
+        assert items[0] == (
+            "Test failure in the items area:\n"
+            ">       assert response.status_code == 404\n"
+            "E       assert 500 == 404\n"
+            "E        +  where 500 = <Response>.status_code"
+        )
+        assert len(items) == 2
+        assert len(items[1]) == MUST_FIX_ITEM_LIMIT
+        assert "Command failures" not in items[1]
 
 
 # ---------------------------------------------------------------------------
@@ -344,13 +369,18 @@ def test_the_failing_test_reaches_the_players_must_fix_list(tmp_path: Path) -> N
         f"- {MUST_FIX_MARKER}Tests did not pass during task-work execution."
     )
     assert FAILING in first
-    assert "honesty record" not in "\n".join(text.splitlines()[:3])
+    assert "honesty record" not in first
 
-    # And the feedback file the Player reads lists it under must_fix.
+    # And the feedback file the Player reads lists it under must_fix, and
+    # only it: no coverage must-fix from a run whose tests failed.
     feedback_path = invoker._write_coach_feedback(TASK_ID, 2, text)
     written = json.loads(feedback_path.read_text())
     assert written["must_fix"], "must_fix must not be empty"
     assert FAILING in written["must_fix"][0]["issue"]
+    assert not any(
+        "Coverage" in item["issue"] for item in written["must_fix"]
+    )
+    assert "Coverage threshold not met" not in text
 
 
 def test_a_payload_with_an_invented_gate_field_is_still_refused(
@@ -500,3 +530,77 @@ def test_a_test_phase_that_left_nothing_is_still_reported(
     advisories = _substrate_advisories(tmp_path, phase_4)
     assert len(advisories) == 1
     assert "did not produce evidence" in advisories[0]["description"]
+
+
+# ---------------------------------------------------------------------------
+# Coverage is not judged from a failed test run
+# ---------------------------------------------------------------------------
+
+
+def _gate_issues(tmp_path: Path, results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    validator = CoachValidator(str(tmp_path), task_id=TASK_ID)
+    gates = validator.verify_quality_gates(
+        results, profile=get_profile(TaskType.FEATURE)
+    )
+    return validator._feedback_from_gates(
+        TASK_ID, 1, gates, results, task_type="feature"
+    ).issues, gates
+
+
+def test_a_failed_test_run_gives_no_coverage_must_fix(tmp_path: Path) -> None:
+    """The FEAT-895D shape: the Player's report claimed everything passed,
+    the test phase ran and one test failed, and the merge marked coverage as
+    not met. The coder is told about the failing test, not about coverage;
+    the gate itself still fails."""
+    results_path = _seed(tmp_path, _phase_4_failed([FAILING]), True)
+    AgentInvoker(worktree_path=tmp_path)._inject_specialist_records_into_task_work_results(
+        TASK_ID
+    )
+    results = json.loads(results_path.read_text())
+    assert results["quality_gates"]["coverage_met"] is False
+
+    issues, gates = _gate_issues(tmp_path, results)
+    categories = [i["category"] for i in issues]
+    assert "test_failure" in categories
+    assert "coverage" not in categories
+    assert gates.coverage_met is False
+    assert gates.all_gates_passed is False
+
+
+def test_a_real_coverage_shortfall_is_still_reported(tmp_path: Path) -> None:
+    """Tests passed and the measured coverage is below the threshold: the
+    coverage must-fix is exactly as before."""
+    results = {
+        "task_id": TASK_ID,
+        "quality_gates": {
+            "tests_passing": True, "tests_passed": 12, "tests_failed": 0,
+            "coverage": 62.5, "line_coverage": 62.5,
+            "coverage_met": False, "all_passed": True,
+        },
+    }
+    issues, _ = _gate_issues(tmp_path, results)
+    coverage = [i for i in issues if i["category"] == "coverage"]
+    assert len(coverage) == 1
+    assert coverage[0]["severity"] == "must_fix"
+    assert coverage[0]["description"] == "Coverage threshold not met"
+    assert coverage[0]["details"]["line_coverage"] == 62.5
+
+
+def test_a_planted_ran_and_failed_flag_is_removed_by_the_merge(
+    tmp_path: Path,
+) -> None:
+    """The flag that silences the coverage line is the merge's, rebuilt from
+    the test phase's own record every turn; one written into the Player's
+    report does not survive a passing test phase."""
+    results_path = _seed(tmp_path, {
+        "status": "passed", "duration_seconds": 5.0, "error": None,
+        "tests_run": 12, "tests_failed": 0,
+    }, True)
+    data = json.loads(results_path.read_text())
+    data["quality_gates"]["test_phase_ran_and_failed"] = True
+    results_path.write_text(json.dumps(data))
+    AgentInvoker(worktree_path=tmp_path)._inject_specialist_records_into_task_work_results(
+        TASK_ID
+    )
+    qg = json.loads(results_path.read_text())["quality_gates"]
+    assert "test_phase_ran_and_failed" not in qg

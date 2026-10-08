@@ -47,6 +47,14 @@ FAILURE_SUMMARY_LIMIT = 240
 # phase ran and tests failed.
 RAN_AND_FAILED = "ran_and_failed"
 
+# The same fact in task_work_results.json's ``quality_gates`` block, set (or
+# removed) by the specialist-record merge on every turn, so the gate's
+# feedback can tell a test run that failed from one that did not.
+QG_TEST_PHASE_RAN_AND_FAILED = "test_phase_ran_and_failed"
+
+# The longest a must-fix item read back from the feedback text may be.
+MUST_FIX_ITEM_LIMIT = 2000
+
 # Starts each must-fix line of the feedback text the Player is given.
 MUST_FIX_MARKER = "MUST FIX: "
 
@@ -98,24 +106,39 @@ def must_fix_items(feedback_text: str) -> List[str]:
     """Read the must-fix items back out of the feedback text.
 
     An item is a line that starts with ``"- "`` followed by
-    :data:`MUST_FIX_MARKER`, together with the indented lines under it. The
-    marker itself is left out of what comes back. Text with no marked line
-    gives an empty list, which is what every feedback written before this
-    module gave.
+    :data:`MUST_FIX_MARKER`, together with every line after it up to the next
+    issue (a line starting ``"- "``), the ``"... and N more issues"`` line, or
+    a blank line (which is where text appended after the issues begins). So a
+    multi-line description or test output is kept whole, bounded to
+    :data:`MUST_FIX_ITEM_LIMIT` characters. The marker itself is left out of
+    what comes back. Text with no marked line gives an empty list, which is
+    what every feedback written before this module gave.
     """
     items: List[str] = []
     current: Optional[List[str]] = None
     prefix = f"- {MUST_FIX_MARKER}"
+
+    def _close() -> None:
+        text = "\n".join(current or []).strip()
+        if text:
+            items.append(text[:MUST_FIX_ITEM_LIMIT])
+
     for line in (feedback_text or "").splitlines():
         if line.startswith(prefix):
             if current is not None:
-                items.append("\n".join(current).strip())
+                _close()
             current = [line[len(prefix):]]
-        elif current is not None and line.startswith("  "):
-            current.append(line.strip())
-        elif current is not None:
-            items.append("\n".join(current).strip())
+        elif current is None:
+            continue
+        elif (
+            line.startswith("- ")
+            or line.startswith("... and ")
+            or not line.strip()
+        ):
+            _close()
             current = None
+        else:
+            current.append(line[2:] if line.startswith("  ") else line)
     if current is not None:
-        items.append("\n".join(current).strip())
-    return [item for item in items if item]
+        _close()
+    return items
