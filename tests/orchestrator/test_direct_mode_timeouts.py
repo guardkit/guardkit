@@ -1110,3 +1110,108 @@ class TestOverriddenApprovalSaysItOnce:
         assert len(must_fix) == 1
         assert "task-work Player attempt timed out" in must_fix[0]["issue"]
         assert must_fix[0]["suggestion"]
+
+
+# ---------------------------------------------------------------------------
+# Independent review, round 2 (R3): the early returns before the reviewer
+# ---------------------------------------------------------------------------
+
+import threading  # noqa: E402
+
+REINSTALL_TEXT = (
+    "Dependency reinstall failed after this turn modified pyproject.toml. "
+    "Fix the dependency declaration so the install succeeds."
+)
+
+
+def _recovered_task_work() -> AgentInvocationResult:
+    return AgentInvocationResult(
+        task_id=TASK_A, turn=2, agent_type="player", success=True,
+        report={"task_id": TASK_A, "_synthetic": True,
+                "files_modified": ["pyproject.toml"], "files_created": [],
+                "tests_written": []},
+        duration_seconds=0.0,
+    )
+
+
+def _one_timeout_must_fix(orch, record, worktree: Path) -> Dict[str, str]:
+    """Exactly one timeout must-fix, with a suggestion, in the saved
+    feedback a resumed run starts from. Returns it."""
+    resumed = _resumed_feedback(orch, record)
+    assert resumed == record.feedback
+    must_fix = _invoker(worktree)._parse_coach_feedback(resumed, 3)["must_fix"]
+    timeouts = [
+        m for m in must_fix
+        if "ran out of time" in m["issue"] or "timed out" in m["issue"]
+    ]
+    assert len(timeouts) == 1, must_fix
+    assert timeouts[0]["suggestion"]
+    assert resumed.count("ran out of time") + resumed.count("timed out") == 1
+    return timeouts[0]
+
+
+class TestEarlyReturnsKeepTheTimeoutNote:
+    def test_direct_timeout_then_reinstall_failure(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+        )
+        with patch.object(
+            orch, "_maybe_refresh_venv_for_manifest_change", return_value=REINSTALL_TEXT
+        ):
+            record = _run_turn(orch, worktree, recovered=recovered)
+
+        assert record.decision == "feedback"
+        assert record.feedback.endswith(REINSTALL_TEXT)
+        item = _one_timeout_must_fix(orch, record, worktree)
+        assert "ran out of time after 2340 s" in item["issue"]
+        assert item["suggestion"] == TIMEOUT_SUGGESTION
+
+    def test_task_work_timeout_then_reinstall_failure(self, worktree: Path) -> None:
+        orch, _ = _task_work_orchestrator(worktree)
+        with patch.object(orch, "_attempt_state_recovery", return_value=_recovered_task_work()), \
+                patch.object(
+                    orch, "_maybe_refresh_venv_for_manifest_change",
+                    return_value=REINSTALL_TEXT,
+                ):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "feedback"
+        assert record.feedback.endswith(REINSTALL_TEXT)
+        item = _one_timeout_must_fix(orch, record, worktree)
+        assert "task-work Player attempt timed out" in item["issue"]
+        assert "player_turn_" not in record.feedback
+
+    def test_cancelled_task_work_timeout(self, worktree: Path) -> None:
+        orch, _ = _task_work_orchestrator(worktree)
+        orch._cancellation_event = threading.Event()
+        orch._cancellation_event.set()
+        with patch.object(orch, "_attempt_state_recovery", return_value=_recovered_task_work()):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "error"
+        assert record.coach_result is None
+        item = _one_timeout_must_fix(orch, record, worktree)
+        assert "task-work Player attempt timed out" in item["issue"]
+
+    def test_no_timeout_leaves_the_reinstall_text_alone(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report={"task_id": TASK_A, "files_modified": ["pyproject.toml"],
+                    "files_created": [], "tests_written": []},
+            duration_seconds=900.0,
+        )
+        with patch.object(
+            orch, "_maybe_refresh_venv_for_manifest_change", return_value=REINSTALL_TEXT
+        ):
+            record = _run_turn(orch, worktree, recovered=None)
+        assert record.feedback == REINSTALL_TEXT

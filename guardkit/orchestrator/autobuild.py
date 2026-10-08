@@ -5702,7 +5702,11 @@ class AutoBuildOrchestrator:
                     player_result=player_result,
                     coach_result=None,
                     decision="error",
-                    feedback=None,
+                    # A Player that ran out of time still says so, so a
+                    # resumed next turn is told (FEAT-2C42). None otherwise.
+                    feedback=self._player_timeout_feedback(
+                        task_id, turn, player_result, recovered_failure_error
+                    ) or None,
                     timestamp=timestamp,
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
@@ -5771,6 +5775,15 @@ class AutoBuildOrchestrator:
             self._progress_display.complete_turn(
                 "feedback", "Dependency reinstall failed - feeding back to Player"
             )
+            # A Player that ran out of time is told so first (FEAT-2C42);
+            # the reinstall text follows unchanged.
+            timeout_note = self._player_timeout_feedback(
+                task_id, turn, player_result, recovered_failure_error
+            )
+            if timeout_note:
+                venv_refresh_feedback = (
+                    f"{timeout_note}\n\n{venv_refresh_feedback}"
+                )
             return TurnRecord(
                 turn=turn,
                 player_result=player_result,
