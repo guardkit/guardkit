@@ -37,6 +37,7 @@ import pytest
 from guardkit.orchestrator.baseline import (
     SOURCE_FEATURE_SMOKE,
     SOURCE_REPOSITORY_TEST,
+    SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED,
     compute_charged_failures,
     feature_baseline_path,
     read_baseline_from_worktree,
@@ -340,6 +341,94 @@ def test_a_failure_outside_the_smoke_folder_is_forgiven_not_charged(
         authored_test_files=[],
     )
     assert charged == []
+
+
+def _runner_by_command(monkeypatch, results):
+    """A fake runner that answers per command, and records what it ran."""
+    calls = []
+
+    def _fake(config, cwd, wave_number, venv_python=None):
+        calls.append(config.command)
+        return results[config.command]
+
+    monkeypatch.setattr(
+        "guardkit.orchestrator.feature_orchestrator.run_smoke_gate", _fake
+    )
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "output"),
+    [
+        (0, "checking 41 cases ... all good\n"),
+        (1, "suite: 1 case did not hold (settings/default-address)\n"),
+    ],
+)
+def test_unreadable_declared_output_falls_back_to_the_smoke_command(
+    tmp_path, monkeypatch, exit_code, output
+):
+    """A runner whose output this probe cannot read test results from.
+
+    Nothing here is Python: the declared command is a project script whose
+    output names no test in a shape the probe reads. The base is then
+    measured with the feature's smoke command, as before the declared command
+    came first, and the record says why — so the finish re-check still has a
+    command to re-run.
+    """
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "./scripts/check-all")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("./scripts/check-area items")
+
+    calls = _runner_by_command(
+        monkeypatch,
+        {
+            "./scripts/check-all": _smoke_result(
+                "./scripts/check-all",
+                passed=exit_code == 0,
+                exit_code=exit_code,
+                stdout=output,
+            ),
+            "./scripts/check-area items": _smoke_result(
+                "./scripts/check-area items", stdout="area items: fine\n"
+            ),
+        },
+    )
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["./scripts/check-all", "./scripts/check-area items"]
+    baseline = read_baseline_from_worktree(wt)
+    assert baseline is not None
+    assert baseline.command == "./scripts/check-area items"
+    assert baseline.source == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+    assert baseline.source == (
+        "the feature's smoke command, because the declared command's output "
+        "could not be read"
+    )
+    assert orch._measured_baseline is not None
+    assert orch._measured_baseline.source == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+
+
+def test_a_declared_command_that_timed_out_does_not_fall_back(
+    tmp_path, monkeypatch
+):
+    """A timeout is not unreadable output: the declared suite did not finish,
+    and that stays recorded as nothing, with no narrower record in its place."""
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "./scripts/check-all")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("./scripts/check-area items")
+
+    timed_out = _smoke_result("./scripts/check-all", passed=False, exit_code=-1)
+    timed_out.timed_out = True
+    calls = _runner_by_command(monkeypatch, {"./scripts/check-all": timed_out})
+    orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["./scripts/check-all"]
+    assert read_baseline_from_worktree(wt) is None
+    assert orch._measured_baseline is None
 
 
 def test_no_smoke_command_runs_the_repository_declaration(tmp_path, caplog):

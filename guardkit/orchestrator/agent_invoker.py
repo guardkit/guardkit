@@ -79,7 +79,9 @@ from guardkit.orchestrator.failing_test_feedback import (
     FAILURE_SUMMARY_LIMIT,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
+    RAN_AND_FAILED,
     must_fix_items,
+    phase_4_ran_and_failed,
 )
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
@@ -12827,6 +12829,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 record["duration_seconds"] = block["duration_seconds"]
             if block.get("error"):
                 record["error"] = block["error"]
+            if phase_id == "4" and phase_4_ran_and_failed(block):
+                # The test phase ran and tests failed: that IS evidence, about
+                # the code. Marked so the Coach does not report this record as
+                # a specialist that "did not produce evidence" (8 October
+                # 2026, build FEAT-895D, where that wording told the Player
+                # the failing test was not its problem).
+                record[RAN_AND_FAILED] = True
             if (
                 phase_id == "5"
                 and invocation_status == "completed"
@@ -12997,12 +13006,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # removes both fields so a name from an earlier turn never lingers.
         qg = task_work_data.get("quality_gates")
         if isinstance(qg, dict):
-            ran_and_failed = (
-                isinstance(phase_4_block, dict)
-                and phase_4_block.get("status") == "failed"
-                and not phase_4_block.get("signal_absent")
-            )
-            if ran_and_failed:
+            if phase_4_ran_and_failed(phase_4_block):
                 named = phase_4_block.get("new_failing_tests")
                 qg[QG_FAILING_TESTS] = (
                     [str(n) for n in named if n]

@@ -435,3 +435,68 @@ def test_a_mismatched_coverage_receipt_is_refused(tmp_path: Path) -> None:
         coach_output_path=tmp_path / "coach_turn_1.json",
     )
     assert decision["issues"] == []
+
+
+# ---------------------------------------------------------------------------
+# A test phase that ran and failed is not "missing evidence"
+# ---------------------------------------------------------------------------
+
+
+def _substrate_advisories(tmp_path: Path, phase_4: Dict[str, Any]) -> List[Dict[str, Any]]:
+    results_path = _seed(tmp_path, phase_4, True)
+    AgentInvoker(worktree_path=tmp_path)._inject_specialist_records_into_task_work_results(
+        TASK_ID
+    )
+    results = json.loads(results_path.read_text())
+    validator = CoachValidator(str(tmp_path), task_id=TASK_ID)
+    return [
+        a for a in validator._compute_specialist_failure_advisories(results)
+        if a["category"] == "specialist_substrate"
+    ]
+
+
+def test_a_failed_test_run_is_not_reported_as_missing_evidence(
+    tmp_path: Path,
+) -> None:
+    """FEAT-895D's turns carried "did not produce evidence ... not a Player
+    honesty issue" for a test phase that ran 1027 tests and saw one fail. That
+    told the Player the failure was not its problem."""
+    assert _substrate_advisories(tmp_path, _phase_4_failed([FAILING])) == []
+
+
+def test_a_failed_run_that_named_no_tests_is_still_evidence(tmp_path: Path) -> None:
+    """A run of the task's own tests reports counts but no names; it still
+    ran and failed."""
+    phase_4 = _phase_4_failed([])
+    phase_4["tests_failed"] = 2
+    assert _substrate_advisories(tmp_path, phase_4) == []
+
+
+@pytest.mark.parametrize(
+    "phase_4",
+    [
+        {
+            "status": "failed",
+            "duration_seconds": 300.0,
+            "error": "hang detected (no model activity for 162s)",
+            "tests_run": 0,
+            "tests_failed": 0,
+        },
+        {
+            "status": "failed",
+            "error": "absent test signal (deterministic Phase 4): no tests ran",
+            "signal_absent": True,
+            "tests_run": 0,
+            "tests_failed": 0,
+        },
+    ],
+    ids=["hung", "absent"],
+)
+def test_a_test_phase_that_left_nothing_is_still_reported(
+    tmp_path: Path, phase_4: Dict[str, Any]
+) -> None:
+    """Where the phase really did not run or left nothing behind, the
+    warning is still right and still emitted."""
+    advisories = _substrate_advisories(tmp_path, phase_4)
+    assert len(advisories) == 1
+    assert "did not produce evidence" in advisories[0]["description"]
