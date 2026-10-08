@@ -325,6 +325,29 @@ def task_work_no_changes_issue(
     }
 
 
+#: Category of the must-fix issue for a task-work attempt that ran out of
+#: time after leaving partial work the factory recovered.
+TASK_WORK_TIMEOUT_CATEGORY = "task_work_timeout"
+
+
+def task_work_timeout_issue(error: str) -> Dict[str, Any]:
+    """The one must-fix issue for a task-work attempt that ran out of time
+    and left recovered partial work. The same issue is used whether the
+    reviewer's approval was overridden or it gave ordinary feedback, so the
+    next turn is told once."""
+    return {
+        "severity": "must_fix",
+        "category": TASK_WORK_TIMEOUT_CATEGORY,
+        "description": (
+            f"The task-work Player attempt timed out and remains failed: {error}"
+        ),
+        "suggestion": (
+            "Reuse the recovered partial work, complete the missing workflow "
+            "phases, and rerun the required checks."
+        ),
+    }
+
+
 def completion_promise_suggestion(turn: int) -> str:
     """The suggestion for criteria that have no matching completion promise.
 

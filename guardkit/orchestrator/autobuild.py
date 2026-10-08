@@ -168,11 +168,13 @@ from guardkit.orchestrator.state_tracker import (
 from guardkit.orchestrator.synthetic_report import (
     PLAYER_TIMED_OUT_CATEGORY,
     SHARED_WORKING_COPY_FIELD,
+    TASK_WORK_TIMEOUT_CATEGORY,
     completion_promise_suggestion,
     mark_shared_working_copy,
     player_no_report_no_changes_issue,
     player_timed_out_issue,
     task_work_no_changes_issue,
+    task_work_timeout_issue,
     player_timeout_from_error,
     player_timeout_from_report,
 )
@@ -900,7 +902,9 @@ _GATE_UNMET_IDS_SHOWN = 10
 
 #: Issue categories that already tell the coder its turn ran out of time.
 #: Feedback that carries one of them gets no second timeout note.
-_TIMEOUT_ISSUE_CATEGORIES = frozenset({PLAYER_TIMED_OUT_CATEGORY, "task_work_timeout"})
+_TIMEOUT_ISSUE_CATEGORIES = frozenset(
+    {PLAYER_TIMED_OUT_CATEGORY, TASK_WORK_TIMEOUT_CATEGORY}
+)
 
 
 def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
@@ -5886,7 +5890,12 @@ class AutoBuildOrchestrator:
                 player_result=player_result,
                 coach_result=coach_result,
                 decision="error",
-                feedback=None,
+                # The reviewer failed, but the Player's turn had run out of
+                # time: keep that must-fix, so a resumed next turn is still
+                # told (FEAT-2C42 review, 8 October 2026). None otherwise.
+                feedback=self._player_timeout_feedback(
+                    task_id, turn, player_result, recovered_failure_error
+                ) or None,
                 timestamp=timestamp,
                 player_context_status=player_context_status,
                 coach_context_status=coach_context_status,
@@ -5915,18 +5924,9 @@ class AutoBuildOrchestrator:
             )
             issues = coach_result.report.setdefault("issues", [])
             if isinstance(issues, list):
-                issues.insert(
-                    0,
-                    {
-                        "severity": "must_fix",
-                        "category": "task_work_timeout",
-                        "description": recovered_failure_error,
-                        "suggestion": (
-                            "Reuse the recovered partial work and complete "
-                            "the missing workflow phases."
-                        ),
-                    },
-                )
+                # The same issue the ordinary feedback path uses, so the
+                # next turn is told once (see _player_timeout_feedback).
+                issues.insert(0, task_work_timeout_issue(recovered_failure_error))
             if self._agent_invoker is not None and worktree is not None:
                 from guardkit.orchestrator.paths import TaskArtifactPaths
 
@@ -5972,27 +5972,15 @@ class AutoBuildOrchestrator:
             # whatever decided the feedback (the evidence gate or the model
             # reviewer), the next turn is told so first, as a must-fix with
             # a suggestion.
-            # Direct-mode turns only: a task-work timeout already has its own
-            # line below (recovered_failure_error), and this note's advice
-            # about writing player_turn_N.json is direct-mode advice.
-            timeout_note = (
-                self._timeout_note_for_feedback(
-                    task_id, turn, player_result, coach_result.report
-                )
-                if not recovered_failure_error
-                and self._implementation_mode(task_id) == "direct"
-                else ""
+            # FEAT-2C42: when this turn ran out of time, the next turn is told
+            # so first, once, as a must-fix with a suggestion, in the words
+            # for its mode, whatever decided the feedback.
+            timeout_note = self._player_timeout_feedback(
+                task_id, turn, player_result, recovered_failure_error,
+                coach_result.report,
             )
             if timeout_note:
                 feedback_text = f"{timeout_note}\n\n{feedback_text}"
-            if recovered_failure_error:
-                feedback_text = (
-                    "The task-work Player attempt timed out and remains failed: "
-                    f"{recovered_failure_error}. Reuse the recovered partial work, "
-                    "complete the missing workflow phases, and rerun the required "
-                    "checks.\n\n"
-                    + feedback_text
-                )
             # TASK-RFX-F7F5: Inject command failure advisory into feedback
             # when Coach is already rejecting. Environment/transient failures
             # are suppressed; only implementation/unknown failures are shown.
@@ -10310,23 +10298,25 @@ class AutoBuildOrchestrator:
             return None
         return mode if isinstance(mode, str) else None
 
-    def _timeout_note_for_feedback(
+    def _player_timeout_feedback(
         self,
         task_id: str,
         turn: int,
         player_result: Optional[AgentInvocationResult],
-        coach_report: Optional[Dict[str, Any]],
+        recovered_failure_error: Optional[str],
+        coach_report: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """The timeout must-fix, as feedback text, for a turn that ran out of
-        time; ``""`` when it did not, or when the feedback already says so.
+        """The timeout must-fix, as feedback text, for a turn whose Player ran
+        out of time; ``""`` when it did not, or when the reviewer's report
+        already carries a timeout issue (so it is said once).
 
-        Separated from the rest of the feedback by a blank line, so the
-        feedback file reads it as its own must-fix item with its own
-        suggestion.
+        Mode-appropriate: a task-work attempt with recovered partial work
+        (``recovered_failure_error``) gets the task-work issue; a direct-mode
+        turn gets the "ran out of time before writing its report" issue.
+        Used on the feedback return and on the reviewer-failed error return.
+        The text is meant to be separated from other feedback by a blank
+        line, so the feedback file reads it as its own must-fix item.
         """
-        details = _player_result_timeout(player_result)
-        if not details:
-            return ""
         issues = (coach_report or {}).get("issues") or []
         if any(
             isinstance(issue, dict)
@@ -10334,9 +10324,14 @@ class AutoBuildOrchestrator:
             for issue in issues
         ):
             return ""
-        return self._extract_feedback(
-            {"issues": [player_timed_out_issue(task_id, turn, details)]}
-        )
+        if recovered_failure_error:
+            issue = task_work_timeout_issue(recovered_failure_error)
+        else:
+            details = _player_result_timeout(player_result)
+            if not details or self._implementation_mode(task_id) != "direct":
+                return ""
+            issue = player_timed_out_issue(task_id, turn, details)
+        return self._extract_feedback({"issues": [issue]})
 
     def _feedback_after_turn_without_work(
         self,
