@@ -994,3 +994,119 @@ class TestTaskWorkTimeoutWording:
         assert "task-work attempt failed" in must_fix[0]["issue"]
         assert "task-work exited with code 1" in must_fix[0]["issue"]
         assert "player_turn_" not in record.feedback
+
+
+# ---------------------------------------------------------------------------
+# Independent review, round 1: the reviewer-failed path and the overridden
+# approval
+# ---------------------------------------------------------------------------
+
+
+def _failed_reviewer() -> AgentInvocationResult:
+    return AgentInvocationResult(
+        task_id=TASK_A, turn=1, agent_type="coach", success=False,
+        report={}, duration_seconds=600.0,
+        error="Coach invocation exceeded 600s timeout",
+    )
+
+
+def _resumed_feedback(orch, record) -> Optional[str]:
+    """What a resumed run's first turn is given, via the saved history."""
+    orch._turn_history = [record]
+    resumed, _ = _mocked_orchestrator(Path(orch.repo_root))
+    resumed._turn_history = resumed._deserialize_turn_history(
+        orch._serialize_turn_history()
+    )
+    return resumed._get_last_feedback()
+
+
+class TestReviewerFailureKeepsTheTimeoutNote:
+    def test_direct_mode(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+        )
+
+        record = _run_turn(orch, worktree, recovered=recovered, coach=_failed_reviewer())
+
+        assert record.decision == "error"
+        resumed = _resumed_feedback(orch, record)
+        must_fix = _invoker(worktree)._parse_coach_feedback(resumed, 2)["must_fix"]
+        assert len(must_fix) == 1
+        assert "ran out of time after 2340 s" in must_fix[0]["issue"]
+        assert "player_turn_1.json" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
+
+    def test_task_work_with_recovered_partial_work(self, worktree: Path) -> None:
+        orch, invoker = _task_work_orchestrator(worktree)
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="player", success=True,
+            report={"task_id": TASK_A, "_synthetic": True,
+                    "files_modified": ["docs/widgets.md"], "files_created": [],
+                    "tests_written": []},
+            duration_seconds=0.0,
+        )
+        with patch.object(orch, "_attempt_state_recovery", return_value=recovered), \
+                patch.object(orch, "_invoke_coach_safely", return_value=_failed_reviewer()):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "error"
+        must_fix = _invoker(worktree)._parse_coach_feedback(
+            _resumed_feedback(orch, record), 3
+        )["must_fix"]
+        assert len(must_fix) == 1
+        assert "task-work Player attempt timed out" in must_fix[0]["issue"]
+        assert TASK_WORK_TIMEOUT in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"]
+        assert "player_turn_" not in must_fix[0]["issue"]
+
+    def test_no_timeout_keeps_no_feedback(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report={"task_id": TASK_A, "files_modified": ["docs/widgets.md"],
+                    "files_created": [], "tests_written": []},
+            duration_seconds=900.0,
+        )
+        record = _run_turn(orch, worktree, recovered=None, coach=_failed_reviewer())
+        assert record.decision == "error"
+        assert record.feedback is None
+
+
+class TestOverriddenApprovalSaysItOnce:
+    def test_task_work_timeout_explained_once(self, worktree: Path) -> None:
+        """The reviewer approved recovered partial work from a timed-out
+        task-work attempt; the approval is overridden to feedback."""
+        orch, _ = _task_work_orchestrator(worktree)
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="player", success=True,
+            report={"task_id": TASK_A, "_synthetic": True,
+                    "files_modified": ["docs/widgets.md"], "files_created": [],
+                    "tests_written": []},
+            duration_seconds=0.0,
+        )
+        approval = AgentInvocationResult(
+            task_id=TASK_A, turn=2, agent_type="coach", success=True,
+            report={"decision": "approve", "issues": [],
+                    "rationale": "The criteria are met."},
+            duration_seconds=1.0,
+        )
+        with patch.object(orch, "_attempt_state_recovery", return_value=recovered), \
+                patch.object(orch, "_invoke_coach_safely", return_value=approval):
+            record = orch._execute_turn(
+                turn=2, task_id=TASK_A, requirements="Document the endpoint",
+                worktree=_FakeWorktree(worktree), previous_feedback=None,
+            )
+
+        assert record.decision == "feedback"
+        assert record.feedback.count("timed out") == 1
+        assert record.feedback.count(TASK_WORK_TIMEOUT) == 1
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 3)["must_fix"]
+        assert len(must_fix) == 1
+        assert "task-work Player attempt timed out" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"]
