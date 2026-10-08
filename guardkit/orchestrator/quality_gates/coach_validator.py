@@ -68,6 +68,8 @@ from guardkit.orchestrator.evidence_repos import EvidenceRepo, EvidenceTestResul
 from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_SHOWN,
     QG_FAILING_TESTS,
+    QG_FAILING_TESTS_BASIS,
+    QG_FAILING_TESTS_TOTAL,
     QG_FAILURE_SUMMARY,
     QG_TEST_PHASE_RAN_AND_FAILED,
     RAN_AND_FAILED,
@@ -11734,6 +11736,63 @@ class CoachValidator:
             honesty_verification=honesty_verification,
         )
 
+    @staticmethod
+    def _named_test_failure_issue(
+        quality_gates: Dict[str, Any],
+        tests_passed_count: Any,
+        tests_failed_count: Any,
+    ) -> Dict[str, Any]:
+        """The must-fix test-failure issue, naming the failing tests.
+
+        8 October 2026, build FEAT-895D: "tests did not pass" alone left the
+        Player guessing for three turns. The names, their total, whether they
+        are the newly failing ones, and the one-line account are what the test
+        phase itself reported, copied into quality_gates by the
+        specialist-record merge; nothing is parsed here. When the test phase
+        ran and failed without naming a test, the issue says so.
+        """
+        failing_tests = quality_gates.get(QG_FAILING_TESTS)
+        if not isinstance(failing_tests, list):
+            failing_tests = []
+        failing_tests = [str(n) for n in failing_tests if n]
+        total = quality_gates.get(QG_FAILING_TESTS_TOTAL)
+        if not isinstance(total, int) or isinstance(total, bool):
+            total = len(failing_tests)
+        total = max(total, len(failing_tests))
+        basis = quality_gates.get(QG_FAILING_TESTS_BASIS)
+        failure_summary = quality_gates.get(QG_FAILURE_SUMMARY)
+        if not isinstance(failure_summary, str):
+            failure_summary = ""
+        named = describe_failing_tests(
+            failing_tests,
+            failure_summary,
+            total=total,
+            basis=basis if isinstance(basis, str) else None,
+            test_phase_failed=(
+                quality_gates.get(QG_TEST_PHASE_RAN_AND_FAILED) is True
+            ),
+        )
+        description = "Tests did not pass during task-work execution"
+        if named:
+            description = f"{description}. {named}"
+        details: Dict[str, Any] = {
+            "failed_count": tests_failed_count,
+            "total_count": tests_passed_count + tests_failed_count,
+        }
+        if failing_tests:
+            details["failing_tests"] = failing_tests[:FAILING_TESTS_SHOWN]
+            details["failing_test_count"] = total
+            if isinstance(basis, str) and basis:
+                details["failing_tests_basis"] = basis
+        if failure_summary:
+            details["failure_summary"] = failure_summary
+        return {
+            "severity": "must_fix",
+            "category": "test_failure",
+            "description": description,
+            "details": details,
+        }
+
     def _feedback_from_gates(
         self,
         task_id: str,
@@ -11826,39 +11885,35 @@ class CoachValidator:
                     },
                 })
             else:
-                # Name the failing tests (8 October 2026, build FEAT-895D):
-                # "tests did not pass" alone left the Player guessing for
-                # three turns. The names and the one-line account are what
-                # the test phase itself reported, copied into quality_gates
-                # by the specialist-record merge; nothing is parsed here.
-                failing_tests = quality_gates.get(QG_FAILING_TESTS)
-                if not isinstance(failing_tests, list):
-                    failing_tests = []
-                failing_tests = [str(n) for n in failing_tests if n]
-                failure_summary = quality_gates.get(QG_FAILURE_SUMMARY)
-                if not isinstance(failure_summary, str):
-                    failure_summary = ""
-                named = describe_failing_tests(failing_tests, failure_summary)
-                description = "Tests did not pass during task-work execution"
-                if named:
-                    description = f"{description}. {named}"
-                details: Dict[str, Any] = {
-                    "failed_count": tests_failed_count,
-                    "total_count": tests_passed_count + tests_failed_count,
-                }
-                if failing_tests:
-                    details["failing_tests"] = failing_tests[
-                        :FAILING_TESTS_SHOWN
-                    ]
-                    details["failing_test_count"] = len(failing_tests)
-                if failure_summary:
-                    details["failure_summary"] = failure_summary
-                issues.append({
-                    "severity": "must_fix",
-                    "category": "test_failure",
-                    "description": description,
-                    "details": details,
-                })
+                issues.append(
+                    self._named_test_failure_issue(
+                        quality_gates, tests_passed_count, tests_failed_count
+                    )
+                )
+        elif (
+            gates.tests_required
+            and quality_gates.get(QG_TEST_PHASE_RAN_AND_FAILED) is True
+        ):
+            # THE COUNT GATE WAS DEFERRED, BUT THE TEST PHASE FAILED (8 October
+            # 2026, external review). With a red baseline on record,
+            # verify_quality_gates hands a counted test failure to the
+            # independent run, which can tell old failures from new ones, and
+            # reports tests_passed=True meanwhile. We are here because some
+            # other gate failed (typically coverage, which the merge marks as
+            # not met after a failed test phase), so evidence gathering stops
+            # and the independent run never happens. Without this branch the
+            # Player was told nothing about the tests at all — on exactly the
+            # red-baseline builds the change exists for. The test phase's own
+            # failing tests are authoritative: after a comparison with the
+            # base they are the newly failing ones only, so a test that was
+            # already failing is not named. The verdict is unchanged.
+            tests_passed_count = quality_gates.get("tests_passed", 0) or 0
+            tests_failed_count = quality_gates.get("tests_failed", 0) or 0
+            issue = self._named_test_failure_issue(
+                quality_gates, tests_passed_count, tests_failed_count
+            )
+            issue["details"]["count_gate_deferred_to_independent_run"] = True
+            issues.append(issue)
 
         if gates.coverage_required and gates.coverage_met is None:
             # B9 Lane C. UNKNOWN is not "the threshold was missed" — nothing

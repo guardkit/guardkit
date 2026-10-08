@@ -22,12 +22,17 @@ replacement, the real feedback text and the real feedback file.
 from __future__ import annotations
 
 import json
+import stat
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from guardkit.models.task_types import TaskType, get_profile
+from guardkit.orchestrator import specialist_invocations as si
 from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.coach_narrative_reconciler import DETERMINISTIC_SOURCE
@@ -46,6 +51,7 @@ from guardkit.orchestrator.quality_gates.coach_evidence import (
     CoachEvidenceBundle,
 )
 from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
 
 
 TASK_ID = "TASK-FTP-002"
@@ -61,7 +67,11 @@ FAILING = (
 
 
 def _phase_4_failed(names: List[str]) -> Dict[str, Any]:
-    """specialist_results.json's phase_4 block for a whole-suite red run."""
+    """specialist_results.json's phase_4 block for a whole-suite red run.
+
+    Shaped like the FEAT-895D record, which was written before the test phase
+    recorded ``failing_tests``; only ``new_failing_tests`` names the failure.
+    """
     return {
         "status": "failed",
         "duration_seconds": 82.3,
@@ -263,7 +273,8 @@ class TestTheNamesReachTheGate:
         issue = next(i for i in feedback.issues if i["category"] == "test_failure")
         assert issue["severity"] == "must_fix"
         assert issue["description"].startswith(
-            "Tests did not pass during task-work execution. 1 failing test: "
+            "Tests did not pass during task-work execution. 1 newly failing "
+            "test (not failing before this build started): "
         )
         assert FAILING in issue["description"]
         assert "AssertionError" in issue["description"]
@@ -604,3 +615,238 @@ def test_a_planted_ran_and_failed_flag_is_removed_by_the_merge(
     )
     qg = json.loads(results_path.read_text())["quality_gates"]
     assert "test_phase_ran_and_failed" not in qg
+
+
+# ---------------------------------------------------------------------------
+# Through the real test phase: red baselines, no baseline, own-test runs
+# ---------------------------------------------------------------------------
+
+_LEG_TASK = "TASK-LEG-0002"
+_LEG_FEATURE = "FEAT-LEG2"
+_INHERITED = "tests/test_orders.py::test_totals"
+_NEW = "tests/test_users.py::test_delete_twice"
+_TWO_RED = (
+    f"FAILED {_NEW} - AssertionError: deleted twice\n"
+    f"FAILED {_INHERITED} - AssertionError\n"
+    "2 failed, 3 passed in 1.20s\n"
+)
+
+
+def _leg_repo(tmp_path: Path) -> tuple:
+    root = tmp_path / "target-repo"
+    worktree = root / ".guardkit" / "worktrees" / _LEG_TASK
+    worktree.mkdir(parents=True)
+    return root, worktree
+
+
+def _declare_suite(root: Path, worktree: Path, output: str, exit_code: int) -> None:
+    """A declared ``bash qa/run-suite.sh`` that prints ``output``."""
+    cfg = root / ".guardkit"
+    cfg.mkdir(parents=True, exist_ok=True)
+    (cfg / "config.yaml").write_text(
+        yaml.safe_dump({"toolchain": {"test": "bash qa/run-suite.sh"}}),
+        encoding="utf-8",
+    )
+    snapshot_task_toolchain(_LEG_TASK, worktree, root)
+    qa = worktree / "qa"
+    qa.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(f"echo {line!r}" for line in output.splitlines())
+    script = qa / "run-suite.sh"
+    script.write_text(f"#!/bin/sh\n{body}\nexit {exit_code}\n", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+
+def _red_baseline(worktree: Path, failing: List[str]) -> None:
+    path = worktree / ".guardkit" / "autobuild" / _LEG_FEATURE / "baseline.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "command": "bash qa/run-suite.sh",
+        "expected_exit": 0,
+        "passed": False,
+        "exit_code": 1,
+        "failing_node_ids": failing,
+        "failing_count": len(failing),
+        "timestamp": "2026-10-08T00:00:00",
+    }), encoding="utf-8")
+
+
+def _player_claimed_green(worktree: Path, files: List[str]) -> Path:
+    TaskArtifactPaths.ensure_autobuild_dir(_LEG_TASK, worktree)
+    path = TaskArtifactPaths.task_work_results_path(_LEG_TASK, worktree)
+    path.write_text(json.dumps({
+        "task_id": _LEG_TASK,
+        "completed": True,
+        "task_type": "feature",
+        "files_modified": files,
+        "files_created": [],
+        "quality_gates": {
+            "tests_passing": True, "tests_passed": 5, "tests_failed": 0,
+            "coverage": 91.0, "coverage_met": True, "all_passed": True,
+        },
+        "code_review": {"score": 90},
+    }), encoding="utf-8")
+    return path
+
+
+def _run_test_phase(worktree: Path) -> Dict[str, Any]:
+    invoker = MagicMock()
+    invoker._venv_python = None
+    block = si._run_deterministic_phase_4(
+        worktree_path=worktree,
+        task_id=_LEG_TASK,
+        agent_invoker=invoker,
+        sdk_timeout=120,
+        turn=1,
+    )
+    assert block is not None
+    autobuild_dir = TaskArtifactPaths.ensure_autobuild_dir(_LEG_TASK, worktree)
+    (autobuild_dir / "specialist_results.json").write_text(
+        json.dumps({"phase_4": block})
+    )
+    return block
+
+
+def _next_turn_must_fix(worktree: Path, results_path: Path):
+    """Merge, gates, gate feedback, replacement, text, feedback file."""
+    invoker = AgentInvoker(worktree_path=worktree)
+    invoker._inject_specialist_records_into_task_work_results(_LEG_TASK)
+    results = json.loads(results_path.read_text())
+    validator = CoachValidator(str(worktree), task_id=_LEG_TASK)
+    gates = validator.verify_quality_gates(
+        results, profile=get_profile(TaskType.FEATURE)
+    )
+    assert gates.all_gates_passed is False
+    gate_feedback = validator._feedback_from_gates(
+        _LEG_TASK, 1, gates, results, task_type="feature"
+    ).to_dict()
+    bundle = CoachEvidenceBundle(
+        honesty=HonestyVerification(
+            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
+        ),
+        gathering_status="partial_gate_abort",
+        quality_gates=gates,
+        gate_feedback=gate_feedback,
+    )
+    decision: Dict[str, Any] = {
+        "task_id": _LEG_TASK, "turn": 1, "decision": "feedback",
+        "rationale": "Quality gates failed.",
+        "issues": [{
+            "type": "finding", "severity": "major",
+            "description": 'gathering_status="partial_gate_abort"',
+        }],
+    }
+    invoker._reconcile_incomplete_evidence_gathering(
+        decision=decision,
+        evidence_bundle=bundle,
+        task_id=_LEG_TASK,
+        turn=1,
+        coach_output_path=worktree / "coach_turn_1.json",
+    )
+    orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+    text = orchestrator._extract_feedback(decision)
+    written = json.loads(
+        invoker._write_coach_feedback(_LEG_TASK, 2, text).read_text()
+    )
+    return gates, text, [item["issue"] for item in written["must_fix"]]
+
+
+def test_a_red_baseline_still_names_the_newly_failing_test(tmp_path: Path) -> None:
+    """External review R1. One test was already failing before the build
+    started; the task broke another; the Player claimed success. With a red
+    baseline on record the count gate is deferred to the independent run,
+    and the merge marks coverage as not met, so gathering stops before that
+    run. The Player must still be told about the new failure, with the
+    failure line, without a coverage line, and without the inherited test."""
+    root, worktree = _leg_repo(tmp_path)
+    _declare_suite(root, worktree, _TWO_RED, 1)
+    _red_baseline(worktree, [_INHERITED])
+    results_path = _player_claimed_green(worktree, ["app/users.py"])
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert block["failing_tests"] == [_NEW]
+    assert block["failing_tests_basis"] == "new since the base"
+
+    gates, text, must_fix = _next_turn_must_fix(worktree, results_path)
+    # The count gate really was deferred: this is the case under test.
+    assert gates.tests_passed is True
+    assert gates.coverage_met is False
+
+    assert len(must_fix) == 1, must_fix
+    assert _NEW in must_fix[0]
+    assert "newly failing" in must_fix[0]
+    assert (
+        "What the test run said: tests failed (deterministic Phase 4): "
+        "2 failed, 1 already failing on the base, 1 newly failing"
+    ) in must_fix[0]
+    assert _INHERITED not in must_fix[0]
+    assert "Coverage" not in text
+    assert _INHERITED not in text
+
+
+def test_with_no_baseline_every_failing_test_is_named(tmp_path: Path) -> None:
+    """External review R2, first case: a failed declared-suite run with
+    nothing on record about the base still names what failed."""
+    root, worktree = _leg_repo(tmp_path)
+    _declare_suite(root, worktree, _TWO_RED, 1)
+    results_path = _player_claimed_green(worktree, ["app/users.py"])
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert sorted(block["failing_tests"]) == sorted([_NEW, _INHERITED])
+    assert block["failing_tests_total"] == 2
+    assert block["failing_tests_basis"] == "observed"
+
+    _, _, must_fix = _next_turn_must_fix(worktree, results_path)
+    assert must_fix[0].startswith(
+        "Tests did not pass during task-work execution. 2 failing tests: "
+    )
+    assert _NEW in must_fix[0] and _INHERITED in must_fix[0]
+
+
+def test_a_run_of_the_tasks_own_tests_names_what_failed(tmp_path: Path) -> None:
+    """External review R2, second case: nothing declared, so the test phase
+    runs the task's own test file with the project's interpreter (a real
+    pytest run here); its failing test is named."""
+    root, worktree = _leg_repo(tmp_path)
+    (worktree / "pyproject.toml").write_text("[project]\nname='x'\n")
+    tests_dir = worktree / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_leg_0002_thing.py").write_text(
+        "def test_ok():\n    pass\n\n"
+        "def test_breaks():\n    assert 'a' == 'b'\n"
+    )
+    venv_python = worktree / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(sys.executable)
+    results_path = _player_claimed_green(
+        worktree, ["tests/test_leg_0002_thing.py"]
+    )
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert block["test_command_source"] != "repository toolchain declaration"
+    assert block["failing_tests"] == [
+        "tests/test_leg_0002_thing.py::test_breaks"
+    ]
+    assert block["failing_tests_basis"] == "observed"
+
+    _, _, must_fix = _next_turn_must_fix(worktree, results_path)
+    assert "tests/test_leg_0002_thing.py::test_breaks" in must_fix[0]
+
+
+def test_a_tool_whose_output_names_no_test_is_said_so(tmp_path: Path) -> None:
+    """A test tool whose output the factory cannot read names from: the
+    Player is told that, not left with silence."""
+    root, worktree = _leg_repo(tmp_path)
+    _declare_suite(
+        root, worktree, "suite: 1 case did not hold (orders/totals)\n", 1
+    )
+    results_path = _player_claimed_green(worktree, ["app/orders.py"])
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert block["failing_tests"] == []
+
+    _, _, must_fix = _next_turn_must_fix(worktree, results_path)
+    assert "did not name its failing tests" in must_fix[0]

@@ -76,8 +76,14 @@ from guardkit.orchestrator.coach_narrative_reconciler import (
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.failing_test_feedback import (
+    FAILING_TESTS_BASIS_NEW,
     FAILURE_SUMMARY_LIMIT,
+    PHASE_4_FAILING_TESTS,
+    PHASE_4_FAILING_TESTS_BASIS,
+    PHASE_4_FAILING_TESTS_TOTAL,
     QG_FAILING_TESTS,
+    QG_FAILING_TESTS_BASIS,
+    QG_FAILING_TESTS_TOTAL,
     QG_FAILURE_SUMMARY,
     QG_TEST_PHASE_RAN_AND_FAILED,
     RAN_AND_FAILED,
@@ -13004,27 +13010,60 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
         # name sat in specialist_results.json and never reached it. Nothing
         # here parses test output; it copies what the test phase already
         # wrote. Every other outcome (passed, absent, skipped, no record)
-        # removes both fields so a name from an earlier turn never lingers.
+        # removes these fields so a name from an earlier turn never lingers.
         qg = task_work_data.get("quality_gates")
         if isinstance(qg, dict):
             if phase_4_ran_and_failed(phase_4_block):
-                named = phase_4_block.get("new_failing_tests")
-                qg[QG_FAILING_TESTS] = (
+                # The test phase's own list of failing tests (charged ones
+                # after a comparison with the base, every one it saw
+                # otherwise). A record written before that list existed has
+                # only ``new_failing_tests``.
+                named = phase_4_block.get(PHASE_4_FAILING_TESTS)
+                basis = phase_4_block.get(PHASE_4_FAILING_TESTS_BASIS)
+                if not isinstance(named, list):
+                    named = phase_4_block.get("new_failing_tests")
+                    basis = FAILING_TESTS_BASIS_NEW if named else None
+                names = (
                     [str(n) for n in named if n]
                     if isinstance(named, list)
                     else []
                 )
+                total = phase_4_block.get(PHASE_4_FAILING_TESTS_TOTAL)
+                if not isinstance(total, int) or isinstance(total, bool):
+                    total = len(names)
+                qg[QG_FAILING_TESTS] = names
+                qg[QG_FAILING_TESTS_TOTAL] = max(total, len(names))
+                if isinstance(basis, str) and basis:
+                    qg[QG_FAILING_TESTS_BASIS] = basis
+                else:
+                    qg.pop(QG_FAILING_TESTS_BASIS, None)
+                # The failure line. The test tool's own words are the most
+                # useful, but when the run was compared with the base and
+                # some failures were already failing before the build
+                # started, those words may describe an old failure instead of
+                # the new one; the test phase's own error line then names
+                # only the new ones and says how many were old.
+                inherited = phase_4_block.get("failures_inherited")
                 line = phase_4_block.get("output_summary") or ""
-                if not isinstance(line, str) or not line.strip():
-                    line = phase_4_block.get("error") or ""
+                if (
+                    isinstance(inherited, int)
+                    and not isinstance(inherited, bool)
+                    and inherited > 0
+                ) or not isinstance(line, str) or not line.strip():
+                    line = phase_4_block.get("error") or line or ""
                 qg[QG_FAILURE_SUMMARY] = (
                     " ".join(str(line).split())[:FAILURE_SUMMARY_LIMIT]
                 )
                 qg[QG_TEST_PHASE_RAN_AND_FAILED] = True
             else:
-                qg.pop(QG_FAILING_TESTS, None)
-                qg.pop(QG_FAILURE_SUMMARY, None)
-                qg.pop(QG_TEST_PHASE_RAN_AND_FAILED, None)
+                for key in (
+                    QG_FAILING_TESTS,
+                    QG_FAILING_TESTS_TOTAL,
+                    QG_FAILING_TESTS_BASIS,
+                    QG_FAILURE_SUMMARY,
+                    QG_TEST_PHASE_RAN_AND_FAILED,
+                ):
+                    qg.pop(key, None)
             task_work_data["quality_gates"] = qg
 
         try:
