@@ -168,11 +168,12 @@ from guardkit.orchestrator.state_tracker import (
 from guardkit.orchestrator.synthetic_report import (
     PLAYER_TIMED_OUT_CATEGORY,
     SHARED_WORKING_COPY_FIELD,
+    completion_promise_suggestion,
     mark_shared_working_copy,
+    player_no_report_no_changes_issue,
     player_timed_out_issue,
     player_timeout_from_error,
     player_timeout_from_report,
-    timeout_seconds_text,
 )
 
 # Import worktree checkpoint management for context pollution mitigation
@@ -877,12 +878,28 @@ def _player_turn_error(turn_record: "TurnRecord") -> Optional[str]:
 
 def _player_turn_timeout(turn_record: "TurnRecord") -> Optional[Dict[str, Any]]:
     """The timeout fields of a coder turn that ran out of time, or ``None``."""
-    result = getattr(turn_record, "player_result", None)
+    return _player_result_timeout(getattr(turn_record, "player_result", None))
+
+
+def _player_result_timeout(result: Any) -> Optional[Dict[str, Any]]:
+    """The timeout fields of a coder result that ran out of time, or ``None``.
+
+    Reads the result's report (the timeout fields, or a rebuilt report's
+    ``_recovery_metadata``) and then its error text.
+    """
     if result is None:
         return None
     return player_timeout_from_report(
         getattr(result, "report", None)
     ) or player_timeout_from_error(getattr(result, "error", None))
+
+
+#: How many unmet criterion ids the direct-mode gate names before "and N more".
+_GATE_UNMET_IDS_SHOWN = 10
+
+#: Issue categories that already tell the coder its turn ran out of time.
+#: Feedback that carries one of them gets no second timeout note.
+_TIMEOUT_ISSUE_CATEGORIES = frozenset({PLAYER_TIMED_OUT_CATEGORY, "task_work_timeout"})
 
 
 def _turn_changed_no_files(turn_record: "TurnRecord") -> bool:
@@ -5253,7 +5270,13 @@ class AutoBuildOrchestrator:
                     player_result=player_result,
                     coach_result=None,
                     decision="error",
-                    feedback=None,
+                    # FEAT-2C42 (8 October 2026): the turn still ends as an
+                    # error, but it says what happened as one plain must-fix,
+                    # so the next turn (a resumed run starts from this
+                    # feedback) is not told nothing.
+                    feedback=self._feedback_after_turn_without_work(
+                        task_id, turn, player_result
+                    ),
                     timestamp=timestamp,
                     player_context_status=player_context_status,
                     sdk_turns_used=getattr(player_result, 'sdk_turns_used', None),
@@ -5934,6 +5957,15 @@ class AutoBuildOrchestrator:
 
         else:  # feedback
             feedback_text = self._extract_feedback(coach_result.report)
+            # FEAT-2C42 (8 October 2026): when this turn ran out of time,
+            # whatever decided the feedback (the evidence gate or the model
+            # reviewer), the next turn is told so first, as a must-fix with
+            # a suggestion.
+            timeout_note = self._timeout_note_for_feedback(
+                task_id, turn, player_result, coach_result.report
+            )
+            if timeout_note:
+                feedback_text = f"{timeout_note}\n\n{feedback_text}"
             if recovered_failure_error:
                 feedback_text = (
                     "The task-work Player attempt timed out and remains failed: "
@@ -10043,6 +10075,13 @@ class AutoBuildOrchestrator:
                 ]
                 total = req_validation.criteria_total
                 unmet = total - req_validation.criteria_met
+                # Bounded, so a task with many criteria cannot push the rest
+                # of the feedback out (FEAT-2C42).
+                shown_ids = unmet_ids[:_GATE_UNMET_IDS_SHOWN]
+                if len(unmet_ids) > len(shown_ids):
+                    shown_ids = shown_ids + [
+                        f"and {len(unmet_ids) - len(shown_ids)} more"
+                    ]
                 must_fix.append(
                     {
                         "severity": "must_fix",
@@ -10058,7 +10097,7 @@ class AutoBuildOrchestrator:
                             # promise that had not been matched.
                             f"Direct mode: {unmet}/{total} acceptance criteria "
                             f"have no matching completion promise "
-                            f"(unmet: {unmet_ids}). Direct mode relaxes "
+                            f"(unmet: {shown_ids}). Direct mode relaxes "
                             f"coverage/arch but NOT AC delivery."
                         ),
                         "details": {"unmet_ids": unmet_ids, "total": total},
@@ -10166,8 +10205,13 @@ class AutoBuildOrchestrator:
             return None
 
         categories = sorted({issue["category"] for issue in must_fix})
+        # Detail lines are indented bullets, not "- " lines: in the feedback
+        # text a line starting "- " begins a new issue, so the old form cut
+        # every detail (which criteria are unmet) out of this must-fix item
+        # before it reached the coder (FEAT-2C42, 8 October 2026).
         detail_lines = "\n".join(
-            f"- [{issue['category']}] {issue['description']}" for issue in must_fix
+            f"  \u2022 [{issue['category']}] {issue['description']}"
+            for issue in must_fix
         )
         rationale = (
             "Direct-mode evidence gate blocked the turn "
@@ -10203,6 +10247,11 @@ class AutoBuildOrchestrator:
             requirements=gate_req_validation,
             category="direct_mode_gate",
             leading_issues=leading_issues,
+            suggestion=(
+                completion_promise_suggestion(turn + 1)
+                if "direct_mode_ac_unverified" in categories
+                else None
+            ),
         )
 
     @staticmethod
@@ -10229,6 +10278,53 @@ class AutoBuildOrchestrator:
 
             return [player_no_own_report_issue(task_id, turn)]
         return []
+
+    def _timeout_note_for_feedback(
+        self,
+        task_id: str,
+        turn: int,
+        player_result: Optional[AgentInvocationResult],
+        coach_report: Optional[Dict[str, Any]],
+    ) -> str:
+        """The timeout must-fix, as feedback text, for a turn that ran out of
+        time; ``""`` when it did not, or when the feedback already says so.
+
+        Separated from the rest of the feedback by a blank line, so the
+        feedback file reads it as its own must-fix item with its own
+        suggestion.
+        """
+        details = _player_result_timeout(player_result)
+        if not details:
+            return ""
+        issues = (coach_report or {}).get("issues") or []
+        if any(
+            isinstance(issue, dict)
+            and issue.get("category") in _TIMEOUT_ISSUE_CATEGORIES
+            for issue in issues
+        ):
+            return ""
+        return self._extract_feedback(
+            {"issues": [player_timed_out_issue(task_id, turn, details)]}
+        )
+
+    def _feedback_after_turn_without_work(
+        self,
+        task_id: str,
+        turn: int,
+        player_result: Optional[AgentInvocationResult],
+    ) -> str:
+        """One plain must-fix for a failed turn after which recovery found
+        nothing: a timeout with its timings, or no report and no changes."""
+        details = _player_result_timeout(player_result)
+        if details:
+            issue = player_timed_out_issue(
+                task_id, turn, details, nothing_found=True
+            )
+        else:
+            issue = player_no_report_no_changes_issue(
+                task_id, turn, getattr(player_result, "error", None)
+            )
+        return self._extract_feedback({"issues": [issue]})
 
     # R1 DE-WIRE (Rich 08-14): _bdd_authoring_sweep_gate
     # (TASK-AB-BDDAUTHOR01) removed — the factory no longer executes
@@ -10257,6 +10353,8 @@ class AutoBuildOrchestrator:
         # each with its own suggestion. Only ``_direct_mode_evidence_gate``
         # passes them; every other caller keeps today's single issue.
         leading_issues: Optional[List[Dict[str, Any]]] = None,
+        # FEAT-2C42: how to fix the blocking issue, when the caller knows.
+        suggestion: Optional[str] = None,
     ) -> AgentInvocationResult:
         """Write a synthetic feedback coach_turn_N.json and return its result.
 
@@ -10335,6 +10433,7 @@ class AutoBuildOrchestrator:
                     "severity": "must_fix",
                     "category": category,
                     "description": rationale,
+                    **({"suggestion": suggestion} if suggestion else {}),
                 },
             ],
             "rationale": rationale,
@@ -11066,18 +11165,34 @@ class AutoBuildOrchestrator:
                     f"Suggested action: give each turn more time, or split "
                     f"the task so a turn can finish and write its report."
                 )
-            return (
+            head = (
                 f"Player-invocation stall detected after {len(turn_history)} turn(s).\n"
                 f"Player failed {n_failed}\u00d7 at the SDK layer before producing "
                 f"any work (turns: {affected_turns}).\n"
                 f"Underlying error (turn {first_turn.turn if first_turn else '?'}): "
                 f"{first_error!r}\n"
                 f"Worktree preserved for inspection.\n"
-                f"Suggested checks:\n"
-                f"  (a) `claude` is logged in on this host "
-                f"(claude auth status / claude login)\n"
-                f"  (b) `pip show claude-agent-sdk` matches the working "
-                f"environment (version + install path)."
+            )
+            # The sign-in and package checks only apply when the run really
+            # calls Anthropic through claude-agent-sdk, decided from the
+            # configured harness and base URL (FEAT-2C42: a local-model run
+            # was told to check `claude login`).
+            from guardkit.orchestrator.harness.selector import (
+                is_anthropic_sdk_run,
+            )
+
+            if is_anthropic_sdk_run():
+                return head + (
+                    f"Suggested checks:\n"
+                    f"  (a) `claude` is logged in on this host "
+                    f"(claude auth status / claude login)\n"
+                    f"  (b) `pip show claude-agent-sdk` matches the working "
+                    f"environment (version + install path)."
+                )
+            return head + (
+                "Suggested checks: the coder's model server is reachable and "
+                "answering, and the coder's log for these turns shows why it "
+                "stopped."
             )
 
         elif final_decision == "unrecoverable_stall":

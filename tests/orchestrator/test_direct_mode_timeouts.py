@@ -558,3 +558,289 @@ class TestTimeoutWordsAreNarrow:
         assert player_timeout_from_error("ReadTimeout: model server read timeout") is None
         assert player_timeout_from_error("SDK API error in stream: unknown") is None
         assert player_timeout_from_error(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Second round (coordinator review, 8 October 2026): the same family of gaps
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock, Mock  # noqa: E402
+
+from guardkit.orchestrator.synthetic_report import (  # noqa: E402
+    PLAYER_NO_REPORT_NO_CHANGES_CATEGORY,
+)
+
+TIMEOUT_ERROR = "SDK timeout after 2340s: Agent invocation exceeded 2340s timeout"
+TIMEOUT_SUGGESTION = (
+    "Write the report as soon as the work is done, before any long test run."
+)
+
+
+def _mocked_orchestrator(worktree: Path) -> tuple:
+    """An orchestrator whose coder and reviewer are stand-ins."""
+    invoker = Mock()
+    invoker.invoke_player = AsyncMock()
+    invoker.invoke_coach = AsyncMock()
+    invoker._get_implementation_mode.return_value = "direct"
+    display = MagicMock()
+    manager = Mock()
+    manager.worktrees_dir = worktree
+    orch = AutoBuildOrchestrator(
+        repo_root=worktree,
+        max_turns=5,
+        worktree_manager=manager,
+        agent_invoker=invoker,
+        progress_display=display,
+        enable_pre_loop=False,
+        enable_checkpoints=False,
+    )
+    return orch, invoker
+
+
+def _reviewer_feedback() -> AgentInvocationResult:
+    """The model reviewer's feedback: it knows nothing about the timeout."""
+    return AgentInvocationResult(
+        task_id=TASK_A, turn=1, agent_type="coach", success=True,
+        report={
+            "decision": "feedback",
+            "issues": [{
+                "severity": "major",
+                "category": "missing_requirement",
+                "description": "docs/widgets.md does not list the 404 response",
+                "suggestion": "Add the 404 response to docs/widgets.md",
+            }],
+            "rationale": "One criterion is not met.",
+        },
+        duration_seconds=1.0,
+    )
+
+
+def _timed_out_player() -> AgentInvocationResult:
+    return AgentInvocationResult(
+        task_id=TASK_A, turn=1, agent_type="player", success=False,
+        report={"timed_out": True, "timeout_seconds": 2340, "elapsed_seconds": 2341},
+        duration_seconds=2341.0, error=TIMEOUT_ERROR,
+    )
+
+
+def _run_turn(orch, worktree: Path, *, recovered, coach=None):
+    patches = [patch.object(orch, "_attempt_state_recovery", return_value=recovered)]
+    if coach is not None:
+        patches.append(patch.object(orch, "_invoke_coach_safely", return_value=coach))
+    for p in patches:
+        p.start()
+    try:
+        return orch._execute_turn(
+            turn=1, task_id=TASK_A, requirements="Document the endpoint",
+            worktree=_FakeWorktree(worktree), previous_feedback=None,
+        )
+    finally:
+        for p in patches:
+            p.stop()
+
+
+class TestTimeoutNoteOnEveryPath:
+    def test_reviewer_feedback_gets_the_timeout_must_fix(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+        )
+
+        record = _run_turn(orch, worktree, recovered=recovered, coach=_reviewer_feedback())
+
+        assert record.decision == "feedback"
+        assert record.feedback.startswith(
+            "- MUST FIX: Your last turn ran out of time after 2340 s"
+        )
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 2)["must_fix"]
+        assert "ran out of time after 2340 s" in must_fix[0]["issue"]
+        assert "player_turn_1.json" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
+        # The reviewer's own issue still follows, with its suggestion.
+        assert must_fix[1]["issue"] == "docs/widgets.md does not list the 404 response"
+        assert must_fix[1]["suggestion"] == "Add the 404 response to docs/widgets.md"
+
+    def test_said_once_when_the_gate_already_said_it(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+        recovered = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+        )
+        coach = _reviewer_feedback()
+        coach.report["issues"].insert(
+            0, player_timed_out_issue_for_test(TASK_A, 1, 2340)
+        )
+
+        record = _run_turn(orch, worktree, recovered=recovered, coach=coach)
+        assert record.feedback.count("ran out of time") == 1
+
+    def test_no_note_when_the_turn_did_not_time_out(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=True,
+            report={"task_id": TASK_A, "files_modified": ["docs/widgets.md"],
+                    "files_created": [], "tests_written": []},
+            duration_seconds=900.0,
+        )
+        record = _run_turn(orch, worktree, recovered=None, coach=_reviewer_feedback())
+        assert "ran out of time" not in record.feedback
+
+
+def player_timed_out_issue_for_test(task_id: str, turn: int, seconds: int) -> Dict:
+    from guardkit.orchestrator.synthetic_report import player_timed_out_issue
+
+    return player_timed_out_issue(
+        task_id, turn, {"timed_out": True, "timeout_seconds": seconds}
+    )
+
+
+class TestNothingRecoveredStillSaysWhatHappened:
+    def test_timeout_with_nothing_found_gives_timings(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+
+        record = _run_turn(orch, worktree, recovered=None)
+
+        assert record.decision == "error"
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 2)["must_fix"]
+        assert len(must_fix) == 1
+        assert "ran out of time (allowed 2340 s, ran 2341 s)" in must_fix[0]["issue"]
+        assert "found no changes" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"] == TIMEOUT_SUGGESTION
+
+    def test_other_failure_with_nothing_found(self, worktree: Path) -> None:
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = AgentInvocationResult(
+            task_id=TASK_A, turn=1, agent_type="player", success=False,
+            report={}, duration_seconds=12.0,
+            error="Player report not found at the expected path",
+        )
+
+        record = _run_turn(orch, worktree, recovered=None)
+
+        assert record.decision == "error"
+        must_fix = _invoker(worktree)._parse_coach_feedback(record.feedback, 2)["must_fix"]
+        assert len(must_fix) == 1
+        assert "ended without writing its report (player_turn_1.json)" in must_fix[0]["issue"]
+        assert "found no changes" in must_fix[0]["issue"]
+        assert "Player report not found" in must_fix[0]["issue"]
+        assert must_fix[0]["suggestion"]
+        assert "ran out of time" not in record.feedback
+
+    def test_the_next_turn_starts_from_it(self, worktree: Path) -> None:
+        """A resumed run takes its first feedback from the saved last turn."""
+        orch, invoker = _mocked_orchestrator(worktree)
+        invoker.invoke_player.return_value = _timed_out_player()
+        record = _run_turn(orch, worktree, recovered=None)
+
+        orch._turn_history = [record]
+        resumed, _ = _mocked_orchestrator(worktree)
+        resumed._turn_history = resumed._deserialize_turn_history(
+            orch._serialize_turn_history()
+        )
+        assert resumed._get_last_feedback() == record.feedback
+        assert "ran out of time" in resumed._get_last_feedback()
+
+
+def _stall_history() -> List[TurnRecord]:
+    return [
+        _turn(n, AgentInvocationResult(
+            task_id=TASK_A, turn=n, agent_type="player", success=False,
+            report={}, duration_seconds=1.0,
+            error="SDK API error in stream: unknown",
+        ))
+        for n in (1, 2, 3)
+    ]
+
+
+class TestSignInHintOnlyForAnthropicSdkRuns:
+    @pytest.mark.parametrize(
+        "harness, base_url, expect_hint",
+        [
+            ("langgraph", None, False),                       # the factory's local default
+            ("langgraph", "https://api.anthropic.com", False),  # harness decides
+            ("sdk", "http://localhost:8000", False),           # SDK on a local server
+            ("sdk", "http://10.0.0.5:4000/v1", False),         # SDK on a LAN server
+            ("sdk", None, True),                               # Anthropic through the SDK
+            ("sdk", "https://api.anthropic.com", True),
+        ],
+    )
+    def test_hint_follows_the_configured_provider(
+        self, worktree: Path, monkeypatch: pytest.MonkeyPatch,
+        harness: str, base_url: Optional[str], expect_hint: bool,
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_HARNESS", harness)
+        if base_url is None:
+            monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        else:
+            monkeypatch.setenv("ANTHROPIC_BASE_URL", base_url)
+
+        text = _orchestrator(worktree)._build_summary_details(
+            _stall_history(), "player_invocation_stall"
+        )
+        has_hint = "claude login" in text or "claude-agent-sdk" in text
+        assert has_hint is expect_hint
+        assert "SDK API error in stream" in text
+
+    def test_timeout_stall_never_has_it_even_on_anthropic(
+        self, worktree: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        history = [
+            _turn(n, AgentInvocationResult(
+                task_id=TASK_A, turn=n, agent_type="player", success=True,
+                report=_recovered_timeout_report(TASK_A, 2340), duration_seconds=0.0,
+            ))
+            for n in (1, 2, 3)
+        ]
+        text = _orchestrator(worktree)._build_summary_details(
+            history, "player_invocation_stall"
+        )
+        assert "claude login" not in text and "claude-agent-sdk" not in text
+
+
+class TestGateItemKeepsItsDetails:
+    def _gate(self, worktree: Path, criteria: List[str]) -> Any:
+        results_dir = worktree / ".guardkit" / "autobuild" / TASK_A
+        results_dir.mkdir(parents=True, exist_ok=True)
+        (results_dir / "task_work_results.json").write_text(
+            json.dumps(_direct_results(TASK_A))
+        )
+        orch = _orchestrator(worktree)
+        validator = CoachValidator(str(worktree), task_id=TASK_A)
+        result = orch._direct_mode_evidence_gate(
+            validator, TASK_A, 2, _FakeWorktree(worktree), 0.0,
+            acceptance_criteria=criteria, task_type="documentation",
+            player_report={"task_id": TASK_A},
+        )
+        return orch, result
+
+    def test_unmet_criteria_and_suggestion_reach_the_coder(self, worktree: Path) -> None:
+        orch, result = self._gate(worktree, CRITERIA)
+        text = orch._extract_feedback(result.report)
+        must_fix = _invoker(worktree)._parse_coach_feedback(text, 3)["must_fix"]
+
+        assert len(must_fix) == 1
+        item = must_fix[0]
+        assert "Direct-mode evidence gate blocked the turn" in item["issue"]
+        # The detail line survives: which criteria are unmet.
+        assert "[direct_mode_ac_unverified]" in item["issue"]
+        assert "AC-001" in item["issue"] and "AC-002" in item["issue"]
+        assert item["suggestion"] == (
+            "List a completion promise for each acceptance criterion "
+            "(criterion_id, status, evidence) in player_turn_3.json."
+        )
+
+    def test_the_unmet_list_is_bounded(self, worktree: Path) -> None:
+        many = [f"AC-{n:03d}: section {n} of docs/widgets.md is written." for n in range(1, 31)]
+        orch, result = self._gate(worktree, many)
+        text = orch._extract_feedback(result.report)
+        item = _invoker(worktree)._parse_coach_feedback(text, 3)["must_fix"][0]
+        assert "AC-010" in item["issue"]
+        assert "AC-011" not in item["issue"]
+        assert "and 20 more" in item["issue"]
+        assert item["suggestion"]

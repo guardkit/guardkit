@@ -168,18 +168,40 @@ def timeout_seconds_text(details: Dict[str, Any]) -> str:
 
 
 def player_timed_out_issue(
-    task_id: str, turn: int, details: Dict[str, Any]
+    task_id: str,
+    turn: int,
+    details: Dict[str, Any],
+    *,
+    nothing_found: bool = False,
 ) -> Dict[str, Any]:
-    """The must-fix issue telling the coder its last turn ran out of time."""
+    """The must-fix issue telling the coder its last turn ran out of time.
+
+    ``nothing_found`` is for a turn after which the factory found no changes
+    and no tests to run either: the issue then gives both timings (allowed
+    and measured) and says nothing was found. Otherwise the words stay the
+    same from turn to turn (see :func:`timeout_seconds_text`).
+    """
     after = timeout_seconds_text(details)
     report_name = f"player_turn_{turn}.json"
+    timings = ""
+    if nothing_found:
+        allowed = details.get("timeout_seconds")
+        ran = details.get("elapsed_seconds")
+        if allowed and ran:
+            timings = f" (allowed {allowed} s, ran {ran} s)"
+            after = ""
     return {
         "severity": "must_fix",
         "category": PLAYER_TIMED_OUT_CATEGORY,
         "description": (
             f"Your last turn ran out of time"
-            f"{f' after {after}' if after else ''} before writing its "
-            f"report ({report_name})"
+            f"{f' after {after}' if after else ''}{timings} before writing "
+            f"its report ({report_name})"
+            + (
+                ", and the factory found no changes in the working copy"
+                if nothing_found
+                else ""
+            )
         ),
         "location": f".guardkit/autobuild/{task_id}/{report_name}",
         "suggestion": (
@@ -216,6 +238,50 @@ def player_no_own_report_issue(task_id: str, turn: int) -> Dict[str, Any]:
             "criterion."
         ),
     }
+
+
+#: Category of the must-fix issue for a turn that failed without a report,
+#: after which the factory found no changes and no tests to run.
+PLAYER_NO_REPORT_NO_CHANGES_CATEGORY = "player_turn_no_report_no_changes"
+
+#: How much of the failed turn's error the issue quotes.
+_ERROR_QUOTE_LIMIT = 300
+
+
+def player_no_report_no_changes_issue(
+    task_id: str, turn: int, error: Optional[str]
+) -> Dict[str, Any]:
+    """The must-fix issue for a turn that failed (not by running out of
+    time) without a report, after which nothing was found in the working
+    copy."""
+    report_name = f"player_turn_{turn}.json"
+    quoted = " ".join(str(error or "").split())[:_ERROR_QUOTE_LIMIT]
+    return {
+        "severity": "must_fix",
+        "category": PLAYER_NO_REPORT_NO_CHANGES_CATEGORY,
+        "description": (
+            f"Your last turn ended without writing its report ({report_name}), "
+            f"and the factory found no changes in the working copy"
+            + (f". The turn failed with: {quoted}" if quoted else "")
+        ),
+        "location": f".guardkit/autobuild/{task_id}/{report_name}",
+        "suggestion": (
+            "Make the changes the task asks for, then write the report as "
+            "soon as the work is done."
+        ),
+    }
+
+
+def completion_promise_suggestion(turn: int) -> str:
+    """The suggestion for criteria that have no matching completion promise.
+
+    ``turn`` is the turn that will write the report, so the file named is
+    the one the coder writes next.
+    """
+    return (
+        "List a completion promise for each acceptance criterion "
+        f"(criterion_id, status, evidence) in player_turn_{turn}.json."
+    )
 
 
 def mark_shared_working_copy(report: Dict[str, Any]) -> Dict[str, Any]:
