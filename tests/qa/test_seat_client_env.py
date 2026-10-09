@@ -22,6 +22,13 @@ import pytest
 import guardkit.qa.qav_shadow as qs
 import guardkit.qa.review_seat as rs
 from guardkit.lib.client_env import API_KEY_ENV, BASE_URL_ENV
+from guardkit.lib.client_env import (
+    FEATURE_ROUTING_HEADER,
+    FEATURE_ROUTING_ID_ENV,
+    FEATURE_ROUTING_REQUIRED_ENV,
+    FeatureRoutingError,
+    resolve_feature_routing_headers,
+)
 
 DUMMY_KEY = "dummy-key-for-tests"
 PLACEHOLDER = "not-needed"
@@ -35,6 +42,8 @@ def clean_env(monkeypatch):
         BASE_URL_ENV,
         qs.QAV_SHADOW_URL_ENV,
         rs.REVIEW_SEAT_URL_ENV,
+        FEATURE_ROUTING_ID_ENV,
+        FEATURE_ROUTING_REQUIRED_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -48,6 +57,7 @@ def captured_client(monkeypatch):
         def __init__(self, base_url=None, api_key=None, timeout=None, **kwargs):
             seen["base_url"] = base_url
             seen["api_key"] = api_key
+            seen["default_headers"] = kwargs.pop("default_headers", None)
             # the QAV client also passes max_retries=0 (2026-09-05) — recorded
             # here so this fake stays a faithful stand-in for every seat client.
             seen.update(kwargs)
@@ -85,6 +95,15 @@ def test_qav_sends_the_key_from_the_environment(captured_client, monkeypatch):
 def test_qav_falls_back_to_the_placeholder_key(captured_client):
     _drive_qav(qs.DEFAULT_ENDPOINT)
     assert captured_client["api_key"] == PLACEHOLDER
+
+
+def test_qav_carries_the_validated_feature_route(captured_client, monkeypatch):
+    monkeypatch.setenv(FEATURE_ROUTING_ID_ENV, "feature_A-12")
+    monkeypatch.setenv(FEATURE_ROUTING_REQUIRED_ENV, "1")
+    _drive_qav(qs.DEFAULT_ENDPOINT)
+    assert captured_client["default_headers"] == {
+        FEATURE_ROUTING_HEADER: "feature_A-12"
+    }
 
 
 def test_qav_address_default_when_nothing_is_configured():
@@ -138,6 +157,73 @@ def test_review_seat_sends_the_key_from_the_environment(captured_client, monkeyp
 def test_review_seat_falls_back_to_the_placeholder_key(captured_client):
     _drive_review()
     assert captured_client["api_key"] == PLACEHOLDER
+
+
+def test_review_seat_carries_the_validated_feature_route(captured_client, monkeypatch):
+    monkeypatch.setenv(FEATURE_ROUTING_ID_ENV, "feature_B-34")
+    monkeypatch.setenv(FEATURE_ROUTING_REQUIRED_ENV, "1")
+    _drive_review()
+    assert captured_client["default_headers"] == {
+        FEATURE_ROUTING_HEADER: "feature_B-34"
+    }
+
+
+@pytest.mark.parametrize(
+    "routing_id",
+    ["", " padded", "dotted.id", "unicode-\N{SNOWMAN}", "a" * 257],
+)
+def test_invalid_feature_route_is_never_coerced(routing_id):
+    with pytest.raises(FeatureRoutingError):
+        resolve_feature_routing_headers(environ={FEATURE_ROUTING_ID_ENV: routing_id})
+
+
+def test_required_feature_route_must_be_present():
+    with pytest.raises(FeatureRoutingError):
+        resolve_feature_routing_headers(environ={FEATURE_ROUTING_REQUIRED_ENV: "1"})
+
+
+def test_feature_route_accepts_the_256_byte_ascii_boundary():
+    routing_id = "a" * 256
+    assert resolve_feature_routing_headers(
+        environ={FEATURE_ROUTING_ID_ENV: routing_id}
+    ) == {FEATURE_ROUTING_HEADER: routing_id}
+
+
+@pytest.mark.parametrize("required", ["", "true", " 1", "2"])
+def test_required_flag_is_not_trimmed_or_coerced(required):
+    with pytest.raises(FeatureRoutingError):
+        resolve_feature_routing_headers(
+            environ={FEATURE_ROUTING_REQUIRED_ENV: required}
+        )
+
+
+def test_feature_route_preserves_unrelated_headers_without_mutation():
+    original = {"X-Trace": "trace", "X-Feature-ID": "route_A"}
+    resolved = resolve_feature_routing_headers(
+        original,
+        environ={
+            FEATURE_ROUTING_ID_ENV: "route_A",
+            FEATURE_ROUTING_REQUIRED_ENV: "1",
+        },
+    )
+    assert resolved == original
+    assert resolved is not original
+    assert original == {"X-Trace": "trace", "X-Feature-ID": "route_A"}
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Feature-ID": "other"},
+        {"x-feature-id": "route_A", "X-Feature-Id": "route_A"},
+    ],
+)
+def test_conflicting_or_duplicate_caller_route_is_refused(headers):
+    with pytest.raises(FeatureRoutingError):
+        resolve_feature_routing_headers(
+            headers,
+            environ={FEATURE_ROUTING_ID_ENV: "route_A"},
+        )
 
 
 def test_review_seat_address_default_when_nothing_is_configured():

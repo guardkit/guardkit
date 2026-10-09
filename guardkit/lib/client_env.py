@@ -30,15 +30,21 @@ nothing at all (no endpoint configured means the model is never asked).
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence
+import re
+from typing import Mapping, Optional, Sequence
 
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL_ENV",
     "PLACEHOLDER_API_KEY",
     "DEFAULT_BASE_URL",
+    "FEATURE_ROUTING_HEADER",
+    "FEATURE_ROUTING_ID_ENV",
+    "FEATURE_ROUTING_REQUIRED_ENV",
+    "FeatureRoutingError",
     "resolve_api_key",
     "resolve_base_url",
+    "resolve_feature_routing_headers",
 ]
 
 #: The shared key variable every OpenAI-compatible client reads.
@@ -54,6 +60,68 @@ PLACEHOLDER_API_KEY = "not-needed"
 #: The estate's llama-swap address — the last resort for the two clients that
 #: had it written into the code.
 DEFAULT_BASE_URL = "http://localhost:9000/v1"
+
+#: Per-child feature-routing contract.  These values are deliberately local to
+#: GuardKit: sharing a helper with the build harness would introduce a package
+#: dependency at the HTTP boundary.
+FEATURE_ROUTING_ID_ENV = "GUARDKIT_FEATURE_ROUTING_ID"
+FEATURE_ROUTING_REQUIRED_ENV = "GUARDKIT_FEATURE_ROUTING_REQUIRED"
+FEATURE_ROUTING_HEADER = "x-feature-id"
+_FEATURE_ROUTING_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,256}\Z")
+
+
+class FeatureRoutingError(ValueError):
+    """The per-child routing contract cannot produce a safe HTTP header."""
+
+
+def resolve_feature_routing_headers(
+    headers: Optional[Mapping[str, str]] = None,
+    *,
+    environ: Optional[Mapping[str, str]] = None,
+) -> dict[str, str]:
+    """Return a copied header mapping with the validated feature route.
+
+    The routing ID is an exact wire value: it is never stripped, truncated or
+    coerced.  Header names are compared case-insensitively.  A caller may
+    already carry the same single routing header, but a different value,
+    duplicate case variant, or reserved header without the child environment
+    is refused instead of overwritten.  ``headers`` and ``environ`` are never
+    mutated.
+    """
+    source: Mapping[str, str] = os.environ if environ is None else environ
+    result = dict(headers or {})
+
+    required_raw = source.get(FEATURE_ROUTING_REQUIRED_ENV)
+    if required_raw not in (None, "0", "1"):
+        raise FeatureRoutingError(
+            f"{FEATURE_ROUTING_REQUIRED_ENV} must be exactly '0' or '1'"
+        )
+    required = required_raw == "1"
+
+    routing_id = source.get(FEATURE_ROUTING_ID_ENV)
+    if routing_id is not None and (
+        not isinstance(routing_id, str) or _FEATURE_ROUTING_ID_RE.fullmatch(routing_id) is None
+    ):
+        raise FeatureRoutingError(
+            f"{FEATURE_ROUTING_ID_ENV} must match ASCII [A-Za-z0-9_-]{{1,256}}"
+        )
+    if routing_id is None and required:
+        raise FeatureRoutingError(
+            f"{FEATURE_ROUTING_ID_ENV} is required when {FEATURE_ROUTING_REQUIRED_ENV}=1"
+        )
+
+    reserved = [name for name in result if name.lower() == FEATURE_ROUTING_HEADER]
+    if len(reserved) > 1:
+        raise FeatureRoutingError(f"duplicate {FEATURE_ROUTING_HEADER} headers are not allowed")
+    if reserved:
+        name = reserved[0]
+        if routing_id is None or result[name] != routing_id:
+            raise FeatureRoutingError(
+                f"caller-supplied {FEATURE_ROUTING_HEADER} conflicts with child routing"
+            )
+    elif routing_id is not None:
+        result[FEATURE_ROUTING_HEADER] = routing_id
+    return result
 
 
 def resolve_api_key(placeholder: str = PLACEHOLDER_API_KEY) -> str:

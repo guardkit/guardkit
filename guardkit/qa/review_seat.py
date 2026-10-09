@@ -72,7 +72,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
-from guardkit.lib.client_env import resolve_api_key, resolve_base_url
+from guardkit.lib.client_env import (
+    resolve_api_key,
+    resolve_base_url,
+    resolve_feature_routing_headers,
+)
 from guardkit.qa.diff_ingest import (
     DiffIngestError,
     FileDiff,
@@ -650,9 +654,15 @@ def _default_seat_call(
 
         # OPENAI_API_KEY when it is set, else the placeholder llama-swap has
         # always ignored. Never logged — it goes into the request and nowhere else.
-        client = OpenAI(
-            base_url=resolved_base_url, api_key=resolve_api_key(), timeout=timeout_s
-        )
+        client_kwargs: Dict[str, Any] = {
+            "base_url": resolved_base_url,
+            "api_key": resolve_api_key(),
+            "timeout": timeout_s,
+        }
+        routing_headers = resolve_feature_routing_headers()
+        if routing_headers:
+            client_kwargs["default_headers"] = routing_headers
+        client = OpenAI(**client_kwargs)
         resp = client.chat.completions.create(
             model=model,
             temperature=temperature,
