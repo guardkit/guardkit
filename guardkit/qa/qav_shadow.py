@@ -75,7 +75,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from guardkit.lib.client_env import resolve_api_key, resolve_base_url
+from guardkit.lib.client_env import (
+    resolve_api_key,
+    resolve_base_url,
+    resolve_feature_routing_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -624,9 +628,16 @@ def _default_seat_call(
         # max_retries=0 so the configured timeout means what it says. The SDK
         # default is 2 retries, which turned a 60 s timeout into a 181 s wait
         # on the 2026-09-03 host (each attempt got the full 60 s, plus backoff).
-        client = OpenAI(
-            base_url=base_url, api_key=resolve_api_key(), timeout=timeout_s, max_retries=0
-        )
+        client_kwargs: Dict[str, Any] = {
+            "base_url": base_url,
+            "api_key": resolve_api_key(),
+            "timeout": timeout_s,
+            "max_retries": 0,
+        }
+        routing_headers = resolve_feature_routing_headers()
+        if routing_headers:
+            client_kwargs["default_headers"] = routing_headers
+        client = OpenAI(**client_kwargs)
         resp = client.chat.completions.create(
             model=model,
             temperature=temperature,

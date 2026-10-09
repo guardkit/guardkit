@@ -140,7 +140,12 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from guardkit.lib.client_env import PLACEHOLDER_API_KEY, resolve_api_key, resolve_base_url
+from guardkit.lib.client_env import (
+    PLACEHOLDER_API_KEY,
+    resolve_api_key,
+    resolve_base_url,
+    resolve_feature_routing_headers,
+)
 from guardkit.orchestrator.verifier_stamp import VERIFIER_HOMES
 
 logger = logging.getLogger(__name__)
@@ -895,16 +900,19 @@ class ConfiguredAsker:
         fields["model"] = self.model
         fields["messages"] = [{"role": "user", "content": prompt}]
         body = json.dumps(fields).encode("utf-8")
-        request = urllib.request.Request(
-            self._url,
-            data=body,
-            headers={
+        headers = resolve_feature_routing_headers(
+            {
                 "Content-Type": "application/json",
                 # The key the estate's router expects: OPENAI_API_KEY when it is
                 # set, else the placeholder llama-swap has always ignored. Never
                 # logged — it goes into the request and nowhere else.
                 "Authorization": f"Bearer {resolve_api_key()}",
-            },
+            }
+        )
+        request = urllib.request.Request(
+            self._url,
+            data=body,
+            headers=headers,
             method="POST",
         )
         try:
