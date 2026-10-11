@@ -25,6 +25,10 @@ from guardkit.templates.parse_gate import (
 )
 from guardkit.templates.patterns_manifest import load_patterns_manifest
 from guardkit.templates.resolver import resolve_template_source_dir
+from installer.core.commands.lib.agent_discovery import (
+    discover_agents,
+    validate_discovery_metadata,
+)
 
 
 TEMPLATE = "react-rust-monorepo"
@@ -126,6 +130,32 @@ def test_repeat_init_preserves_local_guidance(
     assert apply_template(TEMPLATE, project)
     assert rule.read_text(encoding="utf-8") == "local rule edit\n"
     assert json.loads(manifest.read_text(encoding="utf-8"))["local"] is True
+
+
+def test_init_installed_specialists_are_discoverable(
+    installed_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real discovery scanner must select the installed local guides."""
+    monkeypatch.chdir(installed_project)
+    cases = (
+        ("rust-api-specialist", "implementation", ["rust"], ["rust", "api"]),
+        ("monorepo-contract-specialist", "review", ["react"], ["react", "monorepo"]),
+    )
+    for name, phase, stack, keywords in cases:
+        assert name in {
+            agent.get("name") for agent in discover_agents(phase=phase, stack=stack)
+        }
+        matches = discover_agents(phase=phase, stack=stack, keywords=keywords)
+        selected = next((agent for agent in matches if agent.get("name") == name), None)
+        assert selected is not None, (name, matches)
+        assert Path(selected["path"]) == installed_project / ".claude" / "agents" / (
+            f"{name}.md"
+        )
+        assert selected["source"] == "local"
+        assert selected["relevance_score"] > 0
+        valid, errors = validate_discovery_metadata(selected)
+        assert valid, errors
+        assert "model" not in selected
 
 
 def test_manifest_mappings_and_parsed_code_coverage(template_dir: Path) -> None:
