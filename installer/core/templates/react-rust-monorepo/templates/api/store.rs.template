@@ -1,0 +1,19 @@
+use sqlx::{PgPool, Row};
+
+use crate::routes::Note;
+
+// This runtime query is parameter-bound, but SQL/schema are not checked at compile time.
+pub async fn insert_note(pool: &PgPool, label: &str) -> Result<Note, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query("INSERT INTO notes (label) VALUES ($1) RETURNING id, label")
+        .bind(label)
+        .fetch_one(&mut *tx)
+        .await?;
+    let id: i64 = row.try_get("id")?;
+    let note = Note {
+        id: id.to_string(),
+        label: row.try_get("label")?,
+    };
+    tx.commit().await?;
+    Ok(note)
+}

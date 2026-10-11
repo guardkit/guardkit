@@ -1,0 +1,41 @@
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+#[derive(Debug)]
+pub enum ApiError {
+    InvalidInput,
+    Database,
+}
+
+impl From<sqlx::Error> for ApiError {
+    fn from(_: sqlx::Error) -> Self {
+        tracing::error!("database operation failed");
+        Self::Database
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ErrorBody {
+    pub message: String,
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Self::InvalidInput => (StatusCode::BAD_REQUEST, "Invalid request"),
+            Self::Database => (StatusCode::INTERNAL_SERVER_ERROR, "Service unavailable"),
+        };
+        (
+            status,
+            Json(ErrorBody {
+                message: message.into(),
+            }),
+        )
+            .into_response()
+    }
+}

@@ -54,6 +54,7 @@ class TestLanguageDescriptors:
             ("page.tsx", "tsx"),
             ("helper.js", "javascript"),
             ("Service.cs", "csharp"),
+            ("route.rs", "rust"),
             ("config.yaml", None),
             ("README.md", None),
             ("Dockerfile", None),
@@ -185,8 +186,8 @@ class TestAllShippedTemplates:
     def test_multiple_stacks_covered(self):
         result = validate_templates()
         langs = {fr.language for fr in result.files if fr.status is FileStatus.OK}
-        # python + typescript + tsx + csharp all exercised (3/13 -> N/N).
-        assert {"python", "typescript", "tsx", "csharp"} <= langs
+        # Python, web, C# and Rust patterns all exercise the parse gate.
+        assert {"python", "typescript", "tsx", "csharp", "rust"} <= langs
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +205,10 @@ class TestAllShippedTemplates:
 # reintroduces the divergence fails LOUD in CI instead of silently killing the
 # gate. (Extends O4's "raises rather than reports green" to API mismatch.)
 
-# The five grammars the gate must support (task-named; every LANGUAGE_BY_EXT
+# The grammars the gate must support (task-named; every LANGUAGE_BY_EXT
 # value must be one of these — a new descriptor row without a real parse here is
 # a coverage hole).
-_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp")
+_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp", "rust")
 
 # A clean, valid one-liner per grammar — must parse with zero ERROR/MISSING.
 _CLEAN_SOURCE = {
@@ -216,6 +217,7 @@ _CLEAN_SOURCE = {
     "tsx": "const x = <div>{1}</div>;\n",
     "javascript": "const x = 1;\n",
     "csharp": "namespace N { public class C { } }\n",
+    "rust": "fn main() { let value = 1; }\n",
 }
 
 
