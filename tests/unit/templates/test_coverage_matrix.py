@@ -300,10 +300,10 @@ class TestAllShippedTemplatesReportOnly:
 
 class TestEnforcedRegistryDefault:
     def test_coverage_enforced_includes_validated_templates(self) -> None:
-        """The FastAPI and React/Rust templates have validated code layers;
+        """The FastAPI, React/Rust and React/Go templates have validated code layers;
         remaining shipped templates retain report-only coverage."""
         assert COVERAGE_ENFORCED == frozenset(
-            {"fastapi-python", "react-rust-monorepo"}
+            {"fastapi-python", "react-rust-monorepo", "react-go-monorepo"}
         )
 
     def test_enforced_flag_reflects_membership(self, tmp_path: Path, monkeypatch) -> None:

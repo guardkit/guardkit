@@ -1,0 +1,22 @@
+{
+  "naming_conventions": {
+    "go": {"packages": "lowercase", "types": "PascalCase", "functions": "PascalCase exported, camelCase private"},
+    "web": {"components": "PascalCase.tsx", "functions": "camelCase"}
+  },
+  "directory_structure": {
+    "apps/api": "One Go module with cmd/api and feature-local internal packages",
+    "apps/web": "React/Vite app with feature-local modules"
+  },
+  "layer_mappings": {
+    "api": {
+      "directory": "apps/api/internal",
+      "file_patterns": ["*.go"],
+      "description": "net/http handlers and pgx PostgreSQL persistence"
+    },
+    "web": {
+      "directory": "apps/web/src",
+      "file_patterns": ["*.ts", "*.tsx"],
+      "description": "Typed React UI and validated HTTP boundary"
+    }
+  }
+}

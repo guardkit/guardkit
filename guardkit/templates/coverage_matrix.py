@@ -57,11 +57,12 @@ from guardkit.templates.parse_gate import FileStatus, check_file
 # cannot validate non-gated-language files (see LANGUAGE_BY_EXT in
 # parse_gate.py), so a "config" row could never leave WARN. Disposed of as
 # intentionally loader-invisible packaging config rather than a permanent
-# unwinnable row. The React/Rust template likewise declares only parsed code
-# layers (api/web); config and scripts have separate native checks.
+# unwinnable row. The React/Rust and React/Go templates likewise declare only
+# parsed code layers (api/web); config and scripts have separate native checks.
 COVERAGE_ENFORCED: FrozenSet[str] = frozenset({
     "fastapi-python",
     "react-rust-monorepo",
+    "react-go-monorepo",
 })
 
 

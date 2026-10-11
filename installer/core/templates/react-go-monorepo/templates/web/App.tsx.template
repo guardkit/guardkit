@@ -1,0 +1,49 @@
+import { useState, type FormEvent } from "react";
+import { createNote, type Note } from "./api";
+
+export function App() {
+  const [label, setLabel] = useState("");
+  const [saved, setSaved] = useState<Note | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      setSaved(await createNote(label));
+      setLabel("");
+    } catch {
+      setError("The note could not be saved. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main>
+      <h1>Notes</h1>
+      <form
+        onSubmit={(event) => {
+          void submit(event);
+        }}
+      >
+        <label htmlFor="label">New note</label>
+        <input
+          id="label"
+          value={label}
+          maxLength={80}
+          onChange={(event) => {
+            setLabel(event.target.value);
+          }}
+        />
+        <button type="submit" disabled={busy || !label.trim()}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+      </form>
+      {error && <p role="alert">{error}</p>}
+      {saved && <p role="status">Saved: {saved.label}</p>}
+    </main>
+  );
+}

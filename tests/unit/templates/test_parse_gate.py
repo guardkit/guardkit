@@ -54,6 +54,7 @@ class TestLanguageDescriptors:
             ("page.tsx", "tsx"),
             ("helper.js", "javascript"),
             ("Service.cs", "csharp"),
+            ("handler.go", "go"),
             ("route.rs", "rust"),
             ("config.yaml", None),
             ("README.md", None),
@@ -118,6 +119,10 @@ class TestParseFindings:
     def test_mangled_csharp(self):
         assert parse_findings("namespace N { public class {{Name} { } }\n", "csharp")
 
+    def test_clean_and_malformed_go(self):
+        assert parse_findings("package main\nfunc main() {}\n", "go") == []
+        assert parse_findings("package main\nfunc main( {\n", "go")
+
 
 # ---------------------------------------------------------------------------
 # check_file: opt-out + skip + the RED repro
@@ -162,6 +167,13 @@ class TestCheckFile:
         result = check_file(f, "t/config.yaml.template")
         assert result.status is FileStatus.SKIPPED
 
+    def test_go_file_is_rendered_and_parsed(self, tmp_path: Path):
+        f = tmp_path / "handler.go.template"
+        f.write_text("package notes\nfunc {{ClassName}}() {}\n")
+        assert check_file(f, "t/handler.go.template").status is FileStatus.OK
+        f.write_text("package notes\nfunc {{ClassName}}( {\n")
+        assert check_file(f, "t/handler.go.template").status is FileStatus.ERROR
+
 
 # ---------------------------------------------------------------------------
 # Whole-suite acceptance
@@ -186,8 +198,8 @@ class TestAllShippedTemplates:
     def test_multiple_stacks_covered(self):
         result = validate_templates()
         langs = {fr.language for fr in result.files if fr.status is FileStatus.OK}
-        # Python, web, C# and Rust patterns all exercise the parse gate.
-        assert {"python", "typescript", "tsx", "csharp", "rust"} <= langs
+        # Python, web, C#, Go and Rust patterns all exercise the parse gate.
+        assert {"python", "typescript", "tsx", "csharp", "go", "rust"} <= langs
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +220,7 @@ class TestAllShippedTemplates:
 # The grammars the gate must support (task-named; every LANGUAGE_BY_EXT
 # value must be one of these — a new descriptor row without a real parse here is
 # a coverage hole).
-_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp", "rust")
+_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp", "go", "rust")
 
 # A clean, valid one-liner per grammar — must parse with zero ERROR/MISSING.
 _CLEAN_SOURCE = {
@@ -217,6 +229,7 @@ _CLEAN_SOURCE = {
     "tsx": "const x = <div>{1}</div>;\n",
     "javascript": "const x = 1;\n",
     "csharp": "namespace N { public class C { } }\n",
+    "go": "package main\nfunc main() {}\n",
     "rust": "fn main() { let value = 1; }\n",
 }
 
