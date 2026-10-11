@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { createNote, parseNote } from "./api";
+
+describe("API boundary", () => {
+  it("rejects malformed network data", () => {
+    expect(() => parseNote({ id: 12, label: "note" })).toThrow(
+      "Invalid API response",
+    );
+    expect(() => parseNote({ id: "1", label: null })).toThrow(
+      "Invalid API response",
+    );
+  });
+
+  it("accepts a string ID and posts JSON", async () => {
+    const note = await createNote("hello", (_url, init) => {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ label: "hello" }));
+      return Promise.resolve(
+        Response.json(
+          { id: "9007199254740993", label: "hello" },
+          { status: 201 },
+        ),
+      );
+    });
+    expect(note.id).toBe("9007199254740993");
+  });
+});

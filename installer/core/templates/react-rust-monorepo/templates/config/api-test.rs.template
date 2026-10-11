@@ -1,0 +1,22 @@
+#![allow(clippy::expect_used)]
+
+use axum::{body::to_bytes, http::StatusCode, response::IntoResponse};
+use sample_api::{error::ApiError, routes::validate_label};
+
+#[test]
+fn labels_reject_empty_and_long_input() {
+    assert!(validate_label(" \n ").is_err());
+    assert!(validate_label(&"x".repeat(81)).is_err());
+    assert_eq!(validate_label("  valid  ").expect("valid label"), "valid");
+}
+
+#[tokio::test]
+async fn database_errors_have_safe_public_body() {
+    let response = ApiError::Database.into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = to_bytes(response.into_body(), 1024)
+        .await
+        .expect("small body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON body");
+    assert_eq!(body["message"], "Service unavailable");
+}

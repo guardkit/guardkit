@@ -1,0 +1,21 @@
+[package]
+name = "sample_api"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = "=0.8.9"
+serde = { version = "=1.0.229", features = ["derive"] }
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres"] }
+tokio = { version = "=1.53.2", features = ["macros", "rt-multi-thread", "net"] }
+tracing = "=0.1.44"
+tracing-subscriber = "=0.3.23"
+utoipa = "=6.0.0"
+utoipa-axum = "=0.3.0"
+
+[dev-dependencies]
+serde_json = "=1.0.151"
