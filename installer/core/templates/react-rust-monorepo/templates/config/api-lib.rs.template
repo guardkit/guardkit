@@ -1,0 +1,23 @@
+pub mod error;
+pub mod routes;
+pub mod store;
+
+use axum::{Json, Router, routing::get};
+use sqlx::PgPool;
+use utoipa_axum::{router::OpenApiRouter, routes};
+
+pub fn app(pool: PgPool) -> Router {
+    let (api, openapi) = OpenApiRouter::<PgPool>::new()
+        .routes(routes!(routes::health, routes::create_note))
+        .split_for_parts();
+    Router::new()
+        .merge(api)
+        .route(
+            "/openapi.json",
+            get(move || {
+                let document = openapi.clone();
+                async move { Json(document) }
+            }),
+        )
+        .with_state(pool)
+}

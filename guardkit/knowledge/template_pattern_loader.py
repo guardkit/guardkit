@@ -231,6 +231,7 @@ _TECH_STACK_SUBDIR_MAP: dict[str, list[str]] = {
     "react": ["components", "hooks", "pages", "styles", "utils", "web"],
     "typescript": ["components", "hooks", "pages", "types", "utils", "web"],
     "golang": ["api"],
+    "rust": ["api"],
     "nextjs": ["pages", "components", "api", "styles", "public"],
     "dotnet": ["controllers", "models", "services", "data", "middleware"],
 }

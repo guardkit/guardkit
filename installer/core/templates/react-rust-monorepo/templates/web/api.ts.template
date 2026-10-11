@@ -1,0 +1,36 @@
+export type Note = { id: string; label: string };
+
+type Fetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export function parseNote(value: unknown): Note {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Invalid API response");
+  }
+  if (
+    !("id" in value) ||
+    typeof value.id !== "string" ||
+    !/^[0-9]+$/.test(value.id) ||
+    !("label" in value) ||
+    typeof value.label !== "string"
+  ) {
+    throw new Error("Invalid API response");
+  }
+  return { id: value.id, label: value.label };
+}
+
+export async function createNote(
+  label: string,
+  fetcher: Fetcher = fetch,
+): Promise<Note> {
+  const response = await fetcher("/api/notes", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!response.ok) throw new Error("Unable to save note");
+  const body: unknown = await response.json();
+  return parseNote(body);
+}

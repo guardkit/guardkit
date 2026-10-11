@@ -1007,7 +1007,7 @@ def init(
     so no init-time memory configuration is written.
 
     TEMPLATE is the name of the template to apply (default: 'default').
-    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, react-go-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation, dotnet-railway-fastendpoints.
+    Available templates: default, fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, react-rust-monorepo, react-go-monorepo, python-library, nats-asyncio-service, langchain-deepagents, langchain-deepagents-orchestrator, langchain-deepagents-weighted-evaluation, dotnet-railway-fastendpoints.
     """
     if force and not update:
         raise SystemExit(
