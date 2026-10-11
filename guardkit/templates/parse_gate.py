@@ -73,6 +73,7 @@ LANGUAGE_BY_EXT: Dict[str, str] = {
     ".cjs": "javascript",
     ".cs": "csharp",
     ".go": "go",
+    ".rs": "rust",
 }
 
 

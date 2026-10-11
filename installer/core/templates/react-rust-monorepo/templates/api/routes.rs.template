@@ -1,0 +1,62 @@
+use axum::{
+    Json,
+    extract::{State, rejection::JsonRejection},
+    http::StatusCode,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use utoipa::ToSchema;
+
+use crate::{
+    error::{ApiError, ErrorBody},
+    store,
+};
+
+#[derive(Serialize, ToSchema)]
+pub struct Health {
+    status: &'static str,
+}
+
+#[utoipa::path(get, path = "/api/health", responses((status = 200, body = Health)))]
+pub async fn health() -> Json<Health> {
+    Json(Health { status: "ok" })
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateNote {
+    pub label: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Note {
+    pub id: String,
+    pub label: String,
+}
+
+pub fn validate_label(value: &str) -> Result<&str, ApiError> {
+    let label = value.trim();
+    if label.is_empty() || label.chars().count() > 80 {
+        return Err(ApiError::InvalidInput);
+    }
+    Ok(label)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/notes",
+    request_body = CreateNote,
+    responses(
+        (status = 201, body = Note),
+        (status = 400, body = ErrorBody),
+        (status = 500, body = ErrorBody)
+    )
+)]
+pub async fn create_note(
+    State(pool): State<PgPool>,
+    payload: Result<Json<CreateNote>, JsonRejection>,
+) -> Result<(StatusCode, Json<Note>), ApiError> {
+    let Json(payload) = payload.map_err(|_| ApiError::InvalidInput)?;
+    let label = validate_label(&payload.label)?;
+    let note = store::insert_note(&pool, label).await?;
+    Ok((StatusCode::CREATED, Json(note)))
+}

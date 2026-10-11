@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v cargo >/dev/null || { echo 'cargo is required' >&2; exit 1; }
+command -v npm >/dev/null || { echo 'npm is required' >&2; exit 1; }
+cargo fmt --all --check
+cargo check --locked --workspace --all-targets
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
+npm --workspace sample-web run typecheck
+npm --workspace sample-web run lint
+npm --workspace sample-web run format:check
+npm --workspace sample-web run test
+npm --workspace sample-web run build
