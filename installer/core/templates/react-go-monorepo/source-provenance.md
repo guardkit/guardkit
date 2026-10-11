@@ -1,0 +1,19 @@
+# Source provenance
+
+Reviewed 2026-10-11. The Go source patterns were written for this template; no third-party starter source or agent skill was copied. The React `App.tsx`, `api.ts`, web test and web configuration were reused byte-for-byte from the independently reviewed GuardKit React/Rust template payload at commit `64fbb48f` where applicable. The root package name differs. The Rust PR is independent and remains a separate change; this note records code provenance, not a dependency on that PR.
+
+| Guidance | Use in this template | Licence / caution |
+| --- | --- | --- |
+| [Official Go module layout](https://go.dev/doc/modules/layout) and [go.mod reference](https://go.dev/doc/modules/gomod-ref) | One `apps/api` module with `cmd/api` and feature-local `internal/notes`. | Official documentation; no source copied. |
+| [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) and [Go error wrapping guidance](https://go.dev/blog/go1.13-errors) | Consumer-owned narrow interface, request context, checked errors, deliberate `%w` use. | Official guidance; no prose copied. |
+| [`net/http` ServeMux](https://pkg.go.dev/net/http) and [`httptest`](https://pkg.go.dev/net/http/httptest) | Method-aware routes and observable handler contract tests. | Standard library documentation; no source copied. |
+| [pgx maintainer release](https://github.com/jackc/pgx/releases/tag/v5.11.0) and [pgxpool docs](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool) | Bound query/transaction, pool startup ping, request cancellation. pgx 5.11.0 supports Go 1.25+. | [MIT](https://github.com/jackc/pgx/blob/master/LICENSE); dependency, no source copied. |
+| [Go race detector](https://go.dev/doc/articles/race_detector), [vet](https://go.dev/cmd/vet/) and [Staticcheck 2026.2.1](https://github.com/dominikh/go-tools/releases/tag/2026.2.1) | Native source gates. The published release advertises Go 1.27 support, but native analysis failed with Go 1.27.2 export data. Pin module v0.8.1 with the tested Go 1.26.9 toolchain. | [Staticcheck MIT](https://github.com/dominikh/go-tools/blob/master/LICENSE); tool, no source copied. |
+| [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) | A separate scan for known reachable vulnerabilities; its database is external and time-dependent. | Official Go tool; clean scan is not a claim about unknown flaws. |
+| [samber Go agent skills](https://github.com/samber/cc-skills-golang) | Compared for agent-guidance coverage only. The maintainer describes AI bootstrap plus human review. | [MIT](https://github.com/samber/cc-skills-golang/blob/main/LICENSE); no skill installed or copied. |
+
+The targeted native fixture pins Go 1.26.9, pgx 5.11.0, Staticcheck 2026.2.1/v0.8.1, Node 22.23.2 and the same web dependency versions as the reviewed React/Rust payload. Exact dependency resolution comes from `go.sum` and `package-lock.json`, not prose. Go compilation, vet, Staticcheck and exercised race tests cannot prove SQL/schema compatibility, live identity, browser behavior or container lifecycle.
+
+Go 1.26.9 is a supported, patched release under the [Go release policy](https://go.dev/doc/devel/release). The first native run on Go 1.27.2 failed inside Staticcheck with export-data version 5 exceeding supported version 4. The [maintainer issue](https://github.com/dominikh/go-tools/issues/1711) describes this compatibility failure. The gate was retained and the toolchain changed; installing a linter successfully does not establish that it can analyse the target code.
+
+The first online scan found reachable [GO-2026-6629](https://pkg.go.dev/vuln/GO-2026-6629) and [GO-2026-5970](https://pkg.go.dev/vuln/GO-2026-5970) in pgx's selected transitive `golang.org/x/text v0.29.0`. The fixture explicitly upgrades it to **v0.41.0**, with resolved `golang.org/x/sync v0.22.0`, and reruns native checks and the scan. Dependency minimum versions are not security endorsements.

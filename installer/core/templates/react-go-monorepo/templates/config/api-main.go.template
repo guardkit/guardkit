@@ -1,0 +1,72 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"example.com/guardkit/react-go-api/internal/notes"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func main() {
+	if err := run(); err != nil {
+		slog.Error("api stopped", "kind", "startup or server failure")
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	startupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pool, err := pgxpool.New(startupCtx, url)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("configure database: %w", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(startupCtx); err != nil {
+		cancel()
+		return fmt.Errorf("connect database: %w", err)
+	}
+	cancel()
+
+	server := &http.Server{
+		Addr:              "127.0.0.1:3000",
+		Handler:           notes.Routes(notes.PGStore{Pool: pool}),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	result := make(chan error, 1)
+	go func() { result <- server.ListenAndServe() }()
+	select {
+	case err := <-result:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serve api: %w", err)
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shut down api: %w", err)
+		}
+		if err := <-result; !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serve api: %w", err)
+		}
+		return nil
+	}
+}

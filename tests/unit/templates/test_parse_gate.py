@@ -54,6 +54,7 @@ class TestLanguageDescriptors:
             ("page.tsx", "tsx"),
             ("helper.js", "javascript"),
             ("Service.cs", "csharp"),
+            ("handler.go", "go"),
             ("config.yaml", None),
             ("README.md", None),
             ("Dockerfile", None),
@@ -117,6 +118,10 @@ class TestParseFindings:
     def test_mangled_csharp(self):
         assert parse_findings("namespace N { public class {{Name} { } }\n", "csharp")
 
+    def test_clean_and_malformed_go(self):
+        assert parse_findings("package main\nfunc main() {}\n", "go") == []
+        assert parse_findings("package main\nfunc main( {\n", "go")
+
 
 # ---------------------------------------------------------------------------
 # check_file: opt-out + skip + the RED repro
@@ -161,6 +166,13 @@ class TestCheckFile:
         result = check_file(f, "t/config.yaml.template")
         assert result.status is FileStatus.SKIPPED
 
+    def test_go_file_is_rendered_and_parsed(self, tmp_path: Path):
+        f = tmp_path / "handler.go.template"
+        f.write_text("package notes\nfunc {{ClassName}}() {}\n")
+        assert check_file(f, "t/handler.go.template").status is FileStatus.OK
+        f.write_text("package notes\nfunc {{ClassName}}( {\n")
+        assert check_file(f, "t/handler.go.template").status is FileStatus.ERROR
+
 
 # ---------------------------------------------------------------------------
 # Whole-suite acceptance
@@ -204,10 +216,10 @@ class TestAllShippedTemplates:
 # reintroduces the divergence fails LOUD in CI instead of silently killing the
 # gate. (Extends O4's "raises rather than reports green" to API mismatch.)
 
-# The five grammars the gate must support (task-named; every LANGUAGE_BY_EXT
+# The grammars the gate must support (task-named; every LANGUAGE_BY_EXT
 # value must be one of these — a new descriptor row without a real parse here is
 # a coverage hole).
-_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp")
+_SUPPORTED_GRAMMARS = ("python", "typescript", "tsx", "javascript", "csharp", "go")
 
 # A clean, valid one-liner per grammar — must parse with zero ERROR/MISSING.
 _CLEAN_SOURCE = {
@@ -216,6 +228,7 @@ _CLEAN_SOURCE = {
     "tsx": "const x = <div>{1}</div>;\n",
     "javascript": "const x = 1;\n",
     "csharp": "namespace N { public class C { } }\n",
+    "go": "package main\nfunc main() {}\n",
 }
 
 

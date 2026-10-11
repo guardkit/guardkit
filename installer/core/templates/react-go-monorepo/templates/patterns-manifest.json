@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {"file": "api/handler.go.template", "layer": "api", "keywords": ["api", "backend", "go", "golang", "http"], "priority": 1, "pairs_with": ["api/validation.go.template", "api/store.go.template"]},
+    {"file": "web/api.ts.template", "layer": "web", "keywords": ["web", "frontend", "react", "typescript"], "priority": 2, "pairs_with": ["web/App.tsx.template"]},
+    {"file": "web/App.tsx.template", "layer": "web", "keywords": ["web", "frontend", "react", "typescript"], "priority": 3, "pairs_with": ["web/api.ts.template"]},
+    {"file": "api/validation.go.template", "layer": "api", "keywords": ["api", "backend", "go", "validation"], "priority": 4, "pairs_with": []},
+    {"file": "api/store.go.template", "layer": "api", "keywords": ["api", "backend", "go", "postgresql", "pgx"], "priority": 5, "pairs_with": []}
+  ]
+}
