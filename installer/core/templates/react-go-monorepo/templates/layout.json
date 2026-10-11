@@ -1,0 +1,22 @@
+{
+  "api/handler.go.template": "apps/api/internal/notes/handler.go",
+  "api/store.go.template": "apps/api/internal/notes/store.go",
+  "api/validation.go.template": "apps/api/internal/notes/validation.go",
+  "web/api.ts.template": "apps/web/src/api.ts",
+  "web/App.tsx.template": "apps/web/src/App.tsx",
+  "config/api-go.mod.template": "apps/api/go.mod",
+  "config/go-version.template": ".go-version",
+  "config/api-main.go.template": "apps/api/cmd/api/main.go",
+  "config/api-handler_test.go.template": "apps/api/internal/notes/handler_test.go",
+  "config/api-0001_create_notes.sql.template": "apps/api/migrations/0001_create_notes.sql",
+  "config/package.json.template": "package.json",
+  "config/node-version.template": ".nvmrc",
+  "config/web-package.json.template": "apps/web/package.json",
+  "config/web-tsconfig.json.template": "apps/web/tsconfig.json",
+  "config/web-eslint.config.mjs.template": "apps/web/eslint.config.mjs",
+  "config/web-vite.config.ts.template": "apps/web/vite.config.ts",
+  "config/web-index.html.template": "apps/web/index.html",
+  "config/web-main.tsx.template": "apps/web/src/main.tsx",
+  "config/web-api.test.ts.template": "apps/web/src/api.test.ts",
+  "scripts/check.sh.template": "scripts/check.sh"
+}

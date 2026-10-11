@@ -1,0 +1,104 @@
+package notes
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+type fakeCreator struct {
+	calls int
+	label string
+	ctx   context.Context
+	note  Note
+	err   error
+}
+
+func (f *fakeCreator) Create(ctx context.Context, label string) (Note, error) {
+	f.calls++
+	f.ctx = ctx
+	f.label = label
+	return f.note, f.err
+}
+
+func request(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	return w
+}
+
+func TestRejectsInvalidJSONBeforePersistence(t *testing.T) {
+	cases := []string{
+		`{}`,
+		`{"label":"   "}`,
+		`{"label":"ok","extra":1}`,
+		`{"label":"ok"}{"label":"again"}`,
+		`["ok"]`,
+		`{"label":123}`,
+		"{\"label\":\"\xff\"}",
+		`{"label":"` + strings.Repeat("x", 81) + `"}`,
+		`{"label":"` + strings.Repeat("x", 1025) + `"}`,
+	}
+	for _, body := range cases {
+		store := &fakeCreator{}
+		got := request(Routes(store), http.MethodPost, "/api/notes", body)
+		if got.Code != http.StatusBadRequest || got.Body.String() != "{\"message\":\"Invalid request\"}\n" {
+			t.Fatalf("body %q: got %d %q", body, got.Code, got.Body.String())
+		}
+		if store.calls != 0 {
+			t.Fatalf("body %q reached persistence", body)
+		}
+	}
+}
+
+func TestCreatePreservesContextAndWireShape(t *testing.T) {
+	store := &fakeCreator{note: Note{ID: "9007199254740993", Label: "hello"}}
+	h := Routes(store)
+	r := httptest.NewRequest(http.MethodPost, "/api/notes", strings.NewReader(`{"label":"  hello  "}`))
+	r.Header.Set("Content-Type", "application/json; charset=utf-8")
+	type contextKey struct{}
+	r = r.WithContext(context.WithValue(r.Context(), contextKey{}, "trace"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusCreated || w.Body.String() != "{\"id\":\"9007199254740993\",\"label\":\"hello\"}\n" {
+		t.Fatalf("got %d %q", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content type %q", got)
+	}
+	if store.calls != 1 || store.label != "hello" || store.ctx.Value(contextKey{}) != "trace" {
+		t.Fatal("validated label or request context not passed to persistence")
+	}
+}
+
+func TestPersistenceFailureIsPrivate(t *testing.T) {
+	store := &fakeCreator{err: errors.New("password=private")}
+	got := request(Routes(store), http.MethodPost, "/api/notes", `{"label":"hello"}`)
+	if got.Code != http.StatusInternalServerError || got.Body.String() != "{\"message\":\"Service unavailable\"}\n" {
+		t.Fatalf("got %d %q", got.Code, got.Body.String())
+	}
+	if strings.Contains(got.Body.String(), "private") {
+		t.Fatal("database error leaked to client")
+	}
+}
+
+func TestMethodsAndHealth(t *testing.T) {
+	h := Routes(&fakeCreator{})
+	if got := request(h, http.MethodGet, "/api/notes", ""); got.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET notes: %d", got.Code)
+	}
+	if got := request(h, http.MethodPost, "/api/health", ""); got.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST health: %d", got.Code)
+	}
+	if got := request(h, http.MethodGet, "/api/health", ""); got.Code != http.StatusOK || got.Body.String() != "{\"status\":\"ok\"}\n" {
+		t.Fatalf("GET health: %d %q", got.Code, got.Body.String())
+	}
+	if got := request(h, http.MethodGet, "/api/missing", ""); got.Code != http.StatusNotFound {
+		t.Fatalf("missing: %d", got.Code)
+	}
+}

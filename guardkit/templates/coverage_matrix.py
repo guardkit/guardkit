@@ -60,7 +60,7 @@ from guardkit.templates.parse_gate import FileStatus, check_file
 # parse_gate.py), so a "config" row could never leave WARN. Disposed of as
 # intentionally loader-invisible packaging config rather than a permanent
 # unwinnable row.
-COVERAGE_ENFORCED: FrozenSet[str] = frozenset({"fastapi-python"})
+COVERAGE_ENFORCED: FrozenSet[str] = frozenset({"fastapi-python", "react-go-monorepo"})
 
 
 class CoverageStatus(str, Enum):

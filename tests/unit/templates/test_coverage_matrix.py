@@ -10,7 +10,7 @@ Covers:
     coverage (``absence-of-failure-is-not-success.md``);
   * templates with no ``settings.json`` / empty ``layer_mappings`` -> zero
     rows, vacuously ``fully_covered``;
-  * ``COVERAGE_ENFORCED`` is empty by default (report-only posture).
+  * ``COVERAGE_ENFORCED`` includes templates whose layers are all checked.
 """
 
 from __future__ import annotations
@@ -299,11 +299,9 @@ class TestAllShippedTemplatesReportOnly:
 
 
 class TestEnforcedRegistryDefault:
-    def test_coverage_enforced_starts_report_only_plus_fastapi_python(self) -> None:
-        """Report-only posture: only fastapi-python is enforced after its
-        day-one holes (services/, tests->testing alias) were closed in this
-        build; every other shipped template remains report-only."""
-        assert COVERAGE_ENFORCED == frozenset({"fastapi-python"})
+    def test_coverage_enforced_contains_completed_templates(self) -> None:
+        """The completed FastAPI and React/Go templates enforce all declared layers."""
+        assert COVERAGE_ENFORCED == frozenset({"fastapi-python", "react-go-monorepo"})
 
     def test_enforced_flag_reflects_membership(self, tmp_path: Path, monkeypatch) -> None:
         template_dir = tmp_path / "tpl"

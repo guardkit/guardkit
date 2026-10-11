@@ -1,0 +1,43 @@
+package notes
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// PGStore is the PostgreSQL adapter for Creator.
+type PGStore struct{ Pool *pgxpool.Pool }
+
+// Create uses bound SQL inside a transaction; SQL/schema need a real DB test.
+func (s PGStore) Create(ctx context.Context, label string) (note Note, err error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	tx, err := s.Pool.Begin(queryCtx)
+	if err != nil {
+		return Note{}, fmt.Errorf("begin note transaction: %w", err)
+	}
+	defer func() {
+		rollbackCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stop()
+		if rollbackErr := tx.Rollback(rollbackCtx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			err = errors.Join(err, fmt.Errorf("rollback note transaction: %w", rollbackErr))
+		}
+	}()
+	var id int64
+	var savedLabel string
+	if err := tx.QueryRow(queryCtx,
+		"INSERT INTO notes (label) VALUES ($1) RETURNING id, label", label,
+	).Scan(&id, &savedLabel); err != nil {
+		return Note{}, fmt.Errorf("insert note: %w", err)
+	}
+	if err := tx.Commit(queryCtx); err != nil {
+		return Note{}, fmt.Errorf("commit note transaction: %w", err)
+	}
+	return Note{ID: strconv.FormatInt(id, 10), Label: savedLabel}, nil
+}
