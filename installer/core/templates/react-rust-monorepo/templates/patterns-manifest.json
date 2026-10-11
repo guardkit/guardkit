@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    {"file": "api/routes.rs.template", "layer": "api", "keywords": ["api", "backend", "rust", "axum"], "priority": 1, "pairs_with": ["api/error.rs.template", "api/store.rs.template"]},
+    {"file": "web/api.ts.template", "layer": "web", "keywords": ["web", "frontend", "react", "typescript"], "priority": 2, "pairs_with": ["web/App.tsx.template"]},
+    {"file": "web/App.tsx.template", "layer": "web", "keywords": ["web", "frontend", "react", "typescript"], "priority": 3, "pairs_with": ["web/api.ts.template"]},
+    {"file": "api/error.rs.template", "layer": "api", "keywords": ["api", "backend", "rust", "error"], "priority": 4, "pairs_with": []},
+    {"file": "api/store.rs.template", "layer": "api", "keywords": ["api", "backend", "rust", "postgresql"], "priority": 5, "pairs_with": []}
+  ]
+}

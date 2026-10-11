@@ -228,8 +228,9 @@ _TECH_STACK_SUBDIR_MAP: dict[str, list[str]] = {
     "python": ["api", "core", "config", "models", "schemas", "crud", "db"],
     "fastapi": ["api", "core", "config", "models", "schemas", "crud", "db", "dependencies"],
     "django": ["api", "models", "views", "templates", "static"],
-    "react": ["components", "hooks", "pages", "styles", "utils"],
-    "typescript": ["components", "hooks", "pages", "types", "utils"],
+    "react": ["components", "hooks", "pages", "styles", "utils", "web"],
+    "typescript": ["components", "hooks", "pages", "types", "utils", "web"],
+    "rust": ["api"],
     "nextjs": ["pages", "components", "api", "styles", "public"],
     "dotnet": ["controllers", "models", "services", "data", "middleware"],
 }
