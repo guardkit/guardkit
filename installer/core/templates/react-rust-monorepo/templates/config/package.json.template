@@ -1,0 +1,7 @@
+{
+  "name": "react-rust-workspace",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {"check": "bash scripts/check.sh"},
+  "engines": {"node": "22.23.2"}
+}

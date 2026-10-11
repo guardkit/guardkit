@@ -1,0 +1,22 @@
+{
+  "naming_conventions": {
+    "rust": {"modules": "snake_case", "types": "PascalCase", "functions": "snake_case"},
+    "web": {"components": "PascalCase.tsx", "functions": "camelCase"}
+  },
+  "directory_structure": {
+    "apps/api": "One Cargo crate with feature modules",
+    "apps/web": "React/Vite app with feature-local modules"
+  },
+  "layer_mappings": {
+    "api": {
+      "directory": "apps/api/src",
+      "file_patterns": ["*.rs"],
+      "description": "Axum HTTP, services and SQLx persistence"
+    },
+    "web": {
+      "directory": "apps/web/src",
+      "file_patterns": ["*.ts", "*.tsx"],
+      "description": "Typed React UI and validated HTTP boundary"
+    }
+  }
+}

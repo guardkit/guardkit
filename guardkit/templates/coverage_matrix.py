@@ -27,11 +27,10 @@ no coverage requirement.
    layer whose only reachable files are opt-out/skipped/error reports
    ``WARN``, never ``COVERED``.
 
-**Enforcement posture — report-only first.** :data:`COVERAGE_ENFORCED` is the
-declarative per-template opt-in registry (same seed-registry shape as
+**Enforcement posture.** :data:`COVERAGE_ENFORCED` is the declarative
+per-template opt-in registry (same seed-registry shape as
 :data:`guardkit.templates.parse_gate.PARSE_OPTOUT`): templates on the list
 must have zero non-covered rows; templates absent from it are report-only.
-Empty at first — templates flip in one at a time as their holes are filled.
 """
 
 from __future__ import annotations
@@ -48,9 +47,8 @@ from guardkit.templates.parse_gate import FileStatus, check_file
 # ---------------------------------------------------------------------------
 #
 # Templates named here must have zero non-covered rows in their matrix, or
-# the CLI/CI check exits non-zero. Empty at first (report-only for every
-# shipped template) — a template flips in individually once its holes are
-# filled, mirroring PARSE_OPTOUT / the import tier's TEMPLATES registry.
+# the CLI/CI check exits non-zero. A template flips in individually once its
+# holes are filled, mirroring PARSE_OPTOUT / the import tier's TEMPLATES registry.
 #
 # fastapi-python (PB-7 build step 4): 7/9 -> 9/9 after authoring a real
 # services/service.py.template exemplar and adding the tests->testing
@@ -59,8 +57,12 @@ from guardkit.templates.parse_gate import FileStatus, check_file
 # cannot validate non-gated-language files (see LANGUAGE_BY_EXT in
 # parse_gate.py), so a "config" row could never leave WARN. Disposed of as
 # intentionally loader-invisible packaging config rather than a permanent
-# unwinnable row.
-COVERAGE_ENFORCED: FrozenSet[str] = frozenset({"fastapi-python"})
+# unwinnable row. The React/Rust template likewise declares only parsed code
+# layers (api/web); config and scripts have separate native checks.
+COVERAGE_ENFORCED: FrozenSet[str] = frozenset({
+    "fastapi-python",
+    "react-rust-monorepo",
+})
 
 
 class CoverageStatus(str, Enum):
