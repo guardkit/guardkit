@@ -3606,8 +3606,11 @@ Turn: {turn}
 *findings*, which a second toolless pass will turn into the formal verdict. Do
 NOT emit a fenced ```json decision block in this response — emit prose findings.
 
-You have READ-ONLY tools: Read, Bash, Grep, Glob. Use them to verify the work
-on disk rather than trusting the Player's report:
+You have READ-ONLY tools: Read, Bash, Grep, Glob. On the local harness you may
+also have code_search (ranked code blocks or exact lines, tests included),
+code_outline (the symbols in a file or folder) and code_pattern (code by its
+syntax shape), all over this worktree including uncommitted files. Use them to
+verify the work on disk rather than trusting the Player's report:
 - Read the changed files named in the Player's report.
 - Run the focused test(s) for this task if a test command is available.
 - For any acceptance criterion you cannot confirm from the dossier below,
