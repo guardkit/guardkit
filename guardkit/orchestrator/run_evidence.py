@@ -568,6 +568,10 @@ def manifest_digest(entries: Sequence[Sequence[str]]) -> str:
 
 #: Added to a capture's own deadline before the caller stops waiting for it.
 _BOUND_MARGIN_S = 2.0
+#: Added to the sum of a capture phase's inner limits.
+_PHASE_MARGIN_S = 3.0
+#: The largest inventory timeout a project may declare (the schema's bound).
+_INVENTORY_TIMEOUT_MAX = 600.0
 
 
 def within_bound(
@@ -946,6 +950,9 @@ class EvidenceRequest:
     inventory_looked_up: bool = True
     #: What the record says when nothing is declared (a component says so).
     not_declared: str = NOT_DECLARED
+    #: When set, the declaration has NOT been read yet: it is read from this
+    #: main checkout inside the evidence boundary (see :func:`resolve_request`).
+    declaration_from: Optional[Path] = None
 
 
 def request_from_declaration(
@@ -984,22 +991,53 @@ def request_from_declaration(
 
 
 def request_from_repo(kind: str, repo_root: Optional[Path], **observer: Any) -> EvidenceRequest:
-    """Build a request by reading ``toolchain`` from the MAIN checkout.
+    """A request whose declaration is read later, from the MAIN checkout.
 
-    The same reader every repo-level declaration uses; never the build
-    worktree, which the builder edits. Never raises.
+    Nothing is read here: reading the declaration is file I/O, so it happens
+    inside the evidence boundary when the record begins
+    (:func:`resolve_request`). The same reader every repo-level declaration
+    uses; never the build worktree, which the builder edits. Never raises.
     """
-    declaration = None
-    if repo_root is not None:
-        try:
-            from guardkit.orchestrator.toolchain_declaration import (
-                load_toolchain_declaration,
-            )
+    if repo_root is None:
+        return request_from_declaration(kind, None, **observer)
+    return EvidenceRequest(
+        kind=kind, observer=dict(observer), declaration_from=Path(repo_root)
+    )
 
-            declaration = load_toolchain_declaration(Path(repo_root))
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("run evidence: could not read the declaration: %s", exc)
-    return request_from_declaration(kind, declaration, **observer)
+
+#: How long reading a deferred declaration may take before the record says so.
+_DECLARATION_BOUND_S = 5.0
+
+
+def resolve_request(request: EvidenceRequest) -> EvidenceRequest:
+    """Read a deferred request's declaration; any other request is returned
+    as it is. Bounded by ``_DECLARATION_BOUND_S``; never raises."""
+    if request.declaration_from is None:
+        return request
+    root = request.declaration_from
+
+    def _read() -> EvidenceRequest:
+        from guardkit.orchestrator.toolchain_declaration import (
+            load_toolchain_declaration,
+        )
+
+        return request_from_declaration(
+            request.kind, load_toolchain_declaration(root), **request.observer
+        )
+
+    def _failed(exc: Optional[BaseException]) -> EvidenceRequest:
+        why = (
+            f"timed out reading the toolchain declaration after {_DECLARATION_BOUND_S:g}s"
+            if exc is None
+            else f"could not read the toolchain declaration ({type(exc).__name__}: {exc})"
+        )
+        return EvidenceRequest(
+            kind=request.kind, observer=dict(request.observer), not_declared=f"not recorded: {why}"
+        )
+
+    return within_bound(
+        _read, _DECLARATION_BOUND_S, what="reading the toolchain declaration", on_failure=_failed
+    )
 
 
 def run_environment_inventory(
@@ -1245,23 +1283,91 @@ class CommandEvidence:
         self._errors: List[str] = []
         self._finished: Optional[Dict[str, Any]] = None
 
+    # ---- the two capture phases ------------------------------------------
+    #
+    # Everything this record does before the command (reading a deferred
+    # declaration, running the inventory, the before observation) is ONE
+    # phase, and everything after it (the after observation, finding Docker
+    # and reading its events) is another. Each phase runs entirely inside one
+    # ``within_bound`` with a fixed overall deadline: the sum of its inner
+    # limits plus a margin. Whatever did not complete by then is recorded as
+    # "not recorded: timed out". The command itself never runs inside the
+    # boundary; it runs between the two phases, in the caller's own thread.
+
+    def _begin_bound(self) -> float:
+        req = self.request
+        inventory = (
+            float(req.inventory_timeout)
+            if req.environment_inventory
+            else (_INVENTORY_TIMEOUT_MAX if req.declaration_from is not None else 0.0)
+        )
+        declaration = _DECLARATION_BOUND_S if req.declaration_from is not None else 0.0
+        return (
+            declaration
+            + inventory
+            + 2 * _DRAIN_SECONDS
+            + self.limits.max_seconds
+            + _BOUND_MARGIN_S
+            + _PHASE_MARGIN_S
+        )
+
+    def _finish_bound(self) -> float:
+        return (
+            self.limits.max_seconds
+            + _BOUND_MARGIN_S
+            + self.limits.docker_timeout
+            + 2 * _DRAIN_SECONDS
+            + _PHASE_MARGIN_S
+        )
+
+    def _run_phase(self, name: str, work: Callable[[Dict[str, Any]], None], seconds: float) -> Dict[str, Any]:
+        """Run ``work(state)`` inside one boundary; return what it completed.
+
+        ``state`` belongs to the phase's own thread. On expiry the caller
+        takes a copy of what was completed and never looks at it again, so a
+        late write from an abandoned thread changes nothing the caller holds.
+        """
+        state: Dict[str, Any] = {}
+
+        def _failed(exc: Optional[BaseException]) -> bool:
+            if exc is not None:
+                self._errors.append(f"{name}: {type(exc).__name__}: {exc}")
+            else:
+                self._errors.append(f"{name}: did not finish within {seconds:g}s")
+            return False
+
+        within_bound(
+            lambda: (work(state), True)[1],
+            seconds,
+            what=f"the {name} phase of the run record",
+            on_failure=_failed,
+        )
+        return dict(state)
+
     def begin(self) -> "CommandEvidence":
-        try:
-            self._inventory = run_environment_inventory(
-                self.request,
-                cwd=self.cwd,
-                env=self.env,
-                limits=self.limits,
-                runner=self.runner,
+        timed_out = {
+            "status": NOT_RECORDED_TIMED_OUT,
+            "limit_reached": "the record's begin phase did not finish in time",
+        }
+
+        def _work(state: Dict[str, Any]) -> None:
+            request = resolve_request(self.request)
+            state["request"] = request
+            state["inventory"] = run_environment_inventory(
+                request, cwd=self.cwd, env=self.env, limits=self.limits, runner=self.runner
             )
-        except Exception as exc:  # noqa: BLE001
-            self._errors.append(f"inventory: {type(exc).__name__}: {exc}")
-        try:
-            self._before = source_manifest(
+            state["before"] = source_manifest(
                 self.execution_root, limits=self.limits, runner=self.runner, clock=self.clock
             )
+
+        try:
+            done = self._run_phase("begin", _work, self._begin_bound())
+            if "request" in done:
+                self.request = done["request"]
+            self._inventory = done.get("inventory", dict(timed_out))
+            self._before = done.get("before", dict(timed_out))
         except Exception as exc:  # noqa: BLE001
-            self._errors.append(f"source before: {type(exc).__name__}: {exc}")
+            self._errors.append(f"begin: {type(exc).__name__}: {exc}")
         try:
             self._started = self.clock()
         except Exception as exc:  # noqa: BLE001
@@ -1282,13 +1388,45 @@ class CommandEvidence:
 
     def _build(self) -> Dict[str, Any]:
         ended = self.clock()
-        try:
-            after = source_manifest(
-                self.execution_root, limits=self.limits, runner=self.runner, clock=self.clock
-            )
-        except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
-            self._errors.append(f"source after: {type(exc).__name__}: {exc}")
-            after = {"status": f"not recorded: capture error ({type(exc).__name__}: {exc})"}
+        timed_out = {
+            "status": NOT_RECORDED_TIMED_OUT,
+            "limit_reached": "the record's finish phase did not finish in time",
+        }
+        started = self._started
+
+        def _work(state: Dict[str, Any]) -> None:
+            try:
+                state["after"] = source_manifest(
+                    self.execution_root, limits=self.limits, runner=self.runner, clock=self.clock
+                )
+            except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
+                state["after"] = {
+                    "status": f"not recorded: capture error ({type(exc).__name__}: {exc})"
+                }
+                state.setdefault("errors", []).append(f"source after: {type(exc).__name__}: {exc}")
+            if started is None:
+                state["events"] = {
+                    "what_this_shows": WHAT_THE_EVENTS_SHOW,
+                    "status": "not recorded: the command's start time was not taken",
+                }
+                return
+            try:
+                state["events"] = docker_events_between(
+                    started, ended, probe=self.docker, limits=self.limits
+                )
+            except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
+                state.setdefault("errors", []).append(
+                    f"container events: {type(exc).__name__}: {exc}"
+                )
+                state["events"] = {
+                    "what_this_shows": WHAT_THE_EVENTS_SHOW,
+                    "status": f"not recorded: capture error ({type(exc).__name__}: {exc})",
+                }
+
+        done = self._run_phase("finish", _work, self._finish_bound())
+        self._errors.extend(done.get("errors", []))
+        after = done.get("after", dict(timed_out))
+        events_done = done.get("events")
         verdict, changed, created = compare_manifests(
             self._before, after, limit=self.limits.changed_paths
         )
@@ -1303,22 +1441,7 @@ class CommandEvidence:
                 "entries_total": len(entries),
                 "truncated": len(entries) > self.limits.inline_entries,
             }
-        if self._started is None:
-            events = {
-                "what_this_shows": WHAT_THE_EVENTS_SHOW,
-                "status": "not recorded: the command's start time was not taken",
-            }
-        else:
-            try:
-                events = docker_events_between(
-                    self._started, ended, probe=self.docker, limits=self.limits
-                )
-            except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
-                self._errors.append(f"container events: {type(exc).__name__}: {exc}")
-                events = {
-                    "what_this_shows": WHAT_THE_EVENTS_SHOW,
-                    "status": f"not recorded: capture error ({type(exc).__name__}: {exc})",
-                }
+        events = events_done or {"what_this_shows": WHAT_THE_EVENTS_SHOW, **timed_out}
         observer = {
             "build": (os.environ.get(RUN_OWNER_ENV) or "").strip() or "not stated",
         }
@@ -1400,6 +1523,7 @@ __all__ = [
     "originating_worktree_identity",
     "request_from_declaration",
     "request_from_repo",
+    "resolve_request",
     "run_environment_inventory",
     "source_manifest",
     "start_command_evidence",

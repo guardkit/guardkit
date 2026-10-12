@@ -223,7 +223,7 @@ class _ToolchainCommands(BaseModel):
     # record. It never decides anything. There is no default: a project that
     # declares nothing is recorded as "not declared". See ``run_evidence``.
     environment_inventory: Optional[str] = Field(default=None, min_length=1)
-    environment_inventory_timeout: int = Field(default=120, ge=1, le=_MAX_TIMEOUT)
+    environment_inventory_timeout: int = Field(default=120, ge=1, le=600)
 
     # ---- bounded timeouts -----------------------------------------------
     # Both default to TODAY's hardcoded 300s, deliberately: a repo that

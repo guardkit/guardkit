@@ -185,3 +185,36 @@ def test_baseline_record_round_trips_and_old_records_read_empty():
         command="x", expected_exit=0, passed=True, exit_code=0, run_evidence={"a": 1}
     )
     assert BaselineResult.from_dict(new.to_dict()).run_evidence == {"a": 1}
+
+
+def test_a_blocked_declaration_read_never_holds_the_smoke_command(wt, tmp_path, monkeypatch):
+    """Round 4, R10: the declaration is read inside the record's begin phase,
+    behind its bound; the smoke command's own result is unchanged."""
+    import threading
+    import time
+
+    from guardkit.orchestrator import toolchain_declaration
+
+    release = threading.Event()
+
+    def _blocked(_root):
+        release.wait()
+        return None
+
+    monkeypatch.setattr(toolchain_declaration, "load_toolchain_declaration", _blocked)
+    try:
+        for command, passed in (("true", True), ("false", False)):
+            started = time.monotonic()
+            result = run_smoke_gate(
+                SmokeGates(after_wave="all", command=command),
+                cwd=wt,
+                wave_number=1,
+                evidence=request_from_repo("smoke command", tmp_path, feature="FEAT-X"),
+            )
+            elapsed = time.monotonic() - started
+            assert result.passed is passed
+            assert elapsed < 15, f"took {elapsed:.1f}s"
+            inventory = result.run_evidence["environment_inventory"]["status"]
+            assert inventory.startswith("not recorded: timed out reading the toolchain declaration")
+    finally:
+        release.set()

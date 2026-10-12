@@ -484,3 +484,74 @@ def test_a_stalled_filesystem_leaves_the_check_and_its_result_unchanged(worktree
             assert source["verdict"].startswith("not compared")
     finally:
         release.set()
+
+
+# ---------------------------------------------------------------------------
+# Implementation review round 4, R10: whole capture phases are bounded
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def quick_phases(monkeypatch):
+    """Small inner limits so a phase bound is a few seconds, and a release
+    for anything a test leaves blocked."""
+    import threading
+
+    monkeypatch.setattr(run_evidence, "_DRAIN_SECONDS", 0.2)
+    monkeypatch.setattr(
+        run_evidence, "DEFAULT_LIMITS",
+        run_evidence.EvidenceLimits(max_seconds=0.5, git_timeout=0.5, docker_timeout=0.5),
+    )
+    release = threading.Event()
+    yield release
+    release.set()
+
+
+def _timed_check(worktree, cmd, **kw):
+    import time
+
+    started = time.monotonic()
+    result = _validator(worktree, cmd, wave_size=1, **kw).run_independent_tests()
+    return result, time.monotonic() - started
+
+
+def test_a_blocked_docker_discovery_is_left_behind_at_the_phase_bound(worktree, monkeypatch, quick_phases):
+    def _blocked_which(_name):
+        quick_phases.wait()
+        return "/usr/bin/docker"
+
+    monkeypatch.setattr(
+        run_evidence, "default_docker_probe",
+        lambda: run_evidence.DockerProbe(which=_blocked_which),
+    )
+    for cmd, passed in (("true", True), ("exit 1", False)):
+        result, elapsed = _timed_check(worktree, cmd)
+        assert result.tests_passed is passed
+        record = result.run_evidence["runs"][0]
+        assert elapsed < 12, f"took {elapsed:.1f}s"
+        assert record["container_events"]["status"] == run_evidence.NOT_RECORDED_TIMED_OUT
+        assert record["source"]["after"]["status"] == "recorded"
+        assert any("finish" in e for e in record["capture_errors"])
+
+
+def test_a_blocked_helper_startup_is_left_behind_at_the_phase_bound(worktree, monkeypatch, quick_phases):
+    real_popen = run_evidence.subprocess.Popen
+
+    class _BlockingPopen(real_popen):  # type: ignore[misc, valid-type]
+        def __init__(self, args, *a, **k):
+            if "inventory-marker" in str(args):
+                quick_phases.wait()
+            super().__init__(args, *a, **k)
+
+    monkeypatch.setattr(run_evidence.subprocess, "Popen", _BlockingPopen)
+    toolchain = parse_toolchain_block(
+        {"test": "true", "environment_inventory": "echo inventory-marker",
+         "environment_inventory_timeout": 1}
+    )
+    for cmd, passed in (("true", True), ("exit 1", False)):
+        result, elapsed = _timed_check(worktree, cmd, toolchain=toolchain)
+        assert result.tests_passed is passed
+        record = result.run_evidence["runs"][0]
+        assert elapsed < 12, f"took {elapsed:.1f}s"
+        assert record["environment_inventory"]["status"] == run_evidence.NOT_RECORDED_TIMED_OUT
+        assert any("begin" in e for e in record["capture_errors"])

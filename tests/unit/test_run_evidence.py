@@ -271,8 +271,11 @@ def test_inventory_is_read_from_the_declaration(tmp_path):
     (tmp_path / ".guardkit" / "config.yaml").write_text(
         "toolchain:\n  environment_inventory: 'npm ls --all'\n"
     )
-    assert request_from_repo("probe", tmp_path).environment_inventory == "npm ls --all"
-    assert request_from_repo("probe", tmp_path / "nowhere").environment_inventory is None
+    # Deferred: nothing is read until the record begins.
+    assert request_from_repo("probe", tmp_path).environment_inventory is None
+    resolve = re_mod.resolve_request
+    assert resolve(request_from_repo("probe", tmp_path)).environment_inventory == "npm ls --all"
+    assert resolve(request_from_repo("probe", tmp_path / "nowhere")).environment_inventory is None
 
 
 def test_a_component_inventory_wins_over_the_root(tmp_path):
