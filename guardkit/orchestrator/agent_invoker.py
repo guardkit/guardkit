@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
+    AgentLaunchRefusedError,
     CoachDecisionInvalidError,
     CoachDecisionNotFoundError,
     PlanNotFoundError,
@@ -45,6 +46,7 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
     TaskStateError,
     TaskWorkResult,
+    find_agent_launch_refusal,
 )
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.llm_instrumentation import (
@@ -2823,6 +2825,10 @@ class AgentInvoker:
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
                 session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
+        except AgentLaunchRefusedError:
+            # The agent never started and would be refused again next turn.
+            # Let the orchestrator's unrecoverable path stop the task.
+            raise
         except (Exception, asyncio.CancelledError) as e:
             duration = time.time() - start_time
             if isinstance(e, asyncio.CancelledError):
@@ -10824,7 +10830,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except Exception as e:
             duration = time.time() - start_time
             error_report = {"task_id": task_id, "turn": turn}
-            error_msg = f"Unexpected error: {str(e)}"
+            refused = self._launch_refusal_error(task_id, e)
+            error_msg = str(refused) if refused else f"Unexpected error: {str(e)}"
             self._write_direct_mode_results(
                 task_id,
                 error_report,
@@ -10839,6 +10846,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 success=False,
                 error=error_msg,
             )
+            if refused is not None:
+                raise refused from e
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
@@ -10849,6 +10858,23 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 error=error_msg,
                 session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
+
+    def _launch_refusal_error(
+        self, task_id: str, error: BaseException
+    ) -> Optional[AgentLaunchRefusedError]:
+        """Map a harness launch refusal in ``error``'s chain to GuardKit's error.
+
+        Returns ``None`` for every other failure, which keeps its existing
+        handling. The refusal's entry list (path, type, size, SHA-256) is
+        logged so the task's log carries the evidence.
+        """
+        refusal = find_agent_launch_refusal(error)
+        if refusal is None:
+            return None
+        refused = AgentLaunchRefusedError.from_refusal(refusal)
+        logger.error(f"[{task_id}] AGENT LAUNCH REFUSED: {refused}")
+        logger.error(f"[{task_id}] Unexpected launch entries: {refused.entries}")
+        return refused
 
     def _write_direct_mode_results(
         self,
@@ -12120,6 +12146,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             #   * "Claude Code CLI not installed."  (sdk_harness.py:422)
             #   * "SDK process failed (exit ...)"   (sdk_harness.py:427)
             #   * "Failed to parse SDK response: ..." (sdk_harness.py:431)
+            refused = self._launch_refusal_error(task_id, e)
+            if refused is not None:
+                self._write_failure_results(
+                    task_id, str(refused), "AgentLaunchRefusedError", collected_output
+                )
+                raise refused from e
             error_msg = str(e)
             logger.error(
                 f"[{task_id}] SDK invocation failed via harness "
@@ -12139,6 +12171,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             )
 
         except Exception as e:
+            # A refused agent launch never reached the model; it is not an
+            # implementation failure and must not be retried as one.
+            refused = self._launch_refusal_error(task_id, e)
+            if refused is not None:
+                self._write_failure_results(
+                    task_id, str(refused), "AgentLaunchRefusedError", collected_output
+                )
+                raise refused from e
+
             error_msg = str(e)
 
             # Check for rate limit in error message.

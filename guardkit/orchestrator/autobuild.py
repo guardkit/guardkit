@@ -92,6 +92,7 @@ from guardkit.orchestrator.stale_test_attribution import (
 )
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
+    AgentLaunchRefusedError,
     BlockedReport,
     CoachDecisionInvalidError,
     PlanNotFoundError,
@@ -329,6 +330,10 @@ UNRECOVERABLE_ERRORS = (
     PlanNotFoundError,
     StateValidationError,
     RateLimitExceededError,  # NEW: Stop immediately on rate limit
+    # The harness refused to start the agent (its run profile failed the
+    # launch check). No turn can succeed until that is resolved, so state
+    # recovery, Coach review and implementation feedback would only repeat it.
+    AgentLaunchRefusedError,
 )
 
 
@@ -8664,12 +8669,17 @@ class AutoBuildOrchestrator:
         except UNRECOVERABLE_ERRORS as e:
             # Unrecoverable errors - fail immediately without retrying
             logger.error(f"Unrecoverable error for {task_id}: {e}")
+            report: Dict[str, Any] = {"unrecoverable": True}
+            if isinstance(e, AgentLaunchRefusedError):
+                report["unrecoverable_reason"] = e.reason
+                report["launch_refused_entries"] = e.entries
+                report["launch_refused_profile"] = e.profile
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
                 agent_type="player",
                 success=False,
-                report={"unrecoverable": True},
+                report=report,
                 duration_seconds=0.0,
                 error=f"Unrecoverable: {str(e)}",
             )
