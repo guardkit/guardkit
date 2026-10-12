@@ -381,7 +381,13 @@ def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> 
     assert "shell_environment" not in raw["toolchain"]
     assert raw["launch"] == {
         "settings": ["PLAYWRIGHT_BROWSERS_PATH"],
-        "scratch": ["GOPATH", "GOCACHE", "npm_config_cache"],
+        "scratch": [
+            "GOPATH",
+            "GOCACHE",
+            "npm_config_cache",
+            "XDG_CONFIG_HOME",
+            "NODE_COMPILE_CACHE",
+        ],
     }
 
 
