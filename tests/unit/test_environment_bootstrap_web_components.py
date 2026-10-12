@@ -61,6 +61,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List
 from unittest.mock import MagicMock, patch
 
@@ -443,12 +444,14 @@ class TestDeclaredInstallFailsSafely:
     def test_a_failing_declared_install_fails_the_per_turn_refresh(
         self, web_repo, root_label
     ):
-        """Through the real per-turn caller: ``relevant_stacks`` comes from
-        the changed file names, so a ``go.sum`` edit reads as ``go`` while the
-        declared root install is labelled for the whole repo (``node``, or
-        ``declared`` for a mixed root). A failing declared install must still
-        fail the refresh, not be counted as a non-blocking warning and saved
-        as success."""
+        """Through ``refresh_environment_for_changes``, with
+        ``relevant_stacks`` computed the way the per-turn caller computes it
+        (from the changed file names), so a ``go.sum`` edit reads as ``go``
+        while the declared root install is labelled for the whole repo
+        (``node``, or ``declared`` for a mixed root). A failing declared
+        install must still fail the refresh, not be counted as a non-blocking
+        warning and saved as success. The next test goes through the real
+        caller itself."""
         if root_label == "declared":
             (web_repo / "go.mod").write_text("module example.com/root\n", "utf-8")
         [declared] = ProjectEnvironmentDetector(web_repo).detect()
@@ -467,6 +470,30 @@ class TestDeclaredInstallFailsSafely:
         assert result is not None
         assert result.success is False
         assert result.installs_failed >= 1
+
+    @_R7
+    def test_the_real_per_turn_caller_reports_a_failing_declared_install(
+        self, web_repo
+    ):
+        """Through ``AutoBuildOrchestrator._maybe_refresh_venv_for_manifest_change``
+        itself: after a ``go.sum``-only change the failing declared install
+        runs, and the caller must return feedback for the Player, not
+        ``None`` (a silent pass)."""
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        orchestrator._venv_python = None
+        (web_repo / "apps" / "api" / "go.sum").write_text(
+            "example.com/dep v1.0.1 h1:bbbb=\n", "utf-8"
+        )
+        with patch("subprocess.run", side_effect=_fake_run(returncode=1)) as mock_run:
+            feedback = orchestrator._maybe_refresh_venv_for_manifest_change(
+                SimpleNamespace(report={"files_modified": ["apps/api/go.sum"]}),
+                SimpleNamespace(path=str(web_repo)),
+                1,
+            )
+        assert len(_declared_calls(mock_run)) == 1
+        assert feedback, "a failed declared install was swallowed into a silent pass"
 
     @_R7
     @pytest.mark.parametrize("escaping", ["../outside-web", "/srv/outside-web"])
