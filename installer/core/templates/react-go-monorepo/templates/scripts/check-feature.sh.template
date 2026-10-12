@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Placeholder. The product foundation replaces this with the connected
+# browser/API/database journey. Until then it fails, so a documentation- or
+# configuration-only change can never claim the running app was exercised.
+echo 'no connected feature check yet: the product foundation supplies this' >&2
+exit 1

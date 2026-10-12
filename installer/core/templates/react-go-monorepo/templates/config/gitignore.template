@@ -1,0 +1,10 @@
+# Installed dependencies and generated output: recreated by scripts/install.sh
+# and scripts/check.sh, never committed.
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo

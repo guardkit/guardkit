@@ -94,9 +94,8 @@ def main() -> None:
         run(command, output, env)
     locked = [output / name for name in ("apps/api/go.mod", "apps/api/go.sum", "package-lock.json")]
     before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in locked}
-    run(["go", "mod", "download"], output / "apps/api", env)
-    run(["go", "mod", "verify"], output / "apps/api", env)
-    run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], output, env)
+    # The declared root install, then the declared aggregate test (.guardkit/config.yaml).
+    run(["bash", "scripts/install.sh"], output, env)
     run(["bash", "scripts/check.sh"], output, env)
     negative = output / "apps/api/internal/notes/negative_control.go"
     reject_mutation(negative, 'package notes\nfunc invalidType() int { return "bad" }\n',

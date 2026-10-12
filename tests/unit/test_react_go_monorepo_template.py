@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
+import yaml
 
 from guardkit.cli.init import apply_template
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -13,6 +17,16 @@ from guardkit.knowledge.template_pattern_loader import (
     TemplatePatternContext,
     load_template_patterns,
     select_patterns,
+)
+from guardkit.orchestrator.quality_gates.stack_test_execution import (
+    classify_absent_for_stack,
+    detect_stack_profile,
+    overlay_declared_profile,
+)
+from guardkit.orchestrator.toolchain_declaration import (
+    load_toolchain_declaration,
+    parse_toolchain_block,
+    resolve_component_cwd,
 )
 from guardkit.templates.coverage_matrix import (
     COVERAGE_ENFORCED,
@@ -30,6 +44,7 @@ from installer.core.commands.lib.agent_discovery import (
     discover_agents,
     validate_discovery_metadata,
 )
+from tests.integration.verify_react_go_template import materialise
 
 
 TEMPLATE = "react-go-monorepo"
@@ -107,6 +122,7 @@ def test_init_installs_guidance_without_materialising_source(
         "scripts",
         "go.mod",
         "package.json",
+        ".guardkit/config.yaml",
     ):
         assert not (project / path).exists(), f"init must not materialise {path}"
 
@@ -298,3 +314,231 @@ async def test_v2_player_context_uses_planned_target(
         if line.startswith("### ")
     ]
     assert headings == [str(path) for path in targeted.selected_files]
+
+
+@pytest.fixture
+def rendered(tmp_path: Path) -> Path:
+    """The exact literal layout, rendered by the native fixture's own materialiser."""
+    output = tmp_path / "rendered"
+    materialise(output)
+    return output
+
+
+def _rendered_config(rendered: Path) -> dict:
+    return yaml.safe_load(
+        (rendered / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
+    )
+
+
+def test_rendered_toolchain_declaration_parses_through_real_parser(
+    rendered: Path,
+) -> None:
+    raw = _rendered_config(rendered)
+    declaration = parse_toolchain_block(raw["toolchain"])
+    assert load_toolchain_declaration(rendered) == declaration
+
+    assert declaration.install == "bash scripts/install.sh"
+    assert declaration.test == "bash scripts/check.sh"
+    assert declaration.feature_check == "bash scripts/check-feature.sh"
+    for key in ("install_timeout", "test_timeout", "feature_check_timeout"):
+        assert key in raw["toolchain"], f"root {key} must be explicit"
+    assert declaration.runtime is not None
+    assert declaration.runtime.go == (rendered / ".go-version").read_text().strip()
+    assert declaration.runtime.node == (rendered / ".nvmrc").read_text().strip()
+    for script in ("install.sh", "check.sh", "check-feature.sh", "require-tools.sh"):
+        assert (rendered / "scripts" / script).is_file()
+
+    assert declaration.component_names == ["api", "web"]
+    expected = {"web": ("apps/web", "package.json"), "api": ("apps/api", "go.mod")}
+    for name, (cwd, manifest) in expected.items():
+        component = declaration.component(name)
+        assert component is not None
+        assert component.cwd == cwd
+        resolved = resolve_component_cwd(rendered, component.cwd)
+        assert resolved.resolve().is_relative_to(rendered.resolve())
+        assert (resolved / manifest).is_file()
+        assert component.test
+        assert component.install is None, "component installs are not consumed"
+        assert "test_timeout" in raw["toolchain"]["components"][name]
+        assert component.requires_ran_marker is True
+        assert component.ran_marker_regex
+
+    api = declaration.component("api")
+    assert api is not None
+    for flag in ("-race", "-count=1", "GOTOOLCHAIN=local"):
+        assert flag in api.test
+    assert "go test -race -count=1 ./..." in (
+        rendered / "scripts" / "check.sh"
+    ).read_text(encoding="utf-8")
+    assert declaration.requires_ran_marker is True
+
+
+# Real outputs (12 October 2026, Go 1.26.9 and Vitest 4.0.15, colour codes kept).
+_GO_NO_TEST_FILES = "?   \texample.com/guardkit/react-go-api/cmd/api\t[no test files]\n"
+_GO_RAN = _GO_NO_TEST_FILES + "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.024s\n"
+_GO_CACHED = _GO_NO_TEST_FILES + "ok  \texample.com/guardkit/react-go-api/internal/notes\t(cached)\n"
+_GO_NO_TESTS_TO_RUN = (
+    _GO_NO_TEST_FILES
+    + "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.018s [no tests to run]\n"
+)
+_VITEST_PASSED = (
+    "\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m\x1b[90m (1)\x1b[39m\n"
+    "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m2 passed\x1b[39m\x1b[22m\x1b[90m (2)\x1b[39m\n"
+)
+_VITEST_PASSED_PLAIN = " Test Files  1 passed (1)\n      Tests  2 passed (2)\n"
+_VITEST_ONE_PASSED_ONE_SKIPPED = (
+    "\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m\x1b[90m (1)\x1b[39m\n"
+    "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m\x1b[2m | \x1b[22m"
+    "\x1b[33m1 skipped\x1b[39m\x1b[90m (2)\x1b[39m\n"
+)
+_VITEST_ALL_SKIPPED = (
+    "\x1b[2m Test Files \x1b[22m \x1b[33m1 skipped\x1b[39m\x1b[90m (1)\x1b[39m\n"
+    "\x1b[2m      Tests \x1b[22m \x1b[33m2 skipped\x1b[39m\x1b[90m (2)\x1b[39m\n"
+)
+_VITEST_TODO_ONLY = (
+    "\x1b[2m Test Files \x1b[22m \x1b[33m1 skipped\x1b[39m\x1b[90m (1)\x1b[39m\n"
+    "\x1b[2m      Tests \x1b[22m \x1b[90m1 todo\x1b[39m\x1b[90m (1)\x1b[39m\n"
+)
+_VITEST_NO_FILES = "No test files found, exiting with code 0\n"
+
+
+@pytest.mark.parametrize(
+    ("target", "output", "ran"),
+    [
+        ("api", _GO_RAN, True),
+        ("api", _GO_CACHED, False),
+        ("api", _GO_NO_TESTS_TO_RUN, False),
+        ("api", _GO_NO_TEST_FILES, False),
+        ("web", _VITEST_PASSED, True),
+        ("web", _VITEST_PASSED_PLAIN, True),
+        ("web", _VITEST_ONE_PASSED_ONE_SKIPPED, True),
+        ("web", _VITEST_ALL_SKIPPED, False),
+        ("web", _VITEST_TODO_ONLY, False),
+        ("web", _VITEST_NO_FILES, False),
+        ("root", _GO_RAN + _VITEST_PASSED, True),
+        ("root", _GO_RAN + _VITEST_ONE_PASSED_ONE_SKIPPED, True),
+        ("root", _GO_RAN + _VITEST_ALL_SKIPPED, False),
+        ("root", _GO_RAN + _VITEST_TODO_ONLY, False),
+        ("root", _GO_CACHED + _VITEST_PASSED, False),
+        ("root", _GO_NO_TESTS_TO_RUN + _VITEST_PASSED, False),
+        ("root", _VITEST_PASSED, False),
+    ],
+)
+def test_declared_ran_markers_classify_real_outputs(
+    rendered: Path, target: str, output: str, ran: bool
+) -> None:
+    """A clean exit counts as a run only with real work, judged by GuardKit's own classifier."""
+    declaration = parse_toolchain_block(_rendered_config(rendered)["toolchain"])
+    source = declaration if target == "root" else declaration.component(target)
+    assert source is not None
+    marker_root = (
+        rendered if target == "root" else resolve_component_cwd(rendered, source.cwd)
+    )
+    profile = overlay_declared_profile(
+        detect_stack_profile(marker_root),
+        command=source.test,
+        absent_substrings=source.absent_substrings,
+        ran_marker_regex=source.ran_marker_regex,
+        requires_ran_marker=source.requires_ran_marker,
+    )
+    assert profile is not None and profile.success_requires_ran_marker
+    assert classify_absent_for_stack(profile, 0, output) is (not ran)
+
+
+def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> None:
+    """Raw YAML only: GuardKit has no launch.scratch reader yet (web readiness W1b)."""
+    raw = _rendered_config(rendered)
+    assert "shell_environment" not in raw["toolchain"]
+    assert raw["launch"] == {
+        "settings": ["PLAYWRIGHT_BROWSERS_PATH"],
+        "scratch": [
+            "GOPATH",
+            "GOCACHE",
+            "npm_config_cache",
+            "XDG_CONFIG_HOME",
+            "NODE_COMPILE_CACHE",
+        ],
+    }
+
+
+def test_rendered_gitignore_keeps_installed_and_generated_output_out(
+    rendered: Path,
+) -> None:
+    git = shutil.which("git")
+    assert git is not None
+    env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
+    subprocess.run([git, "init", "-q"], cwd=rendered, env=env, check=True, timeout=30)
+    ignored = [
+        "node_modules/vite/package.json",
+        "apps/web/node_modules/.vite/deps.json",
+        "apps/web/dist/index.html",
+        "coverage/lcov.info",
+        "apps/web/coverage/lcov.info",
+        "test-results/report.json",
+        "playwright-report/index.html",
+        "apps/web/tsconfig.tsbuildinfo",
+    ]
+    kept = [
+        ".gitignore",
+        ".guardkit/config.yaml",
+        "package-lock.json",
+        "apps/api/go.sum",
+        "apps/web/src/App.tsx",
+        "scripts/check.sh",
+    ]
+    for rel in ignored:
+        path = rendered / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("generated\n", encoding="utf-8")
+    result = subprocess.run(
+        [git, "-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", *ignored, *kept],
+        cwd=rendered,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert sorted(result.stdout.splitlines()) == sorted(ignored)
+
+
+def test_feature_check_stub_fails_until_foundation_supplies_it(rendered: Path) -> None:
+    result = subprocess.run(
+        ["bash", "scripts/check-feature.sh"],
+        cwd=rendered,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "no connected feature check yet" in result.stderr
+
+
+def test_install_refuses_missing_toolchain_before_installing(
+    rendered: Path, tmp_path: Path
+) -> None:
+    """install.sh shares check.sh's exact guards and installs nothing without them."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("dirname", "awk"):
+        found = shutil.which(tool)
+        assert found is not None
+        (bin_dir / tool).symlink_to(found)
+    bash = shutil.which("bash")
+    assert bash is not None
+    for script in ("install.sh", "check.sh"):
+        assert "source scripts/require-tools.sh" in (
+            rendered / "scripts" / script
+        ).read_text(encoding="utf-8")
+        result = subprocess.run(
+            [bash, f"scripts/{script}"],
+            cwd=rendered,
+            env={"PATH": str(bin_dir), "HOME": os.environ.get("HOME", str(tmp_path))},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 1, (script, result.stderr)
+        assert "go is required" in result.stderr
+    assert not (rendered / "node_modules").exists()

@@ -29,9 +29,28 @@ The notes endpoint is an **unauthenticated demonstration** of bounded JSON decod
 | `config/web-index.html.template` | `apps/web/index.html` |
 | `config/web-main.tsx.template` | `apps/web/src/main.tsx` |
 | `config/web-api.test.ts.template` | `apps/web/src/api.test.ts` |
+| `config/guardkit-config.yaml.template` | `.guardkit/config.yaml` |
+| `config/gitignore.template` | `.gitignore` |
+| `scripts/require-tools.sh.template` | `scripts/require-tools.sh` |
+| `scripts/install.sh.template` | `scripts/install.sh` |
 | `scripts/check.sh.template` | `scripts/check.sh` |
+| `scripts/check-feature.sh.template` | `scripts/check-feature.sh` |
 
-The fixture copies the committed `validation/go.sum` to `apps/api/go.sum` and `validation/package-lock.json` to the root after rendering. A product foundation should commit its own lockfiles and update them intentionally when dependencies change. The Go module lives at `apps/api`, so Go commands run there. Root npm commands use the web workspace.
+The fixture copies the committed `validation/go.sum` to `apps/api/go.sum` and `validation/package-lock.json` to the root after rendering. They are not layout entries: every layout source is a contained `.template` under `templates/`, and lockfiles are not rendered. A product foundation should commit its own lockfiles and update them intentionally when dependencies change. The Go module lives at `apps/api`, so Go commands run there. Root npm commands use the web workspace.
+
+## Toolchain declaration
+
+The rendered `.guardkit/config.yaml` tells GuardKit how to install and check the project, using the existing `toolchain:` schema. The exit code is the verdict.
+
+| Declaration | Command | Purpose |
+| --- | --- | --- |
+| Root `install` | `bash scripts/install.sh` | `npm ci` at the root workspace, then `go mod download`, `go mod verify` and a read-only `go list -deps -test ./...` in `apps/api` (a missing `go.sum` line fails here), under the same exact version guards as `check.sh` (`scripts/require-tools.sh`). |
+| Root `test` | `bash scripts/check.sh` | The aggregate check: every static check, unit test and build. A clean exit counts only when the output has both a timed Go `ok` line and a Vitest `Tests … N passed` line with N at least 1, so an all-skipped web suite cannot pass. |
+| Root `feature_check` | `bash scripts/check-feature.sh` | The connected browser/API/database journey. |
+| Component `web` (`cwd: apps/web`) | `npm run test` | Vitest only; a clean exit without a `Tests … N passed` line (N at least 1) counts as not run. |
+| Component `api` (`cwd: apps/api`) | `go test -race -count=1 ./...` with `GOTOOLCHAIN=local` | Race-enabled Go tests; a clean exit counts only with a timed `ok` line, never `(cached)` or `[no tests to run]`. |
+
+Every command has an explicit timeout, and the Go and Node pins are recorded under `runtime`. Go tests always run with `-count=1`, here and in `check.sh`, so a cached result is never replayed as a pass. A separate top-level `launch` block says what the build shell receives: `settings` names `PLAYWRIGHT_BROWSERS_PATH`, copied from the launching process (the file holds names, never values), and each `scratch` name (`GOPATH`, `GOCACHE`, `npm_config_cache`, `XDG_CONFIG_HOME` for Go's telemetry files, and `NODE_COMPILE_CACHE` for Node's compile cache) is set to `<worktree scratch folder>/toolchain/<NAME>`, outside the project tree. Applying `scratch` needs a GuardKit/Forge release that reads it. Component installs are not declared because GuardKit runs only the root install. The rendered `.gitignore` keeps installed dependencies and generated output (`node_modules/`, `apps/web/dist/`, coverage, Playwright reports, `*.tsbuildinfo`) out of commits. The product foundation supplies `scripts/check-feature.sh`. Until it does, the template's stub prints `no connected feature check yet` and fails, so a documentation- or configuration-only change can never claim the app was exercised.
 
 ## HTTP contract in the neutral sample
 
@@ -47,9 +66,9 @@ The fixture copies the committed `validation/go.sum` to `apps/api/go.sum` and `v
 
 ## Native checks and reproduction
 
-Use Go **1.26.9**, Staticcheck **2026.2.1** (module **v0.8.1**), and Node **22.23.2**. From a materialised fixture with locks and dependencies installed, `bash scripts/check.sh` verifies exact tool versions, requires CGO for the race detector, forces `GOTOOLCHAIN=local` and read-only Go modules, then runs `gofmt`, `go mod verify`, `go vet`, Staticcheck, `go test -race`, `go build`, web typecheck, typed ESLint and Hooks rules, Prettier, Vitest and Vite build. Any missing or mismatched tool, dependency resolution failure or failed check fails the script. `govulncheck` is a separate dated online scan, because its external database changes; see validation notes.
+Use Go **1.26.9**, Staticcheck **2026.2.1** (module **v0.8.1**), and Node **22.23.2**. From a materialised fixture with locks and dependencies installed, `bash scripts/check.sh` verifies exact tool versions, requires CGO for the race detector, forces `GOTOOLCHAIN=local` and read-only Go modules, then runs `gofmt`, `go mod verify`, `go vet`, Staticcheck, `go test -race -count=1`, `go build`, web typecheck, typed ESLint and Hooks rules, Prettier, Vitest and Vite build. Any missing or mismatched tool, dependency resolution failure or failed check fails the script. `govulncheck` is a separate dated online scan, because its external database changes; see validation notes.
 
-Reproduce from a GuardKit checkout with Python dependencies installed: `python tests/integration/verify_react_go_template.py /path/to/new-scratch-directory`. The directory must not exist. The fixture uses the shipped renderer and layout, copies the locks, installs npm dependencies, runs native checks, and confirms deliberate defects fail their substantive gates. See [validation/README.md](validation/README.md) for dated evidence. The source and licence boundaries are in [source-provenance.md](source-provenance.md).
+Reproduce from a GuardKit checkout with Python dependencies installed: `python tests/integration/verify_react_go_template.py /path/to/new-scratch-directory`. The directory must not exist. The fixture uses the shipped renderer and layout, copies the locks, runs the declared `scripts/install.sh` and then `scripts/check.sh`, and confirms deliberate defects fail their substantive gates. See [validation/README.md](validation/README.md) for dated evidence. The source and licence boundaries are in [source-provenance.md](source-provenance.md).
 
 Install the pinned analysis tools with the selected Go toolchain before the fixture:
 
