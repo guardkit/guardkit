@@ -2370,3 +2370,38 @@ def test_code_reviewer_prompt_says_unknown_never_zero(tmp_path: Path):
     assert "- tests_run: unknown" in prompt
     assert "- tests_failed: unknown" in prompt
     assert "tests_run: 0" not in prompt
+
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
+    tmp_path, monkeypatch
+):
+    """A red run whose output counted 7 passing tests and no failure (a later
+    type-check step failed) records the minimum of one failure, never 7."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=False,
+            test_command="npm test",
+            test_output_summary="Tests  7 passed (7)",
+            duration_seconds=0.4,
+            raw_output=(
+                " Test Files  3 passed (3)\n      Tests  7 passed (7)\n"
+                "src/a.ts(3,1): error TS2304: Cannot find name 'x'.\n"
+            ),
+            signal_absent=False,
+        ),
+    )
+    await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=_make_fake_agent_invoker(),
+    )
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "failed"
+    assert block["tests_run"] == 7
+    assert block["tests_failed"] == 1

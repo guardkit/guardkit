@@ -193,6 +193,9 @@ def test_a_task_check_that_read_only_part_of_its_input_says_how_much() -> None:
     read was covered by nothing, and the count of it used to be thrown away —
     so a check that had read one file in three came out of here as "ran and
     found nothing" with no number beside it at all.
+
+    12 October 2026: and it is "not checked", not "ran and found nothing",
+    the same answer the check after each group of tasks gives.
     """
     summary = summarise_check(
         {
@@ -202,7 +205,7 @@ def test_a_task_check_that_read_only_part_of_its_input_says_how_much() -> None:
             "degraded_files": ["a/one", "a/two"],
         }
     )
-    assert summary["state"] == STATE_RAN_FOUND_NOTHING
+    assert summary["state"] == STATE_NOT_CHECKED
     assert summary["inputs_not_read"] == 2
     assert "could not be read" in summary["reason"]
     assert "2" in summary["reason"]
@@ -615,3 +618,53 @@ def test_an_unsupported_coverage_component_is_kind_not_supported() -> None:
     block = {"status": "unsupported_stack", "ran": False, "findings": None,
              "reason": "this coverage check measures Python only"}
     assert summarise_check(block)["state"] == STATE_KIND_NOT_SUPPORTED
+
+
+# ---------------------------------------------------------------------------
+# Files in a language no dialect reads (12 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def test_partly_unsupported_with_nothing_found_is_not_checked() -> None:
+    summary = summarise_check({
+        "status": "partly_unsupported", "ran": True, "findings": [],
+        "degraded_files": [], "undialected_files": ["api/main.go"],
+    })
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert summary["inputs_not_read"] == 1
+
+
+def test_unread_and_undialected_files_are_counted_together() -> None:
+    summary = summarise_check({
+        "status": "partly_unsupported", "ran": True, "findings": [],
+        "degraded_files": ["web/Broken.tsx"],
+        "undialected_files": ["api/main.go", "api/db.go"],
+    })
+    assert summary["inputs_not_read"] == 3
+
+
+def test_partly_unsupported_with_a_finding_keeps_both() -> None:
+    summary = summarise_check(
+        dict(FINDING, status="partly_unsupported", degraded_files=[],
+             undialected_files=["api/main.go"])
+    )
+    assert summary["state"] == STATE_FOUND_SOMETHING
+    assert summary["inputs_not_read"] == 1
+
+
+def test_unread_files_under_the_word_complete_are_not_checked() -> None:
+    summary = summarise_check({
+        "status": "complete", "ran": True, "findings": [],
+        "degraded_files": [], "undialected_files": ["api/main.go"],
+    })
+    assert summary["state"] == STATE_NOT_CHECKED
+    assert summary["inputs_not_read"] == 1
+
+
+def test_a_complete_check_with_empty_lists_still_ran() -> None:
+    summary = summarise_check({
+        "status": "complete", "ran": True, "findings": [],
+        "degraded_files": [], "undialected_files": [],
+    })
+    assert summary["state"] == STATE_RAN_FOUND_NOTHING
+    assert summary["inputs_not_read"] is None

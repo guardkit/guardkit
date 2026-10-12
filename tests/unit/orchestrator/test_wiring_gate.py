@@ -422,3 +422,29 @@ class TestWiringGateRecord:
             {"status": "unsupported_stack", "undialected_files": ["main.go"]}
         )
         assert row["state"] == "kind_of_project_not_supported"
+
+
+def test_task_and_group_records_agree_on_partly_read_checks():
+    """The per-task summary and the per-group record give the same state and
+    the same count for the same wiring result (12 October 2026)."""
+    from guardkit.orchestrator.code_checks import summarise_check
+
+    finding = {"file": "web/a.tsx", "symbol": "X", "pattern": "UNWIRED_PATH"}
+    cases = [
+        {"status": "complete", "findings": [], "degraded_files": [],
+         "undialected_files": []},
+        {"status": "parse_degraded", "findings": [],
+         "degraded_files": ["web/a.tsx"]},
+        {"status": "partly_unsupported", "findings": [], "degraded_files": [],
+         "undialected_files": ["api/main.go"]},
+        {"status": "partly_unsupported", "findings": [finding],
+         "degraded_files": ["web/b.tsx"], "undialected_files": ["api/main.go"]},
+    ]
+    for block in cases:
+        group = FeatureOrchestrator._wiring_gate_record(
+            1, block, list(block["findings"])
+        )
+        task = summarise_check(block)
+        assert (group["state"], group["inputs_not_read"]) == (
+            task["state"], task["inputs_not_read"]
+        ), block

@@ -112,18 +112,22 @@ _NODE_RAN_MARKER = (
 
 
 # A Go run proves a test executed with a fresh package pass line
-# (``ok  pkg 0.01s``) or a failing test line (``--- FAIL:``). Not with
+# (``ok  pkg 0.01s``), a failing test line (``--- FAIL:``) or a package
+# failure line (``FAIL  pkg 0.003s`` or ``FAIL  pkg [build failed]``; a
+# TestMain ``os.Exit`` or a compile error prints only that). Not with
 # (12 October 2026):
 #   * ``ok pkg (cached)`` — Go replays an earlier result without running
 #     anything, and with ``-v`` it replays the old ``=== RUN`` / ``--- PASS``
 #     lines too, so those lines cannot prove a run either;
 #   * ``ok pkg 0.01s [no tests to run]`` — the package ran no test.
-# Go never caches a failure, so ``--- FAIL:`` is always fresh. A run whose only
-# ``ok`` lines are cached or ran nothing is not a run.
+# Go never caches a failure, so a FAIL line is always fresh. A run whose only
+# ``ok`` lines are cached or ran nothing is not a run. The bare ``FAIL`` line
+# Go prints last names no package and proves nothing on its own.
 _GO_RAN_MARKER = (
     r"(?m)("
-    r"^ok\s(?!.*\(cached\))(?!.*\[no tests to run\])"
+    r"^ok[ \t](?!.*\(cached\))(?!.*\[no tests to run\])"
     r"|^\s*--- FAIL:"
+    r"|^FAIL[ \t]+\S"
     r")"
 )
 

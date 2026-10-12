@@ -210,6 +210,37 @@ class TestGoRanMarker:
         out = "ok  \tex/a\t(cached)\nok  \tex/b\t0.010s\n"
         assert classify_absent_for_stack(_profile("go"), 0, out) is False
 
+    def test_build_failure_beside_cached_and_testless_is_a_failure(self):
+        """Go never caches a FAIL, so a package FAIL line proves a run."""
+        out = (
+            "ok  \tex/b\t(cached)\n"
+            "?   \tex/cmd\t[no test files]\n"
+            "# ex/a [ex/a.test]\na/x_test.go:5:2: undefined: Foo\n"
+            "FAIL\tex/a [build failed]\nFAIL\n"
+        )
+        assert classify_absent_for_stack(_profile("go"), 1, out) is False
+
+    def test_testmain_exit_beside_cached_and_testless_is_a_failure(self):
+        out = (
+            "ok  \tex/b\t(cached)\n"
+            "?   \tex/cmd\t[no test files]\n"
+            "FAIL\tex/a\t0.003s\nFAIL\n"
+        )
+        assert classify_absent_for_stack(_profile("go"), 1, out) is False
+
+    def test_build_failure_beside_only_a_testless_package_is_a_failure(self):
+        out = (
+            "?   \tex/cmd\t[no test files]\n"
+            "# ex/a [ex/a.test]\na/x_test.go:5:2: undefined: Foo\n"
+            "FAIL\tex/a [build failed]\nFAIL\n"
+        )
+        assert classify_absent_for_stack(_profile("go"), 1, out) is False
+
+    def test_the_bare_closing_fail_line_proves_nothing(self):
+        """``FAIL`` alone names no package; it is not a run marker."""
+        out = "?   \tex/cmd\t[no test files]\nFAIL\n"
+        assert classify_absent_for_stack(_profile("go"), 1, out) is True
+
     def test_failure_beside_testless_package_is_ran_and_failed(self):
         out = (
             "?   \tex/cmd\t[no test files]\n"

@@ -347,8 +347,9 @@ def _parse_coverage_json(
 # ---------------------------------------------------------------------------
 
 
-#: Files at a project root that say "this is a Python project". A stray
-#: ``*.py`` helper somewhere in the tree does not (12 October 2026: a
+#: Files at a project root that say "this is a Python project". Used only for
+#: a project that declares its toolchain: there a stray ``*.py`` helper
+#: somewhere in the tree does not make it Python (12 October 2026: a
 #: TypeScript worktree with one script in it used to get a root pytest run).
 _PYTHON_PROJECT_MARKERS = (
     "pyproject.toml",
@@ -356,26 +357,37 @@ _PYTHON_PROJECT_MARKERS = (
     "setup.cfg",
     "pytest.ini",
     "tox.ini",
-    "requirements.txt",
     "conftest.py",
+    "Pipfile",
 )
+_PYTHON_PROJECT_MARKER_GLOBS = ("requirements*.txt",)
 
 
-def _is_python_stack(worktree_path: Path) -> bool:
+def _is_python_stack(worktree_path: Path, declared: bool = False) -> bool:
     """Check if the worktree (or component directory) is a Python project.
 
     Parameters
     ----------
     worktree_path : Path
         Root of the worktree, or of the selected component.
+    declared : bool, optional
+        True when the project declares its toolchain. Only then is a Python
+        project marker file at this root required. A project that declares
+        nothing keeps the original rule: any ``*.py`` file in the tree.
 
     Returns
     -------
     bool
-        True only when a Python project marker file sits at that root.
+        Whether this gate should run pytest here.
     """
+    if not declared:
+        return any(worktree_path.rglob("*.py"))
+    if any((worktree_path / name).is_file() for name in _PYTHON_PROJECT_MARKERS):
+        return True
     return any(
-        (worktree_path / name).is_file() for name in _PYTHON_PROJECT_MARKERS
+        path.is_file()
+        for pattern in _PYTHON_PROJECT_MARKER_GLOBS
+        for path in worktree_path.glob(pattern)
     )
 
 
@@ -403,6 +415,7 @@ def _run_coverage(
     worktree_path: Path,
     authored_files: List[str],
     timeout: int = 300,
+    declared: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Run pytest under coverage measurement and parse results.
 
@@ -414,6 +427,10 @@ def _run_coverage(
         Authored source files to examine for zero-execution.
     timeout : int, optional
         Timeout in seconds for the coverage run. Default: 300.
+    declared : bool, optional
+        True when the project declares its toolchain (see
+        :func:`_is_python_stack`); only then are authored files other than
+        ``*.py`` left out before deciding whether to run.
 
     Returns
     -------
@@ -422,7 +439,7 @@ def _run_coverage(
         is not Python (absent signal).
     """
     # Gate: non-Python stack → absent signal
-    if not _is_python_stack(worktree_path):
+    if not _is_python_stack(worktree_path, declared=declared):
         logger.debug(
             "Coverage gate: non-Python stack detected for %s; "
             "returning absent signal.",
@@ -430,12 +447,14 @@ def _run_coverage(
         )
         return None
 
-    # Gate: no authored Python files → absent signal. This gate reads Python
-    # source only, so a change with none has nothing here to measure.
-    authored_files = [f for f in authored_files if f.endswith(".py")]
+    # Gate: no authored (Python) files → absent signal. In a declared project
+    # this gate reads Python source only, so a change with none has nothing
+    # here to measure.
+    if declared:
+        authored_files = [f for f in authored_files if f.endswith(".py")]
     if not authored_files:
         logger.debug(
-            "Coverage gate: no authored Python files for %s; "
+            "Coverage gate: no authored files for %s; "
             "returning absent signal.",
             worktree_path,
         )
@@ -504,18 +523,10 @@ def _run_coverage(
         )
         return None
 
-    # Exit code 5 = no tests collected: nothing was measured, so absent.
-    # (This check used to sit inside ``not in (0, 5)``, where it never ran.)
-    if result.returncode == 5:
-        logger.debug(
-            "Coverage gate: no tests collected for %s; "
-            "returning absent signal.",
-            worktree_path,
-        )
-        return None
-    # If pytest itself is not available (pytest module not found), that's
-    # an absent signal — never a pass.
-    if result.returncode != 0:
+    # Exit code 5 = no tests collected. The report, when one was written, is
+    # still read: every authored symbol then shows zero execution, which is
+    # the finding this gate exists to make.
+    if result.returncode not in (0, 5):
         # Other failures: still parse coverage if available, but note the
         # failure. For the gate, a test failure doesn't negate coverage data.
         logger.warning(
@@ -548,6 +559,7 @@ def run_coverage_gate(
     timeout: int = 300,
     component: Optional[str] = None,
     component_cwd: Optional[str] = None,
+    toolchain_declared: bool = False,
 ) -> Dict[str, Any]:
     """Run the L3 coverage gate for authored files.
 
@@ -570,6 +582,9 @@ def run_coverage_gate(
     component_cwd : str, optional
         That component's declared, repo-relative directory; ``None`` when the
         task names no component or names one the declaration does not define.
+    toolchain_declared : bool, optional
+        True when the project declares its toolchain. A project that declares
+        nothing keeps this gate's original Python detection, unchanged.
 
     Returns
     -------
@@ -601,7 +616,9 @@ def run_coverage_gate(
         return None
 
     if not component:
-        return _run_coverage(worktree_path, authored_files, timeout)
+        return _run_coverage(
+            worktree_path, authored_files, timeout, declared=toolchain_declared
+        )
 
     # 12 October 2026. A task that names a component is measured in THAT
     # component's directory, never by a root pytest run over the whole
@@ -617,7 +634,7 @@ def run_coverage_gate(
     if prefix in ("", "."):
         prefix = ""
     root = Path(worktree_path) / prefix if prefix else Path(worktree_path)
-    if not _is_python_stack(root):
+    if not _is_python_stack(root, declared=True):
         return _unavailable(
             "unsupported_stack",
             f"this coverage check measures Python only, and component "
@@ -629,7 +646,7 @@ def run_coverage_gate(
             for f in authored_files
             if f.startswith(prefix + "/")
         ]
-    result = _run_coverage(root, authored_files, timeout)
+    result = _run_coverage(root, authored_files, timeout, declared=True)
     if prefix and isinstance(result, dict):
         # Findings name files from the repository root, like every other check.
         for finding in result.get("findings") or []:
@@ -645,6 +662,7 @@ def run_coverage_gate_for_bundle(
     timeout: int = 300,
     component: Optional[str] = None,
     component_cwd: Optional[str] = None,
+    toolchain_declared: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Run the coverage gate and return a bundle-compatible dict.
 
@@ -665,6 +683,9 @@ def run_coverage_gate_for_bundle(
     component, component_cwd : str, optional
         The task's declared component and its directory; see
         :func:`run_coverage_gate`.
+    toolchain_declared : bool, optional
+        Whether the project declares its toolchain; see
+        :func:`run_coverage_gate`.
 
     Returns
     -------
@@ -678,5 +699,6 @@ def run_coverage_gate_for_bundle(
         timeout,
         component=component,
         component_cwd=component_cwd,
+        toolchain_declared=toolchain_declared,
     )
     return result
