@@ -385,6 +385,39 @@ def test_a_planted_receipt_with_no_run_this_turn_is_removed(with_bundle) -> None
     assert "facts are copied" not in text
 
 
+def test_the_legacy_fallback_drops_a_planted_receipt(tmp_path: Path) -> None:
+    """GUARDKIT_COACH_LEGACY=1 and the validator fails: the model Coach runs."""
+    from unittest.mock import AsyncMock, patch
+
+    from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+
+    invoker = MagicMock()
+    invoker.invoke_coach = AsyncMock(return_value=AgentInvocationResult(
+        task_id=TASK_ID, turn=4, agent_type="coach", success=True,
+        report=_planted_report(), duration_seconds=1.0, error=None,
+    ))
+    orchestrator = AutoBuildOrchestrator(
+        repo_root=tmp_path, agent_invoker=invoker, worktree_manager=MagicMock(),
+        progress_display=MagicMock(), pre_loop_gates=MagicMock(),
+    )
+    worktree = MagicMock(path=tmp_path)
+    with patch.object(
+        orchestrator, "_load_coach_config", side_effect=RuntimeError("boom")
+    ):
+        result = orchestrator._invoke_coach_legacy(
+            task_id=TASK_ID, turn=4, requirements="r", player_report={},
+            worktree=worktree, acceptance_criteria=None, task_type=None,
+            skip_arch_review=True, requires_infrastructure=None,
+            consumer_context=None, remaining_budget=None, wave_size=1,
+            peer_changed_files=None, context_prompt="", start_time=0.0,
+        )
+
+    assert invoker.invoke_coach.await_count == 1
+    assert SUITE_RECEIPT_KEY not in result.report
+    text = orchestrator._turn_feedback_text(result.report, 4)
+    assert TURN_3_TEXT not in text
+
+
 def test_the_coach_memory_context_omits_earlier_coaches_rejection_words() -> None:
     """The memory search's turn states carry rejected turns' feedback too."""
     context = RetrievedContext(

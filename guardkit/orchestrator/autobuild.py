@@ -2446,6 +2446,7 @@ class AutoBuildOrchestrator:
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         sdk_timeout_is_override: Optional[bool] = None,
         expected_branch: Optional[str] = None,
+        expected_branch_pinned: bool = False,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -2657,6 +2658,9 @@ class AutoBuildOrchestrator:
         # orchestrator at build start (build 0D7C). None: decided here, at
         # this (single) task's start.
         self._expected_branch: Optional[str] = expected_branch
+        # True when the feature orchestrator pinned it, even to None (no
+        # branch could be determined): then this task never re-reads HEAD.
+        self._expected_branch_pinned: bool = expected_branch_pinned
         # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
         # deliverable's real runtime entry point). Threaded into CoachValidator
         # so the per-task Coach can exercise it before approving on a
@@ -4431,7 +4435,8 @@ class AutoBuildOrchestrator:
                 # the feature branch; never commit on a detached HEAD.
                 expected_branch=(
                     self._expected_branch
-                    or expected_checkpoint_branch(
+                    if self._expected_branch_pinned
+                    else expected_checkpoint_branch(
                         getattr(worktree, "path", None),
                         getattr(worktree, "branch_name", None),
                     )
@@ -9556,7 +9561,7 @@ class AutoBuildOrchestrator:
                 fallback_kwargs: Dict[str, Any] = {}
                 if project_documents:
                     fallback_kwargs["project_documents"] = project_documents
-                return loop.run_until_complete(
+                result = loop.run_until_complete(
                     self._agent_invoker.invoke_coach(
                         task_id=task_id,
                         turn=turn,
@@ -9566,6 +9571,15 @@ class AutoBuildOrchestrator:
                         **fallback_kwargs,
                     )
                 )
+                # A model's report never carries the test run's facts: only
+                # the orchestrator writes that key (build 7010).
+                from guardkit.orchestrator.failing_test_feedback import (
+                    SUITE_RECEIPT_KEY,
+                )
+
+                if isinstance(getattr(result, "report", None), dict):
+                    result.report.pop(SUITE_RECEIPT_KEY, None)
+                return result
 
             except NotImplementedError as sdk_error:
                 logger.warning(f"Coach invocation not implemented: {sdk_error}")

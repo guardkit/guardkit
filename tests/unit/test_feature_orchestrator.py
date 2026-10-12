@@ -1346,6 +1346,7 @@ def test_every_task_gets_the_branch_pinned_at_build_start(
     assert reads == ["autobuild/FEAT-TEST"], "read once, at build start"
     for call in mock_orch_class.call_args_list:
         assert call[1].get("expected_branch") == "autobuild/FEAT-TEST"
+        assert call[1].get("expected_branch_pinned") is True
 
 
 def test_execute_task_uses_default_sdk_timeout_when_not_specified(

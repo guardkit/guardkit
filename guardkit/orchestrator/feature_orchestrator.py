@@ -5827,6 +5827,7 @@ The detailed specifications are in the task markdown file.
                 # Pinned at build start; a task that starts anywhere else is
                 # refused at its checkpoint (build 0D7C).
                 expected_branch=self._pinned_feature_branch(worktree),
+                expected_branch_pinned=True,
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
                 feature_id=feature.id,

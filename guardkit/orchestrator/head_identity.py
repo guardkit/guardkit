@@ -438,13 +438,15 @@ def expected_checkpoint_branch(
     HEAD, and adopting wherever HEAD happens to be would bless the move. A
     later task that starts on any other branch is refused at its checkpoint.
 
-    The branch HEAD is attached to at that moment is the observed fact, so it
-    wins (a branch prepared before GuardKit started, such as a repair branch,
-    is accepted that way); the branch the worktree was declared with
-    (``declared``) is used when HEAD is detached or cannot be read. A
-    disagreement is logged. When neither is known the result is ``None`` and
-    an error is logged; the caller then refuses checkpoints rather than
-    committing unchecked.
+    The branch the worktree was declared with (``declared``) wins: it is the
+    branch the candidate is merged from, and GuardKit always creates or reuses
+    the inner worktree on it (Forge's repair branch is only ever a base
+    branch). HEAD's own branch is used only when nothing is declared. If HEAD
+    is on another branch already — say a resumed build whose worktree was
+    left on a branch an agent made — that is logged now and refused at the
+    first checkpoint, never adopted. When neither is known the result is
+    ``None`` and an error is logged; the caller then refuses checkpoints
+    rather than committing unchecked.
     """
     declared = declared if isinstance(declared, str) and declared else None
     attached: Optional[str] = None
@@ -455,8 +457,8 @@ def expected_checkpoint_branch(
     if attached and declared and attached != declared:
         logger.warning(
             "Worktree %s is on branch %s, not the declared %s; checkpoints "
-            "will be kept on %s, the branch it is actually on.",
-            worktree, attached, declared, attached,
+            "must land on %s, so they will be refused until HEAD is back on it.",
+            worktree, attached, declared, declared,
         )
     if not (attached or declared):
         logger.error(
@@ -464,4 +466,4 @@ def expected_checkpoint_branch(
             "branch and none was declared. Checkpoints will be refused.",
             worktree,
         )
-    return attached or declared
+    return declared or attached

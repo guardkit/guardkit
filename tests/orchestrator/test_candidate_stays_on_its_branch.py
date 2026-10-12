@@ -303,11 +303,12 @@ def test_a_refused_checkpoint_stops_the_task_with_its_reason(
     assert f"Expected branch: {BRANCH}." in message
 
 
-def test_the_expected_branch_is_the_one_head_is_on_at_build_start(
+def test_the_declared_branch_wins_and_head_is_used_only_without_one(
     worktree: Path,
 ) -> None:
     assert expected_checkpoint_branch(worktree, BRANCH) == BRANCH
-    assert expected_checkpoint_branch(worktree, "autobuild/other") == BRANCH
+    assert expected_checkpoint_branch(worktree, "autobuild/other") == "autobuild/other"
+    assert expected_checkpoint_branch(worktree, None) == BRANCH
     _git(worktree, "checkout", "-q", "--detach")
     assert expected_checkpoint_branch(worktree, BRANCH) == BRANCH
     assert expected_checkpoint_branch(worktree.parent / "missing", None) is None
@@ -381,22 +382,101 @@ def test_a_task_orchestrator_uses_the_pinned_branch_not_head(
     )
 
 
-def test_a_repair_branch_prepared_before_the_build_is_accepted(
+def test_a_resume_on_an_agent_made_branch_is_refused_naming_both(
     worktree: Path,
 ) -> None:
-    repair = f"{BRANCH}-repair-1"
-    _git(worktree, "checkout", "-q", "-b", repair)
+    """A resumed build whose worktree was left on a branch an agent made."""
+    _git(worktree, "checkout", "-q", "-b", "agent-made")
     feature = _feature_orchestrator()
     pinned = feature._pinned_feature_branch(Worktree(
         task_id="FEAT-0D7C", branch_name=BRANCH, path=worktree, base_branch="main"
     ))
-    assert pinned == repair
+    assert pinned == BRANCH
 
-    checkpoint = WorktreeCheckpointManager(
-        worktree_path=worktree, task_id="TASK-0D7C-001",
-        expected_branch=pinned, refuse_without_branch=True,
-    ).create_checkpoint(turn=1, tests_passed=True)
-    assert _git(worktree, "rev-parse", f"refs/heads/{repair}") == checkpoint.commit_hash
+    with pytest.raises(CheckpointRefused) as refused:
+        WorktreeCheckpointManager(
+            worktree_path=worktree, task_id="TASK-0D7C-002",
+            expected_branch=pinned, refuse_without_branch=True,
+        ).create_checkpoint(turn=1, tests_passed=True)
+    message = str(refused.value)
+    assert f"Expected branch: {BRANCH}." in message
+    assert "Actual HEAD: refs/heads/agent-made at" in message
+    assert _git(worktree, "rev-parse", "refs/heads/agent-made") == _tip(worktree)
+
+
+def test_a_feature_pinned_to_no_branch_is_not_re_read_per_task(
+    worktree: Path,
+) -> None:
+    """Pinned to None at build start: a later task refuses, never reads HEAD."""
+    display = MagicMock()
+    display.__enter__ = Mock(return_value=display)
+    display.__exit__ = Mock(return_value=False)
+    orchestrator = AutoBuildOrchestrator(
+        repo_root=worktree, max_turns=3, worktree_manager=Mock(),
+        agent_invoker=Mock(), progress_display=display,
+        pre_loop_gates=MagicMock(),
+        expected_branch=None, expected_branch_pinned=True,
+    )
+    record = TurnRecord(
+        turn=1,
+        player_result=Mock(success=True, report={}, error=None),
+        coach_result=AgentInvocationResult(
+            task_id="TASK-0D7C-004", turn=1, agent_type="coach", success=True,
+            report={"decision": "approve", "rationale": "r", "issues": []},
+            duration_seconds=1.0, error=None,
+        ),
+        decision="approve", feedback=None, timestamp="2026-10-12T21:40:00Z",
+    )
+    tip = _tip(worktree)
+    with patch.object(orchestrator, "_execute_turn", return_value=record), \
+            patch.object(orchestrator, "_capture_turn_state"), \
+            patch.object(orchestrator, "_record_honesty"), \
+            patch.object(orchestrator, "_display_criteria_progress"):
+        history, final = orchestrator._loop_phase(
+            task_id="TASK-0D7C-004", requirements="r", acceptance_criteria=["AC1"],
+            worktree=Worktree(task_id="FEAT-0D7C", branch_name=BRANCH,
+                              path=worktree, base_branch="main"),
+        )
+    assert final == "error"
+    assert "no feature branch was determined" in (
+        orchestrator._build_error_message(final, history)
+    )
+    assert _tip(worktree) == tip
+
+
+def test_orchestrate_pins_after_setup_and_before_the_first_wave(
+    worktree: Path,
+) -> None:
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+    feature = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    declared = Worktree(
+        task_id="FEAT-0D7C", branch_name=BRANCH, path=worktree, base_branch="main"
+    )
+    order = []
+
+    def _setup(feature_id, base_branch):
+        order.append("setup")
+        return MagicMock(id="FEAT-0D7C"), declared
+
+    def _wave(feature_obj, wt):
+        order.append(("wave", feature._feature_branch_pinned, feature._feature_branch))
+        return []
+
+    real_pin = FeatureOrchestrator._pinned_feature_branch
+
+    def _pin(self, wt):
+        if not self._feature_branch_pinned:
+            order.append("pin")
+        return real_pin(self, wt)
+
+    with patch.object(feature, "_setup_phase", side_effect=_setup), \
+            patch.object(feature, "_wave_phase", side_effect=_wave), \
+            patch.object(feature, "_finalize_phase", return_value=MagicMock()), \
+            patch.object(FeatureOrchestrator, "_pinned_feature_branch", _pin):
+        feature.orchestrate("FEAT-0D7C")
+
+    assert order == ["setup", "pin", ("wave", True, BRANCH)]
 
 
 def test_no_branch_known_refuses_rather_than_skipping(
