@@ -650,3 +650,50 @@ def test_a_merge_in_a_main_copy_writes_no_record(worktree: Path) -> None:
     )
 
     assert not (worktree / head_identity.RECORD_RELATIVE_PATH).exists()
+
+
+def test_a_held_record_lock_drops_the_line_within_the_deadline(worktree: Path, caplog) -> None:
+    """Implementation review round 1, R4: the head-identity record is written
+    around every invocation and inside checkpoint serialisation, so another
+    process holding its lock must never hold either up for long."""
+    import sys
+    import time
+
+    record = head_identity.record_path(worktree)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.touch()
+    holder = subprocess.Popen(
+        [
+            sys.executable, "-c",
+            "import fcntl, sys, time\n"
+            "f = open(sys.argv[1], 'a')\n"
+            "fcntl.flock(f, fcntl.LOCK_EX)\n"
+            "print('held', flush=True)\n"
+            "time.sleep(30)\n",
+            str(record),
+        ],
+        stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        started = time.monotonic()
+        with caplog.at_level(logging.WARNING):
+            written = head_identity.record_git_operation(
+                worktree, actor="test", operation="checkpoint", task_id="TASK-X"
+            )
+            token = head_identity.invocation_started(worktree, role="player", task_id="TASK-X")
+            finished = head_identity.invocation_finished(token)
+        elapsed = time.monotonic() - started
+
+        assert written is False
+        assert finished["record_status"] == head_identity.NOT_RECORDED_BUSY
+        assert elapsed < 8, f"three busy writes took {elapsed:.1f}s"
+        assert head_identity.NOT_RECORDED_BUSY in caplog.text
+    finally:
+        holder.kill()
+        holder.wait()
+
+    # With the lock free again, lines are written as before.
+    assert head_identity.record_git_operation(
+        worktree, actor="test", operation="checkpoint", task_id="TASK-X"
+    ) is True

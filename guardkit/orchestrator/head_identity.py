@@ -156,22 +156,56 @@ def _now() -> Dict[str, Any]:
     }
 
 
-def _append(worktree: Path, entry: Dict[str, Any]) -> bool:
-    """Append one JSON line under an exclusive lock. Never raises."""
+#: What a line that could not take the record's lock in time says.
+NOT_RECORDED_BUSY = "not recorded: evidence file busy"
+RECORDED = "recorded"
+
+# The record's lock is taken without waiting, retried for at most this long.
+# It is written around every agent invocation and inside checkpoint
+# serialisation, so evidence must never hold either up for longer.
+_LOCK_DEADLINE_S = 2.0
+_LOCK_RETRY_S = 0.05
+
+
+def _append_status(worktree: Path, entry: Dict[str, Any]) -> str:
+    """Append one JSON line under an exclusive lock; say how it went.
+
+    The lock is asked for without blocking and retried for at most
+    ``_LOCK_DEADLINE_S``; if another writer still holds it, the line is
+    dropped and ``NOT_RECORDED_BUSY`` returned. Never raises.
+    """
     path = record_path(worktree)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            give_up_at = time.monotonic() + _LOCK_DEADLINE_S
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= give_up_at:
+                        logger.warning(
+                            "head identity: %s for %s (another writer held its "
+                            "lock for %.0fs); this line is dropped.",
+                            NOT_RECORDED_BUSY, path, _LOCK_DEADLINE_S,
+                        )
+                        return NOT_RECORDED_BUSY
+                    time.sleep(_LOCK_RETRY_S)
             try:
                 handle.write(json.dumps(entry, sort_keys=True) + "\n")
                 handle.flush()
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
-        return True
+        return RECORDED
     except (OSError, TypeError, ValueError) as exc:
         logger.warning("head identity: could not write %s: %s", path, exc)
-        return False
+        return f"not recorded: {type(exc).__name__}: {exc}"
+
+
+def _append(worktree: Path, entry: Dict[str, Any]) -> bool:
+    """Append one JSON line; True when it was written. Never raises."""
+    return _append_status(worktree, entry) == RECORDED
 
 
 def read_entries(worktree: Path) -> List[Dict[str, Any]]:
@@ -335,7 +369,8 @@ def invocation_finished(token: Optional[InvocationToken]) -> Optional[Dict[str, 
             "git_operations_during": git_operations,
             "attribution": attribution,
         }
-        _append(token.worktree, entry)
+        # Whether the line reached the record: the entry handed back says so.
+        entry["record_status"] = _append_status(token.worktree, entry)
         if ref_changed:
             # Plain words for the operator. Never a stop: the checkpoint is
             # where a detached or switched HEAD is refused.
