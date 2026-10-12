@@ -486,7 +486,10 @@ def _describe(
             try:
                 target = os.readlink(full)
             except OSError as exc:
-                target = f"<unreadable link: {type(exc).__name__}>"
+                # A link whose target could not be read is an unread entry,
+                # so the manifest is incomplete and is never compared.
+                entries.append([rel, "unreadable", f"link target: {type(exc).__name__}"])
+                continue
             entries.append([rel, "symlink", target])
         elif stat.S_ISREG(st.st_mode):
             if hashed + st.st_size > limits.max_bytes:

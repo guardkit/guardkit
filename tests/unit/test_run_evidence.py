@@ -633,3 +633,27 @@ def test_excessive_helper_output_is_streamed_kept_bounded_and_hashed_whole(tmp_p
     assert record["output_bytes"] == size and record["output_truncated"] is True
     assert len(record["output"]) == EvidenceLimits().inventory_output_bytes
     assert record["output_sha256"] == hashlib.sha256(b"\0" * size).hexdigest()
+
+
+def test_links_whose_targets_cannot_be_read_are_never_compared(tmp_path, monkeypatch):
+    """Round 2, R2: both observations failing to read the same link must not
+    read as "source unchanged"."""
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "a.txt").write_text("a\n")
+    os.symlink("a.txt", str(root / "link"))
+    real_readlink = os.readlink
+
+    def _failing_readlink(path, *a, **k):
+        if str(path).endswith("link"):
+            raise PermissionError("cannot read link")
+        return real_readlink(path, *a, **k)
+
+    monkeypatch.setattr(re_mod.os, "readlink", _failing_readlink)
+    record = CommandEvidence(
+        EvidenceRequest(kind="t"), command="x", execution_root=root, docker=_no_docker()
+    ).begin().finish()
+
+    assert record["source"]["before"]["status"] == re_mod.NOT_RECORDED_INCOMPLETE
+    assert record["source"]["before"]["unreadable"] == ["link"]
+    assert record["source"]["verdict"].startswith("not compared")
