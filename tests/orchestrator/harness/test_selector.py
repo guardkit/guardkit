@@ -1639,3 +1639,174 @@ def test_sdk_drops_progressive_native_tool_sink(
 
     assert isinstance(harness, ClaudeSDKHarness)
     assert not hasattr(harness, "on_native_tool_event")
+
+
+class TestLaunchDeclarationReachesTheBackend:
+    """12 October 2026: the task's pinned ``launch:`` block reaches the shell.
+
+    The selector hands its names to ``build_autobuild_backend`` for every
+    role, prepares the worktree's scratch folder when scratch names are
+    declared and the caller had none, and never drops the block silently.
+    """
+
+    @staticmethod
+    def _checkout(tmp_path: Path) -> Path:
+        worktree = tmp_path / "wt"
+        (worktree / ".git").mkdir(parents=True)
+        return worktree
+
+    @staticmethod
+    def _recording_factory(received: dict[str, Any]) -> Any:
+        def new_factory(worktree: Any, **kwargs: Any) -> Any:
+            received["worktree"] = worktree
+            received.update(kwargs)
+            return MagicMock(name="composite-backend")
+
+        return new_factory
+
+    def test_names_and_scratch_folder_reach_a_non_player_backend(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+        from guardkit.orchestrator.paths import builder_scratch_dir
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        worktree = self._checkout(tmp_path)
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=worktree,
+            harness_role="coach",
+            launch_declaration=LaunchDeclaration(
+                settings=("BROWSERS_AT",), scratch=("TOOL_CACHE",)
+            ),
+        )
+
+        assert received["launch_environment"] == {
+            "settings": ["BROWSERS_AT"],
+            "scratch": ["TOOL_CACHE"],
+        }
+        # Handed over only as the place the names resolve: the Coach's file
+        # tools get no write root for it (B5).
+        assert received["launch_scratch_root"] == Path(
+            os.path.realpath(builder_scratch_dir(worktree))
+        )
+        assert "scratch_root" not in received
+
+    def test_a_player_with_its_own_scratch_folder_uses_it(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        worktree = self._checkout(tmp_path)
+        folder = prepare_builder_scratch_dir(worktree)
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        class _PlayerCapableHarness:
+            def __init__(self, *, player_config: Any = None, **kwargs: Any) -> None:
+                self.kwargs = kwargs
+
+        monkeypatch.setattr(
+            sys.modules["guardkitfactory.harness"],
+            "LangGraphHarness",
+            _PlayerCapableHarness,
+        )
+        monkeypatch.setattr(
+            selector_module, "_load_player_project_inputs",
+            lambda _wt: {"protected_paths": (), "required_documents": ()},
+        )
+        monkeypatch.setattr(
+            selector_module, "_configure_dcode_launch", lambda _wt: tmp_path
+        )
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=worktree,
+            harness_role="player",
+            scratch_root=folder,
+            launch_declaration=LaunchDeclaration(scratch=("TOOL_CACHE",)),
+        )
+
+        assert received["scratch_root"] == folder
+        assert "launch_scratch_root" not in received
+
+    def test_settings_only_needs_no_scratch_folder(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            launch_declaration=LaunchDeclaration(settings=("BROWSERS_AT",)),
+        )
+
+        assert received["launch_environment"]["settings"] == ["BROWSERS_AT"]
+        assert "scratch_root" not in received
+
+    def test_no_declaration_leaves_the_backend_call_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=tmp_path,
+            launch_declaration=None,
+        )
+
+        assert set(received) == {"worktree", "max_tool_result_chars"}
+
+    def test_declared_scratch_without_a_scratch_folder_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        _install_fake_guardkitfactory(
+            monkeypatch, self._recording_factory({})
+        )
+
+        with pytest.raises(AgentInvocationError, match="no scratch folder"):
+            select_harness(
+                env_var=_TEST_ENV_VAR,
+                model=MagicMock(),
+                cwd=tmp_path,  # not a git checkout
+                launch_declaration=LaunchDeclaration(scratch=("TOOL_CACHE",)),
+            )
+
+    def test_a_stale_factory_cannot_drop_the_block(self) -> None:
+        with pytest.raises(AgentInvocationError, match="cannot be dropped"):
+            _build_backend_with_optional_cap(
+                _old_factory_no_cap,
+                Path("/tmp/wt"),
+                None,
+                (),
+                None,
+                {"settings": ["BROWSERS_AT"], "scratch": []},
+            )
+        with pytest.raises(AgentInvocationError, match="outside the project"):
+            _build_backend_with_optional_cap(
+                lambda worktree, *, launch_environment=None: None,
+                Path("/tmp/wt"),
+                None,
+                (),
+                None,
+                {"settings": [], "scratch": ["TOOL_CACHE"]},
+                Path("/tmp/git/scratch"),
+            )

@@ -192,7 +192,7 @@ class TaskWorkInterface:
 
         try:
             # Execute via Claude Agent SDK
-            raw_result = await self._execute_via_sdk(prompt)
+            raw_result = await self._execute_via_sdk(prompt, task_id=task_id)
             return self._parse_design_result(raw_result)
 
         except ImportError as e:
@@ -413,7 +413,9 @@ class TaskWorkInterface:
 
         return "\n".join(result)
 
-    async def _execute_via_sdk(self, prompt: str) -> Dict[str, Any]:
+    async def _execute_via_sdk(
+        self, prompt: str, task_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Execute the design-phase prompt through the active harness.
 
@@ -437,6 +439,8 @@ class TaskWorkInterface:
         ----------
         prompt : str
             The complete design-phase prompt.
+        task_id : Optional[str]
+            The task whose pinned ``launch:`` declaration the shell gets.
 
         Returns
         -------
@@ -466,6 +470,7 @@ class TaskWorkInterface:
             ResultMessageEvent,
             select_harness,
         )
+        from guardkit.orchestrator.launch_declaration import load_launch_snapshot
         from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 
         logger.info(f"Executing design phase via harness (cwd={self.worktree_path})")
@@ -498,6 +503,9 @@ class TaskWorkInterface:
                 # ``self.worktree_path`` to ``.invoke()`` twelve lines below, so
                 # there was never any doubt about which path belongs here.
                 cwd=self.worktree_path,
+                # The task's pinned `launch:` settings and scratch folders for
+                # the shell (LangGraph only); None without a task or a block.
+                launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
             )
         except AgentInvocationError as e:
             logger.error(f"Harness selection failed: {e}")

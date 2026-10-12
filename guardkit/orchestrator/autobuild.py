@@ -3020,6 +3020,17 @@ class AutoBuildOrchestrator:
         # suite, which is the exact false verdict the seam removes.
         component: Optional[str] = self._resolve_task_component(task_id, _component_raw)
 
+        # The project's `launch:` block, checked LOUDLY here for the same
+        # reason: a malformed one fails the task load, never degrades to
+        # "absent", because that would send tool caches into the worktree.
+        # Raises LaunchDeclarationError (a ValueError) with the plain reason.
+        from guardkit.orchestrator.launch_declaration import (
+            load_launch_declaration,
+            snapshot_task_launch,
+        )
+
+        load_launch_declaration(self.repo_root)
+
         # ROUTING LAW (card Q8/A.2): validate the `verifier:` stamp LOUDLY,
         # outside the metadata swallow above — same seam, same law as the
         # component selector directly above. An unknown home raises here and
@@ -3091,6 +3102,13 @@ class AutoBuildOrchestrator:
                 # Player-unreachable private dir — and the pinned copy is what
                 # executes for the whole build.
                 self._snapshot_toolchain_declaration(task_id, worktree)
+
+                # The project's `launch:` block (settings and scratch folders
+                # for its commands' shells), pinned at the same point for the
+                # same reason. A no-op without one. NOT swallowed: a block
+                # that cannot be pinned would send tool caches into the
+                # worktree (``launch_declaration``).
+                snapshot_task_launch(task_id, worktree.path, self.repo_root)
 
                 # Save initial state
                 if task_file_path:

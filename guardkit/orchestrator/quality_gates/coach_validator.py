@@ -81,6 +81,7 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     detect_stack_profile,
     overlay_declared_profile,
 )
+from guardkit.orchestrator.launch_declaration import apply_task_launch_environment
 from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
     ToolchainDeclaration,
@@ -6592,7 +6593,9 @@ class CoachValidator:
 
         env = build_venv_env(self.worktree_path) or dict(os.environ)
         env.update(getattr(self, "_fixture_env", {}))
-        return env
+        return apply_task_launch_environment(
+            env, getattr(self, "task_id", None), self.worktree_path
+        )
 
     # ------------------------------------------------------------------
     # TASK-ABFIX-011: gated per-test pytest-timeout injection
@@ -10503,7 +10506,9 @@ class CoachValidator:
         """
         env = os.environ.copy()
         env.update(getattr(self, "_fixture_env", {}))
-        return env
+        return apply_task_launch_environment(
+            env, getattr(self, "task_id", None), self.worktree_path
+        )
 
     def _describe_detection_absence(self) -> str:
         """Build the actionable message for the deleted pytest default.

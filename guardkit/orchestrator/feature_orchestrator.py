@@ -3130,6 +3130,9 @@ The detailed specifications are in the task markdown file.
                 "whole-feature check", self.repo_root,
                 feature=str(feature.id), attempt=attempt_number,
             ),
+            # The project's `launch:` settings and scratch folders, read from
+            # the main checkout like the check command itself.
+            launch_root=self.repo_root,
         )
         exit_code = run["exit_code"]
         timed_out = bool(run["timed_out"])

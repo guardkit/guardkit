@@ -891,6 +891,8 @@ def _build_backend_with_optional_cap(
     max_tool_result_chars: int | None,
     protected_paths: tuple[str, ...] = (),
     scratch_root: Path | None = None,
+    launch_environment: dict[str, list[str]] | None = None,
+    launch_scratch_root: Path | None = None,
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -952,6 +954,25 @@ def _build_backend_with_optional_cap(
                 "scratch folder %s; writes there will be refused.",
                 scratch_root,
             )
+    # 12 October 2026: the project's ``launch:`` settings and scratch folders
+    # for the shell (``launch_declaration``). Never dropped: without them a
+    # tool's caches land in the project, or a declared setting is missing.
+    if launch_environment is not None:
+        if not _factory_accepts_kwarg(factory, "launch_environment"):
+            raise AgentInvocationError(
+                "The project declares `launch:` settings or scratch folders, but "
+                "the installed guardkitfactory cannot apply them to the shell. "
+                "Install the matching Factory revision; they cannot be dropped."
+            )
+        kwargs["launch_environment"] = launch_environment
+    if launch_scratch_root is not None:
+        if not _factory_accepts_kwarg(factory, "launch_scratch_root"):
+            raise AgentInvocationError(
+                "The project declares `launch.scratch` folders, but the "
+                "installed guardkitfactory cannot place them outside the "
+                "project. Install the matching Factory revision."
+            )
+        kwargs["launch_scratch_root"] = launch_scratch_root
     return factory(worktree, **kwargs)
 
 
@@ -1063,6 +1084,10 @@ def select_harness(
     # (``paths.prepare_builder_scratch_dir``). LangGraph Player only; the SDK
     # harness has no way to allow it and never sees it.
     scratch_root = harness_kwargs.pop("scratch_root", None)
+    # 12 October 2026: the task's pinned ``launch:`` declaration
+    # (``launch_declaration.load_launch_snapshot``). LangGraph only: the SDK
+    # harness's shell inherits this process's environment and real ``HOME``.
+    launch_declaration = harness_kwargs.pop("launch_declaration", None)
 
     # Role is consumed by this selector so it never leaks into either
     # concrete constructor. LangGraph Player selects the required dcode route;
@@ -1165,6 +1190,29 @@ def select_harness(
         protected_paths: tuple[str, ...] = ()
         if harness_role != "player":
             scratch_root = None
+        launch_environment = None
+        launch_scratch_root = None
+        if launch_declaration is not None and not launch_declaration.is_empty:
+            launch_environment = launch_declaration.as_backend_argument()
+            # Declared scratch folders live under the worktree's scratch
+            # folder, for every role's shell (the Player and Coach of one
+            # worktree share them deliberately). When the caller passed no
+            # scratch folder (the Coach, specialists, the direct Player), the
+            # folder is handed over ONLY as the place those names resolve:
+            # not as a write root. The caches are written by shell commands,
+            # which the file-write confinement does not cover, so the Coach's
+            # file tools gain no write access at all.
+            if launch_declaration.scratch and scratch_root is None:
+                from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+                launch_scratch_root = prepare_builder_scratch_dir(Path(cwd))
+                if launch_scratch_root is None:
+                    raise AgentInvocationError(
+                        "The project declares `launch.scratch` "
+                        f"({', '.join(launch_declaration.scratch)}), but the "
+                        f"worktree {cwd} has no scratch folder. Nothing is put "
+                        "inside the project instead."
+                    )
         if harness_role == "player":
             if not _factory_accepts_kwarg(LangGraphHarness, "player_config"):
                 raise AgentInvocationError(
@@ -1208,6 +1256,8 @@ def select_harness(
             max_tool_result_chars,
             protected_paths,
             scratch_root,
+            launch_environment,
+            launch_scratch_root,
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING
