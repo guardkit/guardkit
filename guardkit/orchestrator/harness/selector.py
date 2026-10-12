@@ -892,6 +892,7 @@ def _build_backend_with_optional_cap(
     protected_paths: tuple[str, ...] = (),
     scratch_root: Path | None = None,
     launch_environment: dict[str, list[str]] | None = None,
+    launch_scratch_root: Path | None = None,
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -964,6 +965,14 @@ def _build_backend_with_optional_cap(
                 "Install the matching Factory revision; they cannot be dropped."
             )
         kwargs["launch_environment"] = launch_environment
+    if launch_scratch_root is not None:
+        if not _factory_accepts_kwarg(factory, "launch_scratch_root"):
+            raise AgentInvocationError(
+                "The project declares `launch.scratch` folders, but the "
+                "installed guardkitfactory cannot place them outside the "
+                "project. Install the matching Factory revision."
+            )
+        kwargs["launch_scratch_root"] = launch_scratch_root
     return factory(worktree, **kwargs)
 
 
@@ -1182,17 +1191,22 @@ def select_harness(
         if harness_role != "player":
             scratch_root = None
         launch_environment = None
+        launch_scratch_root = None
         if launch_declaration is not None and not launch_declaration.is_empty:
             launch_environment = launch_declaration.as_backend_argument()
             # Declared scratch folders live under the worktree's scratch
             # folder, for every role's shell (the Player and Coach of one
-            # worktree share them deliberately). Prepared here when the caller
-            # had none; never replaced by a folder inside the project.
+            # worktree share them deliberately). When the caller passed no
+            # scratch folder (the Coach, specialists, the direct Player), the
+            # folder is handed over ONLY as the place those names resolve:
+            # not as a write root. The caches are written by shell commands,
+            # which the file-write confinement does not cover, so the Coach's
+            # file tools gain no write access at all.
             if launch_declaration.scratch and scratch_root is None:
                 from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
-                scratch_root = prepare_builder_scratch_dir(Path(cwd))
-                if scratch_root is None:
+                launch_scratch_root = prepare_builder_scratch_dir(Path(cwd))
+                if launch_scratch_root is None:
                     raise AgentInvocationError(
                         "The project declares `launch.scratch` "
                         f"({', '.join(launch_declaration.scratch)}), but the "
@@ -1243,6 +1257,7 @@ def select_harness(
             protected_paths,
             scratch_root,
             launch_environment,
+            launch_scratch_root,
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING

@@ -29,6 +29,7 @@ import yaml
 
 from guardkit.orchestrator.launch_declaration import (
     LaunchDeclaration,
+    LaunchDeclarationError,
     LaunchEnvironmentError,
     apply_launch_environment,
     apply_task_launch_environment,
@@ -97,10 +98,14 @@ class TestParse:
         assert block.settings == ("SOME_TOOL_CACHE",)
         assert block.scratch == ()
 
-    def test_non_mapping_or_empty_block_declares_nothing(self):
-        assert parse_launch_block("settings").is_empty
+    def test_empty_block_declares_nothing(self):
+        assert parse_launch_block(None).is_empty
         assert parse_launch_block({}).is_empty
         assert parse_launch_block({"settings": None, "scratch": None}).is_empty
+
+    def test_a_block_that_is_not_a_mapping_is_refused(self):
+        with pytest.raises(ValueError, match="must be a mapping"):
+            parse_launch_block(["GOCACHE"])
 
     @pytest.mark.parametrize(
         "name, why",
@@ -126,9 +131,12 @@ class TestParse:
             with pytest.raises(ValueError, match=why):
                 parse_launch_block({key: [name]})
 
-    def test_duplicates_are_refused(self):
-        with pytest.raises(ValueError, match="more than once"):
-            parse_launch_block({"scratch": ["TOOL_CACHE", "TOOL_CACHE"]})
+    def test_duplicates_fold_as_forge_folds_them(self):
+        block = parse_launch_block(
+            {"settings": ["B", "A", "B"], "scratch": ["TOOL_CACHE", "TOOL_CACHE"]}
+        )
+        assert block.settings == ("B", "A")
+        assert block.scratch == ("TOOL_CACHE",)
 
     def test_a_name_in_both_lists_is_refused(self):
         with pytest.raises(ValueError, match="cannot be both"):
@@ -154,10 +162,68 @@ class TestLoad:
         _write_config(tmp_path, {"something_else": 1})
         assert load_launch_declaration(tmp_path) is None
 
-    def test_malformed_block_degrades_to_none_loudly(self, tmp_path, caplog):
-        _write_config(tmp_path, {"scratch": ["PATH"]})
-        assert load_launch_declaration(tmp_path) is None
-        assert "MALFORMED `launch:` block" in caplog.text
+    def test_malformed_block_refuses_rather_than_degrading(self, tmp_path):
+        config = _write_config(tmp_path, {"scratch": ["PATH"]})
+        with pytest.raises(LaunchDeclarationError) as raised:
+            load_launch_declaration(tmp_path)
+        assert str(config) in str(raised.value)
+        assert "PATH" in str(raised.value)
+        # A task-load ValueError, and an OSError for "could not run" callers.
+        assert isinstance(raised.value, ValueError)
+        assert isinstance(raised.value, OSError)
+
+    # The coach's reader-disagreement cases (probeB/div.py), with Forge's
+    # answer for `settings` alongside.
+    @pytest.mark.parametrize(
+        "text, settings, scratch",
+        [
+            (
+                "launch:\n  settings: [PLAYWRIGHT_BROWSERS_PATH, "
+                "PLAYWRIGHT_BROWSERS_PATH]\n  scratch: [GOCACHE]\n",
+                ("PLAYWRIGHT_BROWSERS_PATH",),  # Forge folds the repeat
+                ("GOCACHE",),
+            ),
+            (
+                "launch:\n  settings: ["
+                + ", ".join(f"S{i}" for i in range(32))
+                + "]\n  scratch: ["
+                + ", ".join(f"C{i}" for i in range(32))
+                + "]\n",
+                tuple(f"S{i}" for i in range(32)),  # Forge accepts 32
+                tuple(f"C{i}" for i in range(32)),
+            ),
+        ],
+    )
+    def test_accepted_like_forge(self, tmp_path, text, settings, scratch):
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(text)
+        declaration = load_launch_declaration(tmp_path)
+        assert declaration.settings == settings
+        assert declaration.scratch == scratch
+
+    @pytest.mark.parametrize(
+        "text, reason",
+        [
+            (
+                "launch:\n  settings: [PLAYWRIGHT_BROWSERS_PATH]\n  scratch: [TMPDIR]\n",
+                "TMPDIR",
+            ),
+            (
+                "launch:\n  settings: [PLAYWRIGHT_BROWSERS_PATH]\n  scratch: GOCACHE\n",
+                "list of names",
+            ),
+            (
+                "launch:\n  scratch: [" + ", ".join(f"N{i}" for i in range(33)) + "]\n",
+                "at most 32",
+            ),
+            ("launch: [GOCACHE]\n", "must be a mapping"),
+        ],
+    )
+    def test_malformed_cases_refuse_the_task(self, tmp_path, text, reason):
+        (tmp_path / ".guardkit").mkdir()
+        (tmp_path / ".guardkit" / "config.yaml").write_text(text)
+        with pytest.raises(LaunchDeclarationError, match=reason):
+            load_launch_declaration(tmp_path)
 
     def test_declared_block_is_read(self, tmp_path):
         _write_config(tmp_path, {"scratch": ["TOOL_CACHE"]})
@@ -200,22 +266,39 @@ class TestSnapshot:
         _, worktree = repo
         assert load_launch_snapshot(None, worktree) is None
 
-    def test_autobuild_pins_it_with_the_toolchain(self, repo):
-        """The pre-turn-1 pin writes the launch snapshot too."""
-        from types import SimpleNamespace
+    def test_a_malformed_block_is_never_pinned(self, repo):
+        root, worktree = repo
+        _write_config(root, {"scratch": ["HOME"]})
+        with pytest.raises(LaunchDeclarationError):
+            snapshot_task_launch(_TASK_ID, worktree, root)
+        assert not launch_snapshot_path(_TASK_ID, worktree).exists()
 
-        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
-
+    def test_an_unreadable_pin_refuses_rather_than_reading_as_absent(self, repo):
         root, worktree = repo
         _write_config(root, {"scratch": ["TOOL_CACHE"]})
-        orch = object.__new__(AutoBuildOrchestrator)
-        orch.repo_root = root
+        path = snapshot_task_launch(_TASK_ID, worktree, root)
+        path.write_text("{not json")
+        with pytest.raises(LaunchDeclarationError, match="cannot be read"):
+            load_launch_snapshot(_TASK_ID, worktree)
 
-        orch._snapshot_toolchain_declaration(
-            _TASK_ID, SimpleNamespace(path=worktree)
+    def test_autobuild_checks_at_task_load_and_pins_after_the_toolchain(self):
+        """Structural pin: the block is checked loudly beside the component
+        selector (before any worktree), and pinned right after the toolchain
+        snapshot, outside its swallow."""
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        source = inspect.getsource(AutoBuildOrchestrator.orchestrate)
+        component = source.index("self._resolve_task_component(task_id")
+        checked = source.index("load_launch_declaration(self.repo_root)")
+        setup = source.index("self._setup_phase(task_id")
+        toolchain = source.index("self._snapshot_toolchain_declaration(task_id, worktree)")
+        pinned = source.index(
+            "snapshot_task_launch(task_id, worktree.path, self.repo_root)"
         )
-
-        assert load_launch_snapshot(_TASK_ID, worktree).scratch == ("TOOL_CACHE",)
+        assert component < checked < setup < toolchain < pinned
+        between = source[toolchain:pinned]
+        for forbidden in ("_loop_phase", "invoke_", "_execute_turn", "await "):
+            assert forbidden not in between
 
 
 # =========================================================================
@@ -255,6 +338,41 @@ class TestApply:
             assert env[name] == str(base / name)
             assert stat.S_IMODE((base / name).stat().st_mode) == 0o700
         assert _files(worktree) == []
+
+    def test_a_setting_never_replaces_a_value_the_caller_set(self, repo, monkeypatch):
+        _, worktree = repo
+        monkeypatch.setenv("BROWSERS_AT", "/opt/browsers")
+
+        env = apply_launch_environment(
+            {"BROWSERS_AT": "/caller/choice"},
+            LaunchDeclaration(settings=("BROWSERS_AT",)),
+            worktree,
+        )
+
+        assert env["BROWSERS_AT"] == "/caller/choice"
+
+    def test_a_scratch_name_the_caller_chose_is_refused(self, repo, monkeypatch):
+        _, worktree = repo
+        monkeypatch.delenv("TOOL_CACHE", raising=False)
+
+        with pytest.raises(LaunchEnvironmentError, match="already sets itself"):
+            apply_launch_environment(
+                {"TOOL_CACHE": "/caller/cache"},
+                LaunchDeclaration(scratch=("TOOL_CACHE",)),
+                worktree,
+            )
+
+    def test_an_inherited_value_is_replaced_by_the_scratch_folder(
+        self, repo, monkeypatch
+    ):
+        _, worktree = repo
+        monkeypatch.setenv("TOOL_CACHE", "/runner/default")
+
+        env = apply_launch_environment(
+            dict(os.environ), LaunchDeclaration(scratch=("TOOL_CACHE",)), worktree
+        )
+
+        assert env["TOOL_CACHE"].endswith("guardkit-scratch/toolchain/TOOL_CACHE")
 
     def test_none_env_means_this_process_environment(self, repo, monkeypatch):
         _, worktree = repo
@@ -376,12 +494,13 @@ class TestFeatureCheck:
     def test_the_check_command_sees_the_scratch_folder(self, repo):
         from guardkit.orchestrator.feature_check import run_feature_check_command
 
-        _, worktree = repo
+        root, worktree = repo
+        _write_config(root, {"scratch": ["TOOL_CACHE"]})
         run = run_feature_check_command(
             'printf "%s" "$TOOL_CACHE"',
             cwd=worktree,
             timeout=30,
-            launch=LaunchDeclaration(scratch=("TOOL_CACHE",)),
+            launch_root=root,
         )
 
         assert run["exit_code"] == 0
@@ -390,58 +509,49 @@ class TestFeatureCheck:
     def test_no_scratch_folder_means_the_check_could_not_start(self, tmp_path):
         from guardkit.orchestrator.feature_check import run_feature_check_command
 
+        _write_config(tmp_path, {"scratch": ["TOOL_CACHE"]})
         run = run_feature_check_command(
-            "true",
-            cwd=tmp_path,
-            timeout=30,
-            launch=LaunchDeclaration(scratch=("TOOL_CACHE",)),
+            "true", cwd=tmp_path, timeout=30, launch_root=tmp_path
         )
 
         assert run["exit_code"] is None
         assert "could not start" in run["stderr"]
         assert "no scratch folder" in run["stderr"]
 
-    def test_the_orchestrator_passes_the_main_checkouts_block(self):
+    def test_a_malformed_block_means_the_check_could_not_start(self, repo):
+        from guardkit.orchestrator.feature_check import run_feature_check_command
+
+        root, worktree = repo
+        _write_config(root, {"scratch": "TOOL_CACHE"})
+        run = run_feature_check_command(
+            "true", cwd=worktree, timeout=30, launch_root=root
+        )
+
+        assert run["exit_code"] is None
+        assert "could not start" in run["stderr"]
+        assert "list of names" in run["stderr"]
+
+    def test_the_orchestrator_passes_the_main_checkout(self):
         from guardkit.orchestrator import feature_orchestrator
 
         source = inspect.getsource(feature_orchestrator)
-        assert "launch=load_launch_declaration(self.repo_root)" in source
+        assert "launch_root=self.repo_root" in source
+
+
+def _declared_manifest(eb, worktree):
+    return eb.DetectedManifest(
+        stack="custom",
+        path=worktree / ".guardkit" / "config.yaml",
+        is_lock_file=False,
+        install_command=["tool", "install"],
+        declared=True,
+        install_cwd=worktree,
+    )
 
 
 class TestInstallBootstrap:
-    def test_install_command_env_carries_the_scratch_folder(
-        self, repo, monkeypatch
-    ):
-        from guardkit.orchestrator import environment_bootstrap as eb
-
-        _, worktree = repo
-        _write_config(worktree, {"scratch": ["TOOL_CACHE"]})
-        seen = {}
-
-        def fake_run(cmd, **kwargs):
-            seen["env"] = kwargs.get("env")
-            return eb.subprocess.CompletedProcess(cmd, 0, "", "")
-
-        monkeypatch.setattr(eb.subprocess, "run", fake_run)
-        bootstrapper = eb.EnvironmentBootstrapper(worktree)
-        manifest = eb.DetectedManifest(
-            stack="custom",
-            path=worktree / ".guardkit" / "config.yaml",
-            is_lock_file=False,
-            install_command=["tool", "install"],
-            declared=True,
-            install_cwd=worktree,
-        )
-
-        assert bootstrapper._run_install(manifest) is True
-        assert seen["env"]["TOOL_CACHE"].endswith("guardkit-scratch/toolchain/TOOL_CACHE")
-        assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
-        assert "TOOL_CACHE" in seen["env"]
-
-    def test_without_a_block_install_inherits_as_before(self, repo, monkeypatch):
-        from guardkit.orchestrator import environment_bootstrap as eb
-
-        _, worktree = repo
+    @staticmethod
+    def _record(monkeypatch, eb):
         seen = {}
 
         def fake_run(cmd, **kwargs):
@@ -449,10 +559,66 @@ class TestInstallBootstrap:
             return eb.subprocess.CompletedProcess(cmd, 0, "", "")
 
         monkeypatch.setattr(eb.subprocess, "run", fake_run)
+        return seen
+
+    def test_install_command_env_carries_the_main_checkouts_folders(
+        self, repo, monkeypatch
+    ):
+        from guardkit.orchestrator import environment_bootstrap as eb
+
+        root, worktree = repo
+        _write_config(root, {"scratch": ["TOOL_CACHE"]})
+        seen = self._record(monkeypatch, eb)
+        bootstrapper = eb.EnvironmentBootstrapper(worktree)
+
+        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is True
+        assert seen["env"]["TOOL_CACHE"].endswith("guardkit-scratch/toolchain/TOOL_CACHE")
+        assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
+        assert "TOOL_CACHE" in seen["env"]
+
+    def test_a_player_edit_of_the_worktree_config_changes_nothing(
+        self, repo, monkeypatch
+    ):
+        """B2: the block is the main checkout's, not the worktree's."""
+        from guardkit.orchestrator import environment_bootstrap as eb
+
+        root, worktree = repo
+        _write_config(root, {"scratch": ["TOOL_CACHE"]})
+        monkeypatch.setenv("SOME_PROXY", "http://proxy.invalid")
+        # What a Player could write into its own worktree mid-build.
+        _write_config(worktree, {"settings": ["SOME_PROXY"], "scratch": ["OTHER"]})
+        seen = self._record(monkeypatch, eb)
+
+        assert eb.EnvironmentBootstrapper(worktree)._run_single_command(
+            ["tool", "add"], worktree
+        )
+        assert "TOOL_CACHE" in seen["env"]
+        assert "OTHER" not in seen["env"]
+
+    def test_without_a_block_install_envs_are_unchanged(self, repo, monkeypatch):
+        """Reliability (1): no block means the very env the install had."""
+        from guardkit.orchestrator import environment_bootstrap as eb
+
+        root, worktree = repo
+        _write_config(root, None)
+        seen = self._record(monkeypatch, eb)
         bootstrapper = eb.EnvironmentBootstrapper(worktree)
 
         assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
         assert seen["env"] is None
+        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is True
+        assert seen["env"] is None
+        # A Python install keeps its isolated env, byte for byte.
+        venv = worktree / ".venv"
+        bootstrapper._venv_python = venv / "bin" / "python"
+        python = eb.DetectedManifest(
+            stack="python",
+            path=worktree / "pyproject.toml",
+            is_lock_file=False,
+            install_command=[eb.sys.executable, "-m", "pip", "install", "-e", "."],
+        )
+        assert bootstrapper._run_install(python) is True
+        assert seen["env"] == bootstrapper._isolated_env(venv)
 
     def test_no_scratch_folder_fails_the_install_plainly(self, tmp_path, monkeypatch):
         from guardkit.orchestrator import environment_bootstrap as eb
@@ -465,6 +631,19 @@ class TestInstallBootstrap:
 
         assert bootstrapper._run_single_command(["tool", "add"], tmp_path) is False
         assert "no scratch folder" in bootstrapper._last_failure_stderr
+
+    def test_a_malformed_block_fails_the_install_plainly(self, repo, monkeypatch):
+        from guardkit.orchestrator import environment_bootstrap as eb
+
+        root, worktree = repo
+        _write_config(root, {"scratch": ["PATH"]})
+        monkeypatch.setattr(
+            eb.subprocess, "run", lambda *a, **k: pytest.fail("must not run")
+        )
+        bootstrapper = eb.EnvironmentBootstrapper(worktree)
+
+        assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is False
+        assert "`launch:` block" in bootstrapper._last_failure_stderr
 
 
 class TestHarnessCallers:
@@ -507,3 +686,160 @@ class TestHarnessCallers:
         value = keywords["launch_declaration"]
         assert isinstance(value, ast.Call)
         assert value.func.id == "load_launch_snapshot"
+
+
+# =========================================================================
+# 5. What the reliability owner requires (12 October 2026)
+# =========================================================================
+
+
+def _git(cwd: Path, *args: str) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True
+    ).stdout
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A build clone with a real git feature worktree, as the runner lays out."""
+    root = tmp_path / "build-clone"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    (root / "README").write_text("clone\n")
+    _git(root, "add", "README")
+    _git(root, "commit", "-q", "-m", "init")
+    wt = root / ".guardkit" / "worktrees" / "FEAT-L"
+    wt.parent.mkdir(parents=True)
+    _git(root, "worktree", "add", "-q", "-b", "feat", str(wt))
+    (wt / "src.txt").write_text("committed source\n")
+    _git(wt, "add", "src.txt")
+    _git(wt, "commit", "-q", "-m", "source")
+    return root, wt
+
+
+# Fills the declared cache when there is one, then passes or fails on purpose.
+_CACHE_FILLING = (
+    'if [ -n "$TOOL_CACHE" ]; then mkdir -p "$TOOL_CACHE/pkg" && '
+    'echo c > "$TOOL_CACHE/pkg/c" && pwd > "$TOOL_CACHE/cwd"; fi; '
+)
+
+
+def _coach(wt: Path, cmd: str, wave_size: int):
+    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+
+    validator = CoachValidator(
+        worktree_path=str(wt), task_id=_TASK_ID, test_command=cmd, wave_size=wave_size
+    )
+    validator._coach_test_execution = "subprocess"
+    return validator
+
+
+def _comparable(record: dict) -> dict:
+    """The run_evidence fields a launch block must not change."""
+    source = record["source"]
+    return {
+        "keys": sorted(record),
+        "source_keys": sorted(source),
+        "command": record["command"],
+        "execution_root_is": record["execution_root_is"],
+        "verdict": source["verdict"],
+        "changed_paths": source["changed_paths"],
+        "created": source["files_created_during_the_command"],
+        "entries": source["manifest"]["entries"] if source["manifest"] else None,
+        "capture_errors": record.get("capture_errors"),
+    }
+
+
+class TestReliabilityRequirements:
+    def test_1_no_block_leaves_the_coach_envs_byte_identical(self, repo):
+        from guardkit.orchestrator.quality_gates.command_models import build_venv_env
+        from guardkit.orchestrator.quality_gates.coach_validator import (
+            CoachValidator,
+        )
+
+        root, worktree = repo
+        _write_config(root, None)
+        snapshot_task_launch(_TASK_ID, worktree, root)
+        validator = CoachValidator(str(worktree), task_id=_TASK_ID)
+        validator._fixture_env = {"DATABASE_URL": "postgresql://fixture.invalid/db"}
+
+        declared_today = os.environ.copy()
+        declared_today.update(validator._fixture_env)
+        pytest_today = build_venv_env(worktree) or dict(os.environ)
+        pytest_today.update(validator._fixture_env)
+        assert validator._declared_command_env() == declared_today
+        assert validator._pytest_env() == pytest_today
+
+    def test_1_no_block_leaves_the_feature_check_env_byte_identical(self, repo):
+        from guardkit.orchestrator.feature_check import run_feature_check_command
+
+        root, worktree = repo
+        _write_config(root, None)
+        cmd = "env | LC_ALL=C sort"
+
+        today = run_feature_check_command(cmd, cwd=worktree, timeout=30)
+        with_root = run_feature_check_command(
+            cmd, cwd=worktree, timeout=30, launch_root=root
+        )
+
+        assert today["exit_code"] == with_root["exit_code"] == 0
+        assert with_root["stdout"] == today["stdout"]
+
+    @pytest.mark.parametrize("wave_size", [1, 2], ids=["worktree", "isolated-copy"])
+    @pytest.mark.parametrize("ending", ["test -f src.txt", "false"], ids=["pass", "fail"])
+    def test_2_and_3_the_block_changes_no_verdict_or_record_field(
+        self, clone, wave_size, ending
+    ):
+        root, wt = clone
+        cmd = _CACHE_FILLING + ending
+
+        without = _coach(wt, cmd, wave_size).run_independent_tests(turn=1)
+        _write_config(root, {"scratch": ["TOOL_CACHE"]})
+        snapshot_task_launch(_TASK_ID, wt, root)
+        declared = _coach(wt, cmd, wave_size).run_independent_tests(turn=1)
+
+        # (2) the same verdict and the same record fields.
+        assert declared.tests_passed == without.tests_passed == (ending != "false")
+        assert declared.signal_absent == without.signal_absent
+        runs_without = without.run_evidence["runs"]
+        runs_declared = declared.run_evidence["runs"]
+        assert [_comparable(r) for r in runs_declared] == [
+            _comparable(r) for r in runs_without
+        ]
+
+        # (3) the cache was really written, outside every execution root, and
+        # no record names it as a file the command created or as source.
+        cache = Path(os.path.realpath(builder_scratch_dir(wt))) / "toolchain" / "TOOL_CACHE"
+        assert (cache / "pkg" / "c").read_text() == "c\n"
+        for record in runs_declared:
+            root_dir = Path(record["execution_root"]).resolve()
+            assert not cache.is_relative_to(root_dir)
+            source = record["source"]
+            assert not source["files_created_during_the_command"]
+            text = repr(source)
+            assert "guardkit-scratch" not in text and "TOOL_CACHE" not in text
+
+    def test_4_isolated_copy_uses_the_originating_worktrees_scratch(self, clone):
+        root, wt = clone
+        _write_config(root, {"scratch": ["TOOL_CACHE"]})
+        snapshot_task_launch(_TASK_ID, wt, root)
+
+        result = _coach(wt, _CACHE_FILLING + "test -f src.txt", 2).run_independent_tests(
+            turn=1
+        )
+
+        assert result.tests_passed, result.test_output_summary
+        record = result.run_evidence["runs"][0]
+        copy_root = Path(record["execution_root"]).resolve()
+        assert copy_root != wt.resolve()
+        assert "without Git metadata" in record["execution_root_is"]
+        cache = Path(os.path.realpath(builder_scratch_dir(wt))) / "toolchain" / "TOOL_CACHE"
+        # The command ran in the copy, and its cache was the original's.
+        ran_in = Path((cache / "cwd").read_text().strip()).resolve()
+        assert ran_in == copy_root
+        assert not cache.is_relative_to(copy_root)
+        assert cache.is_relative_to(Path(os.path.realpath(root / ".git")))

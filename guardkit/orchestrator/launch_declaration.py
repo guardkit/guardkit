@@ -6,8 +6,8 @@ need (12 October 2026, web readiness W1/R4):
 .. code-block:: yaml
 
     launch:
-      settings: [PLAYWRIGHT_BROWSERS_PATH]           # Forge's block, 22 September 2026
-      scratch: [GOPATH, GOCACHE, npm_config_cache]   # new here
+      settings: [PLAYWRIGHT_BROWSERS_PATH]   # Forge's block, 22 September 2026
+      scratch: [GOPATH, GOCACHE, npm_config_cache, XDG_CONFIG_HOME, NODE_COMPILE_CACHE]
 
 ``settings`` is Forge's existing declaration. Forge reads it at the commit the
 work starts from and passes each named value into this process's environment,
@@ -23,18 +23,33 @@ worktree inside its git directory (``paths.builder_scratch_dir``): outside the
 project tree, ``git status`` and the candidate. Without a scratch folder the
 command does not run; nothing falls back into the worktree. Forge reads only
 ``settings`` and treats other keys in the block as ordinary, so one block holds
-both lists.
+both lists. (``XDG_CONFIG_HOME`` and ``NODE_COMPILE_CACHE`` in the example are
+there because Go keeps its telemetry under the user config folder and Node 22
+its compile cache under ``TMPDIR``, both inside the worktree otherwise.)
+
+A value the caller set itself is never replaced: a setting is only added when
+the caller's environment lacks it, and a scratch name whose value the caller
+chose (one that differs from this process's own) is refused. A value merely
+inherited from this process is replaced by the scratch folder.
+
+A MALFORMED block refuses the task (:class:`LaunchDeclarationError`); it is
+never logged and dropped, because dropping it sends tool caches into the
+worktree. Duplicate names are folded exactly as Forge folds them. No block, or
+a block with neither list, changes nothing.
 
 Central code carries the names as text and knows nothing about what tool they
 belong to (CLAUDE.md rule 5). A project without the block is unchanged.
 
-The name rules MIRROR Forge's ``declared_setting_refusal``. GuardKit cannot
+The name rules MIRROR Forge's ``declared_setting_refusal`` and its reader
+``read_declared_launch_settings``. GuardKit cannot
 import Forge (Forge depends on GuardKit, not the other way round), so the rules
 are copied here; keep the two in step.
 
 Like the toolchain declaration, the block lives inside the tree the Player
 edits, so it is pinned before turn 1 from the canonical repo root
 (:func:`snapshot_task_launch`) and only that copy is read during the build.
+Callers without a task (the install bootstrap, the whole-feature check) read
+the main checkout (:func:`main_checkout_root`), never the feature worktree.
 """
 
 from __future__ import annotations
@@ -92,6 +107,14 @@ class LaunchEnvironmentError(OSError):
     An ``OSError`` so that every caller which already treats "the command
     could not start" as that command's failure treats this the same way, with
     this plain message.
+    """
+
+
+class LaunchDeclarationError(LaunchEnvironmentError, ValueError):
+    """The project's ``launch:`` block is malformed.
+
+    Also a ``ValueError``, like the other declaration errors that fail a task
+    load (an undeclared ``component:``, say).
     """
 
 
@@ -159,19 +182,25 @@ def _names(block: Mapping[str, Any], key: str) -> Tuple[str, ...]:
         if refusal is not None:
             raise ValueError(f"`launch.{key}`: {refusal}")
         name = entry.strip()
-        if name in names:
-            raise ValueError(f"`launch.{key}` lists {name} more than once")
-        names.append(name)
+        # Folded, not refused: Forge's reader keeps the first of a repeat.
+        if name not in names:
+            names.append(name)
     return tuple(names)
 
 
 def parse_launch_block(raw: Any) -> LaunchDeclaration:
     """Validate a raw ``launch`` mapping. Raises ``ValueError`` when malformed.
 
-    A ``launch`` value that is not a mapping declares nothing, as in Forge.
+    ``None`` declares nothing. Any other value that is not a mapping is
+    refused: Forge would ignore it, but here ignoring a mistyped block would
+    put tool caches into the worktree.
     """
-    if not isinstance(raw, dict):
+    if raw is None:
         return LaunchDeclaration()
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"`launch:` must be a mapping (it reads as {type(raw).__name__})"
+        )
     settings = _names(raw, SETTINGS_KEY)
     scratch = _names(raw, SCRATCH_KEY)
     both = sorted(set(settings) & set(scratch))
@@ -186,9 +215,16 @@ def parse_launch_block(raw: Any) -> LaunchDeclaration:
 def load_launch_declaration(repo_root: Path) -> Optional[LaunchDeclaration]:
     """Read ``launch:`` from ``<repo_root>/.guardkit/config.yaml``.
 
-    Never raises. ``None`` when the file or block is absent or declares
-    nothing. A malformed block is logged at ERROR and degrades to ``None`` —
-    the same posture as ``load_toolchain_declaration``.
+    ``None`` when the file or block is absent or declares nothing, and when
+    the file itself cannot be read as YAML (the posture of every other reader
+    of this file).
+
+    Raises
+    ------
+    LaunchDeclarationError
+        When the block is malformed. Unlike the toolchain reader this never
+        degrades to "absent": dropping the block would send tool caches into
+        the worktree, so the task is refused with the plain reason instead.
     """
     from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
 
@@ -205,14 +241,25 @@ def load_launch_declaration(repo_root: Path) -> Optional[LaunchDeclaration]:
     try:
         declaration = parse_launch_block(data[LAUNCH_KEY])
     except ValueError as exc:
-        logger.error(
-            "MALFORMED `launch:` block in %s — its settings and scratch "
-            "folders will NOT be applied until it is fixed: %s",
-            config_path,
-            exc,
-        )
-        return None
+        raise LaunchDeclarationError(
+            f"The `launch:` block in {config_path} cannot be used: {exc}. Fix "
+            "it there; the work does not run without it, because its tool "
+            "caches would otherwise land inside the project."
+        ) from exc
     return None if declaration.is_empty else declaration
+
+
+def main_checkout_root(worktree: Path) -> Path:
+    """The main checkout a feature worktree was cut from, or ``worktree``.
+
+    The same derivation as ``TaskArtifactPaths.task_private_dir``: a worktree
+    at ``<repo>/.guardkit/worktrees/<id>`` belongs to ``<repo>``; anything
+    else (a repo-root run) is its own root.
+    """
+    wt = Path(worktree)
+    if wt.parent.name == "worktrees" and wt.parent.parent.name == ".guardkit":
+        return wt.parent.parent.parent
+    return wt
 
 
 def launch_snapshot_path(task_id: str, worktree_path: Path) -> Path:
@@ -229,51 +276,52 @@ def launch_snapshot_path(task_id: str, worktree_path: Path) -> Path:
 def snapshot_task_launch(
     task_id: str, worktree_path: Path, repo_root: Path
 ) -> Optional[Path]:
-    """Pin the canonical ``launch:`` block pre-turn-1. Never raises."""
-    try:
-        declaration = load_launch_declaration(Path(repo_root))
-        if declaration is None:
-            return None
-        path = launch_snapshot_path(task_id, worktree_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(declaration), indent=2), encoding="utf-8")
-        logger.info(
-            "Pinned the launch declaration for %s pre-turn-1 (settings=%s "
-            "scratch=%s) at %s",
-            task_id,
-            list(declaration.settings),
-            list(declaration.scratch),
-            path,
-        )
-        return path
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("launch snapshot failed for %s (%s)", task_id, exc)
+    """Pin the canonical ``launch:`` block pre-turn-1.
+
+    Raises :class:`LaunchDeclarationError` for a malformed block and
+    ``OSError`` when the pin cannot be written: without the pin the build's
+    shells would run without the declared folders.
+    """
+    declaration = load_launch_declaration(Path(repo_root))
+    if declaration is None:
         return None
+    path = launch_snapshot_path(task_id, worktree_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(declaration), indent=2), encoding="utf-8")
+    logger.info(
+        "Pinned the launch declaration for %s pre-turn-1 (settings=%s "
+        "scratch=%s) at %s",
+        task_id,
+        list(declaration.settings),
+        list(declaration.scratch),
+        path,
+    )
+    return path
 
 
 def load_launch_snapshot(
     task_id: Optional[str], worktree_path: Path
 ) -> Optional[LaunchDeclaration]:
-    """The pinned declaration for a task, or ``None``. Never raises.
+    """The pinned declaration for a task, or ``None`` when none was pinned.
 
-    Never falls back to the live file in the worktree.
+    Never falls back to the live file in the worktree. A pin that exists but
+    cannot be read raises :class:`LaunchDeclarationError` rather than reading
+    as "absent".
     """
     if not task_id:
         return None
-    try:
-        path = launch_snapshot_path(task_id, worktree_path)
-        if not path.exists():
-            return None
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        declaration = parse_launch_block(raw)
-    except Exception as exc:  # noqa: BLE001 — an unreadable snapshot is absence
-        logger.warning(
-            "could not read the launch snapshot for %s (%s) — treating the "
-            "declaration as absent",
-            task_id,
-            exc,
-        )
+    path = launch_snapshot_path(task_id, worktree_path)
+    if not path.exists():
         return None
+    try:
+        declaration = parse_launch_block(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+    except (OSError, ValueError) as exc:
+        raise LaunchDeclarationError(
+            f"the pinned `launch:` declaration for {task_id} at {path} cannot "
+            f"be read: {exc}"
+        ) from exc
     return None if declaration.is_empty else declaration
 
 
@@ -306,23 +354,37 @@ def apply_launch_environment(
     process's"). With no declaration it is returned as it is, so callers stay
     byte-for-byte unchanged.
 
-    Otherwise a new dictionary: ``settings`` names copied from this process's
-    environment when set there, and each ``scratch`` name set to
-    ``<scratch folder>/toolchain/<NAME>`` for ``worktree``.
+    Otherwise a new dictionary: each ``settings`` name copied from this
+    process's environment when set there and not already in ``env``, and each
+    ``scratch`` name set to ``<scratch folder>/toolchain/<NAME>`` for
+    ``worktree``. A scratch name may replace a value inherited from this
+    process, never one the caller chose.
 
     Raises
     ------
     LaunchEnvironmentError
         When scratch names are declared and the worktree has no usable scratch
-        folder, or a folder cannot be created.
+        folder, a folder cannot be created, or the caller already chose a
+        value for a scratch name.
     """
     if declaration is None or declaration.is_empty:
         return env
     result = dict(os.environ if env is None else env)
     for name in declaration.settings:
         value = os.environ.get(name)
-        if value is not None:
+        if value is not None and name not in result:
             result[name] = value
+    chosen = sorted(
+        name
+        for name in declaration.scratch
+        if name in result and result[name] != os.environ.get(name)
+    )
+    if chosen:
+        raise LaunchEnvironmentError(
+            f"the project declares `launch.scratch` names this command already "
+            f"sets itself ({', '.join(chosen)}), so it was not run with either "
+            "value."
+        )
     if declaration.scratch:
         from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
@@ -356,16 +418,32 @@ def apply_task_launch_environment(
     )
 
 
+def apply_main_checkout_launch_environment(
+    env: Optional[Dict[str, str]], worktree: Path
+) -> Optional[Dict[str, str]]:
+    """:func:`apply_launch_environment` with the main checkout's block.
+
+    For callers without a task (the install bootstrap): the block is read from
+    the checkout the worktree was cut from, never from the worktree the
+    Player edits. Raises :class:`LaunchDeclarationError` for a malformed block.
+    """
+    declaration = load_launch_declaration(main_checkout_root(worktree))
+    return apply_launch_environment(env, declaration, worktree)
+
+
 __all__ = [
     "LAUNCH_KEY",
     "LaunchDeclaration",
+    "LaunchDeclarationError",
     "LaunchEnvironmentError",
     "apply_launch_environment",
+    "apply_main_checkout_launch_environment",
     "apply_task_launch_environment",
     "declared_setting_refusal",
     "launch_snapshot_path",
     "load_launch_declaration",
     "load_launch_snapshot",
+    "main_checkout_root",
     "parse_launch_block",
     "snapshot_task_launch",
 ]

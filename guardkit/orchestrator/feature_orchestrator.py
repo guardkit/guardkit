@@ -86,7 +86,6 @@ from guardkit.orchestrator.twin_coverage import (
     twin_coverage_summary,
     write_twin_coverage_receipt,
 )
-from guardkit.orchestrator.launch_declaration import load_launch_declaration
 from guardkit.orchestrator.feature_check import (
     claimed_machine_criteria,
     FeatureCheckAttempt,
@@ -3133,7 +3132,7 @@ The detailed specifications are in the task markdown file.
             ),
             # The project's `launch:` settings and scratch folders, read from
             # the main checkout like the check command itself.
-            launch=load_launch_declaration(self.repo_root),
+            launch_root=self.repo_root,
         )
         exit_code = run["exit_code"]
         timed_out = bool(run["timed_out"])

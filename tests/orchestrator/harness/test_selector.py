@@ -1689,9 +1689,53 @@ class TestLaunchDeclarationReachesTheBackend:
             "settings": ["BROWSERS_AT"],
             "scratch": ["TOOL_CACHE"],
         }
-        assert received["scratch_root"] == Path(
+        # Handed over only as the place the names resolve: the Coach's file
+        # tools get no write root for it (B5).
+        assert received["launch_scratch_root"] == Path(
             os.path.realpath(builder_scratch_dir(worktree))
         )
+        assert "scratch_root" not in received
+
+    def test_a_player_with_its_own_scratch_folder_uses_it(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.launch_declaration import LaunchDeclaration
+        from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+        monkeypatch.setenv(_TEST_ENV_VAR, "langgraph")
+        worktree = self._checkout(tmp_path)
+        folder = prepare_builder_scratch_dir(worktree)
+        received: dict[str, Any] = {}
+        _install_fake_guardkitfactory(monkeypatch, self._recording_factory(received))
+
+        class _PlayerCapableHarness:
+            def __init__(self, *, player_config: Any = None, **kwargs: Any) -> None:
+                self.kwargs = kwargs
+
+        monkeypatch.setattr(
+            sys.modules["guardkitfactory.harness"],
+            "LangGraphHarness",
+            _PlayerCapableHarness,
+        )
+        monkeypatch.setattr(
+            selector_module, "_load_player_project_inputs",
+            lambda _wt: {"protected_paths": (), "required_documents": ()},
+        )
+        monkeypatch.setattr(
+            selector_module, "_configure_dcode_launch", lambda _wt: tmp_path
+        )
+
+        select_harness(
+            env_var=_TEST_ENV_VAR,
+            model=MagicMock(),
+            cwd=worktree,
+            harness_role="player",
+            scratch_root=folder,
+            launch_declaration=LaunchDeclaration(scratch=("TOOL_CACHE",)),
+        )
+
+        assert received["scratch_root"] == folder
+        assert "launch_scratch_root" not in received
 
     def test_settings_only_needs_no_scratch_folder(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1755,4 +1799,14 @@ class TestLaunchDeclarationReachesTheBackend:
                 (),
                 None,
                 {"settings": ["BROWSERS_AT"], "scratch": []},
+            )
+        with pytest.raises(AgentInvocationError, match="outside the project"):
+            _build_backend_with_optional_cap(
+                lambda worktree, *, launch_environment=None: None,
+                Path("/tmp/wt"),
+                None,
+                (),
+                None,
+                {"settings": [], "scratch": ["TOOL_CACHE"]},
+                Path("/tmp/git/scratch"),
             )
