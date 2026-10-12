@@ -55,6 +55,10 @@ from guardkit.orchestrator.feature_loader import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
+from guardkit.orchestrator.run_evidence import (
+    request_from_repo,
+    requested as evidence_requested,
+)
 from guardkit.orchestrator.smoke_gates import (
     SmokeGateResult,
     run_smoke_gate,
@@ -3125,6 +3129,10 @@ The detailed specifications are in the task markdown file.
             timeout=declaration.timeout,
             env_extra=env_extra,
             venv_python=self._bootstrap_venv_python,
+            evidence=request_from_repo(
+                "whole-feature check", self.repo_root,
+                feature=str(feature.id), attempt=attempt_number,
+            ),
         )
         exit_code = run["exit_code"]
         timed_out = bool(run["timed_out"])
@@ -3184,6 +3192,7 @@ The detailed specifications are in the task markdown file.
             observations_total=line.observations_total,
             notes=list(line.notes),
             scenarios_covered=(line.scenarios_covered if passed else []),
+            run_evidence=dict(run.get("run_evidence") or {}),
             ran_at=datetime.now().isoformat(),
         )
 
@@ -3433,12 +3442,18 @@ The detailed specifications are in the task markdown file.
         retries_remaining = self._smoke_gate_max_retries
         attempt = 0
         while True:
-            smoke_result = run_smoke_gate(
-                feature.smoke_gates,
-                cwd=Path(worktree.path),
-                wave_number=wave_number,
-                venv_python=self._bootstrap_venv_python,
-            )
+            with evidence_requested(
+                request_from_repo(
+                    "smoke command", self.repo_root,
+                    feature=str(feature.id), wave=wave_number,
+                )
+            ):
+                smoke_result = run_smoke_gate(
+                    feature.smoke_gates,
+                    cwd=Path(worktree.path),
+                    wave_number=wave_number,
+                    venv_python=self._bootstrap_venv_python,
+                )
             wave_result.smoke_gate_result = smoke_result
 
             if smoke_result.passed:
@@ -5326,12 +5341,17 @@ The detailed specifications are in the task markdown file.
         def _measure(config: SmokeGates, measured_source: str):
             """Run one command over the worktree; ``None`` if it cannot run."""
             try:
-                run = run_smoke_gate(
-                    config,
-                    cwd=worktree.path,
-                    wave_number=0,
-                    venv_python=self._bootstrap_venv_python,
-                )
+                with evidence_requested(
+                    request_from_repo(
+                        "baseline probe", self.repo_root, feature=str(feature.id)
+                    )
+                ):
+                    run = run_smoke_gate(
+                        config,
+                        cwd=worktree.path,
+                        wave_number=0,
+                        venv_python=self._bootstrap_venv_python,
+                    )
             except Exception as exc:  # noqa: BLE001 — probe is best-effort/report-only
                 logger.warning(
                     "Baseline probe could not run '%s' in %s: %s "
@@ -5354,6 +5374,8 @@ The detailed specifications are in the task markdown file.
                 # measurement from one that was checked out with the code.
                 measured_in=worktree_identity(worktree.path),
             )
+            evidence = getattr(run, "run_evidence", None)
+            record.run_evidence = dict(evidence) if isinstance(evidence, dict) else {}
             return run, record, output
 
         measured = _measure(probe_config, source)

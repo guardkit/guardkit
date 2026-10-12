@@ -101,6 +101,14 @@ from guardkit.orchestrator.docker_fixtures import (
     parse_port_output,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.run_evidence import (
+    CommandEvidence,
+    EvidenceRequest,
+    mark_copy_stability,
+    originating_worktree_identity,
+    request_from_declaration,
+    start_command_evidence,
+)
 from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
 from guardkit.orchestrator.baseline import (
     BASELINE_FAILED,
@@ -978,6 +986,21 @@ def _combined_output_tail(
     return "\n".join(parts) or None
 
 
+#: The kinds of command run record the independent check makes (repair 7),
+#: and what each one's execution root is, in plain words.
+EVIDENCE_ISOLATED = "independent suite (isolated copy)"
+EVIDENCE_WORKTREE = "independent suite (worktree)"
+EVIDENCE_SDK = "independent suite (through the SDK, in the worktree)"
+EVIDENCE_ROOT_DESCRIPTIONS = {
+    EVIDENCE_ISOLATED: (
+        "an isolated copy of the build worktree, without Git metadata; the "
+        "originating worktree's identity at copy time is recorded separately"
+    ),
+    EVIDENCE_WORKTREE: "the build worktree",
+    EVIDENCE_SDK: "the build worktree (the command was run by an SDK agent)",
+}
+
+
 @dataclass
 class IndependentTestResult:
     """
@@ -1063,6 +1086,14 @@ class IndependentTestResult:
     # 2026). ``None`` when there was none to read (the agent-shell path, a
     # timeout, a skipped run). Read only by ``failure_receipt`` below.
     exit_code: Optional[int] = None
+
+    # WHAT THE CHECK RAN AGAINST (repair 7, 2026-10-12): one record per
+    # command run for this check, in order — the isolated attempt and its
+    # worktree fallback are two. Each names the real execution root, its
+    # source before and after, the declared environment inventory and the
+    # raw container events of the interval (see ``run_evidence``). Receipt
+    # evidence only: no gate, verdict or feedback branch reads it.
+    run_evidence: Optional[Dict[str, Any]] = None
 
     def failure_receipt(self) -> Optional[Dict[str, Any]]:
         """This run's own failure facts, for the Player's feedback.
@@ -1479,6 +1510,16 @@ class CoachValidationResult:
                         self.independent_tests.isolation_fallback_reason
                     ),
                     "exit_code": self.independent_tests.exit_code,
+                    # Repair 7: what the check actually ran against. Evidence
+                    # only; serialised even when None (the ABFIX-010 lesson).
+                    "run_evidence": (
+                        self.independent_tests.run_evidence
+                        if isinstance(
+                            getattr(self.independent_tests, "run_evidence", None),
+                            dict,
+                        )
+                        else None
+                    ),
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -7149,6 +7190,8 @@ class CoachValidator:
 
         try:
             with self._isolated_copy_location() as (tmpdir_path, holder):
+                # Repair 7: who the copy came from, at the moment of copying.
+                copied_from = self._originating_identity_for_copy()
 
                 # Copy worktree snapshot, skipping large/irrelevant directories
                 for item in self.worktree_path.iterdir():
@@ -7175,6 +7218,8 @@ class CoachValidator:
                 logger.info(
                     f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
                 )
+                # Repair 7: did the worktree hold still while it was copied?
+                copied_from = self._copy_stability(copied_from)
 
                 # THE COPY IS NOT ENOUGH. The copy carries the source files;
                 # the declared test command also needs whatever guardkit's
@@ -7215,8 +7260,9 @@ class CoachValidator:
                             + self._pytest_timeout_argv()
                             + basetemp_argv
                         )
-                        result = subprocess.run(
+                        result = self._run_recorded(
                             cmd,
+                            evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
                             cwd=str(self._component_run_cwd(tmpdir_path)),
                             capture_output=True,
                             text=True,
@@ -7232,8 +7278,9 @@ class CoachValidator:
                     # parallel-wave oracle would run the component's command
                     # at the copy's root — the same wrong-directory failure the
                     # standard path was fixed for.
-                    result = subprocess.run(
+                    result = self._run_recorded(
                         test_cmd,
+                        evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
                         shell=True,
                         cwd=str(self._component_run_cwd(tmpdir_path)),
                         capture_output=True,
@@ -7331,7 +7378,129 @@ class CoachValidator:
                 resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
 
+    # ---- what the check ran against (repair 7, 2026-10-12) ---------------
+    #
+    # Every command this validator runs for its independent check is
+    # recorded by ``run_evidence``: the real execution root (the worktree, or
+    # the isolated copy that has no ``.git``), its source just before and just
+    # after, the declared environment inventory, and the raw container events
+    # of the interval. Recording NEVER changes a verdict: the command itself
+    # is run exactly as before by ``subprocess.run``, and every capture error
+    # is written into the record, never raised.
+
+    _run_evidence_log: Optional[List[Dict[str, Any]]] = None
+    _run_evidence_turn: Optional[int] = None
+
     def run_independent_tests(
+        self,
+        task_work_results: Optional[Dict[str, Any]] = None,
+        task: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
+    ) -> IndependentTestResult:
+        """Run the independent check, and record what it ran against.
+
+        The check itself is :meth:`_run_independent_tests_unrecorded`,
+        unchanged. This adds the run records it produced to the result's
+        ``run_evidence`` (one per command: an isolated attempt and its
+        worktree fallback are two) and touches nothing else.
+        """
+        self._run_evidence_log = []
+        self._run_evidence_turn = turn
+        try:
+            result = self._run_independent_tests_unrecorded(
+                task_work_results=task_work_results, task=task, turn=turn
+            )
+            runs = list(self._run_evidence_log or [])
+        finally:
+            self._run_evidence_log = None
+        if runs and isinstance(result, IndependentTestResult):
+            # Set on the result itself (not a copy): the result a caller is
+            # handed is the very object the check produced.
+            try:
+                result.run_evidence = {"runs": runs}
+            except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+                logger.warning("Could not attach the run evidence: %s", exc)
+        return result
+
+    def _evidence_request(self, kind: str) -> "EvidenceRequest":
+        return request_from_declaration(
+            kind,
+            getattr(self, "_toolchain", None),
+            component=getattr(self, "_component_toolchain", None),
+            component_name=getattr(self, "_component", None),
+            task=getattr(self, "task_id", None),
+            turn=getattr(self, "_run_evidence_turn", None),
+        )
+
+    def _begin_run_evidence(
+        self,
+        kind: str,
+        command: Any,
+        execution_root: Path,
+        origin: Optional[Dict[str, Any]],
+        cwd: Optional[str],
+        env: Optional[Dict[str, str]],
+    ) -> "CommandEvidence":
+        """Start one command's record. Never raises."""
+        try:
+            request = self._evidence_request(kind)
+        except Exception:  # noqa: BLE001
+            request = None
+        return start_command_evidence(
+            request,
+            command=command,
+            execution_root=execution_root,
+            cwd=cwd,
+            env=env,
+            execution_root_is=EVIDENCE_ROOT_DESCRIPTIONS.get(kind, kind),
+            origin=origin,
+        )
+
+    def _keep_run_evidence(self, evidence: "CommandEvidence") -> None:
+        """Finish one command's record and keep it for this check."""
+        try:
+            record = evidence.finish()
+        except Exception as exc:  # noqa: BLE001
+            record = {"capture_errors": [f"{type(exc).__name__}: {exc}"]}
+        if self._run_evidence_log is None:
+            self._run_evidence_log = []
+        self._run_evidence_log.append(record)
+
+    def _run_recorded(self, args: Any, *, evidence: Tuple[str, Path, Any], **kwargs: Any):
+        """``subprocess.run(args, **kwargs)``, with the command recorded.
+
+        The command is run by the same ``subprocess.run`` call, with the same
+        arguments, as before; the record is made around it and kept whether
+        the command returns, times out or fails to start.
+        """
+        kind, execution_root, origin = evidence
+        record = self._begin_run_evidence(
+            kind, args, Path(execution_root), origin, kwargs.get("cwd"), kwargs.get("env")
+        )
+        try:
+            return subprocess.run(args, **kwargs)
+        finally:
+            self._keep_run_evidence(record)
+
+    def _copy_stability(
+        self, at_start: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Take the identity again after copying and say whether it held."""
+        try:
+            return mark_copy_stability(at_start, self._originating_identity_for_copy())
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+            record = dict(at_start or {})
+            record["stable_during_copy"] = f"not known (capture error: {exc})"
+            return record
+
+    def _originating_identity_for_copy(self) -> Optional[Dict[str, Any]]:
+        """The worktree's HEAD and temporary-index tree, taken as it is copied."""
+        try:
+            return originating_worktree_identity(self.worktree_path)
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+            return {"status": f"not recorded: capture error ({exc})"}
+
+    def _run_independent_tests_unrecorded(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
         task: Optional[Dict[str, Any]] = None,
@@ -7485,7 +7654,13 @@ class CoachValidator:
                     except RuntimeError:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                    sdk_evidence = self._begin_run_evidence(
+                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, None
+                    )
+                    try:
+                        result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                    finally:
+                        self._keep_run_evidence(sdk_evidence)
                     logger.info(
                         f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
                         f"in {result.duration_seconds:.1f}s"
@@ -7583,8 +7758,9 @@ class CoachValidator:
                             + self._pytest_timeout_argv()
                             + basetemp_argv
                         )
-                        result = subprocess.run(
+                        result = self._run_recorded(
                             cmd,
+                            evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
                             cwd=str(self._component_run_cwd(self.worktree_path)),
                             capture_output=True,
                             text=True,
@@ -7603,8 +7779,9 @@ class CoachValidator:
                     # snapshot reader and to anyone auditing the receipt.
                     # ``_component_run_cwd`` returns the worktree UNCHANGED
                     # when no component is active.
-                    result = subprocess.run(
+                    result = self._run_recorded(
                         test_cmd,
+                        evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
                         shell=True,
                         cwd=str(self._component_run_cwd(self.worktree_path)),
                         capture_output=True,

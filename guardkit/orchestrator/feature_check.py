@@ -45,6 +45,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
 from guardkit.orchestrator.toolchain_declaration import load_toolchain_declaration
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,11 @@ class FeatureCheckAttempt:
     observations: List[Dict[str, str]] = field(default_factory=list)
     observations_total: int = 0
     notes: List[str] = field(default_factory=list)
+    #: What the command ran against (repair 7, 2026-10-12): the execution
+    #: root's source before and after, the declared environment inventory and
+    #: the raw container events of the interval. Evidence only; no outcome is
+    #: read from it. Empty for an attempt that ran no command.
+    run_evidence: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def resolved_outcome(self) -> str:
@@ -255,6 +261,7 @@ class FeatureCheckAttempt:
             "missing_twins": list(self.missing_twins),
             "scenarios_covered": self.covered_minus_not_checked(also_not_checked),
             "ran_at": self.ran_at,
+            "run_evidence": dict(self.run_evidence),
         }
 
 
@@ -751,6 +758,7 @@ def run_feature_check_command(
     timeout: int,
     env_extra: Optional[Dict[str, str]] = None,
     venv_python: Optional[str] = None,
+    evidence: Optional[EvidenceRequest] = None,
 ) -> Dict[str, Any]:
     """Run the declared command in the feature worktree; report what happened.
 
@@ -758,6 +766,9 @@ def run_feature_check_command(
     wrote a command line, not an argv. The environment is the daemon's plus
     the four ``GUARDKIT_*`` names the check is promised, plus (when known) the
     bootstrap venv on PATH so a bare ``python`` means the project's python.
+
+    The result also carries ``run_evidence`` (repair 7): what the command ran
+    against, recorded around the run and never read for the outcome.
     """
     env = os.environ.copy()
     if venv_python:
@@ -766,6 +777,9 @@ def run_feature_check_command(
         )
     env.update(env_extra or {})
 
+    record = start_command_evidence(
+        evidence, command=command, execution_root=cwd, cwd=cwd, env=env
+    )
     started = time.monotonic()
     try:
         proc = subprocess.run(
@@ -778,14 +792,17 @@ def run_feature_check_command(
             env=env,
         )
     except subprocess.TimeoutExpired as exc:
+        duration = time.monotonic() - started
         return {
             "exit_code": None,
             "timed_out": True,
             "stdout": _decode(exc.stdout),
             "stderr": _decode(exc.stderr),
-            "duration_seconds": time.monotonic() - started,
+            "duration_seconds": duration,
+            "run_evidence": record.finish(),
         }
     except OSError as exc:
+        duration = time.monotonic() - started
         # A command that cannot even start (no such shell, unreadable cwd) is
         # a failure of the check, never a silent skip.
         return {
@@ -793,14 +810,17 @@ def run_feature_check_command(
             "timed_out": False,
             "stdout": "",
             "stderr": f"the feature check command could not start: {exc}",
-            "duration_seconds": time.monotonic() - started,
+            "duration_seconds": duration,
+            "run_evidence": record.finish(),
         }
+    duration = time.monotonic() - started
     return {
         "exit_code": proc.returncode,
         "timed_out": False,
         "stdout": proc.stdout or "",
         "stderr": proc.stderr or "",
-        "duration_seconds": time.monotonic() - started,
+        "duration_seconds": duration,
+        "run_evidence": record.finish(),
     }
 
 
