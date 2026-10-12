@@ -9431,6 +9431,29 @@ class AutoBuildOrchestrator:
                 context=context_prompt if context_prompt else None,
             )
 
+            # Reliability repair 1 (12 October 2026): the same required-suite
+            # rule the primary path applies in
+            # AgentInvoker._apply_independent_test_code_failure_guard. A task
+            # whose profile requires tests is not approved while its
+            # independent suite ran and failed — this closes validate()'s
+            # conditional approvals of a red run (a code failure in a
+            # parallel wave among them). Applied BEFORE save_decision so the
+            # persisted coach_turn_N.json and the returned report agree. The
+            # classification only shapes the feedback words.
+            from guardkit.orchestrator.quality_gates.required_suite import (
+                enforce_on_validation_result,
+            )
+
+            validation_result = enforce_on_validation_result(
+                validation_result,
+                task_type=task_type,
+                classify=lambda raw: validator._classify_test_failure(
+                    raw,
+                    requires_infrastructure=requires_infrastructure or [],
+                    task_type=task_type,
+                ),
+            )
+
             if context_prompt:
                 logger.info(
                     f"[Memory] Coach context provided: {len(context_prompt)} chars"

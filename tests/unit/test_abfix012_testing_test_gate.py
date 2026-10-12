@@ -338,39 +338,58 @@ class TestCodeFailureGuard:
         )
         assert out["decision"] == "approve"
 
-    def test_noop_when_infrastructure(self, tmp_path: Path) -> None:
+    # Reliability repair 1 (12 October 2026): the classification exempts
+    # nothing. The trial's classifier labelled missing containers and DNS
+    # failures "code", so its labels cannot excuse a red required suite; they
+    # only shape the feedback words.
+
+    def test_not_approved_when_infrastructure(self, tmp_path: Path) -> None:
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="testing", tests_passed=False, signal_absent=False,
             failure_class="infrastructure", tmp_path=tmp_path,
         )
-        assert out["decision"] == "approve"
+        assert out["decision"] == "feedback"
+        assert "do not change code for it" in out["rationale"]
+        persisted = json.loads((tmp_path / "coach_turn_1.json").read_text())
+        assert persisted["decision"] == "feedback"
 
-    def test_noop_when_parallel_contention(self, tmp_path: Path) -> None:
-        """Genuine cross-task contention amnesty preserved (not classified code)."""
+    def test_not_approved_when_parallel_contention(self, tmp_path: Path) -> None:
+        """No contention amnesty: the words say a concurrent task looks responsible."""
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="testing", tests_passed=False, signal_absent=False,
             failure_class="parallel_contention", tmp_path=tmp_path,
         )
-        assert out["decision"] == "approve"
+        assert out["decision"] == "feedback"
+        assert "concurrent task" in out["rationale"]
 
-    def test_noop_for_feature_task_type(self, tmp_path: Path) -> None:
-        """Scope: only TESTING gate semantics change. FEATURE is untouched."""
+    def test_not_approved_for_feature_task_type(self, tmp_path: Path) -> None:
+        """Any type whose profile requires tests is covered, not only TESTING."""
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="feature", tests_passed=False, signal_absent=False,
             failure_class="code", tmp_path=tmp_path,
         )
+        assert out["decision"] == "feedback"
+
+    def test_noop_for_task_type_not_requiring_tests(self, tmp_path: Path) -> None:
+        """A type whose profile does not require tests is skipped, as today."""
+        decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
+        out = _guard(
+            decision, task_type="scaffolding", tests_passed=False, signal_absent=False,
+            failure_class="code", tmp_path=tmp_path,
+        )
         assert out["decision"] == "approve"
 
-    def test_noop_when_classification_none(self, tmp_path: Path) -> None:
+    def test_not_approved_when_classification_none(self, tmp_path: Path) -> None:
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(
             decision, task_type="testing", tests_passed=False, signal_absent=False,
             failure_class=None, tmp_path=tmp_path,
         )
-        assert out["decision"] == "approve"
+        assert out["decision"] == "feedback"
+        assert out["issues"][0]["details"]["failure_class"] is None
 
     def test_noop_when_tests_passed(self, tmp_path: Path) -> None:
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
