@@ -481,6 +481,7 @@ class WorktreeCheckpointManager:
         git_executor: Optional[GitCommandExecutor] = None,
         evidence_repos: Optional[List[EvidenceRepo]] = None,
         expected_branch: Optional[str] = None,
+        refuse_without_branch: bool = False,
     ):
         """Initialize WorktreeCheckpointManager.
 
@@ -500,10 +501,15 @@ class WorktreeCheckpointManager:
                 checkpoint first checks HEAD is on it (see
                 :meth:`_keep_head_on_expected_branch`). Default None -> no
                 check, unchanged behaviour.
+            refuse_without_branch: With no ``expected_branch``, refuse every
+                checkpoint instead of committing unchecked. The orchestrator
+                sets it: a build whose branch could not be determined at its
+                start must not commit wherever HEAD happens to be.
         """
         self.worktree_path = Path(worktree_path)
         self.task_id = task_id
         self.expected_branch = expected_branch
+        self.refuse_without_branch = refuse_without_branch
         self.git_executor = git_executor or SubprocessGitExecutor()
         self.evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self.checkpoints: List[Checkpoint] = []
@@ -649,6 +655,18 @@ class WorktreeCheckpointManager:
         # checkpoint can move HEAD between the check and the commit.
         if self.expected_branch:
             self._keep_head_on_expected_branch(turn)
+        elif self.refuse_without_branch:
+            reason = (
+                f"Checkpoint refused for {self.task_id} turn {turn}: no "
+                f"feature branch was determined when the build started (HEAD "
+                f"was not on a branch and none was declared), so there is no "
+                f"branch to keep the work on. Nothing was committed."
+            )
+            logger.error(reason)
+            raise CheckpointRefused(
+                reason, expected_branch="", actual_ref=None,
+                head="unknown", branch_tip=None,
+            )
 
         # Stage all changes (including untracked files) EXCEPT build junk
         # (register 2a5, 2026-07-30; extended to the JS/TS classes by TS-lane

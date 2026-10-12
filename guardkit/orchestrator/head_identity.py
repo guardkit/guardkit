@@ -103,12 +103,49 @@ def read_head(worktree: Path) -> Dict[str, Optional[str]]:
     return {"symbolic_ref": symbolic, "head": head}
 
 
+# Tells this process's lines from an earlier process that had the same pid.
+_SESSION = uuid.uuid4().hex[:12]
+
+
 def _identity() -> Dict[str, Any]:
     """Who is writing: the build (Forge exports it) and the process."""
     return {
         "build_id": os.environ.get("GUARDKIT_RUN_OWNER") or None,
         "pid": os.getpid(),
+        "session": _SESSION,
     }
+
+
+def _pid_alive(pid: Any) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # it exists; it is just not ours to signal
+    except OSError:
+        return False
+    return True
+
+
+def _stale_unfinished(start: Dict[str, Any]) -> bool:
+    """A start with no end that cannot still be running in this build.
+
+    Its process is gone (a crash, or an earlier build in a reused worktree);
+    or it carries this process's pid but was written by an earlier process
+    that had the same pid; or it belongs to a different build. Such a line
+    would otherwise count as overlapping every later invocation for ever.
+    """
+    pid = start.get("pid")
+    if not _pid_alive(pid):
+        return True
+    if pid == os.getpid() and start.get("session") != _SESSION:
+        return True
+    mine = os.environ.get("GUARDKIT_RUN_OWNER") or None
+    theirs = start.get("build_id")
+    return bool(mine and theirs and mine != theirs)
 
 
 def _now() -> Dict[str, Any]:
@@ -231,6 +268,8 @@ def _overlapping(
             continue
         finished = ends.get(ident)
         if finished is not None and finished < token.started_at:
+            continue
+        if finished is None and _stale_unfinished(start):
             continue
         overlapping.append({
             "invocation_id": ident,
@@ -391,12 +430,21 @@ def record_git_operation(
 def expected_checkpoint_branch(
     worktree: Optional[Path], declared: Optional[str]
 ) -> Optional[str]:
-    """The branch a task's checkpoints must land on, decided at task start.
+    """The branch every checkpoint of a build must land on.
 
-    The branch HEAD is attached to when the task starts is the observed fact,
-    so it wins; the branch the worktree was declared with (``declared``) is
-    used when HEAD is already detached, or cannot be read. A disagreement is
-    logged. ``None`` (no check) when neither is known.
+    Decided ONCE, when the build starts — before its first wave, before any
+    agent has run — and handed to every task (``FeatureOrchestrator``). It is
+    never re-read at a later task's start: by then an agent may have moved
+    HEAD, and adopting wherever HEAD happens to be would bless the move. A
+    later task that starts on any other branch is refused at its checkpoint.
+
+    The branch HEAD is attached to at that moment is the observed fact, so it
+    wins (a branch prepared before GuardKit started, such as a repair branch,
+    is accepted that way); the branch the worktree was declared with
+    (``declared``) is used when HEAD is detached or cannot be read. A
+    disagreement is logged. When neither is known the result is ``None`` and
+    an error is logged; the caller then refuses checkpoints rather than
+    committing unchecked.
     """
     declared = declared if isinstance(declared, str) and declared else None
     attached: Optional[str] = None
@@ -409,5 +457,11 @@ def expected_checkpoint_branch(
             "Worktree %s is on branch %s, not the declared %s; checkpoints "
             "will be kept on %s, the branch it is actually on.",
             worktree, attached, declared, attached,
+        )
+    if not (attached or declared):
+        logger.error(
+            "No feature branch could be determined for %s: HEAD is not on a "
+            "branch and none was declared. Checkpoints will be refused.",
+            worktree,
         )
     return attached or declared

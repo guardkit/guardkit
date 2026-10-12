@@ -2445,6 +2445,7 @@ class AutoBuildOrchestrator:
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         sdk_timeout_is_override: Optional[bool] = None,
+        expected_branch: Optional[str] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -2652,6 +2653,10 @@ class AutoBuildOrchestrator:
         # carries it as `previous_feedback` (see _loop_phase). Default None ->
         # identical to today for every non-retry task.
         self._seed_feedback: Optional[str] = seed_feedback
+        # The branch every checkpoint must land on, pinned once by the feature
+        # orchestrator at build start (build 0D7C). None: decided here, at
+        # this (single) task's start.
+        self._expected_branch: Optional[str] = expected_branch
         # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
         # deliverable's real runtime entry point). Threaded into CoachValidator
         # so the per-task Coach can exercise it before approving on a
@@ -4424,10 +4429,14 @@ class AutoBuildOrchestrator:
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-004)
                 # Build 0D7C (12 October 2026): every checkpoint must land on
                 # the feature branch; never commit on a detached HEAD.
-                expected_branch=expected_checkpoint_branch(
-                    getattr(worktree, "path", None),
-                    getattr(worktree, "branch_name", None),
+                expected_branch=(
+                    self._expected_branch
+                    or expected_checkpoint_branch(
+                        getattr(worktree, "path", None),
+                        getattr(worktree, "branch_name", None),
+                    )
                 ),
+                refuse_without_branch=True,
             )
             logger.info(
                 f"Checkpoint manager initialized for {task_id} "

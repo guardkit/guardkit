@@ -1139,6 +1139,10 @@ class FeatureOrchestrator:
         try:
             # Phase 1: Setup
             feature, worktree = self._setup_phase(feature_id, base_branch)
+            # Build 0D7C (12 October 2026): the branch every task's
+            # checkpoints must land on, pinned once before the first wave.
+            self._feature_branch_pinned = False
+            self._pinned_feature_branch(worktree)
 
             # Phase 2: Wave Execution
             if specific_task:
@@ -1169,6 +1173,26 @@ class FeatureOrchestrator:
             raise FeatureOrchestrationError(
                 f"Failed to orchestrate feature {feature_id}: {e}"
             ) from e
+
+    def _pinned_feature_branch(self, worktree: Worktree) -> Optional[str]:
+        """The branch every task's checkpoints must land on (build 0D7C).
+
+        Read once, at the build's start, before any agent has run: HEAD's
+        branch then, else the worktree's declared branch
+        (``head_identity.expected_checkpoint_branch``). Later calls return the
+        pinned value and never look at HEAD again.
+        """
+        if not getattr(self, "_feature_branch_pinned", False):
+            from guardkit.orchestrator.head_identity import (
+                expected_checkpoint_branch,
+            )
+
+            self._feature_branch = expected_checkpoint_branch(
+                getattr(worktree, "path", None),
+                getattr(worktree, "branch_name", None),
+            )
+            self._feature_branch_pinned = True
+        return self._feature_branch
 
     def _setup_phase(
         self,
@@ -5800,6 +5824,9 @@ The detailed specifications are in the task markdown file.
                 worktree_manager=self._worktree_manager,
                 sdk_timeout=effective_sdk_timeout,
                 sdk_timeout_is_override=sdk_timeout_is_override,
+                # Pinned at build start; a task that starts anywhere else is
+                # refused at its checkpoint (build 0D7C).
+                expected_branch=self._pinned_feature_branch(worktree),
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
                 feature_id=feature.id,

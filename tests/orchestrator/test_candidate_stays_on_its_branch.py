@@ -303,7 +303,7 @@ def test_a_refused_checkpoint_stops_the_task_with_its_reason(
     assert f"Expected branch: {BRANCH}." in message
 
 
-def test_the_expected_branch_is_the_one_head_is_on_at_task_start(
+def test_the_expected_branch_is_the_one_head_is_on_at_build_start(
     worktree: Path,
 ) -> None:
     assert expected_checkpoint_branch(worktree, BRANCH) == BRANCH
@@ -311,6 +311,110 @@ def test_the_expected_branch_is_the_one_head_is_on_at_task_start(
     _git(worktree, "checkout", "-q", "--detach")
     assert expected_checkpoint_branch(worktree, BRANCH) == BRANCH
     assert expected_checkpoint_branch(worktree.parent / "missing", None) is None
+
+
+def _feature_orchestrator():
+    from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+
+    orchestrator = FeatureOrchestrator.__new__(FeatureOrchestrator)
+    orchestrator._feature_branch_pinned = False
+    return orchestrator
+
+
+def test_a_later_task_starting_on_main_is_refused(worktree: Path) -> None:
+    """The branch is pinned at build start; HEAD moving later is not adopted."""
+    feature = _feature_orchestrator()
+    declared = Worktree(
+        task_id="FEAT-0D7C", branch_name=BRANCH, path=worktree, base_branch="main"
+    )
+    assert feature._pinned_feature_branch(declared) == BRANCH
+
+    _git(worktree, "checkout", "-q", "main")  # an agent switched it mid-build
+    pinned = feature._pinned_feature_branch(declared)
+    assert pinned == BRANCH
+
+    later_task = WorktreeCheckpointManager(
+        worktree_path=worktree, task_id="TASK-0D7C-004",
+        expected_branch=pinned, refuse_without_branch=True,
+    )
+    with pytest.raises(CheckpointRefused) as refused:
+        later_task.create_checkpoint(turn=1, tests_passed=True)
+    assert "Actual HEAD: refs/heads/main at" in str(refused.value)
+    assert f"Expected branch: {BRANCH}." in str(refused.value)
+
+
+def test_a_task_orchestrator_uses_the_pinned_branch_not_head(
+    worktree: Path,
+) -> None:
+    """A task starting on main with the pinned branch passed in is refused."""
+    _git(worktree, "checkout", "-q", "main")
+    display = MagicMock()
+    display.__enter__ = Mock(return_value=display)
+    display.__exit__ = Mock(return_value=False)
+    orchestrator = AutoBuildOrchestrator(
+        repo_root=worktree, max_turns=3, worktree_manager=Mock(),
+        agent_invoker=Mock(), progress_display=display,
+        pre_loop_gates=MagicMock(), expected_branch=BRANCH,
+    )
+    record = TurnRecord(
+        turn=1,
+        player_result=Mock(success=True, report={}, error=None),
+        coach_result=AgentInvocationResult(
+            task_id="TASK-0D7C-004", turn=1, agent_type="coach", success=True,
+            report={"decision": "approve", "rationale": "r", "issues": []},
+            duration_seconds=1.0, error=None,
+        ),
+        decision="approve", feedback=None, timestamp="2026-10-12T21:40:00Z",
+    )
+    with patch.object(orchestrator, "_execute_turn", return_value=record), \
+            patch.object(orchestrator, "_capture_turn_state"), \
+            patch.object(orchestrator, "_record_honesty"), \
+            patch.object(orchestrator, "_display_criteria_progress"):
+        history, final = orchestrator._loop_phase(
+            task_id="TASK-0D7C-004", requirements="r", acceptance_criteria=["AC1"],
+            worktree=Worktree(task_id="FEAT-0D7C", branch_name=BRANCH,
+                              path=worktree, base_branch="main"),
+        )
+    assert final == "error"
+    assert "Actual HEAD: refs/heads/main" in orchestrator._build_error_message(
+        final, history
+    )
+
+
+def test_a_repair_branch_prepared_before_the_build_is_accepted(
+    worktree: Path,
+) -> None:
+    repair = f"{BRANCH}-repair-1"
+    _git(worktree, "checkout", "-q", "-b", repair)
+    feature = _feature_orchestrator()
+    pinned = feature._pinned_feature_branch(Worktree(
+        task_id="FEAT-0D7C", branch_name=BRANCH, path=worktree, base_branch="main"
+    ))
+    assert pinned == repair
+
+    checkpoint = WorktreeCheckpointManager(
+        worktree_path=worktree, task_id="TASK-0D7C-001",
+        expected_branch=pinned, refuse_without_branch=True,
+    ).create_checkpoint(turn=1, tests_passed=True)
+    assert _git(worktree, "rev-parse", f"refs/heads/{repair}") == checkpoint.commit_hash
+
+
+def test_no_branch_known_refuses_rather_than_skipping(
+    worktree: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _git(worktree, "checkout", "-q", "--detach")
+    tip = _tip(worktree)
+    with caplog.at_level(logging.ERROR):
+        branch = expected_checkpoint_branch(worktree, None)
+    assert branch is None
+    assert any("No feature branch" in r.getMessage() for r in caplog.records)
+
+    with pytest.raises(CheckpointRefused, match="no feature branch was determined"):
+        WorktreeCheckpointManager(
+            worktree_path=worktree, task_id="TASK-0D7C-001",
+            expected_branch=branch, refuse_without_branch=True,
+        ).create_checkpoint(turn=1, tests_passed=True)
+    assert _head(worktree) == tip
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +445,33 @@ def test_the_record_lists_overlapping_invocations(worktree: Path) -> None:
     # Finished before it began: not overlapping. And nothing changed.
     assert end_later["overlapping_invocations"] == []
     assert end_later["attribution"] is None
+
+
+def test_stale_unfinished_starts_are_not_counted_as_overlapping(
+    worktree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash, an earlier process or another build leaves a start with no end."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    path = worktree / head_identity.RECORD_RELATIVE_PATH
+    stale = [
+        {"event": "invocation_start", "invocation_id": "crashed", "at": 1.0,
+         "pid": dead.pid, "session": "x", "build_id": None, "role": "player"},
+        {"event": "invocation_start", "invocation_id": "earlier-process",
+         "at": 2.0, "pid": __import__("os").getpid(), "session": "not-this-one",
+         "build_id": None, "role": "player"},
+        {"event": "invocation_start", "invocation_id": "other-build", "at": 3.0,
+         "pid": 1, "session": "y", "build_id": "BUILD-OLD", "role": "player"},
+    ]
+    path.write_text("".join(json.dumps(e) + "\n" for e in stale))
+    monkeypatch.setenv("GUARDKIT_RUN_OWNER", "BUILD-NOW")
+
+    live = invocation_started(worktree, role="coach", task_id="TASK-B", turn=1)
+    mine = invocation_started(worktree, role="player", task_id="TASK-A", turn=1)
+    end = invocation_finished(mine)
+
+    assert [o["task_id"] for o in end["overlapping_invocations"]] == ["TASK-B"]
+    invocation_finished(live)
 
 
 def test_observing_a_stream_passes_events_and_never_stops(worktree: Path) -> None:
