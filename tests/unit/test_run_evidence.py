@@ -657,3 +657,49 @@ def test_links_whose_targets_cannot_be_read_are_never_compared(tmp_path, monkeyp
     assert record["source"]["before"]["status"] == re_mod.NOT_RECORDED_INCOMPLETE
     assert record["source"]["before"]["unreadable"] == ["link"]
     assert record["source"]["verdict"].startswith("not compared")
+
+
+@pytest.fixture
+def stalled_read(monkeypatch):
+    """Make reading any file named ``stall.bin`` block until the test ends,
+    as a hung filesystem would."""
+    import threading
+
+    release = threading.Event()
+    real_read = os.read
+
+    def _read(fd, n):
+        try:
+            name = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError:
+            name = ""
+        if name.endswith("stall.bin"):
+            release.wait()
+        return real_read(fd, n)
+
+    monkeypatch.setattr(re_mod.os, "read", _read)
+    monkeypatch.setattr(
+        re_mod, "DEFAULT_LIMITS", EvidenceLimits(max_seconds=0.5, git_timeout=0.5)
+    )
+    yield
+    release.set()
+
+
+def test_a_stalled_read_cannot_hold_the_caller_past_the_bound(tmp_path, stalled_read):
+    import time as _time
+
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "stall.bin").write_bytes(b"stuck")
+
+    started = _time.monotonic()
+    record = CommandEvidence(
+        EvidenceRequest(kind="t"), command="x", execution_root=root, docker=_no_docker()
+    ).begin().finish()
+    elapsed = _time.monotonic() - started
+
+    bound = 2 * (0.5 + re_mod._BOUND_MARGIN_S) + 2
+    assert elapsed < bound, f"took {elapsed:.1f}s"
+    assert record["source"]["before"]["status"] == re_mod.NOT_RECORDED_TIMED_OUT
+    assert record["source"]["after"]["status"] == re_mod.NOT_RECORDED_TIMED_OUT
+    assert record["source"]["verdict"].startswith("not compared")

@@ -438,3 +438,49 @@ def test_an_inventory_that_floods_its_output_does_not_change_the_verdict(worktre
         inventory = result.run_evidence["runs"][0]["environment_inventory"]
         assert inventory["output_bytes"] == 20_000_000
         assert inventory["output_truncated"] is True
+
+
+def test_a_stalled_filesystem_leaves_the_check_and_its_result_unchanged(worktree, monkeypatch):
+    """Round 2, R3: a read that never returns cannot hold the Coach's check,
+    and the result it returns is the one the check made."""
+    import threading
+    import time
+    from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
+
+    (worktree / "stall.bin").write_bytes(b"stuck")
+    release = threading.Event()
+    real_read = os.read
+
+    def _read(fd, n):
+        try:
+            name = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError:
+            name = ""
+        if name.endswith("stall.bin"):
+            release.wait()
+        return real_read(fd, n)
+
+    monkeypatch.setattr(run_evidence.os, "read", _read)
+    monkeypatch.setattr(
+        run_evidence, "DEFAULT_LIMITS",
+        run_evidence.EvidenceLimits(max_seconds=0.5, git_timeout=0.5),
+    )
+    made = []
+    real_from_run = IndependentTestResult.from_run.__func__
+
+    def _recording(cls, **kwargs):
+        made.append(real_from_run(cls, **kwargs))
+        return made[-1]
+
+    monkeypatch.setattr(IndependentTestResult, "from_run", classmethod(_recording))
+    try:
+        for cmd, passed in (("true", True), ("exit 1", False)):
+            started = time.monotonic()
+            result = _validator(worktree, cmd, wave_size=1).run_independent_tests()
+            assert time.monotonic() - started < 10
+            assert result is made[-1] and result.tests_passed is passed
+            source = result.run_evidence["runs"][0]["source"]
+            assert source["before"]["status"] == run_evidence.NOT_RECORDED_TIMED_OUT
+            assert source["verdict"].startswith("not compared")
+    finally:
+        release.set()

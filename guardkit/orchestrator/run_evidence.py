@@ -562,10 +562,85 @@ def manifest_digest(entries: Sequence[Sequence[str]]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+# =========================================================================
+# The one boundary around filesystem capture
+# =========================================================================
+
+#: Added to a capture's own deadline before the caller stops waiting for it.
+_BOUND_MARGIN_S = 2.0
+
+
+def _within_bound(
+    capture: Callable[[], Dict[str, Any]],
+    seconds: float,
+    *,
+    what: str,
+    clock: Callable[[], float],
+) -> Dict[str, Any]:
+    """Run ``capture`` so that the caller is back after ``seconds``, always.
+
+    A deadline checked between reads cannot interrupt a read, a directory
+    listing or a metadata call that has itself stalled (a hung network
+    filesystem, a FUSE mount, a device). So every filesystem capture runs in
+    a daemon thread, and the caller waits for it at most ``seconds``. On
+    expiry the record says "not recorded: timed out" and the thread is left
+    behind: it works only on its own local objects and its result is
+    discarded, so it holds nothing the caller needs. Never raises.
+    """
+    import threading
+
+    box: List[Dict[str, Any]] = []
+
+    def _run() -> None:
+        try:
+            box.append(capture())
+        except Exception as exc:  # noqa: BLE001 — capture never fails a run
+            box.append(
+                {"status": f"not recorded: capture error ({type(exc).__name__}: {exc})"}
+            )
+
+    worker = threading.Thread(target=_run, name=f"guardkit-evidence-{what}", daemon=True)
+    worker.start()
+    worker.join(timeout=max(0.0, seconds))
+    if box:
+        return box[0]
+    logger.warning(
+        "run evidence: %s did not finish within %.1fs; recorded as timed out "
+        "and left behind.", what, seconds,
+    )
+    return {
+        "taken_at": _utc(clock()),
+        "status": NOT_RECORDED_TIMED_OUT,
+        "limit_reached": f"{what} did not finish within {seconds:g}s",
+    }
+
+
 def source_manifest(
     root: Union[str, Path],
     *,
-    limits: EvidenceLimits = DEFAULT_LIMITS,
+    limits: Optional[EvidenceLimits] = None,
+    runner: Optional[Runner] = None,
+    clock: Callable[[], float] = time.time,
+) -> Dict[str, Any]:
+    """A content manifest of ``root``, back within its bound. Never raises.
+
+    The manifest is taken behind :func:`_within_bound`: the caller waits at
+    most the manifest's own time limit plus a small margin, whatever the
+    filesystem does.
+    """
+    limits = limits or DEFAULT_LIMITS
+    return _within_bound(
+        lambda: _source_manifest(root, limits=limits, runner=runner, clock=clock),
+        limits.max_seconds + _BOUND_MARGIN_S,
+        what="the source manifest",
+        clock=clock,
+    )
+
+
+def _source_manifest(
+    root: Union[str, Path],
+    *,
+    limits: EvidenceLimits,
     runner: Optional[Runner] = None,
     clock: Callable[[], float] = time.time,
 ) -> Dict[str, Any]:
@@ -684,7 +759,36 @@ def compare_manifests(
 def originating_worktree_identity(
     worktree: Union[str, Path],
     *,
-    limits: EvidenceLimits = DEFAULT_LIMITS,
+    limits: Optional[EvidenceLimits] = None,
+    runner: Optional[Runner] = None,
+    clock: Callable[[], float] = time.time,
+) -> Dict[str, Any]:
+    """The origin's identity, back within its bound. Never raises.
+
+    Taken behind :func:`_within_bound`, waiting at most the Git timeout plus
+    a small margin; see :func:`_originating_worktree_identity`.
+    """
+    limits = limits or DEFAULT_LIMITS
+
+    def _capture() -> Dict[str, Any]:
+        return _originating_worktree_identity(
+            worktree, limits=limits, runner=runner, clock=clock
+        )
+
+    record = _within_bound(
+        _capture,
+        limits.git_timeout + _BOUND_MARGIN_S,
+        what="the originating worktree identity",
+        clock=clock,
+    )
+    record.setdefault("worktree", str(worktree))
+    return record
+
+
+def _originating_worktree_identity(
+    worktree: Union[str, Path],
+    *,
+    limits: EvidenceLimits,
     runner: Optional[Runner] = None,
     clock: Callable[[], float] = time.time,
 ) -> Dict[str, Any]:
@@ -1100,7 +1204,7 @@ class CommandEvidence:
         origin: Optional[Dict[str, Any]] = None,
         runner: Optional[Runner] = None,
         docker: Optional[DockerProbe] = None,
-        limits: EvidenceLimits = DEFAULT_LIMITS,
+        limits: Optional[EvidenceLimits] = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.request = request or EvidenceRequest(kind="declared command", inventory_looked_up=False)
@@ -1112,7 +1216,7 @@ class CommandEvidence:
         self.origin = origin
         self.runner = runner
         self.docker = docker
-        self.limits = limits
+        self.limits = limits or DEFAULT_LIMITS
         self.clock = clock
         self._inventory: Dict[str, Any] = {"status": "not recorded: begin() was not called"}
         self._before: Dict[str, Any] = {"status": "not recorded: begin() was not called"}
