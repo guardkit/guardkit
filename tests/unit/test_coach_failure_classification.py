@@ -14,6 +14,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from guardkit.orchestrator.quality_gates.required_suite import (
+    enforce_on_validation_result,
+)
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
@@ -575,6 +578,14 @@ class TestConditionalApproval:
         assert result.decision == "approve"
         assert result.approved_without_independent_tests is True
 
+        # The shared required-suite rule, applied by the Coach path that calls
+        # validate(), turns this ran-and-failed run into ordinary feedback
+        # (reliability repair 1, 12 October 2026).
+        final = enforce_on_validation_result(result, task_type=None)
+        assert final.decision == "feedback"
+        assert final.is_configuration_error is False
+        assert final.approved_without_independent_tests is False
+
     def test_high_confidence_infra_no_declared_deps_returns_feedback(
         self, coach_validator: CoachValidator
     ) -> None:
@@ -707,6 +718,11 @@ class TestConditionalApproval:
         result_dict = result.to_dict()
         assert "approved_without_independent_tests" in result_dict
         assert result_dict["approved_without_independent_tests"] is True
+
+        # After the shared required-suite rule the flag is cleared.
+        final = enforce_on_validation_result(result, task_type=None).to_dict()
+        assert final["decision"] == "feedback"
+        assert final["approved_without_independent_tests"] is False
 
     def test_normal_approval_has_false_flag(
         self, coach_validator: CoachValidator
@@ -890,3 +906,11 @@ class TestCollectionErrorConditionalApproval:
         assert result.approved_without_independent_tests is True
         assert "infrastructure" in result.rationale.lower()
         assert "collection" not in result.rationale.lower()
+
+        # The shared required-suite rule, applied by the Coach path that calls
+        # validate(), turns this ran-and-failed run into ordinary feedback
+        # (reliability repair 1, 12 October 2026).
+        final = enforce_on_validation_result(result, task_type=None)
+        assert final.decision == "feedback"
+        assert final.is_configuration_error is False
+        assert final.approved_without_independent_tests is False

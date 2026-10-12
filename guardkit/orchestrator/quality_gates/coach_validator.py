@@ -103,6 +103,9 @@ from guardkit.orchestrator.docker_fixtures import (
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_UNMEASURED,
+    NO_BASELINE_COMPARISON,
     baseline_diff_enabled,
     compute_charged_failures,
     failing_node_ids,
@@ -2751,6 +2754,8 @@ class CoachValidator:
             # a single precondition so a future clause cannot forget it.
             conditional_approval = not test_result.signal_absent and (
                 (
+                    # Overridden to feedback by the shared required-suite rule
+                    # (required_suite.py) in _invoke_coach_legacy.
                     failure_class == "infrastructure"
                     and failure_confidence == "high"
                     and bool(requires_infra)
@@ -2807,6 +2812,7 @@ class CoachValidator:
                         f"Continuing to requirements check."
                     )
                 else:
+                    # Overridden to feedback by the shared required-suite rule.
                     logger.warning(
                         f"Conditional approval for {task_id}: infrastructure failure "
                         f"with declared deps {requires_infra}, Docker unavailable. "
@@ -5079,8 +5085,10 @@ class CoachValidator:
         if not baseline_diff_enabled():
             return False
         baseline, ledger = self._baseline_context()
-        has_baseline_reds = baseline is not None and not baseline.passed and bool(
-            baseline.failing_node_ids
+        # Only named failures from a measured baseline can excuse anything;
+        # an unmeasured one (did not pass, named nothing) excuses nothing.
+        has_baseline_reds = (
+            baseline is not None and baseline.state == BASELINE_FAILED
         )
         return has_baseline_reds or bool(ledger)
 
@@ -5148,7 +5156,14 @@ class CoachValidator:
                     "%d; kill-switch GUARDKIT_AUTOBUILD_BASELINE_DIFF: %s)",
                     "absent"
                     if baseline is None
-                    else ("green" if baseline.passed else "red"),
+                    else (
+                        "green" if baseline.passed
+                        else (
+                            NO_BASELINE_COMPARISON
+                            if baseline.state == BASELINE_UNMEASURED
+                            else "red"
+                        )
+                    ),
                     len(ledger),
                     "on" if baseline_diff_enabled() else "OFF",
                 )
@@ -5195,9 +5210,29 @@ class CoachValidator:
                 )
                 return test_result
             attributed = sorted(set(observed))
+            # Name only the record(s) that actually covered these failures. A
+            # baseline that measured nothing, or one that named none of them,
+            # is never credited (reliability repair 2, 12 October 2026).
+            by_baseline = set(baseline_ids)
+            used_baseline = any(n in by_baseline for n in attributed)
+            used_ledger = any(
+                n in ledger and n not in by_baseline for n in attributed
+            )
+            sources_words = " and ".join(
+                words
+                for words, used in (
+                    ("the measured baseline", used_baseline),
+                    (
+                        "the repository's known-failure ledger "
+                        "(qa/known-failures.yaml)",
+                        used_ledger,
+                    ),
+                )
+                if used
+            )
             summary = (
                 f"Independent tests: {len(attributed)} failure(s) attributed to "
-                f"the measured baseline / F2 ledger (pre-existing before wave 1, "
+                f"{sources_words} (pre-existing before wave 1, "
                 f"not this task): {', '.join(attributed)}. No regressions "
                 f"introduced by this task (GUARDKIT_AUTOBUILD_BASELINE_DIFF)."
             )
@@ -5220,9 +5255,8 @@ class CoachValidator:
                 "NOTE FOR THE REVIEWER: this run is reported as PASSED even "
                 f"though the output below shows {len(attributed)} failing "
                 "test(s). Every one of them was ALREADY failing on this "
-                "branch's base before any task touched it (the build's "
-                "measured baseline and the repository's known-failure "
-                "ledger), and none is in a file this task authored. They are "
+                f"branch's base before any task touched it ({sources_words}), "
+                "and none is in a file this task authored. They are "
                 "not this task's failures and there is nothing in them for "
                 "the builder to fix. Zero net-new is the bar, not all-green.\n"
                 "---\n"
@@ -5274,8 +5308,10 @@ class CoachValidator:
         ``baseline.json`` shape source 1 writes, so the two doors are
         reading one record, not two.
 
-        ``base_known`` is ``False`` only when neither is present. Nothing is
-        then forgiven: :meth:`compare_suite_against_base` makes no comparison
+        ``base_known`` is ``False`` only when neither is present — an
+        unmeasured baseline (it did not pass and named no failing test) counts
+        as not present, and the words then say no baseline comparison was
+        possible. Nothing is then forgiven: :meth:`compare_suite_against_base` makes no comparison
         at all, the run's own red stands in full, and the record says in
         plain words that nothing was on record. That is the fail-closed
         direction, and it is the same verdict the Coach's own gate reaches in
@@ -5284,7 +5320,14 @@ class CoachValidator:
         measured, ledger = self._baseline_context()
         sources: List[str] = []
         ids: List[str] = []
-        if measured is not None:
+        # An UNMEASURED baseline (it did not pass and named no failing test —
+        # an import or collection error, say) is not knowledge of the base:
+        # it is never offered as a source, so a comparison is never claimed
+        # against it (reliability repair 2, 12 October 2026).
+        unmeasured = (
+            measured is not None and measured.state == BASELINE_UNMEASURED
+        )
+        if measured is not None and not unmeasured:
             ids.extend(measured.failing_node_ids)
             sources.append(
                 "the build's measured baseline (the wave-0 run on this "
@@ -5304,6 +5347,13 @@ class CoachValidator:
                 "(qa/known-failures.yaml)"
             )
         if not sources:
+            if unmeasured:
+                return (
+                    False,
+                    [],
+                    f"{NO_BASELINE_COMPARISON}, and there is no "
+                    "qa/known-failures.yaml",
+                )
             return (
                 False,
                 [],

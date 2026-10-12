@@ -255,3 +255,107 @@ class TestTheSuppressedRunExplainsItself:
         assert out.tests_passed is False
         assert out.raw_output == original
         assert "NOTE FOR THE REVIEWER" not in out.raw_output
+
+
+class TestAnUnmeasuredBaseline:
+    """Reliability repair 2 (12 October 2026). A baseline that did not pass
+    and named no failing test measured nothing: it excuses nothing, and every
+    comparison says no baseline comparison was possible — never "new failures
+    against the measured baseline"."""
+
+    def test_the_diff_is_inert_and_says_no_comparison_was_possible(
+        self, tmp_path, caplog
+    ):
+        _write_baseline(tmp_path, [])  # red, naming nothing: unmeasured
+        cv = CoachValidator(str(tmp_path))
+        result = _failed_result(
+            "FAILED tests/test_url.py::test_database_url - real\n"
+            "1 failed, 871 passed in 9.0s\n"
+        )
+        with caplog.at_level("INFO"):
+            out = cv._apply_baseline_diff(result, {})
+
+        assert out.tests_passed is False
+        assert "baseline diff: INERT" in caplog.text
+        assert "no baseline comparison was possible" in caplog.text
+
+    def test_the_work_leg_base_is_not_known(self, tmp_path):
+        _write_baseline(tmp_path, [])
+        cv = CoachValidator(str(tmp_path))
+
+        known, ids, source = cv.base_failing_tests()
+
+        assert known is False
+        assert ids == []
+        assert source.startswith("no baseline comparison was possible")
+        assert "measured baseline" not in source
+        assert cv.compare_suite_against_base(
+            _failed_result(
+                "FAILED tests/test_url.py::test_database_url - real\n"
+                "1 failed, 871 passed in 9.0s\n"
+            )
+        ) is None
+
+    def test_a_ledger_beside_it_is_the_only_source_named(self, tmp_path):
+        _write_baseline(tmp_path, [])
+        (tmp_path / "qa").mkdir()
+        (tmp_path / "qa" / "known-failures.yaml").write_text(
+            "known_failures:\n  - test_id: tests/test_url.py::test_old\n"
+        )
+        cv = CoachValidator(str(tmp_path))
+
+        known, ids, source = cv.base_failing_tests()
+
+        assert known is True
+        assert ids == ["tests/test_url.py::test_old"]
+        assert "measured baseline" not in source
+        assert "known-failure ledger" in source
+
+    def test_a_measured_red_base_still_compares(self, tmp_path):
+        """Control: named failures from a measured baseline still count."""
+        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
+        cv = CoachValidator(str(tmp_path))
+
+        known, ids, source = cv.base_failing_tests()
+
+        assert known is True
+        assert ids == ["tests/slice.py::test_home"]
+        assert "measured baseline" in source
+
+
+class TestTheForgivenessNamesWhatForgave:
+    """The summary and the reviewer's note credit only the record that
+    actually covered the failures — never an unmeasured baseline."""
+
+    def _ledger(self, worktree: Path, test_id: str) -> None:
+        (worktree / "qa").mkdir()
+        (worktree / "qa" / "known-failures.yaml").write_text(
+            f"known_failures:\n  - test_id: {test_id}\n"
+        )
+
+    def test_ledger_only_with_an_unmeasured_baseline(self, tmp_path):
+        _write_baseline(tmp_path, [])  # unmeasured
+        self._ledger(tmp_path, "tests/slice.py::test_home")
+        cv = CoachValidator(str(tmp_path))
+
+        out = cv._apply_baseline_diff(
+            _failed_result("FAILED tests/slice.py::test_home - stale\n"), {}
+        )
+
+        assert out.tests_passed is True
+        for text in (out.test_output_summary, out.raw_output.split("---")[0]):
+            assert "known-failure ledger" in text
+            assert "measured baseline" not in text
+
+    def test_measured_baseline_only(self, tmp_path):
+        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
+        cv = CoachValidator(str(tmp_path))
+
+        out = cv._apply_baseline_diff(
+            _failed_result("FAILED tests/slice.py::test_home - stale\n"), {}
+        )
+
+        assert out.tests_passed is True
+        for text in (out.test_output_summary, out.raw_output.split("---")[0]):
+            assert "the measured baseline" in text
+            assert "ledger" not in text

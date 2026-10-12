@@ -217,9 +217,10 @@ class TestGuardDoesNotOverReach:
     ) -> None:
         """AC-5. Independent tests that RAN and genuinely FAILED
         (tests_passed=False, signal_absent=False) are NOT this guard's case —
-        the guard is a no-op and the verdict flows through unchanged (here:
-        the synthesised ``approve`` is left for the existing
-        conditional-approval / _classify_test_failure path to own)."""
+        the absent guard is a no-op. Since reliability repair 1 (12 October
+        2026) the required-suite rule owns this case instead and turns the
+        ``approve`` to feedback — under its own category, not the absent
+        guard's."""
         monkeypatch.delenv("GUARDKIT_COACH_SYNTHESIS", raising=False)
         monkeypatch.delenv("GUARDKIT_COACH_GATHER", raising=False)
         invoker = _make_invoker(tmp_path)
@@ -235,7 +236,10 @@ class TestGuardDoesNotOverReach:
             invoker, task_id="TASK-FAIL", turn=1, bundle=_bundle(independent)
         )
 
-        assert result.report["decision"] == "approve"
+        assert result.report["decision"] == "feedback"
+        categories = [i.get("category") for i in result.report["issues"]]
+        assert "absence_of_failure" not in categories
+        assert "independent_test_code_failure" in categories
 
     def test_happy_path_approve_is_untouched(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
