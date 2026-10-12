@@ -156,6 +156,10 @@ class TestGatherPrompt:
         assert "emit a fenced ```json decision block" in prompt
         # Evidence dossier is rendered so the gather knows what's been checked.
         assert "<evidence_bundle>" in prompt
+        # The local harness's read-only code search tools are named
+        # (guardkitfactory adds them to the Coach's gather graph).
+        for tool in ("code_search", "code_outline", "code_pattern"):
+            assert tool in prompt
 
 
 # ---------------------------------------------------------------------------
