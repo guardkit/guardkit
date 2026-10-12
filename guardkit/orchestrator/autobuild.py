@@ -10646,8 +10646,15 @@ class AutoBuildOrchestrator:
           verdict there).
 
         Returns the (mutated) ``report`` for call-site convenience; no-ops and
-        returns the input unchanged when either argument is absent.
+        returns the input unchanged when either argument is absent — except
+        that the run's failure facts (``SUITE_RECEIPT_KEY``) are only ever
+        this turn's own: whatever the model's report held under that key is
+        removed first, so with no independent run there are none.
         """
+        from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
+
+        if isinstance(report, dict):
+            report.pop(SUITE_RECEIPT_KEY, None)
         if not isinstance(report, dict) or evidence_bundle is None:
             return report
 
@@ -10688,13 +10695,11 @@ class AutoBuildOrchestrator:
             # This turn's own failure facts (command, exit status, first
             # failing lines), taken from the run itself and never from the
             # model's report: they head the Player's feedback when the run
-            # failed (build 7010, 12 October 2026). Assigned, not defaulted,
-            # because only this turn's run may supply them.
+            # failed (build 7010, 12 October 2026).
             receipt_of = getattr(independent, "failure_receipt", None)
             receipt = receipt_of() if callable(receipt_of) else None
-            indep_dict["failure_receipt"] = (
-                receipt if isinstance(receipt, dict) else None
-            )
+            if isinstance(receipt, dict):
+                report[SUITE_RECEIPT_KEY] = receipt
 
         # Preserve the deterministic per-criterion result for metadata
         # consumers. The LLM Coach remains the decision owner: this enriches
@@ -10886,21 +10891,13 @@ class AutoBuildOrchestrator:
         DNS; the Player must always be able to see what this turn's run said.
         """
         from guardkit.orchestrator.failing_test_feedback import (
+            SUITE_RECEIPT_KEY,
             describe_independent_suite_failure,
         )
 
         feedback_text = self._extract_feedback(coach_report)
-        validation = (coach_report or {}).get("validation_results")
-        independent = (
-            validation.get("independent_tests")
-            if isinstance(validation, dict)
-            else None
-        )
-        receipt = (
-            independent.get("failure_receipt")
-            if isinstance(independent, dict)
-            else None
-        )
+        # Only the orchestrator writes this key (see SUITE_RECEIPT_KEY).
+        receipt = (coach_report or {}).get(SUITE_RECEIPT_KEY)
         summary = describe_independent_suite_failure(turn, receipt)
         if summary:
             return f"{summary}\n\n{feedback_text}"

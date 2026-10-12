@@ -1405,6 +1405,10 @@ class CoachValidationResult:
         Dict[str, Any]
             Dictionary representation suitable for JSON
         """
+        from guardkit.orchestrator.failing_test_feedback import (
+            SUITE_RECEIPT_KEY,
+        )
+
         # Build per-criterion results from requirements validation
         criteria_verification: List[Dict[str, Any]] = []
         acceptance_criteria_results: List[Dict[str, Any]] = []
@@ -1471,12 +1475,7 @@ class CoachValidationResult:
                     "isolation_fallback_reason": (
                         self.independent_tests.isolation_fallback_reason
                     ),
-                    # This turn's own failure facts for the Player's
-                    # feedback (None unless the run ran and failed).
                     "exit_code": self.independent_tests.exit_code,
-                    "failure_receipt": (
-                        self.independent_tests.failure_receipt()
-                    ),
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -1491,6 +1490,12 @@ class CoachValidationResult:
             "acceptance_criteria_verification": {
                 "criteria_results": acceptance_criteria_results,
             },
+            # This turn's own failure facts for the Player's feedback (None
+            # unless the run ran and failed), under the orchestrator's key.
+            SUITE_RECEIPT_KEY: (
+                self.independent_tests.failure_receipt()
+                if self.independent_tests else None
+            ),
             "issues": self.issues,
             "rationale": self.rationale,
             "context_used": self.context_used,

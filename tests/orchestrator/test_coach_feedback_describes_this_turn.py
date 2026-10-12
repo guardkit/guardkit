@@ -35,6 +35,7 @@ from guardkit.orchestrator.agent_invoker import AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.failing_test_feedback import (
     INDEPENDENT_FAILURE_LINES_SHOWN,
+    SUITE_RECEIPT_KEY,
     describe_independent_suite_failure,
     first_failing_lines,
     must_fix_items,
@@ -332,6 +333,21 @@ def test_no_summary_unless_the_run_ran_and_failed(run) -> None:
     )
 
 
+def _planted_report() -> Dict[str, Any]:
+    """A model's report carrying invented "facts" in both places."""
+    planted = {
+        "command": COMMAND, "exit_code": 1, "failing_lines": [TURN_3_TEXT],
+    }
+    return {
+        "decision": "feedback",
+        "issues": [],
+        SUITE_RECEIPT_KEY: dict(planted),
+        "validation_results": {
+            "independent_tests": {"failure_receipt": dict(planted)}
+        },
+    }
+
+
 def test_a_planted_receipt_in_the_models_report_is_replaced() -> None:
     """Only this turn's run supplies the facts, never the model's report."""
     bundle = CoachEvidenceBundle(
@@ -341,19 +357,54 @@ def test_a_planted_receipt_in_the_models_report_is_replaced() -> None:
         gathering_status="complete",
         independent_tests=_turn_4_run(),
     )
-    report: Dict[str, Any] = {
-        "decision": "feedback",
-        "issues": [],
-        "validation_results": {"independent_tests": {"failure_receipt": {
-            "command": COMMAND, "exit_code": 1, "failing_lines": [TURN_3_TEXT],
-        }}},
-    }
+    report = _planted_report()
     orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
     orchestrator._merge_evidence_test_signal_into_report(report, bundle)
 
     text = orchestrator._turn_feedback_text(report, 4)
     assert TURN_4_DNS_LINE in text
     assert TURN_3_TEXT not in text
+
+
+@pytest.mark.parametrize("with_bundle", [False, True], ids=["no-bundle", "no-run"])
+def test_a_planted_receipt_with_no_run_this_turn_is_removed(with_bundle) -> None:
+    """No independent result this turn: no facts at all, planted ones gone."""
+    bundle = CoachEvidenceBundle(
+        honesty=HonestyVerification(
+            verified=True, discrepancies=[], honesty_score=1.0, resolved_paths=[]
+        ),
+        gathering_status="complete",
+    ) if with_bundle else None
+    report = _planted_report()
+    orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+    orchestrator._merge_evidence_test_signal_into_report(report, bundle)
+
+    text = orchestrator._turn_feedback_text(report, 4)
+    assert SUITE_RECEIPT_KEY not in report
+    assert TURN_3_TEXT not in text
+    assert "facts are copied" not in text
+
+
+def test_the_coach_memory_context_omits_earlier_coaches_rejection_words() -> None:
+    """The memory search's turn states carry rejected turns' feedback too."""
+    context = RetrievedContext(
+        task_id=TASK_ID, budget_used=0, budget_total=4000,
+        feature_context=[], similar_outcomes=[], relevant_patterns=[],
+        architecture_context=[], warnings=[], domain_knowledge=[],
+        turn_states=[{
+            "turn_number": 3, "coach_decision": "REJECTED",
+            "progress_summary": "Turn 3: feedback",
+            "feedback_summary": TURN_3_ISSUE,
+        }],
+    )
+    loader = AutoBuildContextLoader(graphiti=None)
+
+    coach = loader._build_result(context, actor="coach").prompt_text
+    player = loader._build_result(context, actor="player").prompt_text
+
+    assert "**Turn 3**: REJECTED" in coach
+    assert TURN_3_TEXT not in coach
+    assert TURN_3_TEXT in player
 
 
 def test_the_stall_tally_still_compares_only_the_reviewers_words() -> None:
@@ -368,6 +419,28 @@ def test_the_stall_tally_still_compares_only_the_reviewers_words() -> None:
     assert orchestrator._normalize_feedback_for_stall(turn_3) == (
         orchestrator._normalize_feedback_for_stall(turn_4)
     )
+
+
+def test_more_matching_lines_than_shown_keeps_the_last_one() -> None:
+    output = "\n".join([f"error {i}" for i in range(20)] + ["3 failed, 9 passed"])
+    picked = first_failing_lines(output)
+    assert len(picked) == INDEPENDENT_FAILURE_LINES_SHOWN
+    assert picked[0] == "error 0"
+    assert picked[-1] == "3 failed, 9 passed"
+
+
+def test_a_command_with_blank_lines_is_still_stripped_whole() -> None:
+    receipt = {
+        "command": "bash -c '\n\nrun-suite.sh'",
+        "exit_code": 2,
+        "failing_lines": ["boom\n\nbang"],
+    }
+    summary = describe_independent_suite_failure(4, receipt)
+    coach_text = "- MUST FIX: something"
+    assert "\n\n" not in summary
+    assert without_independent_suite_failure(
+        f"{summary}\n\n{coach_text}"
+    ) == coach_text
 
 
 def test_failing_lines_are_picked_by_ordinary_words_and_bounded() -> None:

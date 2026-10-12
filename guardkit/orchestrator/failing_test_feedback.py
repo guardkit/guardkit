@@ -261,6 +261,12 @@ def split_must_fix_item(item: str) -> Tuple[str, str]:
 # out (see :func:`without_independent_suite_failure`).
 INDEPENDENT_FAILURE_OPENING = "The required test command failed on this turn (turn "
 
+# Where a Coach report carries the run's failure facts. Only the orchestrator
+# writes this key: the deterministic Coach's report (``to_dict``) sets it, and
+# for the model Coach the evidence merge removes whatever the model's report
+# held under it and sets it from this turn's run, or leaves it absent.
+SUITE_RECEIPT_KEY = "orchestrator_independent_suite_receipt"
+
 # How many lines of the run's output the summary shows.
 INDEPENDENT_FAILURE_LINES_SHOWN = 8
 
@@ -281,17 +287,22 @@ def first_failing_lines(
     """The first ``limit`` lines of ``output`` that read as a failure.
 
     A line reads as a failure when it contains one of a few ordinary failure
-    words (any case). When none does, the last ``limit`` non-empty lines are
+    words (any case). When more than ``limit`` do, the last of them is kept in
+    place of the ``limit``-th, because a run's closing totals line is usually
+    the last such line. When none does, the last ``limit`` non-empty lines are
     returned instead, because a run that failed says why at the end more often
     than not. Each line is stripped and cut to
     :data:`INDEPENDENT_FAILURE_LINE_LIMIT` characters.
     """
     lines = [line.strip() for line in (output or "").splitlines()]
     lines = [line for line in lines if line]
-    picked = [
+    matching = [
         line for line in lines
         if any(word in line.lower() for word in _FAILURE_WORDS)
-    ][:limit]
+    ]
+    picked = matching[:limit]
+    if len(matching) > limit > 0:
+        picked = matching[:limit - 1] + [matching[-1]]
     if not picked:
         picked = lines[-limit:]
     return [line[:INDEPENDENT_FAILURE_LINE_LIMIT] for line in picked]
@@ -311,7 +322,9 @@ def describe_independent_suite_failure(
     """
     if not isinstance(receipt, dict):
         return ""
-    command = receipt.get("command") or "(not recorded)"
+    # One line each, whitespace collapsed: the summary must stay one
+    # paragraph, so :func:`without_independent_suite_failure` removes all of it.
+    command = " ".join(str(receipt.get("command") or "").split()) or "(not recorded)"
     exit_code = receipt.get("exit_code")
     exit_text = (
         str(exit_code)
@@ -324,7 +337,11 @@ def describe_independent_suite_failure(
         f"  Command: {command}",
         f"  Exit status: {exit_text}",
     ]
-    failing = [str(line) for line in (receipt.get("failing_lines") or []) if line]
+    failing = [
+        " ".join(str(line).split())
+        for line in (receipt.get("failing_lines") or [])
+        if line and str(line).strip()
+    ]
     if failing:
         lines.append("  First failing lines of its output:")
         lines.extend(f"    {line}" for line in failing)

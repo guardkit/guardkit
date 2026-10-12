@@ -945,8 +945,11 @@ class AutoBuildContextLoader:
         Returns:
             AutoBuildContextResult with formatted prompt
         """
-        # Format prompt text
-        prompt_text = context.to_prompt()
+        # Format prompt text. The Coach is not shown what earlier Coaches
+        # wrote (build 7010, 12 October 2026); the Player is.
+        prompt_text = context.to_prompt(
+            include_coach_feedback=(actor != "coach")
+        )
 
         # Append turn continuation context if available
         if turn_continuation:
