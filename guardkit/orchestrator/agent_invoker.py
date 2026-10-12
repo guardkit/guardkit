@@ -4884,9 +4884,10 @@ Turn: {turn}
         # Repair 7: the run record (source manifests, environment inventory,
         # container events) is for a person diagnosing a run afterwards. It
         # stays in coach_turn_N.json and is kept out of the model's prompt.
-        independent_for_prompt = bundle_dict.get("independent_tests")
-        if isinstance(independent_for_prompt, dict):
-            independent_for_prompt.pop("run_evidence", None)
+        for leg_for_prompt in ("independent_tests", "behavioural_oracle"):
+            leg = bundle_dict.get(leg_for_prompt)
+            if isinstance(leg, dict):
+                leg.pop("run_evidence", None)
 
         # Truncate bdd.discoveries / bdd.errors.
         bdd = bundle_dict.get("bdd")

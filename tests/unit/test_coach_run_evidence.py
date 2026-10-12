@@ -327,3 +327,102 @@ def test_every_route_returns_the_object_the_check_made_with_its_record(worktree,
         assert result.exit_code == 1
         assert result.failure_receipt()["exit_code"] == 1
         assert isinstance(runs[0]["command"], list)  # the pytest argv itself
+
+
+# ---------------------------------------------------------------------------
+# Behavioural-oracle routes (implementation review round 1, R1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command,passed,timed_out",
+    [("true", True, False), ("exit 3", False, False), ("sleep 30", False, True)],
+)
+def test_a_declared_oracle_command_carries_its_run_record(worktree, monkeypatch, command, passed, timed_out):
+    monkeypatch.setenv("GUARDKIT_ORACLE_TIMEOUT", "1")
+    v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
+    task = {"id": "TASK-R7-001", "task_type": "feature", "behavioural_oracle": {"command": command}}
+
+    result = v._produce_behavioural_oracle(authored_files=[], task=task)
+
+    assert result["status"] == "ran"
+    assert result["passed"] is passed and result["timed_out"] is timed_out
+    record = result["run_evidence"]
+    assert record["command_kind"] == "behavioural oracle"
+    assert record["execution_root"] == str(worktree)
+    assert record["source"]["verdict"] == run_evidence.SOURCE_UNCHANGED
+    json.dumps(result)
+    # The oracle's record goes on the oracle's receipt, not the suite's runs.
+    assert not v._run_evidence_log
+
+
+def test_a_python_oracle_carries_its_run_record(worktree):
+    import sys
+    import textwrap
+
+    oracle = worktree / "tests" / "acceptance" / "x_roundtrip.py"
+    oracle.parent.mkdir(parents=True)
+    oracle.write_text(textwrap.dedent("""
+        def test_roundtrip():
+            assert True
+    """))
+    v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
+    v._pytest_interpreter = lambda: sys.executable  # type: ignore[method-assign]
+
+    result = v._produce_behavioural_oracle(authored_files=[], task={"id": "TASK-R7-001"})
+
+    assert result["oracle_path"] == "tests/acceptance/x_roundtrip.py"
+    assert result["run_evidence"]["command_kind"] == "behavioural oracle"
+    assert isinstance(result["run_evidence"]["command"], list)
+
+
+def test_a_required_oracle_carries_its_run_record_and_keeps_its_verdict(worktree, tmp_path):
+    import hashlib
+    import sys
+
+    checker = tmp_path / "checker.py"
+    checker.write_text(
+        "from pathlib import Path\nimport json, os\n"
+        "Path(os.environ['GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT']).write_text("
+        "json.dumps({'run': 1, 'failures': 0, 'errors': 0, 'skipped': 0}))\n"
+    )
+    task = {
+        "behavioural_oracle": {
+            "command": f"{sys.executable} -B {checker}",
+            "expected_exit": 0,
+            "timeout": 20,
+            "required": True,
+            "expected_checks": 1,
+            "checker_path": str(checker),
+            "checker_sha256": hashlib.sha256(checker.read_bytes()).hexdigest(),
+            "source_paths": ["src.txt"],
+        }
+    }
+    v = CoachValidator(worktree_path=worktree, task_id="TASK-REQ")
+
+    result = v._produce_behavioural_oracle(
+        authored_files=[], task=task, task_id="TASK-REQ", turn=2
+    )
+
+    assert result["passed"] is True and result["receipt_validation"]["valid"] is True
+    assert result["run_evidence"]["command_kind"] == "behavioural oracle"
+    assert result["run_evidence"]["source"]["before"]["status"] == "recorded"
+
+
+def test_the_oracle_record_stays_out_of_the_prompt(worktree):
+    from guardkit.orchestrator.agent_invoker import AgentInvoker
+    from guardkit.orchestrator.coach_verification import HonestyVerification
+    from guardkit.orchestrator.quality_gates.coach_evidence import CoachEvidenceBundle
+
+    v = CoachValidator(worktree_path=worktree, task_id="TASK-R7-001")
+    oracle = v._produce_behavioural_oracle(
+        authored_files=[], task={"behavioural_oracle": {"command": "true"}}
+    )
+    bundle = CoachEvidenceBundle(
+        honesty=HonestyVerification(verified=True, discrepancies=[], honesty_score=1.0),
+        behavioural_oracle=oracle,
+    )
+    text = AgentInvoker._render_evidence_bundle_section(AgentInvoker.__new__(AgentInvoker), bundle)
+    payload = json.loads(text.split("<evidence_bundle>")[1].split("</evidence_bundle>")[0])
+    assert "run_evidence" not in payload["behavioural_oracle"]
+    assert bundle.to_dict()["behavioural_oracle"]["run_evidence"]

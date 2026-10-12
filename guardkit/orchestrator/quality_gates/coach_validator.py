@@ -991,6 +991,7 @@ def _combined_output_tail(
 EVIDENCE_ISOLATED = "independent suite (isolated copy)"
 EVIDENCE_WORKTREE = "independent suite (worktree)"
 EVIDENCE_SDK = "independent suite (through the SDK, in the worktree)"
+EVIDENCE_ORACLE = "behavioural oracle"
 EVIDENCE_ROOT_DESCRIPTIONS = {
     EVIDENCE_ISOLATED: (
         "an isolated copy of the build worktree, without Git metadata; the "
@@ -998,6 +999,7 @@ EVIDENCE_ROOT_DESCRIPTIONS = {
     ),
     EVIDENCE_WORKTREE: "the build worktree",
     EVIDENCE_SDK: "the build worktree (the command was run by an SDK agent)",
+    EVIDENCE_ORACLE: "the build worktree",
 }
 
 
@@ -4482,9 +4484,13 @@ class CoachValidator:
         env["GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT"] = str(receipt_path)
         start_time = time.time()
         proc: Optional[subprocess.CompletedProcess[str]] = None
+        # Repair 7: what the oracle command ran against, on its own receipt.
+        result["run_evidence"] = oracle_evidence = {}
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 command,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -4629,9 +4635,12 @@ class CoachValidator:
         provenance = f"yaml_command:{command}"
 
         start_time = time.time()
+        oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 command,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -4664,6 +4673,7 @@ class CoachValidator:
                 "timed_out": True,
                 "output_tail": output_tail,
                 "provenance": provenance,
+                "run_evidence": oracle_evidence,
             }
         except Exception as exc:
             logger.warning(
@@ -4702,6 +4712,7 @@ class CoachValidator:
             "timed_out": False,
             "output_tail": output_tail,
             "provenance": provenance,
+            "run_evidence": oracle_evidence,
         }
 
     def _execute_oracle(
@@ -4728,9 +4739,12 @@ class CoachValidator:
             A dict with the oracle result shape, or ``None`` on failure.
         """
         start_time = time.time()
+        oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 cmd,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 cwd=str(self.worktree_path),
                 capture_output=True,
                 text=True,
@@ -4762,6 +4776,7 @@ class CoachValidator:
                 "timed_out": True,
                 "output_tail": output_tail,
                 "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
+                "run_evidence": oracle_evidence,
             }
         except Exception as exc:
             logger.warning(
@@ -4797,6 +4812,7 @@ class CoachValidator:
             "timed_out": False,
             "output_tail": output_tail,
             "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
+            "run_evidence": oracle_evidence,
         }
 
     def _compute_agent_invocations_advisory(
@@ -7466,12 +7482,21 @@ class CoachValidator:
             self._run_evidence_log = []
         self._run_evidence_log.append(record)
 
-    def _run_recorded(self, args: Any, *, evidence: Tuple[str, Path, Any], **kwargs: Any):
+    def _run_recorded(
+        self,
+        args: Any,
+        *,
+        evidence: Tuple[str, Path, Any],
+        record_into: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ):
         """``subprocess.run(args, **kwargs)``, with the command recorded.
 
         The command is run by the same ``subprocess.run`` call, with the same
         arguments, as before; the record is made around it and kept whether
-        the command returns, times out or fails to start.
+        the command returns, times out or fails to start. With
+        ``record_into`` the record is written into that dict (the caller's
+        own receipt) instead of this check's list of runs.
         """
         kind, execution_root, origin = evidence
         record = self._begin_run_evidence(
@@ -7480,7 +7505,13 @@ class CoachValidator:
         try:
             return subprocess.run(args, **kwargs)
         finally:
-            self._keep_run_evidence(record)
+            if record_into is None:
+                self._keep_run_evidence(record)
+            else:
+                try:
+                    record_into.update(record.finish())
+                except Exception as exc:  # noqa: BLE001
+                    record_into["capture_errors"] = [f"{type(exc).__name__}: {exc}"]
 
     def _copy_stability(
         self, at_start: Optional[Dict[str, Any]]
