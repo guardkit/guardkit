@@ -176,6 +176,48 @@ class TestGoExitZeroMixedModuleGuard:
         assert classify_absent_for_stack(_profile("go"), 1, out) is False
 
 
+class TestGoRanMarker:
+    """12 October 2026: an exit-0 Go run needs proof a test ran."""
+
+    def test_exit_zero_with_no_output_is_not_a_pass(self):
+        assert classify_absent_for_stack(_profile("go"), 0, "") is True
+
+    def test_exit_zero_with_only_no_test_files_is_not_a_pass(self):
+        out = "?   \tex/cmd\t[no test files]\n"
+        assert classify_absent_for_stack(_profile("go"), 0, out) is True
+
+    def test_only_cached_results_are_not_a_run(self):
+        """R4: Go replays a cached pass without executing a test."""
+        out = "ok  \tex/a\t(cached)\n?   \tex/b\t[no test files]\n"
+        assert classify_absent_for_stack(_profile("go"), 0, out) is True
+        assert classify_absent_for_stack(
+            _profile("go"), 0, "ok  \tex/a\t(cached)\nok  \tex/c\t(cached)\n"
+        ) is True
+
+    def test_cached_verbose_replay_is_not_a_run(self):
+        """With -v the cached replay repeats the old RUN/PASS lines."""
+        out = (
+            "=== RUN   TestX\n--- PASS: TestX (0.00s)\nPASS\n"
+            "ok  \tex/a\t(cached)\n"
+        )
+        assert classify_absent_for_stack(_profile("go"), 0, out) is True
+
+    def test_no_tests_to_run_is_not_a_run(self):
+        out = "ok  \tex/a\t0.002s [no tests to run]\n"
+        assert classify_absent_for_stack(_profile("go"), 0, out) is True
+
+    def test_one_fresh_package_beside_cached_ones_is_a_run(self):
+        out = "ok  \tex/a\t(cached)\nok  \tex/b\t0.010s\n"
+        assert classify_absent_for_stack(_profile("go"), 0, out) is False
+
+    def test_failure_beside_testless_package_is_ran_and_failed(self):
+        out = (
+            "?   \tex/cmd\t[no test files]\n"
+            "--- FAIL: TestX (0.00s)\nFAIL\tex/a\t0.01s\n"
+        )
+        assert classify_absent_for_stack(_profile("go"), 1, out) is False
+
+
 class TestGenuineFailureNotAbsent:
     def test_dotnet_test_failure_is_not_absent(self):
         assert classify_absent_for_stack(

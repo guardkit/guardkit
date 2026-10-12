@@ -3975,6 +3975,12 @@ The detailed specifications are in the task markdown file.
         says it could not read part of what it was given, how much travels
         beside the state as a number, because the part it could not read is
         part nothing looked at.
+
+        12 October 2026: a check that could not read part of what it was given
+        (``parse_degraded``, or files in a language no dialect reads, listed in
+        ``undialected_files`` with the word ``partly_unsupported``) is "not
+        checked" unless it found something; it used to read as "ran and found
+        nothing". A status word this gate does not know is "not checked" too.
         """
         status = ""
         not_read: Optional[int] = None
@@ -3983,9 +3989,15 @@ The detailed specifications are in the task markdown file.
         ):
             status = wiring_result["status"].strip().lower()
         if isinstance(wiring_result, dict):
-            unread = wiring_result.get("degraded_files")
-            if isinstance(unread, (list, tuple)):
-                not_read = len(unread)
+            unread_lists = [
+                wiring_result.get(key)
+                for key in ("degraded_files", "undialected_files")
+            ]
+            unread_lists = [
+                u for u in unread_lists if isinstance(u, (list, tuple))
+            ]
+            if unread_lists:
+                not_read = sum(len(u) for u in unread_lists)
         if status == "unsupported_stack":
             return code_check_group_record(
                 wave_number,
@@ -3999,29 +4011,44 @@ The detailed specifications are in the task markdown file.
                 state=CODE_CHECK_NOT_CHECKED,
                 reason="this check stopped on an error of its own",
             )
+        partly_read = status in ("parse_degraded", "partly_unsupported") or bool(
+            not_read
+        )
         if advisory:
             return code_check_group_record(
                 wave_number,
                 state=CODE_CHECK_FOUND_SOMETHING,
                 reason="reported without asking for a re-run",
                 findings=list(advisory),
-                inputs_not_read=not_read,
+                inputs_not_read=not_read if partly_read else None,
             )
-        degraded = status == "parse_degraded"
-        return code_check_group_record(
-            wave_number,
-            state=CODE_CHECK_RAN_FOUND_NOTHING,
-            reason=(
-                (
+        if partly_read:
+            return code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_NOT_CHECKED,
+                reason=(
                     f"some of what it was given could not be read "
                     f"({not_read} of them)"
                     if not_read
                     else "some of what it was given could not be read"
-                )
-                if degraded
-                else ""
-            ),
-            inputs_not_read=not_read if degraded else None,
+                ),
+                inputs_not_read=not_read,
+            )
+        if wiring_result is not None and status not in ("complete", "ran"):
+            return code_check_group_record(
+                wave_number,
+                state=CODE_CHECK_NOT_CHECKED,
+                reason=(
+                    f"this check reported '{status}', which is not a word "
+                    "this gate knows"
+                    if status
+                    else "this check recorded no word saying whether it ran"
+                ),
+            )
+        return code_check_group_record(
+            wave_number,
+            state=CODE_CHECK_RAN_FOUND_NOTHING,
+            reason="",
         )
 
     def _run_post_wave_wiring_gate(

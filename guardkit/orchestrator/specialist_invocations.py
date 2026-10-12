@@ -1156,12 +1156,12 @@ def _build_code_reviewer_prompt(
 
 def _parse_pytest_counts(
     output: Optional[str],
-) -> tuple[int, int, Optional[int]]:
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
     """Parse ``(tests_run, tests_failed, tests_skipped)`` from pytest output.
 
     ``tests_run`` = passed + failed + errors + xpassed + xfailed (skipped
     excluded — a skipped test executed no assertions). Best-effort: returns
-    ``(0, 0, None)`` when no recognisable summary token is present. Counts are
+    ``(None, None, None)`` when no recognisable summary token is present. Counts are
     metadata only — the authoritative pass/fail signal is the subprocess
     return code (carried by :attr:`IndependentTestResult.tests_passed`), so a
     parse miss never changes the gate verdict. ``max`` per class tolerates
@@ -1175,13 +1175,15 @@ def _parse_pytest_counts(
     tests into skips).
 
     TASK-AB-REVIEWCLEAN01 (item 1): count extraction is delegated to the
-    shared ``guardkit.lib.pytest_summary`` parser. This one-shot count
-    consumer keeps its historic ``(0, 0, None)`` shape on a parse miss —
-    ``tests_run``/``tests_failed`` are 0-coerced here (metadata only; the
-    return code is authoritative) while ``tests_skipped`` stays ``None``.
+    shared ``guardkit.lib.pytest_summary`` parser.
+
+    12 October 2026: a parse miss is UNKNOWN for all three counts. It used to
+    be ``(0, 0, None)``, so plain ``go test`` output (which prints no count)
+    was recorded as "0 tests run" on a run that did run tests. A count this
+    parser could read is unchanged.
     """
     summary = parse_pytest_summary(output)
-    return (summary.tests_run or 0, summary.tests_failed or 0, summary.skipped)
+    return (summary.tests_run, summary.tests_failed, summary.skipped)
 
 
 def _load_task_work_results(
@@ -1697,7 +1699,11 @@ def _deterministic_phase_4_block(
         "duration_seconds": duration,
         "error": error[:400],
         "tests_run": tests_run,
-        "tests_failed": tests_failed or max(1, tests_run),
+        # 12 October 2026: with no readable count this is the verdict's own
+        # minimum (a red run that was not absent failed at least once), not a
+        # parsed number; ``tests_run`` above stays unknown. The failing-test
+        # feedback to the Player keys on it being positive.
+        "tests_failed": tests_failed or max(1, tests_run or 0),
         # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
         "tests_skipped": tests_skipped,
         # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only. NOTE: no

@@ -1758,13 +1758,65 @@ def test_phase4_execution_mode_unknown_degrades_to_subprocess(monkeypatch):
         # All-skipped run (the FEAT-ABL-001 R1 shape: missing optional extra
         # silently turns every test into a skip; pytest exits 0).
         ("===== 4 skipped in 0.5s =====", (0, 0, 4)),
-        ("", (0, 0, None)),
-        (None, (0, 0, None)),
-        ("no recognisable summary here", (0, 0, None)),
+        # 12 October 2026: an unread count is UNKNOWN, never 0.
+        ("", (None, None, None)),
+        (None, (None, None, None)),
+        ("no recognisable summary here", (None, None, None)),
+        # Vitest: the Tests line, never the Test Files line.
+        (
+            " Test Files  3 passed (3)\n      Tests  7 passed (7)\n",
+            (7, 0, 0),
+        ),
+        # ...including when there are more files than passing tests.
+        (
+            " Test Files  5 passed (5)\n      Tests  3 passed | 4 skipped (7)\n",
+            (3, 0, 4),
+        ),
+        # Plain go test output prints no count at all.
+        ("ok  \tex/a\t0.012s\n?   \tex/b\t[no test files]\n", (None, None, None)),
     ],
 )
 def test_parse_pytest_counts(output, expected):
     assert _parse_pytest_counts(output) == expected
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_unread_counts_stay_unknown(tmp_path, monkeypatch):
+    """A run whose output carries no count (plain ``go test``) is recorded with
+    unknown counts, never "0 tests run" (12 October 2026)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    for passed, expected_status in ((True, "passed"), (False, "failed")):
+        _patch_run_independent_tests(
+            monkeypatch,
+            IndependentTestResult(
+                tests_passed=passed,
+                test_command="go test ./...",
+                test_output_summary="ok  \tex/a\t0.012s",
+                duration_seconds=0.4,
+                raw_output=(
+                    "ok  \tex/a\t0.012s\n"
+                    if passed
+                    else "--- FAIL: TestX (0.00s)\nFAIL\tex/a\t0.01s\n"
+                ),
+                signal_absent=False,
+            ),
+        )
+        result = await invoke_test_orchestrator(
+            worktree_path=tmp_path,
+            task_id=_TASK_ID_DET,
+            sdk_timeout=900,
+            agent_invoker=_make_fake_agent_invoker(),
+        )
+
+        assert result.status == expected_status
+        block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+        assert block["status"] == expected_status
+        assert block["tests_run"] is None
+        assert block["tests_skipped"] is None
+        if not passed:
+            # The red verdict's own minimum, so the Player still hears about
+            # the failure; never a parsed count.
+            assert block["tests_failed"] == 1
 
 
 # --- result mapping (the absence-of-failure-critical surface) ---------------

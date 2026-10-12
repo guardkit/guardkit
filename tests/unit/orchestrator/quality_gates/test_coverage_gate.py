@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 
@@ -629,3 +630,170 @@ class TestCoverageFinding:
         assert finding.severity == "warning"
         assert finding.pattern == "ZERO_EXECUTION"
         assert finding.executed_lines == 0
+
+
+# ---------------------------------------------------------------------------
+# Declared components and honest absence (12 October 2026, web readiness W3)
+# ---------------------------------------------------------------------------
+
+
+class TestDeclaredComponentAndHonestAbsence:
+    """A non-Python project is never given a root pytest run, and a run that
+    measured none of the task's files is never ``clean``."""
+
+    def test_typescript_worktree_with_a_stray_py_helper_runs_no_pytest(
+        self, tmp_worktree: Path
+    ) -> None:
+        (tmp_worktree / "package.json").write_text("{}", encoding="utf-8")
+        (tmp_worktree / "src").mkdir()
+        (tmp_worktree / "src" / "app.ts").write_text(
+            "export const x = 1;\n", encoding="utf-8"
+        )
+        (tmp_worktree / "scripts").mkdir()
+        (tmp_worktree / "scripts" / "helper.py").write_text(
+            "print('x')\n", encoding="utf-8"
+        )
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["src/app.ts", "scripts/helper.py"],
+                task_type="FEATURE",
+            )
+
+        run.assert_not_called()
+        assert result is None  # the existing absent signal, never a pass
+        assert _is_python_stack(tmp_worktree) is False
+
+    def test_declared_non_python_component_is_unsupported_not_root_pytest(
+        self, tmp_worktree: Path
+    ) -> None:
+        # The repository root carries Python tooling; the task's component
+        # is the TypeScript web app.
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        web = tmp_worktree / "web"
+        web.mkdir()
+        (web / "package.json").write_text("{}", encoding="utf-8")
+        (web / "tool.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["web/src/App.tsx", "web/tool.py"],
+                task_type="FEATURE",
+                component="web",
+                component_cwd="web",
+            )
+
+        run.assert_not_called()
+        assert result["status"] == "unsupported_stack"
+        assert result["ran"] is False
+        assert result["findings"] is None
+        assert "web" in result["reason"]
+
+    def test_named_but_undeclared_component_runs_nothing(
+        self, tmp_worktree: Path
+    ) -> None:
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["mod.py"],
+                task_type="FEATURE",
+                component="api",
+                component_cwd=None,
+            )
+        run.assert_not_called()
+        assert result["status"] == "absent"
+        assert result["findings"] is None
+
+    def test_python_component_is_measured_in_its_own_directory(
+        self, tmp_worktree: Path
+    ) -> None:
+        api = tmp_worktree / "api"
+        api.mkdir()
+        (api / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (api / "svc.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        seen: Dict[str, Any] = {}
+
+        def fake_run(cmd, cwd, **kwargs):
+            seen["cwd"] = cwd
+            report = Path(cwd) / ".cov_output" / "coverage.json"
+            report.write_text(
+                json.dumps({
+                    "files": {"svc.py": {
+                        "executed_lines": [],
+                        "functions": {"f": {"start_line": 1, "executed_lines": []}},
+                    }},
+                    "totals": {"percent_covered": 0.0},
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["api/svc.py", "web/App.tsx"],
+                task_type="FEATURE",
+                component="api",
+                component_cwd="api",
+            )
+
+        assert seen["cwd"] == str(api)
+        assert result["status"] == "positive"
+        # Findings still name the file from the repository root.
+        assert result["findings"][0]["file"] == "api/svc.py"
+
+    def test_a_run_that_measured_no_authored_file_is_never_clean(
+        self, tmp_worktree: Path
+    ) -> None:
+        json_file = tmp_worktree / "coverage.json"
+        json_file.write_text(
+            json.dumps({
+                "files": {"other_pkg/unrelated.py": {"executed_lines": [1]}},
+                "totals": {"percent_covered": 100.0},
+            }),
+            encoding="utf-8",
+        )
+
+        result = _parse_coverage_json(json_file, ["mymodule.py"], tmp_worktree)
+
+        assert result["status"] != "clean"
+        assert result["status"] == "absent"
+        assert result["findings"] is None
+
+    def test_no_tests_collected_is_absent(self, tmp_worktree: Path) -> None:
+        """pytest exit 5 is absent even when a coverage report was written."""
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (tmp_worktree / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+
+        def fake_run(cmd, cwd, **kwargs):
+            (Path(cwd) / ".cov_output" / "coverage.json").write_text(
+                json.dumps({
+                    "files": {"mod.py": {
+                        "executed_lines": [],
+                        "functions": {"f": {"start_line": 1, "executed_lines": []}},
+                    }},
+                    "totals": {"percent_covered": 0.0},
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 5, "", "")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_coverage_gate(tmp_worktree, ["mod.py"], task_type="FEATURE")
+
+        assert result is None

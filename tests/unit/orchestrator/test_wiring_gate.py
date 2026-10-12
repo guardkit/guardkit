@@ -363,3 +363,62 @@ class TestRunPostWaveWiringGate:
             )
         assert outcome.terminate is True
         assert outcome.final_wave_result is rejected
+
+
+# ============================================================================
+# 5. _wiring_gate_record — unread input is never "ran and found nothing"
+#    (12 October 2026, web readiness W4)
+# ============================================================================
+
+
+class TestWiringGateRecord:
+    @staticmethod
+    def _record(result, advisory=()):
+        return FeatureOrchestrator._wiring_gate_record(3, result, list(advisory))
+
+    def test_parse_degraded_is_not_checked(self):
+        row = self._record(
+            {"status": "parse_degraded", "findings": [],
+             "degraded_files": ["web/src/Broken.tsx"]}
+        )
+        assert row["state"] == "not_checked"
+        assert row["inputs_not_read"] == 1
+
+    def test_partly_unsupported_lists_go_files_as_not_checked(self):
+        row = self._record(
+            {"status": "partly_unsupported", "findings": [],
+             "degraded_files": [],
+             "undialected_files": ["api/main.go", "api/handler.go"]}
+        )
+        assert row["state"] == "not_checked"
+        assert row["inputs_not_read"] == 2
+
+    def test_unread_files_under_a_complete_word_are_still_not_checked(self):
+        row = self._record(
+            {"status": "complete", "findings": [], "degraded_files": [],
+             "undialected_files": ["api/main.go"]}
+        )
+        assert row["state"] == "not_checked"
+        assert row["inputs_not_read"] == 1
+
+    def test_older_result_without_the_new_field_still_reads(self):
+        row = self._record({"status": "complete", "findings": [],
+                            "degraded_files": []})
+        assert row["state"] == "ran_and_found_nothing"
+        assert row["inputs_not_read"] is None
+
+    def test_a_finding_in_a_partly_read_check_keeps_both(self):
+        row = self._record(
+            {"status": "partly_unsupported", "degraded_files": [],
+             "undialected_files": ["api/main.go"]},
+            advisory=[{"file": "web/a.tsx", "symbol": "X",
+                       "pattern": "UNWIRED_PATH"}],
+        )
+        assert row["state"] == "found_something"
+        assert row["inputs_not_read"] == 1
+
+    def test_unsupported_stack_is_kind_not_supported(self):
+        row = self._record(
+            {"status": "unsupported_stack", "undialected_files": ["main.go"]}
+        )
+        assert row["state"] == "kind_of_project_not_supported"
