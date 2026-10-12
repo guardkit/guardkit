@@ -199,7 +199,7 @@ def _recording_runner(monkeypatch, result):
     """
     calls = []
 
-    def _fake(config, cwd, wave_number, venv_python=None):
+    def _fake(config, cwd, wave_number, venv_python=None, evidence=None):
         calls.append(
             {
                 "command": config.command,
@@ -347,7 +347,7 @@ def _runner_by_command(monkeypatch, results):
     """A fake runner that answers per command, and records what it ran."""
     calls = []
 
-    def _fake(config, cwd, wave_number, venv_python=None):
+    def _fake(config, cwd, wave_number, venv_python=None, evidence=None):
         calls.append(config.command)
         return results[config.command]
 
@@ -707,7 +707,7 @@ def test_probe_runner_blowing_up_is_one_warning_and_nothing_else(
     feature = _feature("unused")
     feature.smoke_gates = None
 
-    def _boom(config, cwd, wave_number, venv_python=None):
+    def _boom(config, cwd, wave_number, venv_python=None, evidence=None):
         raise RuntimeError("the runner fell over")
 
     monkeypatch.setattr(

@@ -83,8 +83,6 @@ import stat
 import subprocess
 import tempfile
 import time
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -822,30 +820,6 @@ class EvidenceRequest:
     not_declared: str = NOT_DECLARED
 
 
-_REQUESTED: "ContextVar[Optional[EvidenceRequest]]" = ContextVar(
-    "guardkit_run_evidence_request", default=None
-)
-
-
-@contextmanager
-def requested(request: Optional[EvidenceRequest]):
-    """Hand ``request`` to the declared-command runner called inside.
-
-    For runners whose signature many tests replace with fakes (the smoke
-    gate): the caller states what it knows without changing the call.
-    """
-    token = _REQUESTED.set(request)
-    try:
-        yield request
-    finally:
-        _REQUESTED.reset(token)
-
-
-def current_request() -> Optional[EvidenceRequest]:
-    """The request set by the innermost :func:`requested`, if any."""
-    return _REQUESTED.get()
-
-
 def request_from_declaration(
     kind: str,
     declaration: Any,
@@ -1291,7 +1265,6 @@ __all__ = [
     "SOURCE_CHANGED",
     "SOURCE_UNCHANGED",
     "compare_manifests",
-    "current_request",
     "default_docker_probe",
     "docker_events_between",
     "manifest_digest",
@@ -1299,7 +1272,6 @@ __all__ = [
     "originating_worktree_identity",
     "request_from_declaration",
     "request_from_repo",
-    "requested",
     "run_environment_inventory",
     "source_manifest",
     "start_command_evidence",

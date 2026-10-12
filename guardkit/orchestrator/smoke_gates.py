@@ -23,7 +23,6 @@ from typing import Optional
 from guardkit.orchestrator.feature_loader import SmokeGates
 from guardkit.orchestrator.run_evidence import (
     EvidenceRequest,
-    current_request,
     start_command_evidence,
 )
 
@@ -168,9 +167,8 @@ def run_smoke_gate(
     evidence : Optional[EvidenceRequest]
         What the caller knows for the run record (repair 7): the kind of
         command, who is observing, and the project's declared environment
-        inventory. When ``None``, the request the caller set with
-        ``run_evidence.requested`` is used; a caller that set neither still
-        gets a record, which says the inventory was not looked up.
+        inventory. A caller that passes nothing still gets a record, which
+        says the inventory was not looked up.
 
     Returns
     -------
@@ -198,7 +196,7 @@ def run_smoke_gate(
 
     # Repair 7: record what the command ran against. Never changes the run.
     record = start_command_evidence(
-        evidence or current_request(),
+        evidence,
         command=config.command,
         execution_root=cwd,
         cwd=cwd,

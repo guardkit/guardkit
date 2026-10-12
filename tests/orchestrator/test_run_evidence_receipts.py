@@ -32,7 +32,6 @@ from guardkit.orchestrator.run_evidence import (
     SOURCE_CHANGED,
     SOURCE_UNCHANGED,
     request_from_repo,
-    requested,
 )
 from guardkit.orchestrator.smoke_gates import run_smoke_gate
 from guardkit.worktrees import Worktree
@@ -71,13 +70,15 @@ def test_smoke_command_record_without_a_request_says_not_looked_up(wt):
     assert record["environment_inventory"] == {"status": NOT_LOOKED_UP}
 
 
-def test_smoke_command_uses_the_request_set_around_it(wt, tmp_path):
+def test_smoke_command_uses_the_request_it_is_given(wt, tmp_path):
     repo_root = tmp_path / "main-checkout"
     _declare(repo_root, {"environment_inventory": "printf inv"})
-    with requested(request_from_repo("smoke command", repo_root, feature="FEAT-X", wave=2)):
-        result = run_smoke_gate(
-            SmokeGates(after_wave="all", command="printf x > made.txt"), cwd=wt, wave_number=2
-        )
+    result = run_smoke_gate(
+        SmokeGates(after_wave="all", command="printf x > made.txt"),
+        cwd=wt,
+        wave_number=2,
+        evidence=request_from_repo("smoke command", repo_root, feature="FEAT-X", wave=2),
+    )
     record = result.run_evidence
     assert record["command_kind"] == "smoke command"
     assert record["observer"]["feature"] == "FEAT-X" and record["observer"]["wave"] == 2
