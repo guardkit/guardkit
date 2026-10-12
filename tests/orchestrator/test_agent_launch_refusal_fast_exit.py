@@ -193,7 +193,6 @@ def _run_loop(tmp_path, worktree, display, mode: str, error: BaseException):
     return turns, decision, harness, recovery, coach_safely, coach, orchestrator
 
 
-@pytest.mark.integration
 @pytest.mark.parametrize("mode", ["task-work", "direct"])
 def test_one_launch_refusal_stops_the_task(tmp_path, worktree, display, mode):
     turns, decision, harness, recovery, coach_safely, coach, orchestrator = _run_loop(
@@ -225,7 +224,6 @@ def test_one_launch_refusal_stops_the_task(tmp_path, worktree, display, mode):
     assert "agent launch refused" in message and _ENTRY["path"] in message
 
 
-@pytest.mark.integration
 @pytest.mark.parametrize("mode", ["task-work", "direct"])
 def test_other_invocation_errors_behave_as_before(tmp_path, worktree, display, mode):
     """A different harness error still goes through state recovery and the Coach."""
