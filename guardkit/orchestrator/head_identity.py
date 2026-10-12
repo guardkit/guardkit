@@ -44,7 +44,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,9 @@ ATTRIBUTION_OVERLAPPING = "this invocation or an overlapping one"
 ATTRIBUTION_ALONE = (
     "this invocation, or something outside every recorded invocation "
     "(no other recorded invocation overlapped it)"
+)
+ATTRIBUTION_UNKNOWN = (
+    "unknown: the record of other invocations could not be read in full"
 )
 
 
@@ -272,7 +275,7 @@ def _append(worktree: Path, entry: Dict[str, Any]) -> bool:
     return _append_status(worktree, entry) == RECORDED
 
 
-def _read_tail_unbounded(path: Path) -> bytes:
+def _read_tail_unbounded(path: Path) -> Tuple[bytes, bool]:
     fd = _open_record(path, os.O_RDONLY)
     try:
         size = os.fstat(fd).st_size
@@ -290,32 +293,42 @@ def _read_tail_unbounded(path: Path) -> bytes:
         if start > 0:
             # The first line read is probably cut; drop it.
             data = data.split(b"\n", 1)[1] if b"\n" in data else b""
-        return data
+        return data, start > 0
     finally:
         os.close(fd)
 
 
-def read_entries(worktree: Path) -> List[Dict[str, Any]]:
-    """The readable lines at the end of the record (at most the last
-    ``_READ_TAIL_BYTES``), in order; ``[]`` when there is none, or when it
-    could not be read within the shared evidence boundary. Never raises."""
+#: How much of the record a reading covered.
+HISTORY_COMPLETE = "complete"
+HISTORY_TRUNCATED = "truncated: only the end of the record was read"
+
+
+def read_history(worktree: Path) -> Tuple[List[Dict[str, Any]], str]:
+    """The readable lines at the end of the record, and how much of the
+    record they cover: ``HISTORY_COMPLETE``, ``HISTORY_TRUNCATED`` (only the
+    last ``_READ_TAIL_BYTES`` were read), or a "not recorded: ..." reason
+    when the record could not be read within the shared evidence boundary
+    (or is not there at all). Never raises."""
     path = record_path(worktree)
 
-    def _failed(exc: Optional[BaseException]) -> bytes:
-        if not isinstance(exc, FileNotFoundError):
-            logger.warning(
-                "head identity: %s for %s; read as empty.",
-                NOT_RECORDED_TIMED_OUT if exc is None else NOT_RECORDED_UNAVAILABLE,
-                path,
-            )
-        return b""
+    def _failed(exc: Optional[BaseException]):
+        if exc is None:
+            return b"", NOT_RECORDED_TIMED_OUT
+        if isinstance(exc, FileNotFoundError):
+            return b"", f"{NOT_RECORDED_UNAVAILABLE} (there is no record)"
+        return b"", f"{NOT_RECORDED_UNAVAILABLE} ({type(exc).__name__}: {exc})"
 
-    data = _bounded(
+    data, how = _bounded(
         lambda: _read_tail_unbounded(path),
         _IO_BOUND_S,
         what="reading the head-identity record",
         on_failure=_failed,
     )
+    if isinstance(how, bool):
+        coverage = HISTORY_TRUNCATED if how else HISTORY_COMPLETE
+    else:
+        coverage = how
+        logger.warning("head identity: %s for %s; read as empty.", coverage, path)
     entries: List[Dict[str, Any]] = []
     for line in data.decode("utf-8", errors="replace").splitlines():
         try:
@@ -324,7 +337,12 @@ def read_entries(worktree: Path) -> List[Dict[str, Any]]:
             continue
         if isinstance(entry, dict):
             entries.append(entry)
-    return entries
+    return entries, coverage
+
+
+def read_entries(worktree: Path) -> List[Dict[str, Any]]:
+    """The readable lines at the end of the record; see :func:`read_history`."""
+    return read_history(worktree)[0]
 
 
 def _read_head_for_record(worktree: Path) -> Dict[str, Optional[str]]:
@@ -471,7 +489,7 @@ def invocation_finished(token: Optional[InvocationToken]) -> Optional[Dict[str, 
     try:
         after = _read_head_for_record(token.worktree)
         stamp = _now()
-        entries = read_entries(token.worktree)
+        entries, coverage = read_history(token.worktree)
         overlapping = _overlapping(entries, token, stamp["at"])
         git_operations = _git_operations_between(
             entries, token.started_at, stamp["at"]
@@ -480,7 +498,14 @@ def invocation_finished(token: Optional[InvocationToken]) -> Optional[Dict[str, 
         head_changed = after["head"] != token.before["head"]
         attribution = None
         if ref_changed or head_changed:
-            attribution = ATTRIBUTION_OVERLAPPING if overlapping else ATTRIBUTION_ALONE
+            if coverage != HISTORY_COMPLETE:
+                # Others may have overlapped and not be in what was read: the
+                # overlaps it did see are kept, but nothing is concluded.
+                attribution = f"{ATTRIBUTION_UNKNOWN} ({coverage})"
+            else:
+                attribution = (
+                    ATTRIBUTION_OVERLAPPING if overlapping else ATTRIBUTION_ALONE
+                )
         entry = {
             "event": "invocation_end",
             "invocation_id": token.invocation_id,
@@ -496,6 +521,7 @@ def invocation_finished(token: Optional[InvocationToken]) -> Optional[Dict[str, 
             "overlapping_invocations": overlapping,
             "git_operations_during": git_operations,
             "attribution": attribution,
+            "history_coverage": coverage,
         }
         # Whether the line reached the record: the entry handed back says so.
         entry["record_status"] = _append_status(token.worktree, entry)

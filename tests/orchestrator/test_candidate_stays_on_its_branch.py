@@ -821,3 +821,63 @@ def test_a_stalled_record_read_or_write_never_blocks_a_turn(
     assert elapsed < _bound_for_one_turn(), f"took {elapsed:.1f}s"
     assert _tip(worktree) == checkpoint.commit_hash
     assert "work.txt" in _git(worktree, "show", "--name-only", "--format=", "HEAD")
+
+
+# ---------------------------------------------------------------------------
+# Implementation review round 4, R12: incomplete history is never "alone"
+# ---------------------------------------------------------------------------
+
+
+def _move_head(worktree: Path) -> None:
+    _git(worktree, "commit", "-q", "--allow-empty", "-m", "moved by someone")
+
+
+def test_unreadable_history_makes_the_attribution_unknown(worktree: Path) -> None:
+    import os
+
+    token = invocation_started(worktree, role="player", task_id="TASK-R12-A", turn=1)
+    _move_head(worktree)
+    record = head_identity.record_path(worktree)
+    os.chmod(record, 0)
+    try:
+        end = invocation_finished(token)
+    finally:
+        os.chmod(record, 0o644)
+
+    assert end["head_changed"] is True
+    assert end["attribution"].startswith(head_identity.ATTRIBUTION_UNKNOWN)
+    assert end["attribution"] != head_identity.ATTRIBUTION_ALONE
+    assert end["history_coverage"].startswith("not recorded")
+
+
+def test_an_active_invocation_outside_the_read_tail_makes_it_unknown(
+    worktree: Path, monkeypatch
+) -> None:
+    other = invocation_started(worktree, role="coach", task_id="TASK-R12-B", turn=1)
+    for n in range(20):  # push B's start line out of a small tail
+        head_identity.record_git_operation(
+            worktree, actor="test", operation=f"padding {n}", task_id="TASK-R12-PAD"
+        )
+    monkeypatch.setattr(head_identity, "_READ_TAIL_BYTES", 1500)
+    token = invocation_started(worktree, role="player", task_id="TASK-R12-A", turn=1)
+    _move_head(worktree)
+
+    end = invocation_finished(token)
+
+    assert end["history_coverage"] == head_identity.HISTORY_TRUNCATED
+    assert end["attribution"].startswith(head_identity.ATTRIBUTION_UNKNOWN)
+    assert "TASK-R12-B" not in [o["task_id"] for o in end["overlapping_invocations"]]
+    invocation_finished(other)
+
+
+def test_complete_history_still_names_the_overlap(worktree: Path) -> None:
+    other = invocation_started(worktree, role="coach", task_id="TASK-R12-B", turn=1)
+    token = invocation_started(worktree, role="player", task_id="TASK-R12-A", turn=1)
+    _move_head(worktree)
+
+    end = invocation_finished(token)
+
+    assert end["history_coverage"] == head_identity.HISTORY_COMPLETE
+    assert end["attribution"] == head_identity.ATTRIBUTION_OVERLAPPING
+    assert [o["task_id"] for o in end["overlapping_invocations"]] == ["TASK-R12-B"]
+    invocation_finished(other)
