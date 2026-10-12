@@ -9,4 +9,6 @@ npm ci --ignore-scripts --no-audit --no-fund
   cd apps/api
   go mod download
   go mod verify
+  # Resolve every package and test import read-only: a dropped go.sum line fails here.
+  go list -deps -test ./... >/dev/null
 )

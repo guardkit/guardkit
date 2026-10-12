@@ -8,8 +8,11 @@ toolchain:
   # TypeScript, ESLint, Prettier, Vitest and the Vite build.
   test: "bash scripts/check.sh"
   test_timeout: 1800
+  # Both suites must report real work: a timed Go `ok` line and a Vitest
+  # "Tests ... N passed" line with N >= 1 (colour codes tolerated), so an
+  # all-skipped web suite cannot pass on the Go line alone.
   requires_ran_marker: true
-  ran_marker_regex: '(?m)^ok\s'
+  ran_marker_regex: '(?ms)\A(?=.*^ok\s+\S+\s+\d+(\.\d+)?s$)(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)'
   # The connected browser/API/database journey. Supplied by the product
   # foundation; the template's stub fails until then.
   feature_check: "bash scripts/check-feature.sh"
@@ -23,7 +26,7 @@ toolchain:
       test: "npm run test"
       test_timeout: 600
       requires_ran_marker: true
-      ran_marker_regex: '[1-9][0-9]* passed'
+      ran_marker_regex: 'Tests\b[^\n]*?[1-9][0-9]* passed'
       runtime:
         node: "22.23.2"
     api:
@@ -31,7 +34,8 @@ toolchain:
       test: "GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=readonly go test -race -count=1 ./..."
       test_timeout: 900
       requires_ran_marker: true
-      ran_marker_regex: '(?m)^(ok|---) '
+      # A timed `ok` line only: never `(cached)` or `[no tests to run]`.
+      ran_marker_regex: '(?m)^ok\s+\S+\s+\d+(\.\d+)?s$'
       runtime:
         go: "1.26.9"
 # What the build shell receives. `settings` names variables copied from the

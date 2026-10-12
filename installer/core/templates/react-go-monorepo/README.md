@@ -30,6 +30,7 @@ The notes endpoint is an **unauthenticated demonstration** of bounded JSON decod
 | `config/web-main.tsx.template` | `apps/web/src/main.tsx` |
 | `config/web-api.test.ts.template` | `apps/web/src/api.test.ts` |
 | `config/guardkit-config.yaml.template` | `.guardkit/config.yaml` |
+| `config/gitignore.template` | `.gitignore` |
 | `scripts/require-tools.sh.template` | `scripts/require-tools.sh` |
 | `scripts/install.sh.template` | `scripts/install.sh` |
 | `scripts/check.sh.template` | `scripts/check.sh` |
@@ -43,13 +44,13 @@ The rendered `.guardkit/config.yaml` tells GuardKit how to install and check the
 
 | Declaration | Command | Purpose |
 | --- | --- | --- |
-| Root `install` | `bash scripts/install.sh` | `npm ci` at the root workspace, then `go mod download` and `go mod verify` in `apps/api`, under the same exact version guards as `check.sh` (`scripts/require-tools.sh`). |
-| Root `test` | `bash scripts/check.sh` | The aggregate check: every static check, unit test and build. |
+| Root `install` | `bash scripts/install.sh` | `npm ci` at the root workspace, then `go mod download`, `go mod verify` and a read-only `go list -deps -test ./...` in `apps/api` (a missing `go.sum` line fails here), under the same exact version guards as `check.sh` (`scripts/require-tools.sh`). |
+| Root `test` | `bash scripts/check.sh` | The aggregate check: every static check, unit test and build. A clean exit counts only when the output has both a timed Go `ok` line and a Vitest `Tests … N passed` line with N at least 1, so an all-skipped web suite cannot pass. |
 | Root `feature_check` | `bash scripts/check-feature.sh` | The connected browser/API/database journey. |
-| Component `web` (`cwd: apps/web`) | `npm run test` | Vitest only; a clean exit with no passed test counts as not run. |
-| Component `api` (`cwd: apps/api`) | `go test -race -count=1 ./...` with `GOTOOLCHAIN=local` | Race-enabled Go tests; a clean exit with no `ok` line counts as not run. |
+| Component `web` (`cwd: apps/web`) | `npm run test` | Vitest only; a clean exit without a `Tests … N passed` line (N at least 1) counts as not run. |
+| Component `api` (`cwd: apps/api`) | `go test -race -count=1 ./...` with `GOTOOLCHAIN=local` | Race-enabled Go tests; a clean exit counts only with a timed `ok` line, never `(cached)` or `[no tests to run]`. |
 
-Every command has an explicit timeout, and the Go and Node pins are recorded under `runtime`. Go tests always run with `-count=1`, here and in `check.sh`, so a cached result is never replayed as a pass. A separate top-level `launch` block says what the build shell receives: `settings` names `PLAYWRIGHT_BROWSERS_PATH`, copied from the launching process (the file holds names, never values), and each `scratch` name (`GOPATH`, `GOCACHE`, `npm_config_cache`, `XDG_CONFIG_HOME` for Go's telemetry files, and `NODE_COMPILE_CACHE` for Node's compile cache) is set to `<worktree scratch folder>/toolchain/<NAME>`, outside the project tree. Applying `scratch` needs a GuardKit/Forge release that reads it. Component installs are not declared because GuardKit runs only the root install. The product foundation supplies `scripts/check-feature.sh`. Until it does, the template's stub prints `no connected feature check yet` and fails, so a documentation- or configuration-only change can never claim the app was exercised.
+Every command has an explicit timeout, and the Go and Node pins are recorded under `runtime`. Go tests always run with `-count=1`, here and in `check.sh`, so a cached result is never replayed as a pass. A separate top-level `launch` block says what the build shell receives: `settings` names `PLAYWRIGHT_BROWSERS_PATH`, copied from the launching process (the file holds names, never values), and each `scratch` name (`GOPATH`, `GOCACHE`, `npm_config_cache`, `XDG_CONFIG_HOME` for Go's telemetry files, and `NODE_COMPILE_CACHE` for Node's compile cache) is set to `<worktree scratch folder>/toolchain/<NAME>`, outside the project tree. Applying `scratch` needs a GuardKit/Forge release that reads it. Component installs are not declared because GuardKit runs only the root install. The rendered `.gitignore` keeps installed dependencies and generated output (`node_modules/`, `apps/web/dist/`, coverage, Playwright reports, `*.tsbuildinfo`) out of commits. The product foundation supplies `scripts/check-feature.sh`. Until it does, the template's stub prints `no connected feature check yet` and fails, so a documentation- or configuration-only change can never claim the app was exercised.
 
 ## HTTP contract in the neutral sample
 

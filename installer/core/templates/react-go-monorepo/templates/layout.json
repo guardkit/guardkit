@@ -19,6 +19,7 @@
   "config/web-main.tsx.template": "apps/web/src/main.tsx",
   "config/web-api.test.ts.template": "apps/web/src/api.test.ts",
   "config/guardkit-config.yaml.template": ".guardkit/config.yaml",
+  "config/gitignore.template": ".gitignore",
   "scripts/require-tools.sh.template": "scripts/require-tools.sh",
   "scripts/install.sh.template": "scripts/install.sh",
   "scripts/check.sh.template": "scripts/check.sh",
