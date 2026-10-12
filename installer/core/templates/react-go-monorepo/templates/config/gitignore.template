@@ -8,3 +8,5 @@ coverage/
 test-results/
 playwright-report/
 *.tsbuildinfo
+# Tool caches that land under HOME when HOME is the project (Staticcheck).
+.cache/
