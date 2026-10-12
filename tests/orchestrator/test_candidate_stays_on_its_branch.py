@@ -697,3 +697,127 @@ def test_a_held_record_lock_drops_the_line_within_the_deadline(worktree: Path, c
     assert head_identity.record_git_operation(
         worktree, actor="test", operation="checkpoint", task_id="TASK-X"
     ) is True
+
+
+# ---------------------------------------------------------------------------
+# Implementation review round 3, R8: the record's own I/O is bounded
+# ---------------------------------------------------------------------------
+
+
+async def _two_events():
+    yield "a"
+    yield "b"
+
+
+def _observe(worktree: Path) -> list:
+    async def _run():
+        seen = []
+        async with aclosing(
+            head_identity.observe_invocation(
+                _two_events(), worktree, role="player", task_id="TASK-R8-001", turn=1
+            )
+        ) as stream:
+            async for event in stream:
+                seen.append(event)
+        return seen
+
+    return asyncio.run(_run())
+
+
+def _invocation_and_checkpoint(worktree: Path):
+    import time
+
+    started = time.monotonic()
+    seen = _observe(worktree)
+    (worktree / "work.txt").write_text("the task's work\n")
+    checkpoint = _manager(worktree, "TASK-R8-001").create_checkpoint(turn=1, tests_passed=True)
+    return seen, checkpoint, time.monotonic() - started
+
+
+def _bound_for_one_turn() -> float:
+    # start + end of the invocation, the checkpoint's git operation lines:
+    # each bounded; generous slack for slow machines.
+    return 4 * (3.0 + 0.5) + 6
+
+
+def test_a_fifo_in_the_records_place_never_blocks_a_turn(worktree: Path) -> None:
+    import os
+
+    record = head_identity.record_path(worktree)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(record)
+
+    seen, checkpoint, elapsed = _invocation_and_checkpoint(worktree)
+
+    assert seen == ["a", "b"]
+    assert elapsed < _bound_for_one_turn(), f"took {elapsed:.1f}s"
+    assert _tip(worktree) == checkpoint.commit_hash
+    assert _attached(worktree) == f"refs/heads/{BRANCH}"
+    assert "work.txt" in _git(worktree, "show", "--name-only", "--format=", "HEAD")
+
+
+@pytest.mark.parametrize("stalled", ["write", "read"])
+def test_a_stalled_record_read_or_write_never_blocks_a_turn(
+    worktree: Path, monkeypatch, stalled: str
+) -> None:
+    """A hung filesystem: the record's lock-and-write, or its read, never
+    returns. Stalled at every primitive the record could use."""
+    import os
+    import pathlib
+    import threading
+
+    release = threading.Event()
+
+    def _is_record(fd_or_path) -> bool:
+        try:
+            name = (
+                os.readlink(f"/proc/self/fd/{fd_or_path}")
+                if isinstance(fd_or_path, int)
+                else str(fd_or_path)
+            )
+        except OSError:
+            return False
+        return name.endswith("head-identity.jsonl")
+
+    # A record with a line in it, so reading it really reads.
+    head_identity.record_git_operation(worktree, actor="test", operation="seed")
+    if stalled == "write":
+        real_flock, real_write = head_identity.fcntl.flock, os.write
+
+        def _flock(fd, op):
+            target = fd if isinstance(fd, int) else fd.fileno()
+            if op & head_identity.fcntl.LOCK_EX and _is_record(target):
+                release.wait()
+            return real_flock(fd, op)
+
+        def _write(fd, data):
+            if _is_record(fd):
+                release.wait()
+            return real_write(fd, data)
+
+        monkeypatch.setattr(head_identity.fcntl, "flock", _flock)
+        monkeypatch.setattr(head_identity.os, "write", _write)
+    else:
+        real_read, real_read_text = os.read, pathlib.Path.read_text
+
+        def _read(fd, n):
+            if _is_record(fd):
+                release.wait()
+            return real_read(fd, n)
+
+        def _read_text(self, *a, **k):
+            if _is_record(self):
+                release.wait()
+            return real_read_text(self, *a, **k)
+
+        monkeypatch.setattr(head_identity.os, "read", _read)
+        monkeypatch.setattr(pathlib.Path, "read_text", _read_text)
+    try:
+        seen, checkpoint, elapsed = _invocation_and_checkpoint(worktree)
+    finally:
+        release.set()
+
+    assert seen == ["a", "b"]
+    assert elapsed < _bound_for_one_turn(), f"took {elapsed:.1f}s"
+    assert _tip(worktree) == checkpoint.commit_hash
+    assert "work.txt" in _git(worktree, "show", "--name-only", "--format=", "HEAD")

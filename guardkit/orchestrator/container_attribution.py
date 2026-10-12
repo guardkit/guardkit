@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from guardkit.orchestrator.docker_fixtures import OWNER_LABEL, RUN_OWNER_ENV
-from guardkit.orchestrator.run_evidence import HelperRun, Runner, _default_runner
+from guardkit.orchestrator.run_evidence import HelperRun, Runner, _default_runner, within_bound
 
 UNKNOWN = "unknown"
 TEARDOWN_KIND = "teardown"
@@ -291,8 +291,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not actor:
         parser.error(f"{RUN_OWNER_ENV} must name the acting build")
     receipt = record_teardown(command, acting_build=actor)
-    args.receipt.parent.mkdir(parents=True, exist_ok=True)
-    args.receipt.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+    def _write() -> bool:
+        args.receipt.parent.mkdir(parents=True, exist_ok=True)
+        args.receipt.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+        return True
+
+    # The receipt is evidence: written behind the shared evidence boundary.
+    written = within_bound(
+        _write, 10.0, what="writing the teardown receipt", on_failure=lambda _exc: False
+    )
+    if not written:
+        print(f"the teardown receipt could not be written to {args.receipt}", file=sys.stderr)
+        return 2
     return 0 if receipt["exit_code"] == 0 else 1
 
 

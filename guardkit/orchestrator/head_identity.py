@@ -37,6 +37,7 @@ import fcntl
 import json
 import logging
 import os
+import stat
 import subprocess
 import time
 import uuid
@@ -167,40 +168,103 @@ _LOCK_DEADLINE_S = 2.0
 _LOCK_RETRY_S = 0.05
 
 
+#: What a line that could not be written or read in time says.
+NOT_RECORDED_UNAVAILABLE = "not recorded: evidence file unavailable"
+NOT_RECORDED_TIMED_OUT = "not recorded: evidence file timed out"
+
+# Every read and write of the record runs behind the shared evidence boundary
+# (``run_evidence.within_bound``) and the caller waits at most this long: the
+# record is written around every agent invocation and inside checkpoint
+# serialisation, so a FIFO, a stalled filesystem or a held lock in its place
+# must never hold either up.
+_IO_BOUND_S = _LOCK_DEADLINE_S + 1.0
+# HEAD is read with git for the record; the caller waits at most this long.
+_HEAD_BOUND_S = 5.0
+# Only the end of the record is read back: overlaps are recent by nature.
+_READ_TAIL_BYTES = 1024 * 1024
+
+
+def _bounded(work, seconds: float, *, what: str, on_failure):
+    from guardkit.orchestrator.run_evidence import within_bound
+
+    return within_bound(work, seconds, what=what, on_failure=on_failure)
+
+
+def _open_record(path: Path, flags: int) -> int:
+    """Open the record without following a link and without waiting; the
+    opened file must itself be a regular file. Raises ``OSError``."""
+    fd = os.open(
+        path,
+        flags | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+        0o644,
+    )
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("the record is not a regular file")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _append_unbounded(path: Path, line: bytes) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = _open_record(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+    try:
+        give_up_at = time.monotonic() + _LOCK_DEADLINE_S
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= give_up_at:
+                    return NOT_RECORDED_BUSY
+                time.sleep(_LOCK_RETRY_S)
+        try:
+            view = memoryview(line)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        return RECORDED
+    finally:
+        os.close(fd)
+
+
 def _append_status(worktree: Path, entry: Dict[str, Any]) -> str:
     """Append one JSON line under an exclusive lock; say how it went.
 
-    The lock is asked for without blocking and retried for at most
-    ``_LOCK_DEADLINE_S``; if another writer still holds it, the line is
-    dropped and ``NOT_RECORDED_BUSY`` returned. Never raises.
+    The whole append (a race-safe open of a regular file, a lock asked for
+    without blocking and retried for at most ``_LOCK_DEADLINE_S``, the write)
+    runs behind the shared evidence boundary, so the caller is back within
+    ``_IO_BOUND_S`` whatever is in the record's place. Returns ``RECORDED``,
+    ``NOT_RECORDED_BUSY``, ``NOT_RECORDED_UNAVAILABLE`` (with why) or
+    ``NOT_RECORDED_TIMED_OUT``. Never raises.
     """
     path = record_path(worktree)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as handle:
-            give_up_at = time.monotonic() + _LOCK_DEADLINE_S
-            while True:
-                try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= give_up_at:
-                        logger.warning(
-                            "head identity: %s for %s (another writer held its "
-                            "lock for %.0fs); this line is dropped.",
-                            NOT_RECORDED_BUSY, path, _LOCK_DEADLINE_S,
-                        )
-                        return NOT_RECORDED_BUSY
-                    time.sleep(_LOCK_RETRY_S)
-            try:
-                handle.write(json.dumps(entry, sort_keys=True) + "\n")
-                handle.flush()
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
-        return RECORDED
-    except (OSError, TypeError, ValueError) as exc:
-        logger.warning("head identity: could not write %s: %s", path, exc)
-        return f"not recorded: {type(exc).__name__}: {exc}"
+        line = (json.dumps(entry, sort_keys=True) + "\n").encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        logger.warning("head identity: could not encode a line for %s: %s", path, exc)
+        return f"{NOT_RECORDED_UNAVAILABLE} ({type(exc).__name__}: {exc})"
+
+    def _failed(exc: Optional[BaseException]) -> str:
+        return (
+            NOT_RECORDED_TIMED_OUT
+            if exc is None
+            else f"{NOT_RECORDED_UNAVAILABLE} ({type(exc).__name__}: {exc})"
+        )
+
+    status = _bounded(
+        lambda: _append_unbounded(path, line),
+        _IO_BOUND_S,
+        what="writing the head-identity record",
+        on_failure=_failed,
+    )
+    if status != RECORDED:
+        logger.warning("head identity: %s for %s; this line is dropped.", status, path)
+    return status
 
 
 def _append(worktree: Path, entry: Dict[str, Any]) -> bool:
@@ -208,15 +272,52 @@ def _append(worktree: Path, entry: Dict[str, Any]) -> bool:
     return _append_status(worktree, entry) == RECORDED
 
 
-def read_entries(worktree: Path) -> List[Dict[str, Any]]:
-    """Every readable line of the record, in order; ``[]`` when there is none."""
-    path = record_path(worktree)
-    entries: List[Dict[str, Any]] = []
+def _read_tail_unbounded(path: Path) -> bytes:
+    fd = _open_record(path, os.O_RDONLY)
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return entries
-    for line in text.splitlines():
+        size = os.fstat(fd).st_size
+        start = max(0, size - _READ_TAIL_BYTES)
+        os.lseek(fd, start, os.SEEK_SET)
+        chunks: List[bytes] = []
+        remaining = size - start
+        while remaining > 0:
+            chunk = os.read(fd, min(remaining, 65536))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if start > 0:
+            # The first line read is probably cut; drop it.
+            data = data.split(b"\n", 1)[1] if b"\n" in data else b""
+        return data
+    finally:
+        os.close(fd)
+
+
+def read_entries(worktree: Path) -> List[Dict[str, Any]]:
+    """The readable lines at the end of the record (at most the last
+    ``_READ_TAIL_BYTES``), in order; ``[]`` when there is none, or when it
+    could not be read within the shared evidence boundary. Never raises."""
+    path = record_path(worktree)
+
+    def _failed(exc: Optional[BaseException]) -> bytes:
+        if not isinstance(exc, FileNotFoundError):
+            logger.warning(
+                "head identity: %s for %s; read as empty.",
+                NOT_RECORDED_TIMED_OUT if exc is None else NOT_RECORDED_UNAVAILABLE,
+                path,
+            )
+        return b""
+
+    data = _bounded(
+        lambda: _read_tail_unbounded(path),
+        _IO_BOUND_S,
+        what="reading the head-identity record",
+        on_failure=_failed,
+    )
+    entries: List[Dict[str, Any]] = []
+    for line in data.decode("utf-8", errors="replace").splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
@@ -224,6 +325,33 @@ def read_entries(worktree: Path) -> List[Dict[str, Any]]:
         if isinstance(entry, dict):
             entries.append(entry)
     return entries
+
+
+def _read_head_for_record(worktree: Path) -> Dict[str, Optional[str]]:
+    """``read_head`` for the record only, behind the shared boundary."""
+    return _bounded(
+        lambda: read_head(worktree),
+        _HEAD_BOUND_S,
+        what="reading HEAD for the head-identity record",
+        on_failure=lambda _exc: {"symbolic_ref": "unreadable", "head": "unreadable"},
+    )
+
+
+def _is_recorded_worktree(worktree: Optional[Path], *, require_record: bool = False) -> bool:
+    """``_is_build_worktree`` (and, if asked, "a record exists") behind the
+    shared boundary: a metadata call on a stalled filesystem answers False."""
+    if worktree is None:
+        return False
+
+    def _check() -> bool:
+        if not _is_build_worktree(worktree):
+            return False
+        return (not require_record) or record_path(Path(worktree)).is_file()
+
+    return bool(_bounded(
+        _check, _IO_BOUND_S, what="checking the build worktree",
+        on_failure=lambda _exc: False,
+    ))
 
 
 @dataclass
@@ -248,11 +376,11 @@ def invocation_started(
 ) -> Optional[InvocationToken]:
     """Write the "before" line. ``None`` (nothing written) outside a build
     worktree or when anything goes wrong."""
-    if not _is_build_worktree(worktree):
+    if not _is_recorded_worktree(worktree):
         return None
     try:
         worktree = Path(worktree)
-        before = read_head(worktree)
+        before = _read_head_for_record(worktree)
         stamp = _now()
         token = InvocationToken(
             invocation_id=f"{os.getpid()}-{uuid.uuid4().hex[:12]}",
@@ -341,7 +469,7 @@ def invocation_finished(token: Optional[InvocationToken]) -> Optional[Dict[str, 
     if token is None:
         return None
     try:
-        after = read_head(token.worktree)
+        after = _read_head_for_record(token.worktree)
         stamp = _now()
         entries = read_entries(token.worktree)
         overlapping = _overlapping(entries, token, stamp["at"])
@@ -439,11 +567,9 @@ def record_git_operation(
     repository's main copy leaves no record there. Returns whether a line was
     written. Never raises.
     """
-    if not _is_build_worktree(worktree):
+    if not _is_recorded_worktree(worktree, require_record=only_if_recorded):
         return False
     worktree = Path(worktree)
-    if only_if_recorded and not record_path(worktree).is_file():
-        return False
     try:
         entry = {
             "event": "git_operation",
@@ -452,7 +578,7 @@ def record_git_operation(
             "task_id": task_id,
             **_now(),
             **_identity(),
-            **read_head(worktree),
+            **_read_head_for_record(worktree),
         }
         if detail:
             entry["detail"] = detail

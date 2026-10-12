@@ -570,6 +570,49 @@ def manifest_digest(entries: Sequence[Sequence[str]]) -> str:
 _BOUND_MARGIN_S = 2.0
 
 
+def within_bound(
+    work: Callable[[], Any],
+    seconds: float,
+    *,
+    what: str,
+    on_failure: Callable[[Optional[BaseException]], Any],
+) -> Any:
+    """Run diagnostic ``work`` so that the caller is back after ``seconds``.
+
+    THE ONE BOUNDARY for evidence I/O (run records, head identity). A
+    deadline checked between reads cannot interrupt a read, a write, an open,
+    a directory listing or a metadata call that has itself stalled (a hung
+    network filesystem, a FUSE mount, a FIFO with no peer). So the work runs
+    in a daemon thread and the caller waits for it at most ``seconds``.
+
+    Returns what ``work`` returned; otherwise ``on_failure(exc)`` when it
+    raised, or ``on_failure(None)`` when it did not finish in time. A thread
+    that did not finish is left behind: the work must touch only its own
+    local objects, and its late result is discarded. Never raises.
+    """
+    import threading
+
+    box: List[Any] = []
+
+    def _run() -> None:
+        try:
+            box.append(("ok", work()))
+        except BaseException as exc:  # noqa: BLE001 — evidence never fails a run
+            box.append(("error", exc))
+
+    worker = threading.Thread(target=_run, name=f"guardkit-evidence: {what}", daemon=True)
+    worker.start()
+    worker.join(timeout=max(0.0, seconds))
+    if box:
+        kind, value = box[0]
+        return value if kind == "ok" else on_failure(value)
+    logger.warning(
+        "evidence: %s did not finish within %.1fs; recorded as timed out and "
+        "left behind.", what, seconds,
+    )
+    return on_failure(None)
+
+
 def _within_bound(
     capture: Callable[[], Dict[str, Any]],
     seconds: float,
@@ -577,42 +620,20 @@ def _within_bound(
     what: str,
     clock: Callable[[], float],
 ) -> Dict[str, Any]:
-    """Run ``capture`` so that the caller is back after ``seconds``, always.
+    """A filesystem capture behind :func:`within_bound`, as a record."""
 
-    A deadline checked between reads cannot interrupt a read, a directory
-    listing or a metadata call that has itself stalled (a hung network
-    filesystem, a FUSE mount, a device). So every filesystem capture runs in
-    a daemon thread, and the caller waits for it at most ``seconds``. On
-    expiry the record says "not recorded: timed out" and the thread is left
-    behind: it works only on its own local objects and its result is
-    discarded, so it holds nothing the caller needs. Never raises.
-    """
-    import threading
+    def _failed(exc: Optional[BaseException]) -> Dict[str, Any]:
+        if exc is not None:
+            return {
+                "status": f"not recorded: capture error ({type(exc).__name__}: {exc})"
+            }
+        return {
+            "taken_at": _utc(clock()),
+            "status": NOT_RECORDED_TIMED_OUT,
+            "limit_reached": f"{what} did not finish within {seconds:g}s",
+        }
 
-    box: List[Dict[str, Any]] = []
-
-    def _run() -> None:
-        try:
-            box.append(capture())
-        except Exception as exc:  # noqa: BLE001 — capture never fails a run
-            box.append(
-                {"status": f"not recorded: capture error ({type(exc).__name__}: {exc})"}
-            )
-
-    worker = threading.Thread(target=_run, name=f"guardkit-evidence-{what}", daemon=True)
-    worker.start()
-    worker.join(timeout=max(0.0, seconds))
-    if box:
-        return box[0]
-    logger.warning(
-        "run evidence: %s did not finish within %.1fs; recorded as timed out "
-        "and left behind.", what, seconds,
-    )
-    return {
-        "taken_at": _utc(clock()),
-        "status": NOT_RECORDED_TIMED_OUT,
-        "limit_reached": f"{what} did not finish within {seconds:g}s",
-    }
+    return within_bound(capture, seconds, what=what, on_failure=_failed)
 
 
 def source_manifest(
@@ -1382,4 +1403,5 @@ __all__ = [
     "run_environment_inventory",
     "source_manifest",
     "start_command_evidence",
+    "within_bound",
 ]

@@ -179,3 +179,14 @@ def test_an_unobserved_creation_says_the_creator_came_from_the_label():
     )
     assert finding.created_by == "build-A"
     assert "creation not observed; creator read from the label" in finding.reason
+
+
+def test_the_teardown_cli_writes_its_receipt(tmp_path, monkeypatch):
+    from guardkit.orchestrator import container_attribution as ca
+
+    monkeypatch.setenv("GUARDKIT_RUN_OWNER", "build-B")
+    receipt = tmp_path / "out" / "teardown.json"
+    assert ca.main(["record-teardown", "--receipt", str(receipt), "--", "true"]) == 0
+    import json
+
+    assert json.loads(receipt.read_text())["acting_build"] == "build-B"
