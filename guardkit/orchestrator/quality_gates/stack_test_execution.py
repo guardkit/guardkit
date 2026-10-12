@@ -111,6 +111,27 @@ _NODE_RAN_MARKER = (
 )
 
 
+# A Go run proves a test executed with a fresh package pass line
+# (``ok  pkg 0.01s``), a failing test line (``--- FAIL:``) or a package
+# failure line (``FAIL  pkg 0.003s`` or ``FAIL  pkg [build failed]``; a
+# TestMain ``os.Exit`` or a compile error prints only that). Not with
+# (12 October 2026):
+#   * ``ok pkg (cached)`` — Go replays an earlier result without running
+#     anything, and with ``-v`` it replays the old ``=== RUN`` / ``--- PASS``
+#     lines too, so those lines cannot prove a run either;
+#   * ``ok pkg 0.01s [no tests to run]`` — the package ran no test.
+# Go never caches a failure, so a FAIL line is always fresh. A run whose only
+# ``ok`` lines are cached or ran nothing is not a run. The bare ``FAIL`` line
+# Go prints last names no package and proves nothing on its own.
+_GO_RAN_MARKER = (
+    r"(?m)("
+    r"^ok[ \t](?!.*\(cached\))(?!.*\[no tests to run\])"
+    r"|^\s*--- FAIL:"
+    r"|^FAIL[ \t]+\S"
+    r")"
+)
+
+
 # Each row is one stack. ``detect_stack_profile`` requires a UNIQUE marker match,
 # so declaration order carries no priority — it is purely cosmetic. Python is
 # DELIBERATELY ABSENT: the pytest deterministic path (TASK-AB-PERTASKFG01 AC-004)
@@ -171,7 +192,10 @@ STACK_TEST_PROFILES: tuple[StackTestProfile, ...] = (
         # ``[no test files]`` co-occurs with passing packages in a mixed module,
         # so it is absent ONLY when no ``ok <pkg>`` pass-line is present.
         ambiguous_zero_test_substrings=("[no test files]",),
-        ran_marker_regex=r"(?mi)^ok\s",
+        ran_marker_regex=_GO_RAN_MARKER,
+        # Like node: ``go test`` can exit 0 having run nothing (an empty
+        # output, or only cached results), so a clean exit needs the marker.
+        success_requires_ran_marker=True,
     ),
 )
 

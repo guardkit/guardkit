@@ -3792,11 +3792,21 @@ class CoachValidator:
                     }
                 )
             else:
+                # 12 October 2026: the task's declared component, and whether
+                # the project declares a toolchain at all, travel with it, so a
+                # non-Python component is never given a root pytest.
                 coverage_dict = run_coverage_gate_for_bundle(
                     worktree_path=self.worktree_path,
                     authored_files=authored,
                     task_type=task_type.value,
                     timeout=self.test_timeout,
+                    component=getattr(self, "_component", None),
+                    component_cwd=getattr(
+                        getattr(self, "_component_toolchain", None), "cwd", None
+                    ),
+                    toolchain_declared=(
+                        getattr(self, "_toolchain", None) is not None
+                    ),
                 )
             if coverage_dict is not None:
                 logger.info(

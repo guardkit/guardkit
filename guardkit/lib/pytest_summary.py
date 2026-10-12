@@ -20,6 +20,14 @@ but carried no token for a given outcome is ``0`` for that outcome. So:
 
 ``max`` per outcome tolerates pytest reprinting the summary line.
 
+Per-FILE aggregate lines are not test counts (12 October 2026). Vitest prints
+``Test Files  3 passed (3)`` above ``Tests  7 passed (7)``, and Jest prints
+``Test Suites: 3 passed`` above ``Tests: 7 passed``. Those file lines are left
+out, so the count comes from the ``Tests`` line and never from the number of
+files. Output with no outcome token at all (plain ``go test``, an opaque
+wrapper) stays unknown. pytest output contains neither line, so its counts
+are unchanged.
+
 The authoritative pass/fail signal is always the subprocess return code, not
 these counts — a parse miss therefore never changes a gate verdict; the
 counts are metadata / advisory only.
@@ -37,6 +45,11 @@ __all__ = ["PytestSummary", "parse_pytest_summary"]
 _PYTEST_OUTCOME_RE = re.compile(
     r"(\d+)\s+(passed|failed|errors?|xpassed|xfailed|skipped)\b",
     re.IGNORECASE,
+)
+
+# A Vitest ``Test Files ...`` or Jest ``Test Suites: ...`` line counts files.
+_FILE_AGGREGATE_LINE_RE = re.compile(
+    r"^\s*Test\s+(?:Files|Suites)\b.*$", re.IGNORECASE | re.MULTILINE
 )
 
 
@@ -95,6 +108,7 @@ def parse_pytest_summary(output: Optional[str]) -> PytestSummary:
     if not output:
         return PytestSummary()
     counts: dict[str, int] = {}
+    output = _FILE_AGGREGATE_LINE_RE.sub("", output)
     for match in _PYTEST_OUTCOME_RE.finditer(output):
         key = match.group(2).lower()
         if key == "errors":

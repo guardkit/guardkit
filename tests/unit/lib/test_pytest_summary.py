@@ -104,3 +104,53 @@ class TestConsumerParity:
     )
     def test_parse_tests_skipped_tri_state(self, output, expected_skipped):
         assert parse_pytest_summary(output).skipped == expected_skipped
+
+
+class TestNonPytestSummaries:
+    """12 October 2026: per-file lines are not test counts, and output with no
+    count at all stays unknown."""
+
+    def test_vitest_reads_the_tests_line_not_the_test_files_line(self):
+        out = (
+            " ✓ src/a.test.ts (2)\n"
+            " Test Files  3 passed (3)\n"
+            "      Tests  7 passed (7)\n"
+            "   Duration  1.20s\n"
+        )
+        s = parse_pytest_summary(out)
+        assert s.passed == 7
+        assert s.tests_run == 7
+
+    def test_vitest_file_count_never_wins_over_a_smaller_test_count(self):
+        out = (
+            " Test Files  5 passed (5)\n"
+            "      Tests  3 passed | 4 skipped (7)\n"
+        )
+        s = parse_pytest_summary(out)
+        assert s.passed == 3
+        assert s.skipped == 4
+
+    def test_vitest_failures_come_from_the_tests_line(self):
+        out = (
+            " Test Files  2 failed | 1 passed (3)\n"
+            "      Tests  2 failed | 5 passed (7)\n"
+        )
+        s = parse_pytest_summary(out)
+        assert (s.passed, s.failed) == (5, 2)
+
+    def test_jest_reads_tests_not_test_suites(self):
+        out = (
+            "Test Suites: 4 passed, 4 total\n"
+            "Tests:       2 passed, 2 total\n"
+        )
+        assert parse_pytest_summary(out).passed == 2
+
+    def test_plain_go_test_output_is_unknown(self):
+        out = "ok  \tex/a\t0.012s\n?   \tex/b\t[no test files]\n"
+        s = parse_pytest_summary(out)
+        assert s == PytestSummary()
+        assert s.tests_run is None
+
+    def test_pytest_summary_is_unchanged(self):
+        s = parse_pytest_summary("===== 3 passed, 1 failed, 2 skipped in 0.4s =====")
+        assert (s.passed, s.failed, s.skipped) == (3, 1, 2)

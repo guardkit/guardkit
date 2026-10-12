@@ -71,6 +71,32 @@ _PHASE_4_AGENT_FIELD_DEFAULTS: dict[str, Any] = {
     "quality_gates_passed": False,
 }
 
+# The two COUNT fields. A reader never fills them from the defaults above:
+# a count the record does not hold, or holds as ``null``, is unknown (``None``)
+# and the code-reviewer prompt says "unknown", never 0 (12 October 2026).
+_PHASE_4_COUNT_FIELDS: tuple[str, ...] = ("tests_run", "tests_failed")
+
+#: How the code-reviewer prompt shows a count nobody could read.
+_UNKNOWN_COUNT = "unknown"
+
+
+def _read_phase_4_count(record: Any, key: str) -> Optional[int]:
+    """A count from a phase-4 record, or ``None`` when it is not a real one."""
+    if not isinstance(record, dict):
+        return None
+    value = record.get(key)
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _empty_phase_4_reading() -> dict[str, Any]:
+    """The defaults a phase-4 READER starts from: counts unknown."""
+    merged: dict[str, Any] = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+    for key in _PHASE_4_COUNT_FIELDS:
+        merged[key] = None
+    return merged
+
 # Phase 5 agent-derived field defaults. The orchestrator-side code-reviewer
 # specialist runs without ``Write`` (review must NOT modify source files), so
 # the runner can't read structured review output from a sidecar file the way
@@ -870,8 +896,12 @@ def _read_phase_4_summary(summary_path: Path) -> dict[str, Any]:
     or malformed input degrades to the defaults — this helper never
     raises. Type-checks each field individually so a single bad value
     does not poison the whole dict.
+
+    The counts (``tests_run``, ``tests_failed``) are the exception: one that
+    is missing, ``null`` or not a whole number reads as ``None`` (unknown),
+    never as the 0 default.
     """
-    merged: dict[str, Any] = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+    merged: dict[str, Any] = _empty_phase_4_reading()
     try:
         if not summary_path.exists():
             return merged
@@ -885,8 +915,10 @@ def _read_phase_4_summary(summary_path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         return merged
 
+    for key in _PHASE_4_COUNT_FIELDS:
+        merged[key] = _read_phase_4_count(data, key)
     for key, default in _PHASE_4_AGENT_FIELD_DEFAULTS.items():
-        if key not in data:
+        if key not in data or key in _PHASE_4_COUNT_FIELDS:
             continue
         value = data[key]
         if isinstance(default, bool) and isinstance(value, bool):
@@ -986,8 +1018,12 @@ def _read_phase_4_block(specialist_results_path: Path) -> dict[str, Any]:
     missing/wrong-typed phase_4 entry all degrade to defaults — this
     helper never raises. Used by :func:`invoke_code_reviewer` to render
     the Phase 4 summary into the code-reviewer prompt.
+
+    The counts (``tests_run``, ``tests_failed``) are the exception: one that
+    is missing, ``null`` or not a whole number reads as ``None`` (unknown),
+    never as the 0 default.
     """
-    merged: dict[str, Any] = dict(_PHASE_4_AGENT_FIELD_DEFAULTS)
+    merged: dict[str, Any] = _empty_phase_4_reading()
     try:
         if not specialist_results_path.exists():
             return merged
@@ -1006,8 +1042,10 @@ def _read_phase_4_block(specialist_results_path: Path) -> dict[str, Any]:
     if not isinstance(block, dict):
         return merged
 
+    for key in _PHASE_4_COUNT_FIELDS:
+        merged[key] = _read_phase_4_count(block, key)
     for key, default in _PHASE_4_AGENT_FIELD_DEFAULTS.items():
-        if key not in block:
+        if key not in block or key in _PHASE_4_COUNT_FIELDS:
             continue
         value = block[key]
         if isinstance(default, bool) and isinstance(value, bool):
@@ -1023,6 +1061,12 @@ def _read_phase_4_block(specialist_results_path: Path) -> dict[str, Any]:
         elif isinstance(default, str) and isinstance(value, str):
             merged[key] = value
     return merged
+
+
+def _prompt_count(summary: Any, key: str) -> str:
+    """A count for the code-reviewer prompt; "unknown" when it is not known."""
+    value = _read_phase_4_count(summary, key)
+    return _UNKNOWN_COUNT if value is None else str(value)
 
 
 def _build_code_reviewer_prompt(
@@ -1068,8 +1112,8 @@ def _build_code_reviewer_prompt(
         max_chars = SPECIALIST_PROMPT_MAX_CHARS
 
     summary_lines = (
-        f"- tests_run: {phase_4_summary.get('tests_run', 0)}\n"
-        f"- tests_failed: {phase_4_summary.get('tests_failed', 0)}\n"
+        f"- tests_run: {_prompt_count(phase_4_summary, 'tests_run')}\n"
+        f"- tests_failed: {_prompt_count(phase_4_summary, 'tests_failed')}\n"
         f"- coverage_pct: {phase_4_summary.get('coverage_pct', 0.0)}\n"
         f"- quality_gates_passed: "
         f"{phase_4_summary.get('quality_gates_passed', False)}\n"
@@ -1156,12 +1200,12 @@ def _build_code_reviewer_prompt(
 
 def _parse_pytest_counts(
     output: Optional[str],
-) -> tuple[int, int, Optional[int]]:
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
     """Parse ``(tests_run, tests_failed, tests_skipped)`` from pytest output.
 
     ``tests_run`` = passed + failed + errors + xpassed + xfailed (skipped
     excluded — a skipped test executed no assertions). Best-effort: returns
-    ``(0, 0, None)`` when no recognisable summary token is present. Counts are
+    ``(None, None, None)`` when no recognisable summary token is present. Counts are
     metadata only — the authoritative pass/fail signal is the subprocess
     return code (carried by :attr:`IndependentTestResult.tests_passed`), so a
     parse miss never changes the gate verdict. ``max`` per class tolerates
@@ -1175,13 +1219,15 @@ def _parse_pytest_counts(
     tests into skips).
 
     TASK-AB-REVIEWCLEAN01 (item 1): count extraction is delegated to the
-    shared ``guardkit.lib.pytest_summary`` parser. This one-shot count
-    consumer keeps its historic ``(0, 0, None)`` shape on a parse miss —
-    ``tests_run``/``tests_failed`` are 0-coerced here (metadata only; the
-    return code is authoritative) while ``tests_skipped`` stays ``None``.
+    shared ``guardkit.lib.pytest_summary`` parser.
+
+    12 October 2026: a parse miss is UNKNOWN for all three counts. It used to
+    be ``(0, 0, None)``, so plain ``go test`` output (which prints no count)
+    was recorded as "0 tests run" on a run that did run tests. A count this
+    parser could read is unchanged.
     """
     summary = parse_pytest_summary(output)
-    return (summary.tests_run or 0, summary.tests_failed or 0, summary.skipped)
+    return (summary.tests_run, summary.tests_failed, summary.skipped)
 
 
 def _load_task_work_results(
@@ -1697,7 +1743,13 @@ def _deterministic_phase_4_block(
         "duration_seconds": duration,
         "error": error[:400],
         "tests_run": tests_run,
-        "tests_failed": tests_failed or max(1, tests_run),
+        # 12 October 2026: when no failure count could be read, or the parse
+        # read 0 failures on a non-zero exit (say "Tests 7 passed" and then a
+        # type-check failure), this is the verdict's own minimum of one — a
+        # red run that was not absent failed at least once. It is never the
+        # number of tests run. The failing-test feedback to the Player keys on
+        # it being positive.
+        "tests_failed": tests_failed or 1,
         # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
         "tests_skipped": tests_skipped,
         # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only. NOTE: no

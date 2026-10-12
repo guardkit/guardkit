@@ -95,14 +95,20 @@ _DOES_NOT_APPLY_STATUSES = {
 _ERROR_STATUSES = {"error"}
 #: The words a check uses for "I ran, and my list of findings is the whole
 #: answer". Only these mean an empty findings list may be read as a result.
-_RAN_STATUSES = {"complete", "ran"}
+#: ``clean`` and ``positive`` are the coverage check's own words for that
+#: (12 October 2026: without them every real coverage result read as "not
+#: checked"). Its ``absent`` stays a word this summary does not read as a run.
+_RAN_STATUSES = {"complete", "ran", "clean", "positive"}
 #: The word a check uses when it read only PART of what it was given. It ran,
 #: and its findings stand for the part it could read — the rest was covered by
 #: nothing, so how much it could not read travels beside the state as a number
 #: (21 September 2026; the group half below has carried it from the start).
-_PARTLY_READ_STATUSES = {"parse_degraded"}
-#: Where a check lists the things it could not read.
-_UNREAD_KEYS = ("degraded_files",)
+#: ``partly_unsupported`` is the wiring check's word for "some of the change is
+#: in a language no dialect reads" (12 October 2026).
+_PARTLY_READ_STATUSES = {"parse_degraded", "partly_unsupported"}
+#: Where a check lists the things it could not read: files that would not
+#: parse, and files in a language it does not read. Both count.
+_UNREAD_KEYS = ("degraded_files", "undialected_files")
 
 #: What an entry that is ``None`` — or missing altogether — means when the
 #: kept record cannot say. The review writes that same absence for several
@@ -204,14 +210,21 @@ def _entry(
 
 
 def _unread_count(block: Any) -> Optional[int]:
-    """How many things this check says it could not read, or ``None``."""
+    """How many things this check says it could not read, or ``None``.
+
+    The lists under every key in :data:`_UNREAD_KEYS` are added together;
+    ``None`` only when the block carries none of them.
+    """
     if not isinstance(block, dict):
         return None
-    for key in _UNREAD_KEYS:
-        value = block.get(key)
-        if isinstance(value, (list, tuple)):
-            return len(value)
-    return None
+    lists = [
+        block.get(key)
+        for key in _UNREAD_KEYS
+        if isinstance(block.get(key), (list, tuple))
+    ]
+    if not lists:
+        return None
+    return sum(len(value) for value in lists)
 
 
 def summarise_check(
@@ -235,6 +248,10 @@ def summarise_check(
       word itself as the reason. It used to fall through to the findings
       list, so an unknown skip word with no findings came out as "ran and
       found nothing" — a clean answer made out of a word nobody understood.
+
+    12 October 2026: a partly-read check that found nothing is now "not
+    checked" (with the count), as the group record says; one that found
+    something stays "found something" with the count beside it.
     """
     try:
         if block is None:
@@ -302,7 +319,12 @@ def summarise_check(
                 reason or "this check recorded no list of findings",
             )
 
-        not_read = _unread_count(block) if partly_read else None
+        unread = _unread_count(block)
+        if unread:
+            # A list of unread files under any word means part of the input
+            # was covered by nothing, exactly as if the word had said so.
+            partly_read = True
+        not_read = unread if partly_read else None
         if partly_read and not reason:
             reason = (
                 f"some of what it was given could not be read ({not_read} of them)"
@@ -313,6 +335,11 @@ def summarise_check(
             return _entry(
                 STATE_FOUND_SOMETHING, reason or "", findings, not_read
             )
+        if partly_read:
+            # 12 October 2026: found nothing in the part it read, and nothing
+            # looked at the rest. That is not "ran and found nothing" — the
+            # check after each group of tasks says "not checked" here too.
+            return _entry(STATE_NOT_CHECKED, reason, None, not_read)
         return _entry(STATE_RAN_FOUND_NOTHING, reason or "", None, not_read)
     except Exception as exc:  # noqa: BLE001 — a summary never fails a build
         logger.debug("code checks: a check entry could not be summarised: %s", exc)

@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 
@@ -629,3 +630,284 @@ class TestCoverageFinding:
         assert finding.severity == "warning"
         assert finding.pattern == "ZERO_EXECUTION"
         assert finding.executed_lines == 0
+
+
+# ---------------------------------------------------------------------------
+# Declared components and honest absence (12 October 2026, web readiness W3)
+# ---------------------------------------------------------------------------
+
+
+class TestDeclaredComponentAndHonestAbsence:
+    """A non-Python project is never given a root pytest run, and a run that
+    measured none of the task's files is never ``clean``."""
+
+    def test_declared_typescript_worktree_with_a_stray_py_helper_runs_no_pytest(
+        self, tmp_worktree: Path
+    ) -> None:
+        (tmp_worktree / "package.json").write_text("{}", encoding="utf-8")
+        (tmp_worktree / "src").mkdir()
+        (tmp_worktree / "src" / "app.ts").write_text(
+            "export const x = 1;\n", encoding="utf-8"
+        )
+        (tmp_worktree / "scripts").mkdir()
+        (tmp_worktree / "scripts" / "helper.py").write_text(
+            "print('x')\n", encoding="utf-8"
+        )
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["src/app.ts", "scripts/helper.py"],
+                task_type="FEATURE",
+                toolchain_declared=True,
+            )
+
+        run.assert_not_called()
+        assert result is None  # the existing absent signal, never a pass
+        assert _is_python_stack(tmp_worktree, declared=True) is False
+
+    def test_undeclared_project_keeps_the_original_python_detection(
+        self, tmp_worktree: Path
+    ) -> None:
+        """A project that declares no toolchain is unchanged: any ``*.py`` file
+        makes it Python, so a bare package with no marker file still runs."""
+        (tmp_worktree / "pkg").mkdir()
+        (tmp_worktree / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (tmp_worktree / "pkg" / "m.py").write_text(
+            "def f():\n    return 1\n", encoding="utf-8"
+        )
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as run:
+            run_coverage_gate_for_bundle(
+                tmp_worktree, ["pkg/m.py"], task_type="FEATURE"
+            )
+
+        run.assert_called_once()
+        assert _is_python_stack(tmp_worktree) is True
+
+    @pytest.mark.parametrize(
+        "marker", ["Pipfile", "requirements-dev.txt", "requirements.txt"]
+    )
+    def test_declared_project_markers_include_pipfile_and_requirements(
+        self, tmp_worktree: Path, marker: str
+    ) -> None:
+        (tmp_worktree / marker).write_text("", encoding="utf-8")
+        (tmp_worktree / "m.py").write_text("x = 1\n", encoding="utf-8")
+        assert _is_python_stack(tmp_worktree, declared=True) is True
+
+    def test_declared_non_python_component_is_unsupported_not_root_pytest(
+        self, tmp_worktree: Path
+    ) -> None:
+        # The repository root carries Python tooling; the task's component
+        # is the TypeScript web app.
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        web = tmp_worktree / "web"
+        web.mkdir()
+        (web / "package.json").write_text("{}", encoding="utf-8")
+        (web / "tool.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["web/src/App.tsx", "web/tool.py"],
+                task_type="FEATURE",
+                component="web",
+                component_cwd="web",
+            )
+
+        run.assert_not_called()
+        assert result["status"] == "unsupported_stack"
+        assert result["ran"] is False
+        assert result["findings"] is None
+        assert "web" in result["reason"]
+
+    def test_named_but_undeclared_component_runs_nothing(
+        self, tmp_worktree: Path
+    ) -> None:
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run"
+        ) as run:
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["mod.py"],
+                task_type="FEATURE",
+                component="api",
+                component_cwd=None,
+            )
+        run.assert_not_called()
+        assert result["status"] == "absent"
+        assert result["findings"] is None
+
+    def test_python_component_is_measured_in_its_own_directory(
+        self, tmp_worktree: Path
+    ) -> None:
+        api = tmp_worktree / "api"
+        api.mkdir()
+        (api / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (api / "svc.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        seen: Dict[str, Any] = {}
+
+        def fake_run(cmd, cwd, **kwargs):
+            seen["cwd"] = cwd
+            report = Path(cwd) / ".cov_output" / "coverage.json"
+            report.write_text(
+                json.dumps({
+                    "files": {"svc.py": {
+                        "executed_lines": [],
+                        "functions": {"f": {"start_line": 1, "executed_lines": []}},
+                    }},
+                    "totals": {"percent_covered": 0.0},
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_coverage_gate_for_bundle(
+                tmp_worktree,
+                ["api/svc.py", "web/App.tsx"],
+                task_type="FEATURE",
+                component="api",
+                component_cwd="api",
+            )
+
+        assert seen["cwd"] == str(api)
+        assert result["status"] == "positive"
+        # Findings still name the file from the repository root.
+        assert result["findings"][0]["file"] == "api/svc.py"
+
+    def test_a_run_that_measured_no_authored_file_is_never_clean(
+        self, tmp_worktree: Path
+    ) -> None:
+        json_file = tmp_worktree / "coverage.json"
+        json_file.write_text(
+            json.dumps({
+                "files": {"other_pkg/unrelated.py": {"executed_lines": [1]}},
+                "totals": {"percent_covered": 100.0},
+            }),
+            encoding="utf-8",
+        )
+
+        result = _parse_coverage_json(json_file, ["mymodule.py"], tmp_worktree)
+
+        assert result["status"] != "clean"
+        assert result["status"] == "absent"
+        assert result["findings"] is None
+
+    def test_no_tests_collected_still_reads_the_report(
+        self, tmp_worktree: Path
+    ) -> None:
+        """pytest exit 5 (no tests collected) keeps its original behaviour: the
+        report is read, and an authored symbol nothing executed is a finding."""
+        (tmp_worktree / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (tmp_worktree / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+
+        def fake_run(cmd, cwd, **kwargs):
+            (Path(cwd) / ".cov_output" / "coverage.json").write_text(
+                json.dumps({
+                    "files": {"mod.py": {
+                        "executed_lines": [],
+                        "functions": {"f": {"start_line": 1, "executed_lines": []}},
+                    }},
+                    "totals": {"percent_covered": 0.0},
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(cmd, 5, "", "")
+
+        with patch(
+            "guardkit.orchestrator.quality_gates.coverage_gate.subprocess.run",
+            side_effect=fake_run,
+        ):
+            result = run_coverage_gate(tmp_worktree, ["mod.py"], task_type="FEATURE")
+
+        assert result["status"] == "positive"
+        assert result["findings"][0]["symbol"] == "f"
+
+
+
+# ---------------------------------------------------------------------------
+# Through the real caller: CoachValidator.gather_evidence step 7
+# ---------------------------------------------------------------------------
+
+
+def test_gather_evidence_gives_a_web_component_no_root_pytest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task on the declared ``web`` component, in a repository with a Python
+    ``pyproject.toml`` at its root: the Coach's coverage pass reports
+    ``unsupported_stack`` and pytest is never called (12 October 2026)."""
+    import yaml
+
+    from guardkit.orchestrator.quality_gates import coverage_gate as cg
+    from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+    from guardkit.orchestrator.toolchain_declaration import snapshot_task_toolchain
+    from tests.integration.quality_gates.test_qav_005_dogfood import (
+        _genuine_implementation_payload,
+        _make_task,
+        _write_task_work_results,
+    )
+
+    task_id = "TASK-W3-STEP7"
+    root = tmp_path / "repo"
+    worktree = root / ".guardkit" / "worktrees" / task_id
+    worktree.mkdir(parents=True)
+    (root / ".guardkit" / "config.yaml").write_text(yaml.safe_dump({"toolchain": {
+        "test": "bash scripts/check.sh",
+        "components": {
+            "web": {"cwd": "apps/web", "test": "npm test"},
+            "api": {"cwd": "apps/api", "test": "go test -count=1 ./..."},
+        },
+    }}))
+    (worktree / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (worktree / "apps" / "web").mkdir(parents=True)
+    (worktree / "apps" / "web" / "package.json").write_text("{}")
+    authored = ["apps/web/src/App.tsx", "apps/web/scripts/gen.py"]
+    payload = _genuine_implementation_payload()
+    payload.update({"task_id": task_id, "files_created": authored,
+                    "files_modified": [], "files_authored": authored})
+    _write_task_work_results(worktree, task_id, payload)
+    snapshot_task_toolchain(task_id, worktree, root)
+
+    real_run = subprocess.run
+    calls: list = []
+
+    def spy(cmd, *args, **kwargs):
+        calls.append(cmd)
+        argv0 = cmd[0] if isinstance(cmd, (list, tuple)) else str(cmd).split()[0]
+        if Path(str(argv0)).name == "git":
+            return real_run(cmd, *args, **kwargs)
+        return subprocess.CompletedProcess(cmd, 127, "", "refused by this test")
+
+    seen: list = []
+    real_bundle = cg.run_coverage_gate_for_bundle
+
+    def recording_bundle(*args, **kwargs):
+        seen.append(kwargs)
+        return real_bundle(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", spy)
+    monkeypatch.setattr(cg, "run_coverage_gate_for_bundle", recording_bundle)
+    monkeypatch.setattr(CoachValidator, "_honesty_issues_from", lambda self, h: [])
+
+    validator = CoachValidator(str(worktree), task_id=task_id, component="web")
+    bundle = validator.gather_evidence(
+        task_id=task_id, turn=1, task=_make_task(task_id, "feature")
+    )
+
+    assert seen and seen[0]["component"] == "web"
+    assert seen[0]["component_cwd"] == "apps/web"
+    assert seen[0]["toolchain_declared"] is True
+    assert not [c for c in calls if "--cov-report=json" in str(c)]
+    assert bundle.coverage["status"] == "unsupported_stack"
