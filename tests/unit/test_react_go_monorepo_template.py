@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import re
+import shutil
+import subprocess
 
 import pytest
+import yaml
 
 from guardkit.cli.init import apply_template
 from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
@@ -13,6 +18,11 @@ from guardkit.knowledge.template_pattern_loader import (
     TemplatePatternContext,
     load_template_patterns,
     select_patterns,
+)
+from guardkit.orchestrator.toolchain_declaration import (
+    load_toolchain_declaration,
+    parse_toolchain_block,
+    resolve_component_cwd,
 )
 from guardkit.templates.coverage_matrix import (
     COVERAGE_ENFORCED,
@@ -30,6 +40,7 @@ from installer.core.commands.lib.agent_discovery import (
     discover_agents,
     validate_discovery_metadata,
 )
+from tests.integration.verify_react_go_template import materialise
 
 
 TEMPLATE = "react-go-monorepo"
@@ -107,6 +118,7 @@ def test_init_installs_guidance_without_materialising_source(
         "scripts",
         "go.mod",
         "package.json",
+        ".guardkit/config.yaml",
     ):
         assert not (project / path).exists(), f"init must not materialise {path}"
 
@@ -298,3 +310,123 @@ async def test_v2_player_context_uses_planned_target(
         if line.startswith("### ")
     ]
     assert headings == [str(path) for path in targeted.selected_files]
+
+
+@pytest.fixture
+def rendered(tmp_path: Path) -> Path:
+    """The exact literal layout, rendered by the native fixture's own materialiser."""
+    output = tmp_path / "rendered"
+    materialise(output)
+    return output
+
+
+def _rendered_toolchain(rendered: Path) -> dict:
+    raw = yaml.safe_load(
+        (rendered / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
+    )
+    return raw["toolchain"]
+
+
+def test_rendered_toolchain_declaration_parses_through_real_parser(
+    rendered: Path,
+) -> None:
+    # shell_environment is checked separately below until the parser has it.
+    toolchain = dict(_rendered_toolchain(rendered))
+    assert set(toolchain.pop("shell_environment")) == {"scratch", "pass_through"}
+    raw = {"toolchain": toolchain}
+    declaration = parse_toolchain_block(toolchain)
+
+    assert declaration.install == "bash scripts/install.sh"
+    assert declaration.test == "bash scripts/check.sh"
+    assert declaration.feature_check == "bash scripts/check-feature.sh"
+    for key in ("install_timeout", "test_timeout", "feature_check_timeout"):
+        assert key in raw["toolchain"], f"root {key} must be explicit"
+    assert declaration.runtime is not None
+    assert declaration.runtime.go == (rendered / ".go-version").read_text().strip()
+    assert declaration.runtime.node == (rendered / ".nvmrc").read_text().strip()
+    for script in ("install.sh", "check.sh", "check-feature.sh", "require-tools.sh"):
+        assert (rendered / "scripts" / script).is_file()
+
+    assert declaration.component_names == ["api", "web"]
+    expected = {"web": ("apps/web", "package.json"), "api": ("apps/api", "go.mod")}
+    for name, (cwd, manifest) in expected.items():
+        component = declaration.component(name)
+        assert component is not None
+        assert component.cwd == cwd
+        resolved = resolve_component_cwd(rendered, component.cwd)
+        assert resolved.resolve().is_relative_to(rendered.resolve())
+        assert (resolved / manifest).is_file()
+        assert component.test
+        assert component.install is None, "component installs are not consumed"
+        assert "test_timeout" in raw["toolchain"]["components"][name]
+        assert component.requires_ran_marker is True
+        assert component.ran_marker_regex
+
+    web = declaration.component("web")
+    api = declaration.component("api")
+    assert web is not None and api is not None
+    assert re.search(web.ran_marker_regex, "      Tests  2 passed (2)\n")
+    assert not re.search(web.ran_marker_regex, "No test files found, exiting\n")
+    assert re.search(api.ran_marker_regex, "?   \tex/cmd/api\t[no test files]\nok  \tex/internal/notes\t1.1s\n")
+    assert not re.search(api.ran_marker_regex, "?   \tex/cmd/api\t[no test files]\n")
+    for flag in ("-race", "-count=1", "GOTOOLCHAIN=local"):
+        assert flag in api.test
+    assert "go test -race -count=1 ./..." in (
+        rendered / "scripts" / "check.sh"
+    ).read_text(encoding="utf-8")
+    assert declaration.requires_ran_marker is True
+    assert re.search(declaration.ran_marker_regex, "ok  \tex/internal/notes\t1.1s\n")
+
+
+@pytest.mark.xfail(
+    strict=True, reason="needs toolchain.shell_environment (web readiness W1/R4)"
+)
+def test_rendered_shell_environment_parses_through_real_parser(rendered: Path) -> None:
+    """Today's parser refuses the unknown key, so the loader ignores the whole file."""
+    declaration = parse_toolchain_block(_rendered_toolchain(rendered))
+    assert load_toolchain_declaration(rendered) == declaration
+    environment = declaration.shell_environment
+    assert list(environment.scratch) == ["GOPATH", "GOCACHE", "npm_config_cache"]
+    assert list(environment.pass_through) == ["PLAYWRIGHT_BROWSERS_PATH"]
+
+
+def test_feature_check_stub_fails_until_foundation_supplies_it(rendered: Path) -> None:
+    result = subprocess.run(
+        ["bash", "scripts/check-feature.sh"],
+        cwd=rendered,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "no connected feature check yet" in result.stderr
+
+
+def test_install_refuses_missing_toolchain_before_installing(
+    rendered: Path, tmp_path: Path
+) -> None:
+    """install.sh shares check.sh's exact guards and installs nothing without them."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("dirname", "awk"):
+        found = shutil.which(tool)
+        assert found is not None
+        (bin_dir / tool).symlink_to(found)
+    bash = shutil.which("bash")
+    assert bash is not None
+    for script in ("install.sh", "check.sh"):
+        assert "source scripts/require-tools.sh" in (
+            rendered / "scripts" / script
+        ).read_text(encoding="utf-8")
+        result = subprocess.run(
+            [bash, f"scripts/{script}"],
+            cwd=rendered,
+            env={"PATH": str(bin_dir), "HOME": os.environ.get("HOME", str(tmp_path))},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 1, (script, result.stderr)
+        assert "go is required" in result.stderr
+    assert not (rendered / "node_modules").exists()

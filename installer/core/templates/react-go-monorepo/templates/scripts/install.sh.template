@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+source scripts/require-tools.sh
+# Locked installs only: npm ci refuses a lockfile/manifest mismatch, and read-only
+# Go modules plus go mod verify refuse go.mod/go.sum drift or tampered downloads.
+npm ci --ignore-scripts --no-audit --no-fund
+(
+  cd apps/api
+  go mod download
+  go mod verify
+)

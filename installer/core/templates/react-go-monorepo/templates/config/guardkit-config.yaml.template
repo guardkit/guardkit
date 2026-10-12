@@ -1,0 +1,41 @@
+# GuardKit toolchain declaration (schema: guardkit/orchestrator/toolchain_declaration.py).
+# Exit code is the verdict. GuardKit snapshots this block before a build starts.
+toolchain:
+  # Locked npm and Go module installs under the exact toolchain guards.
+  install: "bash scripts/install.sh"
+  install_timeout: 1200
+  # The aggregate check: format, vet, Staticcheck, race tests, Go build,
+  # TypeScript, ESLint, Prettier, Vitest and the Vite build.
+  test: "bash scripts/check.sh"
+  test_timeout: 1800
+  requires_ran_marker: true
+  ran_marker_regex: '(?m)^ok\s'
+  # The connected browser/API/database journey. Supplied by the product
+  # foundation; the template's stub fails until then.
+  feature_check: "bash scripts/check-feature.sh"
+  feature_check_timeout: 1800
+  runtime:
+    go: "1.26.9"
+    node: "22.23.2"
+  # Caches live in GuardKit's per-worktree scratch folder, outside the project
+  # tree; the Playwright browser location is copied from the runner when set.
+  shell_environment:
+    scratch: [GOPATH, GOCACHE, npm_config_cache]
+    pass_through: [PLAYWRIGHT_BROWSERS_PATH]
+  components:
+    web:
+      cwd: "apps/web"
+      test: "npm run test"
+      test_timeout: 600
+      requires_ran_marker: true
+      ran_marker_regex: '[1-9][0-9]* passed'
+      runtime:
+        node: "22.23.2"
+    api:
+      cwd: "apps/api"
+      test: "GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=readonly go test -race -count=1 ./..."
+      test_timeout: 900
+      requires_ran_marker: true
+      ran_marker_regex: '(?m)^(ok|---) '
+      runtime:
+        go: "1.26.9"
