@@ -178,6 +178,10 @@ class HelperRun:
 
 Runner = Callable[..., HelperRun]
 
+#: After a helper is killed at its limit, how long its pipes are drained
+#: before they are abandoned (a ``setsid`` child can hold them open forever).
+_DRAIN_SECONDS = 5.0
+
 
 def _default_runner(
     args: Union[str, Sequence[str]],
@@ -212,7 +216,23 @@ def _default_runner(
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
             proc.kill()
-        out, err = proc.communicate()
+        try:
+            out, err = proc.communicate(timeout=_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            # Something outside the killed group (a ``setsid`` child, a
+            # daemon) still holds the pipes. Stop reading: the limit is the
+            # limit, and what it wrote is not worth waiting for.
+            for stream in (proc.stdout, proc.stderr):
+                try:
+                    if stream is not None:
+                        stream.close()
+                except OSError:
+                    pass
+            try:
+                proc.wait(timeout=_DRAIN_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+            return HelperRun(None, b"", b"", timed_out=True)
         return HelperRun(None, out or b"", err or b"", timed_out=True)
     return HelperRun(proc.returncode, out or b"", err or b"")
 
@@ -436,30 +456,53 @@ def compare_manifests(
     after: Mapping[str, Any],
     *,
     limit: int = DEFAULT_LIMITS.changed_paths,
-) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """The plain-words verdict on two manifests, and what changed (bounded)."""
+) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """The plain-words verdict on two manifests, what changed and what is new.
+
+    The verdict is about the source the command STARTED with: it reads
+    "source changed during the command" only when an entry that existed
+    before was modified (contents, mode or link target) or removed. Entries
+    that appeared during the command (caches, build output, anything a run
+    writes) are reported separately as files created during the command,
+    whatever the language; they never decide the verdict. Returns
+    ``(verdict, changed, created)``; the last two are bounded.
+    """
     if before.get("status") != RECORDED or after.get("status") != RECORDED:
         why = []
         if before.get("status") != RECORDED:
             why.append(f"before: {before.get('status')}")
         if after.get("status") != RECORDED:
             why.append(f"after: {after.get('status')}")
-        return f"not compared ({'; '.join(why)})", None
+        return f"not compared ({'; '.join(why)})", None, None
     if before.get("digest") == after.get("digest"):
-        return SOURCE_UNCHANGED, None
+        return SOURCE_UNCHANGED, None, None
     old = {e[0]: tuple(e[1:]) for e in before.get("_entries", [])}
     new = {e[0]: tuple(e[1:]) for e in after.get("_entries", [])}
     added = sorted(set(new) - set(old))
     removed = sorted(set(old) - set(new))
     modified = sorted(p for p in set(old) & set(new) if old[p] != new[p])
-    total = len(added) + len(removed) + len(modified)
-    return SOURCE_CHANGED, {
-        "added": added[:limit],
-        "removed": removed[:limit],
-        "modified": modified[:limit],
-        "total": total,
-        "truncated": any(len(x) > limit for x in (added, removed, modified)),
-    }
+    created = (
+        {"paths": added[:limit], "total": len(added), "truncated": len(added) > limit}
+        if added
+        else None
+    )
+    changed = (
+        {
+            "modified": modified[:limit],
+            "removed": removed[:limit],
+            "total": len(modified) + len(removed),
+            "truncated": len(modified) > limit or len(removed) > limit,
+        }
+        if (modified or removed)
+        else None
+    )
+    if changed:
+        return SOURCE_CHANGED, changed, created
+    return (
+        f"{SOURCE_UNCHANGED}; {len(added)} files created during the command",
+        None,
+        created,
+    )
 
 
 def originating_worktree_identity(
@@ -551,6 +594,35 @@ def originating_worktree_identity(
             shutil.rmtree(str(scratch), ignore_errors=True)
 
 
+COPY_STABLE = "worktree unchanged while copying"
+COPY_UNSTABLE = "changed while copying (the copy may hold a mix)"
+
+
+def mark_copy_stability(
+    at_start: Optional[Mapping[str, Any]], at_end: Optional[Mapping[str, Any]]
+) -> Dict[str, Any]:
+    """The origin identity taken as copying began, with whether it held.
+
+    ``at_start`` and ``at_end`` are :func:`originating_worktree_identity`
+    results from just before and just after the copy. Never raises.
+    """
+    record: Dict[str, Any] = dict(at_start or {})
+    end = dict(at_end or {})
+    record["after_copy"] = {
+        k: end.get(k) for k in ("status", "head", "tree_with_untracked", "taken_at")
+    }
+    if record.get("status") != RECORDED or end.get("status") != RECORDED:
+        record["stable_during_copy"] = "not known (an identity was not recorded)"
+    elif (record.get("head"), record.get("tree_with_untracked")) == (
+        end.get("head"),
+        end.get("tree_with_untracked"),
+    ):
+        record["stable_during_copy"] = COPY_STABLE
+    else:
+        record["stable_during_copy"] = COPY_UNSTABLE
+    return record
+
+
 # =========================================================================
 # 2. The resolved environment, where the project declares how
 # =========================================================================
@@ -571,6 +643,8 @@ class EvidenceRequest:
     environment_inventory: Optional[str] = None
     inventory_timeout: int = 120
     inventory_looked_up: bool = True
+    #: What the record says when nothing is declared (a component says so).
+    not_declared: str = NOT_DECLARED
 
 
 _REQUESTED: "ContextVar[Optional[EvidenceRequest]]" = ContextVar(
@@ -602,28 +676,33 @@ def request_from_declaration(
     declaration: Any,
     *,
     component: Any = None,
+    component_name: Optional[str] = None,
     **observer: Any,
 ) -> EvidenceRequest:
     """Build a request from a toolchain declaration (or ``None``).
 
-    A selected component's own ``environment_inventory`` wins; otherwise the
-    root block's. Never raises.
+    When a component is selected, ONLY that component's own declaration is
+    used — the per-component rule: the root's command is never run in a
+    component's directory. Never raises.
     """
-    command: Optional[str] = None
-    timeout = 120
-    for source in (component, declaration):
-        if source is None:
-            continue
-        value = getattr(source, "environment_inventory", None)
-        if value:
-            command = value
-            timeout = int(getattr(source, "environment_inventory_timeout", 120) or 120)
-            break
+    source = component if component is not None else declaration
+    command = getattr(source, "environment_inventory", None) if source is not None else None
+    timeout = (
+        int(getattr(source, "environment_inventory_timeout", 120) or 120)
+        if command
+        else 120
+    )
+    not_declared = (
+        f"not declared for component {component_name or '(unnamed)'}"
+        if component is not None
+        else NOT_DECLARED
+    )
     return EvidenceRequest(
         kind=kind,
         observer=dict(observer),
-        environment_inventory=command,
+        environment_inventory=command or None,
         inventory_timeout=timeout,
+        not_declared=not_declared,
     )
 
 
@@ -659,7 +738,7 @@ def run_environment_inventory(
         return {"status": NOT_LOOKED_UP}
     command = request.environment_inventory
     if not command:
-        return {"status": NOT_DECLARED}
+        return {"status": request.not_declared or NOT_DECLARED}
     runner = runner or _default_runner
     record: Dict[str, Any] = {"command": command, "directory": str(cwd)}
     try:
@@ -919,10 +998,14 @@ class CommandEvidence:
 
     def _build(self) -> Dict[str, Any]:
         ended = self.clock()
-        after = source_manifest(
-            self.execution_root, limits=self.limits, runner=self.runner, clock=self.clock
-        )
-        verdict, changed = compare_manifests(
+        try:
+            after = source_manifest(
+                self.execution_root, limits=self.limits, runner=self.runner, clock=self.clock
+            )
+        except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
+            self._errors.append(f"source after: {type(exc).__name__}: {exc}")
+            after = {"status": f"not recorded: capture error ({type(exc).__name__}: {exc})"}
+        verdict, changed, created = compare_manifests(
             self._before, after, limit=self.limits.changed_paths
         )
         entries = self._before.get("_entries") or []
@@ -941,9 +1024,16 @@ class CommandEvidence:
                 "status": "not recorded: the command's start time was not taken",
             }
         else:
-            events = docker_events_between(
-                self._started, ended, probe=self.docker, limits=self.limits
-            )
+            try:
+                events = docker_events_between(
+                    self._started, ended, probe=self.docker, limits=self.limits
+                )
+            except Exception as exc:  # noqa: BLE001 — one part failing keeps the rest
+                self._errors.append(f"container events: {type(exc).__name__}: {exc}")
+                events = {
+                    "what_this_shows": WHAT_THE_EVENTS_SHOW,
+                    "status": f"not recorded: capture error ({type(exc).__name__}: {exc})",
+                }
         observer = {
             "build": (os.environ.get(RUN_OWNER_ENV) or "").strip() or "not stated",
         }
@@ -969,6 +1059,7 @@ class CommandEvidence:
                 "before": _public_manifest(self._before),
                 "after": _public_manifest(after),
                 "changed_paths": changed,
+                "files_created_during_the_command": created,
                 "manifest": manifest_copy,
             },
             "container_events": events,
@@ -1019,6 +1110,7 @@ __all__ = [
     "default_docker_probe",
     "docker_events_between",
     "manifest_digest",
+    "mark_copy_stability",
     "originating_worktree_identity",
     "request_from_declaration",
     "request_from_repo",

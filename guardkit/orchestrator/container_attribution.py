@@ -18,6 +18,8 @@ when:
   names its acting build, with start and end times — covers the moment of
   removal.
 
+Only container removals are analysed; network removals are not.
+
 Everything else is **unknown**: no teardown receipt covering the moment (a
 suite's own run record is not a teardown receipt and never counts as one), two
 or more teardowns overlapping it, or no creation label. A removal of an
@@ -242,6 +244,8 @@ def attribute_removals(
                 + ("" if cid in created else ", and its creation was not observed")
                 + ")"
             )
+        elif cid not in created:
+            reason += "; creation not observed; creator read from the label"
         if removed_during == UNKNOWN:
             statement = UNKNOWN
         else:

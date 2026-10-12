@@ -188,7 +188,11 @@ def test_a_capture_failure_never_changes_the_outcome(worktree, monkeypatch, wave
         raise RuntimeError("manifest exploded")
 
     monkeypatch.setattr(run_evidence, "source_manifest", _broken)
-    monkeypatch.setattr(run_evidence, "originating_worktree_identity", _broken)
+    # The name the Coach imported is the one it calls.
+    monkeypatch.setattr(
+        "guardkit.orchestrator.quality_gates.coach_validator.originating_worktree_identity",
+        _broken,
+    )
     monkeypatch.setattr(
         run_evidence, "docker_events_between", _broken
     )
@@ -198,6 +202,10 @@ def test_a_capture_failure_never_changes_the_outcome(worktree, monkeypatch, wave
     assert broken.signal_absent == baseline.signal_absent
     assert broken.test_output_summary == baseline.test_output_summary
     assert broken.run_evidence["runs"][0]["capture_errors"]
+    if wave_size > 1:
+        origin = broken.run_evidence["runs"][0]["originating_worktree"]
+        assert origin["status"].startswith("not recorded: capture error")
+        assert origin["stable_during_copy"].startswith("not known")
 
 
 def test_the_record_stays_out_of_the_coach_prompt_but_in_the_bundle(worktree):
@@ -217,3 +225,43 @@ def test_the_record_stays_out_of_the_coach_prompt_but_in_the_bundle(worktree):
     assert payload["independent_tests"]["tests_passed"] is True
     # The bundle itself (what coach_turn_N.json is written from) keeps it.
     assert bundle.to_dict()["independent_tests"]["run_evidence"]["runs"]
+
+
+def test_python_run_inside_the_copy_keeps_the_verdict_and_lists_what_it_made(worktree):
+    import sys
+
+    (worktree / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    cmd = f'"{sys.executable}" -m pytest -q test_ok.py'
+    result = _validator(worktree, cmd).run_independent_tests()
+
+    assert result.tests_passed, result.test_output_summary
+    source = result.run_evidence["runs"][0]["source"]
+    assert source["verdict"].startswith(run_evidence.SOURCE_UNCHANGED + "; ")
+    assert "files created during the command" in source["verdict"]
+    created = source["files_created_during_the_command"]
+    assert created["total"] > 0
+    assert any("__pycache__" in p or ".pytest_cache" in p for p in created["paths"])
+
+
+def test_a_worktree_change_while_copying_is_recorded(worktree, monkeypatch):
+    from guardkit.orchestrator import run_evidence as rem
+
+    real = CoachValidator._originating_identity_for_copy
+    calls = {"n": 0}
+
+    def _identity(self):
+        calls["n"] += 1
+        if calls["n"] == 2:  # just after the copy: somebody wrote meanwhile
+            (worktree / "written-while-copying.txt").write_text("x\n")
+        return real(self)
+
+    monkeypatch.setattr(CoachValidator, "_originating_identity_for_copy", _identity)
+    result = _validator(worktree, "true").run_independent_tests()
+    origin = result.run_evidence["runs"][0]["originating_worktree"]
+    assert origin["stable_during_copy"] == rem.COPY_UNSTABLE
+
+    calls["n"] = 10  # no write this time
+    result = _validator(worktree, "true").run_independent_tests()
+    origin = result.run_evidence["runs"][0]["originating_worktree"]
+    assert origin["stable_during_copy"] == rem.COPY_STABLE
+    assert origin["after_copy"]["tree_with_untracked"] == origin["tree_with_untracked"]

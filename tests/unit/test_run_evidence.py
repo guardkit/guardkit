@@ -120,7 +120,7 @@ def test_a_write_during_the_command_is_recorded_as_changed(repo):
     assert record["source"]["verdict"] == SOURCE_CHANGED
     changed = record["source"]["changed_paths"]
     assert changed["modified"] == ["notes.txt"]
-    assert changed["added"] == ["new.txt"]
+    assert record["source"]["files_created_during_the_command"]["paths"] == ["new.txt"]
     assert "continuous" not in record["source"]["verdict"]
     assert "do not show what the bytes were" in record["source"]["what_this_shows"]
     json.dumps(record)  # the record is plain JSON
@@ -406,3 +406,74 @@ def test_a_command_record_carries_the_observer_and_its_events(repo, monkeypatch)
     assert record["observer"] == {"build": "build-A", "task": "TASK-1", "turn": 3}
     assert [e["Actor"]["ID"] for e in record["container_events"]["events"]] == ["during"]
     assert record["interval"]["started_unix"] < record["interval"]["ended_unix"]
+
+
+# ---------------------------------------------------------------------------
+# Fix pass (independent coach, 12 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def test_a_helper_limit_holds_even_when_a_setsid_child_keeps_the_pipes(tmp_path):
+    import time as _time
+
+    request = EvidenceRequest(
+        kind="t", environment_inventory="setsid sleep 12 & sleep 60", inventory_timeout=1
+    )
+    started = _time.monotonic()
+    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    elapsed = _time.monotonic() - started
+
+    assert record["status"] == "not recorded: timed out after 1s"
+    assert elapsed < 10, f"the 1s limit took {elapsed:.1f}s"
+
+
+def test_files_made_by_the_command_do_not_change_the_verdict_on_either_root_kind(repo, tmp_path):
+    plain = tmp_path / "copy"
+    plain.mkdir()
+    (plain / "app.txt").write_text("source\n")
+    for root in (repo, plain):
+        evidence = CommandEvidence(
+            EvidenceRequest(kind="t"), command="x", execution_root=root, docker=_no_docker()
+        ).begin()
+        (root / "made-by-run.txt").write_text("cache\n")
+        record = evidence.finish()
+        assert record["source"]["verdict"] == (
+            f"{SOURCE_UNCHANGED}; 1 files created during the command"
+        ), root
+        assert record["source"]["files_created_during_the_command"]["paths"] == ["made-by-run.txt"]
+        assert record["source"]["after"]["digest"] != record["source"]["before"]["digest"]
+
+
+@pytest.mark.parametrize("change", ["contents", "mode", "link target", "removed"])
+def test_a_change_to_a_file_that_existed_before_is_source_changed(tmp_path, change):
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "a.txt").write_text("a\n")
+    os.symlink("a.txt", str(root / "link"))
+    evidence = CommandEvidence(
+        EvidenceRequest(kind="t"), command="x", execution_root=root, docker=_no_docker()
+    ).begin()
+    if change == "contents":
+        (root / "a.txt").write_text("b\n")
+    elif change == "mode":
+        os.chmod(root / "a.txt", 0o700)
+    elif change == "link target":
+        os.unlink(root / "link")
+        os.symlink("elsewhere", str(root / "link"))
+    else:
+        os.unlink(root / "a.txt")
+    record = evidence.finish()
+    assert record["source"]["verdict"] == SOURCE_CHANGED
+
+
+def test_a_component_uses_only_its_own_inventory():
+    decl = parse_toolchain_block(
+        {"environment_inventory": "root-inventory", "components": {"app": {"cwd": "app"}}}
+    )
+    request = request_from_declaration(
+        "suite", decl, component=decl.component("app"), component_name="app"
+    )
+    assert request.environment_inventory is None
+    assert run_environment_inventory(request, cwd=".", env=None) == {
+        "status": "not declared for component app"
+    }

@@ -82,8 +82,15 @@ def test_smoke_command_uses_the_request_set_around_it(wt, tmp_path):
     assert record["command_kind"] == "smoke command"
     assert record["observer"]["feature"] == "FEAT-X" and record["observer"]["wave"] == 2
     assert record["environment_inventory"]["output"] == "inv"
-    assert record["source"]["verdict"] == SOURCE_CHANGED
-    assert record["source"]["changed_paths"]["added"] == ["made.txt"]
+    # A file the command made is reported as made; the source it started
+    # with did not change.
+    assert record["source"]["verdict"] == (
+        f"{SOURCE_UNCHANGED}; 1 files created during the command"
+    )
+    assert record["source"]["changed_paths"] is None
+    assert record["source"]["files_created_during_the_command"] == {
+        "paths": ["made.txt"], "total": 1, "truncated": False,
+    }
 
 
 def test_a_timed_out_smoke_command_is_still_recorded(wt):

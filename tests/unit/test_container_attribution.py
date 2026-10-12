@@ -171,3 +171,11 @@ def test_the_fixture_labels_every_resource_with_the_creating_build():
         assert "GUARDKIT_RUN_OWNER" in network["labels"][OWNER_LABEL]
     teardown = (FIXTURE / "teardown.sh").read_text()
     assert "record-teardown" in teardown and "--receipt" in teardown
+
+
+def test_an_unobserved_creation_says_the_creator_came_from_the_label():
+    [finding] = attribute_removals(
+        [_ev("destroy", 21.0, "c1", owner="build-A")], [_teardown("build-B", 20.0, 22.0)]
+    )
+    assert finding.created_by == "build-A"
+    assert "creation not observed; creator read from the label" in finding.reason

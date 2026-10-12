@@ -104,6 +104,7 @@ from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.run_evidence import (
     CommandEvidence,
     EvidenceRequest,
+    mark_copy_stability,
     originating_worktree_identity,
     request_from_declaration,
     start_command_evidence,
@@ -7113,6 +7114,8 @@ class CoachValidator:
                 logger.info(
                     f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
                 )
+                # Repair 7: did the worktree hold still while it was copied?
+                copied_from = self._copy_stability(copied_from)
 
                 # THE COPY IS NOT ENOUGH. The copy carries the source files;
                 # the declared test command also needs whatever guardkit's
@@ -7319,6 +7322,7 @@ class CoachValidator:
             kind,
             getattr(self, "_toolchain", None),
             component=getattr(self, "_component_toolchain", None),
+            component_name=getattr(self, "_component", None),
             task=getattr(self, "task_id", None),
             turn=getattr(self, "_run_evidence_turn", None),
         )
@@ -7372,6 +7376,17 @@ class CoachValidator:
             return subprocess.run(args, **kwargs)
         finally:
             self._keep_run_evidence(record)
+
+    def _copy_stability(
+        self, at_start: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Take the identity again after copying and say whether it held."""
+        try:
+            return mark_copy_stability(at_start, self._originating_identity_for_copy())
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+            record = dict(at_start or {})
+            record["stable_during_copy"] = f"not known (capture error: {exc})"
+            return record
 
     def _originating_identity_for_copy(self) -> Optional[Dict[str, Any]]:
         """The worktree's HEAD and temporary-index tree, taken as it is copied."""
