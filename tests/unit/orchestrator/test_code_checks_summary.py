@@ -579,3 +579,39 @@ def test_nothing_in_here_ever_raises(tmp_path: Path) -> None:
     (tmp_path / SUMMARY_RELATIVE_PATH).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / SUMMARY_RELATIVE_PATH).write_text("{not json", encoding="utf-8")
     assert read_code_checks_summary(tmp_path) is None
+
+
+# ---------------------------------------------------------------------------
+# The coverage check's own words (12 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def test_a_clean_coverage_run_ran_and_found_nothing() -> None:
+    block = {"status": "clean", "findings": [], "coverage_percentage": 100.0}
+    assert summarise_check(block)["state"] == STATE_RAN_FOUND_NOTHING
+
+
+def test_a_positive_coverage_run_found_something() -> None:
+    block = {
+        "status": "positive",
+        "findings": [{"file": "pkg/mod.py", "symbol": "unused",
+                      "pattern": "ZERO_EXECUTION"}],
+    }
+    summary = summarise_check(block)
+    assert summary["state"] == STATE_FOUND_SOMETHING
+    assert summary["findings"][0]["name"] == "unused"
+
+
+def test_an_absent_coverage_run_is_still_not_checked() -> None:
+    for block in (
+        {"status": "absent", "findings": [], "coverage_percentage": 0.0},
+        {"status": "absent", "ran": False, "findings": None,
+         "reason": "coverage ran but measured none of the files this task wrote"},
+    ):
+        assert summarise_check(block)["state"] == STATE_NOT_CHECKED
+
+
+def test_an_unsupported_coverage_component_is_kind_not_supported() -> None:
+    block = {"status": "unsupported_stack", "ran": False, "findings": None,
+             "reason": "this coverage check measures Python only"}
+    assert summarise_check(block)["state"] == STATE_KIND_NOT_SUPPORTED

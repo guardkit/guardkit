@@ -95,7 +95,10 @@ _DOES_NOT_APPLY_STATUSES = {
 _ERROR_STATUSES = {"error"}
 #: The words a check uses for "I ran, and my list of findings is the whole
 #: answer". Only these mean an empty findings list may be read as a result.
-_RAN_STATUSES = {"complete", "ran"}
+#: ``clean`` and ``positive`` are the coverage check's own words for that
+#: (12 October 2026: without them every real coverage result read as "not
+#: checked"). Its ``absent`` stays a word this summary does not read as a run.
+_RAN_STATUSES = {"complete", "ran", "clean", "positive"}
 #: The word a check uses when it read only PART of what it was given. It ran,
 #: and its findings stand for the part it could read — the rest was covered by
 #: nothing, so how much it could not read travels beside the state as a number
