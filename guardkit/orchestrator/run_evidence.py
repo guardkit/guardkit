@@ -102,6 +102,7 @@ NOT_DECLARED = "not declared"
 NOT_LOOKED_UP = "not looked up by the caller that ran this command"
 NOT_AVAILABLE = "not available"
 NOT_RECORDED_TOO_LARGE = "not recorded: too large"
+NOT_RECORDED_TIMED_OUT = "not recorded: timed out"
 RECORDED = "recorded"
 
 WHAT_THE_SOURCE_CHECK_SHOWS = (
@@ -198,6 +199,13 @@ def _default_runner(
     expects an exact sequence of calls, and evidence capture must never take a
     slot in that sequence. The helper runs in its own session so a timeout
     kills everything it started.
+
+    THE LIMIT, EXACTLY. At ``timeout`` the helper's process group is killed;
+    its pipes are then drained for up to 5 seconds (``_DRAIN_SECONDS``), and
+    if something outside the group (a ``setsid`` child, a daemon) still holds
+    them, they are closed and the process is waited on for up to 5 seconds
+    more. So a timed-out helper returns at most ``timeout`` + 5 seconds
+    after it started, and in the worst case ``timeout`` + 10.
     """
     proc = subprocess.Popen(  # noqa: S603 — argv or a project-declared command
         args if shell else list(args),
@@ -263,6 +271,10 @@ class _TooLarge(Exception):
     """A manifest bound was reached."""
 
 
+class _TimedOut(Exception):
+    """A helper command used to build the manifest ran out of time."""
+
+
 def is_git_worktree(root: Path) -> bool:
     """True when ``root`` itself carries Git metadata (a ``.git`` dir or file).
 
@@ -282,7 +294,7 @@ def _git_file_set(
         timeout=limits.git_timeout,
     )
     if run.timed_out:
-        raise _TooLarge(
+        raise _TimedOut(
             f"listing the files with git took longer than {limits.git_timeout:g}s"
         )
     if run.returncode != 0:
@@ -439,6 +451,10 @@ def source_manifest(
         entries = _describe(root, paths, limits, deadline)
     except _TooLarge as exc:
         record["status"] = NOT_RECORDED_TOO_LARGE
+        record["limit_reached"] = str(exc)
+        return record
+    except _TimedOut as exc:
+        record["status"] = NOT_RECORDED_TIMED_OUT
         record["limit_reached"] = str(exc)
         return record
     except Exception as exc:  # noqa: BLE001 — capture never fails a run
@@ -1102,6 +1118,7 @@ __all__ = [
     "NOT_AVAILABLE",
     "NOT_DECLARED",
     "NOT_LOOKED_UP",
+    "NOT_RECORDED_TIMED_OUT",
     "NOT_RECORDED_TOO_LARGE",
     "SOURCE_CHANGED",
     "SOURCE_UNCHANGED",

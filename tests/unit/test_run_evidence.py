@@ -477,3 +477,12 @@ def test_a_component_uses_only_its_own_inventory():
     assert run_environment_inventory(request, cwd=".", env=None) == {
         "status": "not declared for component app"
     }
+
+
+def test_a_git_listing_that_times_out_is_recorded_as_timed_out(repo):
+    def _slow_git(argv, **kwargs):
+        return HelperRun(None, b"", b"", timed_out=True)
+
+    record = source_manifest(repo, runner=_slow_git)
+    assert record["status"] == re_mod.NOT_RECORDED_TIMED_OUT
+    assert "took longer than" in record["limit_reached"]
