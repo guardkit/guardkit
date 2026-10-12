@@ -426,3 +426,15 @@ def test_the_oracle_record_stays_out_of_the_prompt(worktree):
     payload = json.loads(text.split("<evidence_bundle>")[1].split("</evidence_bundle>")[0])
     assert "run_evidence" not in payload["behavioural_oracle"]
     assert bundle.to_dict()["behavioural_oracle"]["run_evidence"]
+
+
+def test_an_inventory_that_floods_its_output_does_not_change_the_verdict(worktree):
+    toolchain = parse_toolchain_block(
+        {"test": "true", "environment_inventory": "head -c 20000000 /dev/zero"}
+    )
+    for cmd, passed in (("true", True), ("exit 1", False)):
+        result = _validator(worktree, cmd, wave_size=1, toolchain=toolchain).run_independent_tests()
+        assert result.tests_passed is passed
+        inventory = result.run_evidence["runs"][0]["environment_inventory"]
+        assert inventory["output_bytes"] == 20_000_000
+        assert inventory["output_truncated"] is True

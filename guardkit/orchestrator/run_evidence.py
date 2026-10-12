@@ -159,6 +159,9 @@ class EvidenceLimits:
     docker_timeout: float = 15.0
     docker_events: int = 500
     docker_bytes: int = 256 * 1024
+    #: Most output kept from a helper's stdout (it is hashed in full).
+    git_output_bytes: int = 16 * 1024 * 1024
+    docker_output_bytes: int = 8 * 1024 * 1024
 
 
 DEFAULT_LIMITS = EvidenceLimits()
@@ -177,6 +180,12 @@ class HelperRun:
     stdout: bytes = b""
     stderr: bytes = b""
     timed_out: bool = False
+    #: How much stdout the helper wrote in all, and its SHA-256, when the
+    #: runner streamed it (``stdout`` then holds only what was kept). ``None``
+    #: from a runner that does not say; readers then use ``stdout`` itself.
+    stdout_total: Optional[int] = None
+    stdout_sha256: Optional[str] = None
+    stdout_truncated: bool = False
 
 
 Runner = Callable[..., HelperRun]
@@ -184,6 +193,37 @@ Runner = Callable[..., HelperRun]
 #: After a helper is killed at its limit, how long its pipes are drained
 #: before they are abandoned (a ``setsid`` child can hold them open forever).
 _DRAIN_SECONDS = 5.0
+#: Default retention of a helper's stdout and stderr. Output beyond it is
+#: read (so the helper never blocks on a full pipe) and hashed, not kept.
+_DEFAULT_KEEP_BYTES = 8 * 1024 * 1024
+_STDERR_KEEP_BYTES = 64 * 1024
+
+
+class _Sink:
+    """Keeps the first ``keep`` bytes of a stream and hashes all of it."""
+
+    def __init__(self, keep: int) -> None:
+        self.keep = max(0, int(keep))
+        self.kept = bytearray()
+        self.total = 0
+        self.digest = hashlib.sha256()
+
+    def add(self, chunk: bytes) -> None:
+        self.total += len(chunk)
+        self.digest.update(chunk)
+        room = self.keep - len(self.kept)
+        if room > 0:
+            self.kept += chunk[:room]
+
+
+def _kill_group(proc: "subprocess.Popen[bytes]") -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
 
 
 def _default_runner(
@@ -193,8 +233,9 @@ def _default_runner(
     env: Optional[Mapping[str, str]] = None,
     timeout: float,
     shell: bool = False,
+    keep_bytes: int = _DEFAULT_KEEP_BYTES,
 ) -> HelperRun:
-    """Run one helper command with a hard timeout.
+    """Run one helper command with a hard timeout and bounded output.
 
     Deliberately built on ``Popen`` rather than ``subprocess.run``: a great
     many existing tests replace ``subprocess.run`` with a scripted fake that
@@ -202,13 +243,21 @@ def _default_runner(
     slot in that sequence. The helper runs in its own session so a timeout
     kills everything it started.
 
+    OUTPUT IS STREAMED. Both pipes are read as the helper writes, so it never
+    blocks on a full pipe; the first ``keep_bytes`` of stdout (64 KiB of
+    stderr) are kept and the whole of stdout is counted and hashed, so the
+    result says how much there was and what it was without holding it.
+
     THE LIMIT, EXACTLY. At ``timeout`` the helper's process group is killed;
-    its pipes are then drained for up to 5 seconds (``_DRAIN_SECONDS``), and
-    if something outside the group (a ``setsid`` child, a daemon) still holds
-    them, they are closed and the process is waited on for up to 5 seconds
-    more. So a timed-out helper returns at most ``timeout`` + 5 seconds
-    after it started, and in the worst case ``timeout`` + 10.
+    its pipes are then drained for up to 5 seconds (``_DRAIN_SECONDS``) and
+    closed, whoever still holds them (a ``setsid`` child, a daemon), and the
+    process is waited on for up to 5 seconds more. So a timed-out helper
+    returns at most ``timeout`` + 5 seconds after it started, and in the
+    worst case ``timeout`` + 10. A helper that exits in time but leaves a
+    child holding its pipes is read for at most 5 seconds after it exits.
     """
+    import selectors
+
     proc = subprocess.Popen(  # noqa: S603 — argv or a project-declared command
         args if shell else list(args),
         cwd=str(cwd) if cwd is not None else None,
@@ -219,32 +268,64 @@ def _default_runner(
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
+    out, err = _Sink(keep_bytes), _Sink(_STDERR_KEEP_BYTES)
+    deadline = time.monotonic() + float(timeout)
+    timed_out = False
+    stop_reading_at: Optional[float] = None
+    selector = selectors.DefaultSelector()
     try:
-        out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            proc.kill()
-        try:
-            out, err = proc.communicate(timeout=_DRAIN_SECONDS)
-        except subprocess.TimeoutExpired:
-            # Something outside the killed group (a ``setsid`` child, a
-            # daemon) still holds the pipes. Stop reading: the limit is the
-            # limit, and what it wrote is not worth waiting for.
-            for stream in (proc.stdout, proc.stderr):
+        selector.register(proc.stdout, selectors.EVENT_READ, out)
+        selector.register(proc.stderr, selectors.EVENT_READ, err)
+        while selector.get_map():
+            now = time.monotonic()
+            if stop_reading_at is None:
+                if proc.poll() is not None:
+                    stop_reading_at = now + _DRAIN_SECONDS
+                elif now >= deadline:
+                    timed_out = True
+                    _kill_group(proc)
+                    stop_reading_at = now + _DRAIN_SECONDS
+            elif now >= stop_reading_at:
+                break
+            horizon = stop_reading_at if stop_reading_at is not None else deadline
+            for key, _events in selector.select(timeout=max(0.0, min(horizon - now, 0.2))):
                 try:
-                    if stream is not None:
-                        stream.close()
+                    chunk = os.read(key.fd, 65536)
                 except OSError:
-                    pass
+                    chunk = b""
+                if chunk:
+                    key.data.add(chunk)
+                else:
+                    selector.unregister(key.fileobj)
+    finally:
+        selector.close()
+        for stream in (proc.stdout, proc.stderr):
             try:
-                proc.wait(timeout=_DRAIN_SECONDS)
-            except subprocess.TimeoutExpired:
+                if stream is not None:
+                    stream.close()
+            except OSError:
                 pass
-            return HelperRun(None, b"", b"", timed_out=True)
-        return HelperRun(None, out or b"", err or b"", timed_out=True)
-    return HelperRun(proc.returncode, out or b"", err or b"")
+    if not timed_out and proc.poll() is None:
+        # Both pipes closed but the helper is still running.
+        try:
+            proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_group(proc)
+    if timed_out:
+        try:
+            proc.wait(timeout=_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
+    return HelperRun(
+        None if timed_out else proc.returncode,
+        bytes(out.kept),
+        bytes(err.kept),
+        timed_out=timed_out,
+        stdout_total=out.total,
+        stdout_sha256=out.digest.hexdigest(),
+        stdout_truncated=out.total > len(out.kept),
+    )
 
 
 def _git_env(extra: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
@@ -299,6 +380,7 @@ def _git_file_set(
         ["git", "-C", str(root), "ls-files", "-co", "--exclude-standard", "-z"],
         env=_git_env(),
         timeout=limits.git_timeout,
+        keep_bytes=limits.git_output_bytes,
     )
     if run.timed_out:
         raise _TimedOut(
@@ -308,6 +390,8 @@ def _git_file_set(
         raise RuntimeError(
             f"git ls-files exited {run.returncode}: {_first_line(run.stderr)}"
         )
+    if run.stdout_truncated:
+        raise _TooLarge(f"the file list is over {limits.git_output_bytes} bytes")
     # Git lists what it can and only WARNS about a directory it could not
     # open (exit 0), so that warning is what makes the listing incomplete.
     unreadable = [
@@ -407,18 +491,16 @@ def _describe(
                 target = f"<unreadable link: {type(exc).__name__}>"
             entries.append([rel, "symlink", target])
         elif stat.S_ISREG(st.st_mode):
-            hashed += st.st_size
-            if hashed > limits.max_bytes:
+            if hashed + st.st_size > limits.max_bytes:
                 raise _TooLarge(f"more than {limits.max_bytes} bytes to hash")
-            digest = hashlib.sha256()
-            try:
-                with open(full, "rb") as handle:
-                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                        digest.update(chunk)
-            except OSError as exc:
-                entries.append([rel, "unreadable", type(exc).__name__])
+            mode, digest_or_reason, read = _hash_regular_file(
+                full, limits.max_bytes - hashed, deadline, limits
+            )
+            hashed += read
+            if mode is None:
+                entries.append([rel, "unreadable", digest_or_reason])
                 continue
-            entries.append([rel, f"{st.st_mode:o}", digest.hexdigest()])
+            entries.append([rel, f"{mode:o}", digest_or_reason])
         elif stat.S_ISDIR(st.st_mode):
             # Listed as a directory only when its contents could not be
             # listed (it could not be entered) or Git names it (a submodule).
@@ -427,6 +509,47 @@ def _describe(
         else:
             entries.append([rel, "special", f"{st.st_mode:o}"])
     return entries
+
+
+def _hash_regular_file(
+    full: str, budget: int, deadline: float, limits: EvidenceLimits
+) -> Tuple[Optional[int], str, int]:
+    """Hash one file as it is OPENED, inside the byte and time bounds.
+
+    The open never follows a link and never waits (``O_NOFOLLOW |
+    O_NONBLOCK``), and the opened file must itself be a regular file: a path
+    swapped for a link, a FIFO or a device after it was listed is recorded as
+    unreadable, never read. The byte budget and the deadline are checked on
+    every read, so a file that grows while it is hashed cannot take the
+    capture past either bound. Returns ``(mode, sha256, bytes read)`` or
+    ``(None, reason, bytes read)``.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(full, flags)
+    except OSError as exc:
+        return None, type(exc).__name__, 0
+    read = 0
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            return None, "not a regular file when opened", 0
+        digest = hashlib.sha256()
+        while True:
+            if time.monotonic() > deadline:
+                raise _TooLarge(f"hashing took longer than {limits.max_seconds:g}s")
+            chunk = os.read(fd, 1024 * 1024)
+            if not chunk:
+                break
+            read += len(chunk)
+            if read > budget:
+                raise _TooLarge(f"more than {limits.max_bytes} bytes to hash")
+            digest.update(chunk)
+        return opened.st_mode, digest.hexdigest(), read
+    except OSError as exc:
+        return None, type(exc).__name__, read
+    finally:
+        os.close(fd)
 
 
 def manifest_digest(entries: Sequence[Sequence[str]]) -> str:
@@ -800,6 +923,7 @@ def run_environment_inventory(
             env=env,
             timeout=float(request.inventory_timeout),
             shell=True,
+            keep_bytes=limits.inventory_output_bytes,
         )
     except Exception as exc:  # noqa: BLE001 — capture never fails a run
         record["status"] = f"not recorded: capture error ({type(exc).__name__}: {exc})"
@@ -810,14 +934,15 @@ def run_environment_inventory(
         )
         return record
     cap = limits.inventory_output_bytes
+    total = run.stdout_total if run.stdout_total is not None else len(run.stdout)
     record.update(
         {
             "status": RECORDED,
             "exit_code": run.returncode,
-            "output_sha256": hashlib.sha256(run.stdout).hexdigest(),
-            "output_bytes": len(run.stdout),
+            "output_sha256": run.stdout_sha256 or hashlib.sha256(run.stdout).hexdigest(),
+            "output_bytes": total,
             "output": run.stdout[:cap].decode("utf-8", errors="replace"),
-            "output_truncated": len(run.stdout) > cap,
+            "output_truncated": total > min(cap, len(run.stdout)),
             "stderr_head": run.stderr[:2000].decode("utf-8", errors="replace"),
         }
     )
@@ -889,7 +1014,9 @@ def docker_events_between(
         ]
         for kind in DOCKER_EVENT_TYPES:
             argv[2:2] = ["--filter", f"type={kind}"]
-        run = probe.runner(argv, timeout=limits.docker_timeout)
+        run = probe.runner(
+            argv, timeout=limits.docker_timeout, keep_bytes=limits.docker_output_bytes
+        )
     except Exception as exc:  # noqa: BLE001 — capture never fails a run
         record["status"] = NOT_AVAILABLE
         record["reason"] = f"the Docker query could not start ({type(exc).__name__}: {exc})"
@@ -952,6 +1079,9 @@ def docker_events_between(
             "truncated": truncated,
             "dropped_outside_interval_or_type": outside,
             "unreadable_lines": unreadable,
+            # The daemon wrote more than was read into memory; the events
+            # above come from the first part only.
+            "output_truncated": bool(run.stdout_truncated),
         }
     )
     return record

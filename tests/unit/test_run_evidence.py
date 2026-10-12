@@ -547,3 +547,89 @@ def test_a_git_directory_git_could_not_open_is_incomplete(repo, restore_modes):
 
     assert record["status"] == re_mod.NOT_RECORDED_INCOMPLETE
     assert "private" in record["unreadable"]
+
+
+def _after_lstat(monkeypatch, name, action):
+    """Run ``action(path)`` once, just after the capture lstat()s ``name``."""
+    real_lstat = os.lstat
+    done = []
+
+    def _lstat(path, *a, **k):
+        st = real_lstat(path, *a, **k)
+        if str(path).endswith(name) and not done:
+            done.append(True)
+            action(str(path))
+        return st
+
+    monkeypatch.setattr(re_mod.os, "lstat", _lstat)
+
+
+def test_a_file_that_grows_while_hashed_cannot_pass_the_byte_bound(tmp_path, monkeypatch):
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "grow.bin").write_bytes(b"small")
+    _after_lstat(monkeypatch, "grow.bin", lambda p: os.truncate(p, 64 * 1024 * 1024))
+
+    record = source_manifest(root, limits=EvidenceLimits(max_bytes=1024 * 1024))
+
+    assert record["status"] == NOT_RECORDED_TOO_LARGE
+    assert "bytes to hash" in record["limit_reached"]
+
+
+def test_a_file_that_grows_while_hashed_cannot_pass_the_time_bound(tmp_path, monkeypatch):
+    import time as _time
+
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "grow.bin").write_bytes(b"small")
+    _after_lstat(monkeypatch, "grow.bin", lambda p: os.truncate(p, 64 * 1024 ** 3))
+
+    started = _time.monotonic()
+    record = source_manifest(
+        root, limits=EvidenceLimits(max_bytes=128 * 1024 ** 3, max_seconds=0.3)
+    )
+
+    assert record["status"] == NOT_RECORDED_TOO_LARGE
+    assert "took longer" in record["limit_reached"]
+    assert _time.monotonic() - started < 5
+
+
+def test_a_file_swapped_for_a_fifo_is_unreadable_and_never_blocks(tmp_path, monkeypatch):
+    import threading
+
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "swap.txt").write_text("regular when listed\n")
+
+    def _swap(path):
+        os.unlink(path)
+        os.mkfifo(path)
+
+    _after_lstat(monkeypatch, "swap.txt", _swap)
+    out = {}
+    worker = threading.Thread(target=lambda: out.update(source_manifest(root)), daemon=True)
+    worker.start()
+    worker.join(timeout=5)
+
+    assert not worker.is_alive(), "hashing blocked on a FIFO"
+    assert out["status"] == re_mod.NOT_RECORDED_INCOMPLETE
+    entry = [e for e in out["_entries"] if e[0] == "swap.txt"][0]
+    assert entry == ["swap.txt", "unreadable", "not a regular file when opened"]
+
+
+def test_excessive_helper_output_is_streamed_kept_bounded_and_hashed_whole(tmp_path):
+    size = 20_000_000
+    request = EvidenceRequest(kind="t", environment_inventory=f"head -c {size} /dev/zero")
+
+    run = re_mod._default_runner(
+        f"head -c {size} /dev/zero", shell=True, timeout=30, keep_bytes=1000
+    )
+    assert len(run.stdout) == 1000 and run.stdout_total == size
+    assert run.stdout_sha256 == hashlib.sha256(b"\0" * size).hexdigest()
+    assert run.stdout_truncated is True and run.returncode == 0
+
+    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    assert record["status"] == "recorded"
+    assert record["output_bytes"] == size and record["output_truncated"] is True
+    assert len(record["output"]) == EvidenceLimits().inventory_output_bytes
+    assert record["output_sha256"] == hashlib.sha256(b"\0" * size).hexdigest()
