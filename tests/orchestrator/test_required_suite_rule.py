@@ -433,49 +433,6 @@ class TestPrimaryPositiveControls:
         assert "could not import or collect" in rationale
         assert "do not change code for it" not in rationale
 
-    def test_declared_infrastructure_without_docker_is_an_estate_fault(
-        self, tmp_path: Path
-    ) -> None:
-        """Neither a pass nor builder feedback: the existing could-not-run
-        handling ends the turn and stops the loop."""
-        wt = _git_worktree(tmp_path)
-        _write_results(wt, mode="direct")
-
-        result = _run_primary(
-            wt,
-            task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-            failure_class="infrastructure",
-            requires_infrastructure=["postgresql"],
-            docker_available=False,
-        )
-
-        persisted = _persisted(wt)
-        for report in (result.report, persisted):
-            assert report["decision"] == "feedback"
-            assert report["issues"] == []
-            assert report["is_configuration_error"] is True
-            assert "Docker is not available" in report["rationale"]
-
-    def test_declared_infrastructure_with_docker_still_blocks(
-        self, tmp_path: Path
-    ) -> None:
-        """Control: with Docker present the red suite is ordinary feedback."""
-        wt = _git_worktree(tmp_path)
-        _write_results(wt, mode="direct")
-
-        result = _run_primary(
-            wt,
-            task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-            failure_class="infrastructure",
-            requires_infrastructure=["postgresql"],
-            docker_available=True,
-        )
-
-        assert result.report["decision"] == "feedback"
-        assert _blocked_by_rule(_persisted(wt))
-
     def test_an_unmeasured_baseline_excuses_nothing(self, tmp_path: Path) -> None:
         """Repair 2: a base that failed at import named nothing, so it cannot
         stand as the baseline exception."""
@@ -701,19 +658,28 @@ class TestLegacyPath:
         assert result.report["decision"] == "approve"
         assert _persisted(wt)["decision"] == "approve"
 
-    def test_declared_infrastructure_without_docker_is_an_estate_fault(
+    def test_declared_infrastructure_without_docker_is_not_approved(
         self, tmp_path: Path
     ) -> None:
-        """A certain fact the builder cannot fix: neither a pass nor builder
-        feedback. validate() used to approve it conditionally."""
+        """validate() conditionally approves a red suite whose declared
+        infrastructure has no Docker; the shared rule makes it ordinary
+        feedback (unavailable evidence keeps today's handling; this run
+        actually ran and failed)."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="task-work")
+        red = _independent(_RED_OUTPUT, passed=False)
+        judged = ("infrastructure", "high")
+
+        assert _validate_today(
+            wt, red, judged, wave_size=1,
+            requires_infrastructure=["postgresql"], docker_available=False,
+        ).decision == "approve"
 
         result = _run_legacy(
             wt,
             task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-            classifications=[("infrastructure", "high")],
+            independent=red,
+            classifications=[judged, judged],
             requires_infrastructure=["postgresql"],
             docker_available=False,
         )
@@ -721,12 +687,9 @@ class TestLegacyPath:
         persisted = _persisted(wt)
         for report in (result.report, persisted):
             assert report["decision"] == "feedback"
-            assert report["issues"] == []
-            assert report["is_configuration_error"] is True
-            assert "Docker is not available" in report["rationale"]
-            assert report["validation_results"]["independent_tests"][
-                "check_could_not_run"
-            ] is True
+            assert _blocked_by_rule(report)
+            assert report["is_configuration_error"] is False
+            assert report["approved_without_independent_tests"] is False
 
     def test_passing_run_is_approved(self, tmp_path: Path) -> None:
         wt = _git_worktree(tmp_path)

@@ -113,12 +113,9 @@ class TestConditionalApprovalLogging:
         results = make_task_work_results(tests_passed=True, requirements_met=["The thing works"])
         write_results(task_work_results_dir, results)
 
-        # No declared infrastructure: since reliability repair 1 (12 October
-        # 2026) declared infrastructure with Docker unavailable ends the turn
-        # as "the check could not run" before this log line is reached.
         task = {
             "acceptance_criteria": ["The thing works"],
-            "requires_infrastructure": [],
+            "requires_infrastructure": ["docker"],
             "_docker_available": False,
         }
 
@@ -153,12 +150,9 @@ class TestConditionalApprovalLogging:
         results = make_task_work_results(tests_passed=True, requirements_met=["The thing works"])
         write_results(task_work_results_dir, results)
 
-        # No declared infrastructure: since reliability repair 1 (12 October
-        # 2026) declared infrastructure with Docker unavailable ends the turn
-        # as "the check could not run" before this log line is reached.
         task = {
             "acceptance_criteria": ["The thing works"],
-            "requires_infrastructure": [],
+            "requires_infrastructure": ["docker"],
             "_docker_available": False,
         }
 

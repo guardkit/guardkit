@@ -2571,9 +2571,6 @@ class CoachValidator:
             # F2 ledger) and not in a file this task authored. Inert unless a
             # red baseline exists; only removes false charges.
             test_result = self._apply_baseline_diff(test_result, task_work_results)
-            test_result = self._declared_infrastructure_unavailable(
-                test_result, task
-            )
 
         # THE CHECK COULD NOT RUN. Nothing below this line may treat it as a
         # verdict: it is not a failure to feed back and not a pass to approve.
@@ -2716,6 +2713,8 @@ class CoachValidator:
             # a single precondition so a future clause cannot forget it.
             conditional_approval = not test_result.signal_absent and (
                 (
+                    # Overridden to feedback by the shared required-suite rule
+                    # (required_suite.py) in _invoke_coach_legacy.
                     failure_class == "infrastructure"
                     and failure_confidence == "high"
                     and bool(requires_infra)
@@ -2772,6 +2771,7 @@ class CoachValidator:
                         f"Continuing to requirements check."
                     )
                 else:
+                    # Overridden to feedback by the shared required-suite rule.
                     logger.warning(
                         f"Conditional approval for {task_id}: infrastructure failure "
                         f"with declared deps {requires_infra}, Docker unavailable. "
@@ -3527,9 +3527,6 @@ class CoachValidator:
             # agreeing is strictly the honest direction.
             test_result = self._apply_baseline_diff(
                 test_result, task_work_results
-            )
-            test_result = self._declared_infrastructure_unavailable(
-                test_result, task
             )
 
         # THE CHECK COULD NOT RUN. The gate may not go on saying the tests
@@ -6911,47 +6908,6 @@ class CoachValidator:
         if not all(others):
             return False
         return self._declared_coverage_command() is not None
-
-    def _declared_infrastructure_unavailable(
-        self,
-        test_result: "IndependentTestResult",
-        task: Optional[Dict[str, Any]],
-    ) -> "IndependentTestResult":
-        """A red run of a task whose declared infrastructure cannot exist here.
-
-        Reliability repair 1 (12 October 2026). When the task declares
-        ``requires_infrastructure`` and Docker is not available, a red suite
-        is a certain fact about this machine that the builder cannot change.
-        Under the required-suite rule it would otherwise be fed back turn
-        after turn until a stall. It is turned into THE CHECK COULD NOT RUN —
-        neither a pass nor builder feedback — so both Coach paths end the turn
-        as an estate fault through their existing handling. Every other
-        ran-and-failed run is returned unchanged and still blocks.
-        """
-        task = task or {}
-        requires = [
-            str(service)
-            for service in (task.get("requires_infrastructure") or [])
-            if str(service).strip()
-        ]
-        if not requires or task.get("_docker_available", True):
-            return test_result
-        if test_result.signal_absent or test_result.tests_passed is not False:
-            return test_result
-        detail = (
-            f"The task declares infrastructure its tests need "
-            f"({', '.join(requires)}), and Docker is not available on this "
-            f"machine, so '{test_result.test_command}' could not run against "
-            f"it. Nothing about the builder's work was measured; this is for "
-            f"the operator, not the builder."
-        )
-        return IndependentTestResult.could_not_run(
-            test_command=test_result.test_command,
-            detail=detail,
-            duration_seconds=test_result.duration_seconds,
-            raw_output=test_result.raw_output,
-            resolved_interpreter=test_result.resolved_interpreter,
-        )
 
     def _estate_fault_result(
         self,
