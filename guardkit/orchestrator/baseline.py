@@ -265,6 +265,11 @@ class BaselineResult:
     # into the repository months ago". See "HOW WE TELL" above. Empty on any
     # record this probe did not write, which is exactly how it should read.
     measured_in: dict = field(default_factory=dict)
+    # What the probe's command ran against (repair 7, 2026-10-12): the
+    # worktree's source before and after, the declared environment inventory
+    # and the raw container events of the interval. Evidence only; nothing
+    # reads it to decide anything. Empty on a record written before it existed.
+    run_evidence: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -277,6 +282,7 @@ class BaselineResult:
             "timestamp": self.timestamp,
             "source": self.source,
             "measured_in": dict(self.measured_in),
+            "run_evidence": dict(self.run_evidence),
             # A loud marker that this is NOT the F2 ledger (LPA-09).
             "note": (
                 "session-scoped observation; NOT the qa/known-failures.yaml "
@@ -298,6 +304,11 @@ class BaselineResult:
             measured_in=(
                 dict(data.get("measured_in"))
                 if isinstance(data.get("measured_in"), dict)
+                else {}
+            ),
+            run_evidence=(
+                dict(data.get("run_evidence"))
+                if isinstance(data.get("run_evidence"), dict)
                 else {}
             ),
         )

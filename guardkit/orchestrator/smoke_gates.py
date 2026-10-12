@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Optional
 
 from guardkit.orchestrator.feature_loader import SmokeGates
+from guardkit.orchestrator.run_evidence import (
+    EvidenceRequest,
+    current_request,
+    start_command_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,11 @@ class SmokeGateResult:
     timeout: int
     after_wave: int
     gate_not_wired: bool = False
+    #: What the command ran against (repair 7): its execution root's source
+    #: before and after, the declared environment inventory and the raw
+    #: container events of the interval. Evidence only — never read by the
+    #: pass/fail logic above.
+    run_evidence: Optional[dict] = None
 
 
 def should_fire_for_wave(config: SmokeGates, wave_number: int) -> bool:
@@ -128,6 +138,7 @@ def run_smoke_gate(
     cwd: Path,
     wave_number: int,
     venv_python: Optional[str] = None,
+    evidence: Optional[EvidenceRequest] = None,
 ) -> SmokeGateResult:
     """Execute a smoke gate and return a structured result.
 
@@ -154,6 +165,12 @@ def run_smoke_gate(
         venv interpreter rather than failing on Ubuntu 24+ where only
         ``python3`` exists in system PATH (TASK-FIX-A7B1). Falls back to
         the parent environment when None.
+    evidence : Optional[EvidenceRequest]
+        What the caller knows for the run record (repair 7): the kind of
+        command, who is observing, and the project's declared environment
+        inventory. When ``None``, the request the caller set with
+        ``run_evidence.requested`` is used; a caller that set neither still
+        gets a record, which says the inventory was not looked up.
 
     Returns
     -------
@@ -179,6 +196,14 @@ def run_smoke_gate(
             "Smoke gate PATH-prepended with bootstrap venv: %s", venv_bin
         )
 
+    # Repair 7: record what the command ran against. Never changes the run.
+    record = start_command_evidence(
+        evidence or current_request(),
+        command=config.command,
+        execution_root=cwd,
+        cwd=cwd,
+        env=env,
+    )
     try:
         proc = subprocess.run(
             config.command,
@@ -190,6 +215,7 @@ def run_smoke_gate(
             env=env,
         )
     except subprocess.TimeoutExpired as exc:
+        run_evidence = record.finish()
         # TASK-SGER-001: surface partial output captured before the gate was
         # killed. ``exc.stdout`` / ``exc.stderr`` carry whatever the
         # subprocess wrote before the timeout fired — useful when a gate
@@ -214,7 +240,10 @@ def run_smoke_gate(
             command=config.command,
             timeout=config.timeout,
             after_wave=wave_number,
+            run_evidence=run_evidence,
         )
+
+    run_evidence = record.finish()
 
     # TASK-FIX-SG05: distinguish exit 5 (no tests collected — gate not wired)
     # from exit 1 (tests ran and failed — genuine regression). Without this
@@ -276,4 +305,5 @@ def run_smoke_gate(
         timeout=config.timeout,
         after_wave=wave_number,
         gate_not_wired=gate_not_wired,
+        run_evidence=run_evidence,
     )
