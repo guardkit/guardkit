@@ -504,6 +504,22 @@ class WorktreeManager:
         """
         where = Path(working_folder) if working_folder is not None else None
 
+        # 12 October 2026 (build 0D7C): if this folder is a build's worktree
+        # (its agents' HEAD record is there), say so in that record before
+        # switching its branch, so a later reading can tell this checkout
+        # from an agent's. Nothing is written in any other folder.
+        from guardkit.orchestrator.head_identity import record_git_operation
+
+        record_git_operation(
+            where if where is not None else self.repo_root,
+            actor="guardkit WorktreeManager.merge",
+            operation=(
+                f"checkout {target_branch} to merge {worktree.branch_name}"
+            ),
+            task_id=worktree.task_id,
+            only_if_recorded=True,
+        )
+
         # Switch to target branch
         try:
             self._run_git(["checkout", target_branch], cwd=where)

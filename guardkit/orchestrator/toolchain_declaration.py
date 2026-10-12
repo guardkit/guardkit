@@ -36,6 +36,7 @@ Shape
       ran_marker_regex:  null
       requires_ran_marker: true
       runtime: {node: "v24.15.0"}
+      environment_inventory: "npm ls --all" # evidence only (run_evidence)
 
 Only ``test`` is verdict-bearing by default. ``typecheck`` / ``lint`` /
 ``build`` are *available* — a plan that wants one enforced writes it as a
@@ -214,6 +215,16 @@ class _ToolchainCommands(BaseModel):
     feature_check: Optional[str] = Field(default=None, min_length=1)
     feature_check_timeout: int = Field(default=600, ge=1, le=_MAX_TIMEOUT)
 
+    # ---- the resolved-environment record (repair 7, 2026-10-12) ----------
+    # OPTIONAL and evidence only: a command that prints what the environment
+    # resolved to (a package list, say). When declared, GuardKit runs it just
+    # before each declared command it measures, in that command's directory
+    # and environment, and keeps the output with a SHA-256 on the command's
+    # record. It never decides anything. There is no default: a project that
+    # declares nothing is recorded as "not declared". See ``run_evidence``.
+    environment_inventory: Optional[str] = Field(default=None, min_length=1)
+    environment_inventory_timeout: int = Field(default=120, ge=1, le=600)
+
     # ---- bounded timeouts -----------------------------------------------
     # Both default to TODAY's hardcoded 300s, deliberately: a repo that
     # declares only ``test:`` must not silently acquire a different timeout
@@ -266,6 +277,7 @@ class _ToolchainCommands(BaseModel):
                 self.has_classifier_overlay,
                 self.runtime,
                 self.feature_check,
+                self.environment_inventory,
             )
         )
 
@@ -393,7 +405,8 @@ def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
             "Allowed keys: test, install, typecheck, lint, build, "
             "test_timeout, install_timeout, absent_substrings, "
             "ran_marker_regex, requires_ran_marker, runtime, components, "
-            "feature_check, feature_check_timeout. "
+            "feature_check, feature_check_timeout, environment_inventory, "
+            "environment_inventory_timeout. "
             "Unknown keys are rejected — check for typos.\n"
             "Inside `components: <name>:` the SAME keys are allowed plus a "
             "REQUIRED repo-relative `cwd:`."

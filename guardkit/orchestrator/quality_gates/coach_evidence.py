@@ -138,26 +138,21 @@ class IndependentTestClassification:
     signal (an absent signal must never manufacture a code verdict;
     ``absence-of-failure-is-not-success.md``). ``None`` on the bundle otherwise.
 
-    A ``failure_class == "code"`` result for a TESTING task deterministically
-    blocks the turn via
-    ``AgentInvoker._apply_independent_test_code_failure_guard`` — the deterministic
-    backstop the LLM Coach lacked when it false-approved FEAT-FMDR-004 (a 5/9-red
-    TESTING task whose real code bugs were reasoned away as "substrate, absent").
+    Since reliability repair 1 (12 October 2026) the classification exempts
+    nothing: ``AgentInvoker._apply_independent_test_code_failure_guard`` blocks
+    every ran-and-failed required suite, whatever its class, and the class only
+    shapes the feedback words (``quality_gates/required_suite.py``).
 
     Attributes
     ----------
     failure_class : str
         One of ``"code"`` / ``"infrastructure"`` / ``"parallel_contention"`` /
         ``"collection_error"`` / ``"sdk_api_error"`` (see
-        ``CoachValidator._classify_test_failure``). Only ``"code"`` blocks; a
-        substrate gap classifies ``"infrastructure"`` and genuine cross-task
-        contention classifies ``"parallel_contention"`` — neither reaches the
-        blocking guard, preserving the parallel-contention amnesty for non-code
-        failures.
+        ``CoachValidator._classify_test_failure``). Used for the feedback
+        words only; no class exempts a red required suite.
     confidence : str
-        ``"high"`` / ``"ambiguous"`` / ``"n/a"``. The guard blocks on any
-        confidence (a single-wave failure with no recognised exception token is
-        still ``("code", "n/a")`` and IS a real failure for a TESTING task).
+        ``"high"`` / ``"ambiguous"`` / ``"n/a"``. Recorded, never a reason to
+        approve.
     raw_output_excerpt : str
         Last 500 chars of the independent-test raw output, for the Player-facing
         feedback. Bounded so ``coach_turn_N.json`` stays small.
@@ -235,8 +230,9 @@ class CoachEvidenceBundle:
         verdict for a RAN-AND-FAILED independent test run. Populated only when
         ``independent_tests`` ran and failed (``tests_passed`` False AND
         ``signal_absent`` False); ``None`` for passing / absent / skipped runs.
-        A ``("code", ...)`` result for a TESTING task deterministically blocks
-        the turn via ``AgentInvoker._apply_independent_test_code_failure_guard``.
+        It shapes the feedback words of
+        ``AgentInvoker._apply_independent_test_code_failure_guard``, which blocks
+        any ran-and-failed required suite whatever the class.
     requirements
         ``RequirementsValidation`` from ``validate_requirements``. ``None``
         when gathering aborted before requirements validation.
@@ -377,9 +373,10 @@ class CoachEvidenceBundle:
     independent_tests: Optional["IndependentTestResult"] = None
     # TASK-ABFIX-012: substrate-vs-code classification of a ran-and-failed
     # independent test run. Populated by gather_evidence ONLY when independent
-    # tests RAN and FAILED (tests_passed False AND signal_absent False). A
-    # ("code", ...) result for a TESTING task deterministically blocks via
-    # AgentInvoker._apply_independent_test_code_failure_guard. ``None`` for
+    # tests RAN and FAILED (tests_passed False AND signal_absent False). It
+    # shapes the feedback words of the required-suite guard
+    # (AgentInvoker._apply_independent_test_code_failure_guard); it exempts
+    # nothing. ``None`` for
     # passing / absent / skipped runs — an absent signal never manufactures a
     # code verdict (absence-of-failure-is-not-success). Serialised automatically
     # by ``to_dict``/``asdict`` (it is a dataclass), so the verdict reaches

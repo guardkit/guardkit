@@ -247,6 +247,49 @@ def stamp_normalizer_model_is_never_live(monkeypatch):
     monkeypatch.setenv(MODEL_URL_ENV, "")
 
 
+# ---------------------------------------------------------------------------
+# The run-evidence Docker fence: no test reads a real daemon's events
+# ---------------------------------------------------------------------------
+# Every declared command GuardKit runs now records the container events of its
+# own interval when a Docker command-line tool is on PATH (repair 7,
+# ``guardkit.orchestrator.run_evidence``). On a developer machine or the
+# factory host that would make every test that runs a check ask the real
+# daemon. This switches the query off for every test (the record then says it
+# was switched off, never "no events"). A test whose SUBJECT is the Docker
+# capture injects its own fake probe, which this switch does not touch.
+
+
+@pytest.fixture(autouse=True)
+def run_evidence_never_reads_real_docker(monkeypatch):
+    """No test asks a real Docker daemon for events.
+
+    A test that blocks evidence I/O leaves the capture's worker thread
+    behind (by design). After the test releases it, the worker finishes its
+    phase; it is waited for HERE, before this test's patches and this switch
+    are undone, so it can never run against the real environment afterwards.
+    """
+    from guardkit.orchestrator.run_evidence import DOCKER_SWITCH_ENV
+
+    import threading
+
+    monkeypatch.setenv(DOCKER_SWITCH_ENV, "0")
+    already_running = set(threading.enumerate())
+    yield
+    settle_evidence_threads(exclude=already_running)
+
+
+def settle_evidence_threads(timeout: float = 20.0, exclude=frozenset()) -> None:
+    """Wait for the evidence worker threads a test left running to finish."""
+    import threading
+    import time
+
+    give_up_at = time.monotonic() + timeout
+    for thread in threading.enumerate():
+        if thread in exclude or not thread.name.startswith("guardkit-evidence"):
+            continue
+        thread.join(timeout=max(0.0, give_up_at - time.monotonic()))
+
+
 @pytest.fixture
 def m0_routine_fleet_route(monkeypatch):
     """Declare the routine local-fleet route for the duration of one test.

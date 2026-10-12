@@ -1766,13 +1766,15 @@ class TestTurnContinuationWiring:
                 description="Test task",
             )
 
-            # Verify continuation was called
+            # Verify continuation was called — without the previous Coach's
+            # own words (build 7010, 12 October 2026).
             mock_load.assert_called_once_with(
                 graphiti_client=mock_graphiti,
                 feature_id="FEAT-001",
                 task_id="TASK-001",
                 current_turn=2,
                 autobuild_dir=None,
+                include_coach_feedback=False,
             )
 
     async def test_structured_logging_for_continuation(self):

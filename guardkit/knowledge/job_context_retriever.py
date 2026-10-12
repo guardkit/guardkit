@@ -126,8 +126,14 @@ class RetrievedContext:
     implementation_modes: List[Dict[str, Any]] = field(default_factory=list)
     quality_metrics: Optional[ContextQualityMetrics] = None
 
-    def to_prompt(self) -> str:
+    def to_prompt(self, include_coach_feedback: bool = True) -> str:
         """Format retrieved context as a prompt string.
+
+        Args:
+            include_coach_feedback: ``False`` (the Coach's context) leaves out
+                the feedback earlier Coaches wrote on rejected turns, so the
+                Coach judges this turn's evidence (build 7010, 12 October
+                2026). The Player's context keeps it.
 
         Returns:
             Formatted string suitable for prompt injection
@@ -195,7 +201,9 @@ class RetrievedContext:
 
         if self.turn_states:
             # Use dedicated formatter for turn states with cross-turn learning format
-            turn_states_section = self._format_turn_states()
+            turn_states_section = self._format_turn_states(
+                include_coach_feedback=include_coach_feedback
+            )
             if turn_states_section:
                 lines.append(turn_states_section)
 
@@ -207,7 +215,7 @@ class RetrievedContext:
 
         return "\n".join(lines)
 
-    def _format_turn_states(self) -> str:
+    def _format_turn_states(self, include_coach_feedback: bool = True) -> str:
         """Format turn states for cross-turn learning.
 
         Returns formatted string with:
@@ -240,7 +248,7 @@ class RetrievedContext:
                 lines.append(f"  Progress: {progress}")
 
             # Emphasize REJECTED turns with warning and feedback
-            if decision == "REJECTED":
+            if decision == "REJECTED" and include_coach_feedback:
                 feedback = turn.get("feedback_summary", "")
                 if feedback:
                     lines.append(f"  ⚠️ Feedback: \"{feedback}\"")

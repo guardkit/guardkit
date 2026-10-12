@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
-from guardkit.orchestrator.baseline import failing_node_ids
+from guardkit.orchestrator.baseline import NO_BASELINE_COMPARISON, failing_node_ids
 from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_BASIS_NEW,
     FAILING_TESTS_BASIS_OBSERVED,
@@ -1292,6 +1292,42 @@ def _run_deterministic_phase_4(
     wave_size: int = 1,
     component: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
+    """The deterministic Phase-4 block, with what its run ran against.
+
+    Repair 7 (2026-10-12): the block built by
+    :func:`_deterministic_phase_4_block` (unchanged) gains ``run_evidence`` —
+    the record the Coach's own runner made of the command: its real
+    execution root, that root's source before and after, the declared
+    environment inventory and the raw container events of the interval.
+    Evidence only; nothing reads it to decide anything.
+    """
+    sink: dict[str, Any] = {}
+    block = _deterministic_phase_4_block(
+        worktree_path,
+        task_id,
+        agent_invoker,
+        sdk_timeout=sdk_timeout,
+        turn=turn,
+        wave_size=wave_size,
+        component=component,
+        evidence_sink=sink,
+    )
+    if isinstance(block, dict) and isinstance(sink.get("run_evidence"), dict):
+        block["run_evidence"] = sink["run_evidence"]
+    return block
+
+
+def _deterministic_phase_4_block(
+    worktree_path: Path,
+    task_id: str,
+    agent_invoker: "AgentInvoker",
+    *,
+    sdk_timeout: int,
+    turn: Optional[int],
+    wave_size: int = 1,
+    component: Optional[str] = None,
+    evidence_sink: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
     """Execute Phase-4 tests deterministically and return a phase_4 block.
 
     TASK-AB-PERTASKFG01 AC-004. Reuses the Coach's
@@ -1407,6 +1443,8 @@ def _run_deterministic_phase_4(
         result = validator.run_independent_tests(
             task_work_results=task_work_results, turn=turn
         )
+        if evidence_sink is not None:
+            evidence_sink["run_evidence"] = getattr(result, "run_evidence", None)
     except InterpreterResolutionError:
         # WS3-S1 Q1 SPLIT: an interpreter-resolution hard-abort must NOT
         # degrade to the LLM test-orchestrator specialist (which would run
@@ -1627,10 +1665,15 @@ def _run_deterministic_phase_4(
             f"newly failing: {named}"
         )
     elif base_unknown_note:
+        # An unmeasured baseline is said as such, never as a comparison.
+        base_words = (
+            "no baseline comparison was possible"
+            if (base_source or "").startswith(NO_BASELINE_COMPARISON)
+            else "nothing on record about the base"
+        )
         error = (
             f"tests failed (deterministic Phase 4): {summary[:160]} "
-            f"[whole suite: nothing on record about the base, so every "
-            f"failure is charged]"
+            f"[whole suite: {base_words}, so every failure is charged]"
         )
     else:
         error = f"tests failed (deterministic Phase 4): {summary[:160]}"

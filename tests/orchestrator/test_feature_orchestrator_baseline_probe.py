@@ -199,7 +199,7 @@ def _recording_runner(monkeypatch, result):
     """
     calls = []
 
-    def _fake(config, cwd, wave_number, venv_python=None):
+    def _fake(config, cwd, wave_number, venv_python=None, evidence=None):
         calls.append(
             {
                 "command": config.command,
@@ -347,7 +347,7 @@ def _runner_by_command(monkeypatch, results):
     """A fake runner that answers per command, and records what it ran."""
     calls = []
 
-    def _fake(config, cwd, wave_number, venv_python=None):
+    def _fake(config, cwd, wave_number, venv_python=None, evidence=None):
         calls.append(config.command)
         return results[config.command]
 
@@ -707,7 +707,7 @@ def test_probe_runner_blowing_up_is_one_warning_and_nothing_else(
     feature = _feature("unused")
     feature.smoke_gates = None
 
-    def _boom(config, cwd, wave_number, venv_python=None):
+    def _boom(config, cwd, wave_number, venv_python=None, evidence=None):
         raise RuntimeError("the runner fell over")
 
     monkeypatch.setattr(
@@ -1534,3 +1534,100 @@ def test_a_repository_with_neither_declaration_writes_nothing_still(tmp_path):
 
     assert orch._measured_baseline is None
     assert list(wt.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Reliability repair 2, part A (12 October 2026): the probe records one of
+# three states — passed, failed with named failures, or unmeasured. B463 and
+# DC47's base failed at import and named no test; it was filed as
+# "pre-existing test failure(s)" and later compared against as if measured.
+# ---------------------------------------------------------------------------
+
+
+def test_the_three_states_from_real_runs(tmp_path, caplog):
+    """Passed, failed with a named failure, and an import error — real pytest.
+
+    The import error is in ``conftest.py``, so pytest names no failing test
+    and exits non-zero: that is unmeasured, warned as such, and never called
+    pre-existing failures.
+    """
+    from guardkit.orchestrator.baseline import (
+        BASELINE_FAILED,
+        BASELINE_PASSED,
+        BASELINE_UNMEASURED,
+    )
+
+    cases = {
+        "green": ("def test_ok():\n    assert True\n", None, BASELINE_PASSED),
+        "red": ("def test_home():\n    assert 1 == 2\n", None, BASELINE_FAILED),
+        "import": (
+            "def test_ok():\n    assert True\n",
+            "import a_module_that_is_not_installed_xyz\n",
+            BASELINE_UNMEASURED,
+        ),
+    }
+    for name, (test_body, conftest, expected) in cases.items():
+        wt = tmp_path / name
+        wt.mkdir()
+        (wt / "test_slice.py").write_text(test_body)
+        if conftest is not None:
+            (wt / "conftest.py").write_text(conftest)
+        orch = _orchestrator(tmp_path)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            orch._run_baseline_probe(
+                _feature(_pytest_command("test_slice.py")), _worktree(wt)
+            )
+        recorded = read_baseline_from_worktree(wt)
+        assert recorded is not None, name
+        assert recorded.state == expected, name
+        assert orch._measured_baseline.state == expected, name
+        text = " ".join(r.getMessage() for r in caplog.records)
+        if expected == BASELINE_UNMEASURED:
+            assert "BASELINE UNMEASURED" in text
+            assert "no baseline comparison is possible" in text
+            assert "pre-existing test failure" not in text
+            assert "BASELINE RED" not in text
+        elif expected == BASELINE_FAILED:
+            assert "BASELINE RED" in text
+            assert "pre-existing" in text
+
+
+def test_the_b463_shape_is_recorded_unmeasured(tmp_path, monkeypatch, caplog):
+    """The declared suite fails at import naming nothing; the smoke command it
+    falls back to does the same. The record is kept (finalize re-runs its
+    command) but says unmeasured, and the Coach's diff stays inert."""
+    from guardkit.orchestrator.baseline import BASELINE_UNMEASURED
+
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "./scripts/check-all")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("./scripts/check-smoke")
+    import_error = (
+        "ImportError while loading conftest '/w/tests/conftest.py'.\n"
+        "E   ModuleNotFoundError: No module named 'psycopg'\n"
+    )
+    _runner_by_command(
+        monkeypatch,
+        {
+            "./scripts/check-all": _smoke_result(
+                "./scripts/check-all", passed=False, exit_code=4,
+                stdout=import_error,
+            ),
+            "./scripts/check-smoke": _smoke_result(
+                "./scripts/check-smoke", passed=False, exit_code=4,
+                stdout=import_error,
+            ),
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    recorded = read_baseline_from_worktree(wt)
+    assert recorded is not None
+    assert recorded.state == BASELINE_UNMEASURED
+    assert recorded.source == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "BASELINE UNMEASURED" in text
+    assert "pre-existing test failure" not in text

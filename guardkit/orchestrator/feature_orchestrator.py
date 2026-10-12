@@ -55,6 +55,7 @@ from guardkit.orchestrator.feature_loader import (
 )
 from guardkit.orchestrator import evidence_repos as evidence_repos_lib
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
+from guardkit.orchestrator.run_evidence import request_from_repo
 from guardkit.orchestrator.smoke_gates import (
     SmokeGateResult,
     run_smoke_gate,
@@ -128,6 +129,8 @@ GUARD_MISSING_CHECK_FILE_REASON = (
     "such file exists in the built tree"
 )
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_PASSED,
     SOURCE_FEATURE_SMOKE,
     SOURCE_REPOSITORY_TEST,
     SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED,
@@ -1139,6 +1142,10 @@ class FeatureOrchestrator:
         try:
             # Phase 1: Setup
             feature, worktree = self._setup_phase(feature_id, base_branch)
+            # Build 0D7C (12 October 2026): the branch every task's
+            # checkpoints must land on, pinned once before the first wave.
+            self._feature_branch_pinned = False
+            self._pinned_feature_branch(worktree)
 
             # Phase 2: Wave Execution
             if specific_task:
@@ -1169,6 +1176,26 @@ class FeatureOrchestrator:
             raise FeatureOrchestrationError(
                 f"Failed to orchestrate feature {feature_id}: {e}"
             ) from e
+
+    def _pinned_feature_branch(self, worktree: Worktree) -> Optional[str]:
+        """The branch every task's checkpoints must land on (build 0D7C).
+
+        Read once, at the build's start, before any agent has run: HEAD's
+        branch then, else the worktree's declared branch
+        (``head_identity.expected_checkpoint_branch``). Later calls return the
+        pinned value and never look at HEAD again.
+        """
+        if not getattr(self, "_feature_branch_pinned", False):
+            from guardkit.orchestrator.head_identity import (
+                expected_checkpoint_branch,
+            )
+
+            self._feature_branch = expected_checkpoint_branch(
+                getattr(worktree, "path", None),
+                getattr(worktree, "branch_name", None),
+            )
+            self._feature_branch_pinned = True
+        return self._feature_branch
 
     def _setup_phase(
         self,
@@ -3099,6 +3126,10 @@ The detailed specifications are in the task markdown file.
             timeout=declaration.timeout,
             env_extra=env_extra,
             venv_python=self._bootstrap_venv_python,
+            evidence=request_from_repo(
+                "whole-feature check", self.repo_root,
+                feature=str(feature.id), attempt=attempt_number,
+            ),
         )
         exit_code = run["exit_code"]
         timed_out = bool(run["timed_out"])
@@ -3158,6 +3189,7 @@ The detailed specifications are in the task markdown file.
             observations_total=line.observations_total,
             notes=list(line.notes),
             scenarios_covered=(line.scenarios_covered if passed else []),
+            run_evidence=dict(run.get("run_evidence") or {}),
             ran_at=datetime.now().isoformat(),
         )
 
@@ -3412,6 +3444,10 @@ The detailed specifications are in the task markdown file.
                 cwd=Path(worktree.path),
                 wave_number=wave_number,
                 venv_python=self._bootstrap_venv_python,
+                evidence=request_from_repo(
+                    "smoke command", self.repo_root,
+                    feature=str(feature.id), wave=wave_number,
+                ),
             )
             wave_result.smoke_gate_result = smoke_result
 
@@ -5230,8 +5266,14 @@ The detailed specifications are in the task markdown file.
                 "measured now would record this build's own breakage as "
                 "pre-existing.",
                 worktree.path,
-                "green" if existing.passed
-                else f"{existing.failing_count} pre-existing failure(s)",
+                "green" if existing.state == BASELINE_PASSED
+                else (
+                    f"{existing.failing_count} pre-existing failure(s)"
+                    if existing.state == BASELINE_FAILED
+                    # Did not pass and named no failing test: nothing was
+                    # measured, so nothing is called pre-existing.
+                    else "unmeasured — no baseline comparison is possible"
+                ),
                 existing.command,
                 existing.source or "an earlier run",
             )
@@ -5299,6 +5341,9 @@ The detailed specifications are in the task markdown file.
                     cwd=worktree.path,
                     wave_number=0,
                     venv_python=self._bootstrap_venv_python,
+                    evidence=request_from_repo(
+                        "baseline probe", self.repo_root, feature=str(feature.id)
+                    ),
                 )
             except Exception as exc:  # noqa: BLE001 — probe is best-effort/report-only
                 logger.warning(
@@ -5322,6 +5367,8 @@ The detailed specifications are in the task markdown file.
                 # measurement from one that was checked out with the code.
                 measured_in=worktree_identity(worktree.path),
             )
+            evidence = getattr(run, "run_evidence", None)
+            record.run_evidence = dict(evidence) if isinstance(evidence, dict) else {}
             return run, record, output
 
         measured = _measure(probe_config, source)
@@ -5390,6 +5437,11 @@ The detailed specifications are in the task markdown file.
             smoke_result, result, combined = measured
             source = SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
 
+        # The record says which of three things the run established
+        # (``BaselineResult.state``: passed, failed with named failures, or
+        # unmeasured). An unmeasured record is still written, so finalize has
+        # a command to re-run, but it excuses nothing: only named failures
+        # are ever subtracted, and comparisons say none was possible.
         self._measured_baseline = result
 
         try:
@@ -5800,6 +5852,10 @@ The detailed specifications are in the task markdown file.
                 worktree_manager=self._worktree_manager,
                 sdk_timeout=effective_sdk_timeout,
                 sdk_timeout_is_override=sdk_timeout_is_override,
+                # Pinned at build start; a task that starts anywhere else is
+                # refused at its checkpoint (build 0D7C).
+                expected_branch=self._pinned_feature_branch(worktree),
+                expected_branch_pinned=True,
                 enable_pre_loop=effective_enable_pre_loop,
                 enable_context=self.enable_context,
                 feature_id=feature.id,

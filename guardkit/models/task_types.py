@@ -265,8 +265,9 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         # reason a 5/9-red run away as "substrate" and false-approve FMDR-004).
         # Safe only because this ships WITH the substrate-vs-code classifier
         # (a substrate gap → signal_absent → feedback, not a false-red) and the
-        # deterministic _apply_independent_test_code_failure_guard (a real code
-        # bug → block). Do not flip this back without those guards.
+        # deterministic _apply_independent_test_code_failure_guard (a red
+        # required suite → block, for every type that requires tests since
+        # reliability repair 1). Do not flip this back without those guards.
         tests_required=True,
         plan_audit_required=True,
         # TASK-ABFIX-012: a TESTING task that produced zero runnable tests is

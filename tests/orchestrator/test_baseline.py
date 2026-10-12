@@ -14,6 +14,9 @@ from pathlib import Path
 import pytest
 
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_PASSED,
+    BASELINE_UNMEASURED,
     BaselineResult,
     baseline_diff_enabled,
     baseline_measured_here,
@@ -164,11 +167,58 @@ class TestWave0Warning:
         assert "not attributable to any task" in msg
         assert "tests/a.py::test_x" in msg
 
-    def test_red_baseline_unparseable_ids_still_warns(self):
+    def test_red_baseline_naming_no_test_is_unmeasured_not_pre_existing(self):
+        """Reliability repair 2 (12 October 2026): a run that did not pass and
+        named no failing test measured nothing. It still warns, but it is never
+        described as pre-existing failures (B463 and DC47's import error was)."""
         r = BaselineResult("flutter test", 0, False, 1, [], 0)
         msg = wave0_baseline_warning(r)
-        assert "not attributable to any task" in msg
-        assert "not parseable" in msg
+        assert msg.startswith("BASELINE UNMEASURED")
+        assert "no baseline comparison is possible" in msg
+        assert "pre-existing test failure" not in msg
+        assert "not attributable to any task" not in msg
+
+
+class TestThreeBaselineStates:
+    """passed / failed with named failures / unmeasured — from the exit status
+    and the failure names already extracted, nothing else."""
+
+    def test_passed(self):
+        r = BaselineResult("pytest", 0, True, 0)
+        assert r.state == BASELINE_PASSED
+
+    def test_failed_with_named_failures(self):
+        r = probe_baseline_result(
+            command="pytest -q", expected_exit=0, passed=False, exit_code=1,
+            output="FAILED tests/a.py::test_x - boom\n",
+            timestamp="2026-10-12T00:00:00",
+        )
+        assert r.state == BASELINE_FAILED
+        assert r.failing_node_ids == ["tests/a.py::test_x"]
+
+    def test_import_error_naming_nothing_is_unmeasured(self):
+        r = probe_baseline_result(
+            command="pytest -q", expected_exit=0, passed=False, exit_code=4,
+            output=(
+                "ImportError while loading conftest '/w/tests/conftest.py'.\n"
+                "tests/conftest.py:1: in <module>\n"
+                "    import sqlalchemy_missing\n"
+                "E   ModuleNotFoundError: No module named 'sqlalchemy_missing'\n"
+            ),
+            timestamp="2026-10-12T00:00:00",
+        )
+        assert r.failing_node_ids == []
+        assert r.state == BASELINE_UNMEASURED
+
+    def test_state_is_written_and_re_derived_on_read(self, tmp_path):
+        path = tmp_path / "baseline.json"
+        write_baseline(path, BaselineResult("pytest -q", 0, False, 4, [], 0))
+        data = json.loads(path.read_text())
+        assert data["state"] == BASELINE_UNMEASURED
+        # A stored state is never trusted over the record's own facts.
+        data["state"] = BASELINE_FAILED
+        path.write_text(json.dumps(data))
+        assert load_baseline_file(path).state == BASELINE_UNMEASURED
 
 
 class TestDiffEnabledFlag:

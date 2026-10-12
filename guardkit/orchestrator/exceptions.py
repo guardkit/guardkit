@@ -273,6 +273,70 @@ class RateLimitExceededError(AgentInvokerError):
         self.reset_time = reset_time
 
 
+# The harness marks a refused agent launch with this ``failure_kind``. GuardKit
+# matches the value rather than importing the harness package, which stays an
+# optional dependency.
+AGENT_LAUNCH_REFUSED_KIND = "agent_launch_refused"
+
+
+def find_agent_launch_refusal(error: BaseException) -> Optional[BaseException]:
+    """Return the harness's launch refusal in ``error``'s cause chain, if any.
+
+    Wrappers such as ``AgentInvocationError`` keep the refusal as their cause,
+    so the chain is searched. An implicit context is followed only when it was
+    not suppressed (``raise ... from None``): an unrelated error raised while a
+    refusal was being handled is not itself a refusal.
+    """
+    seen: set = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "failure_kind", None) == AGENT_LAUNCH_REFUSED_KIND:
+            return current
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return None
+
+
+class AgentLaunchRefusedError(AgentInvokerError):
+    """Raised when the harness refused to launch the agent.
+
+    The agent never reached the model and every later turn would be refused
+    the same way, so the task stops at once: no state recovery, no Coach
+    review and no implementation feedback.
+
+    Attributes:
+        reason: Always ``"agent launch refused"``.
+        entries: The harness's description of each unexpected entry (path,
+            type, size, SHA-256), never file contents.
+        profile: The refused run profile, when the harness named it.
+    """
+
+    reason = "agent launch refused"
+
+    def __init__(
+        self,
+        message: str,
+        entries: Optional[List[Dict[str, Any]]] = None,
+        profile: Optional[str] = None,
+    ):
+        super().__init__(f"{self.reason}: {message}")
+        self.entries = [dict(entry) for entry in entries or ()]
+        self.profile = profile
+
+    @classmethod
+    def from_refusal(cls, refusal: BaseException) -> "AgentLaunchRefusedError":
+        return cls(
+            str(refusal),
+            entries=list(getattr(refusal, "entries", None) or ()),
+            profile=getattr(refusal, "profile", None),
+        )
+
+
 # ============================================================================
 # Orchestration Exceptions
 # ============================================================================

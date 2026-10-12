@@ -101,8 +101,19 @@ from guardkit.orchestrator.docker_fixtures import (
     parse_port_output,
 )
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.orchestrator.run_evidence import (
+    CommandEvidence,
+    EvidenceRequest,
+    mark_copy_stability,
+    originating_worktree_identity,
+    request_from_declaration,
+    start_command_evidence,
+)
 from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_UNMEASURED,
+    NO_BASELINE_COMPARISON,
     baseline_diff_enabled,
     compute_charged_failures,
     failing_node_ids,
@@ -975,6 +986,23 @@ def _combined_output_tail(
     return "\n".join(parts) or None
 
 
+#: The kinds of command run record the independent check makes (repair 7),
+#: and what each one's execution root is, in plain words.
+EVIDENCE_ISOLATED = "independent suite (isolated copy)"
+EVIDENCE_WORKTREE = "independent suite (worktree)"
+EVIDENCE_SDK = "independent suite (through the SDK, in the worktree)"
+EVIDENCE_ORACLE = "behavioural oracle"
+EVIDENCE_ROOT_DESCRIPTIONS = {
+    EVIDENCE_ISOLATED: (
+        "an isolated copy of the build worktree, without Git metadata; the "
+        "originating worktree's identity at copy time is recorded separately"
+    ),
+    EVIDENCE_WORKTREE: "the build worktree",
+    EVIDENCE_SDK: "the build worktree (the command was run by an SDK agent)",
+    EVIDENCE_ORACLE: "the build worktree",
+}
+
+
 @dataclass
 class IndependentTestResult:
     """
@@ -1056,6 +1084,42 @@ class IndependentTestResult:
     # uses. Records THAT it fell back and WHY. Receipt evidence only: no gate,
     # verdict or feedback branch reads it.
     isolation_fallback_reason: Optional[str] = None
+    # The command's own exit status, when it ran as a subprocess (12 October
+    # 2026). ``None`` when there was none to read (the agent-shell path, a
+    # timeout, a skipped run). Read only by ``failure_receipt`` below.
+    exit_code: Optional[int] = None
+
+    # WHAT THE CHECK RAN AGAINST (repair 7, 2026-10-12): one record per
+    # command run for this check, in order — the isolated attempt and its
+    # worktree fallback are two. Each names the real execution root, its
+    # source before and after, the declared environment inventory and the
+    # raw container events of the interval (see ``run_evidence``). Receipt
+    # evidence only: no gate, verdict or feedback branch reads it.
+    run_evidence: Optional[Dict[str, Any]] = None
+
+    def failure_receipt(self) -> Optional[Dict[str, Any]]:
+        """This run's own failure facts, for the Player's feedback.
+
+        ``None`` unless the run really ran and failed: a pass, an absent
+        signal and a check that could not run are never described as a
+        failure to fix. Otherwise the command, its exit status and the first
+        failing lines of its output (``failing_test_feedback``), so the
+        Player is told what THIS turn's run said whatever the reviewer's prose
+        says (build 7010, 12 October 2026).
+        """
+        if self.tests_passed or self.signal_absent or self.check_could_not_run:
+            return None
+        from guardkit.orchestrator.failing_test_feedback import (
+            first_failing_lines,
+        )
+
+        return {
+            "command": self.test_command,
+            "exit_code": self.exit_code,
+            "failing_lines": first_failing_lines(
+                self.raw_output or self.test_output_summary
+            ),
+        }
 
     # ------------------------------------------------------------------
     # TASK-AB-REVIEWCLEAN01 (item 3): outcome-shape factories. The advisory
@@ -1083,6 +1147,7 @@ class IndependentTestResult:
         output: Optional[str],
         resolved_interpreter: Optional[str],
         signal_absent: bool = False,
+        exit_code: Optional[int] = None,
     ) -> "IndependentTestResult":
         """A run that produced ``output``. Derives the advisory skip count
         from ``output`` so it can never be silently omitted."""
@@ -1095,6 +1160,7 @@ class IndependentTestResult:
             signal_absent=signal_absent,
             tests_skipped=parse_pytest_summary(output).skipped,
             resolved_interpreter=resolved_interpreter,
+            exit_code=exit_code,
         )
 
     @classmethod
@@ -1375,6 +1441,10 @@ class CoachValidationResult:
         Dict[str, Any]
             Dictionary representation suitable for JSON
         """
+        from guardkit.orchestrator.failing_test_feedback import (
+            SUITE_RECEIPT_KEY,
+        )
+
         # Build per-criterion results from requirements validation
         criteria_verification: List[Dict[str, Any]] = []
         acceptance_criteria_results: List[Dict[str, Any]] = []
@@ -1441,6 +1511,17 @@ class CoachValidationResult:
                     "isolation_fallback_reason": (
                         self.independent_tests.isolation_fallback_reason
                     ),
+                    "exit_code": self.independent_tests.exit_code,
+                    # Repair 7: what the check actually ran against. Evidence
+                    # only; serialised even when None (the ABFIX-010 lesson).
+                    "run_evidence": (
+                        self.independent_tests.run_evidence
+                        if isinstance(
+                            getattr(self.independent_tests, "run_evidence", None),
+                            dict,
+                        )
+                        else None
+                    ),
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -1455,6 +1536,12 @@ class CoachValidationResult:
             "acceptance_criteria_verification": {
                 "criteria_results": acceptance_criteria_results,
             },
+            # This turn's own failure facts for the Player's feedback (None
+            # unless the run ran and failed), under the orchestrator's key.
+            SUITE_RECEIPT_KEY: (
+                self.independent_tests.failure_receipt()
+                if self.independent_tests else None
+            ),
             "issues": self.issues,
             "rationale": self.rationale,
             "context_used": self.context_used,
@@ -2710,6 +2797,8 @@ class CoachValidator:
             # a single precondition so a future clause cannot forget it.
             conditional_approval = not test_result.signal_absent and (
                 (
+                    # Overridden to feedback by the shared required-suite rule
+                    # (required_suite.py) in _invoke_coach_legacy.
                     failure_class == "infrastructure"
                     and failure_confidence == "high"
                     and bool(requires_infra)
@@ -2766,6 +2855,7 @@ class CoachValidator:
                         f"Continuing to requirements check."
                     )
                 else:
+                    # Overridden to feedback by the shared required-suite rule.
                     logger.warning(
                         f"Conditional approval for {task_id}: infrastructure failure "
                         f"with declared deps {requires_infra}, Docker unavailable. "
@@ -4394,9 +4484,13 @@ class CoachValidator:
         env["GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT"] = str(receipt_path)
         start_time = time.time()
         proc: Optional[subprocess.CompletedProcess[str]] = None
+        # Repair 7: what the oracle command ran against, on its own receipt.
+        result["run_evidence"] = oracle_evidence = {}
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 command,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -4541,9 +4635,12 @@ class CoachValidator:
         provenance = f"yaml_command:{command}"
 
         start_time = time.time()
+        oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 command,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -4576,6 +4673,7 @@ class CoachValidator:
                 "timed_out": True,
                 "output_tail": output_tail,
                 "provenance": provenance,
+                "run_evidence": oracle_evidence,
             }
         except Exception as exc:
             logger.warning(
@@ -4614,6 +4712,7 @@ class CoachValidator:
             "timed_out": False,
             "output_tail": output_tail,
             "provenance": provenance,
+            "run_evidence": oracle_evidence,
         }
 
     def _execute_oracle(
@@ -4640,9 +4739,12 @@ class CoachValidator:
             A dict with the oracle result shape, or ``None`` on failure.
         """
         start_time = time.time()
+        oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            proc = subprocess.run(
+            proc = self._run_recorded(
                 cmd,
+                evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
+                record_into=oracle_evidence,
                 cwd=str(self.worktree_path),
                 capture_output=True,
                 text=True,
@@ -4674,6 +4776,7 @@ class CoachValidator:
                 "timed_out": True,
                 "output_tail": output_tail,
                 "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
+                "run_evidence": oracle_evidence,
             }
         except Exception as exc:
             logger.warning(
@@ -4709,6 +4812,7 @@ class CoachValidator:
             "timed_out": False,
             "output_tail": output_tail,
             "provenance": "independent" if oracle_type == "python" else f"yaml_command:{oracle_rel}",
+            "run_evidence": oracle_evidence,
         }
 
     def _compute_agent_invocations_advisory(
@@ -5038,8 +5142,10 @@ class CoachValidator:
         if not baseline_diff_enabled():
             return False
         baseline, ledger = self._baseline_context()
-        has_baseline_reds = baseline is not None and not baseline.passed and bool(
-            baseline.failing_node_ids
+        # Only named failures from a measured baseline can excuse anything;
+        # an unmeasured one (did not pass, named nothing) excuses nothing.
+        has_baseline_reds = (
+            baseline is not None and baseline.state == BASELINE_FAILED
         )
         return has_baseline_reds or bool(ledger)
 
@@ -5107,7 +5213,14 @@ class CoachValidator:
                     "%d; kill-switch GUARDKIT_AUTOBUILD_BASELINE_DIFF: %s)",
                     "absent"
                     if baseline is None
-                    else ("green" if baseline.passed else "red"),
+                    else (
+                        "green" if baseline.passed
+                        else (
+                            NO_BASELINE_COMPARISON
+                            if baseline.state == BASELINE_UNMEASURED
+                            else "red"
+                        )
+                    ),
                     len(ledger),
                     "on" if baseline_diff_enabled() else "OFF",
                 )
@@ -5154,9 +5267,29 @@ class CoachValidator:
                 )
                 return test_result
             attributed = sorted(set(observed))
+            # Name only the record(s) that actually covered these failures. A
+            # baseline that measured nothing, or one that named none of them,
+            # is never credited (reliability repair 2, 12 October 2026).
+            by_baseline = set(baseline_ids)
+            used_baseline = any(n in by_baseline for n in attributed)
+            used_ledger = any(
+                n in ledger and n not in by_baseline for n in attributed
+            )
+            sources_words = " and ".join(
+                words
+                for words, used in (
+                    ("the measured baseline", used_baseline),
+                    (
+                        "the repository's known-failure ledger "
+                        "(qa/known-failures.yaml)",
+                        used_ledger,
+                    ),
+                )
+                if used
+            )
             summary = (
                 f"Independent tests: {len(attributed)} failure(s) attributed to "
-                f"the measured baseline / F2 ledger (pre-existing before wave 1, "
+                f"{sources_words} (pre-existing before wave 1, "
                 f"not this task): {', '.join(attributed)}. No regressions "
                 f"introduced by this task (GUARDKIT_AUTOBUILD_BASELINE_DIFF)."
             )
@@ -5179,9 +5312,8 @@ class CoachValidator:
                 "NOTE FOR THE REVIEWER: this run is reported as PASSED even "
                 f"though the output below shows {len(attributed)} failing "
                 "test(s). Every one of them was ALREADY failing on this "
-                "branch's base before any task touched it (the build's "
-                "measured baseline and the repository's known-failure "
-                "ledger), and none is in a file this task authored. They are "
+                f"branch's base before any task touched it ({sources_words}), "
+                "and none is in a file this task authored. They are "
                 "not this task's failures and there is nothing in them for "
                 "the builder to fix. Zero net-new is the bar, not all-green.\n"
                 "---\n"
@@ -5233,8 +5365,10 @@ class CoachValidator:
         ``baseline.json`` shape source 1 writes, so the two doors are
         reading one record, not two.
 
-        ``base_known`` is ``False`` only when neither is present. Nothing is
-        then forgiven: :meth:`compare_suite_against_base` makes no comparison
+        ``base_known`` is ``False`` only when neither is present — an
+        unmeasured baseline (it did not pass and named no failing test) counts
+        as not present, and the words then say no baseline comparison was
+        possible. Nothing is then forgiven: :meth:`compare_suite_against_base` makes no comparison
         at all, the run's own red stands in full, and the record says in
         plain words that nothing was on record. That is the fail-closed
         direction, and it is the same verdict the Coach's own gate reaches in
@@ -5243,7 +5377,14 @@ class CoachValidator:
         measured, ledger = self._baseline_context()
         sources: List[str] = []
         ids: List[str] = []
-        if measured is not None:
+        # An UNMEASURED baseline (it did not pass and named no failing test —
+        # an import or collection error, say) is not knowledge of the base:
+        # it is never offered as a source, so a comparison is never claimed
+        # against it (reliability repair 2, 12 October 2026).
+        unmeasured = (
+            measured is not None and measured.state == BASELINE_UNMEASURED
+        )
+        if measured is not None and not unmeasured:
             ids.extend(measured.failing_node_ids)
             sources.append(
                 "the build's measured baseline (the wave-0 run on this "
@@ -5263,6 +5404,13 @@ class CoachValidator:
                 "(qa/known-failures.yaml)"
             )
         if not sources:
+            if unmeasured:
+                return (
+                    False,
+                    [],
+                    f"{NO_BASELINE_COMPARISON}, and there is no "
+                    "qa/known-failures.yaml",
+                )
             return (
                 False,
                 [],
@@ -5892,13 +6040,25 @@ class CoachValidator:
                 # TASK-FIX-LGACLOSE: finalise the harness async generator on
                 # every exit (incl. timeout/cancel) via aclosing() so no
                 # orphaned async_generator_athrow survives interpreter shutdown.
+                # HEAD recorded before and after this shell-capable agent
+                # (build 0D7C, 12 October 2026); evidence only.
+                from guardkit.orchestrator.head_identity import (
+                    observe_invocation,
+                )
+
                 async with aclosing(
-                    harness.invoke(
-                        prompt=prompt,
-                        role="coach_test",
-                        tools=["Bash"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.test_timeout,
+                    observe_invocation(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="coach_test",
+                            tools=["Bash"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.test_timeout,
+                        ),
+                        self.worktree_path,
+                        role="coach test runner",
+                        task_id=self.task_id,
+                        turn=self._turn,
                     )
                 ) as _harness_stream:
                     async for event in _harness_stream:
@@ -7046,6 +7206,8 @@ class CoachValidator:
 
         try:
             with self._isolated_copy_location() as (tmpdir_path, holder):
+                # Repair 7: who the copy came from, at the moment of copying.
+                copied_from = self._originating_identity_for_copy()
 
                 # Copy worktree snapshot, skipping large/irrelevant directories
                 for item in self.worktree_path.iterdir():
@@ -7072,6 +7234,8 @@ class CoachValidator:
                 logger.info(
                     f"[TASK-ABFIX-005] Worktree snapshot created at {tmpdir_path}"
                 )
+                # Repair 7: did the worktree hold still while it was copied?
+                copied_from = self._copy_stability(copied_from)
 
                 # THE COPY IS NOT ENOUGH. The copy carries the source files;
                 # the declared test command also needs whatever guardkit's
@@ -7112,8 +7276,9 @@ class CoachValidator:
                             + self._pytest_timeout_argv()
                             + basetemp_argv
                         )
-                        result = subprocess.run(
+                        result = self._run_recorded(
                             cmd,
+                            evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
                             cwd=str(self._component_run_cwd(tmpdir_path)),
                             capture_output=True,
                             text=True,
@@ -7129,8 +7294,9 @@ class CoachValidator:
                     # parallel-wave oracle would run the component's command
                     # at the copy's root — the same wrong-directory failure the
                     # standard path was fixed for.
-                    result = subprocess.run(
+                    result = self._run_recorded(
                         test_cmd,
+                        evidence=(EVIDENCE_ISOLATED, tmpdir_path, copied_from),
                         shell=True,
                         cwd=str(self._component_run_cwd(tmpdir_path)),
                         capture_output=True,
@@ -7196,6 +7362,7 @@ class CoachValidator:
                     output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=False,
                     resolved_interpreter=self._resolved_interpreter_for(test_cmd),
+                    exit_code=result.returncode,
                 )
 
         except subprocess.TimeoutExpired:
@@ -7227,7 +7394,144 @@ class CoachValidator:
                 resolved_interpreter=self._resolved_interpreter_for(test_cmd),
             )
 
+    # ---- what the check ran against (repair 7, 2026-10-12) ---------------
+    #
+    # Every command this validator runs for its independent check is
+    # recorded by ``run_evidence``: the real execution root (the worktree, or
+    # the isolated copy that has no ``.git``), its source just before and just
+    # after, the declared environment inventory, and the raw container events
+    # of the interval. Recording NEVER changes a verdict: the command itself
+    # is run exactly as before by ``subprocess.run``, and every capture error
+    # is written into the record, never raised.
+
+    _run_evidence_log: Optional[List[Dict[str, Any]]] = None
+    _run_evidence_turn: Optional[int] = None
+
     def run_independent_tests(
+        self,
+        task_work_results: Optional[Dict[str, Any]] = None,
+        task: Optional[Dict[str, Any]] = None,
+        turn: Optional[int] = None,
+    ) -> IndependentTestResult:
+        """Run the independent check, and record what it ran against.
+
+        The check itself is :meth:`_run_independent_tests_unrecorded`,
+        unchanged. This adds the run records it produced to the result's
+        ``run_evidence`` (one per command: an isolated attempt and its
+        worktree fallback are two) and touches nothing else.
+        """
+        self._run_evidence_log = []
+        self._run_evidence_turn = turn
+        try:
+            result = self._run_independent_tests_unrecorded(
+                task_work_results=task_work_results, task=task, turn=turn
+            )
+            runs = list(self._run_evidence_log or [])
+        finally:
+            self._run_evidence_log = None
+        if runs and isinstance(result, IndependentTestResult):
+            # Set on the result itself (not a copy): the result a caller is
+            # handed is the very object the check produced.
+            try:
+                result.run_evidence = {"runs": runs}
+            except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+                logger.warning("Could not attach the run evidence: %s", exc)
+        return result
+
+    def _evidence_request(self, kind: str) -> "EvidenceRequest":
+        return request_from_declaration(
+            kind,
+            getattr(self, "_toolchain", None),
+            component=getattr(self, "_component_toolchain", None),
+            component_name=getattr(self, "_component", None),
+            task=getattr(self, "task_id", None),
+            turn=getattr(self, "_run_evidence_turn", None),
+        )
+
+    def _begin_run_evidence(
+        self,
+        kind: str,
+        command: Any,
+        execution_root: Path,
+        origin: Optional[Dict[str, Any]],
+        cwd: Optional[str],
+        env: Optional[Dict[str, str]],
+    ) -> "CommandEvidence":
+        """Start one command's record. Never raises."""
+        try:
+            request = self._evidence_request(kind)
+        except Exception:  # noqa: BLE001
+            request = None
+        return start_command_evidence(
+            request,
+            command=command,
+            execution_root=execution_root,
+            cwd=cwd,
+            env=env,
+            execution_root_is=EVIDENCE_ROOT_DESCRIPTIONS.get(kind, kind),
+            origin=origin,
+        )
+
+    def _keep_run_evidence(self, evidence: "CommandEvidence") -> None:
+        """Finish one command's record and keep it for this check."""
+        try:
+            record = evidence.finish()
+        except Exception as exc:  # noqa: BLE001
+            record = {"capture_errors": [f"{type(exc).__name__}: {exc}"]}
+        if self._run_evidence_log is None:
+            self._run_evidence_log = []
+        self._run_evidence_log.append(record)
+
+    def _run_recorded(
+        self,
+        args: Any,
+        *,
+        evidence: Tuple[str, Path, Any],
+        record_into: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ):
+        """``subprocess.run(args, **kwargs)``, with the command recorded.
+
+        The command is run by the same ``subprocess.run`` call, with the same
+        arguments, as before; the record is made around it and kept whether
+        the command returns, times out or fails to start. With
+        ``record_into`` the record is written into that dict (the caller's
+        own receipt) instead of this check's list of runs.
+        """
+        kind, execution_root, origin = evidence
+        record = self._begin_run_evidence(
+            kind, args, Path(execution_root), origin, kwargs.get("cwd"), kwargs.get("env")
+        )
+        try:
+            return subprocess.run(args, **kwargs)
+        finally:
+            if record_into is None:
+                self._keep_run_evidence(record)
+            else:
+                try:
+                    record_into.update(record.finish())
+                except Exception as exc:  # noqa: BLE001
+                    record_into["capture_errors"] = [f"{type(exc).__name__}: {exc}"]
+
+    def _copy_stability(
+        self, at_start: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Take the identity again after copying and say whether it held."""
+        try:
+            return mark_copy_stability(at_start, self._originating_identity_for_copy())
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+            record = dict(at_start or {})
+            record["stable_during_copy"] = f"not known (capture error: {exc})"
+            return record
+
+    def _originating_identity_for_copy(self) -> Optional[Dict[str, Any]]:
+        """The worktree's HEAD and temporary-index tree, taken as it is copied."""
+        try:
+            return originating_worktree_identity(self.worktree_path)
+        except Exception as exc:  # noqa: BLE001 — evidence never fails a check
+            return {"status": f"not recorded: capture error ({exc})"}
+
+    def _run_independent_tests_unrecorded(
         self,
         task_work_results: Optional[Dict[str, Any]] = None,
         task: Optional[Dict[str, Any]] = None,
@@ -7381,7 +7685,13 @@ class CoachValidator:
                     except RuntimeError:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                    sdk_evidence = self._begin_run_evidence(
+                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, None
+                    )
+                    try:
+                        result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
+                    finally:
+                        self._keep_run_evidence(sdk_evidence)
                     logger.info(
                         f"SDK independent tests {'passed' if result.tests_passed else 'failed'} "
                         f"in {result.duration_seconds:.1f}s"
@@ -7479,8 +7789,9 @@ class CoachValidator:
                             + self._pytest_timeout_argv()
                             + basetemp_argv
                         )
-                        result = subprocess.run(
+                        result = self._run_recorded(
                             cmd,
+                            evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
                             cwd=str(self._component_run_cwd(self.worktree_path)),
                             capture_output=True,
                             text=True,
@@ -7499,8 +7810,9 @@ class CoachValidator:
                     # snapshot reader and to anyone auditing the receipt.
                     # ``_component_run_cwd`` returns the worktree UNCHANGED
                     # when no component is active.
-                    result = subprocess.run(
+                    result = self._run_recorded(
                         test_cmd,
+                        evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
                         shell=True,
                         cwd=str(self._component_run_cwd(self.worktree_path)),
                         capture_output=True,
@@ -7637,6 +7949,7 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
+                        exit_code=result.returncode,
                     ),
                     # The command completed and has an exit code, so a
                     # fallback close-out can re-ask what that exit code

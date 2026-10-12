@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
+    AgentLaunchRefusedError,
     CoachDecisionInvalidError,
     CoachDecisionNotFoundError,
     PlanNotFoundError,
@@ -45,6 +46,7 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
     TaskStateError,
     TaskWorkResult,
+    find_agent_launch_refusal,
 )
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
 from guardkit.orchestrator.instrumentation.llm_instrumentation import (
@@ -2823,6 +2825,10 @@ class AgentInvoker:
                 error=f"SDK timeout after {self.sdk_timeout_seconds}s: {str(e)}",
                 session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
+        except AgentLaunchRefusedError:
+            # The agent never started and would be refused again next turn.
+            # Let the orchestrator's unrecoverable path stop the task.
+            raise
         except (Exception, asyncio.CancelledError) as e:
             duration = time.time() - start_time
             if isinstance(e, asyncio.CancelledError):
@@ -3246,13 +3252,15 @@ class AgentInvoker:
                 coach_output_path=coach_output_path,
             )
 
-            # TASK-ABFIX-012: TESTING-task independent-code-failure hard-gate.
-            # Deterministic backstop for the FMDR-004 false-approval — overrides
-            # approve->feedback when a TESTING task's own tests ran and FAILED with
-            # a code defect. Substrate gaps are owned by the absent guard above
-            # (signal_absent); genuine parallel contention is not classified
-            # 'code', so its amnesty is preserved. Runs in the same deterministic
-            # verdict-override seam, before narrative reconciliation.
+            # TASK-ABFIX-012, widened by reliability repair 1 (12 October 2026):
+            # the required-suite hard-gate. Overrides approve->feedback when a
+            # task whose profile requires tests had its independent suite run
+            # and FAIL, whatever the task type and whatever the failure class,
+            # unless the baseline exception verified every failure. Absent
+            # signals are owned by the absent guard above. The legacy path
+            # applies the same rule (required_suite.py). Runs in the same
+            # deterministic verdict-override seam, before narrative
+            # reconciliation.
             self._apply_independent_test_code_failure_guard(
                 decision=decision,
                 evidence_bundle=evidence_bundle,
@@ -4876,6 +4884,14 @@ Turn: {turn}
                 "gathering_error": f"bundle_serialisation_failed: {exc}",
             }
 
+        # Repair 7: the run record (source manifests, environment inventory,
+        # container events) is for a person diagnosing a run afterwards. It
+        # stays in coach_turn_N.json and is kept out of the model's prompt.
+        for leg_for_prompt in ("independent_tests", "behavioural_oracle"):
+            leg = bundle_dict.get(leg_for_prompt)
+            if isinstance(leg, dict):
+                leg.pop("run_evidence", None)
+
         # Truncate bdd.discoveries / bdd.errors.
         bdd = bundle_dict.get("bdd")
         if isinstance(bdd, dict):
@@ -5522,6 +5538,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             preserve_prompt as _sdk_preserve_prompt,
             preserve_event_checked as _sdk_preserve_event_checked,
         )
+        from guardkit.orchestrator.head_identity import observe_invocation
         _debug_task_id = task_id or heartbeat_task_id
         _debug_turn = turn if turn is not None else 1
         _debug_role = "coach" if agent_type == "coach" else "player"
@@ -5726,8 +5743,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         cwd=self.worktree_path,
                                         timeout_seconds=self.sdk_timeout_seconds,
                                     )
+                                # 12 October 2026 (build 0D7C): HEAD and its
+                                # branch are recorded before and after, with
+                                # the invocations that overlapped. Evidence
+                                # only; the stream passes through unchanged.
                                 async with aclosing(
-                                    _harness_call
+                                    observe_invocation(
+                                        _harness_call,
+                                        self.worktree_path,
+                                        role=(
+                                            heartbeat_label_override
+                                            or agent_type
+                                        ).removesuffix(" invocation"),
+                                        task_id=_debug_task_id,
+                                        turn=turn,
+                                    )
                                 ) as _harness_stream:
                                     async for event in _harness_stream:
                                         # TASK-FIX-SPECHANG2: record model-
@@ -9303,103 +9333,73 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         turn: int,
         coach_output_path: Path,
     ) -> None:
-        """Fail closed when a TESTING task's own tests RAN and FAILED with a code defect.
+        """Fail closed when a task's REQUIRED test suite RAN and FAILED.
 
-        TASK-ABFIX-012. Deterministic backstop killing the FEAT-FMDR-004
-        false-approval: a TESTING-type task (whose deliverable IS a passing test)
-        was approved on turn 1 while its own independent run was 5/9 red, because
-        ``tests_required`` was ``False`` and the LLM Coach reasoned the failures
-        away as "a substrate failure … evidence is ABSENT, not failed". With
-        ``tests_required`` flipped ``True`` the Coach now runs the tests, but the
-        LLM can STILL rationalise a real red — so this guard makes the rejection
-        deterministic (mirrors :meth:`_apply_runtime_parity_guard`).
+        TASK-ABFIX-012 began this as a TESTING-only backstop for the FMDR-004
+        false-approval. Factory reliability repair 1 (12 October 2026) widened
+        it to the one acceptance rule in
+        :mod:`guardkit.orchestrator.quality_gates.required_suite`, shared with
+        the legacy Coach path: B463's declarative direct-mode task was approved
+        with 1 failed / 871 passed because this guard returned early for every
+        type but ``testing``.
 
-        Fires ONLY when ALL hold:
+        Fires when ALL hold:
 
         * ``decision == "approve"`` — a feedback verdict already rejects; untouched.
-        * ``evidence_bundle.task_type == "testing"`` — scope: TESTING gate
-          semantics only. FEATURE / REFACTOR / etc. are out of scope and
-          unchanged (their independent code failures are owned by the LLM Coach
-          and the existing gates).
+        * the task type's profile has ``tests_required`` (any type).
         * ``independent_tests`` RAN and FAILED: ``tests_passed is False`` AND
-          ``signal_absent is False``. An ABSENT signal (``signal_absent`` True —
-          e.g. a host-substrate gap, routed there by ``run_independent_tests``) is
-          owned by :meth:`_reconcile_absent_independent_test_signal` and must
-          NEVER block as code (``absence-of-failure-is-not-success.md``).
-        * ``independent_test_classification.failure_class == "code"``. Substrate
-          gaps classify ``"infrastructure"`` and genuine cross-task contention
-          classifies ``"parallel_contention"`` — neither reaches here, so the
-          ``parallel_contention`` amnesty is preserved for non-code failures while
-          a real own-code assertion failure is rejected in BOTH single and
-          parallel waves (the wave_size-swing neutralisation).
+          ``signal_absent is False``. An ABSENT signal (including
+          ``check_could_not_run``) is owned by
+          :meth:`_reconcile_absent_independent_test_signal` and is never
+          blocked here (``absence-of-failure-is-not-success.md``).
+        * the baseline exception did not cover it: ``_apply_baseline_diff``
+          reports a run as passed when every failure was verified as
+          pre-existing, so ``tests_passed is False`` here means it did not.
 
-        Any confidence (``"high"`` or the single-wave ``"n/a"`` fallback) blocks:
-        a ran-and-failed TESTING run that is not substrate and not contention is a
-        real failure regardless of whether a specific exception token matched
-        (firing only on ``"high"`` would leave a single-wave false-green hole).
+        The failure classification exempts nothing (``code``,
+        ``infrastructure``, ``parallel_contention`` and none alike); it only
+        shapes the feedback words.
 
         Mutates ``decision`` in place and re-persists ``coach_turn_N.json`` so the
         operator artifact and the Layer-4 late-approval reconciliation cannot
         resurrect the overridden ``approve`` (``harness-cancellation-contract.md``).
         """
+        from guardkit.orchestrator.quality_gates.required_suite import (
+            required_suite_override,
+        )
+
         if decision.get("decision") != "approve":
             return
         if evidence_bundle is None:
             return
-        task_type = (getattr(evidence_bundle, "task_type", None) or "").lower()
-        if task_type != "testing":
-            return
-        independent = getattr(evidence_bundle, "independent_tests", None)
-        if independent is None:
-            return
-        # RAN-AND-FAILED only. A pass (or an absent signal) is never a code block.
-        if getattr(independent, "tests_passed", True) is not False:
-            return
-        if getattr(independent, "signal_absent", False) is not False:
-            return
         classification = getattr(
             evidence_bundle, "independent_test_classification", None
         )
-        if classification is None:
-            return
-        if getattr(classification, "failure_class", None) != "code":
+        override = required_suite_override(
+            task_type=getattr(evidence_bundle, "task_type", None),
+            independent_tests=getattr(evidence_bundle, "independent_tests", None),
+            failure_class=getattr(classification, "failure_class", None),
+            confidence=getattr(classification, "confidence", None),
+            raw_output_excerpt=getattr(classification, "raw_output_excerpt", None),
+        )
+        if override is None:
             return
 
         original_decision = decision["decision"]
-        confidence = getattr(classification, "confidence", "n/a")
-        excerpt = (getattr(classification, "raw_output_excerpt", "") or "").strip()
-        rationale = (
-            "Independent test verification FAILED for a TESTING task: the Coach's "
-            "own run of the task's tests reported failures classified as a CODE "
-            f"defect (confidence={confidence}), not an environment/substrate gap "
-            "and not parallel-wave contention. A TESTING task's deliverable is "
-            "passing tests — fix the failing test code. Independent-test output "
-            f"(tail): {excerpt or '<empty>'}"
-        )
-
         decision["decision"] = "feedback"
-        decision["rationale"] = rationale
-        override_issue = {
-            "severity": "must_fix",
-            "category": "independent_test_code_failure",
-            "description": rationale,
-            "details": {
-                "failure_class": "code",
-                "confidence": confidence,
-                "raw_output_excerpt": excerpt,
-                "overridden_decision": original_decision,
-            },
-        }
-        decision["issues"] = [override_issue, *decision.get("issues", [])]
+        decision["rationale"] = override["rationale"]
+        override["issue"]["details"]["overridden_decision"] = original_decision
+        decision["issues"] = [override["issue"], *decision.get("issues", [])]
 
         logger.warning(
             "TASK-ABFIX-012: overriding Coach verdict %r->'feedback' for %s turn "
-            "%s — TESTING task independent tests ran and FAILED with a code "
-            "defect (confidence=%s). FMDR-004 false-approval backstop.",
+            "%s — the required test suite ran and FAILED (task_type=%s, "
+            "classification=%s).",
             original_decision,
             task_id,
             turn,
-            confidence,
+            getattr(evidence_bundle, "task_type", None),
+            getattr(classification, "failure_class", None),
         )
 
         self._persist_coach_decision(
@@ -10827,7 +10827,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         except Exception as e:
             duration = time.time() - start_time
             error_report = {"task_id": task_id, "turn": turn}
-            error_msg = f"Unexpected error: {str(e)}"
+            refused = self._launch_refusal_error(task_id, e)
+            error_msg = str(refused) if refused else f"Unexpected error: {str(e)}"
             self._write_direct_mode_results(
                 task_id,
                 error_report,
@@ -10842,6 +10843,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 success=False,
                 error=error_msg,
             )
+            if refused is not None:
+                raise refused from e
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
@@ -10852,6 +10855,23 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 error=error_msg,
                 session_id=self._last_session_id,  # TASK-RFX-B20B: preserve for retry
             )
+
+    def _launch_refusal_error(
+        self, task_id: str, error: BaseException
+    ) -> Optional[AgentLaunchRefusedError]:
+        """Map a harness launch refusal in ``error``'s chain to GuardKit's error.
+
+        Returns ``None`` for every other failure, which keeps its existing
+        handling. The refusal's entry list (path, type, size, SHA-256) is
+        logged so the task's log carries the evidence.
+        """
+        refusal = find_agent_launch_refusal(error)
+        if refusal is None:
+            return None
+        refused = AgentLaunchRefusedError.from_refusal(refusal)
+        logger.error(f"[{task_id}] AGENT LAUNCH REFUSED: {refused}")
+        logger.error(f"[{task_id}] Unexpected launch entries: {refused.entries}")
+        return refused
 
     def _write_direct_mode_results(
         self,
@@ -11621,6 +11641,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             preserve_event as _sdk_preserve_event,
             preserve_event_checked as _sdk_preserve_event_checked,
         )
+        from guardkit.orchestrator.head_identity import observe_invocation
         _sdk_debug_dir = _sdk_preserve_prompt(
             workspace_root=self.worktree_path,
             task_id=task_id,
@@ -11800,13 +11821,21 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         # TASK-FIX-LGACLOSE: finalise the harness async generator
                         # on every exit (incl. cancellation) — see the specialist
                         # call site for the full rationale.
+                        # HEAD recorded before and after (build 0D7C);
+                        # the stream passes through unchanged.
                         async with aclosing(
-                            harness.invoke(
-                                prompt=prompt,
-                                role="player",
-                                tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
-                                cwd=self.worktree_path,
-                                timeout_seconds=self.sdk_timeout_seconds,
+                            observe_invocation(
+                                harness.invoke(
+                                    prompt=prompt,
+                                    role="player",
+                                    tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                                    cwd=self.worktree_path,
+                                    timeout_seconds=self.sdk_timeout_seconds,
+                                ),
+                                self.worktree_path,
+                                role="player (task-work)",
+                                task_id=task_id,
+                                turn=turn,
                             )
                         ) as _harness_stream:
                             async for event in _harness_stream:
@@ -12123,6 +12152,12 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             #   * "Claude Code CLI not installed."  (sdk_harness.py:422)
             #   * "SDK process failed (exit ...)"   (sdk_harness.py:427)
             #   * "Failed to parse SDK response: ..." (sdk_harness.py:431)
+            refused = self._launch_refusal_error(task_id, e)
+            if refused is not None:
+                self._write_failure_results(
+                    task_id, str(refused), "AgentLaunchRefusedError", collected_output
+                )
+                raise refused from e
             error_msg = str(e)
             logger.error(
                 f"[{task_id}] SDK invocation failed via harness "
@@ -12142,6 +12177,15 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             )
 
         except Exception as e:
+            # A refused agent launch never reached the model; it is not an
+            # implementation failure and must not be retried as one.
+            refused = self._launch_refusal_error(task_id, e)
+            if refused is not None:
+                self._write_failure_results(
+                    task_id, str(refused), "AgentLaunchRefusedError", collected_output
+                )
+                raise refused from e
+
             error_msg = str(e)
 
             # Check for rate limit in error message.
