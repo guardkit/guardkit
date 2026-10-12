@@ -165,6 +165,24 @@ def _blocked_by_rule(report: Dict[str, Any]) -> bool:
     )
 
 
+def _measured_red_base(worktree: Path) -> None:
+    """A measured baseline naming exactly the one failure the run reports."""
+    write_baseline(
+        feature_baseline_path(worktree, "FEAT-B463"),
+        BaselineResult(
+            command="bash qa/run-suite.sh",
+            expected_exit=0,
+            passed=False,
+            exit_code=1,
+            failing_node_ids=[
+                "tests/test_conftest_database_url.py::test_database_url"
+            ],
+            failing_count=1,
+            timestamp="2026-10-12T00:00:00",
+        ),
+    )
+
+
 class _Worktree:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -204,6 +222,8 @@ def _run_primary(
     independent: Optional[IndependentTestResult],
     failure_class: Optional[str] = "code",
     wave_size: int = 1,
+    requires_infrastructure: Optional[list] = None,
+    docker_available: bool = True,
 ):
     """Drive ``_invoke_coach_primary`` with the test run and classifier as seams."""
     original_gather = CoachValidator.gather_evidence
@@ -231,7 +251,7 @@ def _run_primary(
     with patch.object(
         CoachValidator, "run_independent_tests", return_value=independent
     ), patch.object(CoachValidator, "gather_evidence", _gather), patch.object(
-        CoachValidator, "_is_docker_available", return_value=True
+        CoachValidator, "_is_docker_available", return_value=docker_available
     ):
         return orch._invoke_coach_primary(
             task_id=TASK_ID,
@@ -242,7 +262,7 @@ def _run_primary(
             acceptance_criteria=["AC-001: read the database URL from settings"],
             task_type=task_type,
             skip_arch_review=True,
-            requires_infrastructure=None,
+            requires_infrastructure=requires_infrastructure,
             consumer_context=None,
             remaining_budget=None,
             wave_size=wave_size,
@@ -397,6 +417,65 @@ class TestPrimaryPositiveControls:
         assert result.report["decision"] == "approve"
         assert _persisted(wt)["decision"] == "approve"
 
+    def test_collection_error_gets_neutral_words(self, tmp_path: Path) -> None:
+        wt = _git_worktree(tmp_path)
+        _write_results(wt, mode="direct")
+
+        result = _run_primary(
+            wt,
+            task_type="declarative",
+            independent=_independent(_RED_OUTPUT, passed=False),
+            failure_class="collection_error",
+        )
+
+        assert result.report["decision"] == "feedback"
+        rationale = _persisted(wt)["rationale"]
+        assert "could not import or collect" in rationale
+        assert "do not change code for it" not in rationale
+
+    def test_declared_infrastructure_without_docker_is_an_estate_fault(
+        self, tmp_path: Path
+    ) -> None:
+        """Neither a pass nor builder feedback: the existing could-not-run
+        handling ends the turn and stops the loop."""
+        wt = _git_worktree(tmp_path)
+        _write_results(wt, mode="direct")
+
+        result = _run_primary(
+            wt,
+            task_type="declarative",
+            independent=_independent(_RED_OUTPUT, passed=False),
+            failure_class="infrastructure",
+            requires_infrastructure=["postgresql"],
+            docker_available=False,
+        )
+
+        persisted = _persisted(wt)
+        for report in (result.report, persisted):
+            assert report["decision"] == "feedback"
+            assert report["issues"] == []
+            assert report["is_configuration_error"] is True
+            assert "Docker is not available" in report["rationale"]
+
+    def test_declared_infrastructure_with_docker_still_blocks(
+        self, tmp_path: Path
+    ) -> None:
+        """Control: with Docker present the red suite is ordinary feedback."""
+        wt = _git_worktree(tmp_path)
+        _write_results(wt, mode="direct")
+
+        result = _run_primary(
+            wt,
+            task_type="declarative",
+            independent=_independent(_RED_OUTPUT, passed=False),
+            failure_class="infrastructure",
+            requires_infrastructure=["postgresql"],
+            docker_available=True,
+        )
+
+        assert result.report["decision"] == "feedback"
+        assert _blocked_by_rule(_persisted(wt))
+
     def test_an_unmeasured_baseline_excuses_nothing(self, tmp_path: Path) -> None:
         """Repair 2: a base that failed at import named nothing, so it cannot
         stand as the baseline exception."""
@@ -430,25 +509,105 @@ class TestPrimaryPositiveControls:
 # ---------------------------------------------------------------------------
 
 
+# Each legacy case is a shape validate() APPROVES today, so the override is
+# what the test exercises: (wave size, what validate()'s classifier returns,
+# what the wording step's classifier returns, bootstrap broken?).
+LEGACY_HOLES = {
+    # A code failure in a parallel wave (TASK-ABFIX-005 conditional approval).
+    "code": (3, ("code", "high"), ("code", "high"), False),
+    # Parallel contention with no source-file overlap.
+    "parallel_contention": (
+        3, ("parallel_contention", "high"), ("parallel_contention", "high"), False,
+    ),
+    # The broken-bootstrap environment amnesty (TASK-ABSR-2468).
+    "infrastructure": (
+        1, ("infrastructure", "ambiguous"), ("infrastructure", "ambiguous"), True,
+    ),
+    # validate() approves on contention; the wording step gets no class.
+    None: (3, ("parallel_contention", "high"), (None, None), False),
+}
+
+
+def _legacy_patches(
+    independent: IndependentTestResult,
+    classifications: list,
+    *,
+    docker_available: bool = True,
+    bootstrap_broken: bool = False,
+):
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    stack.enter_context(
+        patch.object(CoachValidator, "run_independent_tests", return_value=independent)
+    )
+    stack.enter_context(
+        patch.object(
+            CoachValidator,
+            "_classify_test_failure",
+            side_effect=list(classifications) + [classifications[-1]] * 4,
+        )
+    )
+    stack.enter_context(
+        patch.object(
+            CoachValidator, "_is_docker_available", return_value=docker_available
+        )
+    )
+    stack.enter_context(
+        patch.object(
+            CoachValidator, "_bootstrap_likely_broken", return_value=bootstrap_broken
+        )
+    )
+    return stack
+
+
+def _validate_today(
+    worktree: Path,
+    independent: IndependentTestResult,
+    classification: tuple,
+    *,
+    wave_size: int,
+    bootstrap_broken: bool = False,
+    requires_infrastructure: Optional[list] = None,
+    docker_available: bool = True,
+):
+    """What validate() alone decides — the precondition proving the hole."""
+    with _legacy_patches(
+        independent,
+        [classification],
+        docker_available=docker_available,
+        bootstrap_broken=bootstrap_broken,
+    ):
+        return CoachValidator(str(worktree), task_id=TASK_ID, wave_size=wave_size).validate(
+            task_id=TASK_ID,
+            turn=1,
+            task={
+                "acceptance_criteria": ["AC-001: read the database URL from settings"],
+                "task_type": "declarative",
+                "requires_infrastructure": requires_infrastructure or [],
+                "_docker_available": docker_available,
+            },
+            skip_arch_review=True,
+        )
+
+
 def _run_legacy(
     worktree: Path,
     *,
     task_type: str,
     independent: IndependentTestResult,
-    failure_class: Optional[str] = "code",
+    classifications: Optional[list] = None,
     wave_size: int = 1,
     requires_infrastructure: Optional[list] = None,
     docker_available: bool = True,
+    bootstrap_broken: bool = False,
 ):
     orch = AutoBuildOrchestrator(repo_root=worktree, enable_pre_loop=False)
-    with patch.object(
-        CoachValidator, "run_independent_tests", return_value=independent
-    ), patch.object(
-        CoachValidator,
-        "_classify_test_failure",
-        return_value=(failure_class, "high"),
-    ), patch.object(
-        CoachValidator, "_is_docker_available", return_value=docker_available
+    with _legacy_patches(
+        independent,
+        classifications or [("code", "high")],
+        docker_available=docker_available,
+        bootstrap_broken=bootstrap_broken,
     ):
         return orch._invoke_coach_legacy(
             task_id=TASK_ID,
@@ -471,89 +630,103 @@ def _run_legacy(
 
 class TestLegacyPath:
     @pytest.mark.parametrize("failure_class", CLASSES)
-    def test_red_required_suite_is_not_approved_in_a_parallel_wave(
+    def test_a_red_suite_validate_approves_is_not_approved(
         self, tmp_path: Path, failure_class: Optional[str]
     ) -> None:
-        """validate() conditionally approves a parallel-wave code failure and
-        contention; the shared rule turns every class to feedback."""
+        """Every class, in a shape validate() itself approves today: the rule
+        applied in _invoke_coach_legacy turns it to feedback, persisted."""
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="task-work")
+        wave, judged, worded, broken = LEGACY_HOLES[failure_class]
+        red = _independent(_RED_OUTPUT, passed=False)
+
+        today = _validate_today(
+            wt, red, judged, wave_size=wave, bootstrap_broken=broken
+        )
+        assert today.decision == "approve"  # the hole
 
         result = _run_legacy(
             wt,
             task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-            failure_class=failure_class,
-            wave_size=3,
+            independent=red,
+            classifications=[judged, worded],
+            wave_size=wave,
+            bootstrap_broken=broken,
         )
 
         assert result.success is True
         assert result.report["decision"] == "feedback"
+        assert _blocked_by_rule(result.report)
         persisted = _persisted(wt)
         assert persisted["decision"] == "feedback"
+        assert _blocked_by_rule(persisted)
         assert persisted["approved_without_independent_tests"] is False
+        assert persisted["environment_conditional_approval"] is False
+        assert persisted["issues"][0]["details"]["failure_class"] == failure_class
 
-    def test_parallel_wave_code_failure_was_the_hole(self, tmp_path: Path) -> None:
-        """The specific hole: validate() itself still approves this; only the
-        rule applied in _invoke_coach_legacy stops it, and it is persisted."""
-        wt = _git_worktree(tmp_path)
-        _write_results(wt, mode="task-work")
-
-        with patch.object(
-            CoachValidator,
-            "run_independent_tests",
-            return_value=_independent(_RED_OUTPUT, passed=False),
-        ), patch.object(
-            CoachValidator, "_classify_test_failure", return_value=("code", "high")
-        ), patch.object(CoachValidator, "_is_docker_available", return_value=True):
-            raw = CoachValidator(
-                str(wt), task_id=TASK_ID, wave_size=3
-            ).validate(
-                task_id=TASK_ID,
-                turn=1,
-                task={
-                    "acceptance_criteria": [
-                        "AC-001: read the database URL from settings"
-                    ],
-                    "task_type": "declarative",
-                    "requires_infrastructure": [],
-                    "_docker_available": True,
-                },
-                skip_arch_review=True,
-            )
-        assert raw.decision == "approve"  # today's validate() verdict
-
-        result = _run_legacy(
-            wt,
-            task_type="declarative",
-            independent=_independent(_RED_OUTPUT, passed=False),
-            failure_class="code",
-            wave_size=3,
-        )
-        assert result.report["decision"] == "feedback"
-        assert _blocked_by_rule(result.report)
-        assert _blocked_by_rule(_persisted(wt))
-
-    def test_infrastructure_with_docker_unavailable_is_not_approved(
+    def test_collection_error_approval_is_closed_with_neutral_words(
         self, tmp_path: Path
     ) -> None:
         wt = _git_worktree(tmp_path)
         _write_results(wt, mode="task-work")
+        red = _independent(_RED_OUTPUT, passed=False)
+        judged = ("collection_error", "high")
+
+        assert _validate_today(wt, red, judged, wave_size=1).decision == "approve"
+
+        result = _run_legacy(
+            wt, task_type="declarative", independent=red,
+            classifications=[judged, judged],
+        )
+
+        assert result.report["decision"] == "feedback"
+        persisted = _persisted(wt)
+        assert persisted["decision"] == "feedback"
+        assert "could not import or collect" in persisted["rationale"]
+        assert "do not change code for it" not in persisted["rationale"]
+
+    def test_every_failure_on_a_measured_baseline_is_approved(
+        self, tmp_path: Path
+    ) -> None:
+        wt = _git_worktree(tmp_path)
+        _write_results(wt, mode="task-work")
+        _measured_red_base(wt)
 
         result = _run_legacy(
             wt,
             task_type="declarative",
             independent=_independent(_RED_OUTPUT, passed=False),
-            failure_class="infrastructure",
+        )
+
+        assert result.report["decision"] == "approve"
+        assert _persisted(wt)["decision"] == "approve"
+
+    def test_declared_infrastructure_without_docker_is_an_estate_fault(
+        self, tmp_path: Path
+    ) -> None:
+        """A certain fact the builder cannot fix: neither a pass nor builder
+        feedback. validate() used to approve it conditionally."""
+        wt = _git_worktree(tmp_path)
+        _write_results(wt, mode="task-work")
+
+        result = _run_legacy(
+            wt,
+            task_type="declarative",
+            independent=_independent(_RED_OUTPUT, passed=False),
+            classifications=[("infrastructure", "high")],
             requires_infrastructure=["postgresql"],
             docker_available=False,
         )
 
-        assert result.report["decision"] == "feedback"
-        assert _blocked_by_rule(result.report)
         persisted = _persisted(wt)
-        assert persisted["decision"] == "feedback"
-        assert "do not change code for it" in persisted["rationale"]
+        for report in (result.report, persisted):
+            assert report["decision"] == "feedback"
+            assert report["issues"] == []
+            assert report["is_configuration_error"] is True
+            assert "Docker is not available" in report["rationale"]
+            assert report["validation_results"]["independent_tests"][
+                "check_could_not_run"
+            ] is True
 
     def test_passing_run_is_approved(self, tmp_path: Path) -> None:
         wt = _git_worktree(tmp_path)

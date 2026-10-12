@@ -53,9 +53,7 @@ logger = logging.getLogger(__name__)
 # itself is in ``details.failure_class``.
 REQUIRED_SUITE_FAILURE_CATEGORY = "independent_test_code_failure"
 
-_ENVIRONMENTAL_CLASSES = frozenset(
-    {"infrastructure", "collection_error", "sdk_api_error"}
-)
+_ENVIRONMENTAL_CLASSES = frozenset({"infrastructure", "sdk_api_error"})
 
 
 def tests_required_for(task_type: Optional[str]) -> bool:
@@ -97,6 +95,13 @@ def _guidance(failure_class: Optional[str]) -> str:
             "The failure looks caused by a concurrent task in this parallel "
             "wave; do not change code for it unless the output below shows a "
             "defect in this task's own work."
+        )
+    if failure_class == "collection_error":
+        # Neutral: a suite that cannot import or collect is as often this
+        # task's own change as the environment.
+        return (
+            "The suite could not import or collect its tests; check whether "
+            "this task's changes cause it before treating it as environmental."
         )
     if failure_class in _ENVIRONMENTAL_CLASSES:
         return (

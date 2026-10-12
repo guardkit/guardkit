@@ -382,6 +382,18 @@ class TestCodeFailureGuard:
         )
         assert out["decision"] == "approve"
 
+    def test_collection_error_words_are_neutral(self, tmp_path: Path) -> None:
+        """A suite that cannot collect may be this task's own doing: the builder
+        is not told to leave the code alone."""
+        decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
+        out = _guard(
+            decision, task_type="testing", tests_passed=False, signal_absent=False,
+            failure_class="collection_error", tmp_path=tmp_path,
+        )
+        assert out["decision"] == "feedback"
+        assert "could not import or collect" in out["rationale"]
+        assert "do not change code for it" not in out["rationale"]
+
     def test_not_approved_when_classification_none(self, tmp_path: Path) -> None:
         decision = {"decision": "approve", "issues": [], "rationale": "lgtm"}
         out = _guard(

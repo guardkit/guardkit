@@ -551,10 +551,13 @@ class TestConditionalApproval:
             ),
         )
 
-    def test_high_confidence_infra_declared_deps_docker_unavailable_approves(
+    def test_high_confidence_infra_declared_deps_docker_unavailable_is_estate_fault(
         self, coach_validator: CoachValidator
     ) -> None:
-        """High-confidence infra + declared deps + Docker unavailable -> conditional approve."""
+        """Declared deps + Docker unavailable -> the check could not run.
+
+        Reliability repair 1 (12 October 2026): no longer a conditional
+        approval of a red suite; neither a pass nor builder feedback."""
         task_work_results = self._make_task_work_results()
         infra_result = self._make_infra_test_result()
 
@@ -572,8 +575,11 @@ class TestConditionalApproval:
                 },
             )
 
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is True
+        assert result.decision == "feedback"
+        assert result.is_configuration_error is True
+        assert result.issues == []
+        assert result.independent_tests.check_could_not_run is True
+        assert result.approved_without_independent_tests is False
 
     def test_high_confidence_infra_no_declared_deps_returns_feedback(
         self, coach_validator: CoachValidator
@@ -686,7 +692,11 @@ class TestConditionalApproval:
     def test_conditional_approval_in_to_dict(
         self, coach_validator: CoachValidator
     ) -> None:
-        """approved_without_independent_tests appears in to_dict output."""
+        """approved_without_independent_tests appears in to_dict output.
+
+        The declared-infrastructure, Docker-unavailable case is now an estate
+        fault (reliability repair 1), so the flag is False and the turn is
+        marked as one the builder cannot fix."""
         task_work_results = self._make_task_work_results()
         infra_result = self._make_infra_test_result()
 
@@ -706,7 +716,8 @@ class TestConditionalApproval:
 
         result_dict = result.to_dict()
         assert "approved_without_independent_tests" in result_dict
-        assert result_dict["approved_without_independent_tests"] is True
+        assert result_dict["approved_without_independent_tests"] is False
+        assert result_dict["is_configuration_error"] is True
 
     def test_normal_approval_has_false_flag(
         self, coach_validator: CoachValidator
@@ -855,10 +866,11 @@ class TestCollectionErrorConditionalApproval:
         assert result.decision == "feedback"
         assert result.approved_without_independent_tests is False
 
-    def test_infrastructure_approval_path_unchanged(
+    def test_infrastructure_docker_unavailable_path_is_estate_fault(
         self, coach_validator: CoachValidator
     ) -> None:
-        """Existing infrastructure approval path continues to work (no regression)."""
+        """Declared infrastructure with Docker unavailable is no longer an
+        approval (reliability repair 1): the check could not run."""
         task_work_results = self._make_task_work_results()
         infra_result = IndependentTestResult(
             tests_passed=False,
@@ -886,7 +898,8 @@ class TestCollectionErrorConditionalApproval:
                 },
             )
 
-        assert result.decision == "approve"
-        assert result.approved_without_independent_tests is True
-        assert "infrastructure" in result.rationale.lower()
+        assert result.decision == "feedback"
+        assert result.is_configuration_error is True
+        assert result.approved_without_independent_tests is False
+        assert "docker is not available" in result.rationale.lower()
         assert "collection" not in result.rationale.lower()
