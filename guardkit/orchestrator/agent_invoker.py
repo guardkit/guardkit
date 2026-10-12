@@ -63,6 +63,7 @@ from guardkit.orchestrator.paths import (
     prepare_builder_scratch_dir,
 )
 from guardkit.orchestrator.docker_fixtures import render_player_recipes
+from guardkit.orchestrator.launch_declaration import load_launch_snapshot
 from guardkit.orchestrator.prompts import load_protocol
 from guardkit.orchestrator.coach_verification import (
     CoachVerifier,
@@ -5635,6 +5636,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
                 ) if _sdk_debug_dir is not None else None,
                 harness_role=agent_type,
+                # The task's pinned `launch:` settings and scratch folders for
+                # the shell (LangGraph only). None without a task or a block.
+                launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
             )
 
             # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
@@ -11764,6 +11768,9 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
                     ) if _sdk_debug_dir is not None else None,
                     scratch_root=scratch_folder,
+                    launch_declaration=load_launch_snapshot(
+                        task_id, self.worktree_path
+                    ),
                 )
 
                 # 3 October 2026: keep the scratch folder only if the

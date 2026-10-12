@@ -3544,6 +3544,18 @@ class AutoBuildOrchestrator:
                 worktree_path=worktree.path,
                 repo_root=self.repo_root,
             )
+            # The project's `launch:` block (settings + scratch folders for
+            # its commands' shell), pinned at the same point for the same
+            # reason. Also a no-op for every repo without one.
+            from guardkit.orchestrator.launch_declaration import (
+                snapshot_task_launch,
+            )
+
+            snapshot_task_launch(
+                task_id=task_id,
+                worktree_path=worktree.path,
+                repo_root=self.repo_root,
+            )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
                 "TS-lane D.1b: toolchain snapshot failed for %s (%s) — the "

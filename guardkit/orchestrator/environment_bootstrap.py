@@ -48,6 +48,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence
 
+from guardkit.orchestrator.launch_declaration import (
+    apply_launch_environment,
+    load_launch_declaration,
+)
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
 
@@ -1650,6 +1655,9 @@ class EnvironmentBootstrapper:
         # that assert ``is True`` / ``is False`` don't regress).
         self._last_failure_stderr: str = ""
         self._last_failure_is_pep668: bool = False
+        # The project's `launch:` settings and scratch folders, added to the
+        # install commands' environment (12 October 2026). None without one.
+        self._launch = load_launch_declaration(root)
 
     def bootstrap(
         self,
@@ -2492,6 +2500,7 @@ class EnvironmentBootstrapper:
             " ".join(cmd),
         )
         try:
+            env = apply_launch_environment(env, self._launch, self._root)
             proc = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -2715,6 +2724,7 @@ class EnvironmentBootstrapper:
 
         logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
+            env = apply_launch_environment(env, self._launch, self._root)
             proc = subprocess.run(
                 run_cmd,
                 cwd=str(cwd),
