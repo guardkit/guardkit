@@ -484,6 +484,7 @@ def test_a_stalled_filesystem_leaves_the_check_and_its_result_unchanged(worktree
             assert source["verdict"].startswith("not compared")
     finally:
         release.set()
+        _settle_evidence_threads()
 
 
 # ---------------------------------------------------------------------------
@@ -515,14 +516,50 @@ def _timed_check(worktree, cmd, **kw):
     return result, time.monotonic() - started
 
 
+def _settle_evidence_threads(timeout: float = 20.0) -> None:
+    import threading
+    import time
+
+    give_up_at = time.monotonic() + timeout
+    for thread in threading.enumerate():
+        if thread.name.startswith("guardkit-evidence"):
+            thread.join(timeout=max(0.0, give_up_at - time.monotonic()))
+            assert not thread.is_alive(), f"{thread.name} did not settle"
+
+
+def _forbid_real_docker(monkeypatch) -> list:
+    """Fail on any real ``docker`` process, from any thread, at any time
+    while the patch holds; returns the list of attempts."""
+    attempts: list = []
+    real_popen = run_evidence.subprocess.Popen
+
+    class _Guarded(real_popen):  # type: ignore[misc, valid-type]
+        def __init__(self, args, *a, **k):
+            argv = args if isinstance(args, (list, tuple)) else str(args).split()
+            if argv and str(argv[0]).endswith("docker"):
+                attempts.append(list(argv))
+                raise AssertionError("a real docker process was started")
+            super().__init__(args, *a, **k)
+
+    monkeypatch.setattr(run_evidence.subprocess, "Popen", _Guarded)
+    return attempts
+
+
 def test_a_blocked_docker_discovery_is_left_behind_at_the_phase_bound(worktree, monkeypatch, quick_phases):
+    attempts = _forbid_real_docker(monkeypatch)
+    fake_calls: list = []
+
     def _blocked_which(_name):
         quick_phases.wait()
         return "/usr/bin/docker"
 
+    def _fake_runner(argv, **kwargs):
+        fake_calls.append(list(argv))
+        return run_evidence.HelperRun(0, b"", b"")
+
     monkeypatch.setattr(
         run_evidence, "default_docker_probe",
-        lambda: run_evidence.DockerProbe(which=_blocked_which),
+        lambda: run_evidence.DockerProbe(runner=_fake_runner, which=_blocked_which),
     )
     for cmd, passed in (("true", True), ("exit 1", False)):
         result, elapsed = _timed_check(worktree, cmd)
@@ -532,6 +569,13 @@ def test_a_blocked_docker_discovery_is_left_behind_at_the_phase_bound(worktree, 
         assert record["container_events"]["status"] == run_evidence.NOT_RECORDED_TIMED_OUT
         assert record["source"]["after"]["status"] == "recorded"
         assert any("finish" in e for e in record["capture_errors"])
+
+    # Release the blocked discovery: the abandoned phases run on, reach the
+    # injected runner, and never start a real docker process.
+    quick_phases.set()
+    _settle_evidence_threads()
+    assert attempts == []
+    assert fake_calls and all(c[:2] == ["docker", "events"] for c in fake_calls)
 
 
 def test_a_blocked_helper_startup_is_left_behind_at_the_phase_bound(worktree, monkeypatch, quick_phases):
@@ -548,6 +592,7 @@ def test_a_blocked_helper_startup_is_left_behind_at_the_phase_bound(worktree, mo
         {"test": "true", "environment_inventory": "echo inventory-marker",
          "environment_inventory_timeout": 1}
     )
+    attempts = _forbid_real_docker(monkeypatch)
     for cmd, passed in (("true", True), ("exit 1", False)):
         result, elapsed = _timed_check(worktree, cmd, toolchain=toolchain)
         assert result.tests_passed is passed
@@ -555,3 +600,6 @@ def test_a_blocked_helper_startup_is_left_behind_at_the_phase_bound(worktree, mo
         assert elapsed < 12, f"took {elapsed:.1f}s"
         assert record["environment_inventory"]["status"] == run_evidence.NOT_RECORDED_TIMED_OUT
         assert any("begin" in e for e in record["capture_errors"])
+    quick_phases.set()
+    _settle_evidence_threads()
+    assert attempts == []
