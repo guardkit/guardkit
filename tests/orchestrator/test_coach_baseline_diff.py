@@ -321,3 +321,41 @@ class TestAnUnmeasuredBaseline:
         assert known is True
         assert ids == ["tests/slice.py::test_home"]
         assert "measured baseline" in source
+
+
+class TestTheForgivenessNamesWhatForgave:
+    """The summary and the reviewer's note credit only the record that
+    actually covered the failures — never an unmeasured baseline."""
+
+    def _ledger(self, worktree: Path, test_id: str) -> None:
+        (worktree / "qa").mkdir()
+        (worktree / "qa" / "known-failures.yaml").write_text(
+            f"known_failures:\n  - test_id: {test_id}\n"
+        )
+
+    def test_ledger_only_with_an_unmeasured_baseline(self, tmp_path):
+        _write_baseline(tmp_path, [])  # unmeasured
+        self._ledger(tmp_path, "tests/slice.py::test_home")
+        cv = CoachValidator(str(tmp_path))
+
+        out = cv._apply_baseline_diff(
+            _failed_result("FAILED tests/slice.py::test_home - stale\n"), {}
+        )
+
+        assert out.tests_passed is True
+        for text in (out.test_output_summary, out.raw_output.split("---")[0]):
+            assert "known-failure ledger" in text
+            assert "measured baseline" not in text
+
+    def test_measured_baseline_only(self, tmp_path):
+        _write_baseline(tmp_path, ["tests/slice.py::test_home"])
+        cv = CoachValidator(str(tmp_path))
+
+        out = cv._apply_baseline_diff(
+            _failed_result("FAILED tests/slice.py::test_home - stale\n"), {}
+        )
+
+        assert out.tests_passed is True
+        for text in (out.test_output_summary, out.raw_output.split("---")[0]):
+            assert "the measured baseline" in text
+            assert "ledger" not in text

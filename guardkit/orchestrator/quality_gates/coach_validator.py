@@ -5166,9 +5166,29 @@ class CoachValidator:
                 )
                 return test_result
             attributed = sorted(set(observed))
+            # Name only the record(s) that actually covered these failures. A
+            # baseline that measured nothing, or one that named none of them,
+            # is never credited (reliability repair 2, 12 October 2026).
+            by_baseline = set(baseline_ids)
+            used_baseline = any(n in by_baseline for n in attributed)
+            used_ledger = any(
+                n in ledger and n not in by_baseline for n in attributed
+            )
+            sources_words = " and ".join(
+                words
+                for words, used in (
+                    ("the measured baseline", used_baseline),
+                    (
+                        "the repository's known-failure ledger "
+                        "(qa/known-failures.yaml)",
+                        used_ledger,
+                    ),
+                )
+                if used
+            )
             summary = (
                 f"Independent tests: {len(attributed)} failure(s) attributed to "
-                f"the measured baseline / F2 ledger (pre-existing before wave 1, "
+                f"{sources_words} (pre-existing before wave 1, "
                 f"not this task): {', '.join(attributed)}. No regressions "
                 f"introduced by this task (GUARDKIT_AUTOBUILD_BASELINE_DIFF)."
             )
@@ -5191,9 +5211,8 @@ class CoachValidator:
                 "NOTE FOR THE REVIEWER: this run is reported as PASSED even "
                 f"though the output below shows {len(attributed)} failing "
                 "test(s). Every one of them was ALREADY failing on this "
-                "branch's base before any task touched it (the build's "
-                "measured baseline and the repository's known-failure "
-                "ledger), and none is in a file this task authored. They are "
+                f"branch's base before any task touched it ({sources_words}), "
+                "and none is in a file this task authored. They are "
                 "not this task's failures and there is nothing in them for "
                 "the builder to fix. Zero net-new is the bar, not all-green.\n"
                 "---\n"
