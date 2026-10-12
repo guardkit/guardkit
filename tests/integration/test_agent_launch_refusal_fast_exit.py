@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from guardkit.orchestrator.agent_invoker import AgentInvoker
+from guardkit.orchestrator.agent_invoker import AgentInvocationResult, AgentInvoker
 from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -118,6 +118,49 @@ def _orchestrator(tmp_path: Path, worktree: Mock, display: Mock, invoker: AgentI
     )
 
 
+def _recovered(task_id, turn, **_kwargs) -> AgentInvocationResult:
+    """What B463's state recovery produced: a synthetic report for the Coach."""
+    return AgentInvocationResult(
+        task_id=task_id,
+        turn=turn,
+        agent_type="player",
+        success=True,
+        report={
+            "task_id": task_id,
+            "turn": turn,
+            "_synthetic": True,
+            "files_modified": [],
+            "files_created": [],
+            "tests_passed": False,
+        },
+        duration_seconds=0.0,
+    )
+
+
+def _coach_feedback(*, task_id, turn, **_kwargs) -> AgentInvocationResult:
+    """The implementation feedback B463's Coach returned on each refused turn."""
+    return AgentInvocationResult(
+        task_id=task_id,
+        turn=turn,
+        agent_type="coach",
+        success=True,
+        report={
+            "task_id": task_id,
+            "turn": turn,
+            "decision": "feedback",
+            "issues": [
+                {
+                    "severity": "must_fix",
+                    "category": "missing_requirement",
+                    "description": "0/1 acceptance criteria verified",
+                }
+            ],
+            "rationale": "Implement the endpoint",
+        },
+        duration_seconds=0.0,
+    )
+
+
 def _run_loop(tmp_path, worktree, display, mode: str, error: BaseException):
     invoker = AgentInvoker(
         worktree_path=worktree.path,
@@ -137,9 +180,9 @@ def _run_loop(tmp_path, worktree, display, mode: str, error: BaseException):
     ), patch.object(
         invoker, "invoke_coach", coach
     ), patch.object(
-        orchestrator, "_attempt_state_recovery", return_value=None
+        orchestrator, "_attempt_state_recovery", side_effect=_recovered
     ) as recovery, patch.object(
-        orchestrator, "_invoke_coach_safely", wraps=orchestrator._invoke_coach_safely
+        orchestrator, "_invoke_coach_safely", side_effect=_coach_feedback
     ) as coach_safely:
         turns, decision = orchestrator._loop_phase(
             task_id=_TASK,
@@ -185,21 +228,41 @@ def test_one_launch_refusal_stops_the_task(tmp_path, worktree, display, mode):
 @pytest.mark.integration
 @pytest.mark.parametrize("mode", ["task-work", "direct"])
 def test_other_invocation_errors_behave_as_before(tmp_path, worktree, display, mode):
-    """A different harness error still goes through state recovery."""
-    turns, decision, harness, recovery, _, coach, _ = _run_loop(
+    """A different harness error still goes through state recovery and the Coach."""
+    turns, decision, harness, recovery, coach_safely, _, _ = _run_loop(
         tmp_path, worktree, display, mode, RuntimeError("model server reset the connection")
     )
 
-    assert harness.calls == 1
-    recovery.assert_called_once()
-    assert len(turns) == 1
-    result = turns[0].player_result
-    assert result.success is False
-    assert result.report.get("unrecoverable") is not True
-    assert "unrecoverable_reason" not in result.report
-    assert "agent launch refused" not in (result.error or "")
-    assert "model server reset the connection" in (result.error or "")
-    coach.assert_not_called()
+    # Unchanged behaviour: every turn is recovered, reviewed and retried.
+    # (The orchestrator's own test specialist also calls the harness in
+    # task-work mode, so the harness sees at least one call per turn.)
+    assert len(turns) > 1 and harness.calls >= len(turns)
+    assert recovery.call_count == len(turns)
+    assert coach_safely.call_count == len(turns)
+    assert all(turn.player_result.report.get("_synthetic") for turn in turns)
+    assert all("unrecoverable_reason" not in turn.player_result.report for turn in turns)
+    original = recovery.call_args_list[0].kwargs["original_error"]
+    assert "model server reset the connection" in original
+    assert "agent launch refused" not in original
+
+
+def test_unrelated_error_raised_from_none_is_not_a_refusal():
+    """An error raised ``from None`` while handling a refusal is not a refusal."""
+    try:
+        try:
+            raise _refusal()
+        except RuntimeError:
+            raise ValueError("unrelated bookkeeping failure") from None
+    except ValueError as unrelated:
+        assert unrelated.__context__ is not None
+        assert find_agent_launch_refusal(unrelated) is None
+    try:
+        try:
+            raise _refusal()
+        except RuntimeError:
+            raise ValueError("raised while handling, context kept")
+    except ValueError as implicit:
+        assert find_agent_launch_refusal(implicit) is implicit.__context__
 
 
 def test_refusal_is_found_through_a_wrapper():

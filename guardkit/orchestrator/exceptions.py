@@ -283,7 +283,9 @@ def find_agent_launch_refusal(error: BaseException) -> Optional[BaseException]:
     """Return the harness's launch refusal in ``error``'s cause chain, if any.
 
     Wrappers such as ``AgentInvocationError`` keep the refusal as their cause,
-    so the whole chain is searched.
+    so the chain is searched. An implicit context is followed only when it was
+    not suppressed (``raise ... from None``): an unrelated error raised while a
+    refusal was being handled is not itself a refusal.
     """
     seen: set = set()
     current: Optional[BaseException] = error
@@ -291,7 +293,12 @@ def find_agent_launch_refusal(error: BaseException) -> Optional[BaseException]:
         seen.add(id(current))
         if getattr(current, "failure_kind", None) == AGENT_LAUNCH_REFUSED_KIND:
             return current
-        current = current.__cause__ or current.__context__
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
     return None
 
 
