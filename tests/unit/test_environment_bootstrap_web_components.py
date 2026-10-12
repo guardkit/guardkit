@@ -20,17 +20,28 @@ deliver and flip loudly (``xfail(strict=True)``) once it lands.
 3. The hash is deterministic: each input's relative POSIX path plus its
    contents, in sorted order, so an edit, an addition, a removal or a rename
    all change it.
-4. The marker also records the environment it was made in (the declared
-   ``runtime`` pins and the image or tool identity). A marker made in another
-   environment, or in another worktree, is not reused.
+4. The marker also records an execution identity: the declared ``runtime``
+   pins plus the image identity from the environment (``FORGE_IMAGE_IDENTITY``,
+   which the reliability lane forwards into the build container). A marker
+   made under another identity is not reused. The execution identity includes
+   the worktree's own root, so a copied or new worktree never reuses another
+   worktree's marker, while file contents are hashed by relative path.
 5. Traversal is bounded. It never leaves the worktree and never reads inside
    dependency or cache folders such as ``node_modules``. A component ``cwd``
    that escapes the worktree, including through a symlink, fails the
-   bootstrap with a clear message.
+   bootstrap with a clear message. A ``..`` or absolute component ``cwd`` is
+   refused visibly; it must not silently drop the whole declaration and fall
+   back to guessing from manifest files.
 6. An unreadable dependency input fails the bootstrap; it never produces a
    success or a cache hit. A failed install stays failed and retryable under
    the existing limits.
-7. A component's own ``install:`` stays declared but not run, and repos
+7. A declared root install is always essential, whatever stacks the change
+   touched. The per-turn refresh scopes essential stacks by the changed
+   file names (a ``go.sum`` edit reads as ``go``), but the declared root
+   install carries one label for the whole repo (``node`` or ``declared``), so
+   its failure must still fail the refresh rather than be counted as a
+   non-blocking warning and saved as success.
+8. A component's own ``install:`` stays declared but not run, and repos
    without a declared install behave exactly as before (no new discovery).
 
 The tests use only public seams: ``ProjectEnvironmentDetector.detect``,
@@ -60,6 +71,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     EnvironmentBootstrapper,
     ProjectEnvironmentDetector,
     refresh_environment_for_changes,
+    stacks_for_changed_manifests,
 )
 
 _REAL_RUN = subprocess.run
@@ -262,33 +274,29 @@ class TestDeclaredInstallReruns:
         assert _reruns(web_repo)
 
     @_R7
-    def test_reruns_when_the_install_tool_resolves_to_another_executable(
-        self, web_repo, tmp_path, monkeypatch
-    ):
-        """An execution-identity change: the same command now resolves to a
-        different ``npm`` (a replaced image or toolchain). The old marker
-        belongs to the old environment and must not be reused."""
-        bins = []
-        for name, version in (("bin-a", "10.0.0"), ("bin-b", "11.0.0")):
-            directory = tmp_path / name
-            directory.mkdir()
-            tool = directory / "npm"
-            tool.write_text(f"#!/bin/sh\necho {version}\n", "utf-8")
-            tool.chmod(0o755)
-            bins.append(directory)
-        original_path = os.environ.get("PATH", "")
-        monkeypatch.setenv("PATH", f"{bins[0]}{os.pathsep}{original_path}")
+    def test_reruns_when_the_image_identity_changes(self, web_repo, monkeypatch):
+        """An execution-identity change: the build container was replaced by
+        another image. The old marker belongs to the old image."""
+        monkeypatch.setenv("FORGE_IMAGE_IDENTITY", "a" * 64)
         _installed_once(web_repo)
-        monkeypatch.setenv("PATH", f"{bins[1]}{os.pathsep}{original_path}")
+        monkeypatch.setenv("FORGE_IMAGE_IDENTITY", "b" * 64)
         assert _reruns(web_repo)
 
     def test_a_copied_worktree_does_not_reuse_the_marker(self, web_repo, tmp_path):
-        """Guard (passes today): a worktree copied elsewhere, success marker
-        included, installs again rather than trusting the copy."""
+        """Guard (passes today, because today's hash includes absolute
+        paths). The requirement it pins: the execution identity includes the
+        worktree's own root, so a worktree copied elsewhere, success marker
+        and identical files included, installs again rather than trusting the
+        copy. Moving to relative-path hashing must not lose this."""
         _installed_once(web_repo)
         copy = tmp_path / "copy"
         shutil.copytree(web_repo, copy)
+        state = Path(".guardkit") / "bootstrap_state.json"
+        assert (copy / state).read_bytes() == (web_repo / state).read_bytes()
         assert _reruns(copy)
+        # The original, unchanged, is still a cache hit in its own root.
+        result, calls = _bootstrap(web_repo)
+        assert calls == [] and result.success is True
 
     @_R7
     def test_a_builder_edit_to_a_component_lock_refreshes_before_verification(
@@ -402,6 +410,105 @@ class TestDeclaredInstallFailsSafely:
         result, calls = _bootstrap(web_repo, returncode=1)
         assert len(calls) == 1
         assert result.success is False
+
+    def test_a_failed_install_is_retried_once_the_cooldown_has_passed(
+        self, web_repo
+    ):
+        """Guard (passes today): the existing retry limit. Within the cooldown
+        a failed install is not run again; once it has passed, it is."""
+        with patch("subprocess.run", side_effect=_fake_run(returncode=1)) as first:
+            manifests = ProjectEnvironmentDetector(web_repo).detect()
+            failed = EnvironmentBootstrapper(
+                web_repo, retry_cooldown_seconds=3600
+            ).bootstrap(manifests)
+        assert failed.success is False and len(_declared_calls(first)) == 1
+
+        with patch("subprocess.run", side_effect=_fake_run()) as waiting:
+            manifests = ProjectEnvironmentDetector(web_repo).detect()
+            EnvironmentBootstrapper(
+                web_repo, retry_cooldown_seconds=3600
+            ).bootstrap(manifests)
+        assert _declared_calls(waiting) == []
+
+        with patch("subprocess.run", side_effect=_fake_run()) as retried:
+            manifests = ProjectEnvironmentDetector(web_repo).detect()
+            result = EnvironmentBootstrapper(
+                web_repo, retry_cooldown_seconds=0
+            ).bootstrap(manifests)
+        assert len(_declared_calls(retried)) == 1
+        assert result.success is True
+
+    @_R7
+    @pytest.mark.parametrize("root_label", ["node", "declared"])
+    def test_a_failing_declared_install_fails_the_per_turn_refresh(
+        self, web_repo, root_label
+    ):
+        """Through the real per-turn caller: ``relevant_stacks`` comes from
+        the changed file names, so a ``go.sum`` edit reads as ``go`` while the
+        declared root install is labelled for the whole repo (``node``, or
+        ``declared`` for a mixed root). A failing declared install must still
+        fail the refresh, not be counted as a non-blocking warning and saved
+        as success."""
+        if root_label == "declared":
+            (web_repo / "go.mod").write_text("module example.com/root\n", "utf-8")
+        [declared] = ProjectEnvironmentDetector(web_repo).detect()
+        assert declared.stack == root_label
+        changed = ["apps/api/go.sum"]
+        (web_repo / "apps" / "api" / "go.sum").write_text(
+            "example.com/dep v1.0.1 h1:bbbb=\n", "utf-8"
+        )
+        with patch("subprocess.run", side_effect=_fake_run(returncode=1)) as mock_run:
+            result = refresh_environment_for_changes(
+                web_repo,
+                changed,
+                relevant_stacks=stacks_for_changed_manifests(changed) or None,
+            )
+        assert len(_declared_calls(mock_run)) == 1
+        assert result is not None
+        assert result.success is False
+        assert result.installs_failed >= 1
+
+    @_R7
+    @pytest.mark.parametrize("escaping", ["../outside-web", "/srv/outside-web"])
+    def test_a_dot_dot_or_absolute_component_cwd_is_refused_visibly(
+        self, web_repo, escaping
+    ):
+        """A ``..`` or absolute ``cwd`` must not silently drop the whole
+        declaration so the bootstrap falls back to guessing from manifest
+        files. Either detection refuses with an error naming the ``cwd``, or
+        the bootstrap fails and says why."""
+        _declare(
+            web_repo,
+            dict(_COMPONENTS, web={"cwd": escaping, "test": "npm test"}),
+            _RUNTIME,
+        )
+        with patch("subprocess.run", side_effect=_fake_run()):
+            try:
+                manifests = ProjectEnvironmentDetector(web_repo).detect()
+                result = EnvironmentBootstrapper(web_repo).bootstrap(manifests)
+            except Exception as exc:  # noqa: BLE001 - a visible refusal counts
+                assert escaping in str(exc)
+                return
+        assert result.success is False
+        assert escaping in (result.error or "")
+
+    def test_a_components_own_install_is_never_run(self, web_repo):
+        """Guard (passes today): only the declared root install runs; a
+        component's ``install:`` stays declared but not run."""
+        _declare(
+            web_repo,
+            dict(
+                _COMPONENTS,
+                web={"cwd": "apps/web", "test": "npm test", "install": "npm run setup-web"},
+            ),
+            _RUNTIME,
+        )
+        with patch("subprocess.run", side_effect=_fake_run()) as mock_run:
+            manifests = ProjectEnvironmentDetector(web_repo).detect()
+            EnvironmentBootstrapper(web_repo).bootstrap(manifests)
+        ran = [list(map(str, c.args[0])) for c in mock_run.call_args_list]
+        assert ["npm", "run", "setup-web"] not in ran
+        assert len(_declared_calls(mock_run)) == 1
 
 
 # =========================================================================
