@@ -76,6 +76,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import stat
@@ -103,6 +104,7 @@ NOT_LOOKED_UP = "not looked up by the caller that ran this command"
 NOT_AVAILABLE = "not available"
 NOT_RECORDED_TOO_LARGE = "not recorded: too large"
 NOT_RECORDED_TIMED_OUT = "not recorded: timed out"
+NOT_RECORDED_INCOMPLETE = "not recorded: incomplete (some entries could not be read)"
 RECORDED = "recorded"
 
 WHAT_THE_SOURCE_CHECK_SHOWS = (
@@ -282,12 +284,17 @@ def is_git_worktree(root: Path) -> bool:
     worktree, inside the build's own clone, and must never be taken for part
     of that clone.
     """
-    return (Path(root) / ".git").exists()
+    # ``os.path.exists`` answers False, never raises, for a root that cannot
+    # be looked into; the walk then reports that root as unreadable.
+    return os.path.exists(os.path.join(str(root), ".git"))
+
+
+_GIT_UNREADABLE_DIR = re.compile(r"could not open directory '([^']*)'")
 
 
 def _git_file_set(
     root: Path, runner: Runner, limits: EvidenceLimits
-) -> Tuple[List[str], Optional[str]]:
+) -> Tuple[List[str], Optional[str], List[str]]:
     run = runner(
         ["git", "-C", str(root), "ls-files", "-co", "--exclude-standard", "-z"],
         env=_git_env(),
@@ -301,6 +308,14 @@ def _git_file_set(
         raise RuntimeError(
             f"git ls-files exited {run.returncode}: {_first_line(run.stderr)}"
         )
+    # Git lists what it can and only WARNS about a directory it could not
+    # open (exit 0), so that warning is what makes the listing incomplete.
+    unreadable = [
+        m.group(1).rstrip("/") or "."
+        for m in _GIT_UNREADABLE_DIR.finditer(
+            run.stderr.decode("utf-8", errors="replace")
+        )
+    ]
     seen = set()
     paths: List[str] = []
     for raw in run.stdout.split(b"\0"):
@@ -322,11 +337,17 @@ def _git_file_set(
         if head_run.returncode == 0
         else None
     )
-    return sorted(paths), head
+    return sorted(paths), head, unreadable
 
 
-def _walk_file_set(root: Path, limits: EvidenceLimits, deadline: float) -> List[str]:
-    """Every entry under ``root``, never following a symbolic link."""
+def _walk_file_set(
+    root: Path, limits: EvidenceLimits, deadline: float
+) -> Tuple[List[str], List[str]]:
+    """Every entry under ``root``, never following a symbolic link.
+
+    Returns the paths and the directories (``"."`` for the root itself) whose
+    contents could not be listed.
+    """
     paths: List[str] = []
     unreadable: List[str] = []
 
@@ -353,11 +374,13 @@ def _walk_file_set(root: Path, limits: EvidenceLimits, deadline: float) -> List[
             paths.append(os.path.normpath(os.path.join(rel_dir, name)))
         if len(paths) > limits.max_files:
             raise _TooLarge(f"more than {limits.max_files} files")
-    for full in unreadable:
-        rel = os.path.relpath(full, str(root))
+    unlisted = sorted(
+        {os.path.relpath(full, str(root)).replace(os.sep, "/") for full in unreadable}
+    )
+    for rel in unlisted:
         if rel != ".":
             paths.append(rel)
-    return sorted(set(p.replace(os.sep, "/") for p in paths))
+    return sorted(set(p.replace(os.sep, "/") for p in paths)), unlisted
 
 
 def _describe(
@@ -441,13 +464,13 @@ def source_manifest(
                 "Git worktree: tracked and untracked files, ignored files "
                 "excluded (git ls-files -co --exclude-standard)"
             )
-            paths, head = _git_file_set(root, runner, limits)
+            paths, head, unlisted = _git_file_set(root, runner, limits)
             record["head"] = head
         else:
             record["file_set"] = (
                 "plain directory without Git metadata: every entry it holds"
             )
-            paths = _walk_file_set(root, limits, deadline)
+            paths, unlisted = _walk_file_set(root, limits, deadline)
         entries = _describe(root, paths, limits, deadline)
     except _TooLarge as exc:
         record["status"] = NOT_RECORDED_TOO_LARGE
@@ -460,10 +483,23 @@ def source_manifest(
     except Exception as exc:  # noqa: BLE001 — capture never fails a run
         record["status"] = f"not recorded: capture error ({type(exc).__name__}: {exc})"
         return record
-    record["status"] = RECORDED
+    # COMPLETENESS. A manifest that could not see every entry's contents, or
+    # could not list a directory, is not an identity: two such manifests can
+    # agree while the bytes nobody could read differed. It is kept, as
+    # diagnosis, but never compared.
+    unreadable = sorted(
+        set(unlisted) | {e[0] for e in entries if e[1] == "unreadable"}
+    )
     record["file_count"] = len(entries)
-    record["digest"] = manifest_digest(entries)
     record["_entries"] = entries
+    if unreadable:
+        record["status"] = NOT_RECORDED_INCOMPLETE
+        record["unreadable"] = unreadable[: limits.changed_paths]
+        record["unreadable_total"] = len(unreadable)
+        record["partial_digest"] = manifest_digest(entries)
+        return record
+    record["status"] = RECORDED
+    record["digest"] = manifest_digest(entries)
     return record
 
 
@@ -1026,9 +1062,10 @@ class CommandEvidence:
         )
         entries = self._before.get("_entries") or []
         manifest_copy: Optional[Dict[str, Any]] = None
-        if self._before.get("status") == RECORDED:
+        if self._before.get("_entries") is not None:
             manifest_copy = {
                 "of": "the before observation",
+                "complete": self._before.get("status") == RECORDED,
                 "entry_format": MANIFEST_ENTRY_FORMAT,
                 "entries": entries[: self.limits.inline_entries],
                 "entries_total": len(entries),
@@ -1118,6 +1155,7 @@ __all__ = [
     "NOT_AVAILABLE",
     "NOT_DECLARED",
     "NOT_LOOKED_UP",
+    "NOT_RECORDED_INCOMPLETE",
     "NOT_RECORDED_TIMED_OUT",
     "NOT_RECORDED_TOO_LARGE",
     "SOURCE_CHANGED",

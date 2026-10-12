@@ -486,3 +486,64 @@ def test_a_git_listing_that_times_out_is_recorded_as_timed_out(repo):
     record = source_manifest(repo, runner=_slow_git)
     assert record["status"] == re_mod.NOT_RECORDED_TIMED_OUT
     assert "took longer than" in record["limit_reached"]
+
+
+# ---------------------------------------------------------------------------
+# Implementation review round 1: completeness (R2) and bounded capture (R3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def restore_modes():
+    changed = []
+    yield changed
+    for path in changed:
+        os.chmod(path, 0o755)
+
+
+def test_an_unreadable_file_makes_the_manifest_incomplete_and_never_compared(tmp_path, restore_modes):
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "ok.txt").write_text("ok\n")
+    secret = root / "secret.txt"
+    secret.write_text("cannot read\n")
+    os.chmod(secret, 0)
+    restore_modes.append(secret)
+
+    record = CommandEvidence(
+        EvidenceRequest(kind="t"), command="x", execution_root=root, docker=_no_docker()
+    ).begin().finish()
+
+    before = record["source"]["before"]
+    assert before["status"] == re_mod.NOT_RECORDED_INCOMPLETE
+    assert before["unreadable"] == ["secret.txt"]
+    assert "digest" not in before and before["partial_digest"]
+    assert record["source"]["verdict"].startswith("not compared")
+    assert record["source"]["manifest"]["complete"] is False
+    assert [e[0] for e in record["source"]["manifest"]["entries"]] == ["ok.txt", "secret.txt"]
+
+
+def test_an_unreadable_root_is_incomplete_not_an_empty_manifest(tmp_path, restore_modes):
+    root = tmp_path / "copy"
+    root.mkdir()
+    (root / "a.txt").write_text("a\n")
+    os.chmod(root, 0)
+    restore_modes.append(root)
+
+    record = source_manifest(root)
+
+    assert record["status"] == re_mod.NOT_RECORDED_INCOMPLETE
+    assert "." in record["unreadable"]
+
+
+def test_a_git_directory_git_could_not_open_is_incomplete(repo, restore_modes):
+    hidden = repo / "private"
+    hidden.mkdir()
+    (hidden / "x.txt").write_text("x\n")
+    os.chmod(hidden, 0)
+    restore_modes.append(hidden)
+
+    record = source_manifest(repo)
+
+    assert record["status"] == re_mod.NOT_RECORDED_INCOMPLETE
+    assert "private" in record["unreadable"]
