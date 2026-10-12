@@ -446,7 +446,7 @@ def test_declared_ran_markers_classify_real_outputs(
 
 
 def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> None:
-    """Raw YAML only: GuardKit has no launch.scratch reader yet (web readiness W1b)."""
+    """The launch lists as rendered; GuardKit's launch reader (web readiness W1b) applies them."""
     raw = _rendered_config(rendered)
     assert "shell_environment" not in raw["toolchain"]
     assert raw["launch"] == {
@@ -456,6 +456,7 @@ def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> 
             "GOCACHE",
             "npm_config_cache",
             "XDG_CONFIG_HOME",
+            "XDG_CACHE_HOME",
             "NODE_COMPILE_CACHE",
         ],
     }
@@ -477,6 +478,7 @@ def test_rendered_gitignore_keeps_installed_and_generated_output_out(
         "test-results/report.json",
         "playwright-report/index.html",
         "apps/web/tsconfig.tsbuildinfo",
+        ".cache/staticcheck/cache.json",
     ]
     kept = [
         ".gitignore",

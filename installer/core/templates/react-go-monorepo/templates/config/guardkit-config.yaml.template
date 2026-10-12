@@ -43,4 +43,4 @@ toolchain:
 # <worktree scratch folder>/toolchain/<NAME>, outside the project tree.
 launch:
   settings: [PLAYWRIGHT_BROWSERS_PATH]
-  scratch: [GOPATH, GOCACHE, npm_config_cache, XDG_CONFIG_HOME, NODE_COMPILE_CACHE]
+  scratch: [GOPATH, GOCACHE, npm_config_cache, XDG_CONFIG_HOME, XDG_CACHE_HOME, NODE_COMPILE_CACHE]
