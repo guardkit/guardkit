@@ -101,6 +101,32 @@ SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED = (
 )
 
 
+# WHAT THE BASELINE RUN ESTABLISHED (reliability repair 2, 12 October 2026).
+#
+# Exactly one of three, read from the declared command's exit status and the
+# failing-test names already extracted from its output — nothing else:
+#
+# * passed — the run passed;
+# * failed — it did not pass, and it named at least one failing test;
+# * unmeasured — it did not pass and named no failing test (an import or
+#   collection error, or output this module cannot read names out of).
+#
+# B463 and DC47's baseline failed at import and named nothing. That was filed
+# as "pre-existing test failure(s)", and later comparisons spoke of "new
+# failures against the measured baseline" when nothing had been measured. An
+# unmeasured baseline is never described as pre-existing failures, and any
+# comparison against it says no baseline comparison was possible. Only the
+# named failures of a failed baseline can excuse anything.
+BASELINE_PASSED = "passed"
+BASELINE_FAILED = "failed"
+BASELINE_UNMEASURED = "unmeasured"
+
+NO_BASELINE_COMPARISON = (
+    "no baseline comparison was possible: the baseline run did not pass and "
+    "named no failing test, so nothing about the base was measured"
+)
+
+
 # HOW WE TELL "WE MEASURED THIS" FROM "THIS WAS LYING ABOUT IN THE TREE".
 #
 # A baseline.json can arrive in a worktree two ways. This build's probe can
@@ -266,11 +292,26 @@ class BaselineResult:
     # record this probe did not write, which is exactly how it should read.
     measured_in: dict = field(default_factory=dict)
 
+    @property
+    def state(self) -> str:
+        """``passed``, ``failed`` (with named failures) or ``unmeasured``.
+
+        Derived, never stored-and-trusted: a record read back is classified
+        from its own ``passed`` flag and failing-test names.
+        """
+        if self.passed:
+            return BASELINE_PASSED
+        if self.failing_node_ids:
+            return BASELINE_FAILED
+        return BASELINE_UNMEASURED
+
     def to_dict(self) -> dict:
         return {
             "command": self.command,
             "expected_exit": self.expected_exit,
             "passed": self.passed,
+            # Written for the person reading the file; from_dict re-derives it.
+            "state": self.state,
             "exit_code": self.exit_code,
             "failing_node_ids": list(self.failing_node_ids),
             "failing_count": self.failing_count,
@@ -543,26 +584,32 @@ def probe_baseline_result(
 
 
 def wave0_baseline_warning(result: BaselineResult) -> Optional[str]:
-    """The wave-0 warning string for a red baseline, or ``None`` when green.
+    """The wave-0 warning string for a red or unmeasured baseline, or ``None``.
 
-    "N pre-existing failures — not attributable to any task", listing the
-    parsed failing IDs (or a count when the stack's IDs weren't parseable).
+    A failed baseline lists its named failures as "pre-existing — not
+    attributable to any task". An unmeasured one (it did not pass and named no
+    failing test) says nothing was measured: it is never described as
+    pre-existing failures.
     """
-    if result.passed:
+    if result.state == BASELINE_PASSED:
         return None
-    n = result.failing_count if result.failing_count else "one or more"
+    if result.state == BASELINE_UNMEASURED:
+        return (
+            f"BASELINE UNMEASURED: the baseline run did not pass and named no "
+            f"failing test (command: {result.command}, exit={result.exit_code}) "
+            f"— for example an import or collection error, or output whose "
+            f"test names cannot be read. Nothing about the base was measured: "
+            f"no failure is recorded as pre-existing, and no baseline "
+            f"comparison is possible for this build."
+        )
     header = (
-        f"BASELINE RED: {n} pre-existing test failure(s) in the feature suite "
-        f"BEFORE wave 1 — not attributable to any task in this feature "
-        f"(command: {result.command}, exit={result.exit_code})."
+        f"BASELINE RED: {result.failing_count or len(result.failing_node_ids)} "
+        f"pre-existing test failure(s) in "
+        f"the feature suite BEFORE wave 1 — not attributable to any task in "
+        f"this feature (command: {result.command}, exit={result.exit_code})."
     )
-    if result.failing_node_ids:
-        listing = "\n".join(f"    - {nid}" for nid in result.failing_node_ids)
-        return f"{header}\n{listing}"
-    return (
-        f"{header} (individual test IDs not parseable for this stack; the "
-        f"pass/fail baseline is still recorded)."
-    )
+    listing = "\n".join(f"    - {nid}" for nid in result.failing_node_ids)
+    return f"{header}\n{listing}"
 
 
 def now_isoformat() -> str:

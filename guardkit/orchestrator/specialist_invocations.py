@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
-from guardkit.orchestrator.baseline import failing_node_ids
+from guardkit.orchestrator.baseline import NO_BASELINE_COMPARISON, failing_node_ids
 from guardkit.orchestrator.failing_test_feedback import (
     FAILING_TESTS_BASIS_NEW,
     FAILING_TESTS_BASIS_OBSERVED,
@@ -1627,10 +1627,15 @@ def _run_deterministic_phase_4(
             f"newly failing: {named}"
         )
     elif base_unknown_note:
+        # An unmeasured baseline is said as such, never as a comparison.
+        base_words = (
+            "no baseline comparison was possible"
+            if (base_source or "").startswith(NO_BASELINE_COMPARISON)
+            else "nothing on record about the base"
+        )
         error = (
             f"tests failed (deterministic Phase 4): {summary[:160]} "
-            f"[whole suite: nothing on record about the base, so every "
-            f"failure is charged]"
+            f"[whole suite: {base_words}, so every failure is charged]"
         )
     else:
         error = f"tests failed (deterministic Phase 4): {summary[:160]}"

@@ -103,6 +103,9 @@ from guardkit.orchestrator.docker_fixtures import (
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.zero_test_gate import evaluate_zero_test
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_UNMEASURED,
+    NO_BASELINE_COMPARISON,
     baseline_diff_enabled,
     compute_charged_failures,
     failing_node_ids,
@@ -5038,8 +5041,10 @@ class CoachValidator:
         if not baseline_diff_enabled():
             return False
         baseline, ledger = self._baseline_context()
-        has_baseline_reds = baseline is not None and not baseline.passed and bool(
-            baseline.failing_node_ids
+        # Only named failures from a measured baseline can excuse anything;
+        # an unmeasured one (did not pass, named nothing) excuses nothing.
+        has_baseline_reds = (
+            baseline is not None and baseline.state == BASELINE_FAILED
         )
         return has_baseline_reds or bool(ledger)
 
@@ -5107,7 +5112,14 @@ class CoachValidator:
                     "%d; kill-switch GUARDKIT_AUTOBUILD_BASELINE_DIFF: %s)",
                     "absent"
                     if baseline is None
-                    else ("green" if baseline.passed else "red"),
+                    else (
+                        "green" if baseline.passed
+                        else (
+                            NO_BASELINE_COMPARISON
+                            if baseline.state == BASELINE_UNMEASURED
+                            else "red"
+                        )
+                    ),
                     len(ledger),
                     "on" if baseline_diff_enabled() else "OFF",
                 )
@@ -5233,8 +5245,10 @@ class CoachValidator:
         ``baseline.json`` shape source 1 writes, so the two doors are
         reading one record, not two.
 
-        ``base_known`` is ``False`` only when neither is present. Nothing is
-        then forgiven: :meth:`compare_suite_against_base` makes no comparison
+        ``base_known`` is ``False`` only when neither is present — an
+        unmeasured baseline (it did not pass and named no failing test) counts
+        as not present, and the words then say no baseline comparison was
+        possible. Nothing is then forgiven: :meth:`compare_suite_against_base` makes no comparison
         at all, the run's own red stands in full, and the record says in
         plain words that nothing was on record. That is the fail-closed
         direction, and it is the same verdict the Coach's own gate reaches in
@@ -5243,7 +5257,14 @@ class CoachValidator:
         measured, ledger = self._baseline_context()
         sources: List[str] = []
         ids: List[str] = []
-        if measured is not None:
+        # An UNMEASURED baseline (it did not pass and named no failing test —
+        # an import or collection error, say) is not knowledge of the base:
+        # it is never offered as a source, so a comparison is never claimed
+        # against it (reliability repair 2, 12 October 2026).
+        unmeasured = (
+            measured is not None and measured.state == BASELINE_UNMEASURED
+        )
+        if measured is not None and not unmeasured:
             ids.extend(measured.failing_node_ids)
             sources.append(
                 "the build's measured baseline (the wave-0 run on this "
@@ -5263,6 +5284,13 @@ class CoachValidator:
                 "(qa/known-failures.yaml)"
             )
         if not sources:
+            if unmeasured:
+                return (
+                    False,
+                    [],
+                    f"{NO_BASELINE_COMPARISON}, and there is no "
+                    "qa/known-failures.yaml",
+                )
             return (
                 False,
                 [],

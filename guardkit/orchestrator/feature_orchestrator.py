@@ -128,6 +128,8 @@ GUARD_MISSING_CHECK_FILE_REASON = (
     "such file exists in the built tree"
 )
 from guardkit.orchestrator.baseline import (
+    BASELINE_FAILED,
+    BASELINE_PASSED,
     SOURCE_FEATURE_SMOKE,
     SOURCE_REPOSITORY_TEST,
     SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED,
@@ -5230,8 +5232,14 @@ The detailed specifications are in the task markdown file.
                 "measured now would record this build's own breakage as "
                 "pre-existing.",
                 worktree.path,
-                "green" if existing.passed
-                else f"{existing.failing_count} pre-existing failure(s)",
+                "green" if existing.state == BASELINE_PASSED
+                else (
+                    f"{existing.failing_count} pre-existing failure(s)"
+                    if existing.state == BASELINE_FAILED
+                    # Did not pass and named no failing test: nothing was
+                    # measured, so nothing is called pre-existing.
+                    else "unmeasured — no baseline comparison is possible"
+                ),
                 existing.command,
                 existing.source or "an earlier run",
             )
@@ -5390,6 +5398,11 @@ The detailed specifications are in the task markdown file.
             smoke_result, result, combined = measured
             source = SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
 
+        # The record says which of three things the run established
+        # (``BaselineResult.state``: passed, failed with named failures, or
+        # unmeasured). An unmeasured record is still written, so finalize has
+        # a command to re-run, but it excuses nothing: only named failures
+        # are ever subtracted, and comparisons say none was possible.
         self._measured_baseline = result
 
         try:

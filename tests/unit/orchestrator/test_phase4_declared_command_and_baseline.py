@@ -535,3 +535,37 @@ class TestAbsenceAndTheRecord:
         assert block["failures_total"] == 2
         assert block["failures_inherited"] == 2
         assert "resolved_interpreter" in block
+
+
+class TestAnUnmeasuredBaselineIsNoComparison:
+    """Reliability repair 2 (12 October 2026). The wave-0 run failed at import
+    and named no test, so nothing about the base was measured. The leg must
+    not report "N new ... base from the build's measured baseline"; it says no
+    baseline comparison was possible and charges every failure."""
+
+    def test_the_leg_says_no_baseline_comparison_was_possible(
+        self, tmp_path: Path
+    ):
+        root, worktree = _worktree(tmp_path)
+        _declare(root, worktree)
+        _suite_script(worktree, _TWO_RED, 1)
+        _measured_baseline(worktree, [])
+        # The helper writes passed=not failing; an unmeasured base is red.
+        path = worktree / ".guardkit" / "autobuild" / _FEATURE_ID / "baseline.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.update({"passed": False, "exit_code": 4})
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        block = _leg(worktree)
+
+        assert block is not None
+        assert block["status"] == "failed"
+        assert block["tests_failed"] == 2
+        assert block["failures_new"] is None
+        assert block["failures_inherited"] is None
+        assert block["baseline_source"].startswith(
+            "no baseline comparison was possible"
+        )
+        assert "measured baseline" not in block["baseline_source"]
+        assert "no baseline comparison was possible" in block["error"]
+        assert "no baseline comparison was possible" in block["baseline_note"]
