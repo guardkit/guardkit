@@ -15,8 +15,11 @@ when:
   creator is read from the owner label the fixture set
   (``guardkit.fixture.owner`` = the creating build's ``GUARDKIT_RUN_OWNER``);
 * exactly ONE teardown receipt — a separately recorded teardown command that
-  names its acting build, with start and end times — covers the moment of
-  removal.
+  names its acting build, with start and end times — LISTS that container ID
+  among the ones it removed (the fixture's containers present before the
+  teardown and gone after it), and its interval covers the moment of
+  removal. A receipt that merely overlapped the moment, without listing the
+  container, names nobody: being there at the time is not removing it.
 
 Only container removals are analysed; network removals are not.
 
@@ -69,6 +72,9 @@ class TeardownReceipt:
     started_unix: float
     ended_unix: float
     command: str = ""
+    #: Container IDs present before the teardown and gone after it; ``None``
+    #: when they were not listed, in which case the receipt binds nothing.
+    removed_ids: Optional[frozenset] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Optional["TeardownReceipt"]:
@@ -84,35 +90,95 @@ class TeardownReceipt:
             return None
         if not actor or ended < started:
             return None
-        return cls(actor, started, ended, str(data.get("command") or ""))
+        removed = data.get("removed_ids")
+        removed_ids = (
+            frozenset(str(x) for x in removed) if isinstance(removed, (list, tuple)) else None
+        )
+        return cls(actor, started, ended, str(data.get("command") or ""), removed_ids)
+
+
+#: The label Compose puts on every container of a project.
+COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
+
+
+def _list_project_containers(
+    project: str, runner: Runner, timeout: float
+) -> Optional[List[str]]:
+    """IDs of the project's containers, running or not; ``None`` if unknown."""
+    try:
+        run = runner(
+            [
+                "docker", "ps", "-a", "-q", "--no-trunc",
+                "--filter", f"label={COMPOSE_PROJECT_LABEL}={project}",
+            ],
+            cwd=None,
+            env=None,
+            timeout=timeout,
+        )
+    except Exception:  # noqa: BLE001 — the receipt says it could not list
+        return None
+    if run.timed_out or run.returncode != 0:
+        return None
+    return sorted(
+        line.strip()
+        for line in run.stdout.decode("utf-8", errors="replace").splitlines()
+        if line.strip()
+    )
 
 
 def record_teardown(
     command: Sequence[str],
     *,
     acting_build: str,
+    compose_project: Optional[str] = None,
     runner: Optional[Runner] = None,
     clock: Callable[[], float] = time.time,
     cwd: Optional[Path] = None,
     timeout: float = 300.0,
+    list_timeout: float = 15.0,
 ) -> Dict[str, Any]:
     """Run a teardown command and return its receipt, naming the acting build.
 
-    The receipt carries the start and end times of the command, so a removal
-    event can later be matched to it. It is a receipt of THIS teardown only:
-    it says nothing about any other actor on the daemon.
+    The receipt is RESOURCE-BOUND: with ``compose_project`` it lists the
+    project's container IDs just before and just after the teardown (one
+    bounded ``docker ps`` each) and keeps those that went, as
+    ``removed_ids``. Its interval covers both listings and the command, so a
+    removal event can be matched to it by container ID and time. A container
+    another actor removed between the two listings would also be listed: the
+    receipt says what went during this teardown, and it is a receipt of THIS
+    teardown only. Without a project, or when a listing fails,
+    ``removed_ids`` is ``None`` and the receipt binds no container.
     """
     runner = runner or _default_runner
     started = clock()
+    before = (
+        _list_project_containers(compose_project, runner, list_timeout)
+        if compose_project
+        else None
+    )
     try:
         run = runner(list(command), cwd=cwd, env=None, timeout=timeout)
     except Exception as exc:  # noqa: BLE001 — the receipt says what happened
         run = HelperRun(None, b"", f"{type(exc).__name__}: {exc}".encode())
+    after = (
+        _list_project_containers(compose_project, runner, list_timeout)
+        if compose_project
+        else None
+    )
     ended = clock()
+    removed = (
+        sorted(set(before) - set(after))
+        if before is not None and after is not None
+        else None
+    )
     return {
         "kind": TEARDOWN_KIND,
         "acting_build": acting_build,
         "command": " ".join(command),
+        "compose_project": compose_project,
+        "ids_before": before,
+        "ids_after": after,
+        "removed_ids": removed,
         "started_unix": started,
         "ended_unix": ended,
         "started_at": _utc(started),
@@ -219,24 +285,39 @@ def attribute_removals(
             continue
         created_by = creator.get(cid, UNKNOWN)
         covering = [t for t in teardowns if t.started_unix <= at <= t.ended_unix]
-        if len(covering) == 1:
-            removed_during = covering[0].acting_build
+        listing = [t for t in teardowns if t.removed_ids is not None and cid in t.removed_ids]
+        bound = [t for t in listing if t in covering]
+        overlapped = (
+            f" (teardowns overlapping the moment: "
+            f"{', '.join(sorted(t.acting_build for t in covering))})"
+            if covering
+            else ""
+        )
+        if len(bound) == 1 and len(listing) == 1:
+            removed_during = bound[0].acting_build
             reason = (
-                f"exactly one teardown receipt ({removed_during}'s) covers the "
-                "moment of removal"
+                f"exactly one teardown receipt ({removed_during}'s) lists this "
+                "container as removed and covers the moment of removal"
             )
-        elif covering:
+        elif len(listing) > 1:
             removed_during = UNKNOWN
             reason = (
-                f"{len(covering)} teardowns overlap the moment of removal "
-                f"({', '.join(sorted(t.acting_build for t in covering))}), so "
-                "no one of them can be named"
+                f"{len(listing)} teardown receipts list this container as removed "
+                f"({', '.join(sorted(t.acting_build for t in listing))}), so no "
+                "one of them can be named"
+            )
+        elif listing:
+            removed_during = UNKNOWN
+            reason = (
+                f"{listing[0].acting_build}'s teardown lists this container as "
+                "removed, but its interval does not cover the moment of removal"
             )
         else:
             removed_during = UNKNOWN
             reason = (
-                "no actor-bound teardown receipt covers the moment of removal; "
-                "whatever else was running then is not evidence of who removed it"
+                "no teardown receipt lists this container among the ones it "
+                f"removed{overlapped}; being there at the time is not evidence "
+                "of who removed it"
             )
         if created_by == UNKNOWN:
             reason += (
@@ -281,6 +362,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sub = parser.add_subparsers(dest="action", required=True)
     td = sub.add_parser("record-teardown")
     td.add_argument("--receipt", required=True, type=Path)
+    td.add_argument(
+        "--compose-project",
+        help="the fixture's Compose project; its containers are listed before "
+        "and after so the receipt names the ones this teardown removed",
+    )
     td.add_argument("teardown", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
 
@@ -290,7 +376,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     actor = (os.environ.get(RUN_OWNER_ENV) or "").strip()
     if not actor:
         parser.error(f"{RUN_OWNER_ENV} must name the acting build")
-    receipt = record_teardown(command, acting_build=actor)
+    receipt = record_teardown(
+        command, acting_build=actor, compose_project=args.compose_project
+    )
 
     def _write() -> bool:
         args.receipt.parent.mkdir(parents=True, exist_ok=True)

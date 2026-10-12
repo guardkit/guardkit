@@ -40,8 +40,12 @@ def _ev(action: str, at: float, cid: str, owner: str | None = None, kind: str = 
     }
 
 
-def _teardown(build: str, start: float, end: float) -> dict:
-    return {"kind": "teardown", "acting_build": build, "started_unix": start, "ended_unix": end}
+def _teardown(build: str, start: float, end: float, removed=None) -> dict:
+    """A resource-bound teardown receipt (``removed`` = the IDs it removed)."""
+    return {
+        "kind": "teardown", "acting_build": build, "started_unix": start,
+        "ended_unix": end, "removed_ids": removed,
+    }
 
 
 def _suite(build: str, start: float, end: float) -> dict:
@@ -59,7 +63,9 @@ def test_one_teardown_names_creator_and_remover():
         _ev("start", 10.1, "c1", owner="build-A"),
         _ev("destroy", 21.0, "c1", owner="build-A"),
     ]
-    [finding] = attribute_removals(events, [_suite("build-A", 9.0, 30.0), _teardown("build-B", 20.0, 22.0)])
+    [finding] = attribute_removals(
+        events, [_suite("build-A", 9.0, 30.0), _teardown("build-B", 20.0, 22.0, ["c1"])]
+    )
 
     assert finding.container_id == "c1"
     assert finding.created_by == "build-A"
@@ -70,11 +76,12 @@ def test_one_teardown_names_creator_and_remover():
 def test_overlapping_teardowns_are_unknown():
     events = [_ev("create", 10.0, "c1", owner="build-A"), _ev("destroy", 21.0, "c1")]
     [finding] = attribute_removals(
-        events, [_teardown("build-A", 20.0, 22.0), _teardown("build-B", 20.5, 23.0)]
+        events,
+        [_teardown("build-A", 20.0, 22.0, ["c1"]), _teardown("build-B", 20.5, 23.0, ["c1"])],
     )
     assert finding.removed_during == UNKNOWN
     assert finding.statement == UNKNOWN
-    assert "2 teardowns overlap" in finding.reason
+    assert "2 teardown receipts list this container" in finding.reason
     assert finding.created_by == "build-A"
 
 
@@ -82,7 +89,7 @@ def test_no_actor_bound_receipt_is_unknown():
     events = [_ev("create", 10.0, "c1", owner="build-A"), _ev("destroy", 21.0, "c1")]
     [finding] = attribute_removals(events, [])
     assert finding.statement == UNKNOWN
-    assert "no actor-bound teardown receipt" in finding.reason
+    assert "no teardown receipt lists this container" in finding.reason
 
 
 def test_negative_control_other_builds_cleanup_during_a_sole_recorded_suite_is_unknown():
@@ -104,8 +111,9 @@ def test_negative_control_other_builds_cleanup_during_a_sole_recorded_suite_is_u
 
 def test_a_teardown_outside_the_moment_is_not_used():
     events = [_ev("create", 10.0, "c1", owner="build-A"), _ev("destroy", 30.0, "c1")]
-    [finding] = attribute_removals(events, [_teardown("build-B", 20.0, 22.0)])
+    [finding] = attribute_removals(events, [_teardown("build-B", 20.0, 22.0, ["c1"])])
     assert finding.statement == UNKNOWN
+    assert "does not cover the moment" in finding.reason
 
 
 def test_correlation_is_by_container_id_and_unlabelled_creators_are_unknown():
@@ -116,7 +124,7 @@ def test_correlation_is_by_container_id_and_unlabelled_creators_are_unknown():
         _ev("destroy", 21.5, "c1"),
         _ev("destroy", 21.6, "net", kind="network"),
     ]
-    findings = attribute_removals(events, [_teardown("build-B", 20.0, 22.0)])
+    findings = attribute_removals(events, [_teardown("build-B", 20.0, 22.0, ["c1", "c2"])])
 
     by_id = {f.container_id: f for f in findings}
     assert set(by_id) == {"c1", "c2"}
@@ -171,11 +179,12 @@ def test_the_fixture_labels_every_resource_with_the_creating_build():
         assert "GUARDKIT_RUN_OWNER" in network["labels"][OWNER_LABEL]
     teardown = (FIXTURE / "teardown.sh").read_text()
     assert "record-teardown" in teardown and "--receipt" in teardown
+    assert "--compose-project guardkit-collision-fixture" in teardown
 
 
 def test_an_unobserved_creation_says_the_creator_came_from_the_label():
     [finding] = attribute_removals(
-        [_ev("destroy", 21.0, "c1", owner="build-A")], [_teardown("build-B", 20.0, 22.0)]
+        [_ev("destroy", 21.0, "c1", owner="build-A")], [_teardown("build-B", 20.0, 22.0, ["c1"])]
     )
     assert finding.created_by == "build-A"
     assert "creation not observed; creator read from the label" in finding.reason
@@ -190,3 +199,66 @@ def test_the_teardown_cli_writes_its_receipt(tmp_path, monkeypatch):
     import json
 
     assert json.loads(receipt.read_text())["acting_build"] == "build-B"
+
+
+# ---------------------------------------------------------------------------
+# Implementation review round 5, R13: receipts are resource-bound
+# ---------------------------------------------------------------------------
+
+
+def test_negative_control_an_unrelated_teardown_overlapping_the_moment_is_unknown():
+    """B's recorded teardown overlaps the removal of A's container, but B's
+    receipt does not list that container: B is not named."""
+    events = [
+        _ev("create", 10.0, "c-a", owner="build-A"),
+        _ev("destroy", 21.0, "c-a", owner="build-A"),
+        _ev("destroy", 21.2, "c-b", owner="build-B"),
+    ]
+    findings = {f.container_id: f for f in attribute_removals(
+        events, [_teardown("build-B", 20.0, 22.0, ["c-b"])]
+    )}
+    assert findings["c-a"].statement == UNKNOWN
+    assert "teardowns overlapping the moment: build-B" in findings["c-a"].reason
+    assert findings["c-b"].statement == "created by build-B, removed during build-B's teardown"
+
+
+def test_a_receipt_without_listed_ids_binds_nothing():
+    events = [_ev("create", 10.0, "c1", owner="build-A"), _ev("destroy", 21.0, "c1")]
+    [finding] = attribute_removals(events, [_teardown("build-B", 20.0, 22.0, None)])
+    assert finding.statement == UNKNOWN
+
+
+def test_record_teardown_lists_the_projects_containers_before_and_after():
+    times = iter([50.0, 52.5])
+    listings = iter([b"aaa\nbbb\nccc\n", b"ccc\n"])
+    calls = []
+
+    def _runner(argv, **kwargs):
+        calls.append(argv)
+        if argv[:2] == ["docker", "ps"]:
+            return HelperRun(0, next(listings), b"")
+        return HelperRun(0, b"", b"")
+
+    receipt = record_teardown(
+        ["docker", "compose", "down"], acting_build="build-B",
+        compose_project="guardkit-collision-fixture", runner=_runner,
+        clock=lambda: next(times),
+    )
+    assert calls[1] == ["docker", "compose", "down"]
+    assert "label=com.docker.compose.project=guardkit-collision-fixture" in calls[0]
+    assert receipt["ids_before"] == ["aaa", "bbb", "ccc"]
+    assert receipt["ids_after"] == ["ccc"]
+    assert receipt["removed_ids"] == ["aaa", "bbb"]
+    assert receipt["exit_code"] == 0
+
+
+def test_a_failed_listing_leaves_the_receipt_unbound():
+    def _runner(argv, **kwargs):
+        if argv[:2] == ["docker", "ps"]:
+            return HelperRun(1, b"", b"Cannot connect to the Docker daemon")
+        return HelperRun(0, b"", b"")
+
+    receipt = record_teardown(
+        ["true"], acting_build="build-B", compose_project="p", runner=_runner
+    )
+    assert receipt["removed_ids"] is None

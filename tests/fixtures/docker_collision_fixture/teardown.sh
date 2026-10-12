@@ -6,4 +6,5 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 exec python -m guardkit.orchestrator.container_attribution record-teardown \
-    --receipt "$1" -- docker compose -f "$here/compose.yaml" down
+    --receipt "$1" --compose-project guardkit-collision-fixture \
+    -- docker compose -f "$here/compose.yaml" down
