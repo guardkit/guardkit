@@ -527,6 +527,8 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/.npm/**",
             ":(exclude,glob)**/.claude/task-plans/**",
             ":(exclude,glob)**/.guardkit-git.lock",
+            # The HEAD record (head_identity, 12 October 2026).
+            ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
         )
         for spec in wc.CHECKPOINT_EXCLUDE_PATHSPECS:
             assert spec.startswith(":(exclude,glob)"), (

@@ -5519,6 +5519,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             preserve_prompt as _sdk_preserve_prompt,
             preserve_event_checked as _sdk_preserve_event_checked,
         )
+        from guardkit.orchestrator.head_identity import observe_invocation
         _debug_task_id = task_id or heartbeat_task_id
         _debug_turn = turn if turn is not None else 1
         _debug_role = "coach" if agent_type == "coach" else "player"
@@ -5723,8 +5724,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         cwd=self.worktree_path,
                                         timeout_seconds=self.sdk_timeout_seconds,
                                     )
+                                # 12 October 2026 (build 0D7C): HEAD and its
+                                # branch are recorded before and after, with
+                                # the invocations that overlapped. Evidence
+                                # only; the stream passes through unchanged.
                                 async with aclosing(
-                                    _harness_call
+                                    observe_invocation(
+                                        _harness_call,
+                                        self.worktree_path,
+                                        role=(
+                                            heartbeat_label_override
+                                            or agent_type
+                                        ).removesuffix(" invocation"),
+                                        task_id=_debug_task_id,
+                                        turn=turn,
+                                    )
                                 ) as _harness_stream:
                                     async for event in _harness_stream:
                                         # TASK-FIX-SPECHANG2: record model-
@@ -11618,6 +11632,7 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             preserve_event as _sdk_preserve_event,
             preserve_event_checked as _sdk_preserve_event_checked,
         )
+        from guardkit.orchestrator.head_identity import observe_invocation
         _sdk_debug_dir = _sdk_preserve_prompt(
             workspace_root=self.worktree_path,
             task_id=task_id,
@@ -11797,13 +11812,21 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                         # TASK-FIX-LGACLOSE: finalise the harness async generator
                         # on every exit (incl. cancellation) — see the specialist
                         # call site for the full rationale.
+                        # HEAD recorded before and after (build 0D7C);
+                        # the stream passes through unchanged.
                         async with aclosing(
-                            harness.invoke(
-                                prompt=prompt,
-                                role="player",
-                                tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
-                                cwd=self.worktree_path,
-                                timeout_seconds=self.sdk_timeout_seconds,
+                            observe_invocation(
+                                harness.invoke(
+                                    prompt=prompt,
+                                    role="player",
+                                    tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task"],
+                                    cwd=self.worktree_path,
+                                    timeout_seconds=self.sdk_timeout_seconds,
+                                ),
+                                self.worktree_path,
+                                role="player (task-work)",
+                                task_id=task_id,
+                                turn=turn,
                             )
                         ) as _harness_stream:
                             async for event in _harness_stream:

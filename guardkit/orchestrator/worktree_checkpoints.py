@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Protocol, Tuple
 
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
+from guardkit.orchestrator.head_identity import record_git_operation
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,12 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # a wildcard-free ``:(exclude).guardkit-git.lock`` is the 706589f7
     # refusal bug waiting to happen in the repo that DOES ignore it.
     ":(exclude,glob)**/.guardkit-git.lock",
+    # The record of where HEAD was around each agent invocation
+    # (``head_identity``, 12 October 2026). It is evidence ABOUT the branch,
+    # appended to by every task sharing the worktree: committed, it would
+    # ride into the candidate, and a rollback's ``reset --hard`` would rewind
+    # the very lines that explain the rollback. Untracked, a reset leaves it.
+    ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
 )
 
 # The full ``git add`` argv prefix shared by both add sites.
@@ -333,6 +340,32 @@ class Checkpoint:
         return cls(**data)
 
 
+class CheckpointRefused(RuntimeError):
+    """The worktree's HEAD is not on the feature branch, so no checkpoint.
+
+    Raised by :meth:`WorktreeCheckpointManager.create_checkpoint` when HEAD is
+    detached somewhere other than the branch's tip, or attached to another
+    branch. A commit there would never reach the candidate branch (build
+    0D7C, 12 October 2026). The message names the expected branch, the actual
+    HEAD and the branch tip; the task stops with it.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        expected_branch: str,
+        actual_ref: Optional[str],
+        head: str,
+        branch_tip: Optional[str],
+    ) -> None:
+        super().__init__(reason)
+        self.expected_branch = expected_branch
+        self.actual_ref = actual_ref
+        self.head = head
+        self.branch_tip = branch_tip
+
+
 # ============================================================================
 # Git Command Executor
 # ============================================================================
@@ -447,6 +480,7 @@ class WorktreeCheckpointManager:
         task_id: str,
         git_executor: Optional[GitCommandExecutor] = None,
         evidence_repos: Optional[List[EvidenceRepo]] = None,
+        expected_branch: Optional[str] = None,
     ):
         """Initialize WorktreeCheckpointManager.
 
@@ -461,9 +495,15 @@ class WorktreeCheckpointManager:
                 work that was never committed anywhere, one ``git clean`` from
                 breaking merged main). Default None -> worktree-only
                 checkpoints, unchanged behaviour.
+            expected_branch: The feature branch every checkpoint must land
+                on (short name, e.g. ``autobuild/FEAT-X``). When given, each
+                checkpoint first checks HEAD is on it (see
+                :meth:`_keep_head_on_expected_branch`). Default None -> no
+                check, unchanged behaviour.
         """
         self.worktree_path = Path(worktree_path)
         self.task_id = task_id
+        self.expected_branch = expected_branch
         self.git_executor = git_executor or SubprocessGitExecutor()
         self.evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self.checkpoints: List[Checkpoint] = []
@@ -508,6 +548,9 @@ class WorktreeCheckpointManager:
 
         Raises:
             subprocess.CalledProcessError: If git commands fail
+            CheckpointRefused: If ``expected_branch`` was given and HEAD is
+                neither on it nor detached exactly at its tip. Nothing is
+                committed; the caller stops the task with the reason.
         """
         logger.info(
             f"Creating checkpoint for {self.task_id} turn {turn} "
@@ -601,6 +644,12 @@ class WorktreeCheckpointManager:
         Returns:
             Checkpoint record with commit hash
         """
+        # KEEP THE CANDIDATE ON ITS BRANCH (12 October 2026, build 0D7C).
+        # Checked here, under the same lock as the commit, so no other task's
+        # checkpoint can move HEAD between the check and the commit.
+        if self.expected_branch:
+            self._keep_head_on_expected_branch(turn)
+
         # Stage all changes (including untracked files) EXCEPT build junk
         # (register 2a5, 2026-07-30; extended to the JS/TS classes by TS-lane
         # D.1c): checkpoint commits were baking pip http caches and
@@ -631,6 +680,19 @@ class WorktreeCheckpointManager:
             cwd=self.worktree_path,
         )
         commit_hash = result.stdout.strip()
+        if self.expected_branch:
+            # Recorded beside the agents' own before/after lines: another
+            # task's checkpoint advancing the branch is the commonest
+            # legitimate reason HEAD moves during an invocation.
+            record_git_operation(
+                self.worktree_path,
+                actor="guardkit checkpoint",
+                operation=(
+                    f"commit turn {turn} checkpoint {commit_hash[:12]} "
+                    f"on {self.expected_branch}"
+                ),
+                task_id=self.task_id,
+            )
 
         # TASK-AB-XREPOEV01 (AC-004): also commit each declared sibling repo so
         # approved sibling-repo work is versioned, not left as uncommitted
@@ -647,6 +709,127 @@ class WorktreeCheckpointManager:
             test_count=test_count,
             message=message,
             evidence_commits=evidence_commits,
+        )
+
+    def _keep_head_on_expected_branch(self, turn: int) -> None:
+        """Make sure the checkpoint commit lands on the feature branch.
+
+        Build 0D7C (12 October 2026) finished with its checkout detached at a
+        later checkpoint while its branch still named an older commit: a
+        checkpoint had committed on a detached HEAD, so the work never reached
+        the branch, and the merge guard rightly refused the candidate. Who
+        detached it is not known; this is where the damage would be done, so
+        this is where it is stopped.
+
+        * HEAD attached to the expected branch: proceed as always, whether or
+          not the branch has advanced (parallel tasks share one worktree and
+          each one's checkpoint legitimately moves the branch).
+        * HEAD detached at exactly the branch's current tip: re-attach the
+          branch first. Nothing in the tree or the index changes. A warning
+          is logged.
+        * Anything else (detached elsewhere, or on another branch): refuse,
+          naming the expected branch, the actual HEAD and the branch tip. No
+          commit is ever made on a detached HEAD.
+
+        Must only be called while holding the worktree git lock.
+        """
+        expected = self.expected_branch
+        expected_ref = f"refs/heads/{expected}"
+        symbolic = self.git_executor.execute(
+            ["git", "symbolic-ref", "-q", "HEAD"],
+            cwd=self.worktree_path,
+            check=False,
+        )
+        attached = (
+            (symbolic.stdout or "").strip() or None
+            if symbolic.returncode == 0
+            else None
+        )
+        if attached == expected_ref:
+            return
+
+        head_proc = self.git_executor.execute(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.worktree_path,
+            check=False,
+        )
+        head = (
+            (head_proc.stdout or "").strip() or "unreadable"
+            if head_proc.returncode == 0
+            else "unreadable"
+        )
+        tip_proc = self.git_executor.execute(
+            ["git", "rev-parse", "--verify", "-q", f"{expected_ref}^{{commit}}"],
+            cwd=self.worktree_path,
+            check=False,
+        )
+        tip = (
+            (tip_proc.stdout or "").strip() or None
+            if tip_proc.returncode == 0
+            else None
+        )
+        detached = symbolic.returncode == 1
+
+        if detached and tip is not None and head == tip:
+            # Same commit, so pointing HEAD back at the branch changes no
+            # file and no index entry. The reflog message says who did it.
+            self.git_executor.execute(
+                [
+                    "git", "symbolic-ref",
+                    "-m", f"guardkit: re-attach {expected} at its tip "
+                    f"before {self.task_id} turn {turn} checkpoint",
+                    "HEAD", expected_ref,
+                ],
+                cwd=self.worktree_path,
+            )
+            logger.warning(
+                f"[{self.task_id}] HEAD was detached at {head[:12]}, which is "
+                f"exactly the tip of {expected}; re-attached {expected} before "
+                f"the turn {turn} checkpoint. No file changed. Something "
+                f"detached HEAD during this task — see "
+                f".guardkit/autobuild/head-identity.jsonl for the invocations "
+                f"that overlapped."
+            )
+            record_git_operation(
+                self.worktree_path,
+                actor="guardkit checkpoint",
+                operation=(
+                    f"re-attach {expected} at its tip {head[:12]} before "
+                    f"turn {turn} checkpoint"
+                ),
+                task_id=self.task_id,
+            )
+            return
+
+        if detached:
+            actual = f"detached at {head}"
+        elif attached is not None:
+            actual = f"{attached} at {head}"
+        else:
+            actual = f"unreadable (git symbolic-ref exited {symbolic.returncode})"
+        reason = (
+            f"Checkpoint refused for {self.task_id} turn {turn}: the "
+            f"worktree's HEAD is not on the feature branch, so a commit here "
+            f"would not reach the candidate. Expected branch: {expected}. "
+            f"Actual HEAD: {actual}. Branch tip: "
+            f"{tip if tip is not None else 'the branch does not exist'}. "
+            f"Nothing was committed. See "
+            f".guardkit/autobuild/head-identity.jsonl for the agent "
+            f"invocations and factory git operations that ran meanwhile."
+        )
+        logger.error(reason)
+        record_git_operation(
+            self.worktree_path,
+            actor="guardkit checkpoint",
+            operation=f"refused turn {turn} checkpoint: HEAD {actual}",
+            task_id=self.task_id,
+        )
+        raise CheckpointRefused(
+            reason,
+            expected_branch=expected,
+            actual_ref=attached,
+            head=head,
+            branch_tip=tip,
         )
 
     def _checkpoint_evidence_repos(
@@ -819,6 +1002,16 @@ class WorktreeCheckpointManager:
                 ["git", "reset", "--hard", checkpoint.commit_hash],
                 cwd=self.worktree_path,
             )
+            if self.expected_branch:
+                record_git_operation(
+                    self.worktree_path,
+                    actor="guardkit rollback",
+                    operation=(
+                        f"reset --hard to turn {turn} checkpoint "
+                        f"{checkpoint.commit_hash[:12]}"
+                    ),
+                    task_id=self.task_id,
+                )
 
             # TASK-AB-XREPOEV01 (AC-004): reset declared sibling repos to the
             # hash they were committed at in THIS target checkpoint. Guarded:

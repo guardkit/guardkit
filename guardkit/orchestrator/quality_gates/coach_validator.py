@@ -5928,13 +5928,25 @@ class CoachValidator:
                 # TASK-FIX-LGACLOSE: finalise the harness async generator on
                 # every exit (incl. timeout/cancel) via aclosing() so no
                 # orphaned async_generator_athrow survives interpreter shutdown.
+                # HEAD recorded before and after this shell-capable agent
+                # (build 0D7C, 12 October 2026); evidence only.
+                from guardkit.orchestrator.head_identity import (
+                    observe_invocation,
+                )
+
                 async with aclosing(
-                    harness.invoke(
-                        prompt=prompt,
-                        role="coach_test",
-                        tools=["Bash"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.test_timeout,
+                    observe_invocation(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="coach_test",
+                            tools=["Bash"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.test_timeout,
+                        ),
+                        self.worktree_path,
+                        role="coach test runner",
+                        task_id=self.task_id,
+                        turn=self._turn,
                     )
                 ) as _harness_stream:
                     async for event in _harness_stream:

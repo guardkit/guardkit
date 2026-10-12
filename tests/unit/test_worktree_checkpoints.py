@@ -125,6 +125,8 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/.npm/**",
         ":(exclude,glob)**/.claude/task-plans/**",
         ":(exclude,glob)**/.guardkit-git.lock",
+        # The HEAD record (head_identity, 12 October 2026).
+        ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the
@@ -1023,6 +1025,8 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/.npm/**",
         ":(exclude,glob)**/.claude/task-plans/**",
         ":(exclude,glob)**/.guardkit-git.lock",
+        # The HEAD record (head_identity, 12 October 2026).
+        ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the

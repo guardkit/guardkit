@@ -183,6 +183,7 @@ from guardkit.orchestrator.synthetic_report import (
 from guardkit.orchestrator.worktree_checkpoints import (
     WorktreeCheckpointManager,
     Checkpoint,
+    CheckpointRefused,
 )
 
 # Import turn state operations for cross-turn learning (TASK-GE-002)
@@ -4391,6 +4392,8 @@ class AutoBuildOrchestrator:
         # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
         # classify_stall() sees fresh state per task.
         self._context_pollution_no_checkpoint_fired = False
+        # Why a checkpoint was refused, when one was (build 0D7C).
+        self._checkpoint_refusal: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -4411,10 +4414,20 @@ class AutoBuildOrchestrator:
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoints and self._checkpoint_manager is None:
+            from guardkit.orchestrator.head_identity import (
+                expected_checkpoint_branch,
+            )
+
             self._checkpoint_manager = WorktreeCheckpointManager(
                 worktree_path=worktree.path,
                 task_id=task_id,
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-004)
+                # Build 0D7C (12 October 2026): every checkpoint must land on
+                # the feature branch; never commit on a detached HEAD.
+                expected_branch=expected_checkpoint_branch(
+                    getattr(worktree, "path", None),
+                    getattr(worktree, "branch_name", None),
+                ),
             )
             logger.info(
                 f"Checkpoint manager initialized for {task_id} "
@@ -4666,11 +4679,18 @@ class AutoBuildOrchestrator:
                     if self.enable_checkpoints and self._checkpoint_manager:
                         tests_passed = self._extract_tests_passed(turn_record)
                         test_count = self._extract_test_count(turn_record)
-                        checkpoint = self._checkpoint_manager.create_checkpoint(
-                            turn=turn,
-                            tests_passed=tests_passed,
-                            test_count=test_count,
-                        )
+                        try:
+                            checkpoint = self._checkpoint_manager.create_checkpoint(
+                                turn=turn,
+                                tests_passed=tests_passed,
+                                test_count=test_count,
+                            )
+                        except CheckpointRefused as refused:
+                            # An approval whose work cannot be put on the
+                            # branch is not a finished task (build 0D7C).
+                            return turn_history, self._stop_for_checkpoint_refusal(
+                                task_id, refused
+                            )
                         logger.info(
                             f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                             f"for turn {turn}"
@@ -4732,11 +4752,16 @@ class AutoBuildOrchestrator:
                     tests_passed = self._extract_tests_passed(turn_record)
                     test_count = self._extract_test_count(turn_record)
 
-                    checkpoint = self._checkpoint_manager.create_checkpoint(
-                        turn=turn,
-                        tests_passed=tests_passed,
-                        test_count=test_count,
-                    )
+                    try:
+                        checkpoint = self._checkpoint_manager.create_checkpoint(
+                            turn=turn,
+                            tests_passed=tests_passed,
+                            test_count=test_count,
+                        )
+                    except CheckpointRefused as refused:
+                        return turn_history, self._stop_for_checkpoint_refusal(
+                            task_id, refused
+                        )
                     logger.info(
                         f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                         f"for turn {turn}"
@@ -7614,6 +7639,25 @@ class AutoBuildOrchestrator:
         except Exception as e:
             # Graceful degradation - log and continue
             logger.warning(f"Error capturing turn state: {e}")
+
+    def _stop_for_checkpoint_refusal(
+        self, task_id: str, refused: CheckpointRefused
+    ) -> str:
+        """Stop the task because its checkpoint was refused; returns ``"error"``.
+
+        The worktree's HEAD was off the feature branch (build 0D7C, 12 October
+        2026), so committing would have put the work where the candidate
+        branch never sees it. Another turn cannot fix that: the task stops,
+        and the reason — expected branch, actual HEAD, branch tip — becomes
+        the task's error (:meth:`_build_error_message`).
+        """
+        self._checkpoint_refusal = str(refused)
+        logger.error("[%s] %s", task_id, refused)
+        self._progress_display.console.print(
+            f"\n[bold red]STOPPED: {task_id}: checkpoint refused.[/bold red]\n"
+            f"  {refused}\n"
+        )
+        return "error"
 
     def _extract_feature_id(self, task_id: str) -> str:
         """
@@ -11746,6 +11790,9 @@ class AutoBuildOrchestrator:
             )
 
         elif final_decision == "error":
+            checkpoint_refusal = getattr(self, "_checkpoint_refusal", None)
+            if checkpoint_refusal:
+                return checkpoint_refusal
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
             )

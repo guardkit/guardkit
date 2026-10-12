@@ -426,6 +426,16 @@ def checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
     """
     if current_branch(repo_root) == branch:
         return None
+    # Said in a build worktree's HEAD record when this folder is one (build
+    # 0D7C, 12 October 2026); nothing is written anywhere else.
+    from guardkit.orchestrator.head_identity import record_git_operation
+
+    record_git_operation(
+        repo_root,
+        actor="guardkit merge_executor.checkout_branch",
+        operation=f"checkout {branch}",
+        only_if_recorded=True,
+    )
     proc = _run_git(repo_root, "checkout", branch)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip() or "(no output)"
