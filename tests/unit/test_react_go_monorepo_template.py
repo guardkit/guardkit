@@ -320,21 +320,18 @@ def rendered(tmp_path: Path) -> Path:
     return output
 
 
-def _rendered_toolchain(rendered: Path) -> dict:
-    raw = yaml.safe_load(
+def _rendered_config(rendered: Path) -> dict:
+    return yaml.safe_load(
         (rendered / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
     )
-    return raw["toolchain"]
 
 
 def test_rendered_toolchain_declaration_parses_through_real_parser(
     rendered: Path,
 ) -> None:
-    # shell_environment is checked separately below until the parser has it.
-    toolchain = dict(_rendered_toolchain(rendered))
-    assert set(toolchain.pop("shell_environment")) == {"scratch", "pass_through"}
-    raw = {"toolchain": toolchain}
-    declaration = parse_toolchain_block(toolchain)
+    raw = _rendered_config(rendered)
+    declaration = parse_toolchain_block(raw["toolchain"])
+    assert load_toolchain_declaration(rendered) == declaration
 
     assert declaration.install == "bash scripts/install.sh"
     assert declaration.test == "bash scripts/check.sh"
@@ -378,16 +375,14 @@ def test_rendered_toolchain_declaration_parses_through_real_parser(
     assert re.search(declaration.ran_marker_regex, "ok  \tex/internal/notes\t1.1s\n")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="needs toolchain.shell_environment (web readiness W1/R4)"
-)
-def test_rendered_shell_environment_parses_through_real_parser(rendered: Path) -> None:
-    """Today's parser refuses the unknown key, so the loader ignores the whole file."""
-    declaration = parse_toolchain_block(_rendered_toolchain(rendered))
-    assert load_toolchain_declaration(rendered) == declaration
-    environment = declaration.shell_environment
-    assert list(environment.scratch) == ["GOPATH", "GOCACHE", "npm_config_cache"]
-    assert list(environment.pass_through) == ["PLAYWRIGHT_BROWSERS_PATH"]
+def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> None:
+    """Raw YAML only: GuardKit has no launch.scratch reader yet (web readiness W1b)."""
+    raw = _rendered_config(rendered)
+    assert "shell_environment" not in raw["toolchain"]
+    assert raw["launch"] == {
+        "settings": ["PLAYWRIGHT_BROWSERS_PATH"],
+        "scratch": ["GOPATH", "GOCACHE", "npm_config_cache"],
+    }
 
 
 def test_feature_check_stub_fails_until_foundation_supplies_it(rendered: Path) -> None:
