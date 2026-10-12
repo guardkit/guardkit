@@ -30,6 +30,7 @@ import pytest
 from guardkit.orchestrator import run_evidence
 from guardkit.orchestrator.quality_gates.coach_validator import (
     EVIDENCE_ISOLATED,
+    EVIDENCE_SDK,
     EVIDENCE_WORKTREE,
     CoachValidator,
 )
@@ -265,3 +266,64 @@ def test_a_worktree_change_while_copying_is_recorded(worktree, monkeypatch):
     origin = result.run_evidence["runs"][0]["originating_worktree"]
     assert origin["stable_during_copy"] == rem.COPY_STABLE
     assert origin["after_copy"]["tree_with_untracked"] == origin["tree_with_untracked"]
+
+
+@pytest.mark.parametrize(
+    "route", ["pytest in the isolated copy", "pytest in the worktree", "through the SDK"]
+)
+def test_every_route_returns_the_object_the_check_made_with_its_record(worktree, monkeypatch, route):
+    """The pytest-argv routes and the SDK route hand back the very result the
+    check produced (not a copy), with the run record attached; a failing
+    pytest run keeps its exit status beside the record."""
+    import sys
+    from unittest.mock import AsyncMock
+
+    from guardkit.orchestrator.quality_gates.coach_validator import IndependentTestResult
+
+    (worktree / "test_red.py").write_text("def test_red():\n    assert 1 == 2\n")
+    made = []
+
+    if route == "through the SDK":
+        monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        v = CoachValidator(
+            str(worktree), task_id="TASK-R7-001", test_command="pytest test_red.py",
+            coach_test_execution="sdk",
+        )
+        sentinel = IndependentTestResult(
+            tests_passed=True, test_command="pytest test_red.py",
+            test_output_summary="sdk ran", duration_seconds=1.0,
+        )
+        made.append(sentinel)
+        monkeypatch.setattr(v, "_run_tests_via_sdk", AsyncMock(return_value=sentinel))
+    else:
+        real_from_run = IndependentTestResult.from_run.__func__
+
+        def _recording_from_run(cls, **kwargs):
+            obj = real_from_run(cls, **kwargs)
+            made.append(obj)
+            return obj
+
+        monkeypatch.setattr(
+            IndependentTestResult, "from_run", classmethod(_recording_from_run)
+        )
+        wave = 2 if "isolated" in route else 1
+        v = _validator(worktree, "pytest -q -p no:cacheprovider test_red.py", wave_size=wave)
+        monkeypatch.setattr(v, "_pytest_interpreter", lambda: sys.executable)
+
+    result = v.run_independent_tests()
+
+    assert made and result is made[-1]
+    runs = result.run_evidence["runs"]
+    assert len(runs) == 1
+    expected_kind = {
+        "pytest in the isolated copy": EVIDENCE_ISOLATED,
+        "pytest in the worktree": EVIDENCE_WORKTREE,
+        "through the SDK": EVIDENCE_SDK,
+    }[route]
+    assert runs[0]["command_kind"] == expected_kind
+    if route != "through the SDK":
+        assert result.tests_passed is False
+        assert result.exit_code == 1
+        assert result.failure_receipt()["exit_code"] == 1
+        assert isinstance(runs[0]["command"], list)  # the pytest argv itself
