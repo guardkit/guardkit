@@ -514,13 +514,24 @@ class TaskWorkInterface:
                     # TASK-FIX-LGACLOSE: finalise the harness async generator on
                     # every exit (incl. timeout/cancel) via aclosing() so no
                     # orphaned async_generator_athrow survives interpreter shutdown.
+                    # HEAD recorded before and after (build 0D7C,
+                    # 12 October 2026); evidence only.
+                    from guardkit.orchestrator.head_identity import (
+                        observe_invocation,
+                    )
+
                     async with aclosing(
-                        harness.invoke(
-                            prompt=prompt,
-                            role="design",
-                            tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-                            cwd=self.worktree_path,
-                            timeout_seconds=self.sdk_timeout_seconds,
+                        observe_invocation(
+                            harness.invoke(
+                                prompt=prompt,
+                                role="design",
+                                tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+                                cwd=self.worktree_path,
+                                timeout_seconds=self.sdk_timeout_seconds,
+                            ),
+                            self.worktree_path,
+                            role="design phase",
+                            task_id=heartbeat_task_id,
                         )
                     ) as _harness_stream:
                         async for event in _harness_stream:

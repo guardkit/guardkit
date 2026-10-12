@@ -1056,6 +1056,34 @@ class IndependentTestResult:
     # uses. Records THAT it fell back and WHY. Receipt evidence only: no gate,
     # verdict or feedback branch reads it.
     isolation_fallback_reason: Optional[str] = None
+    # The command's own exit status, when it ran as a subprocess (12 October
+    # 2026). ``None`` when there was none to read (the agent-shell path, a
+    # timeout, a skipped run). Read only by ``failure_receipt`` below.
+    exit_code: Optional[int] = None
+
+    def failure_receipt(self) -> Optional[Dict[str, Any]]:
+        """This run's own failure facts, for the Player's feedback.
+
+        ``None`` unless the run really ran and failed: a pass, an absent
+        signal and a check that could not run are never described as a
+        failure to fix. Otherwise the command, its exit status and the first
+        failing lines of its output (``failing_test_feedback``), so the
+        Player is told what THIS turn's run said whatever the reviewer's prose
+        says (build 7010, 12 October 2026).
+        """
+        if self.tests_passed or self.signal_absent or self.check_could_not_run:
+            return None
+        from guardkit.orchestrator.failing_test_feedback import (
+            first_failing_lines,
+        )
+
+        return {
+            "command": self.test_command,
+            "exit_code": self.exit_code,
+            "failing_lines": first_failing_lines(
+                self.raw_output or self.test_output_summary
+            ),
+        }
 
     # ------------------------------------------------------------------
     # TASK-AB-REVIEWCLEAN01 (item 3): outcome-shape factories. The advisory
@@ -1083,6 +1111,7 @@ class IndependentTestResult:
         output: Optional[str],
         resolved_interpreter: Optional[str],
         signal_absent: bool = False,
+        exit_code: Optional[int] = None,
     ) -> "IndependentTestResult":
         """A run that produced ``output``. Derives the advisory skip count
         from ``output`` so it can never be silently omitted."""
@@ -1095,6 +1124,7 @@ class IndependentTestResult:
             signal_absent=signal_absent,
             tests_skipped=parse_pytest_summary(output).skipped,
             resolved_interpreter=resolved_interpreter,
+            exit_code=exit_code,
         )
 
     @classmethod
@@ -1375,6 +1405,10 @@ class CoachValidationResult:
         Dict[str, Any]
             Dictionary representation suitable for JSON
         """
+        from guardkit.orchestrator.failing_test_feedback import (
+            SUITE_RECEIPT_KEY,
+        )
+
         # Build per-criterion results from requirements validation
         criteria_verification: List[Dict[str, Any]] = []
         acceptance_criteria_results: List[Dict[str, Any]] = []
@@ -1441,6 +1475,7 @@ class CoachValidationResult:
                     "isolation_fallback_reason": (
                         self.independent_tests.isolation_fallback_reason
                     ),
+                    "exit_code": self.independent_tests.exit_code,
                 } if self.independent_tests else None,
                 "requirements": {
                     "criteria_total": self.requirements.criteria_total,
@@ -1455,6 +1490,12 @@ class CoachValidationResult:
             "acceptance_criteria_verification": {
                 "criteria_results": acceptance_criteria_results,
             },
+            # This turn's own failure facts for the Player's feedback (None
+            # unless the run ran and failed), under the orchestrator's key.
+            SUITE_RECEIPT_KEY: (
+                self.independent_tests.failure_receipt()
+                if self.independent_tests else None
+            ),
             "issues": self.issues,
             "rationale": self.rationale,
             "context_used": self.context_used,
@@ -5892,13 +5933,25 @@ class CoachValidator:
                 # TASK-FIX-LGACLOSE: finalise the harness async generator on
                 # every exit (incl. timeout/cancel) via aclosing() so no
                 # orphaned async_generator_athrow survives interpreter shutdown.
+                # HEAD recorded before and after this shell-capable agent
+                # (build 0D7C, 12 October 2026); evidence only.
+                from guardkit.orchestrator.head_identity import (
+                    observe_invocation,
+                )
+
                 async with aclosing(
-                    harness.invoke(
-                        prompt=prompt,
-                        role="coach_test",
-                        tools=["Bash"],
-                        cwd=self.worktree_path,
-                        timeout_seconds=self.test_timeout,
+                    observe_invocation(
+                        harness.invoke(
+                            prompt=prompt,
+                            role="coach_test",
+                            tools=["Bash"],
+                            cwd=self.worktree_path,
+                            timeout_seconds=self.test_timeout,
+                        ),
+                        self.worktree_path,
+                        role="coach test runner",
+                        task_id=self.task_id,
+                        turn=self._turn,
                     )
                 ) as _harness_stream:
                     async for event in _harness_stream:
@@ -7196,6 +7249,7 @@ class CoachValidator:
                     output=(result.stdout or "") + (result.stderr or ""),
                     signal_absent=False,
                     resolved_interpreter=self._resolved_interpreter_for(test_cmd),
+                    exit_code=result.returncode,
                 )
 
         except subprocess.TimeoutExpired:
@@ -7637,6 +7691,7 @@ class CoachValidator:
                         resolved_interpreter=self._resolved_interpreter_for(
                             test_cmd
                         ),
+                        exit_code=result.returncode,
                     ),
                     # The command completed and has an exit code, so a
                     # fallback close-out can re-ask what that exit code

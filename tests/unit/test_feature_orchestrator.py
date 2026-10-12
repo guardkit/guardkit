@@ -1315,6 +1315,40 @@ Test requirements.
         assert call_kwargs.get("sdk_timeout_is_override") is True
 
 
+def test_every_task_gets_the_branch_pinned_at_build_start(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Build 0D7C: the checkpoint branch is read once and handed to each task."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+    reads = []
+
+    def _branch(worktree, declared):
+        reads.append(declared)
+        return "autobuild/FEAT-TEST"
+
+    with patch(
+        "guardkit.orchestrator.head_identity.expected_checkpoint_branch",
+        side_effect=_branch,
+    ), patch(
+        "guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator"
+    ) as mock_orch_class:
+        mock_result = MagicMock(success=True, total_turns=1,
+                                final_decision="approved", error=None)
+        mock_orch_class.return_value.orchestrate.return_value = mock_result
+        orchestrator._feature_branch_pinned = False
+        orchestrator._pinned_feature_branch(mock_worktree)
+        for task in sample_feature.tasks[:2]:
+            orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+    assert reads == ["autobuild/FEAT-TEST"], "read once, at build start"
+    for call in mock_orch_class.call_args_list:
+        assert call[1].get("expected_branch") == "autobuild/FEAT-TEST"
+        assert call[1].get("expected_branch_pinned") is True
+
+
 def test_execute_task_uses_default_sdk_timeout_when_not_specified(
     temp_repo, sample_feature, mock_worktree, mock_worktree_manager
 ):

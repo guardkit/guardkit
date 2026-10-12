@@ -127,6 +127,7 @@ async def load_turn_continuation_context(
     task_id: str,
     current_turn: int,
     autobuild_dir: Optional[Path] = None,
+    include_coach_feedback: bool = True,
 ) -> Optional[str]:
     """Load context for Turn N when N > 1.
 
@@ -140,6 +141,9 @@ async def load_turn_continuation_context(
         current_turn: Current turn number (1-indexed)
         autobuild_dir: Optional path to .guardkit/autobuild/{task_id}/ directory.
             When provided, local turn_state_turn_N.json files are checked first.
+        include_coach_feedback: ``False`` leaves out what the previous Coach
+            wrote (its feedback, lessons and suggested focus). The Coach's
+            own context passes ``False``; see :func:`_format_turn_state_body`.
 
     Returns:
         Formatted markdown string with previous turn summary, or None if:
@@ -174,18 +178,25 @@ async def load_turn_continuation_context(
 
     # TASK-RFX-5FED: Try local file first (fast path, <1ms)
     if autobuild_dir is not None:
-        local_result = _load_from_local_file(autobuild_dir, prev_turn_num, task_id)
+        local_result = _load_from_local_file(
+            autobuild_dir, prev_turn_num, task_id,
+            include_coach_feedback=include_coach_feedback,
+        )
         if local_result is not None:
             return local_result
 
     # Fallback: memory backend query (backward compatibility)
-    return await _load_from_graphiti(graphiti_client, task_id, prev_turn_num)
+    return await _load_from_graphiti(
+        graphiti_client, task_id, prev_turn_num,
+        include_coach_feedback=include_coach_feedback,
+    )
 
 
 def _load_from_local_file(
     autobuild_dir: Path,
     turn_number: int,
     task_id: str,
+    include_coach_feedback: bool = True,
 ) -> Optional[str]:
     """Load turn state from local JSON file.
 
@@ -211,7 +222,9 @@ def _load_from_local_file(
             logger.debug(f"[TurnState] Malformed local turn state for {task_id}")
             return None
 
-        context = _format_turn_state_body(body, turn_number)
+        context = _format_turn_state_body(
+            body, turn_number, include_coach_feedback=include_coach_feedback
+        )
         logger.info(
             f"[TurnState] Loaded from local file: {state_path} ({len(context)} chars)"
         )
@@ -226,6 +239,7 @@ async def _load_from_graphiti(
     graphiti_client,
     task_id: str,
     prev_turn_num: int,
+    include_coach_feedback: bool = True,
 ) -> Optional[str]:
     """Load turn state from the memory backend (fallback path).
 
@@ -266,19 +280,34 @@ async def _load_from_graphiti(
             logger.debug(f"[Memory] Malformed turn state result for {task_id}")
             return None
 
-        return _format_turn_state_body(body, prev_turn_num)
+        return _format_turn_state_body(
+            body, prev_turn_num, include_coach_feedback=include_coach_feedback
+        )
 
     except Exception as e:
         logger.warning(f"[Memory] Failed to load turn continuation context: {e}")
         return None
 
 
-def _format_turn_state_body(body: dict, turn_number: int) -> str:
+def _format_turn_state_body(
+    body: dict, turn_number: int, include_coach_feedback: bool = True
+) -> str:
     """Format turn state body dict as actionable markdown context.
+
+    THE COACH IS NOT TOLD WHAT THE LAST COACH SAID (12 October 2026). In
+    build 7010, task three, turn four's independent suite failed on a DNS
+    lookup, yet the Coach's written issue repeated turn three's
+    missing-container text byte for byte: its context carried this summary,
+    and this summary carried turn three's Coach feedback. The Coach must
+    describe the evidence of the turn in front of it, so its context leaves
+    out everything the previous Coach wrote — the feedback, the lessons and
+    the suggested focus. The Player still gets all of it.
 
     Args:
         body: Turn state data dictionary (from local file or the memory backend)
         turn_number: Turn number for display
+        include_coach_feedback: ``False`` (the Coach's context) leaves out
+            the previous Coach's feedback, lessons and suggested focus.
 
     Returns:
         Formatted markdown string
@@ -290,7 +319,7 @@ def _format_turn_state_body(body: dict, turn_number: int) -> str:
         f"**Coach decision**: {body.get('coach_decision', 'Unknown')}",
     ]
 
-    coach_feedback = body.get('coach_feedback')
+    coach_feedback = body.get('coach_feedback') if include_coach_feedback else None
     if coach_feedback:
         context_lines.append(f"**Coach feedback**: {coach_feedback}")
 
@@ -299,12 +328,12 @@ def _format_turn_state_body(body: dict, turn_number: int) -> str:
         blockers_str = ", ".join(blockers)
         context_lines.append(f"**Blockers found**: {blockers_str}")
 
-    lessons = body.get('lessons_from_turn', [])
+    lessons = body.get('lessons_from_turn', []) if include_coach_feedback else []
     if lessons:
         lessons_str = "; ".join(lessons)
         context_lines.append(f"**Lessons learned**: {lessons_str}")
 
-    next_focus = body.get('what_to_try_next')
+    next_focus = body.get('what_to_try_next') if include_coach_feedback else None
     if next_focus:
         context_lines.append(f"**Suggested focus for this turn**: {next_focus}")
 

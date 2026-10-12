@@ -184,6 +184,7 @@ from guardkit.orchestrator.synthetic_report import (
 from guardkit.orchestrator.worktree_checkpoints import (
     WorktreeCheckpointManager,
     Checkpoint,
+    CheckpointRefused,
 )
 
 # Import turn state operations for cross-turn learning (TASK-GE-002)
@@ -2449,6 +2450,8 @@ class AutoBuildOrchestrator:
         smoke_command: Optional[str] = None,  # TASK-AB-COACHRUNPARITY01 (arm b)
         smoke_expected_exit: int = 0,  # TASK-AB-COACHRUNPARITY01 (arm b)
         sdk_timeout_is_override: Optional[bool] = None,
+        expected_branch: Optional[str] = None,
+        expected_branch_pinned: bool = False,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -2656,6 +2659,13 @@ class AutoBuildOrchestrator:
         # carries it as `previous_feedback` (see _loop_phase). Default None ->
         # identical to today for every non-retry task.
         self._seed_feedback: Optional[str] = seed_feedback
+        # The branch every checkpoint must land on, pinned once by the feature
+        # orchestrator at build start (build 0D7C). None: decided here, at
+        # this (single) task's start.
+        self._expected_branch: Optional[str] = expected_branch
+        # True when the feature orchestrator pinned it, even to None (no
+        # branch could be determined): then this task never re-reads HEAD.
+        self._expected_branch_pinned: bool = expected_branch_pinned
         # TASK-AB-COACHRUNPARITY01 (arm b): the feature smoke command (the
         # deliverable's real runtime entry point). Threaded into CoachValidator
         # so the per-task Coach can exercise it before approving on a
@@ -4396,6 +4406,8 @@ class AutoBuildOrchestrator:
         # TASK-FIX-7A07: Reset stall-classification signals at loop entry so
         # classify_stall() sees fresh state per task.
         self._context_pollution_no_checkpoint_fired = False
+        # Why a checkpoint was refused, when one was (build 0D7C).
+        self._checkpoint_refusal: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -4416,10 +4428,25 @@ class AutoBuildOrchestrator:
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoints and self._checkpoint_manager is None:
+            from guardkit.orchestrator.head_identity import (
+                expected_checkpoint_branch,
+            )
+
             self._checkpoint_manager = WorktreeCheckpointManager(
                 worktree_path=worktree.path,
                 task_id=task_id,
                 evidence_repos=self._evidence_repos,  # TASK-AB-XREPOEV01 (AC-004)
+                # Build 0D7C (12 October 2026): every checkpoint must land on
+                # the feature branch; never commit on a detached HEAD.
+                expected_branch=(
+                    self._expected_branch
+                    if self._expected_branch_pinned
+                    else expected_checkpoint_branch(
+                        getattr(worktree, "path", None),
+                        getattr(worktree, "branch_name", None),
+                    )
+                ),
+                refuse_without_branch=True,
             )
             logger.info(
                 f"Checkpoint manager initialized for {task_id} "
@@ -4671,11 +4698,18 @@ class AutoBuildOrchestrator:
                     if self.enable_checkpoints and self._checkpoint_manager:
                         tests_passed = self._extract_tests_passed(turn_record)
                         test_count = self._extract_test_count(turn_record)
-                        checkpoint = self._checkpoint_manager.create_checkpoint(
-                            turn=turn,
-                            tests_passed=tests_passed,
-                            test_count=test_count,
-                        )
+                        try:
+                            checkpoint = self._checkpoint_manager.create_checkpoint(
+                                turn=turn,
+                                tests_passed=tests_passed,
+                                test_count=test_count,
+                            )
+                        except CheckpointRefused as refused:
+                            # An approval whose work cannot be put on the
+                            # branch is not a finished task (build 0D7C).
+                            return turn_history, self._stop_for_checkpoint_refusal(
+                                task_id, refused
+                            )
                         logger.info(
                             f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                             f"for turn {turn}"
@@ -4737,11 +4771,16 @@ class AutoBuildOrchestrator:
                     tests_passed = self._extract_tests_passed(turn_record)
                     test_count = self._extract_test_count(turn_record)
 
-                    checkpoint = self._checkpoint_manager.create_checkpoint(
-                        turn=turn,
-                        tests_passed=tests_passed,
-                        test_count=test_count,
-                    )
+                    try:
+                        checkpoint = self._checkpoint_manager.create_checkpoint(
+                            turn=turn,
+                            tests_passed=tests_passed,
+                            test_count=test_count,
+                        )
+                    except CheckpointRefused as refused:
+                        return turn_history, self._stop_for_checkpoint_refusal(
+                            task_id, refused
+                        )
                     logger.info(
                         f"Checkpoint created: {checkpoint.commit_hash[:8]} "
                         f"for turn {turn}"
@@ -6014,7 +6053,7 @@ class AutoBuildOrchestrator:
             )
 
         else:  # feedback
-            feedback_text = self._extract_feedback(coach_result.report)
+            feedback_text = self._turn_feedback_text(coach_result.report, turn)
             # FEAT-2C42 (8 October 2026): when this turn ran out of time,
             # whatever decided the feedback (the evidence gate or the model
             # reviewer), the next turn is told so first, as a must-fix with
@@ -7023,7 +7062,14 @@ class AutoBuildOrchestrator:
             Normalized feedback with volatile details replaced by placeholders
             and, where applicable, a canonical violation fingerprint appended.
         """
-        result = feedback
+        from guardkit.orchestrator.failing_test_feedback import (
+            without_independent_suite_failure,
+        )
+
+        # The summary of this turn's failed test run names the turn, so it
+        # is left out: the tally compares the reviewer's words only, as it
+        # did before that summary was added (12 October 2026).
+        result = without_independent_suite_failure(feedback)
         for pattern, replacement in self._STALL_NORMALIZE_PATTERNS:
             result = pattern.sub(replacement, result)
 
@@ -7612,6 +7658,25 @@ class AutoBuildOrchestrator:
         except Exception as e:
             # Graceful degradation - log and continue
             logger.warning(f"Error capturing turn state: {e}")
+
+    def _stop_for_checkpoint_refusal(
+        self, task_id: str, refused: CheckpointRefused
+    ) -> str:
+        """Stop the task because its checkpoint was refused; returns ``"error"``.
+
+        The worktree's HEAD was off the feature branch (build 0D7C, 12 October
+        2026), so committing would have put the work where the candidate
+        branch never sees it. Another turn cannot fix that: the task stops,
+        and the reason — expected branch, actual HEAD, branch tip — becomes
+        the task's error (:meth:`_build_error_message`).
+        """
+        self._checkpoint_refusal = str(refused)
+        logger.error("[%s] %s", task_id, refused)
+        self._progress_display.console.print(
+            f"\n[bold red]STOPPED: {task_id}: checkpoint refused.[/bold red]\n"
+            f"  {refused}\n"
+        )
+        return "error"
 
     def _extract_feature_id(self, task_id: str) -> str:
         """
@@ -9506,7 +9571,7 @@ class AutoBuildOrchestrator:
                 fallback_kwargs: Dict[str, Any] = {}
                 if project_documents:
                     fallback_kwargs["project_documents"] = project_documents
-                return loop.run_until_complete(
+                result = loop.run_until_complete(
                     self._agent_invoker.invoke_coach(
                         task_id=task_id,
                         turn=turn,
@@ -9516,6 +9581,15 @@ class AutoBuildOrchestrator:
                         **fallback_kwargs,
                     )
                 )
+                # A model's report never carries the test run's facts: only
+                # the orchestrator writes that key (build 7010).
+                from guardkit.orchestrator.failing_test_feedback import (
+                    SUITE_RECEIPT_KEY,
+                )
+
+                if isinstance(getattr(result, "report", None), dict):
+                    result.report.pop(SUITE_RECEIPT_KEY, None)
+                return result
 
             except NotImplementedError as sdk_error:
                 logger.warning(f"Coach invocation not implemented: {sdk_error}")
@@ -10605,8 +10679,15 @@ class AutoBuildOrchestrator:
           verdict there).
 
         Returns the (mutated) ``report`` for call-site convenience; no-ops and
-        returns the input unchanged when either argument is absent.
+        returns the input unchanged when either argument is absent — except
+        that the run's failure facts (``SUITE_RECEIPT_KEY``) are only ever
+        this turn's own: whatever the model's report held under that key is
+        removed first, so with no independent run there are none.
         """
+        from guardkit.orchestrator.failing_test_feedback import SUITE_RECEIPT_KEY
+
+        if isinstance(report, dict):
+            report.pop(SUITE_RECEIPT_KEY, None)
         if not isinstance(report, dict) or evidence_bundle is None:
             return report
 
@@ -10644,6 +10725,14 @@ class AutoBuildOrchestrator:
             indep_dict.setdefault(
                 "test_output_summary", independent.test_output_summary
             )
+            # This turn's own failure facts (command, exit status, first
+            # failing lines), taken from the run itself and never from the
+            # model's report: they head the Player's feedback when the run
+            # failed (build 7010, 12 October 2026).
+            receipt_of = getattr(independent, "failure_receipt", None)
+            receipt = receipt_of() if callable(receipt_of) else None
+            if isinstance(receipt, dict):
+                report[SUITE_RECEIPT_KEY] = receipt
 
         # Preserve the deterministic per-criterion result for metadata
         # consumers. The LLM Coach remains the decision owner: this enriches
@@ -10820,6 +10909,32 @@ class AutoBuildOrchestrator:
             return get_quality_gate_profile(task_type_enum).tests_required
         except (ValueError, KeyError):
             return True  # Default to requiring tests for unknown types
+
+    def _turn_feedback_text(
+        self, coach_report: Dict[str, Any], turn: int
+    ) -> str:
+        """The feedback text for the Player after a ``feedback`` decision.
+
+        The Coach's issues (:meth:`_extract_feedback`), preceded — when the
+        required test command ran and failed on this turn — by a short plain
+        summary copied from that run's own receipt: the turn, the command,
+        its exit status and the first failing lines of its output. In build
+        7010 (task three, turn four) the reviewer's prose described the
+        previous turn's failure while the run in front of it had failed on
+        DNS; the Player must always be able to see what this turn's run said.
+        """
+        from guardkit.orchestrator.failing_test_feedback import (
+            SUITE_RECEIPT_KEY,
+            describe_independent_suite_failure,
+        )
+
+        feedback_text = self._extract_feedback(coach_report)
+        # Only the orchestrator writes this key (see SUITE_RECEIPT_KEY).
+        receipt = (coach_report or {}).get(SUITE_RECEIPT_KEY)
+        summary = describe_independent_suite_failure(turn, receipt)
+        if summary:
+            return f"{summary}\n\n{feedback_text}"
+        return feedback_text
 
     def _extract_feedback(self, coach_report: Dict[str, Any]) -> str:
         """
@@ -11705,6 +11820,9 @@ class AutoBuildOrchestrator:
             )
 
         elif final_decision == "error":
+            checkpoint_refusal = getattr(self, "_checkpoint_refusal", None)
+            if checkpoint_refusal:
+                return checkpoint_refusal
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
             )
