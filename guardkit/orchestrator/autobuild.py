@@ -6009,7 +6009,7 @@ class AutoBuildOrchestrator:
             )
 
         else:  # feedback
-            feedback_text = self._extract_feedback(coach_result.report)
+            feedback_text = self._turn_feedback_text(coach_result.report, turn)
             # FEAT-2C42 (8 October 2026): when this turn ran out of time,
             # whatever decided the feedback (the evidence gate or the model
             # reviewer), the next turn is told so first, as a must-fix with
@@ -7018,7 +7018,14 @@ class AutoBuildOrchestrator:
             Normalized feedback with volatile details replaced by placeholders
             and, where applicable, a canonical violation fingerprint appended.
         """
-        result = feedback
+        from guardkit.orchestrator.failing_test_feedback import (
+            without_independent_suite_failure,
+        )
+
+        # The summary of this turn's failed test run names the turn, so it
+        # is left out: the tally compares the reviewer's words only, as it
+        # did before that summary was added (12 October 2026).
+        result = without_independent_suite_failure(feedback)
         for pattern, replacement in self._STALL_NORMALIZE_PATTERNS:
             result = pattern.sub(replacement, result)
 
@@ -10634,6 +10641,16 @@ class AutoBuildOrchestrator:
             indep_dict.setdefault(
                 "test_output_summary", independent.test_output_summary
             )
+            # This turn's own failure facts (command, exit status, first
+            # failing lines), taken from the run itself and never from the
+            # model's report: they head the Player's feedback when the run
+            # failed (build 7010, 12 October 2026). Assigned, not defaulted,
+            # because only this turn's run may supply them.
+            receipt_of = getattr(independent, "failure_receipt", None)
+            receipt = receipt_of() if callable(receipt_of) else None
+            indep_dict["failure_receipt"] = (
+                receipt if isinstance(receipt, dict) else None
+            )
 
         # Preserve the deterministic per-criterion result for metadata
         # consumers. The LLM Coach remains the decision owner: this enriches
@@ -10810,6 +10827,40 @@ class AutoBuildOrchestrator:
             return get_quality_gate_profile(task_type_enum).tests_required
         except (ValueError, KeyError):
             return True  # Default to requiring tests for unknown types
+
+    def _turn_feedback_text(
+        self, coach_report: Dict[str, Any], turn: int
+    ) -> str:
+        """The feedback text for the Player after a ``feedback`` decision.
+
+        The Coach's issues (:meth:`_extract_feedback`), preceded — when the
+        required test command ran and failed on this turn — by a short plain
+        summary copied from that run's own receipt: the turn, the command,
+        its exit status and the first failing lines of its output. In build
+        7010 (task three, turn four) the reviewer's prose described the
+        previous turn's failure while the run in front of it had failed on
+        DNS; the Player must always be able to see what this turn's run said.
+        """
+        from guardkit.orchestrator.failing_test_feedback import (
+            describe_independent_suite_failure,
+        )
+
+        feedback_text = self._extract_feedback(coach_report)
+        validation = (coach_report or {}).get("validation_results")
+        independent = (
+            validation.get("independent_tests")
+            if isinstance(validation, dict)
+            else None
+        )
+        receipt = (
+            independent.get("failure_receipt")
+            if isinstance(independent, dict)
+            else None
+        )
+        summary = describe_independent_suite_failure(turn, receipt)
+        if summary:
+            return f"{summary}\n\n{feedback_text}"
+        return feedback_text
 
     def _extract_feedback(self, coach_report: Dict[str, Any]) -> str:
         """

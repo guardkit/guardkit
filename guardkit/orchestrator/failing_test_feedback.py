@@ -37,7 +37,7 @@ read none the feedback says so.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Keys in task_work_results.json's ``quality_gates`` block.
 QG_FAILING_TESTS = "failing_tests"
@@ -241,3 +241,110 @@ def split_must_fix_item(item: str) -> Tuple[str, str]:
             ).strip()
             return issue, suggestion
     return (item or "").strip(), ""
+
+
+# ---------------------------------------------------------------------------
+# What the required test command did on THIS turn (12 October 2026)
+# ---------------------------------------------------------------------------
+#
+# In build 7010, task three, turn four, the reviewer's own run of the required
+# test command failed on a DNS lookup, but the reviewer's written issue
+# repeated turn three's missing-container text byte for byte, and that prose
+# was all the Player was told. So when the run failed, the Player's feedback
+# now always starts with a few plain facts copied from this turn's own run:
+# the turn, the command, its exit status and the first failing lines of its
+# output. The model's prose can then never be the only description of the
+# failure. Tool-agnostic: the lines are picked by ordinary failure words, not
+# by any test tool's output format.
+
+# The words the summary starts with, so the feedback-stall check can leave it
+# out (see :func:`without_independent_suite_failure`).
+INDEPENDENT_FAILURE_OPENING = "The required test command failed on this turn (turn "
+
+# How many lines of the run's output the summary shows.
+INDEPENDENT_FAILURE_LINES_SHOWN = 8
+
+# How long each of those lines may be.
+INDEPENDENT_FAILURE_LINE_LIMIT = 240
+
+# Words that mark a line as describing a failure, in any language's tooling.
+_FAILURE_WORDS = (
+    "fail", "error", "exception", "traceback", "panic", "fatal", "assert",
+    "refused", "denied", "no such", "not found", "cannot", "can't", "unable",
+    "timed out", "timeout",
+)
+
+
+def first_failing_lines(
+    output: Optional[str], limit: int = INDEPENDENT_FAILURE_LINES_SHOWN
+) -> List[str]:
+    """The first ``limit`` lines of ``output`` that read as a failure.
+
+    A line reads as a failure when it contains one of a few ordinary failure
+    words (any case). When none does, the last ``limit`` non-empty lines are
+    returned instead, because a run that failed says why at the end more often
+    than not. Each line is stripped and cut to
+    :data:`INDEPENDENT_FAILURE_LINE_LIMIT` characters.
+    """
+    lines = [line.strip() for line in (output or "").splitlines()]
+    lines = [line for line in lines if line]
+    picked = [
+        line for line in lines
+        if any(word in line.lower() for word in _FAILURE_WORDS)
+    ][:limit]
+    if not picked:
+        picked = lines[-limit:]
+    return [line[:INDEPENDENT_FAILURE_LINE_LIMIT] for line in picked]
+
+
+def describe_independent_suite_failure(
+    turn: int, receipt: Optional[Dict[str, Any]]
+) -> str:
+    """The plain summary of this turn's failed run, or ``""`` without one.
+
+    ``receipt`` is the run's own failure receipt
+    (``IndependentTestResult.failure_receipt``): its command, exit status and
+    first failing lines. ``None`` (the run passed, gave no verdict, or could
+    not start) gives ``""``: only a run that really ran and failed is
+    described. No line of it starts with ``"- "``, so it is never read back as
+    a must-fix item.
+    """
+    if not isinstance(receipt, dict):
+        return ""
+    command = receipt.get("command") or "(not recorded)"
+    exit_code = receipt.get("exit_code")
+    exit_text = (
+        str(exit_code)
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool)
+        else "not recorded (the command ran through an agent's shell tool)"
+    )
+    lines = [
+        f"{INDEPENDENT_FAILURE_OPENING}{turn}). "
+        f"These facts are copied from this turn's own run:",
+        f"  Command: {command}",
+        f"  Exit status: {exit_text}",
+    ]
+    failing = [str(line) for line in (receipt.get("failing_lines") or []) if line]
+    if failing:
+        lines.append("  First failing lines of its output:")
+        lines.extend(f"    {line}" for line in failing)
+    else:
+        lines.append("  Its output was empty.")
+    return "\n".join(lines)
+
+
+def without_independent_suite_failure(feedback_text: str) -> str:
+    """``feedback_text`` with the run summary above left out.
+
+    The summary names the turn, so it differs on every turn by design. The
+    feedback-stall check compares the reviewer's words from turn to turn and
+    must go on comparing only those, as it did before the summary existed.
+    The summary is one paragraph (it holds no blank line), so it is removed
+    as a paragraph.
+    """
+    paragraphs = (feedback_text or "").split("\n\n")
+    kept = [
+        paragraph for paragraph in paragraphs
+        if not paragraph.startswith(INDEPENDENT_FAILURE_OPENING)
+    ]
+    return "\n\n".join(kept)

@@ -661,12 +661,16 @@ class AutoBuildContextLoader:
                     autobuild_dir = None
                     if self.worktree_path is not None:
                         autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
+                    # Without the previous Coach's own words: the Coach
+                    # judges this turn's evidence, not last turn's account
+                    # of a different failure (build 7010, 12 October 2026).
                     turn_continuation = await load_turn_continuation_context(
                         graphiti_client=self.graphiti,
                         feature_id=feature_id,
                         task_id=task_id,
                         current_turn=turn_number,
                         autobuild_dir=autobuild_dir,
+                        include_coach_feedback=False,
                     )
                     if turn_continuation:
                         logger.info(
