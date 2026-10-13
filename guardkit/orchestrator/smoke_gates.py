@@ -108,6 +108,17 @@ class SmokeGateResult:
     could_not_start: bool = False
 
 
+def _held_back_note(cwd: Path, declaration: object, path_first: tuple) -> str:
+    """Which settings the smoke command's environment held back, by name
+    only; empty when it cannot be built, which the failure already says."""
+    try:
+        return minimal_environment_note(
+            project_command_environment(cwd, declaration, path_first=path_first)
+        )
+    except OSError:
+        return ""
+
+
 def should_fire_for_wave(config: SmokeGates, wave_number: int) -> bool:
     """Decide whether the configured smoke gate should fire after ``wave_number``.
 
@@ -326,7 +337,7 @@ def run_smoke_gate(
             config.expected_exit,
             (proc.stderr or "(empty)").rstrip(),
             (proc.stdout or "(empty)").rstrip(),
-            minimal_environment_note(env),
+            _held_back_note(Path(cwd), declaration, path_first),
         )
 
     return SmokeGateResult(

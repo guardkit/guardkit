@@ -1392,6 +1392,11 @@ ALLOWED: Dict[Tuple[str, str], str] = {
         "the record's begin phase runs the inventory with the record's own env, "
         "which every start_command_evidence / CommandEvidence call is checked for"
     ),
+    ("orchestrator/merge_executor.py", "prepare_tree"): (
+        "the merge build's code (merge design item 2a): the env it builds with "
+        "project_command_environment runs the install and is returned for the "
+        "merge's checks, so it is used besides as an env= keyword"
+    ),
     ("orchestrator/merge_executor.py", "execute_merge"): (
         "the merge's environment from prepare_tree (project_command_environment), merge design item 2a"
     ),
@@ -1498,13 +1503,6 @@ _LAUNCHES = {
 _ANY_RECEIVER_LAUNCHES = {
     "create_subprocess_exec", "create_subprocess_shell", "subprocess_exec", "subprocess_shell",
 }
-#: Methods that change a dictionary in place.
-_MUTATORS = {"update", "setdefault", "__setitem__", "__ior__"}
-#: Functions an environment may be handed to before the launch: they only
-#: read it (or are the helper, a launch or a generic runner, judged anyway).
-_READS_ONLY = {"dict", "len", "sorted", "list", "minimal_environment_note", "withheld_settings"}
-
-
 class _Module(SimpleNamespace):
     rel: str
     dotted: str
@@ -1623,26 +1621,6 @@ def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
     return None
 
 
-def _assignments(func: ast.AST, name: str) -> List[ast.AST]:
-    values: List[ast.AST] = []
-    for node in ast.walk(func):
-        if isinstance(node, ast.Assign):
-            if any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
-                values.append(node.value)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
-            if node.value is not None:
-                values.append(node.value)
-        elif isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith, ast.NamedExpr)):
-            targets = (
-                [node.target] if isinstance(node, (ast.For, ast.AsyncFor, ast.NamedExpr))
-                else [i.optional_vars for i in node.items if i.optional_vars is not None]
-            )
-            for target in targets:
-                if any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(target)):
-                    values.append(ast.Constant(value="<bound by a loop or with>"))
-    return values
-
-
 def _is_parameter(func: ast.AST, name: str) -> bool:
     args = func.args
     every = [*args.posonlyargs, *args.args, *args.kwonlyargs]
@@ -1650,103 +1628,96 @@ def _is_parameter(func: ast.AST, name: str) -> bool:
     return any(a.arg == name for a in every)
 
 
-def _mutated(func: ast.AST, name: str) -> bool:
-    """True when the dictionary ``name`` is changed in place in ``func``."""
+def _inline_helper(node: Optional[ast.AST], mod: _Module, wrappers: set, none_is_safe: bool = False) -> bool:
+    """``node`` is a call to the helper (or to a function that only ever
+    returns one) written right there, or ``None`` where that runs nothing."""
+    if isinstance(node, ast.Constant) and node.value is None:
+        return none_is_safe
+    if isinstance(node, ast.Dict) and not node.keys:
+        return True  # an empty environment, written inline, holds nothing
+    if not isinstance(node, ast.Call):
+        return False
+    target = _resolve(mod, node.func, node)
+    if target == _FINISH:
+        # It copies its input and adds to it: its input must be the helper's.
+        given = node.args[0] if node.args else _env_keyword(node)
+        return _inline_helper(given, mod, wrappers)
+    return target in HELPERS or target in wrappers
+
+
+def _single_use_helper_name(
+    name: str, mod: _Module, func: ast.AST, wrappers: set, is_launch: Callable[[ast.Call], bool]
+) -> bool:
+    """``name`` is assigned exactly once in ``func``, by a single-target
+    assignment of an inline helper call, and every other use of it is as the
+    ``env=`` keyword of a launch or generic-runner call in ``func`` itself."""
+    if _is_parameter(func, name):
+        return False
+    values: List[ast.AST] = []
     for node in ast.walk(func):
-        targets: List[ast.AST] = []
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            return False
         if isinstance(node, ast.Assign):
-            targets = list(node.targets)
-        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
-            targets = [node.target]
-            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
-                return True
-        for target in targets:
-            for sub in ast.walk(target):
-                if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) and sub.value.id == name:
-                    return True
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in _MUTATORS
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == name
-        ):
-            return True
-    return False
-
-
-def _in_return(func: ast.AST, target: ast.AST) -> bool:
-    """True when ``target`` is part of a ``return`` value in ``func``: the
-    function has left on that path, so nothing after it is launched."""
+            bound = [n for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name) and n.id == name]
+            if bound:
+                if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                    return False  # chained or unpacking assignment
+                values.append(node.value)
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == name:
+                if node.value is None:
+                    return False
+                values.append(node.value)
+        elif isinstance(node, (ast.AugAssign, ast.NamedExpr, ast.Delete, ast.For, ast.AsyncFor,
+                               ast.With, ast.AsyncWith, ast.comprehension, ast.ExceptHandler)):
+            targets = []
+            if isinstance(node, (ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.comprehension)):
+                targets = [node.target]
+            elif isinstance(node, ast.Delete):
+                targets = list(node.targets)
+            elif isinstance(node, (ast.With, ast.AsyncWith)):
+                targets = [i.optional_vars for i in node.items if i.optional_vars is not None]
+            elif isinstance(node, ast.ExceptHandler) and node.name == name:
+                return False
+            if any(isinstance(n, ast.Name) and n.id == name for t in targets for n in ast.walk(t)):
+                return False
+    if len(values) != 1 or not _inline_helper(values[0], mod, wrappers):
+        return False
     for node in ast.walk(func):
-        if isinstance(node, ast.Return) and node.value is not None:
-            if any(sub is target for sub in ast.walk(node.value)):
-                return True
-    return False
-
-
-def _escapes(func: ast.AST, name: str, before_line: Optional[int], trusted: set) -> bool:
-    """True when the dictionary ``name`` could be widened through another
-    name: bound to a second name (``other = env``), or handed to a function
-    that is not known to only read it, before the launch at ``before_line``
-    (a call that is itself returned does not count: nothing follows it)."""
-    for node in ast.walk(func):
-        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
-            value = node.value
-            if isinstance(value, ast.Name) and value.id == name:
-                return True
-        if isinstance(node, ast.Call) and (before_line is None or node.lineno < before_line):
-            callee = _last_name(node.func)
-            if callee in _READS_ONLY or callee in trusted or _in_return(func, node):
-                continue
-            handed = list(node.args) + [kw.value for kw in node.keywords]
-            for arg in handed:
-                for sub in [arg, *([arg.body, arg.orelse] if isinstance(arg, ast.IfExp) else [])]:
-                    if isinstance(sub, ast.Name) and sub.id == name:
-                        return True
-    return False
-
-
-#: Callees an environment may be handed to: launches and generic runners are
-#: judged on their own ``env=``; filled in by :func:`unaccounted_launches`.
-_TRUSTED_CALLEES: set = set()
+        if not (isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load)):
+            continue
+        parent = mod.parents.get(id(node))
+        if not (isinstance(parent, ast.keyword) and parent.arg == "env"):
+            return False  # attribute, subscript, argument, return, alias ...
+        call = mod.parents.get(id(parent))
+        if not isinstance(call, ast.Call) or not is_launch(call):
+            return False
+        scope = mod.parents.get(id(call))
+        while scope is not None and scope is not func:
+            if isinstance(scope, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                return False  # captured by a closure
+            scope = mod.parents.get(id(scope))
+    return True
 
 
 def _helper_shaped(
     node: Optional[ast.AST], mod: _Module, func: Optional[ast.AST], wrappers: set,
-    none_is_safe: bool = False, before_line: Optional[int] = None,
+    none_is_safe: bool = False, is_launch: Optional[Callable[[ast.Call], bool]] = None,
 ) -> bool:
-    """True when ``node`` (an ``env=`` value) can only be the helper's result."""
+    """True when ``node`` (an ``env=`` value) is, provably, the helper's
+    result: the helper called inline, or a name that holds nothing else and
+    is used for nothing else (:func:`_single_use_helper_name`)."""
     if node is None:
         return False
-    if isinstance(node, ast.Call):
-        target = _resolve(mod, node.func, node)
-        if target == _FINISH:
-            given = node.args[0] if node.args else _env_keyword(node)
-            return _helper_shaped(given, mod, func, wrappers, none_is_safe, before_line)
-        return target in HELPERS or target in wrappers
-    if isinstance(node, ast.IfExp):
-        return _helper_shaped(
-            node.body, mod, func, wrappers, none_is_safe, before_line
-        ) and _helper_shaped(node.orelse, mod, func, wrappers, none_is_safe, before_line)
-    if isinstance(node, ast.Constant) and node.value is None:
-        return none_is_safe
-    if isinstance(node, ast.Dict) and not node.keys:
-        return True  # an empty environment holds nothing, unless it is filled later
-    if isinstance(node, ast.Name) and func is not None:
-        if _is_parameter(func, node.id) or _mutated(func, node.id):
-            return False
-        if _escapes(func, node.id, before_line, _TRUSTED_CALLEES):
-            return False
-        values = _assignments(func, node.id)
-        return bool(values) and all(
-            _helper_shaped(v, mod, func, wrappers, none_is_safe) for v in values
-        )
+    if _inline_helper(node, mod, wrappers, none_is_safe):
+        return True
+    if isinstance(node, ast.Name) and func is not None and is_launch is not None:
+        return _single_use_helper_name(node.id, mod, func, wrappers, is_launch)
     return False
 
 
 def _wrappers(modules: List[_Module]) -> set:
-    """Functions whose every return is the helper's result, by dotted name."""
+    """Functions whose every return is an inline helper call, by dotted name."""
     found: set = set()
     changed = True
     while changed:
@@ -1762,7 +1733,10 @@ def _wrappers(modules: List[_Module]) -> set:
                     r for r in ast.walk(node)
                     if isinstance(r, ast.Return) and _enclosing_function(mod, r) is node
                 ]
-                if returns and all(_helper_shaped(r.value, mod, node, found) for r in returns):
+                if returns and all(
+                    isinstance(r.value, ast.Call) and _inline_helper(r.value, mod, found)
+                    for r in returns
+                ):
                     found.add(full)
                     changed = True
     return found
@@ -1796,8 +1770,8 @@ def _factory_literal(call: ast.Call) -> bool:
     qualifies: such a launch uses a helper-built environment, or is on the
     allowed list with a reason.
     """
-    if any(isinstance(a, ast.Starred) for a in call.args):
-        return False
+    if len(call.args) > 1 or any(isinstance(a, ast.Starred) for a in call.args):
+        return False  # a further positional argument can be the executable or shell
     for kw in call.keywords:
         if kw.arg is None or kw.arg == "executable":
             return False
@@ -1881,14 +1855,6 @@ def _callee_name(call: ast.Call) -> str:
 
 def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
-    _TRUSTED_CALLEES.clear()
-    for launches in _LAUNCHES.values():
-        _TRUSTED_CALLEES.update(launches)
-    _TRUSTED_CALLEES.update(_ANY_RECEIVER_LAUNCHES)
-    for _rel, _fname in GENERIC_RUNNERS:
-        _TRUSTED_CALLEES.add(_fname)
-    for spec in GENERIC_RUNNERS.values():
-        _TRUSTED_CALLEES.update(spec.get("names", ()))
     wrappers = _wrappers(modules)
     problems: List[str] = []
     runner_ids = {
@@ -1902,6 +1868,23 @@ def unaccounted_launches(package: Path) -> List[str]:
         if not spec.get("scope")
         for name in spec.get("names", ())
     }
+
+    runner_specs = [
+        (spec, _runner_identity(package.name, rel, fname))
+        for (rel, fname), spec in GENERIC_RUNNERS.items()
+    ]
+
+    def launch_checker(mod: _Module) -> Callable[[ast.Call], bool]:
+        def is_launch(call: ast.Call) -> bool:
+            if _launch_kind(mod, call.func):
+                return True
+            return any(
+                (not spec.get("scope") or mod.rel in spec["scope"])
+                and _runner_call_matches(call, spec, mod, identity)
+                for spec, identity in runner_specs
+            )
+
+        return is_launch
 
     def place(mod: _Module, node: ast.AST) -> Tuple[Optional[ast.AST], str]:
         func = _enclosing_function(mod, node)
@@ -1920,7 +1903,7 @@ def unaccounted_launches(package: Path) -> List[str]:
         env = _env_keyword(call, env_position)
         if env is None and default_is_safe:
             return
-        if _helper_shaped(env, mod, func, wrappers, none_is_safe, call.lineno):
+        if _helper_shaped(env, mod, func, wrappers, none_is_safe, launch_checker(mod)):
             return
         reason = "no env= (it inherits everything)" if env is None else "env= is not the helper's"
         problems.append(f"{mod.rel}:{call.lineno} in {fname}: {what}: {reason}")
@@ -2243,6 +2226,46 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(list(OK_ARGV))
 
 
+    def v40_positional_executable(cmd):
+        subprocess.Popen(["git", "-c", "x"], -1, "/bin/sh")
+
+
+    def v41_positional_shell(cmd):
+        subprocess.Popen(["git", "status"], -1, None, None, None, None, None, True, True)
+
+
+    def v42_chained_env_alias(cmd, wf):
+        env = other = project_command_environment(wf, None)
+        other.update(os.environ)
+        subprocess.run(cmd, env=env)
+
+
+    def v43_tuple_unpacked_env(cmd, wf):
+        env, other = project_command_environment(wf, None), None
+        subprocess.run(cmd, env=env)
+
+
+    def v44_env_handed_to_a_logger(cmd, wf, log):
+        env = project_command_environment(wf, None)
+        log.info("env %s", env)
+        subprocess.run(cmd, env=env)
+
+
+    def v45_env_returned(cmd, wf):
+        env = project_command_environment(wf, None)
+        subprocess.run(cmd, env=env)
+        return env
+
+
+    def ok_single_use_named_env(cmd, wf):
+        env = project_command_environment(wf, None)
+        subprocess.run(cmd, shell=True, env=env)
+
+
+    def ok_inline_env(cmd, wf):
+        subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
     def ok_git_inline_no_env(cmd):
         subprocess.run(["git", "status"], shell=False)
 
@@ -2303,6 +2326,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
     assert not {
         "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
+        "ok_single_use_named_env", "ok_inline_env",
     } & named, problems
 
 

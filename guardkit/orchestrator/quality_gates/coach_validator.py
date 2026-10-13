@@ -6601,6 +6601,15 @@ class CoachValidator:
             git_ceiling=git_ceiling,
         )
 
+    def _held_back_note(self) -> str:
+        """Which settings a project command's environment held back, by name
+        only (``project_command_env.minimal_environment_note``); empty when
+        the environment cannot be built, which the failure already says."""
+        try:
+            return minimal_environment_note(self._declared_command_env())
+        except OSError:
+            return ""
+
     def _venv_bin_first(self) -> Tuple[str, ...]:
         """The bootstrap venv's ``bin`` to put first on PATH, when known."""
         if self._venv_python is None:
@@ -7869,7 +7878,6 @@ class CoachValidator:
                             + self._pytest_timeout_argv()
                             + basetemp_argv
                         )
-                        run_env = self._pytest_env()
                         result = self._run_recorded(
                             cmd,
                             evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
@@ -7877,7 +7885,7 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=run_env,
+                            env=self._pytest_env(),
                         )
                 else:
                     # TS-lane D.1b (design §B.5): the declared / non-pytest
@@ -7891,7 +7899,6 @@ class CoachValidator:
                     # snapshot reader and to anyone auditing the receipt.
                     # ``_component_run_cwd`` returns the worktree UNCHANGED
                     # when no component is active.
-                    run_env = self._declared_command_env()
                     result = self._run_recorded(
                         test_cmd,
                         evidence=(EVIDENCE_WORKTREE, self.worktree_path, None),
@@ -7900,7 +7907,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=run_env,
+                        env=self._declared_command_env(),
                     )
 
                 duration = time.time() - start_time
@@ -7912,7 +7919,7 @@ class CoachValidator:
                 if not tests_passed:
                     # Names only, never values: which settings the factory
                     # held back from this command (13 October 2026).
-                    summary = f"{summary}\n{minimal_environment_note(run_env)}"
+                    summary = f"{summary}\n{self._held_back_note()}"
 
                 # TASK-FIX-BSEXTRAS01 (absence-of-failure-is-not-success):
                 # distinguish "the oracle ran and the Player's tests failed"

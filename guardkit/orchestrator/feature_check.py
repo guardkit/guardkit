@@ -790,6 +790,38 @@ def merge_not_checked(
     return merged
 
 
+def _check_environment(
+    cwd: Path,
+    declaration: Any,
+    env_extra: Optional[Dict[str, str]],
+    venv_python: Optional[str],
+) -> Dict[str, str]:
+    """The check command's environment, built from nothing: the four
+    ``GUARDKIT_*`` values it is promised are the factory's additions, and the
+    bootstrap venv (when known) goes first on PATH."""
+    return project_command_environment(
+        Path(cwd),
+        declaration,
+        additions=dict(env_extra or {}),
+        path_first=(str(Path(venv_python).parent),) if venv_python else (),
+    )
+
+
+def _held_back_note(
+    cwd: Path,
+    declaration: Any,
+    env_extra: Optional[Dict[str, str]],
+    venv_python: Optional[str],
+) -> str:
+    """Which settings the check's environment held back, by name only."""
+    try:
+        return minimal_environment_note(
+            _check_environment(cwd, declaration, env_extra, venv_python)
+        )
+    except OSError:
+        return ""
+
+
 def run_feature_check_command(
     command: str,
     *,
@@ -818,10 +850,8 @@ def run_feature_check_command(
     on top. A malformed block or a scratch folder that cannot be prepared
     means the check could not start. ``None``, or no block: unchanged.
     """
-    # Never None (that would inherit everything): empty until the helper
-    # has built it, and the command does not run unless it has.
-    env: Dict[str, str] = {}
     declared: Sequence[str] = ()
+    declaration = None
     try:
         declaration = (
             load_launch_declaration(Path(launch_root))
@@ -829,26 +859,21 @@ def run_feature_check_command(
             else None
         )
         declared = declaration.settings if declaration is not None else ()
-        env = project_command_environment(
-            Path(cwd),
-            declaration,
-            additions=dict(env_extra or {}),
-            path_first=(str(Path(venv_python).parent),) if venv_python else (),
-        )
+        env = _check_environment(cwd, declaration, env_extra, venv_python)
         launch_fault: Optional[OSError] = None
     except OSError as exc:
         launch_fault = exc
 
-    record = start_command_evidence(
-        evidence,
-        command=command,
-        execution_root=cwd,
-        cwd=cwd,
-        env=env if launch_fault is None else None,
-        declared_settings=declared,
-    )
-    started = time.monotonic()
     if launch_fault is not None:
+        # The command never runs, and nothing is run in its name either.
+        record = start_command_evidence(
+            evidence,
+            command=command,
+            execution_root=cwd,
+            cwd=cwd,
+            env=None,
+            declared_settings=declared,
+        )
         return {
             "exit_code": None,
             "timed_out": False,
@@ -857,6 +882,15 @@ def run_feature_check_command(
             "duration_seconds": 0.0,
             "run_evidence": record.finish(),
         }
+    record = start_command_evidence(
+        evidence,
+        command=command,
+        execution_root=cwd,
+        cwd=cwd,
+        env=env,
+        declared_settings=declared,
+    )
+    started = time.monotonic()
     try:
         # A process group of its own (13 October 2026): a timeout ends
         # everything the check started (a server, a ``sleep``), not only the
@@ -900,7 +934,9 @@ def run_feature_check_command(
         # Names only, never values: what the factory held back, for the
         # failure detail of a command that did not pass.
         "environment_note": (
-            minimal_environment_note(env) if proc.returncode != 0 else ""
+            _held_back_note(cwd, declaration, env_extra, venv_python)
+            if proc.returncode != 0
+            else ""
         ),
     }
 

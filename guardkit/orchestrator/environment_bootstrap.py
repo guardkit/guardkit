@@ -1767,9 +1767,6 @@ class EnvironmentBootstrapper:
         # the helpers can retain their bool return type (and existing tests
         # that assert ``is True`` / ``is False`` don't regress).
         self._last_failure_stderr: str = ""
-        # The environment the last failing command ran with, so its failure
-        # detail can name (never show) the settings that were held back.
-        self._last_failure_env: Optional[Dict[str, str]] = None
         self._last_failure_is_pep668: bool = False
 
     def bootstrap(
@@ -1952,7 +1949,7 @@ class EnvironmentBootstrapper:
                     manifest_path=str(manifest.path),
                     stderr_excerpt=_with_note(
                         self._last_failure_stderr,
-                        minimal_environment_note(self._last_failure_env),
+                        self._held_back_note(),
                     ),
                     is_pep668=self._last_failure_is_pep668,
                     requires_python=manifest.get_requires_python(),
@@ -2814,6 +2811,23 @@ class EnvironmentBootstrapper:
         """
         return self._project_env(worktree_venv)
 
+    def _single_command_env(self, is_python_cmd: bool) -> Dict[str, str]:
+        """The environment for one dependency install: VIRTUAL_ENV pointing
+        at the worktree venv for a Python pip command, so an inherited parent
+        venv cannot receive the install; built from nothing either way."""
+        if is_python_cmd and self._venv_python is not None:
+            return self._isolated_env(self._venv_python.parent.parent)
+        return self._project_env()
+
+    def _held_back_note(self) -> str:
+        """Which settings the install's environment held back, by name only
+        (``project_command_env.minimal_environment_note``); empty when the
+        environment cannot be built at all, which the failure already says."""
+        try:
+            return minimal_environment_note(self._project_env())
+        except OSError:
+            return ""
+
     def _project_env(self, worktree_venv: Optional[Path] = None) -> Dict[str, str]:
         """
         The environment every command this bootstrapper runs gets.
@@ -2893,7 +2907,6 @@ class EnvironmentBootstrapper:
         if self._venv_python and is_python_cmd:
             cmd[0] = str(self._venv_python)
 
-        self._last_failure_env = None
 
         # TS-lane D.1b: a DECLARED command runs at the repo root (its ``path``
         # is .guardkit/config.yaml, which exists only for content hashing) and
@@ -2915,15 +2928,13 @@ class EnvironmentBootstrapper:
             # main checkout, and for a Python install with a venv,
             # VIRTUAL_ENV pointing at it. A malformed block or a missing
             # scratch folder fails this install with the reason.
-            env = self._python_install_env(manifest)
-            self._last_failure_env = dict(env)  # a copy: the note reads names only
             proc = process_group.run_project_command(
                 cmd,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=env,
+                env=self._python_install_env(manifest),
             )
             if proc.returncode == 0:
                 logger.info(
@@ -2947,8 +2958,6 @@ class EnvironmentBootstrapper:
                 # .pth back into the parent venv. Use the just-created
                 # PEP 668 venv (<root>/.guardkit/venv) as the worktree-local
                 # interpreter root.
-                retry_env = self._isolated_env(venv_python.parent.parent)
-                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "PEP 668: retrying install for %s (%s): %s",
                     manifest.stack,
@@ -2961,7 +2970,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    env=retry_env,
+                    env=self._isolated_env(venv_python.parent.parent),
                 )
                 if retry_proc.returncode == 0:
                     logger.info(
@@ -3019,8 +3028,6 @@ class EnvironmentBootstrapper:
                 # VIRTUAL_ENV is stripped first (defense-in-depth against
                 # future precedence changes). Observable shape preserved:
                 # VIRTUAL_ENV set to <cwd>/.venv, PATH prepended.
-                retry_env = self._isolated_env(venv_dir)
-                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "uv-sources: retrying install for %s (%s) with VIRTUAL_ENV=%s: %s",
                     manifest.stack,
@@ -3034,7 +3041,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    env=retry_env,
+                    env=self._isolated_env(venv_dir),
                 )
                 if retry_proc.returncode == 0:
                     logger.info(
@@ -3133,24 +3140,18 @@ class EnvironmentBootstrapper:
         if self._venv_python and is_python_cmd:
             run_cmd[0] = str(self._venv_python)
 
-        self._last_failure_env = None
         logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
             # Built from nothing, as in ``_run_install``. Python pip commands
             # get VIRTUAL_ENV pointing at the worktree venv so an inherited
             # parent venv cannot receive the install.
-            if is_python_cmd and self._venv_python is not None:
-                env = self._isolated_env(self._venv_python.parent.parent)
-            else:
-                env = self._project_env()
-            self._last_failure_env = dict(env)  # a copy: the note reads names only
             proc = process_group.run_project_command(
                 run_cmd,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
                 timeout=300,
-                env=env,
+                env=self._single_command_env(bool(is_python_cmd)),
             )
             if proc.returncode == 0:
                 logger.debug("Command succeeded: %s", " ".join(run_cmd))
@@ -3166,8 +3167,6 @@ class EnvironmentBootstrapper:
                 retry_cmd = list(cmd)
                 retry_cmd[0] = str(venv_python)
                 # FFC6 (AC-004): retry must also receive isolated env.
-                retry_env = self._isolated_env(venv_python.parent.parent)
-                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )
@@ -3177,7 +3176,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=300,
-                    env=retry_env,
+                    env=self._isolated_env(venv_python.parent.parent),
                 )
                 if retry_proc.returncode == 0:
                     logger.debug(
