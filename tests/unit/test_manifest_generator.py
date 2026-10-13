@@ -221,9 +221,9 @@ class TestManifestGenerator:
         assert "Python" in description
         assert "Clean Architecture" in description
 
-    @patch("subprocess.run")
+    @patch.object(manifest_gen, "run_git")
     def test_infer_author_success(self, mock_run, sample_analysis):
-        """Test author inference from git config."""
+        """Test author inference from git config (through the git helper)."""
         mock_run.return_value = MagicMock(returncode=0, stdout="John Doe\n")
 
         generator = ManifestGenerator(sample_analysis)

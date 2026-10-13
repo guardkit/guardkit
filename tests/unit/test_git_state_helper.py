@@ -501,7 +501,7 @@ class TestErrorHandling:
                 with pytest.raises(subprocess.CalledProcessError):
                     commit_state_files("TASK-031")
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_commit_state_files_git_commit_failure_silent(self, mock_run):
         """Test that git commit failures are silent (nothing to commit is OK)."""
         with tempfile.TemporaryDirectory() as tmpdir:
