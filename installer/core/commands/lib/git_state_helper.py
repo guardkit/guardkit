@@ -21,6 +21,7 @@ Created: 2025-10-18
 from pathlib import Path
 import subprocess
 from typing import Optional
+from guardkit.lib.project_git import run_git
 
 
 def get_git_root() -> Path:
@@ -42,10 +43,8 @@ def get_git_root() -> Path:
         >>> print(git_root)
         /Users/username/Projects/my-project
     """
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
+    result = run_git(
+        ["rev-parse", "--show-toplevel"],
         check=True
     )
     return Path(result.stdout.strip())
@@ -103,16 +102,14 @@ def commit_state_files(task_id: str, message: Optional[str] = None) -> None:
     state_dir = resolve_state_dir(task_id)
 
     # Stage state directory (all files within it)
-    subprocess.run(
-        ["git", "add", str(state_dir)],
-        check=True,
-        capture_output=True
+    run_git(
+        ["add", str(state_dir)],
+        check=True, text=False
     )
 
     # Commit if there are changes (check=False to avoid error on no changes)
     commit_message = message or f"Save state for {task_id}"
-    subprocess.run(
-        ["git", "commit", "-m", commit_message],
-        check=False,  # Don't fail if nothing to commit
-        capture_output=True
+    run_git(
+        ["commit", "-m", commit_message],
+        check=False, text=False
     )

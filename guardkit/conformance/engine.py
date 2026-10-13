@@ -42,6 +42,7 @@ from guardkit.conformance.rules import (
     repo_identity,
     skip_dir,
 )
+from guardkit.lib.project_git import run_git
 
 
 def place(site: Site, rule: Rule) -> None:
@@ -121,9 +122,9 @@ def files_touched_by(repo: Path, git_range: str) -> list[str]:
         raise ValueError("git is not on this machine, so a range of commits cannot be "
                          "turned into a list of files.")
     try:
-        out = subprocess.run(
-            ["git", "-C", str(repo), "diff", "--name-only", git_range],
-            capture_output=True, text=True, check=True, timeout=60)
+        out = run_git(
+            ["-C", str(repo), "diff", "--name-only", git_range],
+            check=True, timeout=60)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"git could not read the range {git_range!r} in {repo}: "

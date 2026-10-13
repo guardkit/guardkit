@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set
 
 import yaml
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -461,17 +462,14 @@ def _collect_git_completion(
     """
     evidence: Dict[str, List[str]] = {}
     try:
-        proc = subprocess.run(
+        proc = run_git(
             [
-                "git",
                 "log",
                 "--all",
                 "--no-color",
                 f"--format=%h{_UNIT}%s{_REC}",
             ],
             cwd=str(repo_root),
-            capture_output=True,
-            text=True,
             timeout=120,
         )
     except (OSError, subprocess.SubprocessError) as exc:

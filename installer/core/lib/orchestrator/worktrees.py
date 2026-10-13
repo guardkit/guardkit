@@ -98,14 +98,18 @@ class SubprocessExecutor:
         capture_output: bool = True,
         text: bool = True,
     ) -> subprocess.CompletedProcess:
-        """Execute command using subprocess.run()."""
-        return subprocess.run(
-            args,
-            cwd=cwd,
-            check=check,
-            capture_output=capture_output,
-            text=text,
-        )
+        """Run a git command through GuardKit's git helper.
+
+        Every command this manager runs is git (``["git", ...]``). The helper
+        gives git a fixed environment and settings so no project program
+        runs, adds a new worktree in two steps, and replaces git's own error
+        text with a fixed sentence. Output is always captured.
+        """
+        from guardkit.lib.project_git import run_git
+
+        if not args or args[0] != "git":
+            raise ValueError("SubprocessExecutor runs git commands only")
+        return run_git(list(args[1:]), cwd=cwd, check=check, text=text)
 
 
 # ============================================================================
@@ -401,7 +405,9 @@ class WorktreeManager:
             self._run_git(worktree_add_cmd)
         except WorktreeError as e:
             # Check if error is due to branch already existing
-            if self._is_branch_exists_error(e):
+            # Git's own text is no longer read (the helper replaces it with a
+            # fixed sentence), so git is asked whether the branch is there.
+            if self._is_branch_exists_error(e) or self._branch_exists(branch_name):
                 # Attempt automatic cleanup: delete the existing branch
                 try:
                     self._run_git(["branch", "-D", branch_name])

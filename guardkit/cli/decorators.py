@@ -28,6 +28,7 @@ from guardkit.orchestrator.exceptions import (
 )
 
 from guardkit.worktrees.manager import (
+    NotAGitRepositoryError,
     WorktreeCreationError,
     WorktreeError,
     WorktreeMergeError,
@@ -123,7 +124,7 @@ def handle_cli_errors(func: Callable) -> Callable:
 
         except WorktreeError as e:
             console.print(f"[red]Worktree error: {e}[/red]")
-            if "not a git repository" in str(e).lower():
+            if isinstance(e, NotAGitRepositoryError):
                 console.print(
                     "\n[yellow]Suggestion:[/yellow] Run this command from the root of a "
                     "git repository (e.g. `cd` into the project directory first)."

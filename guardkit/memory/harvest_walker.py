@@ -26,6 +26,7 @@ from guardkit.memory.harvest_taxonomy import (
     episode_type_for,
     natural_key_for,
 )
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +63,9 @@ def _get_file_mtime(file_path: Path, repo_root: Path) -> datetime:
     try:
         # Try git log for last commit time (more accurate for versioned files)
         relative_path = file_path.relative_to(repo_root)
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%aI", "--", str(relative_path)],
+        result = run_git(
+            ["log", "-1", "--format=%aI", "--", str(relative_path)],
             cwd=repo_root,
-            capture_output=True,
-            text=True,
             timeout=5,
         )
 

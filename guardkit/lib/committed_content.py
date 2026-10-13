@@ -12,22 +12,21 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from guardkit.lib.project_git import run_git
+
 
 class CommittedContentError(Exception):
     """Git could not answer; the message says what was asked and why it failed."""
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    """Run git in ``repo``. Literal pathspecs: a path is a file name, never a pattern."""
-    return subprocess.run(
-        ["git", "--literal-pathspecs", "-C", str(repo), *args],
-        capture_output=True,
-        timeout=60,
-    )
+    """Run git in ``repo`` through the factory's git helper (literal file names,
+    no project program, a fixed sentence instead of git's error text)."""
+    return run_git(["-C", str(repo), *args], text=False, timeout=60)
 
 
 def git_text(repo: Path, *args: str) -> str:
-    """Run git in ``repo`` and return its output, or raise with git's own message."""
+    """Run git in ``repo`` and return its output, or raise with the helper's sentence."""
     result = git(repo, *args)
     if result.returncode != 0:
         raise CommittedContentError(

@@ -35,6 +35,7 @@ from guardkit.orchestrator.qa_stages.mutation import (
     strip_auth_header_operator,
 )
 from guardkit.orchestrator.qa_stages.sandbox import MutationSandbox
+from guardkit.lib.project_git import run_git
 
 _OPERATORS = ("strip-auth-header", "revert-hunk")
 
@@ -50,20 +51,16 @@ class MutationAssembly:
 
 
 def _git_diff(repo_root: Path, base: str, rel: str) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "diff", base, "--", rel],
-        capture_output=True,
-        text=True,
+    proc = run_git(
+        ["-C", str(repo_root), "diff", base, "--", rel],
         check=False,
     )
     return proc.stdout
 
 
 def _changed_files(repo_root: Path, base: str) -> List[str]:
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "diff", "--name-only", base],
-        capture_output=True,
-        text=True,
+    proc = run_git(
+        ["-C", str(repo_root), "diff", "--name-only", base],
         check=False,
     )
     return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]

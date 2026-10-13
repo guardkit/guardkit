@@ -87,15 +87,10 @@ def _is_build_worktree(worktree: Optional[Path]) -> bool:
 
 
 def _git(worktree: Path, *args: str) -> Optional[subprocess.CompletedProcess]:
+    from guardkit.lib.project_git import run_git
+
     try:
-        return subprocess.run(
-            ["git", *args],
-            cwd=str(worktree),
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_S,
-            check=False,
-        )
+        return run_git(list(args), cwd=worktree, timeout=_GIT_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as exc:
         logger.debug("head identity: git %s failed in %s: %s", args, worktree, exc)
         return None

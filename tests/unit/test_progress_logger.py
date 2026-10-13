@@ -289,9 +289,16 @@ class TestGitMeasuredFilesChanged:
         git_calls = []
         in_player = {"now": False}
 
+        def git_command(cmd):
+            """The git sub-command, past the helper's fixed options."""
+            index = 1
+            while index < len(cmd) and cmd[index].startswith("-"):
+                index += 2 if cmd[index] in ("-c", "-C") else 1
+            return cmd[index] if index < len(cmd) else None
+
         def recording_run(cmd, *args, **kwargs):
-            if isinstance(cmd, list) and cmd[:1] == ["git"]:
-                git_calls.append((in_player["now"], cmd, kwargs.get("env")))
+            if isinstance(cmd, list) and cmd and (cmd[0] == "git" or cmd[0].endswith("/git")):
+                git_calls.append((in_player["now"], git_command(cmd), kwargs.get("env")))
             return real_run(cmd, *args, **kwargs)
 
         def player(*args, **kwargs):
@@ -350,6 +357,8 @@ class TestGitMeasuredFilesChanged:
         # While the Player works, the snapshot's git commands never take the
         # index lock; the photographs either side of the Player run as before.
         during = [(cmd, env) for now, cmd, env in git_calls if now]
-        assert [cmd[1] for cmd, _ in during] == ["status", "diff"]
+        assert [cmd for cmd, _ in during] == ["status", "diff"]
         assert all(env["GIT_OPTIONAL_LOCKS"] == "0" for _, env in during)
-        assert any(not now and env is None for now, _, env in git_calls)
+        assert any(
+            not now and "GIT_OPTIONAL_LOCKS" not in (env or {}) for now, _, env in git_calls
+        )

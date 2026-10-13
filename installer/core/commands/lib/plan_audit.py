@@ -26,6 +26,7 @@ from datetime import datetime
 import json
 import re
 import subprocess
+from guardkit.lib.project_git import run_git
 
 
 @dataclass
@@ -345,11 +346,9 @@ class PlanAuditor:
         git. Used only to tell a file this task made from a file it edited.
         """
         try:
-            done = subprocess.run(
-                ["git", "ls-tree", "-r", "--name-only", commit],
+            done = run_git(
+                ["ls-tree", "-r", "--name-only", commit],
                 cwd=self.workspace_root,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )

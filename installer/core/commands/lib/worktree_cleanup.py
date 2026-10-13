@@ -31,6 +31,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from guardkit.lib.project_git import run_git
 
 # Worktree manager will be imported lazily to avoid circular imports
 WorktreeManager = None
@@ -236,10 +237,8 @@ class WorktreeCleanupOrchestrator:
             return False
 
         try:
-            result = subprocess.run(
-                ["git", "-C", str(self.worktree_path), "status", "--porcelain"],
-                capture_output=True,
-                text=True,
+            result = run_git(
+                ["-C", str(self.worktree_path), "status", "--porcelain"],
                 check=True,
             )
             return bool(result.stdout.strip())
@@ -258,10 +257,8 @@ class WorktreeCleanupOrchestrator:
 
         try:
             # Check if branch exists
-            result = subprocess.run(
-                ["git", "-C", str(self.repo_root), "branch", "--list", branch_name],
-                capture_output=True,
-                text=True,
+            result = run_git(
+                ["-C", str(self.repo_root), "branch", "--list", branch_name],
                 check=True,
             )
 
@@ -271,11 +268,10 @@ class WorktreeCleanupOrchestrator:
 
             # Check if branch has been merged into main
             try:
-                subprocess.run(
-                    ["git", "-C", str(self.repo_root), "merge-base", "--is-ancestor",
+                run_git(
+                    ["-C", str(self.repo_root), "merge-base", "--is-ancestor",
                      branch_name, "main"],
-                    capture_output=True,
-                    check=True,
+                    check=True, text=False,
                 )
                 return True, f"Branch {branch_name} has been merged into main"
             except subprocess.CalledProcessError:

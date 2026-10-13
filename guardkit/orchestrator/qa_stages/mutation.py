@@ -29,6 +29,7 @@ from typing import Callable, List, Optional, Sequence
 from guardkit.orchestrator.qa_stages.errors import MutationError
 from guardkit.orchestrator.qa_stages.sandbox import MutationSandbox
 from guardkit.orchestrator import process_group
+from guardkit.lib.project_git import run_git
 
 
 # --------------------------------------------------------------------------- #
@@ -179,11 +180,9 @@ def revert_hunks_operator(
     mutants: List[Mutant] = []
     for idx, hunk in enumerate(diff_hunks, start=1):
         def _apply(sandbox_root: Path, _hunk=hunk) -> None:
-            proc = subprocess.run(
-                ["git", "-C", str(sandbox_root), "apply", "-R", "--recount", "-"],
+            proc = run_git(
+                ["-C", str(sandbox_root), "apply", "-R", "--recount", "-"],
                 input=_hunk,
-                capture_output=True,
-                text=True,
                 check=False,
             )
             if proc.returncode != 0:

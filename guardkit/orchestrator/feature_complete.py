@@ -471,12 +471,13 @@ class FeatureCompleteOrchestrator:
         """
         import subprocess
 
+        from guardkit.lib.project_git import run_git
+
         attempts = []
         if worktree is not None:
-            attempts.append(["git", "-C", str(worktree.path), "rev-parse", "HEAD"])
+            attempts.append(["-C", str(worktree.path), "rev-parse", "HEAD"])
         attempts.append(
             [
-                "git",
                 "-C",
                 str(self.repo_root),
                 "rev-parse",
@@ -487,9 +488,7 @@ class FeatureCompleteOrchestrator:
         )
         for command in attempts:
             try:
-                completed = subprocess.run(
-                    command, check=False, capture_output=True, text=True, timeout=30
-                )
+                completed = run_git(command, check=False, timeout=30)
             except (OSError, subprocess.SubprocessError):
                 continue
             sha = (completed.stdout or "").strip()

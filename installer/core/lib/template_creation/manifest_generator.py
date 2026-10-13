@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 
 from installer.core.lib.codebase_analyzer.models import CodebaseAnalysis, LayerInfo
 from .models import FrameworkInfo, PlaceholderInfo, TemplateManifest
+from guardkit.lib.project_git import run_git
 
 
 class ManifestGenerator:
@@ -127,10 +128,8 @@ class ManifestGenerator:
             Git user.name if available, None otherwise
         """
         try:
-            result = subprocess.run(
-                ["git", "config", "user.name"],
-                capture_output=True,
-                text=True,
+            result = run_git(
+                ["config", "user.name"],
                 cwd=self.analysis.codebase_path,
                 timeout=5
             )

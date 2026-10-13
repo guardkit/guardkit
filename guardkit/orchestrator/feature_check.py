@@ -55,6 +55,7 @@ from guardkit.orchestrator.launch_declaration import (
     load_launch_declaration,
 )
 from guardkit.orchestrator.toolchain_declaration import load_toolchain_declaration
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -173,11 +174,9 @@ def candidate_sha(worktree_root: Path) -> str:
     pin.
     """
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+        proc = run_git(
+            ["rev-parse", "HEAD"],
             cwd=str(worktree_root),
-            capture_output=True,
-            text=True,
             timeout=30,
         )
     except Exception as exc:  # noqa: BLE001 — a missing git is not a build failure
