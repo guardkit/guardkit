@@ -1163,3 +1163,114 @@ def test_a_missing_declaration_directory_bootstraps_as_today(
 
     assert result is not None and result.success is True
     assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+# ---------------------------------------------------------------------------
+# Declared inputs: only "not found" means absent; any other filesystem error
+# refuses the bootstrap and stops the build (Codex review R3/R4).
+# ---------------------------------------------------------------------------
+
+
+def _skip_if_root() -> None:
+    import os
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root ignores directory permissions")
+
+
+def _bootstrap_once_then_restrict(
+    tmp_path: Path, failure_mode, worktree: Path, restricted: Path, mode: int
+):
+    """Bootstrap successfully, then restrict *restricted* and bootstrap again.
+
+    Returns the error raised by the second bootstrap, the second run's
+    subprocess mock, and whether the saved state was left unchanged.
+    Permissions are restored before returning.
+    """
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    with patch("subprocess.run", _no_installs()):
+        first = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert first is not None and first.success is True
+    state_file = worktree / ".guardkit" / "bootstrap_state.json"
+    saved = state_file.read_bytes()
+
+    restricted.chmod(mode)
+    try:
+        with patch("subprocess.run", _no_installs()) as run:
+            with pytest.raises(FeatureOrchestrationError) as exc:
+                orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    finally:
+        restricted.chmod(0o755)
+    return exc.value, run, state_file.read_bytes() == saved
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_dependency_link_into_an_unsearchable_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``apps/web/package-lock.json`` links to a file in ``.deps``, which then
+    cannot be searched: the link's target cannot be looked up."""
+    _skip_if_root()
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    deps = worktree / ".deps"
+    deps.mkdir()
+    (deps / "lock.json").write_text('{"lockfileVersion":3}\n', "utf-8")
+    (worktree / "apps" / "web" / "package-lock.json").symlink_to(
+        "../../.deps/lock.json"
+    )
+
+    error, run, state_unchanged = _bootstrap_once_then_restrict(
+        tmp_path, failure_mode, worktree, deps, 0o644
+    )
+
+    assert "'web'" in str(error) and "apps/web/package-lock.json" in str(error)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+    assert state_unchanged
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_an_unsearchable_intermediate_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``packages/ui`` is readable but cannot be searched, so whether the
+    declared ``packages/ui/lib`` exists is unknown; it is not "absent"."""
+    import yaml
+
+    _skip_if_root()
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    lib = worktree / "packages" / "ui" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "package.json").write_text('{"name":"ui-lib"}\n', "utf-8")
+    cfg = worktree / ".guardkit" / "config.yaml"
+    block = yaml.safe_load(cfg.read_text("utf-8"))
+    block["toolchain"]["components"]["ui"] = {"cwd": "packages/ui/lib", "test": "npm test"}
+    cfg.write_text(yaml.safe_dump(block), encoding="utf-8")
+
+    error, run, state_unchanged = _bootstrap_once_then_restrict(
+        tmp_path, failure_mode, worktree, worktree / "packages" / "ui", 0o444
+    )
+
+    assert "'ui'" in str(error) and "packages/ui/lib" in str(error)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+    assert state_unchanged
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_missing_declared_directory_is_still_absent(
+    tmp_path: Path, failure_mode
+) -> None:
+    """Control: a declared ``cwd`` that does not exist is an "absent" entry;
+    the install runs, and creating the directory later reruns it."""
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/not-yet")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert result is not None and result.success is True and result.skipped is False
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+    (worktree / "apps" / "not-yet").mkdir()
+    with patch("subprocess.run", _no_installs()) as run:
+        again = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert again is not None and again.skipped is False
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)

@@ -41,6 +41,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -2119,7 +2120,26 @@ class EnvironmentBootstrapper:
         Inferred manifests in the same run are hashed as before. The key also
         records the image identity (``FORGE_IMAGE_IDENTITY``, or "not set")
         and the resolved worktree root.
+
+        One rule holds for every filesystem call on a declared input: only
+        ``FileNotFoundError`` (or ``NotADirectoryError``, a path component
+        that is a file) means a declared directory is absent. Any other
+        ``OSError`` (permission, symlink loop, I/O) refuses the bootstrap,
+        naming the component and path, and as a backstop no ``OSError`` or
+        ``RuntimeError`` leaves this method as anything but a refusal.
         """
+        try:
+            return self._declared_hash(manifests)
+        except _DeclaredInputRefused:
+            raise
+        except (OSError, RuntimeError) as exc:
+            raise _DeclaredInputRefused(
+                "The declared install's inputs could not be read safely "
+                f"({type(exc).__name__}: {exc}), so nothing is installed."
+            ) from exc
+
+    def _declared_hash(self, manifests: List[DetectedManifest]) -> str:
+        """Body of :meth:`_compute_declared_hash`."""
         from guardkit.orchestrator.toolchain_declaration import resolve_component_cwd
 
         root = Path(self._root)
@@ -2148,9 +2168,19 @@ class EnvironmentBootstrapper:
                     raise _DeclaredInputRefused(
                         f"{_input_owner(owner)}: directory {rel_dir!r} is refused: {exc}"
                     ) from exc
-                if not os.path.lexists(directory):
+                # ``lstat`` rather than ``lexists``: ``lexists`` reads every
+                # OSError, an unsearchable parent included, as absence.
+                try:
+                    os.lstat(directory)
+                except (FileNotFoundError, NotADirectoryError):
                     entries[f"{rel_dir}/"] = "absent"
                     continue
+                except OSError as exc:
+                    raise _DeclaredInputRefused(
+                        f"{_input_owner(owner)}: directory {rel_dir!r} cannot be "
+                        f"looked up ({exc}), so the declared install's inputs "
+                        "are unknown."
+                    ) from exc
                 try:
                     names = sorted(os.listdir(directory))
                 except OSError as exc:
@@ -2198,26 +2228,33 @@ class EnvironmentBootstrapper:
         it must lie inside the worktree and be a regular file that can be
         read; anything else raises :class:`_DeclaredInputRefused`.
         """
-        root = Path(self._root).resolve()
         try:
+            root = Path(self._root).resolve()
             resolved = Path(path).resolve()
-            rel = resolved.relative_to(root)
-        except (OSError, RuntimeError, ValueError) as exc:
+        except (OSError, RuntimeError) as exc:  # RuntimeError: a symlink loop
             raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {path} resolves outside the worktree "
-                f"{root}, so it is not read."
+                f"{_input_owner(owner)}: {listed} cannot be resolved ({exc}), "
+                "so it is not read."
             ) from exc
-        if not resolved.is_file():
+        if not resolved.is_relative_to(root):
             raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {rel.as_posix()} is not a regular file."
+                f"{_input_owner(owner)}: {listed} resolves outside the worktree "
+                f"{root}, so it is not read."
             )
+        # A listed file is never "absent": any error looking it up or reading
+        # it (a dangling link included) refuses it.
         try:
-            data = resolved.read_bytes()
+            is_regular = stat.S_ISREG(os.stat(resolved).st_mode)
+            data = resolved.read_bytes() if is_regular else b""
         except OSError as exc:
             raise _DeclaredInputRefused(
-                f"{_input_owner(owner)}: {rel.as_posix()} cannot be read ({exc}), "
+                f"{_input_owner(owner)}: {listed} cannot be read ({exc}), "
                 "so the declared install's inputs are unknown."
             ) from exc
+        if not is_regular:
+            raise _DeclaredInputRefused(
+                f"{_input_owner(owner)}: {listed} is not a regular file."
+            )
         entries[listed] = hashlib.sha256(data).hexdigest()
 
     def _recorded_failure_result(
