@@ -1,0 +1,8 @@
+=== RUN   TestOne
+    a_test.go:5: not yet
+--- SKIP: TestOne (0.00s)
+=== RUN   TestTwo
+    a_test.go:6: not yet
+--- SKIP: TestTwo (0.00s)
+PASS
+ok  	example.com/probe/allskip	0.002s
