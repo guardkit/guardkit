@@ -885,6 +885,33 @@ def _factory_accepts_kwarg(factory: Callable[..., Any], name: str) -> bool:
     )
 
 
+def _is_read_only_request(allowed_tools: Any, harness_role: Any) -> bool:
+    """Whether a harness request asks only to read and search.
+
+    13 October 2026 (proof defect 5). True for a non-empty list of tool names
+    that all fall in the ``read`` or ``search`` category of the one tool table
+    (``agent_invoker._RUNTIME_TOOL_CATEGORIES``), for example the code
+    reviewer's ``["Read", "Search", "Grep"]``. Never true for the Player, and
+    false for any list naming a write, shell, delegation, planning or unknown
+    tool, so those requests are built exactly as before.
+    """
+    if harness_role == "player":
+        return False
+    if not allowed_tools or isinstance(allowed_tools, (str, bytes)):
+        return False
+    try:
+        names = list(allowed_tools)
+    except TypeError:
+        return False
+    # Late import: agent_invoker imports this module.
+    from guardkit.orchestrator.agent_invoker import _runtime_tool_category
+
+    return all(
+        isinstance(name, str) and _runtime_tool_category(name) in ("read", "search")
+        for name in names
+    )
+
+
 def _build_backend_with_optional_cap(
     factory: Callable[..., Any],
     worktree: Path,
@@ -893,6 +920,7 @@ def _build_backend_with_optional_cap(
     scratch_root: Path | None = None,
     launch_environment: dict[str, list[str]] | None = None,
     launch_scratch_root: Path | None = None,
+    read_only: bool = False,
 ) -> Any:
     """Call ``build_autobuild_backend``, forwarding the gather cap defensively.
 
@@ -973,6 +1001,19 @@ def _build_backend_with_optional_cap(
                 "project. Install the matching Factory revision."
             )
         kwargs["launch_scratch_root"] = launch_scratch_root
+    # 13 October 2026 (proof defect 5): a read-only request (the code
+    # reviewer) gets a backend that refuses writes and offers no shell. Never
+    # dropped: an older factory would silently build a writable backend with
+    # a shell, which is how the reviewer came to run long shell commands.
+    if read_only:
+        if not _factory_accepts_kwarg(factory, "read_only"):
+            raise AgentInvocationError(
+                "This request asks only to read and search, but the installed "
+                "guardkitfactory cannot build a read-only backend. Install the "
+                "matching Factory revision; a writable backend with a shell "
+                "is not built in its place."
+            )
+        kwargs["read_only"] = True
     return factory(worktree, **kwargs)
 
 
@@ -1185,6 +1226,9 @@ def select_harness(
                 "were not applied: %s",
                 sorted(sdk_env),
             )
+        read_only = _is_read_only_request(
+            harness_kwargs.get("allowed_tools"), harness_role
+        )
         translated = _translate_kwargs_for_langgraph(harness_kwargs)
         player_config = None
         protected_paths: tuple[str, ...] = ()
@@ -1258,6 +1302,7 @@ def select_harness(
             scratch_root,
             launch_environment,
             launch_scratch_root,
+            read_only=read_only,
         )
         # TASK-FIX-SPECINVOKE01: forward ``on_model_activity`` only when the
         # installed guardkitfactory's signature accepts it; drop-with-WARNING
