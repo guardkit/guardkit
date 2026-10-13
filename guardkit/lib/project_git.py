@@ -162,6 +162,10 @@ COMMAND_OPTIONS: Dict[str, Tuple[str, ...]] = {
     "rebase": ("--no-gpg-sign", "--no-rebase-merges", "--no-update-refs", "--no-autosquash"),
 }
 
+#: The only options a factory ``git rebase`` may carry (the fixed ones in
+#: :data:`COMMAND_OPTIONS` are added after this check).
+REBASE_OPTIONS: Tuple[str, ...] = ("--autostash", "--abort")
+
 #: ``merge`` and ``rebase`` actions that take no other option.
 _ACTION_OPTIONS = frozenset(
     {"--abort", "--continue", "--skip", "--quit", "--edit-todo", "--show-current-patch"}
@@ -197,8 +201,9 @@ SUBMODULE_REFUSAL = (
     "it stopped before running git {command}."
 )
 REBASE_REFUSAL = (
-    "The factory does not run git rebase with --exec or --interactive, because "
-    "those run programs from the to-do list."
+    "The factory runs git rebase only with the options it uses itself "
+    "(--autostash, --abort), because other rebase options can run programs "
+    "from the to-do list."
 )
 WORKTREE_REFUSAL = (
     "git worktree add could not finish filling the new worktree, so the "
@@ -206,7 +211,7 @@ WORKTREE_REFUSAL = (
 )
 SETTINGS_REFUSAL = (
     "git {command} was not run because the project's git settings could not be "
-    "read in time."
+    "read, so nothing they name could be switched off."
 )
 UNSAFE_NAME_REFUSAL = (
     "git {command} was not run because the project's git settings use a name "
@@ -418,14 +423,32 @@ def _read_setting_names(
 ) -> Optional[List[str]]:
     """Every setting name git sees in this place (includes followed).
 
-    ``None`` when git could not answer (then git cannot read its settings for
-    the command either). Raises :class:`_ReadTimedOut` on a timeout.
+    Names are decoded with the file-system encoding's ``surrogateescape``, so
+    a name that is not valid UTF-8 comes back byte for byte when it is put on
+    git's command line. ``None`` when the read did not succeed: it could not
+    start, exited non-zero, or listed none of the repository's own settings
+    although a repository is there. The caller then runs nothing. Raises
+    :class:`_ReadTimedOut` on a timeout.
     """
-    done = _spawn([*prefix, "config", "--list", "--name-only", "-z"], cwd,
-                  _child_environment({}), timeout)
+    env = _child_environment({})
+    done = _spawn([*prefix, "config", "--list", "--name-only", "-z", "--show-scope"],
+                  cwd, env, timeout)
     if done is None or done[0] != 0:
         return None
-    return [n for n in done[1].decode("utf-8", errors="replace").split("\0") if n]
+    fields = done[1].split(b"\0")
+    if fields and fields[-1] == b"":
+        fields.pop()
+    if len(fields) % 2:
+        return None
+    scopes = [os.fsdecode(f) for f in fields[0::2]]
+    names = [os.fsdecode(f) for f in fields[1::2]]
+    if not any(scope in ("local", "worktree") for scope in scopes):
+        # None of a repository's own settings were listed. Outside a
+        # repository that is expected; inside one, the read missed them.
+        inside = _spawn([*prefix, "rev-parse", "--git-dir"], cwd, env, timeout)
+        if inside is None or inside[0] == 0:
+            return None
+    return names
 
 
 def _switch_offs(names: Sequence[str]) -> Optional[List[str]]:
@@ -480,18 +503,19 @@ def _add_pathspecs(rest: Sequence[str]) -> Tuple[List[str], bool]:
 def _nested_repositories(
     command: _Command, env_extra: Mapping[str, str], cwd: Optional[str],
     literal: bool, timeout: float,
-) -> List[str]:
+) -> Optional[List[str]]:
     """Submodules in the index, and (before ``add``) nested repositories the
-    add would take in. Empty when there are none or git could not say (the
-    command then fails on its own)."""
+    add would take in. ``None`` when git could not say; the caller then runs
+    nothing."""
     env = _child_environment(env_extra)
     prefix = _base_argv(command.dirs, command.settings, literal=False)
     done = _spawn([*prefix, "ls-files", "-s", "-z"], cwd, env, timeout)
+    if done is None or done[0] != 0:
+        return None
     found: List[str] = []
-    if done is not None and done[0] == 0:
-        for record in done[1].split(b"\0"):
-            if record.startswith(b"160000 "):
-                found.append(os.fsdecode(record.partition(b"\t")[2]))
+    for record in done[1].split(b"\0"):
+        if record.startswith(b"160000 "):
+            found.append(os.fsdecode(record.partition(b"\t")[2]))
     if command.name == "add" and not found:
         specs, takes_untracked = _add_pathspecs(command.rest)
         if takes_untracked:
@@ -503,8 +527,9 @@ def _nested_repositories(
                 [*prefix, "ls-files", "--others", "--exclude-standard", "-z", "--", *specs],
                 cwd, env, timeout,
             )
-            if done is not None and done[0] == 0:
-                found += [os.fsdecode(p) for p in done[1].split(b"\0") if p.endswith(b"/")]
+            if done is None or done[0] != 0:
+                return None
+            found += [os.fsdecode(p) for p in done[1].split(b"\0") if p.endswith(b"/")]
     return found
 
 
@@ -536,11 +561,10 @@ def _refusal_for(command: _Command) -> Optional[str]:
         for arg in rest[1:]:
             if arg == "--":
                 break
-            if arg in ("--exec", "--interactive") or arg.startswith("--exec="):
-                return REBASE_REFUSAL
-            if arg.startswith("-") and not arg.startswith("--") and (
-                "i" in arg[1:] or "x" in arg[1:]
-            ):
+            # Only the options the factory itself uses: git accepts any unique
+            # prefix of a long option (``--exe=``, ``--interac``), so a
+            # refusal list could never be complete.
+            if arg.startswith("-") and arg not in REBASE_OPTIONS:
                 return REBASE_REFUSAL
     return None
 
@@ -552,7 +576,6 @@ def prepare_git(
     env: Optional[Mapping[str, str]] = None,
     literal_pathspecs: Optional[bool] = None,
     timeout: Optional[float] = None,
-    _strict: bool = False,
 ) -> PreparedGit:
     """Build one protected git command without running it.
 
@@ -583,6 +606,10 @@ def prepare_git(
             nested = _nested_repositories(
                 command, env_extra, workdir, literal_pathspecs, read_timeout
             )
+            if nested is None:
+                return PreparedGit(
+                    None, child_env, label, SETTINGS_REFUSAL.format(command=label)
+                )
             if nested:
                 # Named only here, in the local log; never in the sentence.
                 logger.warning(
@@ -598,9 +625,8 @@ def prepare_git(
     except _ReadTimedOut:
         return PreparedGit(None, child_env, label, SETTINGS_REFUSAL.format(command=label))
     if names is None:
-        if _strict:
-            return PreparedGit(None, child_env, label, SETTINGS_REFUSAL.format(command=label))
-        names = []
+        # Fail closed: without the names nothing can be switched off.
+        return PreparedGit(None, child_env, label, SETTINGS_REFUSAL.format(command=label))
     switch_offs = _switch_offs(names)
     if switch_offs is None:
         return PreparedGit(None, child_env, label, UNSAFE_NAME_REFUSAL.format(command=label))
@@ -765,17 +791,25 @@ def _add_worktree(
     workdir = os.fspath(cwd) if cwd is not None else None
     read_timeout = min(float(timeout), _READ_TIMEOUT_S) if timeout else _READ_TIMEOUT_S
     try:
-        if _nested_repositories(source, dict(env or {}), workdir, True, read_timeout):
-            logger.warning("git worktree add refused: the project holds a submodule")
-            return _refused("worktree add", shown,
-                            SUBMODULE_REFUSAL.format(command="worktree add"), text_mode, check)
-        names = _read_setting_names(
-            _base_argv(command.dirs, command.settings, literal=False), workdir, read_timeout
+        nested = _nested_repositories(source, dict(env or {}), workdir, True, read_timeout)
+        names = (
+            _read_setting_names(
+                _base_argv(command.dirs, command.settings, literal=False), workdir,
+                read_timeout,
+            )
+            if nested == []
+            else None
         )
     except _ReadTimedOut:
+        nested, names = None, None
+    if nested:
+        logger.warning("git worktree add refused: the project holds a submodule")
+        return _refused("worktree add", shown,
+                        SUBMODULE_REFUSAL.format(command="worktree add"), text_mode, check)
+    if names is None:
         return _refused("worktree add", shown,
                         SETTINGS_REFUSAL.format(command="worktree add"), text_mode, check)
-    switch_offs = _switch_offs(names or [])
+    switch_offs = _switch_offs(names)
     if switch_offs is None:
         return _refused("worktree add", shown,
                         UNSAFE_NAME_REFUSAL.format(command="worktree add"), text_mode, check)
@@ -816,7 +850,7 @@ def _fill_new_worktree(
 ) -> Optional[subprocess.CompletedProcess]:
     """Steps 2 and 3 of :func:`_add_worktree`. ``None`` when refused."""
     prepared = prepare_git(["-C", target, "reset", "--hard", "-q", "HEAD"], env=env,
-                           timeout=timeout, _strict=True)
+                           timeout=timeout)
     if prepared.refusal or prepared.argv is None:
         return None
     try:

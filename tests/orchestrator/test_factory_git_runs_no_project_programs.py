@@ -350,3 +350,18 @@ def test_factory_git_calls_all_go_through_the_helper(git_shim: Path) -> None:
         pytest.skip("run the whole file: this test reads what the others recorded")
     direct = {name: calls for name, calls in DIRECT_CALLS.items() if calls}
     assert direct == {}
+
+
+def test_worktree_change_snapshot_switches_off_a_filter_whose_name_is_not_utf8(lab: Lab) -> None:
+    from guardkit.orchestrator.autobuild import _worktree_change_snapshot
+
+    repo = lab.base_repo("repo")
+    (repo / ".gitattributes").write_bytes(b"*.txt filter=\xff\xfe\n")
+    lab.setup_git(repo, "add", "-A")
+    lab.setup_git(repo, "commit", "-qm", "attributes")
+    with open(repo / ".git" / "config", "ab") as config:
+        config.write(b'[filter "\xff\xfe"]\n\tclean = ' + lab.path("clean").encode() + b"\n")
+    lab.same_size_edit(repo / "a.txt")
+    lab.fired()
+    assert _worktree_change_snapshot(repo) is not None
+    assert lab.fired() == []

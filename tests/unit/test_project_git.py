@@ -926,3 +926,132 @@ def test_fixed_settings_are_named_constants() -> None:
     assert {"fetch", "pull", "push", "clone", "ls-remote", "credential", "submodule"} <= set(
         pg.NETWORK_COMMANDS
     )
+
+
+# ---------------------------------------------------------------------------
+# Review fix pass (13 October 2026): names that are not UTF-8, a name read
+# that does not succeed, and abbreviated rebase options
+
+
+def _bytes_named_repo(lab: Lab, name: bytes, kind: str) -> Path:
+    """A repository whose own settings name a program under ``name``, which
+    need not be valid UTF-8. ``kind`` is ``filter`` or ``merge``."""
+    repo = lab.base_repo("repo")
+    g = lambda *a: lab.setup_git(repo, *a)  # noqa: E731
+    attribute = b"filter" if kind == "filter" else b"merge"
+    (repo / ".gitattributes").write_bytes(b"*.txt " + attribute + b"=" + name + b"\n")
+    if kind == "merge":
+        (repo / "a.txt").write_text("1\n2\n3\n4\n5\n6\n")
+        g("add", "-A")
+        g("commit", "-qm", "six")
+        g("checkout", "-q", "-b", "side")
+        (repo / "a.txt").write_text("1\n2\n3\n4\n5\nsix\n")
+        g("commit", "-qam", "side")
+        g("checkout", "-q", "main")
+        (repo / "a.txt").write_text("one\n2\n3\n4\n5\n6\n")
+        g("commit", "-qam", "main")
+        section = b'[merge "' + name + b'"]\n\tdriver = ' + lab.path("mergedrv").encode() + b" %O %A %B\n"
+    else:
+        g("add", "-A")
+        g("commit", "-qm", "attributes")
+        section = b'[filter "' + name + b'"]\n\tclean = ' + lab.path("clean").encode() + b"\n"
+        lab.same_size_edit(repo / "a.txt")
+    with open(repo / ".git" / "config", "ab") as config:
+        config.write(section)
+    return repo
+
+
+NON_UTF8 = {
+    "filter-ff-fe": (b"\xff\xfe", "filter"),
+    "filter-latin1": (b"caf\xe9", "filter"),
+    "merge-driver-ff-fe": (b"\xff\xfe", "merge"),
+}
+
+
+@pytest.mark.parametrize("case", list(NON_UTF8), ids=list(NON_UTF8))
+def test_run_git_switches_off_names_that_are_not_utf8(lab: Lab, case: str) -> None:
+    name, kind = NON_UTF8[case]
+    argv = (["status", "--porcelain"] if kind == "filter"
+            else ["merge", "--no-ff", "-q", "-m", "m", "side"])
+    control = _bytes_named_repo(lab, name, kind)
+    lab.fired()
+    lab.plain(control, *argv)
+    assert Lab.names(lab.fired()) == (["clean"] if kind == "filter" else ["mergedrv"])
+    shutil.rmtree(control)
+    repo = _bytes_named_repo(lab, name, kind)
+    lab.fired()
+    done = _pg().run_git(argv, cwd=repo)
+    assert lab.fired() == []
+    assert done.returncode == 0, done.stderr
+
+
+def _failing_name_read(pg, how: str, unless: str = ""):
+    """Make the helper's setting-name read fail in one way; other reads run
+    (and so does a name read whose command line mentions ``unless``)."""
+    real = pg._spawn
+
+    def spawn(argv, cwd, env, timeout):
+        if "config" in argv and "--list" in argv and not (unless and unless in argv):
+            if how == "cannot start":
+                return None
+            if how == "exits non-zero":
+                return 128, b""
+            if how == "times out":
+                raise pg._ReadTimedOut()
+            if how == "empty in a repository":
+                return 0, b""
+        return real(argv, cwd, env, timeout)
+
+    return spawn
+
+
+READ_FAILURES = ["cannot start", "exits non-zero", "times out", "empty in a repository"]
+
+
+@pytest.mark.parametrize("how", READ_FAILURES)
+def test_run_git_refuses_when_the_setting_names_cannot_be_read(
+    lab: Lab, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    pg = _pg()
+    repo = lab.marked_repo("repo")
+    monkeypatch.setattr(pg, "_spawn", _failing_name_read(pg, how))
+    lab.fired()
+    done = pg.run_git(["status", "--porcelain"], cwd=repo)
+    assert lab.fired() == []
+    assert done.returncode != 0
+    assert done.stderr == pg.SETTINGS_REFUSAL.format(command="status")
+
+
+@pytest.mark.parametrize("how", READ_FAILURES)
+def test_run_git_worktree_add_refuses_when_the_setting_names_cannot_be_read(
+    lab: Lab, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    pg = _pg()
+    repo = _include_repo("gitdir:**/worktrees/**", "smudge_wt")(lab)
+    destination = lab.root / "new-worktree"
+    # Only the source repository's read fails; the new worktree's would work.
+    monkeypatch.setattr(pg, "_spawn", _failing_name_read(pg, how, unless=str(destination)))
+    lab.fired()
+    done = pg.run_git(["worktree", "add", "-q", str(destination), "-b", "autobuild/x"], cwd=repo)
+    assert lab.fired() == []
+    assert done.returncode != 0
+    assert not destination.exists()
+
+
+def test_run_git_names_outside_a_repository_are_not_a_refusal(lab: Lab) -> None:
+    folder = lab.root / "not-a-repository"
+    folder.mkdir()
+    done = _pg().run_git(["rev-parse", "--is-inside-work-tree"], cwd=folder)
+    assert done.returncode != 0
+    assert done.stderr == "git rev-parse stopped with exit code 128."
+
+
+@pytest.mark.parametrize(
+    "option", ["--exe=true", "--interac", "--rebase-m", "-r", "--update-refs", "--empty=keep"]
+)
+def test_run_git_refuses_rebase_options_the_factory_does_not_use(lab: Lab, option: str) -> None:
+    pg = _pg()
+    repo = _two_branches(lab, with_merge=False)
+    done = pg.run_git(["rebase", option, "main"], cwd=repo)
+    assert done.returncode != 0
+    assert done.stderr == pg.REBASE_REFUSAL
