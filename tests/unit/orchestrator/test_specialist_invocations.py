@@ -2728,6 +2728,8 @@ async def test_code_reviewer_records_tool_counts_and_durations(
 
     async def _tools_then_fail(**kwargs: object):
         counter = kwargs["tool_counter"]
+        # As _invoke_with_role does once the harness is chosen.
+        counter.bind({"read_file", "grep", "ls", "glob"})
         for _ in range(3):
             counter.record_native(SimpleNamespace(
                 phase="start", tool_name="read_file",

@@ -2061,13 +2061,15 @@ class ToolCallCounter:
 
     Only tool names are kept, never arguments, paths or results. A name is
     whatever the model wrote (a call to a tool that does not exist reaches
-    only the stream), so only plain names are kept as written — letters,
-    digits and ``_ . : -``, at most 64 characters — and every other name is
-    counted as ``"other"``. No method raises: a fault in counting must never
-    stop a run.
+    the stream as written), so a name is kept only when it is one of the
+    tools actually bound for this run (:meth:`bind`, called by
+    ``_invoke_with_role`` once the harness is chosen) and is a plain name —
+    letters, digits and ``_ . : -``, at most 64 characters. Every other name,
+    including any name seen before the tools are bound, is counted as
+    ``"other"``. No method raises: a fault in counting must never stop a run.
     """
 
-    #: The tool names kept as written; anything else counts as ``"other"``.
+    #: The shape a kept name must have, on top of being a bound tool.
     _PLAIN_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
     OTHER = "other"
 
@@ -2075,13 +2077,25 @@ class ToolCallCounter:
         self._lock = threading.Lock()
         self._native: Dict[str, int] = {}
         self._streamed: Dict[str, int] = {}
+        self._bound: frozenset = frozenset()
 
-    @classmethod
-    def _bump(cls, table: Dict[str, int], name: object) -> None:
-        if isinstance(name, str) and cls._PLAIN_NAME.fullmatch(name):
+    def bind(self, tool_names: Any) -> None:
+        """Set the tools actually bound for this run; only these keep a name."""
+        try:
+            names = frozenset(
+                name for name in tool_names or ()
+                if isinstance(name, str) and self._PLAIN_NAME.fullmatch(name)
+            )
+        except Exception:  # noqa: BLE001 — counting must never raise
+            names = frozenset()
+        with self._lock:
+            self._bound = names
+
+    def _bump(self, table: Dict[str, int], name: object) -> None:
+        if isinstance(name, str) and name in self._bound:
             key = name
         else:
-            key = cls.OTHER
+            key = self.OTHER
         table[key] = table.get(key, 0) + 1
 
     def record_native(self, event: object) -> None:
@@ -2110,6 +2124,29 @@ class ToolCallCounter:
     def total(self) -> int:
         """Total number of tool calls."""
         return sum(self.counts().values())
+
+
+def _bound_tool_names(harness: Any, allowed_tools: Any, role: str) -> frozenset:
+    """The tool names a harness binds for this invocation, for the counter.
+
+    The SDK harness binds the requested names themselves. The LangGraph
+    harness binds the DeepAgents tools its read-only table gives for a
+    read-only request (guardkitfactory ``read_only_allowlist``); for any other
+    request, or a guardkitfactory without that table, the names are not known
+    here and the set is empty, so every name counts as ``"other"``.
+    """
+    if type(harness).__module__.startswith("guardkitfactory"):
+        try:
+            from guardkitfactory.harness.langgraph_harness import (
+                read_only_allowlist,
+            )
+
+            return frozenset(read_only_allowlist(allowed_tools, role) or ())
+        except Exception:  # noqa: BLE001 — unknown names count as "other"
+            return frozenset()
+    return frozenset(
+        name for name in allowed_tools or () if isinstance(name, str)
+    )
 
 
 def _native_tool_sink(
@@ -5798,6 +5835,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # the shell (LangGraph only). None without a task or a block.
                 launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
             )
+
+            if tool_counter is not None:
+                # Only names of tools this harness actually binds are kept in
+                # the count; anything the model invents counts as "other".
+                tool_counter.bind(
+                    _bound_tool_names(harness, allowed_tools, agent_type)
+                )
 
             # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
             # to BOTH the substrate-agnostic ``harness.cancel()`` path
