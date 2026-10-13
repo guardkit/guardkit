@@ -413,6 +413,30 @@ _GO_FAILING = (
     "FAIL\texample.com/probe/failing\t0.009s\n"
     "FAIL\n"
 )
+# The same package run twice without -count=1 (13 October 2026): a fresh run,
+# then Go's cached replay, which reprints the old PASS lines.
+_GO_FRESH_WITHOUT_COUNT = (
+    "=== RUN   TestPasses\n"
+    "=== RUN   TestPasses/case\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "    --- PASS: TestPasses/case (0.00s)\n"
+    "=== RUN   TestSkipped\n"
+    "    m_test.go:8: not yet\n"
+    "--- SKIP: TestSkipped (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.009s\n"
+)
+_GO_CACHED_REPLAY = (
+    "=== RUN   TestPasses\n"
+    "=== RUN   TestPasses/case\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "    --- PASS: TestPasses/case (0.00s)\n"
+    "=== RUN   TestSkipped\n"
+    "    m_test.go:8: not yet\n"
+    "--- SKIP: TestSkipped (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t(cached)\n"
+)
 # Real Vitest 4.0.15 outputs (12 October 2026), colour codes kept.
 _VITEST_PASSED = (
     "\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m\x1b[90m (1)\x1b[39m\n"
@@ -443,6 +467,8 @@ _VITEST_NO_FILES = "No test files found, exiting with code 0\n"
         ("api", _GO_NO_TEST_FILES, 0, False),
         ("api", _GO_NO_TESTS_TO_RUN, 0, False),
         ("api", _GO_FAILING, 1, True),
+        ("api", _GO_FRESH_WITHOUT_COUNT, 0, True),
+        ("api", _GO_CACHED_REPLAY, 0, False),
         ("web", _VITEST_PASSED, 0, True),
         ("web", _VITEST_PASSED_PLAIN, 0, True),
         ("web", _VITEST_ONE_PASSED_ONE_SKIPPED, 0, True),
@@ -458,6 +484,8 @@ _VITEST_NO_FILES = "No test files found, exiting with code 0\n"
         ("root", _GO_NO_TEST_FILES + _VITEST_PASSED, 0, False),
         ("root", _VITEST_PASSED, 0, False),
         ("root", _GO_FAILING, 1, True),
+        ("root", _GO_FRESH_WITHOUT_COUNT + _VITEST_PASSED, 0, True),
+        ("root", _GO_CACHED_REPLAY + _VITEST_PASSED, 0, False),
     ],
 )
 def test_declared_ran_markers_classify_real_outputs(

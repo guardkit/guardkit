@@ -10,9 +10,11 @@ toolchain:
   test_timeout: 1800
   # Both suites must report real work: a verbose Go `--- PASS:` line and a
   # Vitest "Tests ... N passed" line with N >= 1 (colour codes tolerated), so
-  # neither an all-skipped Go suite nor an all-skipped web suite can pass.
+  # neither an all-skipped Go suite nor an all-skipped web suite can pass. A
+  # cached Go replay (`ok <pkg> (cached)`) never counts, even though -v
+  # reprints its old PASS lines.
   requires_ran_marker: true
-  ran_marker_regex: '(?ms)\A(?=.*^\s*--- PASS: \S+)(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)'
+  ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)'
   # The connected browser/API/database journey. Supplied by the product
   # foundation; the template's stub fails until then.
   feature_check: "bash scripts/check-feature.sh"
@@ -35,8 +37,9 @@ toolchain:
       test_timeout: 900
       requires_ran_marker: true
       # At least one passing test or subtest; an all-skipped suite, no test
-      # files or `[no tests to run]` print no `--- PASS:` line.
-      ran_marker_regex: '(?m)^\s*--- PASS: \S+'
+      # files or `[no tests to run]` print no `--- PASS:` line. A cached
+      # replay is refused even though -v reprints its old PASS lines.
+      ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)'
       runtime:
         go: "1.26.9"
 # What the build shell receives. `settings` names variables copied from the
