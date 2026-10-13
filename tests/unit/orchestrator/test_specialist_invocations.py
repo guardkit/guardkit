@@ -1814,9 +1814,11 @@ async def test_deterministic_phase4_unread_counts_stay_unknown(tmp_path, monkeyp
         assert block["tests_run"] is None
         assert block["tests_skipped"] is None
         if not passed:
-            # The red verdict's own minimum, so the Player still hears about
-            # the failure; never a parsed count.
-            assert block["tests_failed"] == 1
+            # Unknown stays unknown; the verdict travels as its own flag.
+            assert block["tests_failed"] is None
+            assert block["ran_and_failed"] is True
+        else:
+            assert "ran_and_failed" not in block
 
 
 # --- result mapping (the absence-of-failure-critical surface) ---------------
@@ -2378,7 +2380,8 @@ async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
     tmp_path, monkeypatch
 ):
     """A red run whose output counted 7 passing tests and no failure (a later
-    type-check step failed) records the minimum of one failure, never 7."""
+    type-check step failed) records the 0 it read, never 7 and never an
+    invented 1; the failure is carried by its own flag."""
     monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
     _patch_run_independent_tests(
         monkeypatch,
@@ -2404,4 +2407,5 @@ async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
     block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
     assert block["status"] == "failed"
     assert block["tests_run"] == 7
-    assert block["tests_failed"] == 1
+    assert block["tests_failed"] == 0
+    assert block["ran_and_failed"] is True
