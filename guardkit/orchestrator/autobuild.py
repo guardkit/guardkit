@@ -3029,7 +3029,7 @@ class AutoBuildOrchestrator:
             snapshot_task_launch,
         )
 
-        load_launch_declaration(self.repo_root)
+        load_launch_declaration(self.repo_root, warn_unread_keys=True)
 
         # ROUTING LAW (card Q8/A.2): validate the `verifier:` stamp LOUDLY,
         # outside the metadata swallow above — same seam, same law as the
