@@ -744,7 +744,8 @@ def commit_outer_tree(
         before = _run(["git", "rev-parse", "HEAD"], check=False)
         info["head_before"] = (getattr(before, "stdout", "") or "").strip() or None
 
-        _run(list(_CHECKPOINT_ADD_ARGV))
+        # The executable is written here literally (the launch guard).
+        _run(["git", *_CHECKPOINT_ADD_ARGV[1:]])
         # GuardKit's private records never enter this commit, even when they
         # were staged before the add (13 October 2026). Done before the
         # emptiness test, so a tree whose only staged change was a private

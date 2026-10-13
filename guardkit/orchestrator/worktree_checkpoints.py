@@ -264,7 +264,8 @@ def unstage_private_records(
         PRIVATE_RECORDS_PATHSPEC,
     ]
     listed = git_executor.execute(
-        list_argv, cwd=cwd, check=False, timeout=timeout
+        # The executable is written here literally (the launch guard).
+        ["git", *list_argv[1:]], cwd=cwd, check=False, timeout=timeout
     )
     if listed.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -276,7 +277,8 @@ def unstage_private_records(
 
     reset_argv = ["git", "reset", "-q", "--", PRIVATE_RECORDS_PATHSPEC]
     reset = git_executor.execute(
-        reset_argv, cwd=cwd, check=False, timeout=timeout
+        # The executable is written here literally (the launch guard).
+        ["git", *reset_argv[1:]], cwd=cwd, check=False, timeout=timeout
     )
     if reset.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -778,7 +780,8 @@ class WorktreeCheckpointManager:
         # See CHECKPOINT_EXCLUDE_PATHSPECS for the law and the glob-magic
         # rule; the SAME constant is used by the sibling-evidence add site.
         self.git_executor.execute(
-            list(_CHECKPOINT_ADD_ARGV),
+            # The executable is written here literally (the launch guard).
+            ["git", *_CHECKPOINT_ADD_ARGV[1:]],
             cwd=self.worktree_path,
         )
         # Nothing under .guardkit/autobuild-private/ enters the commit, even
@@ -1033,8 +1036,9 @@ class WorktreeCheckpointManager:
                     # (register 2a5 + TS-lane D.1c) — a sibling-evidence
                     # commit must not bake pip caches, bootstrap state or
                     # node_modules either. Shared, not copy-pasted: 706589f7
-                    # had to fix two divergent literals.
-                    list(_CHECKPOINT_ADD_ARGV),
+                    # had to fix two divergent literals. The executable is
+                    # written here literally (the launch guard).
+                    ["git", *_CHECKPOINT_ADD_ARGV[1:]],
                     cwd=repo.root,
                     check=False,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
