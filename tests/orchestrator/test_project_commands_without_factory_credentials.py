@@ -1798,16 +1798,75 @@ def _launch_kind(mod: _Module, node: ast.AST) -> Optional[str]:
     return None
 
 
+#: Callees a command list may be handed to before the launch: they only read it.
+_READS_A_COMMAND = {"join", "len", "list", "tuple", "str", "repr"}
+#: List methods that change a command list in place.
+_LIST_MUTATORS = {
+    "append", "insert", "extend", "remove", "pop", "clear", "reverse", "sort",
+    "__setitem__", "__delitem__", "__iadd__",
+}
+
+
+def _command_list_untouched(func: ast.AST, name: str, launch: Optional[ast.Call]) -> bool:
+    """True when the command list ``name`` cannot have changed before the
+    launch: never changed in place (item or slice assignment or deletion,
+    ``+=``, a list method), never bound to a second name, and never handed to
+    a call before the launch other than one that only reads it."""
+    before = launch.lineno if launch is not None else None
+    for node in ast.walk(func):
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+            targets = (
+                node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
+            )
+            for target in targets:
+                if isinstance(node, ast.AugAssign) and isinstance(target, ast.Name) and target.id == name:
+                    return False
+                for sub in ast.walk(target):
+                    if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) and sub.value.id == name:
+                        return False
+            value = getattr(node, "value", None)
+            if isinstance(value, ast.Name) and value.id == name:
+                return False  # bound to a second name, which could change it
+        if isinstance(node, ast.NamedExpr) and isinstance(node.value, ast.Name) and node.value.id == name:
+            return False
+        if isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == name
+                and node.func.attr in _LIST_MUTATORS
+            ):
+                return False
+            if node is launch or _last_name(node.func) in _READS_A_COMMAND:
+                continue
+            if before is not None and node.lineno > before:
+                continue
+            handed = list(node.args) + [kw.value for kw in node.keywords]
+            if any(isinstance(a, ast.Name) and a.id == name for a in handed):
+                return False
+    return True
+
+
 def _factory_literal(
-    node: Optional[ast.AST], constants: Dict[str, ast.AST], func: Optional[ast.AST] = None
+    node: Optional[ast.AST], constants: Dict[str, ast.AST], func: Optional[ast.AST] = None,
+    launch: Optional[ast.Call] = None,
 ) -> bool:
-    """A list whose first item is the literal git/docker/pgrep/ps."""
+    """The launch's command is a list whose first item is the literal git,
+    docker, pgrep or ps, and provably still is at the launch: written inline,
+    a name assigned exactly once to such a list and never changed, aliased
+    or handed on before the launch, or a module-level TUPLE (immutable)."""
     if node is None:
         return False
-    if isinstance(node, ast.Name) and func is not None and not _is_parameter(func, node.id):
+    if isinstance(node, ast.Name) and func is not None:
+        if _is_parameter(func, node.id):
+            return False
         values = _assignments(func, node.id)
-        if values and all(_factory_literal(v, constants) for v in values):
-            return True
+        if values:
+            return (
+                len(values) == 1
+                and _factory_literal(values[0], constants)
+                and _command_list_untouched(func, node.id, launch)
+            )
     if isinstance(node, (ast.List, ast.Tuple)):
         return bool(node.elts) and isinstance(node.elts[0], ast.Constant) and node.elts[0].value in FACTORY_PROGRAMS
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
@@ -1815,7 +1874,13 @@ def _factory_literal(
     if isinstance(node, ast.Call) and _dotted(node.func) in ("list", "tuple") and node.args:
         return _factory_literal(node.args[0], constants)
     if isinstance(node, ast.Name) and node.id in constants:
-        return _factory_literal(constants[node.id], constants)
+        constant = constants[node.id]
+        # A module-level list could be changed anywhere; only a tuple holds
+        # (a tuple literal, or one with more added: tuple + tuple is a tuple).
+        tuple_at_left = constant
+        while isinstance(tuple_at_left, ast.BinOp) and isinstance(tuple_at_left.op, ast.Add):
+            tuple_at_left = tuple_at_left.left
+        return isinstance(tuple_at_left, ast.Tuple) and _factory_literal(constant, constants)
     return False
 
 
@@ -1920,7 +1985,7 @@ def unaccounted_launches(package: Path) -> List[str]:
         func, fname = place(mod, call)
         if (mod.rel, fname) in ALLOWED:
             return
-        if _factory_literal(_first_argument(call), constants, func):
+        if _factory_literal(_first_argument(call), constants, func, call):
             return
         env = _env_keyword(call, env_position)
         if env is None and default_is_safe:
@@ -2168,6 +2233,65 @@ GUARD_PROBES = textwrap.dedent(
         run_project_command(cmd, shell=True, env=project_command_environment(wf, None))
 
 
+    OK_ARGV = ("git", "status")
+    MUTABLE_ARGV = ["git", "status"]
+
+
+    def _swap(argv):
+        argv[0] = "sh"
+
+
+    def v26_command_list_item_replaced(cmd):
+        argv = ["git", "-c", "x"]
+        argv[0] = "sh"
+        subprocess.run(argv)
+
+
+    def v27_command_list_slice_replaced(cmd):
+        argv = ["git", "x"]
+        argv[:1] = ["sh"]
+        subprocess.run(argv)
+
+
+    def v28_command_list_changed_through_an_alias(cmd):
+        argv = ["git", "x"]
+        other = argv
+        other[0] = "sh"
+        subprocess.run(argv)
+
+
+    def v29_command_list_handed_to_a_call_first(cmd):
+        argv = ["git", "x"]
+        _swap(argv)
+        subprocess.run(argv)
+
+
+    def v30_command_list_inserted_into(cmd):
+        argv = ["git", "x"]
+        argv.insert(0, "sh")
+        subprocess.run(argv)
+
+
+    def v31_module_level_list_command(cmd):
+        subprocess.run(MUTABLE_ARGV)
+
+
+    def v32_command_list_assigned_twice(cmd, other):
+        argv = ["git", "x"]
+        argv = other
+        subprocess.run(argv)
+
+
+    def ok_git_named(cmd):
+        argv = ["git", "status"]
+        print(" ".join(argv))
+        subprocess.run(argv)
+
+
+    def ok_git_tuple_constant(cmd):
+        subprocess.run(list(OK_ARGV))
+
+
     def v16_empty_dict_item_filled(cmd):
         env = {}
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
@@ -2217,7 +2341,10 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
-    assert not {"ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner"} & named, problems
+    assert not {
+        "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
+        "ok_git_named", "ok_git_tuple_constant",
+    } & named, problems
 
 
 def test_every_process_launch_is_accounted_for() -> None:
