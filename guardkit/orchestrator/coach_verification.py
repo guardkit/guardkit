@@ -30,6 +30,7 @@ from guardkit.orchestrator.evidence_repos import (
     resolve_qualified_path,
     split_qualified,
 )
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -1571,7 +1572,7 @@ class CoachVerifier:
             )
 
             env = main_checkout_environment(Path(self.worktree_path))
-            result = subprocess.run(
+            result = process_group.run_project_command(
                 cmd,
                 cwd=self.worktree_path,
                 capture_output=True,
@@ -1599,7 +1600,7 @@ class CoachVerifier:
                     fallback_cmd = [python_cmd, "-m", "pytest", "--tb=no", "-q"]
                     if test_paths:
                         fallback_cmd.extend(test_paths)
-                    result = subprocess.run(
+                    result = process_group.run_project_command(
                         fallback_cmd,
                         cwd=self.worktree_path,
                         capture_output=True,

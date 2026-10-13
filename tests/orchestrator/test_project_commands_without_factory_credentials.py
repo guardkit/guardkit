@@ -189,8 +189,13 @@ class Recorder:
 
 
 def _record_run(monkeypatch: pytest.MonkeyPatch, run_real=lambda a: False) -> Recorder:
-    recorder = Recorder(subprocess.run, run_real)
+    """Record every project command, whether it is started with
+    ``subprocess.run`` or with ``process_group.run_project_command``."""
+    from guardkit.orchestrator import process_group
+
+    recorder = Recorder(getattr(process_group, "run_project_command", subprocess.run), run_real)
     monkeypatch.setattr(subprocess, "run", recorder)
+    monkeypatch.setattr(process_group, "run_project_command", recorder, raising=False)
     return recorder
 
 
@@ -516,15 +521,11 @@ def _run_evidence_repo(p: Project) -> Dict[str, str]:
     return p.read("evidence-repo")
 
 
-def _run_live_gate(p: Project) -> Dict[str, str]:
-    import http.server
-    import threading
-
+def _live_gate_repo(p: Project, base_url_env: str = "STANDIN_BASE_URL") -> None:
+    """A stand-in repository with one live gate that writes its environment."""
     import yaml
 
-    from guardkit.orchestrator.live_gate.runner import LiveGateRunner
-
-    (p.repo / "qa" / "gates").mkdir(parents=True)
+    (p.repo / "qa" / "gates").mkdir(parents=True, exist_ok=True)
     (p.repo / "qa" / "pass-bar-T-1.yaml").write_text(
         textwrap.dedent(
             """\
@@ -554,7 +555,7 @@ def _run_live_gate(p: Project) -> Dict[str, str]:
                     {
                         "id": "g1",
                         "path": "qa/gates/g1.py",
-                        "target": {"base_url_env": "STANDIN_BASE_URL", "environment_id": "local"},
+                        "target": {"base_url_env": base_url_env, "environment_id": "local"},
                         "pass_bar_ref": "qa/pass-bar-T-1.yaml",
                         "evidence_dir_pattern": "qa/gates/evidence-{date}/shots-g1",
                     }
@@ -563,6 +564,15 @@ def _run_live_gate(p: Project) -> Dict[str, str]:
         ),
         encoding="utf-8",
     )
+
+
+def _run_live_gate(p: Project) -> Dict[str, str]:
+    import http.server
+    import threading
+
+    from guardkit.orchestrator.live_gate.runner import LiveGateRunner
+
+    _live_gate_repo(p)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -1101,26 +1111,54 @@ def test_a_reachability_probe_that_cannot_be_given_its_environment_could_not_run
     assert not (project.out / "never.env").exists()
 
 
-def test_a_gate_address_with_a_login_is_refused_by_name(project: Project) -> None:
+def _nothing_under_qa_holds(project: Project, mark: str) -> None:
+    for path in (project.repo / "qa").rglob("*"):
+        if path.is_file():
+            assert mark not in path.read_text(encoding="utf-8", errors="replace"), path
+
+
+@pytest.mark.parametrize("handed_in", [False, True])
+def test_a_gate_address_with_a_login_is_refused_before_preflight(
+    project: Project, monkeypatch: pytest.MonkeyPatch, handed_in: bool
+) -> None:
+    """The address is unreachable too, so pre-flight would fail and record it;
+    the refusal comes first, by name, and nothing is written with the value."""
     from guardkit.orchestrator.live_gate.errors import LiveGateError
     from guardkit.orchestrator.live_gate.runner import LiveGateRunner
-    from guardkit.qa.formats.gate_registry import GateEntry, GateTarget
 
-    gate = GateEntry(
-        id="g1", path="qa/gates/g1.py",
-        target=GateTarget(base_url_env="STANDIN_BASE_URL", environment_id="local"),
-        pass_bar_ref="qa/pass-bar-T-1.yaml",
-        evidence_dir_pattern="qa/gates/evidence-{date}/shots",
-    )
-    runner = LiveGateRunner(
-        project.repo, gate_env={"STANDIN_BASE_URL": f"http://user:{MARK}@app:8080"}
-    )
+    _live_gate_repo(project)
+    address = f"http://user:{MARK}@127.0.0.1:9/"
+    if handed_in:
+        runner = LiveGateRunner(project.repo, gate_env={"STANDIN_BASE_URL": address})
+    else:
+        monkeypatch.setenv("STANDIN_BASE_URL", address)
+        runner = LiveGateRunner(project.repo)
     with pytest.raises(LiveGateError) as caught:
-        runner._gate_script_env([gate])
+        runner.run("PILOT", "local")
     assert "STANDIN_BASE_URL" in str(caught.value)
     assert MARK not in str(caught.value)
-    plain = LiveGateRunner(project.repo, gate_env={"STANDIN_BASE_URL": "http://app:8080"})
-    assert plain._gate_script_env([gate])["STANDIN_BASE_URL"] == "http://app:8080"
+    assert not (project.out / "live-gate.env").exists()
+    _nothing_under_qa_holds(project, MARK)
+
+
+def test_a_gate_address_read_from_a_reserved_setting_is_refused_before_preflight(
+    project: Project,
+) -> None:
+    from guardkit.orchestrator.live_gate.errors import LiveGateError
+    from guardkit.orchestrator.live_gate.runner import LiveGateRunner
+
+    _live_gate_repo(project, base_url_env="OPENAI_API_KEY")
+    with pytest.raises(LiveGateError) as caught:
+        LiveGateRunner(project.repo).run("PILOT", "local")
+    assert "OPENAI_API_KEY" in str(caught.value)
+    assert MARK not in str(caught.value)
+    assert not (project.out / "live-gate.env").exists()
+    _nothing_under_qa_holds(project, MARK)
+
+
+def test_a_plain_gate_address_still_reaches_preflight_and_the_gate(project: Project) -> None:
+    seen = _run_live_gate(project)
+    assert seen["STANDIN_BASE_URL"].startswith("http://127.0.0.1:")
 
 
 # ---------------------------------------------------------------------------
@@ -1176,6 +1214,62 @@ def test_a_timed_out_worktree_oracle_command_leaves_nothing_running(
     _nothing_left(pid)
 
 
+def _background_script(project: Project, label: str) -> Tuple[Path, Path]:
+    """An executable that starts a long child, writes its pid and waits."""
+    pid = project.out / f"{label}.pid"
+    script = project.out.parent / "tools" / f"{label}.sh"
+    script.write_text(f'#!/bin/sh\nsleep 300 &\necho $! > "{pid}"\nwait\n', encoding="utf-8")
+    script.chmod(0o755)
+    return script, pid
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_timed_out_install_leaves_nothing_running(project: Project) -> None:
+    from guardkit.orchestrator.environment_bootstrap import (
+        DetectedManifest,
+        EnvironmentBootstrapper,
+    )
+
+    script, pid = _background_script(project, "install")
+    manifest = DetectedManifest(
+        path=project.repo / ".guardkit" / "config.yaml", stack="generic",
+        is_lock_file=False, install_command=[str(script)], declared=True,
+        install_cwd=project.repo, install_timeout=1,
+    )
+    assert EnvironmentBootstrapper(project.repo)._run_install(manifest) is False
+    _nothing_left(pid)
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_timed_out_smoke_gate_leaves_nothing_running(project: Project) -> None:
+    from guardkit.orchestrator.feature_loader import SmokeGates
+    from guardkit.orchestrator.smoke_gates import run_smoke_gate
+
+    script, pid = _background_script(project, "smoke")
+    result = run_smoke_gate(SmokeGates(after_wave="all", command=str(script), timeout=1), project.repo, 1)
+    assert result.timed_out is True
+    _nothing_left(pid)
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_timed_out_checker_test_leaves_nothing_running(project: Project) -> None:
+    script, pid = _background_script(project, "checker")
+    _validator(project, test_command=str(script), test_timeout=1).run_independent_tests()
+    _nothing_left(pid)
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_timed_out_bdd_run_leaves_nothing_running(project: Project) -> None:
+    from guardkit.orchestrator.quality_gates import bdd_runner
+
+    script, pid = _background_script(project, "bdd")
+    bdd_runner._invoke_pytest_bdd(
+        [project.repo / "x.feature"], "@task:X", project.repo,
+        project.repo / "junit.xml", 1, str(script), TASK,
+    )
+    _nothing_left(pid)
+
+
 # ---------------------------------------------------------------------------
 # Section 5: every process launch in the package is accounted for
 # ---------------------------------------------------------------------------
@@ -1208,6 +1302,10 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ),
     ("orchestrator/process_group.py", "run_in_own_group"): (
         "generic runner (a process group of its own); every call is checked"
+    ),
+    ("orchestrator/process_group.py", "run_project_command"): (
+        "generic runner (subprocess.run's shape, a process group of its own); "
+        "every call is checked"
     ),
     ("orchestrator/live_gate/executor.py", "run"): (
         "runs a gate script with the caller's environment; the one production "
@@ -1288,6 +1386,9 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     ("orchestrator/process_group.py", "run_in_own_group"): {
         "names": {"run_in_own_group"},
     },
+    ("orchestrator/process_group.py", "run_project_command"): {
+        "names": {"run_project_command"},
+    },
     ("orchestrator/merge_executor.py", "measure_pre_merge_baseline"): {
         "names": {"measure_pre_merge_baseline"},
         "default_is_safe": True,
@@ -1319,6 +1420,9 @@ HELPERS = {
     "guardkit.orchestrator.project_command_env.project_command_environment",
     "guardkit.orchestrator.project_command_env.finish_project_environment",
 }
+#: ``finish_project_environment`` copies its input and adds to it; it is no
+#: sanitiser. A call to it counts only when its input is itself the helper's.
+_FINISH = "guardkit.orchestrator.project_command_env.finish_project_environment"
 
 #: The factory's own programs, recognised from a literal first argument.
 FACTORY_PROGRAMS = {"git", "docker", "pgrep", "ps"}
@@ -1574,6 +1678,9 @@ def _helper_shaped(
         return False
     if isinstance(node, ast.Call):
         target = _resolve(mod, node.func, node)
+        if target == _FINISH:
+            given = node.args[0] if node.args else _env_keyword(node)
+            return _helper_shaped(given, mod, func, wrappers, none_is_safe, before_line)
         return target in HELPERS or target in wrappers
     if isinstance(node, ast.IfExp):
         return _helper_shaped(
@@ -1691,9 +1798,25 @@ def _first_argument(call: ast.Call) -> Optional[ast.AST]:
     return None
 
 
-def _runner_call_matches(call: ast.Call, spec: Dict[str, Any]) -> bool:
-    """A call to a generic runner: by its last name (any object or module
-    spelling), or by a dotted suffix for the generic method names."""
+def _runner_identity(package_name: str, rel: str, fname: str) -> str:
+    """The dotted name a generic runner is imported by."""
+    if rel.startswith("guardkit:"):
+        package_name, rel = "guardkit", rel[len("guardkit:"):]
+    parts = [package_name, *Path(rel).with_suffix("").parts]
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join([*parts, fname])
+
+
+def _runner_call_matches(
+    call: ast.Call, spec: Dict[str, Any], mod: Optional[_Module] = None,
+    identity: Optional[str] = None,
+) -> bool:
+    """A call to a generic runner: by what it resolves to (an imported alias
+    included), by its last name (any object or module spelling), or by a
+    dotted suffix for the generic method names."""
+    if mod is not None and identity is not None and _resolve(mod, call.func, call) == identity:
+        return True
     if _last_name(call.func) in spec.get("names", ()):
         return True
     dotted = _callee_name(call)
@@ -1791,11 +1914,14 @@ def unaccounted_launches(package: Path) -> List[str]:
                             f"on or wrapped), so its env= cannot be checked"
                         )
     for (rel, fname), spec in GENERIC_RUNNERS.items():
+        identity = _runner_identity(package.name, rel, fname)
         for mod in modules:
             if spec.get("scope") and mod.rel not in spec["scope"]:
                 continue
             for node in ast.walk(mod.tree):
-                if not isinstance(node, ast.Call) or not _runner_call_matches(node, spec):
+                if not isinstance(node, ast.Call) or not _runner_call_matches(
+                    node, spec, mod, identity
+                ):
                     continue
                 func = _enclosing_function(mod, node)
                 if mod.rel == rel and getattr(func, "name", None) == fname:
@@ -1925,6 +2051,23 @@ GUARD_PROBES = textwrap.dedent(
         pass
 
 
+    from guardkit.orchestrator.process_group import run_in_own_group as launch
+    from guardkit.orchestrator.project_command_env import finish_project_environment
+
+
+    def v22_generic_runner_under_an_alias(cmd):
+        launch(cmd, cwd=".", env=dict(os.environ), timeout=5)
+
+
+    def v23_finish_on_the_factory_environment(cmd):
+        subprocess.run(cmd, shell=True, env=finish_project_environment(dict(os.environ)))
+
+
+    def ok_finish(cmd, wf):
+        env = finish_project_environment(project_command_environment(wf, None), additions={"X": "1"})
+        subprocess.run(cmd, shell=True, env=env)
+
+
     def v16_empty_dict_item_filled(cmd):
         env = {}
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
@@ -1974,7 +2117,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
-    assert not {"ok_helper", "ok_git", "ok_wrapper"} & named, problems
+    assert not {"ok_helper", "ok_git", "ok_wrapper", "ok_finish"} & named, problems
 
 
 def test_every_process_launch_is_accounted_for() -> None:

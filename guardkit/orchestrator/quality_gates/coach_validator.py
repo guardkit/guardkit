@@ -153,6 +153,7 @@ from guardkit.orchestrator.harness import (
 )
 from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
 from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+from guardkit.orchestrator import process_group
 
 # Coach architecture-context integration (TASK-SC-009) was retired in the
 # fleet-memory cutover (FEAT-MEM-09): build_coach_context was never invoked and
@@ -4039,7 +4040,7 @@ class CoachValidator:
             env = self._project_env(
                 path_first=self._venv_bin_first(), main_checkout=True
             )
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 command,
                 shell=True,
                 cwd=str(self.worktree_path),
@@ -4518,7 +4519,6 @@ class CoachValidator:
                 command,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
                 record_into=oracle_evidence,
-                own_group=True,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -4671,7 +4671,6 @@ class CoachValidator:
                 command,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
                 record_into=oracle_evidence,
-                own_group=True,
                 shell=True,
                 cwd=str(self.worktree_path),
                 capture_output=True,
@@ -6733,7 +6732,7 @@ class CoachValidator:
         if interpreter == sys.executable:
             return importlib.util.find_spec("pytest_timeout") is not None
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 [
                     interpreter,
                     "-c",
@@ -7567,47 +7566,24 @@ class CoachValidator:
         *,
         evidence: Tuple[str, Path, Any],
         record_into: Optional[Dict[str, Any]] = None,
-        own_group: bool = False,
         **kwargs: Any,
     ):
-        """``subprocess.run(args, **kwargs)``, with the command recorded.
+        """Run one project command, with the command recorded.
 
-        The command is run by the same ``subprocess.run`` call, with the same
-        arguments, as before; the record is made around it and kept whether
-        the command returns, times out or fails to start. With
-        ``record_into`` the record is written into that dict (the caller's
-        own receipt) instead of this check's list of runs.
-
-        With ``own_group`` (13 October 2026) the command runs in a process
-        group of its own (``process_group.run_in_own_group``), so a timeout
-        ends everything it started, not only the shell. The caller sees the
-        same shapes as from ``subprocess.run``: a ``CompletedProcess`` with
-        text output, or ``subprocess.TimeoutExpired`` carrying what was
-        printed before the limit.
+        The command is run with ``process_group.run_project_command``: the
+        same arguments, results and exceptions as ``subprocess.run``, but in
+        a process group of its own, so a timeout ends everything the command
+        started, not only the shell (13 October 2026). The record is made
+        around it and kept whether the command returns, times out or fails to
+        start. With ``record_into`` the record is written into that dict (the
+        caller's own receipt) instead of this check's list of runs.
         """
         kind, execution_root, origin = evidence
         record = self._begin_run_evidence(
             kind, args, Path(execution_root), origin, kwargs.get("cwd"), kwargs.get("env")
         )
         try:
-            if own_group:
-                from guardkit.orchestrator.process_group import run_in_own_group
-
-                run = run_in_own_group(
-                    args,
-                    shell=bool(kwargs.get("shell", False)),
-                    cwd=kwargs["cwd"],
-                    env=kwargs["env"],
-                    timeout=kwargs["timeout"],
-                )
-                if run.timed_out:
-                    raise subprocess.TimeoutExpired(
-                        args, kwargs["timeout"], output=run.stdout, stderr=run.stderr
-                    )
-                return subprocess.CompletedProcess(
-                    args, run.returncode, run.stdout, run.stderr
-                )
-            return subprocess.run(args, **kwargs)
+            return process_group.run_project_command(args, **kwargs)
         finally:
             if record_into is None:
                 self._keep_run_evidence(record)
@@ -8570,7 +8546,7 @@ class CoachValidator:
                 # criterion's command is the project's, never handed the
                 # factory's credentials.
                 env = self._project_env(path_first=path_first)
-                proc = subprocess.run(
+                proc = process_group.run_project_command(
                     cmd,
                     shell=True,
                     cwd=str(self.worktree_path),
@@ -10423,7 +10399,7 @@ class CoachValidator:
         timeout = self._declared_coverage_timeout()
         started = time.time()
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 command,
                 shell=True,
                 cwd=str(cwd),

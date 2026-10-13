@@ -381,3 +381,37 @@ def project_scratch_for_plain_folders(monkeypatch, request, tmp_path_factory):
         return holder[key]
 
     monkeypatch.setattr(project_command_env, "_scratch_folder", _scratch)
+
+
+# ---------------------------------------------------------------------------
+# Tests that stand in for subprocess.run still see project commands
+# ---------------------------------------------------------------------------
+# Since 13 October 2026 GuardKit runs a project's commands with
+# ``process_group.run_project_command``: ``subprocess.run``'s arguments,
+# results and exceptions, but in a process group of its own so a timeout ends
+# everything the command started. Many tests here replace ``subprocess.run``
+# with a fake to script a command's result; they test what GuardKit does with
+# that result (its argv, env, classification), not how the process is
+# started. While a test has replaced ``subprocess.run``, this fixture sends
+# project commands to that replacement with exactly the arguments they had
+# before. With ``subprocess.run`` untouched, the real group runner runs; the
+# tests that check timeouts end every child use it.
+
+_ORIGINAL_SUBPROCESS_RUN = __import__("subprocess").run
+
+
+@pytest.fixture(autouse=True)
+def project_commands_follow_a_replaced_subprocess_run(monkeypatch):
+    import subprocess as _subprocess
+
+    from guardkit.orchestrator import process_group
+
+    real_runner = process_group.run_project_command
+
+    def _runner(args, **kwargs):
+        if _subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
+            kwargs.pop("grace", None)
+            return _subprocess.run(args, **kwargs)
+        return real_runner(args, **kwargs)
+
+    monkeypatch.setattr(process_group, "run_project_command", _runner)

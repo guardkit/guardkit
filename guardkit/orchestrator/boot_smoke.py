@@ -53,6 +53,7 @@ from guardkit.orchestrator.launch_declaration import (
 )
 from guardkit.orchestrator.project_command_env import project_command_environment
 from guardkit.orchestrator.seam_checks import BootSmokeEntry, SeamChecksConfig
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +203,7 @@ def _resolve_target_module(target: str) -> tuple[str, str]:
 
 def _run_import(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSmokeEntryResult:
     module, _sym = _resolve_target_module(entry.target)
-    proc = subprocess.run(
+    proc = process_group.run_project_command(
         [python, "-c", f"import {module}"],
         cwd=str(worktree), env=_hermetic_env(worktree),
         capture_output=True, text=True, timeout=60,
@@ -239,7 +240,7 @@ def _run_construct(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSm
     else:
         checks.append("assert obj is not None, 'factory returned None'")
     script = "\n".join(checks)
-    proc = subprocess.run(
+    proc = process_group.run_project_command(
         [python, "-c", script],
         cwd=str(worktree), env=_hermetic_env(worktree),
         capture_output=True, text=True, timeout=60,
@@ -344,7 +345,7 @@ def _run_command(entry: BootSmokeEntry, worktree: Path) -> BootSmokeEntryResult:
     if not argv:
         return BootSmokeEntryResult(entry.id, "command", _ABSENT, detail="empty command")
     try:
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             argv,
             cwd=str(worktree),
             capture_output=True,
@@ -404,7 +405,7 @@ def _env_prereqs_met(entry: BootSmokeEntry, worktree: Path) -> tuple[bool, List[
         elif isinstance(req, dict) and "reachable" in req:
             cmd = str(req["reachable"])
             try:
-                rc = subprocess.run(cmd, shell=True, cwd=str(worktree),
+                rc = process_group.run_project_command(cmd, shell=True, cwd=str(worktree),
                                     capture_output=True, timeout=15,
                                     env=_command_env(worktree)).returncode
             except LaunchEnvironmentError:

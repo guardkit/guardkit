@@ -54,6 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # (TASK-FIX-SIBTESTENV01 reuses the single source of truth for on-disk
 # venv layouts rather than re-inventing the probe).
 from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -644,7 +645,7 @@ def run_repo_tests(
         )
 
         env = main_checkout_environment(Path(repo.root))
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             argv,
             cwd=str(repo.root),
             capture_output=True,

@@ -34,6 +34,8 @@ from guardkit.orchestrator.run_evidence import (
     start_command_evidence,
 )
 
+from guardkit.orchestrator import process_group
+
 logger = logging.getLogger(__name__)
 
 # pytest exit code for "no tests collected" — distinct from exit 1 (test
@@ -236,7 +238,7 @@ def run_smoke_gate(
         declared_settings=declaration.settings if declaration is not None else (),
     )
     try:
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             config.command,
             shell=True,
             cwd=str(cwd),

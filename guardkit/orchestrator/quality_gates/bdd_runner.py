@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from guardkit.lib.pytest_argv import isolated_basetemp
 from guardkit.orchestrator.launch_declaration import load_launch_snapshot
 from guardkit.orchestrator.project_command_env import project_command_environment
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +312,7 @@ def has_pytest_bdd(
         )
         return False
     try:
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             [python_executable, "-c", "import pytest_bdd"],
             cwd=str(work_folder),
             capture_output=True,
@@ -673,7 +674,7 @@ def _invoke_pytest_bdd(
         with isolated_basetemp(
             f"{task_id}-bdd" if task_id else "bdd", argv
         ) as basetemp_argv:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 argv + basetemp_argv,
                 cwd=str(cwd),
                 capture_output=True,
@@ -1250,7 +1251,7 @@ def _invoke_pytest_sweep(
         with isolated_basetemp(
             f"{task_id}-bdd-sweep" if task_id else "bdd-sweep", argv
         ) as basetemp_argv:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 argv + basetemp_argv,
                 cwd=str(cwd),
                 capture_output=True,

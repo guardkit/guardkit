@@ -38,6 +38,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -508,7 +509,7 @@ def _run_coverage(
         )
 
         env = main_checkout_environment(Path(worktree_path))
-        result = subprocess.run(
+        result = process_group.run_project_command(
             cmd,
             cwd=str(worktree_path),
             capture_output=True,

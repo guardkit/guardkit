@@ -49,6 +49,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
 
+from guardkit.orchestrator import process_group
+
 logger = logging.getLogger(__name__)
 
 # How far out a fresh F2 ledger entry's review_by lands by default (a ledger
@@ -100,7 +102,7 @@ def _default_suite_runner(argv: List[str], cwd: Path) -> Tuple[int, str]:
     from guardkit.orchestrator.project_command_env import main_checkout_environment
 
     env = main_checkout_environment(Path(cwd))
-    proc = subprocess.run(
+    proc = process_group.run_project_command(
         argv,
         cwd=str(cwd),
         capture_output=True,

@@ -58,6 +58,7 @@ from guardkit.orchestrator.project_command_env import (
     minimal_environment_note,
     project_command_environment,
 )
+from guardkit.orchestrator import process_group
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
@@ -2580,7 +2581,7 @@ class EnvironmentBootstrapper:
             logger.info(
                 "PEP 668: falling back to virtualenv at %s", venv_dir
             )
-            subprocess.run(
+            process_group.run_project_command(
                 [sys.executable, "-m", "venv", str(venv_dir)],
                 check=True,
                 env=self._project_env(),
@@ -2664,7 +2665,7 @@ class EnvironmentBootstrapper:
                 venv_dir,
                 f" (python {py_request})" if py_request else "",
             )
-            subprocess.run(
+            process_group.run_project_command(
                 cmd,
                 check=True,
                 capture_output=True,
@@ -2772,7 +2773,7 @@ class EnvironmentBootstrapper:
                 venv_dir,
             )
 
-        subprocess.run(
+        process_group.run_project_command(
             cmd,
             check=True,
             capture_output=True,
@@ -2916,7 +2917,7 @@ class EnvironmentBootstrapper:
             # scratch folder fails this install with the reason.
             env = self._python_install_env(manifest)
             self._last_failure_env = dict(env)  # a copy: the note reads names only
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 cmd,
                 cwd=cwd,
                 capture_output=True,
@@ -2954,7 +2955,7 @@ class EnvironmentBootstrapper:
                     manifest.path.name,
                     " ".join(retry_cmd),
                 )
-                retry_proc = subprocess.run(
+                retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=cwd,
                     capture_output=True,
@@ -3027,7 +3028,7 @@ class EnvironmentBootstrapper:
                     venv_dir,
                     " ".join(retry_cmd),
                 )
-                retry_proc = subprocess.run(
+                retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=cwd,
                     capture_output=True,
@@ -3143,7 +3144,7 @@ class EnvironmentBootstrapper:
             else:
                 env = self._project_env()
             self._last_failure_env = dict(env)  # a copy: the note reads names only
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 run_cmd,
                 cwd=str(cwd),
                 capture_output=True,
@@ -3170,7 +3171,7 @@ class EnvironmentBootstrapper:
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )
-                retry_proc = subprocess.run(
+                retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=str(cwd),
                     capture_output=True,

@@ -33,6 +33,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def _run_resolution_probe(
             load_launch_declaration(main_checkout_root(Path(worktree))),
             additions={"PYTHONPATH": str(worktree)},
         )
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             [venv_python, "-c", script],
             cwd=str(worktree), env=env, capture_output=True, text=True, timeout=120,
         )

@@ -619,9 +619,9 @@ class TestRequiredFrozenDesignControls:
     ) -> None:
         _, _, task, validator = _fixture(tmp_path)
         # 13 October 2026: the oracle command runs in a process group of its
-        # own (process_group.run_in_own_group), so that is where it starts.
+        # own (process_group.run_project_command), so that is where it starts.
         with patch(
-            "guardkit.orchestrator.process_group.run_in_own_group",
+            "guardkit.orchestrator.process_group.run_project_command",
             side_effect=OSError("cannot start"),
         ):
             result = validator._produce_behavioural_oracle(
@@ -636,12 +636,10 @@ class TestRequiredFrozenDesignControls:
     def test_timeout_is_explicit_and_guarded(self, tmp_path: Path) -> None:
         import subprocess
 
-        from guardkit.orchestrator.process_group import GroupRun
-
         _, _, task, validator = _fixture(tmp_path)
         with patch(
-            "guardkit.orchestrator.process_group.run_in_own_group",
-            return_value=GroupRun(None, "partial", "", timed_out=True),
+            "guardkit.orchestrator.process_group.run_project_command",
+            side_effect=subprocess.TimeoutExpired("checker", 1, output="partial"),
         ):
             result = validator._produce_behavioural_oracle(
                 authored_files=[], task=task, task_id="TASK-REQ", turn=1

@@ -62,6 +62,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import yaml
 
 # Import worktree components from guardkit package
+from guardkit.orchestrator import process_group
 from guardkit.worktrees import (
     WorktreeManager,
     Worktree,
@@ -2048,7 +2049,7 @@ def _check_direct_mode_bin_entries(
 
         target_path = worktree / rel_path
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 [python_exe, str(target_path)],
                 cwd=str(worktree),
                 env=probe_env,
@@ -6358,7 +6359,7 @@ class AutoBuildOrchestrator:
                 Path(worktree.path),
                 load_launch_declaration(main_checkout_root(Path(worktree.path))),
             )
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 command,
                 cwd=str(worktree.path),
                 shell=True,

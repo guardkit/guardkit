@@ -19,9 +19,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Union
+from typing import IO, Any, Dict, Mapping, Optional, Sequence, Union
 
-__all__ = ["GroupRun", "run_in_own_group"]
+__all__ = ["GroupRun", "run_in_own_group", "run_project_command"]
 
 _GRACE_SECONDS = 2.0
 _DRAIN_SECONDS = 5.0
@@ -114,3 +114,74 @@ def run_in_own_group(
                 pass
             stdout, stderr = "", ""
         return GroupRun(None, stdout or "", stderr or "", timed_out=True)
+
+
+def run_project_command(
+    args: Union[str, Sequence[str]],
+    *,
+    env: Optional[Mapping[str, str]],
+    cwd: Optional[Union[str, Path]] = None,
+    timeout: Optional[float] = None,
+    shell: bool = False,
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = False,
+    stdin: Optional[Union[int, IO[Any]]] = None,
+    stdout: Optional[Union[int, IO[Any]]] = None,
+    stderr: Optional[Union[int, IO[Any]]] = None,
+    input: Optional[Union[str, bytes]] = None,  # noqa: A002 - subprocess.run's name
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    grace: float = _GRACE_SECONDS,
+) -> "subprocess.CompletedProcess[Any]":
+    """``subprocess.run`` for a project's command, but a timeout ends the
+    whole command, not only its first process (13 October 2026).
+
+    The same arguments, results and exceptions as ``subprocess.run``: a
+    ``CompletedProcess``, ``subprocess.TimeoutExpired`` carrying what was
+    printed before the limit, ``CalledProcessError`` with ``check=True``,
+    and ``OSError`` when the command cannot start. The difference is that
+    the command runs in a new session, so on a timeout its whole process
+    group (a background server, a worker, a ``sleep``) is sent SIGTERM, then
+    SIGKILL after ``grace`` seconds. GuardKit's own group is never signalled.
+    """
+    if capture_output:
+        if stdout is not None or stderr is not None:
+            raise ValueError("stdout and stderr may not be used with capture_output")
+        stdout = stderr = subprocess.PIPE
+    if input is not None and stdin is None:
+        stdin = subprocess.PIPE
+    proc = subprocess.Popen(
+        args if shell or isinstance(args, str) else list(args),
+        shell=shell,
+        cwd=str(cwd) if cwd is not None else None,
+        env=dict(env) if env is not None else None,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        text=text or None,
+        encoding=encoding,
+        errors=errors,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(input=input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _end_group(proc, grace)
+        try:
+            out, err = proc.communicate(timeout=_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            # Something left the group and still holds the output open.
+            proc.kill()
+            try:
+                out, err = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:  # pragma: no cover
+                out, err = None, None
+        raise subprocess.TimeoutExpired(args, timeout, output=out, stderr=err)
+    except BaseException:
+        _end_group(proc, 0.0)
+        proc.wait()
+        raise
+    if check and proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, args, output=out, stderr=err)
+    return subprocess.CompletedProcess(args, proc.returncode, out, err)

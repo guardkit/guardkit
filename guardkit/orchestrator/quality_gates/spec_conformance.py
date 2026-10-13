@@ -44,6 +44,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from typing_extensions import Annotated
 
+from guardkit.orchestrator import process_group
+
 logger = logging.getLogger(__name__)
 
 # Tail length (characters) retained from an assert_command's combined output
@@ -458,7 +460,7 @@ def _evaluate_assert_command(
 
     try:
         env = main_checkout_environment(Path(subject_root))
-        completed = subprocess.run(
+        completed = process_group.run_project_command(
             rule.command,
             shell=True,
             cwd=str(subject_root),

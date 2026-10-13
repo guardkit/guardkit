@@ -28,6 +28,7 @@ from typing import Callable, List, Optional, Sequence
 
 from guardkit.orchestrator.qa_stages.errors import MutationError
 from guardkit.orchestrator.qa_stages.sandbox import MutationSandbox
+from guardkit.orchestrator import process_group
 
 
 # --------------------------------------------------------------------------- #
@@ -81,7 +82,7 @@ def make_pytest_runner(
             env = main_checkout_environment(
                 Path(work_folder) if work_folder is not None else Path(sandbox_root)
             )
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 argv,
                 cwd=str(sandbox_root),
                 capture_output=True,

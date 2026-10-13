@@ -51,6 +51,7 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     classify_absent_for_stack,
     detect_stack_profile,
 )
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +392,7 @@ def run_completion_verification(
         # ``env=`` is EXPLICIT so the resolution rule is visible where the
         # command runs: worktree/repo cwd + the daemon PATH, on which node
         # resolves ONLY via the D.0 symlink fence. Never source nvm here.
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             command,
             shell=True,
             cwd=cwd,
