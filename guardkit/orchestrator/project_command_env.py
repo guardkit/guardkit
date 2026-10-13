@@ -9,31 +9,38 @@ GuardKit's own process holds the factory's credentials (Forge hands it
 others). A project's install or test command is the build's code: honest but
 fallible, and it has no business seeing any of them. So the environment such a
 command runs with is not a copy of GuardKit's with things removed; it is built
-from an empty dictionary, and it holds exactly:
+from an empty dictionary, in five steps, each working on the one before:
 
-* ``PATH`` from GuardKit's own environment, with ``path_first`` in front;
-* ``HOME`` and ``TMPDIR`` set to private folders
-  ``<scratch>/toolchain/HOME`` and ``<scratch>/toolchain/TMPDIR``, where
-  ``<scratch>`` is the work folder's scratch folder in its git directory
-  (``paths.prepare_builder_scratch_dir``), outside the project;
-* ``LANG``, ``LC_ALL`` and ``LC_*``, when set;
-* ``HTTP_PROXY``, ``HTTPS_PROXY``, ``NO_PROXY`` and ``ALL_PROXY``, upper and
-  lower case, when set and when the value carries no ``user:password@`` part
-  (a value that does refuses the command; the value is never quoted);
-* the project's declared ``launch.settings`` names, when set;
-* the project's declared ``launch.scratch`` folders;
-* ``named``: values the factory itself sets for this one command. A
-  credential-shaped name there, or ``GUARDKIT_RUN_OWNER``, is a programming
-  error and raises;
-* last, ``GUARDKIT_RUN_OWNER`` exactly as GuardKit's own environment has it:
-  set when the parent has it, absent when it does not, whatever the caller
-  or the project's declarations added. It is a build id, not a secret:
-  Forge's stop sweep finds a cancelled build's leftover processes by reading
-  it from ``/proc/<pid>/environ``, so only the authoritative parent value
-  may ever reach a project command.
+1. **The base:** ``PATH`` from GuardKit's own environment with ``path_first``
+   in front; ``HOME`` and ``TMPDIR`` set to private folders
+   ``<scratch>/toolchain/HOME`` and ``<scratch>/toolchain/TMPDIR`` in the work
+   folder's scratch folder (``paths.prepare_builder_scratch_dir``, outside
+   the project); ``LANG``, ``LC_ALL`` and ``LC_*`` when set; ``HTTP_PROXY``,
+   ``HTTPS_PROXY``, ``NO_PROXY`` and ``ALL_PROXY`` in upper and lower case
+   when set; the declared ``launch.settings`` names when set; and the
+   declared ``launch.scratch`` folders.
+2. **Additions:** values the factory itself sets for this one command. A
+   credential-shaped name, or ``GUARDKIT_RUN_OWNER``, is a programming error
+   and raises ``ValueError``.
+3. **Overlay:** values the project wrote in its own files. A name the
+   project could not declare (``declared_setting_refusal``: reserved
+   prefixes such as ``GUARDKIT_``, the factory's own names, credential-shaped
+   names), a ``launch.scratch`` name, or a name an addition set is refused
+   with ``LaunchEnvironmentError``.
+4. **The proxy check, on everything composed so far:** a proxy setting (any
+   case of ``HTTP_PROXY``, ``HTTPS_PROXY``, ``ALL_PROXY``, ``FTP_PROXY`` or
+   ``NO_PROXY``) that carries a user name or password refuses the command,
+   whether it was copied by default, declared, added or overlaid. The
+   sentence names the setting and never its value.
+5. **The run-owner marker, last:** ``GUARDKIT_RUN_OWNER`` is set from
+   GuardKit's own environment when it has one and removed when it does not.
+   It is a build id, not a secret: Forge's stop sweep finds a cancelled
+   build's leftover processes by reading it from ``/proc/<pid>/environ``, so
+   only the authoritative parent value may reach a project command.
 
-Nothing else. Anything else a project needs, it declares in
-``launch.settings``. Nothing here names a stack.
+Steps 2 to 5 are :func:`finish_project_environment`, for a caller that builds
+its own base. Nothing else is passed. Anything else a project needs, it
+declares in ``launch.settings``. Nothing here names a stack.
 """
 
 from __future__ import annotations
@@ -50,25 +57,33 @@ from guardkit.orchestrator.launch_declaration import (
     LaunchEnvironmentError,
     _private_directory,
     apply_launch_environment,
+    declared_setting_refusal,
 )
 
 __all__ = [
     "PROXY_NAMES",
     "RUN_OWNER_NAME",
+    "finish_project_environment",
     "project_command_environment",
 ]
 
-#: The marker Forge's stop sweep reads; passed through when GuardKit has it.
+#: The marker Forge's stop sweep reads; only ever taken from the parent.
 RUN_OWNER_NAME = "GUARDKIT_RUN_OWNER"
 
+#: Proxy settings copied into the base when set (step 1).
 PROXY_NAMES: Tuple[str, ...] = tuple(
     name
     for base in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY")
     for name in (base, base.lower())
 )
 
+#: Proxy settings checked for credentials on the composed environment (step 4).
+_CHECKED_PROXY_NAMES = frozenset(
+    {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "NO_PROXY"}
+)
 
-def _named_refusal(name: object) -> Optional[str]:
+
+def _addition_refusal(name: object) -> Optional[str]:
     """Why a factory-set name may not be passed, or ``None``."""
     if not isinstance(name, str) or not DECLARED_NAME_PATTERN.fullmatch(name):
         return f"{name!r} is not the shape of a setting name"
@@ -84,11 +99,72 @@ def _named_refusal(name: object) -> Optional[str]:
     return None
 
 
+def finish_project_environment(
+    env: Dict[str, str],
+    *,
+    additions: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
+    overlay: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
+    scratch_names: Sequence[str] = (),
+) -> Dict[str, str]:
+    """Steps 2 to 5 on a base the caller built: additions, overlay, the proxy
+    check, and the run-owner marker last.
+
+    ``scratch_names`` are the declared ``launch.scratch`` names, which an
+    overlay may not replace.
+
+    Raises ``ValueError`` for a refused addition (a programming error) and
+    :class:`LaunchEnvironmentError` for a refused overlay or a proxy that
+    carries credentials. No sentence quotes a setting's value.
+    """
+    for name in additions:
+        refusal = _addition_refusal(name)
+        if refusal is not None:
+            raise ValueError(
+                f"a factory-set value for a project command was refused: {refusal}"
+            )
+    result = dict(env)
+    result.update({name: str(value) for name, value in additions.items()})
+
+    scratch = {str(name) for name in scratch_names}
+    for name in overlay:
+        refusal = declared_setting_refusal(name)
+        if refusal is None and name in scratch:
+            refusal = f"{name!r} is one of the project's declared scratch folders"
+        if refusal is None and name in additions:
+            refusal = f"{name!r} is set by the factory for this command"
+        if refusal is not None:
+            raise LaunchEnvironmentError(
+                f"a setting the project wrote for this command was refused, so "
+                f"the command was not run: {refusal}"
+            )
+    result.update({name: str(value) for name, value in overlay.items()})
+
+    carrying = sorted(
+        name
+        for name, value in result.items()
+        if name.upper() in _CHECKED_PROXY_NAMES and "@" in str(value)
+    )
+    if carrying:
+        raise LaunchEnvironmentError(
+            f"the proxy setting {', '.join(carrying)} carries a user name or "
+            f"password, so it is not passed to the project's commands and they "
+            f"were not run"
+        )
+
+    for name in [key for key in result if key.upper() == RUN_OWNER_NAME]:
+        del result[name]
+    owner = os.environ.get(RUN_OWNER_NAME)
+    if owner is not None:
+        result[RUN_OWNER_NAME] = owner
+    return result
+
+
 def project_command_environment(
     work_folder: Path,
     declaration: Optional[LaunchDeclaration],
     *,
-    named: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
+    additions: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
+    overlay: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
     path_first: Sequence[str] = (),
 ) -> Dict[str, str]:
     """The whole environment for one project command run in ``work_folder``.
@@ -96,23 +172,23 @@ def project_command_environment(
     Raises
     ------
     LaunchEnvironmentError
-        When no scratch folder can be made for ``work_folder``, a proxy
-        setting carries a user name or password, or the declared launch
-        folders cannot be prepared. It is an ``OSError``, so a caller that
-        already treats "the command could not start" as the command's failure
-        treats this the same way, with this plain sentence. No sentence
-        quotes a setting's value.
+        When no scratch folder can be made for ``work_folder``, the declared
+        launch folders cannot be prepared, an overlay name is refused, or a
+        proxy setting carries a user name or password. It is an ``OSError``,
+        so a caller that already treats "the command could not start" as the
+        command's failure treats this the same way, with this plain sentence.
     ValueError
-        When ``named`` holds a credential-shaped or malformed name: that is
-        a programming error in the caller, not a project problem.
+        When ``additions`` holds a refused name: a programming error in the
+        caller, not a project problem.
     """
-    for name in named:
-        refusal = _named_refusal(name)
+    for name in additions:
+        refusal = _addition_refusal(name)
         if refusal is not None:
             raise ValueError(
                 f"a factory-set value for a project command was refused: {refusal}"
             )
 
+    # Step 1: the base, from an empty dictionary.
     source = os.environ
     env: Dict[str, str] = {}
     path_parts = [str(p) for p in path_first if str(p)]
@@ -125,15 +201,8 @@ def project_command_environment(
             env[name] = value
     for name in PROXY_NAMES:
         value = source.get(name)
-        if value is None:
-            continue
-        if "@" in value:
-            raise LaunchEnvironmentError(
-                f"the proxy setting {name} carries a user name or password, so "
-                f"it is not passed to the project's commands and they were "
-                f"not run"
-            )
-        env[name] = value
+        if value is not None:
+            env[name] = value
 
     from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
@@ -151,13 +220,12 @@ def project_command_environment(
     # process's environment is added (the copy-everything branch is only
     # taken for ``env=None``).
     result = apply_launch_environment(env, declaration, Path(work_folder))
-    final = dict(result if result is not None else env)
-    final.update({name: str(value) for name, value in named.items()})
-    # Applied last, from the parent only: set when the parent has it, absent
-    # when it does not, whatever was added above.
-    for name in [key for key in final if key.upper() == RUN_OWNER_NAME]:
-        del final[name]
-    owner = source.get(RUN_OWNER_NAME)
-    if owner is not None:
-        final[RUN_OWNER_NAME] = owner
-    return final
+    composed = dict(result if result is not None else env)
+
+    # Steps 2 to 5.
+    return finish_project_environment(
+        composed,
+        additions=additions,
+        overlay=overlay,
+        scratch_names=declaration.scratch if declaration is not None else (),
+    )

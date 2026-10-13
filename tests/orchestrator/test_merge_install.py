@@ -760,7 +760,7 @@ class TestNoFactoryCredentials:
         folder = standin.join_folder()
 
         env = project_command_environment(
-            folder, None, named={"GUARDKIT_FEATURE_ID": "FEAT-I"}
+            folder, None, additions={"GUARDKIT_FEATURE_ID": "FEAT-I"}
         )
         assert env["GUARDKIT_FEATURE_ID"] == "FEAT-I"
         for value in SENTINELS.values():
@@ -768,7 +768,7 @@ class TestNoFactoryCredentials:
 
         for bad in ("SERVICE_TOKEN", "DB_PASSWORD", "OPENAI_API_KEY", "x y"):
             with pytest.raises(ValueError):
-                project_command_environment(folder, None, named={bad: "v"})
+                project_command_environment(folder, None, additions={bad: "v"})
 
     def test_an_addition_may_not_set_the_run_owner(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
@@ -783,7 +783,7 @@ class TestNoFactoryCredentials:
 
         for name in ("GUARDKIT_RUN_OWNER", "guardkit_run_owner"):
             with pytest.raises(ValueError):
-                project_command_environment(folder, None, named={name: "build-forged"})
+                project_command_environment(folder, None, additions={name: "build-forged"})
         env = project_command_environment(folder, None)
         assert env["GUARDKIT_RUN_OWNER"] == "build-x"
 
@@ -799,7 +799,7 @@ class TestNoFactoryCredentials:
         folder = standin.join_folder()
 
         env = project_command_environment(
-            folder, None, named={"GUARDKIT_FEATURE_ID": "FEAT-I"}
+            folder, None, additions={"GUARDKIT_FEATURE_ID": "FEAT-I"}
         )
         assert "GUARDKIT_RUN_OWNER" not in env
         assert not any(key.upper() == "GUARDKIT_RUN_OWNER" for key in env)
@@ -818,6 +818,189 @@ class TestNoFactoryCredentials:
         assert "SENTINEL-proxy-7f3a" not in _report_text(report)
         assert standin.ran() == set()
 
+
+
+PROXY_SENTINEL = "SENTINEL-proxy-9c1e"
+CREDENTIAL_PROXY = f"http://u:{PROXY_SENTINEL}@proxy.invalid:3128"
+
+
+class TestTheProxyCheckCoversTheWholeEnvironment:
+    """The credential-bearing-proxy check runs on the composed environment."""
+
+    @pytest.mark.parametrize(
+        "name", ["HTTPS_PROXY", "https_proxy", "FTP_PROXY", "ftp_proxy"]
+    )
+    def test_a_declared_proxy_with_credentials_is_refused_by_name_only(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, name: str
+    ):
+        monkeypatch.setenv(name, CREDENTIAL_PROXY)
+        standin.init(
+            config=config_text(
+                launch=(
+                    "launch:\n  scratch: [STANDIN_CACHE]\n"
+                    f"  settings: [STANDIN_SETTING, {name}]\n"
+                )
+            )
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert report.verify_ran is False
+        assert name in report.verify_detail
+        text = _report_text(report)
+        assert PROXY_SENTINEL not in text
+        assert "u:" not in report.verify_detail
+        assert standin.ran() == set()
+
+    def test_a_declared_proxy_without_credentials_passes(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("FTP_PROXY", "http://proxy.invalid:3128")
+        standin.init(
+            config=config_text(
+                launch=(
+                    "launch:\n  scratch: [STANDIN_CACHE]\n"
+                    "  settings: [STANDIN_SETTING, FTP_PROXY]\n"
+                )
+            )
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert standin.env_file("check.env").get("FTP_PROXY") == (
+            "http://proxy.invalid:3128"
+        )
+
+    @pytest.mark.parametrize("where", ["additions", "overlay"])
+    @pytest.mark.parametrize("name", ["HTTPS_PROXY", "https_proxy", "all_proxy"])
+    def test_an_added_proxy_with_credentials_is_refused_by_name_only(
+        self, standin: Standin, where: str, name: str
+    ):
+        from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        standin.init()
+        folder = standin.join_folder()
+
+        with pytest.raises(LaunchEnvironmentError) as caught:
+            project_command_environment(folder, None, **{where: {name: CREDENTIAL_PROXY}})
+        assert name in str(caught.value)
+        assert PROXY_SENTINEL not in str(caught.value)
+
+    def test_an_added_proxy_without_credentials_passes(self, standin: Standin):
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        standin.init()
+        folder = standin.join_folder()
+
+        env = project_command_environment(
+            folder, None, additions={"HTTPS_PROXY": "http://proxy.invalid:3128"}
+        )
+        assert env["HTTPS_PROXY"] == "http://proxy.invalid:3128"
+
+
+class TestTheBuildOrder:
+    """Base, additions, overlay, proxy check, run-owner marker last."""
+
+    def test_an_overlay_value_arrives(self, standin: Standin):
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        standin.init()
+        folder = standin.join_folder()
+
+        env = project_command_environment(
+            folder, None, overlay={"APP_MODE": "test"}
+        )
+        assert env["APP_MODE"] == "test"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["GUARDKIT_RUN_OWNER", "SERVICE_TOKEN", "DB_PASSWORD", "OPENAI_API_KEY", "PATH"],
+    )
+    def test_an_overlay_may_not_set_a_reserved_or_credential_name(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, name: str
+    ):
+        from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        monkeypatch.setenv("GUARDKIT_RUN_OWNER", "build-x")
+        standin.init()
+        folder = standin.join_folder()
+
+        with pytest.raises(LaunchEnvironmentError) as caught:
+            project_command_environment(folder, None, overlay={name: "v-overlay"})
+        assert name in str(caught.value)
+
+    def test_an_overlay_may_not_replace_an_addition_or_a_scratch_folder(
+        self, standin: Standin
+    ):
+        from guardkit.orchestrator.launch_declaration import (
+            LaunchDeclaration,
+            LaunchEnvironmentError,
+        )
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        standin.init()
+        folder = standin.join_folder()
+        declaration = LaunchDeclaration(scratch=("STANDIN_CACHE",))
+
+        with pytest.raises(LaunchEnvironmentError):
+            project_command_environment(
+                folder,
+                declaration,
+                additions={"GIT_CEILING_DIRECTORIES": "/a"},
+                overlay={"GIT_CEILING_DIRECTORIES": "/b"},
+            )
+        with pytest.raises(LaunchEnvironmentError):
+            project_command_environment(
+                folder, declaration, overlay={"STANDIN_CACHE": "/elsewhere"}
+            )
+
+    def test_an_addition_may_not_be_credential_shaped(self, standin: Standin):
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        standin.init()
+        folder = standin.join_folder()
+
+        for bad in ("GUARDKIT_RUN_OWNER", "SERVICE_TOKEN", "API_SECRET"):
+            with pytest.raises(ValueError):
+                project_command_environment(folder, None, additions={bad: "v"})
+
+    def test_the_run_owner_is_applied_last_from_the_parent(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator.project_command_env import (
+            finish_project_environment,
+        )
+
+        monkeypatch.setenv("GUARDKIT_RUN_OWNER", "build-x")
+        finished = finish_project_environment(
+            {"PATH": "/bin", "GUARDKIT_RUN_OWNER": "left-behind"},
+            additions={"GIT_CEILING_DIRECTORIES": "/a"},
+            overlay={"APP_MODE": "test"},
+        )
+        assert finished["GUARDKIT_RUN_OWNER"] == "build-x"
+        assert finished["APP_MODE"] == "test"
+
+        monkeypatch.delenv("GUARDKIT_RUN_OWNER")
+        finished = finish_project_environment(
+            {"PATH": "/bin", "GUARDKIT_RUN_OWNER": "left-behind"}
+        )
+        assert "GUARDKIT_RUN_OWNER" not in finished
 
 # ---------------------------------------------------------------------------
 # 19-20: the merge reads declarations fail-closed
