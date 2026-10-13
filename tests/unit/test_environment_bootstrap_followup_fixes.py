@@ -207,6 +207,63 @@ class TestRecordedFailureInsideTheCooldown:
 
 
 # =========================================================================
+# 1a. Entries are keyed by the listed path, not a link's target
+# =========================================================================
+
+
+def _aliased_repo(tmp_path: Path) -> Path:
+    """Two web requirements files linking to one shared file in the worktree."""
+    root = _node_root(tmp_path)
+    web = root / "apps" / "web"
+    web.mkdir(parents=True)
+    (root / ".deps").mkdir()
+    (root / ".deps" / "shared.txt").write_text("flask\n", "utf-8")
+    (web / "requirements.txt").symlink_to("../../.deps/shared.txt")
+    (web / "requirements-dev.txt").symlink_to("../../.deps/shared.txt")
+    _declare(root, {"web": {"cwd": "apps/web", "test": "npm test"}})
+    return root
+
+
+class TestLinkedDependencyFiles:
+    def test_removing_one_of_two_linked_files_reruns(self, tmp_path):
+        root = _aliased_repo(tmp_path)
+        first, _ = _bootstrap(root)
+        assert first.success is True
+        (root / "apps" / "web" / "requirements.txt").unlink()
+        result, mock_run = _bootstrap(root)
+        assert _ran(mock_run, _ROOT_INSTALL) == 1
+        assert result.skipped is False
+
+    def test_renaming_a_linked_file_reruns(self, tmp_path):
+        root = _aliased_repo(tmp_path)
+        first, _ = _bootstrap(root)
+        assert first.success is True
+        web = root / "apps" / "web"
+        (web / "requirements-dev.txt").rename(web / "requirements-test.txt")
+        result, mock_run = _bootstrap(root)
+        assert _ran(mock_run, _ROOT_INSTALL) == 1
+        assert result.skipped is False
+
+    def test_a_linked_lockfile_is_keyed_by_its_listed_path(self, tmp_path):
+        """Moving which listed file is the link (same contents, same target)
+        still changes the key: the entry is the listed path, not the target."""
+        root = _node_root(tmp_path)
+        web = root / "apps" / "web"
+        web.mkdir(parents=True)
+        (root / ".deps").mkdir()
+        (root / ".deps" / "lock.json").write_text('{"lockfileVersion":3}\n', "utf-8")
+        (web / "package-lock.json").symlink_to("../../.deps/lock.json")
+        _declare(root, {"web": {"cwd": "apps/web", "test": "npm test"}})
+        first, _ = _bootstrap(root)
+        assert first.success is True
+        (web / "package-lock.json").unlink()
+        (web / "pnpm-lock.yaml").symlink_to("../../.deps/lock.json")
+        result, mock_run = _bootstrap(root)
+        assert _ran(mock_run, _ROOT_INSTALL) == 1
+        assert result.skipped is False
+
+
+# =========================================================================
 # 1a. One shared dependency-file check
 # =========================================================================
 

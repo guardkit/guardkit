@@ -2137,7 +2137,9 @@ class EnvironmentBootstrapper:
                     digest = "unreadable"
                 entries[str(manifest.path)] = digest
                 continue
-            self._hash_declared_file(None, manifest.path, entries)
+            self._hash_declared_file(
+                None, manifest.path, self._listed_path(manifest.path), entries
+            )
             for owner, rel_dir in manifest.declared_inputs:
                 try:
                     directory = resolve_component_cwd(root, rel_dir)
@@ -2158,7 +2160,10 @@ class EnvironmentBootstrapper:
                     ) from exc
                 for name in names:
                     if dependency_file_stack(name) is not None:
-                        self._hash_declared_file(owner, directory / name, entries)
+                        listed = name if rel_dir == "." else f"{rel_dir}/{name}"
+                        self._hash_declared_file(
+                            owner, directory / name, listed, entries
+                        )
 
         hasher = hashlib.sha256()
         hasher.update(b"declared-install-inputs/1\n")
@@ -2169,13 +2174,29 @@ class EnvironmentBootstrapper:
         hasher.update(f"root\0{root.resolve()}\n".encode("utf-8"))
         return hasher.hexdigest()
 
+    def _listed_path(self, path: Path) -> str:
+        """*path* relative to the worktree as listed (links not followed)."""
+        for base in (Path(self._root), Path(self._root).resolve()):
+            try:
+                return Path(path).relative_to(base).as_posix()
+            except ValueError:
+                continue
+        return str(path)  # outside the worktree: refused when it is hashed
+
     def _hash_declared_file(
-        self, owner: Optional[str], path: Path, entries: Dict[str, str]
+        self,
+        owner: Optional[str],
+        path: Path,
+        listed: str,
+        entries: Dict[str, str],
     ) -> None:
         """Add one declared input file to *entries*, or refuse it.
 
-        The file must resolve inside the worktree and be a regular file that
-        can be read; anything else raises :class:`_DeclaredInputRefused`.
+        The entry is keyed by *listed*, the file's own worktree-relative path,
+        so two links to one target stay two entries and removing or renaming
+        either changes the key. The target is resolved only for the checks:
+        it must lie inside the worktree and be a regular file that can be
+        read; anything else raises :class:`_DeclaredInputRefused`.
         """
         root = Path(self._root).resolve()
         try:
@@ -2197,7 +2218,7 @@ class EnvironmentBootstrapper:
                 f"{_input_owner(owner)}: {rel.as_posix()} cannot be read ({exc}), "
                 "so the declared install's inputs are unknown."
             ) from exc
-        entries[rel.as_posix()] = hashlib.sha256(data).hexdigest()
+        entries[listed] = hashlib.sha256(data).hexdigest()
 
     def _recorded_failure_result(
         self,
