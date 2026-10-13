@@ -5028,7 +5028,9 @@ class AutoBuildOrchestrator:
         changed = list(report.get("files_modified", []) or []) + list(
             report.get("files_created", []) or []
         )
-        manifests_changed = changed_dependency_manifests(changed)
+        manifests_changed = changed_dependency_manifests(
+            changed, Path(worktree.path)
+        )
         if not manifests_changed:
             return None
 

@@ -157,6 +157,29 @@ _SNAPSHOT_SUBDIR = "toolchain"
 _SNAPSHOT_FILE = "toolchain.json"
 
 
+class ToolchainDeclarationError(ValueError):
+    """A declaration problem that must stop the build, raised only on request.
+
+    :func:`load_toolchain_declaration` raises it when called with
+    ``strict=True`` and either the declaration file exists but cannot be read,
+    or a ``components.<name>.cwd`` is refused by the schema (a ``..`` segment,
+    an absolute path, a ``~``). Every other malformed block keeps the loud
+    log-and-ignore. ``component`` and ``cwd`` name the offending entry when
+    there is one; ``cwd`` is the value as written.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        component: Optional[str] = None,
+        cwd: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.component = component
+        self.cwd = cwd
+
+
 class ToolchainRuntime(BaseModel):
     """Declared runtime version pins (``runtime: {node: "v24.15.0"}``).
 
@@ -413,24 +436,54 @@ def parse_toolchain_block(raw: Any) -> ToolchainDeclaration:
         ) from exc
 
 
-def load_toolchain_declaration(repo_root: Path) -> Optional[ToolchainDeclaration]:
+def load_toolchain_declaration(
+    repo_root: Path, *, strict: bool = False
+) -> Optional[ToolchainDeclaration]:
     """Read the ``toolchain:`` block from ``<repo_root>/.guardkit/config.yaml``.
 
-    Never raises. Returns ``None`` when the file is absent, unreadable, not a
-    mapping, or carries no ``toolchain`` key — i.e. every repo that has not
-    opted in behaves exactly as it did before this module existed.
+    Without ``strict`` it never raises. Returns ``None`` when the file is
+    absent, unreadable, not a mapping, or carries no ``toolchain`` key — i.e.
+    every repo that has not opted in behaves exactly as it did before this
+    module existed.
 
     A MALFORMED block is logged at ERROR (the loud-degrade lesson: a typo must
     never be mistaken for "the tool ignored me") and degrades to ``None``, so
     a schema mistake in an opt-in feature cannot crash an existing build. The
     schema itself still raises for direct callers of
     :func:`parse_toolchain_block`.
+
+    ``strict=True`` (the environment detector asks for it) raises
+    :class:`ToolchainDeclarationError` in exactly two cases, so that neither
+    silently falls back to guessing the install: the file exists but cannot be
+    read or decoded, or a ``components.<name>.cwd`` is refused by the schema.
+    A missing file still means "not declared", and a file that is not valid
+    YAML, or any other malformed block, keeps the log-and-ignore above.
     """
     config_path = Path(repo_root) / CONFIG_RELATIVE_PATH
-    if not config_path.exists():
-        return None
+    if strict:
+        # Look the file up and read it in one step, so only genuine absence
+        # means "not declared". ``exists()`` itself raises when the
+        # ``.guardkit`` directory cannot be searched; that, and any other
+        # access or I/O failure, is a declaration that cannot be trusted.
+        try:
+            text = config_path.read_text(encoding="utf-8")
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ToolchainDeclarationError(
+                f"The toolchain declaration {config_path} cannot be looked up "
+                f"or read ({exc}), so the declared install cannot be trusted."
+            ) from exc
+    else:
+        if not config_path.exists():
+            return None
+        try:
+            text = config_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Failed to read %s: %s", config_path, exc)
+            return None
     try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001 — a broken config never crashes a build
         logger.warning("Failed to read %s: %s", config_path, exc)
         return None
@@ -442,6 +495,8 @@ def load_toolchain_declaration(repo_root: Path) -> Optional[ToolchainDeclaration
     try:
         declaration = parse_toolchain_block(raw)
     except ValueError as exc:
+        if strict:
+            _raise_for_refused_component_cwd(exc.__cause__, config_path)
         logger.error(
             "MALFORMED `toolchain:` block in %s — the declaration will NOT be "
             "used for this repo until it is fixed, and command detection falls "
@@ -458,6 +513,29 @@ def load_toolchain_declaration(repo_root: Path) -> Optional[ToolchainDeclaration
         return None
     _warn_about_unconsumed_component_installs(declaration, config_path)
     return declaration
+
+
+def _raise_for_refused_component_cwd(cause: Any, config_path: Path) -> None:
+    """Raise :class:`ToolchainDeclarationError` for a refused component ``cwd``.
+
+    Looks only at schema errors located at ``components.<name>.cwd``; any
+    other validation error returns quietly so the caller logs and ignores it.
+    """
+    if not isinstance(cause, ValidationError):
+        return
+    for error in cause.errors():
+        loc = error.get("loc", ())
+        if len(loc) == 3 and loc[0] == "components" and loc[2] == "cwd":
+            component = str(loc[1])
+            written = error.get("input")
+            raise ToolchainDeclarationError(
+                f"Component {component!r} in {config_path} declares cwd "
+                f"{written!r}, which is refused: {error.get('msg')}. The "
+                "build stops rather than guess the install without the "
+                "declaration.",
+                component=component,
+                cwd=written if isinstance(written, str) else None,
+            )
 
 
 def _warn_about_unconsumed_component_installs(
@@ -619,6 +697,7 @@ __all__ = [
     "TOOLCHAIN_KEY",
     "ComponentToolchain",
     "ToolchainDeclaration",
+    "ToolchainDeclarationError",
     "ToolchainRuntime",
     "resolve_component_cwd",
     "parse_toolchain_block",

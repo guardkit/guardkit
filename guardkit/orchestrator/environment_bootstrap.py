@@ -33,6 +33,7 @@ Example:
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -40,13 +41,14 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence
 
 from guardkit.orchestrator.launch_declaration import (
     apply_main_checkout_launch_environment,
@@ -259,6 +261,17 @@ class DetectedManifest:
     # 300s — too tight for ``npm ci`` on a real app, which is why a repo can
     # now say so.
     install_timeout: Optional[int] = None
+    # ---- the declared install's inputs (follow-up fixes, 2026-10-13) -----
+    # Set by detection on a DECLARED manifest only; empty everywhere else, so
+    # repos without a declared install are unchanged. ``declared_inputs`` are
+    # the directories whose dependency files the cache key reads, as
+    # ``(component name or None for the root, worktree-relative POSIX dir)``:
+    # the root, each declared component ``cwd`` and every directory strictly
+    # between. ``served_dirs`` are the directories this install serves when
+    # deciding whether its failure blocks a per-turn refresh: all of those,
+    # except a component directory that got its own inferred install.
+    declared_inputs: tuple[tuple[Optional[str], str], ...] = ()
+    served_dirs: frozenset[str] = frozenset()
 
     # ---- Completeness detection ----------------------------------------
 
@@ -590,6 +603,44 @@ class BootstrapResult:
     non_relevant_failures: int = 0
     skipped_stacks: List[str] = field(default_factory=list)
     failure_details: List[BootstrapFailureDetail] = field(default_factory=list)
+    # A plain sentence when a declared install's input was refused before
+    # anything ran: a directory or file that escapes the worktree, or one that
+    # cannot be listed or read. ``success`` is then False and nothing was
+    # installed. Callers that build a feature treat it as a stopping error.
+    refused: Optional[str] = None
+
+
+class _DeclaredInputRefused(Exception):
+    """A declared install input escapes the worktree or cannot be read."""
+
+
+def _input_owner(component: Optional[str]) -> str:
+    """Name what a declared input belongs to, for a refusal sentence."""
+    if component is None:
+        return "Declared install input at the repository root"
+    return f"Declared install input for component {component!r}"
+
+
+def _declared_install_serves(
+    manifest: "DetectedManifest", changed_paths: Sequence[str]
+) -> bool:
+    """True when a DECLARED install serves one of the changed paths.
+
+    A changed path counts when it is the declaration file itself or sits
+    directly in a directory the install serves (``served_dirs``, set by
+    detection). Inferred manifests never match: they keep the stack rule.
+    """
+    if not manifest.declared:
+        return False
+    from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
+
+    declaration = CONFIG_RELATIVE_PATH.as_posix()
+    for rel in changed_paths:
+        if rel == declaration:
+            return True
+        if (rel.rpartition("/")[0] or ".") in manifest.served_dirs:
+            return True
+    return False
 
 
 # ============================================================================
@@ -1199,6 +1250,14 @@ class ProjectEnvironmentDetector:
             (default) auto-loads it from ``<root>/.guardkit/config.yaml``. When
             it carries an ``install`` command, that command BEATS manifest
             inference at the root directory — see :meth:`_scan_directory`.
+
+        Raises
+        ------
+        ToolchainDeclarationError
+            When auto-loading, if ``.guardkit/config.yaml`` exists but cannot
+            be read, or a component ``cwd`` is refused (``..`` or absolute).
+            Either would otherwise drop the declaration silently and fall back
+            to guessing the install.
         """
         self._root = root
         self._exclude_patterns: List[str] = (
@@ -1213,7 +1272,7 @@ class ProjectEnvironmentDetector:
                 load_toolchain_declaration,
             )
 
-            toolchain = load_toolchain_declaration(root)
+            toolchain = load_toolchain_declaration(root, strict=True)
         self._toolchain: Optional["ToolchainDeclaration"] = toolchain
         # Frozen as a tuple so ``self._python_extras`` is hashable / can't
         # be mutated by callers after construction.
@@ -1231,8 +1290,16 @@ class ProjectEnvironmentDetector:
             lock files suppress non-lock manifests for the same pair.
         """
         results: List[DetectedManifest] = []
+        inferred_dirs: set[str] = set()
         for directory in self._scan_dirs():
-            results.extend(self._scan_directory(directory))
+            found = self._scan_directory(directory)
+            if found and directory != self._root:
+                inferred_dirs.add(directory.relative_to(self._root).as_posix())
+            results.extend(found)
+        results = [
+            self._with_declared_inputs(m, inferred_dirs) if m.declared else m
+            for m in results
+        ]
         logger.debug(
             "ProjectEnvironmentDetector found %d manifest(s) in %s",
             len(results),
@@ -1356,6 +1423,40 @@ class ProjectEnvironmentDetector:
             install_cwd=directory,
             install_timeout=self._toolchain.install_timeout,
         )
+
+    def _with_declared_inputs(
+        self, manifest: DetectedManifest, inferred_dirs: set[str]
+    ) -> DetectedManifest:
+        """Attach the declared install's input and served directories.
+
+        Every directory comes from the declaration: the root, each component
+        ``cwd``, and each directory strictly between the root and a ``cwd``
+        (``packages/ui/lib`` adds ``packages`` and ``packages/ui``). No file is
+        read here; the bootstrapper reads and hashes them. A component
+        directory that got its own inferred install in this run (only possible
+        one level down) is served by that install, not by the declared one.
+        """
+        inputs: List[tuple[Optional[str], str]] = [(None, ".")]
+        component_dirs: set[str] = set()
+        components = (self._toolchain.components if self._toolchain else None) or {}
+        for name in sorted(components):
+            cwd = components[name].cwd
+            component_dirs.add(cwd)
+            parts = [] if cwd == "." else cwd.split("/")
+            for depth in range(1, len(parts) + 1):
+                inputs.append((name, "/".join(parts[:depth])))
+        unique: List[tuple[Optional[str], str]] = []
+        seen: set[str] = set()
+        for owner, rel_dir in inputs:
+            if rel_dir not in seen:
+                seen.add(rel_dir)
+                unique.append((owner, rel_dir))
+        served = frozenset(
+            rel_dir
+            for _owner, rel_dir in unique
+            if not (rel_dir in component_dirs and rel_dir in inferred_dirs)
+        )
+        return replace(manifest, declared_inputs=tuple(unique), served_dirs=served)
 
     def _scan_directory(self, directory: Path) -> List[DetectedManifest]:
         """
@@ -1659,6 +1760,7 @@ class EnvironmentBootstrapper:
         self,
         manifests: List[DetectedManifest],
         relevant_stacks: Optional[List[str]] = None,
+        changed_paths: Optional[Sequence[str]] = None,
     ) -> BootstrapResult:
         """
         Install dependencies for the given manifests.
@@ -1678,6 +1780,12 @@ class EnvironmentBootstrapper:
             ``BootstrapResult.non_relevant_failures`` rather than
             ``installs_failed``, so they do not affect ``success``.
             Defaults to None (all stacks are treated as essential).
+        changed_paths : Optional[Sequence[str]], optional
+            Worktree-relative POSIX paths of the dependency files a turn
+            changed (the per-turn refresh passes them). A DECLARED install is
+            also essential when one of them is the declaration file or sits
+            directly in a directory that install serves, whatever its stack
+            label. Defaults to None (today's stack rule only).
 
         Returns
         -------
@@ -1699,20 +1807,53 @@ class EnvironmentBootstrapper:
         stacks_detected = sorted(set(m.stack for m in manifests))
         manifests_found = [str(m.path) for m in manifests]
 
-        # Hash-based deduplication with outcome awareness
-        content_hash = self._compute_hash(manifests)
-        if self._should_skip(content_hash):
-            logger.debug(
-                "Bootstrap skipped: hash %s matches saved state", content_hash[:8]
+        def _essential(manifest: DetectedManifest) -> bool:
+            if relevant_stacks is None or manifest.stack in relevant_stacks:
+                return True
+            return changed_paths is not None and _declared_install_serves(
+                manifest, changed_paths
             )
-            saved = self._load_state()
+
+        # Hash-based deduplication with outcome awareness. A declared
+        # install's input that escapes the worktree or cannot be read is a
+        # refusal: nothing runs, and the saved state is left as it was.
+        try:
+            content_hash = self._compute_hash(manifests)
+        except _DeclaredInputRefused as exc:
+            logger.error("Bootstrap refused: %s", exc)
             return BootstrapResult(
-                success=True,
-                skipped=True,
+                success=False,
+                skipped=False,
                 stacks_detected=stacks_detected,
                 manifests_found=manifests_found,
-                venv_python=self._resolve_skip_venv_python(saved),
+                error=str(exc),
+                refused=str(exc),
                 duration_seconds=time.monotonic() - start_time,
+            )
+        if self._should_skip(content_hash):
+            saved = self._load_state()
+            if saved.get("success", True):
+                logger.debug(
+                    "Bootstrap skipped: hash %s matches saved state",
+                    content_hash[:8],
+                )
+                return BootstrapResult(
+                    success=True,
+                    skipped=True,
+                    stacks_detected=stacks_detected,
+                    manifests_found=manifests_found,
+                    venv_python=self._resolve_skip_venv_python(saved),
+                    duration_seconds=time.monotonic() - start_time,
+                )
+            # A recorded failure inside the retry cooldown: run nothing and
+            # return that failure, never a success.
+            return self._recorded_failure_result(
+                saved,
+                manifests,
+                _essential,
+                stacks_detected,
+                manifests_found,
+                time.monotonic() - start_time,
             )
 
         # Recover venv from previous run if available
@@ -1801,9 +1942,7 @@ class EnvironmentBootstrapper:
             )
 
         for manifest in manifests:
-            is_essential = (
-                relevant_stacks is None or manifest.stack in relevant_stacks
-            )
+            is_essential = _essential(manifest)
 
             if manifest.is_project_complete():
                 # Full project install (standard path)
@@ -1901,8 +2040,17 @@ class EnvironmentBootstrapper:
         except Exception as exc:  # noqa: BLE001 — advisory must never block bootstrap
             logger.debug("env-parity probe skipped: %s", exc)
 
-        # Persist state hash with outcome so failed attempts can be retried
-        self._save_state(content_hash, success=overall_success)
+        # Persist state hash with outcome so failed attempts can be retried.
+        # The state records success only when no install failed at all,
+        # essential or not, and names the installs that failed; the returned
+        # result still follows relevance, so a partial refresh passes with a
+        # warning but is never remembered as a success.
+        self._save_state(
+            content_hash,
+            success=not failure_details,
+            installs_attempted=installs_attempted,
+            failed_installs=failure_details,
+        )
 
         return BootstrapResult(
             success=overall_success,
@@ -1935,11 +2083,22 @@ class EnvironmentBootstrapper:
         manifests : List[DetectedManifest]
             Manifests to hash.
 
+        When a manifest is DECLARED (``toolchain.install``), the key is built
+        by :meth:`_compute_declared_hash` instead; repos without a declared
+        install keep exactly this hash.
+
         Returns
         -------
         str
             Hex-encoded SHA-256 digest.
+
+        Raises
+        ------
+        _DeclaredInputRefused
+            A declared install input escapes the worktree or cannot be read.
         """
+        if any(m.declared for m in manifests):
+            return self._compute_declared_hash(manifests)
         hasher = hashlib.sha256()
         for manifest in sorted(manifests, key=lambda m: str(m.path)):
             # Include the path itself so that adding/removing manifests changes
@@ -1952,6 +2111,223 @@ class EnvironmentBootstrapper:
                     "Could not read manifest for hashing (%s): %s", manifest.path, exc
                 )
         return hasher.hexdigest()
+
+    def _compute_declared_hash(self, manifests: List[DetectedManifest]) -> str:
+        """The cache key when the root declares ``toolchain.install``.
+
+        One entry per input: its worktree-relative POSIX path and the SHA-256
+        of its contents, sorted by path. The inputs are the declaration file
+        and, in each directory detection attached (the root, every component
+        ``cwd`` and the directories between), the files directly inside it
+        that the shared dependency-file check recognises. A declared directory
+        that does not exist is an "absent" entry. Nothing is read recursively.
+        Inferred manifests in the same run are hashed as before. The key also
+        records the image identity (``FORGE_IMAGE_IDENTITY``, or "not set")
+        and the resolved worktree root.
+
+        One rule holds for every filesystem call on a declared input: only
+        ``FileNotFoundError`` (or ``NotADirectoryError``, a path component
+        that is a file) means a declared directory is absent. Any other
+        ``OSError`` (permission, symlink loop, I/O) refuses the bootstrap,
+        naming the component and path, and as a backstop no ``OSError`` or
+        ``RuntimeError`` leaves this method as anything but a refusal.
+        """
+        try:
+            return self._declared_hash(manifests)
+        except _DeclaredInputRefused:
+            raise
+        except (OSError, RuntimeError) as exc:
+            raise _DeclaredInputRefused(
+                "The declared install's inputs could not be read safely "
+                f"({type(exc).__name__}: {exc}), so nothing is installed."
+            ) from exc
+
+    def _declared_hash(self, manifests: List[DetectedManifest]) -> str:
+        """Body of :meth:`_compute_declared_hash`."""
+        from guardkit.orchestrator.toolchain_declaration import resolve_component_cwd
+
+        root = Path(self._root)
+        entries: Dict[str, str] = {}
+        for manifest in manifests:
+            if not manifest.declared:
+                try:
+                    digest = hashlib.sha256(manifest.path.read_bytes()).hexdigest()
+                except OSError as exc:
+                    logger.warning(
+                        "Could not read manifest for hashing (%s): %s",
+                        manifest.path,
+                        exc,
+                    )
+                    digest = "unreadable"
+                entries[str(manifest.path)] = digest
+                continue
+            self._hash_declared_file(
+                None, manifest.path, self._listed_path(manifest.path), entries
+            )
+            for owner, rel_dir in manifest.declared_inputs:
+                try:
+                    directory = resolve_component_cwd(root, rel_dir)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    # RuntimeError: a symlink loop (Python 3.12 ``resolve``).
+                    raise _DeclaredInputRefused(
+                        f"{_input_owner(owner)}: directory {rel_dir!r} is refused: {exc}"
+                    ) from exc
+                # ``lstat`` rather than ``lexists``: ``lexists`` reads every
+                # OSError, an unsearchable parent included, as absence.
+                try:
+                    os.lstat(directory)
+                except (FileNotFoundError, NotADirectoryError):
+                    entries[f"{rel_dir}/"] = "absent"
+                    continue
+                except OSError as exc:
+                    raise _DeclaredInputRefused(
+                        f"{_input_owner(owner)}: directory {rel_dir!r} cannot be "
+                        f"looked up ({exc}), so the declared install's inputs "
+                        "are unknown."
+                    ) from exc
+                try:
+                    names = sorted(os.listdir(directory))
+                except OSError as exc:
+                    raise _DeclaredInputRefused(
+                        f"{_input_owner(owner)}: directory {rel_dir!r} cannot be "
+                        f"listed ({exc}), so the declared install's inputs are unknown."
+                    ) from exc
+                for name in names:
+                    if dependency_file_stack(name) is not None:
+                        listed = name if rel_dir == "." else f"{rel_dir}/{name}"
+                        self._hash_declared_file(
+                            owner, directory / name, listed, entries
+                        )
+
+        hasher = hashlib.sha256()
+        hasher.update(b"declared-install-inputs/1\n")
+        for key in sorted(entries):
+            hasher.update(f"{key}\0{entries[key]}\n".encode("utf-8"))
+        identity = os.environ.get("FORGE_IMAGE_IDENTITY") or "not set"
+        hasher.update(f"image\0{identity}\n".encode("utf-8"))
+        hasher.update(f"root\0{root.resolve()}\n".encode("utf-8"))
+        return hasher.hexdigest()
+
+    def _listed_path(self, path: Path) -> str:
+        """*path* relative to the worktree as listed (links not followed)."""
+        for base in (Path(self._root), Path(self._root).resolve()):
+            try:
+                return Path(path).relative_to(base).as_posix()
+            except ValueError:
+                continue
+        return str(path)  # outside the worktree: refused when it is hashed
+
+    def _hash_declared_file(
+        self,
+        owner: Optional[str],
+        path: Path,
+        listed: str,
+        entries: Dict[str, str],
+    ) -> None:
+        """Add one declared input file to *entries*, or refuse it.
+
+        The entry is keyed by *listed*, the file's own worktree-relative path,
+        so two links to one target stay two entries and removing or renaming
+        either changes the key. The target is resolved only for the checks:
+        it must lie inside the worktree and be a regular file that can be
+        read; anything else raises :class:`_DeclaredInputRefused`.
+        """
+        try:
+            root = Path(self._root).resolve()
+            resolved = Path(path).resolve()
+        except (OSError, RuntimeError) as exc:  # RuntimeError: a symlink loop
+            raise _DeclaredInputRefused(
+                f"{_input_owner(owner)}: {listed} cannot be resolved ({exc}), "
+                "so it is not read."
+            ) from exc
+        if not resolved.is_relative_to(root):
+            raise _DeclaredInputRefused(
+                f"{_input_owner(owner)}: {listed} resolves outside the worktree "
+                f"{root}, so it is not read."
+            )
+        # A listed file is never "absent": any error looking it up or reading
+        # it (a dangling link included) refuses it.
+        try:
+            is_regular = stat.S_ISREG(os.stat(resolved).st_mode)
+            data = resolved.read_bytes() if is_regular else b""
+        except OSError as exc:
+            raise _DeclaredInputRefused(
+                f"{_input_owner(owner)}: {listed} cannot be read ({exc}), "
+                "so the declared install's inputs are unknown."
+            ) from exc
+        if not is_regular:
+            raise _DeclaredInputRefused(
+                f"{_input_owner(owner)}: {listed} is not a regular file."
+            )
+        entries[listed] = hashlib.sha256(data).hexdigest()
+
+    def _recorded_failure_result(
+        self,
+        saved: Dict[str, object],
+        manifests: List[DetectedManifest],
+        essential: Callable[[DetectedManifest], bool],
+        stacks_detected: List[str],
+        manifests_found: List[str],
+        duration: float,
+    ) -> BootstrapResult:
+        """Return a failure recorded inside the retry cooldown, running nothing.
+
+        Each recorded failed install goes through the same essential-or-not
+        rule as a fresh failure, so a full bootstrap fails and a per-turn
+        refresh fails only when a failed install serves what changed. A state
+        written before failed installs were recorded counts as one essential
+        failure.
+        """
+        by_path = {str(m.path): m for m in manifests}
+        recorded = saved.get("failed_installs")
+        details: List[BootstrapFailureDetail] = []
+        for item in recorded if isinstance(recorded, list) else []:
+            if not isinstance(item, dict):
+                continue
+            manifest = by_path.get(str(item.get("manifest_path")))
+            details.append(
+                BootstrapFailureDetail(
+                    stack=str(item.get("stack", "")),
+                    manifest_path=str(item.get("manifest_path", "")),
+                    stderr_excerpt=str(item.get("stderr_excerpt", "")),
+                    is_pep668=bool(item.get("is_pep668", False)),
+                    requires_python=item.get("requires_python"),
+                    essential=manifest is None or essential(manifest),
+                )
+            )
+        installs_failed = sum(1 for d in details if d.essential) if details else 1
+        non_relevant = sum(1 for d in details if not d.essential)
+        attempted = saved.get("installs_attempted")
+        installs_attempted = max(
+            attempted if isinstance(attempted, int) else 0,
+            installs_failed + non_relevant,
+        )
+        success = installs_failed == 0
+        logger.warning(
+            "Bootstrap not retried: the previous install with these inputs "
+            "failed %d install(s) within the %ds retry cooldown",
+            installs_failed + non_relevant,
+            self._retry_cooldown_seconds,
+        )
+        return BootstrapResult(
+            success=success,
+            skipped=True,
+            stacks_detected=stacks_detected,
+            manifests_found=manifests_found,
+            installs_attempted=installs_attempted,
+            installs_failed=installs_failed,
+            error=(
+                None
+                if success
+                else f"{installs_failed}/{installs_attempted} install(s) failed "
+                "(recorded failure, not retried within the cooldown)"
+            ),
+            duration_seconds=duration,
+            venv_python=self._resolve_skip_venv_python(saved),
+            non_relevant_failures=non_relevant,
+            skipped_stacks=sorted({d.stack for d in details if not d.essential}),
+            failure_details=details,
+        )
 
     def _should_skip(self, content_hash: str) -> bool:
         """
@@ -2100,7 +2476,13 @@ class EnvironmentBootstrapper:
             logger.warning("Could not load bootstrap state from %s: %s", self._state_file, exc)
         return {}
 
-    def _save_state(self, content_hash: str, success: bool) -> None:
+    def _save_state(
+        self,
+        content_hash: str,
+        success: bool,
+        installs_attempted: int = 0,
+        failed_installs: Sequence[BootstrapFailureDetail] = (),
+    ) -> None:
         """
         Persist the content hash, outcome, and timestamp to the state file.
 
@@ -2110,12 +2492,30 @@ class EnvironmentBootstrapper:
             Hex-encoded SHA-256 digest to save.
         success : bool
             True if the install succeeded, False if it failed.
+        installs_attempted : int, optional
+            Install commands run, recorded so a failure returned inside the
+            retry cooldown reports the same counts.
+        failed_installs : Sequence[BootstrapFailureDetail], optional
+            The installs that failed, by the manifest they came from, with
+            their recorded errors.
         """
         state: Dict[str, object] = {
             "content_hash": content_hash,
             "success": success,
             "timestamp": datetime.now().isoformat(),
         }
+        if not success:
+            state["installs_attempted"] = installs_attempted
+            state["failed_installs"] = [
+                {
+                    "manifest_path": d.manifest_path,
+                    "stack": d.stack,
+                    "stderr_excerpt": d.stderr_excerpt,
+                    "is_pep668": d.is_pep668,
+                    "requires_python": d.requires_python,
+                }
+                for d in failed_installs
+            ]
         if self._venv_python:
             state["venv_python"] = str(self._venv_python)
         try:
@@ -2983,30 +3383,13 @@ def _example_version_from_specifier(specifier: str) -> Optional[str]:
 # idempotent bootstrap (the content-hash dedup re-runs because the manifest
 # changed, and the eager-venv path reuses the existing ``<root>/.venv``).
 
-# Basename set of dependency manifests whose modification within a wave
-# warrants a venv refresh. ``requirements*.txt`` is matched separately by
-# ``_REQUIREMENTS_RE`` because its name is not fixed.
-_DEPENDENCY_MANIFEST_NAMES = frozenset(
-    {
-        "pyproject.toml",
-        "uv.lock",
-        "poetry.lock",
-        "package.json",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "go.mod",
-        "go.sum",
-        "Cargo.toml",
-        "Cargo.lock",
-        "pubspec.yaml",
-        "pubspec.lock",
-    }
-)
-
-# Matches requirements.txt / requirements-dev.txt / requirements/base.txt etc.
-_REQUIREMENTS_RE = re.compile(r"requirements[\w.-]*\.txt$")
-
+# THE SHARED DEPENDENCY-FILE CHECK (follow-up fixes, 2026-10-13). One list
+# used by the per-turn refresh trigger, the stack scoping below and the
+# declared install's cache key. It holds every name or pattern detection
+# (``ProjectEnvironmentDetector``) reads, plus the lockfiles detection does not
+# need but an install does read (``go.sum``, ``Cargo.lock``, ...); a guard test
+# keeps detection's names inside it.
+#
 # Basename → stack for scoping the per-turn refresh (relevant_stacks). A turn
 # that edits only pyproject.toml must not be BLOCKED by a co-resident stack
 # whose toolchain is absent on the build host (observed: study-tutor
@@ -3027,6 +3410,81 @@ _MANIFEST_STACK_BY_BASENAME = {
     "pubspec.yaml": "flutter",
     "pubspec.lock": "flutter",
 }
+
+# Names that are not fixed, matched by pattern: detection's .NET project and
+# solution files.
+_DEPENDENCY_FILE_GLOBS: tuple[tuple[str, str], ...] = (
+    ("*.csproj", "dotnet"),
+    ("*.sln", "dotnet"),
+)
+
+# Basename set of dependency manifests whose modification within a wave
+# warrants a venv refresh. ``requirements*.txt`` is matched separately by
+# ``_REQUIREMENTS_RE`` and the .NET files by ``_DEPENDENCY_FILE_GLOBS``,
+# because their names are not fixed.
+_DEPENDENCY_MANIFEST_NAMES = frozenset(_MANIFEST_STACK_BY_BASENAME)
+
+# Matches requirements.txt / requirements-dev.txt / requirements/base.txt etc.
+_REQUIREMENTS_RE = re.compile(r"requirements[\w.-]*\.txt$")
+
+
+def dependency_file_stack(name: str) -> Optional[str]:
+    """Return the stack a dependency file belongs to, or ``None``.
+
+    The one shared check: *name* is a basename. ``None`` means the file is
+    not a dependency file the factory recognises.
+    """
+    stack = _MANIFEST_STACK_BY_BASENAME.get(name)
+    if stack is not None:
+        return stack
+    if _REQUIREMENTS_RE.search(name):
+        return "python"
+    for pattern, glob_stack in _DEPENDENCY_FILE_GLOBS:
+        if fnmatch.fnmatchcase(name, pattern):
+            return glob_stack
+    return None
+
+
+def _strip_repo_prefix(raw: str) -> str:
+    """Strip a repo-qualified prefix (``<repo>:<path>``) from a changed path.
+
+    Introduced by the cross-repo evidence loop, where the token before the
+    first ``:`` is a repo name with no path separator (not a Windows drive —
+    autobuild is POSIX). Ordinary paths are returned untouched.
+    """
+    path_part = str(raw)
+    head, sep, tail = path_part.partition(":")
+    if sep and tail and "/" not in head and "\\" not in head:
+        return tail
+    return path_part
+
+
+def _worktree_relative_path(
+    raw: str, worktree_root: Optional[Path]
+) -> Optional[str]:
+    """A changed path as a worktree-relative POSIX path, or ``None``.
+
+    The repo prefix is stripped first. An absolute path is made relative to
+    *worktree_root* (as given, or resolved); without a root, or outside it,
+    the result is ``None``. A relative path is normalised (``./`` dropped);
+    one that climbs out with ``..`` is ``None``.
+    """
+    path_part = _strip_repo_prefix(raw)
+    candidate = Path(path_part)
+    if candidate.is_absolute():
+        if worktree_root is None:
+            return None
+        root = Path(worktree_root)
+        for base in (root, root.resolve()):
+            try:
+                return candidate.relative_to(base).as_posix()
+            except ValueError:
+                continue
+        return None
+    parts = [p for p in path_part.replace("\\", "/").split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return None
+    return "/".join(parts)
 
 
 def stacks_for_changed_manifests(changed_paths: Iterable[str]) -> List[str]:
@@ -3050,31 +3508,65 @@ def stacks_for_changed_manifests(changed_paths: Iterable[str]) -> List[str]:
     """
     stacks: List[str] = []
     for raw in changed_dependency_manifests(changed_paths):
-        path_part = str(raw)
-        head, sep, tail = path_part.partition(":")
-        if sep and tail and "/" not in head and "\\" not in head:
-            path_part = tail
-        name = Path(path_part).name
-        stack = _MANIFEST_STACK_BY_BASENAME.get(name)
-        if stack is None and _REQUIREMENTS_RE.search(name):
-            stack = "python"
+        stack = dependency_file_stack(Path(_strip_repo_prefix(raw)).name)
         if stack is not None and stack not in stacks:
             stacks.append(stack)
     return stacks
 
 
-def changed_dependency_manifests(changed_paths: Iterable[str]) -> List[str]:
+def _declares_install(worktree_root: Path) -> bool:
+    """True when the worktree's declaration now declares ``toolchain.install``.
+
+    The same test the detector uses to decide an install is declared, read
+    cheaply from the file as it is after the turn. A file that exists but
+    cannot be read counts as declared, so the refresh runs and the strict
+    loader reports it; invalid YAML does not, as the loader ignores it.
+    """
+    from guardkit.orchestrator.toolchain_declaration import (
+        CONFIG_RELATIVE_PATH,
+        TOOLCHAIN_KEY,
+    )
+
+    config_path = Path(worktree_root) / CONFIG_RELATIVE_PATH
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except (OSError, UnicodeDecodeError):
+        return True
+    try:
+        import yaml
+
+        data = yaml.safe_load(text)
+    except Exception:  # noqa: BLE001 - invalid YAML is ignored, as the loader does
+        return False
+    block = data.get(TOOLCHAIN_KEY) if isinstance(data, dict) else None
+    return isinstance(block, dict) and bool(block.get("install"))
+
+
+def changed_dependency_manifests(
+    changed_paths: Iterable[str], worktree_root: Optional[Path] = None
+) -> List[str]:
     """
     Return the subset of ``changed_paths`` that are dependency manifests.
 
     Matching is on the path *basename* so it is robust to repo-relative,
     worktree-relative, absolute, or repo-qualified (``repo:path``) strings as
     they appear in a Player report's ``files_modified`` / ``files_created``.
+    The toolchain declaration (``.guardkit/config.yaml``) also matches, by its
+    path relative to the worktree rather than its bare name, because changing
+    it can change the install. It matches only when *worktree_root* is given
+    and the file, as it is now, declares ``toolchain.install``, so repos
+    without a declared install are unchanged. A turn that removes the whole
+    declared install is picked up by the next full bootstrap, not here.
 
     Parameters
     ----------
     changed_paths : Iterable[str]
         File path strings reported as changed this turn.
+    worktree_root : Optional[Path], optional
+        The worktree. Needed to match the declaration file at all (its
+        content decides), and to recognise an absolute path to it.
 
     Returns
     -------
@@ -3083,21 +3575,25 @@ def changed_dependency_manifests(changed_paths: Iterable[str]) -> List[str]:
         and order-preserving. Empty when no manifest changed (the caller treats
         an empty result as "no refresh needed").
     """
+    from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
+
+    declaration = CONFIG_RELATIVE_PATH.as_posix()
+    declared: Optional[bool] = None  # read the declaration at most once
     matched: List[str] = []
     seen: set[str] = set()
     for raw in changed_paths:
         if not raw or raw in seen:
             continue
-        path_part = str(raw)
-        # Strip a repo-qualified prefix (``<repo>:<path>``) introduced by the
-        # cross-repo evidence loop, where the token before the first ``:`` is a
-        # repo name with no path separator (not a Windows drive — autobuild is
-        # POSIX). Leave ordinary paths untouched.
-        head, sep, tail = path_part.partition(":")
-        if sep and tail and "/" not in head and "\\" not in head:
-            path_part = tail
-        name = Path(path_part).name
-        if name in _DEPENDENCY_MANIFEST_NAMES or _REQUIREMENTS_RE.search(name):
+        name = Path(_strip_repo_prefix(raw)).name
+        is_declaration = False
+        if (
+            worktree_root is not None
+            and _worktree_relative_path(raw, worktree_root) == declaration
+        ):
+            if declared is None:
+                declared = _declares_install(worktree_root)
+            is_declaration = declared
+        if dependency_file_stack(name) is not None or is_declaration:
             matched.append(raw)
             seen.add(raw)
     return matched
@@ -3124,6 +3620,11 @@ def refresh_environment_for_changes(
     state, and the eager-venv path reuses the existing ``<root>/.venv`` so the
     interpreter path is stable across the refresh.
 
+    The changed dependency files (and the declaration, if it changed) are
+    passed to the bootstrap as worktree-relative paths, so a declared root
+    install whose failure would leave those files uninstalled blocks the
+    refresh whatever its stack label.
+
     Parameters
     ----------
     worktree_root : Path
@@ -3147,10 +3648,12 @@ def refresh_environment_for_changes(
         for surfacing ``result.success is False`` as actionable feedback rather
         than swallowing it into a silent pass
         (``absence-of-failure-is-not-success``). ``bootstrap`` may also raise
-        :class:`UvSourcesRequireUvError` / :class:`BootstrapEnvironmentLeakError`;
-        those propagate to the caller for the same reason.
+        :class:`UvSourcesRequireUvError` / :class:`BootstrapEnvironmentLeakError`,
+        and detection may raise ``ToolchainDeclarationError``; those propagate
+        to the caller for the same reason.
     """
-    if not changed_dependency_manifests(changed_paths):
+    changed = changed_dependency_manifests(changed_paths, worktree_root)
+    if not changed:
         return None
 
     detector = ProjectEnvironmentDetector(
@@ -3161,7 +3664,19 @@ def refresh_environment_for_changes(
         return None
 
     bootstrapper = EnvironmentBootstrapper(worktree_root)
-    return bootstrapper.bootstrap(manifests, relevant_stacks=relevant_stacks)
+    if not any(m.declared for m in manifests):
+        # Only a declared install uses the changed paths; leave the call for
+        # every other repo exactly as it was.
+        return bootstrapper.bootstrap(manifests, relevant_stacks=relevant_stacks)
+    return bootstrapper.bootstrap(
+        manifests,
+        relevant_stacks=relevant_stacks,
+        changed_paths=[
+            rel
+            for rel in (_worktree_relative_path(p, worktree_root) for p in changed)
+            if rel is not None
+        ],
+    )
 
 
 # ============================================================================
@@ -3176,6 +3691,7 @@ __all__ = [
     "ProjectEnvironmentDetector",
     "EnvironmentBootstrapper",
     "changed_dependency_manifests",
+    "dependency_file_stack",
     "stacks_for_changed_manifests",
     "refresh_environment_for_changes",
     "RequiresPythonMismatch",

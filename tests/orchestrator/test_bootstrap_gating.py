@@ -983,3 +983,294 @@ def test_replay_feat_j004_702c_preflight_blocks_before_wave1(tmp_path: Path) -> 
     assert "uv python install" in msg
     # Smart default flipped the mode to block during resolution.
     assert orchestrator.bootstrap_failure_mode == "block"
+
+
+# ---------------------------------------------------------------------------
+# Follow-up fixes 2026-10-13 (3b): a refused component ``cwd`` stops the build
+# in every failure mode, through the real detector and bootstrapper.
+# ---------------------------------------------------------------------------
+
+
+def _declared_web_worktree(tmp_path: Path, web_cwd: str) -> Path:
+    """A worktree (separate from the orchestrator's repo root) that declares
+    a root install and a ``web`` component at *web_cwd*."""
+    import yaml
+
+    worktree = tmp_path / "worktree"
+    (worktree / "apps" / "web").mkdir(parents=True)
+    (worktree / "package.json").write_text('{"name":"root"}\n', "utf-8")
+    (worktree / "package-lock.json").write_text('{"lockfileVersion":3}\n', "utf-8")
+    (worktree / "apps" / "web" / "package.json").write_text('{"name":"web"}\n', "utf-8")
+    cfg = worktree / ".guardkit"
+    cfg.mkdir()
+    (cfg / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "toolchain": {
+                    "install": "npm ci",
+                    "components": {"web": {"cwd": web_cwd, "test": "npm test"}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return worktree
+
+
+def _no_installs() -> MagicMock:
+    return MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+@pytest.mark.parametrize("escaping", ["../outside-web", "/srv/outside-web"])
+def test_a_refused_component_cwd_stops_the_bootstrap_in_every_mode(
+    tmp_path: Path, failure_mode, escaping
+) -> None:
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, escaping)
+
+    with patch("subprocess.run", _no_installs()) as run:
+        with pytest.raises(FeatureOrchestrationError) as exc:
+            orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+
+    msg = str(exc.value)
+    assert "'web'" in msg
+    assert escaping in msg
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+def test_a_component_cwd_escaping_through_a_symlink_stops_the_bootstrap(
+    tmp_path: Path,
+) -> None:
+    """The refused-input result (not an exception) stops the build too."""
+    import shutil
+
+    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    outside = tmp_path / "outside-web"
+    outside.mkdir()
+    shutil.rmtree(worktree / "apps" / "web")
+    (worktree / "apps" / "web").symlink_to(outside, target_is_directory=True)
+
+    with patch("subprocess.run", _no_installs()):
+        with pytest.raises(FeatureOrchestrationError) as exc:
+            orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert "'web'" in str(exc.value)
+
+
+def test_a_component_cwd_that_is_a_symlink_loop_stops_the_bootstrap(
+    tmp_path: Path,
+) -> None:
+    """A self-looping symlink as the declared ``cwd`` is refused (named by
+    component and path), not swallowed as a generic error in warning mode."""
+    import shutil
+
+    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    shutil.rmtree(worktree / "apps" / "web")
+    (worktree / "apps" / "web").symlink_to("web")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        with pytest.raises(FeatureOrchestrationError) as exc:
+            orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert "'web'" in str(exc.value)
+    assert "apps/web" in str(exc.value)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+def test_a_valid_component_cwd_bootstraps_as_today(tmp_path: Path) -> None:
+    """Control: a relative ``cwd`` inside the worktree loads and installs."""
+    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+
+    assert result is not None and result.success is True
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+def test_a_refused_component_cwd_stops_phase_1_5_before_wave_1(
+    tmp_path: Path,
+) -> None:
+    """Through the Phase 1.5 call in ``_create_new_worktree``: the build stops
+    before the feature is marked in progress, so no wave runs."""
+    from guardkit.worktrees import Worktree
+
+    orchestrator = _build_orchestrator(tmp_path)  # no mode set: the default
+    worktree_path = _declared_web_worktree(tmp_path, "../outside-web")
+    orchestrator._worktree_manager.create.return_value = Worktree(
+        task_id="FEAT-WEB",
+        branch_name="autobuild/FEAT-WEB",
+        path=worktree_path,
+        base_branch="main",
+    )
+    feature = MagicMock()
+    feature.status = "planned"
+
+    with patch("subprocess.run", _no_installs()), patch.object(
+        orchestrator, "_copy_tasks_to_worktree"
+    ), patch(
+        "guardkit.orchestrator.feature_orchestrator.FeatureLoader.save_feature"
+    ) as save_feature:
+        with pytest.raises(FeatureOrchestrationError) as exc:
+            orchestrator._create_new_worktree(feature, "FEAT-WEB", "main")
+
+    assert "../outside-web" in str(exc.value)
+    save_feature.assert_not_called()
+    assert feature.status == "planned"
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``.guardkit`` cannot be searched, so whether the declaration exists is
+    unknown. That stops the build in every mode instead of escaping as a
+    generic error the bootstrap only warns about."""
+    import os
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can search a mode-000 directory")
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    guardkit_dir = worktree / ".guardkit"
+    guardkit_dir.chmod(0)
+    try:
+        with patch("subprocess.run", _no_installs()) as run:
+            with pytest.raises(FeatureOrchestrationError) as exc:
+                orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    finally:
+        guardkit_dir.chmod(0o755)
+    assert "config.yaml" in str(exc.value)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_missing_declaration_directory_bootstraps_as_today(
+    tmp_path: Path, failure_mode
+) -> None:
+    """Control: no ``.guardkit`` at all means "not declared"; the install is
+    inferred from the lockfile as before."""
+    import shutil
+
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    shutil.rmtree(worktree / ".guardkit")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+
+    assert result is not None and result.success is True
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+# ---------------------------------------------------------------------------
+# Declared inputs: only "not found" means absent; any other filesystem error
+# refuses the bootstrap and stops the build (Codex review R3/R4).
+# ---------------------------------------------------------------------------
+
+
+def _skip_if_root() -> None:
+    import os
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root ignores directory permissions")
+
+
+def _bootstrap_once_then_restrict(
+    tmp_path: Path, failure_mode, worktree: Path, restricted: Path, mode: int
+):
+    """Bootstrap successfully, then restrict *restricted* and bootstrap again.
+
+    Returns the error raised by the second bootstrap, the second run's
+    subprocess mock, and whether the saved state was left unchanged.
+    Permissions are restored before returning.
+    """
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    with patch("subprocess.run", _no_installs()):
+        first = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert first is not None and first.success is True
+    state_file = worktree / ".guardkit" / "bootstrap_state.json"
+    saved = state_file.read_bytes()
+
+    restricted.chmod(mode)
+    try:
+        with patch("subprocess.run", _no_installs()) as run:
+            with pytest.raises(FeatureOrchestrationError) as exc:
+                orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    finally:
+        restricted.chmod(0o755)
+    return exc.value, run, state_file.read_bytes() == saved
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_dependency_link_into_an_unsearchable_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``apps/web/package-lock.json`` links to a file in ``.deps``, which then
+    cannot be searched: the link's target cannot be looked up."""
+    _skip_if_root()
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    deps = worktree / ".deps"
+    deps.mkdir()
+    (deps / "lock.json").write_text('{"lockfileVersion":3}\n', "utf-8")
+    (worktree / "apps" / "web" / "package-lock.json").symlink_to(
+        "../../.deps/lock.json"
+    )
+
+    error, run, state_unchanged = _bootstrap_once_then_restrict(
+        tmp_path, failure_mode, worktree, deps, 0o644
+    )
+
+    assert "'web'" in str(error) and "apps/web/package-lock.json" in str(error)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+    assert state_unchanged
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_an_unsearchable_intermediate_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``packages/ui`` is readable but cannot be searched, so whether the
+    declared ``packages/ui/lib`` exists is unknown; it is not "absent"."""
+    import yaml
+
+    _skip_if_root()
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    lib = worktree / "packages" / "ui" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "package.json").write_text('{"name":"ui-lib"}\n', "utf-8")
+    cfg = worktree / ".guardkit" / "config.yaml"
+    block = yaml.safe_load(cfg.read_text("utf-8"))
+    block["toolchain"]["components"]["ui"] = {"cwd": "packages/ui/lib", "test": "npm test"}
+    cfg.write_text(yaml.safe_dump(block), encoding="utf-8")
+
+    error, run, state_unchanged = _bootstrap_once_then_restrict(
+        tmp_path, failure_mode, worktree, worktree / "packages" / "ui", 0o444
+    )
+
+    assert "'ui'" in str(error) and "packages/ui/lib" in str(error)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+    assert state_unchanged
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_missing_declared_directory_is_still_absent(
+    tmp_path: Path, failure_mode
+) -> None:
+    """Control: a declared ``cwd`` that does not exist is an "absent" entry;
+    the install runs, and creating the directory later reruns it."""
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/not-yet")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert result is not None and result.success is True and result.skipped is False
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+    (worktree / "apps" / "not-yet").mkdir()
+    with patch("subprocess.run", _no_installs()) as run:
+        again = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert again is not None and again.skipped is False
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)

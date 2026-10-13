@@ -654,7 +654,8 @@ class TestQualityGatesReconciliation:
         qg = json.loads(results_path.read_text())["quality_gates"]
         assert qg["all_passed"] is False
         assert qg["tests_passing"] is False
-        assert qg["tests_passed"] == 0
+        # The hung record carries no pass count: unknown, not 0 (fix 3d).
+        assert qg["tests_passed"] is None
         assert qg["coverage_met"] is False
         assert qg.get("reconciled_from_specialist") is True
 
@@ -701,6 +702,78 @@ class TestQualityGatesReconciliation:
         qg = json.loads(results_path.read_text())["quality_gates"]
         assert qg["all_passed"] is True
         assert "reconciled_from_specialist" not in qg
+
+
+class TestRanAndFailedPassCount:
+    """Follow-up fix 3d (13 October 2026): a ran-and-failed phase_4 record's
+    run count is never copied into the pass count, and an unknown pass count
+    stays unknown (``None``) instead of becoming 0. The gate verdict is the
+    same as before the fix in every case."""
+
+    @staticmethod
+    def _verdict(worktree: Path, quality_gates: dict) -> tuple:
+        from guardkit.orchestrator.quality_gates import CoachValidator
+
+        status = CoachValidator(str(worktree)).verify_quality_gates(
+            {"quality_gates": dict(quality_gates), "code_review": {"score": 75}}
+        )
+        return status.tests_passed, status.all_gates_passed
+
+    def _reconcile(
+        self, worktree: Path, invoker: AgentInvoker, phase_4: dict
+    ) -> dict:
+        results_path = _seed_false_green_results(worktree)
+        _seed_specialist_results(worktree, phase_4=phase_4)
+        invoker._inject_specialist_records_into_task_work_results(TASK_ID)
+        return json.loads(results_path.read_text())["quality_gates"]
+
+    @pytest.mark.parametrize(
+        "counts",
+        [
+            {"tests_run": 40, "tests_failed": 3},
+            {"tests_run": 40, "tests_failed": 3, "tests_passed": None},
+            {"tests_run": None, "tests_failed": None},
+            {},
+        ],
+        ids=["run-only", "passed-null", "run-null", "no-counts"],
+    )
+    def test_unknown_pass_count_stays_unknown(
+        self, counts: dict, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        phase_4 = {
+            "status": "failed",
+            "duration_seconds": 9.0,
+            "error": "3 tests failed",
+            **counts,
+        }
+        qg = self._reconcile(worktree, invoker, phase_4)
+
+        assert qg["tests_passed"] is None
+        assert qg["all_passed"] is False
+        assert qg["tests_passing"] is False
+        # Verdict unchanged: the same as with the old run-count copy.
+        old = dict(qg, tests_passed=phase_4.get("tests_run", 0) or 0)
+        assert self._verdict(worktree, qg) == self._verdict(worktree, old)
+        assert self._verdict(worktree, qg) == (False, False)
+
+    def test_known_pass_count_is_copied_from_passed_not_run(
+        self, worktree: Path, invoker: AgentInvoker
+    ) -> None:
+        phase_4 = {
+            "status": "failed",
+            "duration_seconds": 9.0,
+            "error": "3 tests failed",
+            "tests_run": 40,
+            "tests_passed": 37,
+            "tests_failed": 3,
+        }
+        qg = self._reconcile(worktree, invoker, phase_4)
+
+        assert qg["tests_passed"] == 37
+        assert qg["tests_failed"] == 3
+        old = dict(qg, tests_passed=40)
+        assert self._verdict(worktree, qg) == self._verdict(worktree, old)
+        assert self._verdict(worktree, qg) == (False, False)
 
 
 class TestSuccessfulPhase4CountBridge:

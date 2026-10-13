@@ -13092,7 +13092,17 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
             else:
                 qg["all_passed"] = False
                 qg["tests_passing"] = False
-                qg["tests_passed"] = phase_4_block.get("tests_run", 0) or 0
+                # The pass count comes only from a pass count. The run count
+                # is never copied into it, and an unknown count stays
+                # ``None`` rather than becoming 0 (follow-up fix 3d,
+                # 13 October 2026). The verdict is set by the lines above.
+                passed_count = phase_4_block.get("tests_passed")
+                qg["tests_passed"] = (
+                    passed_count
+                    if isinstance(passed_count, int)
+                    and not isinstance(passed_count, bool)
+                    else None
+                )
                 if phase_4_block.get("tests_failed") is not None:
                     qg["tests_failed"] = phase_4_block.get("tests_failed")
                 qg["coverage"] = phase_4_block.get("coverage_pct", qg.get("coverage"))
