@@ -107,6 +107,12 @@ from guardkit.orchestrator.feature_check import (
     OUTCOME_COULD_NOT_RUN as FEATURE_CHECK_COULD_NOT_RUN,
     OUTCOME_FAILED as FEATURE_CHECK_FAILED,
     OUTCOME_PASSED as FEATURE_CHECK_PASSED,
+    FAILURE_KIND_COULD_NOT_START,
+    FAILURE_KIND_EXIT_NONZERO,
+    FAILURE_KIND_MISSING_TWINS,
+    FAILURE_KIND_TIMED_OUT,
+    PUBLIC_LABEL as FEATURE_CHECK_LABEL,
+    output_size as feature_check_output_size,
 )
 
 #: What the central guard says about an example it reports without blocking:
@@ -204,7 +210,10 @@ from guardkit.cli.display import WaveProgressDisplay
 
 # Import instrumentation (TASK-INST-004)
 from guardkit.orchestrator.instrumentation.emitter import NullEmitter
-from guardkit.orchestrator.instrumentation.schemas import WaveCompletedEvent
+from guardkit.orchestrator.instrumentation.schemas import (
+    FeatureCheckAttemptEvent,
+    WaveCompletedEvent,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -3040,17 +3049,27 @@ The detailed specifications are in the task markdown file.
                 attempt_number, declaration, feature, worktree
             )
             attempts.append(attempt)
+            if not attempt.passed and not attempt.could_not_run:
+                # Recorded now, before the budget test, so the last attempt
+                # is recorded too and a repair round never hides a failure.
+                self._record_failed_feature_check_attempt(
+                    feature,
+                    declaration,
+                    attempt,
+                    wave_number,
+                    repair_follows=retries_remaining > 0,
+                )
 
             if attempt.passed:
                 logger.info(
                     "Whole-feature check PASSED on attempt %d: %s",
                     attempt_number,
-                    declaration.command,
+                    FEATURE_CHECK_LABEL,
                 )
                 if not self.quiet:
                     console.print(
                         f"[green]✓ Whole-feature check passed[/green] "
-                        f"({declaration.command})",
+                        f"({FEATURE_CHECK_LABEL})",
                         markup=True,
                     )
                 return self._finish_feature_check(
@@ -3186,6 +3205,7 @@ The detailed specifications are in the task markdown file.
                     f"{len(missing_twins)} scenario(s) marked for a frozen "
                     "twin have no twin file, so the declared check was not run"
                 ),
+                failure_kind=FAILURE_KIND_MISSING_TWINS,
                 twin_coverage=twin_summary,
                 missing_twins=missing_twins,
                 ran_at=datetime.now().isoformat(),
@@ -3203,7 +3223,7 @@ The detailed specifications are in the task markdown file.
             "Running the whole-feature check (attempt %d): %s (cwd=%s, "
             "timeout=%ds)",
             attempt_number,
-            declaration.command,
+            FEATURE_CHECK_LABEL,
             worktree.path,
             declaration.timeout,
         )
@@ -3232,9 +3252,11 @@ The detailed specifications are in the task markdown file.
         # part-way has not finished telling anyone anything. Otherwise the
         # project's own words decide "could not run" — a command that says
         # nothing and exits non-zero is "failed", never "could not run".
+        failure_kind: Optional[str] = None
         if timed_out:
             outcome = FEATURE_CHECK_FAILED
             failure_reason = f"timed out after {declaration.timeout}s"
+            failure_kind = FAILURE_KIND_TIMED_OUT
         elif line.could_not_run:
             outcome = FEATURE_CHECK_COULD_NOT_RUN
             failure_reason = None
@@ -3244,10 +3266,15 @@ The detailed specifications are in the task markdown file.
         elif exit_code is None:
             outcome = FEATURE_CHECK_FAILED
             failure_reason = "the command could not start"
+            failure_kind = FAILURE_KIND_COULD_NOT_START
         else:
             outcome = FEATURE_CHECK_FAILED
             failure_reason = f"exit={exit_code}, expected=0"
+            failure_kind = FAILURE_KIND_EXIT_NONZERO
         passed = outcome == FEATURE_CHECK_PASSED
+        # Sizes only: the per-attempt warning and event publish no output.
+        stdout_bytes, stdout_lines = feature_check_output_size(run["stdout"])
+        stderr_bytes, stderr_lines = feature_check_output_size(run["stderr"])
 
         not_checked = merge_not_checked(reported_not_checked, line.not_checked)
         return FeatureCheckAttempt(
@@ -3281,7 +3308,97 @@ The detailed specifications are in the task markdown file.
             scenarios_covered=(line.scenarios_covered if passed else []),
             run_evidence=dict(run.get("run_evidence") or {}),
             ran_at=datetime.now().isoformat(),
+            failure_kind=failure_kind,
+            stdout_bytes=stdout_bytes,
+            stdout_lines=stdout_lines,
+            stderr_bytes=stderr_bytes,
+            stderr_lines=stderr_lines,
         )
+
+    def _record_failed_feature_check_attempt(
+        self,
+        feature: Feature,
+        declaration: Any,
+        attempt: FeatureCheckAttempt,
+        wave_number: int,
+        repair_follows: bool,
+    ) -> None:
+        """Say at once that one attempt of the whole-feature check failed.
+
+        Build FEAT-1F44 (13 October 2026): a failed attempt was only a
+        console line until the final record was written, so the failure was
+        invisible in the log, in events.jsonl and on disk for 50 minutes while
+        the repair round ran. This leaves a WARNING in the log and one
+        ``FeatureCheckAttemptEvent`` in events.jsonl as soon as it happens.
+
+        Neither carries the declared command or any of its output: both can
+        hold a credential, and both are published beyond the sandbox. The
+        check is named by a fixed label, the failure by a fixed word, and the
+        output by its size. ``declaration`` is accepted for the caller's
+        symmetry; its command is never read here. The full output stays in
+        the final record and the Player's feedback, unchanged.
+
+        Neither half can fail the build.
+        """
+        failure_kind = attempt.failure_kind or (
+            FAILURE_KIND_MISSING_TWINS if attempt.missing_twins
+            else FAILURE_KIND_TIMED_OUT if attempt.timed_out
+            else FAILURE_KIND_COULD_NOT_START if attempt.exit_code is None
+            else FAILURE_KIND_EXIT_NONZERO
+        )
+        try:
+            logger.warning(
+                "Whole-feature check attempt %d failed (%s): "
+                "failure_kind=%s exit_code=%s timed_out=%s "
+                "duration_seconds=%.1f repair_follows=%s "
+                "stdout_bytes=%d stdout_lines=%d "
+                "stderr_bytes=%d stderr_lines=%d",
+                attempt.attempt,
+                FEATURE_CHECK_LABEL,
+                failure_kind,
+                attempt.exit_code,
+                attempt.timed_out,
+                attempt.duration_seconds,
+                repair_follows,
+                attempt.stdout_bytes,
+                attempt.stdout_lines,
+                attempt.stderr_bytes,
+                attempt.stderr_lines,
+            )
+        except Exception:  # noqa: BLE001 — a log line never fails a build
+            pass
+
+        sha = str(attempt.candidate_sha or "")
+        if not re.fullmatch(r"[0-9a-f]{7,64}", sha):
+            sha = "unknown"
+        try:
+            event = FeatureCheckAttemptEvent(
+                run_id=f"run-{feature.id}",
+                feature_id=feature.id,
+                task_id=feature.id,
+                agent_role="router",
+                attempt=attempt.attempt,
+                timestamp=datetime.now().isoformat(),
+                check_attempt=attempt.attempt,
+                failure_kind=failure_kind,
+                exit_code=attempt.exit_code,
+                timed_out=attempt.timed_out,
+                duration_seconds=max(float(attempt.duration_seconds), 0.0),
+                candidate_sha=sha,
+                wave_number=wave_number,
+                repair_follows=repair_follows,
+                stdout_bytes=attempt.stdout_bytes,
+                stdout_lines=attempt.stdout_lines,
+                stderr_bytes=attempt.stderr_bytes,
+                stderr_lines=attempt.stderr_lines,
+            )
+            asyncio.run(self._emitter.emit(event))
+        except Exception as exc:  # noqa: BLE001 — telemetry never fails a build
+            # The exception's type only: a validation message quotes inputs.
+            logger.warning(
+                "Failed to emit the whole-feature check attempt event: %s",
+                type(exc).__name__,
+            )
 
     def _finish_feature_check(
         self,
@@ -3375,7 +3492,7 @@ The detailed specifications are in the task markdown file.
 
         summary = (
             f"the whole-feature check failed ({last_attempt.failure_reason}) "
-            f"after {len(attempts)} attempt(s): {declaration.command}"
+            f"after {len(attempts)} attempt(s): {FEATURE_CHECK_LABEL}"
         )
         if last_attempt.missing_twins:
             summary += (
@@ -3399,7 +3516,7 @@ The detailed specifications are in the task markdown file.
                 timed_out=last_attempt.timed_out,
                 command=(
                     "whole-feature check (toolchain.feature_check): "
-                    f"{declaration.command}"
+                    f"{FEATURE_CHECK_LABEL}"
                 ),
                 timeout=declaration.timeout,
                 after_wave=last.wave_number,
