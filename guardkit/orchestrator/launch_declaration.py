@@ -70,6 +70,7 @@ logger = logging.getLogger(__name__)
 LAUNCH_KEY = "launch"
 SETTINGS_KEY = "settings"
 SCRATCH_KEY = "scratch"
+_READ_KEYS = frozenset({SETTINGS_KEY, SCRATCH_KEY})
 
 # Scratch entries live here, under the worktree's scratch folder.
 SCRATCH_SUBDIR = "toolchain"
@@ -212,12 +213,18 @@ def parse_launch_block(raw: Any) -> LaunchDeclaration:
     return LaunchDeclaration(settings=settings, scratch=scratch)
 
 
-def load_launch_declaration(repo_root: Path) -> Optional[LaunchDeclaration]:
+def load_launch_declaration(
+    repo_root: Path, *, warn_unread_keys: bool = False
+) -> Optional[LaunchDeclaration]:
     """Read ``launch:`` from ``<repo_root>/.guardkit/config.yaml``.
 
     ``None`` when the file or block is absent or declares nothing, and when
     the file itself cannot be read as YAML (the posture of every other reader
     of this file).
+
+    ``warn_unread_keys`` logs one warning naming keys under ``launch:`` that
+    are not read here; only the task-load check passes it, so the warning
+    appears once per task load rather than on every command.
 
     Raises
     ------
@@ -238,8 +245,24 @@ def load_launch_declaration(repo_root: Path) -> Optional[LaunchDeclaration]:
         return None
     if not isinstance(data, dict) or data.get(LAUNCH_KEY) is None:
         return None
+    block = data[LAUNCH_KEY]
+    if warn_unread_keys and isinstance(block, dict):
+        # Not refused: Forge allows other settings in this block. But a typo
+        # such as `scrach:` would otherwise be silently ignored, so say it once
+        # (the task-load read passes this; the per-command reads do not).
+        unread = sorted(str(key) for key in block if key not in _READ_KEYS)
+        if unread:
+            logger.warning(
+                "The `launch:` block in %s has keys GuardKit does not read: %s "
+                "(it reads only `%s` and `%s`). If one is a typo, its names "
+                "are not applied.",
+                config_path,
+                ", ".join(unread),
+                SETTINGS_KEY,
+                SCRATCH_KEY,
+            )
     try:
-        declaration = parse_launch_block(data[LAUNCH_KEY])
+        declaration = parse_launch_block(block)
     except ValueError as exc:
         raise LaunchDeclarationError(
             f"The `launch:` block in {config_path} cannot be used: {exc}. Fix "

@@ -131,6 +131,14 @@ class TestParse:
             with pytest.raises(ValueError, match=why):
                 parse_launch_block({key: [name]})
 
+    def test_a_trailing_newline_is_folded_like_forge(self):
+        # Forge strips names before checking; the pattern itself is matched
+        # whole (fullmatch), so an unstripped newline could never pass.
+        assert parse_launch_block({"scratch": ["GOCACHE\n"]}).scratch == ("GOCACHE",)
+        from guardkit.orchestrator.launch_declaration import DECLARED_NAME_PATTERN
+
+        assert DECLARED_NAME_PATTERN.fullmatch("GOCACHE\n") is None
+
     def test_duplicates_fold_as_forge_folds_them(self):
         block = parse_launch_block(
             {"settings": ["B", "A", "B"], "scratch": ["TOOL_CACHE", "TOOL_CACHE"]}
@@ -225,6 +233,29 @@ class TestLoad:
         with pytest.raises(LaunchDeclarationError, match=reason):
             load_launch_declaration(tmp_path)
 
+    def test_unread_keys_are_named_once_at_task_load_only(self, tmp_path, caplog):
+        _write_config(
+            tmp_path, {"scrach": ["GOCACHE"], "settings": ["B"], "other": 1}
+        )
+
+        with caplog.at_level("WARNING"):
+            assert load_launch_declaration(tmp_path).settings == ("B",)
+        assert "does not read" not in caplog.text  # a per-command read
+
+        with caplog.at_level("WARNING"):
+            declaration = load_launch_declaration(tmp_path, warn_unread_keys=True)
+        warnings = [r for r in caplog.records if "does not read" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "other, scrach" in warnings[0].getMessage()
+        # Warned, not refused.
+        assert declaration.settings == ("B",)
+
+    def test_no_unread_keys_no_warning(self, tmp_path, caplog):
+        _write_config(tmp_path, {"settings": ["B"], "scratch": ["C"]})
+        with caplog.at_level("WARNING"):
+            load_launch_declaration(tmp_path, warn_unread_keys=True)
+        assert "does not read" not in caplog.text
+
     def test_declared_block_is_read(self, tmp_path):
         _write_config(tmp_path, {"scratch": ["TOOL_CACHE"]})
         assert load_launch_declaration(tmp_path).scratch == ("TOOL_CACHE",)
@@ -289,7 +320,9 @@ class TestSnapshot:
 
         source = inspect.getsource(AutoBuildOrchestrator.orchestrate)
         component = source.index("self._resolve_task_component(task_id")
-        checked = source.index("load_launch_declaration(self.repo_root)")
+        checked = source.index(
+            "load_launch_declaration(self.repo_root, warn_unread_keys=True)"
+        )
         setup = source.index("self._setup_phase(task_id")
         toolchain = source.index("self._snapshot_toolchain_declaration(task_id, worktree)")
         pinned = source.index(
