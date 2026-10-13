@@ -1405,6 +1405,16 @@ def _build_code_reviewer_prompt(
             - len(marker)
         )
         if keep < 0:
+            if keep + len(listed_sections) >= 0:
+                # The required context would fit; the criteria and the file
+                # list are what does not. Say so, in numbers only, and fail
+                # closed as before.
+                raise ValueError(
+                    "code-reviewer prompt: the acceptance criteria and file "
+                    f"list ({len(listed_sections)} characters) do not fit the "
+                    f"configured prompt limit ({max_chars} characters, "
+                    f"{SPECIALIST_PROMPT_MAX_CHARS_ENV})"
+                )
             raise ValueError(
                 "code-reviewer prompt budget cannot preserve the canonical root"
             )
@@ -2341,6 +2351,7 @@ async def invoke_code_reviewer(
     )
     phase_4_summary = _read_phase_4_block(specialist_results_path)
     recursion_limit = _CODE_REVIEWER_RECURSION_LIMIT
+    max_tool_result_chars = _CODE_REVIEWER_MAX_TOOL_RESULT_CHARS
     prompt = _build_code_reviewer_prompt(
         task_id=task_id,
         task_context=task_context,
@@ -2386,7 +2397,7 @@ async def invoke_code_reviewer(
         capture_final_message=True,
         # 13 October 2026: the step cap, as the Coach evidence pass passes it.
         recursion_limit=recursion_limit,
-        max_tool_result_chars=_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS,
+        max_tool_result_chars=max_tool_result_chars,
         tool_counter=tool_counter,
     )
     model_run_seconds = time.monotonic() - run_started_at
@@ -2418,6 +2429,10 @@ async def invoke_code_reviewer(
     tool_counts = tool_counter.counts()
     review_record: dict[str, Any] = {
         "ended_by": ended_by,
+        # The bounds in force for this review, so a changed setting shows
+        # in the measurement.
+        "step_cap": recursion_limit,
+        "tool_result_limit": max_tool_result_chars,
         "preparation_seconds": round(preparation_seconds, 3),
         "model_run_seconds": round(model_run_seconds, 3),
         "tool_counts": tool_counts,
@@ -2441,15 +2456,18 @@ async def invoke_code_reviewer(
     _merge_specialist_block(specialist_results_path, "phase_5", phase_5_block)
 
     # One line with the same facts plus the total time, including writing
-    # the record. Tool names and counts only: no arguments, paths, file
-    # names or error text.
+    # the record. Tool names and counts only (names already limited to plain
+    # names by the counter): no arguments, paths, file names or error text.
     logger.info(
         "[%s] code-reviewer review ended ended_by=%s status=%s "
+        "step_cap=%d tool_result_limit=%d "
         "preparation=%.1fs model_run=%.1fs total=%.1fs tool_calls=%d "
         "tools=%s files_reported=%d files_shown=%d file_names_cut=%d",
         task_id,
         ended_by,
         run_result.status,
+        recursion_limit,
+        max_tool_result_chars,
         preparation_seconds,
         model_run_seconds,
         time.monotonic() - started_at,

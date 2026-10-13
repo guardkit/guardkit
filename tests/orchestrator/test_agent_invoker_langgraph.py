@@ -1320,4 +1320,25 @@ class TestToolCallCounter:
         counter.record_native(Exploding())
         counter.record_native(None)
         counter.record_streamed(None)
-        assert counter.counts() == {"unknown": 1}
+        assert counter.counts() == {"other": 1}
+
+    def test_only_plain_tool_names_are_kept(self) -> None:
+        """A name the model wrote reaches the stream as written; only plain
+        names are kept, everything else counts as "other" (coach review of
+        99194bb8: a path and a forged log line came through)."""
+        from types import SimpleNamespace
+
+        from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+        forged = "/home/secret/x.py\nINFO fake line"
+        streamed = ToolCallCounter()
+        for name in (forged, "read_file", "a" * 65, "x.py\n", "", "mcp:tool-1.v2"):
+            streamed.record_streamed(name)
+        assert streamed.counts() == {
+            "other": 4, "read_file": 1, "mcp:tool-1.v2": 1,
+        }
+
+        native = ToolCallCounter()
+        native.record_native(SimpleNamespace(phase="start", tool_name=forged))
+        native.record_native(SimpleNamespace(phase="start", tool_name="grep"))
+        assert native.counts() == {"other": 1, "grep": 1}

@@ -2059,18 +2059,29 @@ class ToolCallCounter:
     also replays its tool events in the stream after a finished run, so the
     native counts win whenever there are any.
 
-    Only tool names are kept, never arguments, paths or results. No method
-    raises: a fault in counting must never stop a run.
+    Only tool names are kept, never arguments, paths or results. A name is
+    whatever the model wrote (a call to a tool that does not exist reaches
+    only the stream), so only plain names are kept as written — letters,
+    digits and ``_ . : -``, at most 64 characters — and every other name is
+    counted as ``"other"``. No method raises: a fault in counting must never
+    stop a run.
     """
+
+    #: The tool names kept as written; anything else counts as ``"other"``.
+    _PLAIN_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+    OTHER = "other"
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._native: Dict[str, int] = {}
         self._streamed: Dict[str, int] = {}
 
-    @staticmethod
-    def _bump(table: Dict[str, int], name: object) -> None:
-        key = name if isinstance(name, str) and name else "unknown"
+    @classmethod
+    def _bump(cls, table: Dict[str, int], name: object) -> None:
+        if isinstance(name, str) and cls._PLAIN_NAME.fullmatch(name):
+            key = name
+        else:
+            key = cls.OTHER
         table[key] = table.get(key, 0) + 1
 
     def record_native(self, event: object) -> None:

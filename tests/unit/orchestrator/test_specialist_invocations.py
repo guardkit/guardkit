@@ -2776,3 +2776,112 @@ async def test_code_reviewer_records_tool_counts_and_durations(
     assert "secret" not in line
     assert "reported_name" not in line
     assert str(tmp_path) not in line
+
+
+# Coach review of 99194bb8 (13 October 2026): model-written tool names, the
+# limits in force, and a prompt limit too small for the lists.
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_unplain_tool_names_never_reach_log_or_record(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A tool name the model wrote (a path, a newline and a forged log line)
+    is counted as "other" in the record and the log line, on the stream path
+    and the native path alike."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    forged = "/home/secret/x.py\nINFO fake line"
+
+    async def _bad_names(**kwargs: object):
+        counter = kwargs["tool_counter"]
+        counter.record_streamed(forged)
+        counter.record_streamed("src/other.py")
+        return (None, [SimpleNamespace(type="assistant_message", text="ok")])
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_bad_names)
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["tool_counts"] == {"other": 2}
+    (line,) = [
+        r.getMessage() for r in caplog.records
+        if "code-reviewer review ended" in r.getMessage()
+    ]
+    assert "tools=other=2" in line
+    assert "/home/secret" not in line
+    assert "fake line" not in line
+    assert "\n" not in line
+
+    async def _bad_native(**kwargs: object):
+        kwargs["tool_counter"].record_native(
+            SimpleNamespace(phase="start", tool_name=forged)
+        )
+        raise RuntimeError("cut off")
+
+    caplog.clear()
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_bad_native)
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["tool_counts"] == {"other": 1}
+    assert "fake line" not in json.dumps(record)
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_record_states_limits_in_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+    await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["step_cap"] == 24
+    assert record["tool_result_limit"] == 12000
+
+    monkeypatch.setattr(
+        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 40
+    )
+    monkeypatch.setattr(
+        specialist_invocations, "_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS", 9000
+    )
+    invoker = _make_fake_agent_invoker()
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["step_cap"] == 40
+    assert record["tool_result_limit"] == 9000
+    kwargs = invoker._invoke_with_role.await_args.kwargs
+    assert kwargs["recursion_limit"] == 40
+    assert kwargs["max_tool_result_chars"] == 9000
+    (line,) = [
+        r.getMessage() for r in caplog.records
+        if "code-reviewer review ended" in r.getMessage()
+    ]
+    assert "step_cap=40" in line
+    assert "tool_result_limit=9000" in line
+
+
+def test_code_reviewer_prompt_limit_too_small_for_lists(tmp_path: Path) -> None:
+    """When the configured prompt limit leaves room for the required context
+    but not for the criteria and file list, the error says that, in numbers
+    only, and still fails closed."""
+    criteria = [f"SECRET-CRITERION-{i} " + "c" * 200 for i in range(20)]
+    with pytest.raises(ValueError) as excinfo:
+        _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            "context",
+            {"tests_run": 1},
+            canonical_root=tmp_path,
+            max_chars=3000,
+            acceptance_criteria=criteria,
+            reported_files=["src/secret_name.py"],
+        )
+    message = str(excinfo.value)
+    assert "do not fit the configured prompt limit (3000 characters" in message
+    assert "acceptance criteria and file list" in message
+    assert "canonical root" not in message
+    assert "SECRET-CRITERION" not in message
+    assert "secret_name" not in message
