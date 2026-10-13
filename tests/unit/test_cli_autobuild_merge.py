@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from guardkit.cli.autobuild import _load_baseline_failing, merge
+from tests.self_contained_python import self_contained_python
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -299,8 +299,11 @@ def red_main_repo(tmp_path: Path, monkeypatch) -> Path:
     (tests / "test_already_red.py").write_text(
         "def test_already_red():\n    assert False\n", encoding="utf-8"
     )
+    # This session's interpreter and packages, independent of the real HOME:
+    # the merge runs the check with a private HOME (13 October 2026).
     _declare_toolchain_test(
-        repo, f'"{sys.executable}" -m pytest -q -p no:cacheprovider tests/'
+        repo,
+        f'"{self_contained_python()}" -m pytest -q -p no:cacheprovider tests/',
     )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "already red on main")

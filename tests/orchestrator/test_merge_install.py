@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ from typing import Dict, Optional
 
 import pytest
 
+from tests.self_contained_python import self_contained_python
 from guardkit.orchestrator.merge_executor import (
     OUTCOME_MERGED,
     OUTCOME_REFUSED,
@@ -416,10 +418,21 @@ class TestAnHonestBaseline:
         assert "measured nothing" in notes
 
     def test_no_install_and_no_launch_block_runs_exactly_as_before(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         """A pytest-shaped project without either block: the red baseline
-        names its failure and the clean branch merges green, as before."""
+        names its failure and the clean branch merges green, as before.
+
+        The design's premise, corrected: an interpreter on PATH that carries
+        its own packages is found, because the merge keeps GuardKit's PATH.
+        One that finds its packages only through the real HOME is not (see
+        the next test); this one is this session's interpreter made
+        independent of HOME (``tests.self_contained_python``).
+        """
+        python = Path(self_contained_python())
+        monkeypatch.setenv(
+            "PATH", f"{python.parent}{os.pathsep}{os.environ.get('PATH', '')}"
+        )
         repo = tmp_path / "repo"
         repo.mkdir()
         _git(repo, "init", "-q", "-b", "main")
@@ -434,7 +447,7 @@ class TestAnHonestBaseline:
             encoding="utf-8",
         )
         (repo / ".guardkit").mkdir()
-        command = f'"{sys.executable}" -m pytest -q -p no:cacheprovider tests/'
+        command = f"{python.name} -m pytest -q -p no:cacheprovider tests/"
         (repo / ".guardkit" / "config.yaml").write_text(
             f"toolchain:\n  test: {json.dumps(command)}\n", encoding="utf-8"
         )
@@ -457,6 +470,62 @@ class TestAnHonestBaseline:
             "tests/test_a.py::test_old_red",
         )
         assert report.verify_command == command
+
+    def test_a_package_only_in_the_real_homes_user_site_is_not_visible(
+        self, standin: Standin, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The private HOME is deliberate: the check cannot read the user's
+        own folders (~/.docker/config.json, ~/.git-credentials, ~/.netrc),
+        and so it cannot use a package found only in the user's site folder
+        either. The result is a plain "could not run" that names nothing
+        from that folder."""
+        home = tmp_path / "real-home"
+        candidates = [sys.executable, getattr(sys, "_base_executable", "")]
+        candidates += [shutil.which("python3") or ""]
+        python = None
+        for candidate in [c for c in candidates if c]:
+            version = subprocess.run(
+                [candidate, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+                capture_output=True, text=True,
+            ).stdout.strip()
+            user_site = home / ".local" / "lib" / f"python{version}" / "site-packages"
+            user_site.mkdir(parents=True, exist_ok=True)
+            (user_site / "standin_only_in_home.py").write_text(
+                "VALUE = 1\n", encoding="utf-8"
+            )
+            control = subprocess.run(
+                [candidate, "-c", "import standin_only_in_home"],
+                env={"PATH": os.environ.get("PATH", ""), "HOME": str(home)},
+                capture_output=True,
+            )
+            if control.returncode == 0:
+                python = candidate
+                break
+        if python is None:
+            pytest.skip("no interpreter here reads a user site folder")
+        # The control above: with the real HOME the package IS importable.
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", SENTINELS["GUARDKIT_NATS_PASSWORD"])
+        check = (
+            "#!/bin/sh\n"
+            f'"{python}" -c "import standin_only_in_home" || exit 1\n'
+            'echo "STANDIN-PASS"\n'
+        )
+        standin.init(
+            config=config_text(install=None, launch=None),
+            files={"scripts/check.sh": check, "deps.txt": ""},
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified", report.verify_detail
+        assert report.verify_ran is False
+        assert "measured nothing" in report.verify_detail
+        text = _report_text(report)
+        assert str(home) not in text
+        assert "standin_only_in_home" not in text
+        assert SENTINELS["GUARDKIT_NATS_PASSWORD"] not in text
 
     @pytest.mark.parametrize("measure", [True, False])
     def test_a_declared_marker_a_passing_check_does_not_print_measured_nothing(
