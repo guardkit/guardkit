@@ -3480,10 +3480,10 @@ def _declares_install(worktree_root: Path) -> bool:
     )
 
     config_path = Path(worktree_root) / CONFIG_RELATIVE_PATH
-    if not config_path.exists():
-        return False
     try:
         text = config_path.read_text(encoding="utf-8")
+    except (FileNotFoundError, NotADirectoryError):
+        return False
     except (OSError, UnicodeDecodeError):
         return True
     try:

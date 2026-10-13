@@ -460,18 +460,28 @@ def load_toolchain_declaration(
     YAML, or any other malformed block, keeps the log-and-ignore above.
     """
     config_path = Path(repo_root) / CONFIG_RELATIVE_PATH
-    if not config_path.exists():
-        return None
-    try:
-        text = config_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        if strict:
+    if strict:
+        # Look the file up and read it in one step, so only genuine absence
+        # means "not declared". ``exists()`` itself raises when the
+        # ``.guardkit`` directory cannot be searched; that, and any other
+        # access or I/O failure, is a declaration that cannot be trusted.
+        try:
+            text = config_path.read_text(encoding="utf-8")
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except (OSError, UnicodeDecodeError) as exc:
             raise ToolchainDeclarationError(
-                f"The toolchain declaration {config_path} exists but cannot be "
-                f"read ({exc}), so the declared install cannot be trusted."
+                f"The toolchain declaration {config_path} cannot be looked up "
+                f"or read ({exc}), so the declared install cannot be trusted."
             ) from exc
-        logger.warning("Failed to read %s: %s", config_path, exc)
-        return None
+    else:
+        if not config_path.exists():
+            return None
+        try:
+            text = config_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Failed to read %s: %s", config_path, exc)
+            return None
     try:
         data = yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001 — a broken config never crashes a build

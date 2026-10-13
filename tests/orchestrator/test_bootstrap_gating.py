@@ -1119,3 +1119,47 @@ def test_a_refused_component_cwd_stops_phase_1_5_before_wave_1(
     assert "../outside-web" in str(exc.value)
     save_feature.assert_not_called()
     assert feature.status == "planned"
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_an_inaccessible_declaration_directory_stops_the_bootstrap(
+    tmp_path: Path, failure_mode
+) -> None:
+    """``.guardkit`` cannot be searched, so whether the declaration exists is
+    unknown. That stops the build in every mode instead of escaping as a
+    generic error the bootstrap only warns about."""
+    import os
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can search a mode-000 directory")
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    guardkit_dir = worktree / ".guardkit"
+    guardkit_dir.chmod(0)
+    try:
+        with patch("subprocess.run", _no_installs()) as run:
+            with pytest.raises(FeatureOrchestrationError) as exc:
+                orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    finally:
+        guardkit_dir.chmod(0o755)
+    assert "config.yaml" in str(exc.value)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
+@pytest.mark.parametrize("failure_mode", ["warn", None], ids=["warn", "default"])
+def test_a_missing_declaration_directory_bootstraps_as_today(
+    tmp_path: Path, failure_mode
+) -> None:
+    """Control: no ``.guardkit`` at all means "not declared"; the install is
+    inferred from the lockfile as before."""
+    import shutil
+
+    orchestrator = _build_orchestrator(tmp_path, failure_mode=failure_mode)
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    shutil.rmtree(worktree / ".guardkit")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        result = orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+
+    assert result is not None and result.success is True
+    assert any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
