@@ -41,6 +41,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     PHASE_4_FAILING_TESTS,
     PHASE_4_FAILING_TESTS_BASIS,
     PHASE_4_FAILING_TESTS_TOTAL,
+    RAN_AND_FAILED,
 )
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
 
@@ -1743,13 +1744,15 @@ def _deterministic_phase_4_block(
         "duration_seconds": duration,
         "error": error[:400],
         "tests_run": tests_run,
-        # 12 October 2026: when no failure count could be read, or the parse
-        # read 0 failures on a non-zero exit (say "Tests 7 passed" and then a
-        # type-check failure), this is the verdict's own minimum of one — a
-        # red run that was not absent failed at least once. It is never the
-        # number of tests run. The failing-test feedback to the Player keys on
-        # it being positive.
-        "tests_failed": tests_failed or 1,
+        # 12 October 2026: exactly what the output said — ``None`` when no
+        # failure count could be read (plain ``go test``), 0 when it read none
+        # (say "Tests 7 passed" and then a type-check step failed). Never a
+        # number made up from the verdict or copied from ``tests_run``.
+        "tests_failed": tests_failed,
+        # The verdict itself, said explicitly: the tests ran and the run
+        # failed. The failing-test feedback to the Player reads this, so it
+        # no longer depends on the count being readable.
+        RAN_AND_FAILED: True,
         # TASK-AB-SKIPVIS01: advisory only — no verdict logic reads it.
         "tests_skipped": tests_skipped,
         # TASK-AB-RESUMEVENV01 (AC-003): forensic evidence only. NOTE: no
