@@ -283,15 +283,42 @@ class TestSharedDependencyFileCheck:
 
 class TestDeclarationChangeRefreshes:
     def test_the_declaration_is_matched_by_its_path_not_its_name(self, tmp_path):
-        assert changed_dependency_manifests([".guardkit/config.yaml"]) == [
-            ".guardkit/config.yaml"
-        ]
-        assert changed_dependency_manifests(["repo:.guardkit/config.yaml"])
-        absolute = str(tmp_path / ".guardkit" / "config.yaml")
-        assert changed_dependency_manifests([absolute], tmp_path) == [absolute]
-        assert changed_dependency_manifests(["config.yaml"]) == []
-        assert changed_dependency_manifests(["app/.guardkit/config.yaml"]) == []
-        assert changed_dependency_manifests(["app/config.yaml"]) == []
+        root = _node_root(tmp_path)
+        _declare(root)
+        decl = ".guardkit/config.yaml"
+        assert changed_dependency_manifests([decl], root) == [decl]
+        assert changed_dependency_manifests([f"repo:{decl}"], root)
+        absolute = str(root / ".guardkit" / "config.yaml")
+        assert changed_dependency_manifests([absolute], root) == [absolute]
+        assert changed_dependency_manifests(["config.yaml"], root) == []
+        assert changed_dependency_manifests(["app/.guardkit/config.yaml"], root) == []
+        assert changed_dependency_manifests(["app/config.yaml"], root) == []
+
+    def test_an_undeclared_repo_ignores_a_declaration_file_edit(self, tmp_path):
+        """No declared install: ``.guardkit/config.yaml`` holds other settings
+        only. After a failed install, a turn that edits only that file
+        behaves as before: no refresh and no failure fed back."""
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        root = _node_root(tmp_path)
+        cfg = root / ".guardkit" / "config.yaml"
+        cfg.parent.mkdir()
+        cfg.write_text(yaml.safe_dump({"autobuild": {"max_turns": 3}}), "utf-8")
+        failed, _ = _bootstrap(root, {_ROOT_INSTALL: 1})
+        assert failed.success is False
+
+        cfg.write_text(yaml.safe_dump({"autobuild": {"max_turns": 5}}), "utf-8")
+        assert changed_dependency_manifests([".guardkit/config.yaml"], root) == []
+        orchestrator = AutoBuildOrchestrator.__new__(AutoBuildOrchestrator)
+        orchestrator._venv_python = None
+        with patch("subprocess.run", side_effect=_fake_run()) as mock_run:
+            feedback = orchestrator._maybe_refresh_venv_for_manifest_change(
+                SimpleNamespace(report={"files_modified": [".guardkit/config.yaml"]}),
+                SimpleNamespace(path=str(root)),
+                1,
+            )
+        assert feedback is None
+        assert mock_run.call_args_list == []
 
     def test_a_turn_that_edits_the_declaration_refreshes(self, tmp_path):
         """Through the real per-turn caller: the builder changed the declared

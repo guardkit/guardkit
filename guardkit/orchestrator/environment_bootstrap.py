@@ -2141,7 +2141,8 @@ class EnvironmentBootstrapper:
             for owner, rel_dir in manifest.declared_inputs:
                 try:
                     directory = resolve_component_cwd(root, rel_dir)
-                except ValueError as exc:
+                except (OSError, RuntimeError, ValueError) as exc:
+                    # RuntimeError: a symlink loop (Python 3.12 ``resolve``).
                     raise _DeclaredInputRefused(
                         f"{_input_owner(owner)}: directory {rel_dir!r} is refused: {exc}"
                     ) from exc
@@ -3444,6 +3445,36 @@ def stacks_for_changed_manifests(changed_paths: Iterable[str]) -> List[str]:
     return stacks
 
 
+def _declares_install(worktree_root: Path) -> bool:
+    """True when the worktree's declaration now declares ``toolchain.install``.
+
+    The same test the detector uses to decide an install is declared, read
+    cheaply from the file as it is after the turn. A file that exists but
+    cannot be read counts as declared, so the refresh runs and the strict
+    loader reports it; invalid YAML does not, as the loader ignores it.
+    """
+    from guardkit.orchestrator.toolchain_declaration import (
+        CONFIG_RELATIVE_PATH,
+        TOOLCHAIN_KEY,
+    )
+
+    config_path = Path(worktree_root) / CONFIG_RELATIVE_PATH
+    if not config_path.exists():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return True
+    try:
+        import yaml
+
+        data = yaml.safe_load(text)
+    except Exception:  # noqa: BLE001 - invalid YAML is ignored, as the loader does
+        return False
+    block = data.get(TOOLCHAIN_KEY) if isinstance(data, dict) else None
+    return isinstance(block, dict) and bool(block.get("install"))
+
+
 def changed_dependency_manifests(
     changed_paths: Iterable[str], worktree_root: Optional[Path] = None
 ) -> List[str]:
@@ -3455,15 +3486,18 @@ def changed_dependency_manifests(
     they appear in a Player report's ``files_modified`` / ``files_created``.
     The toolchain declaration (``.guardkit/config.yaml``) also matches, by its
     path relative to the worktree rather than its bare name, because changing
-    it can change the install.
+    it can change the install. It matches only when *worktree_root* is given
+    and the file, as it is now, declares ``toolchain.install``, so repos
+    without a declared install are unchanged. A turn that removes the whole
+    declared install is picked up by the next full bootstrap, not here.
 
     Parameters
     ----------
     changed_paths : Iterable[str]
         File path strings reported as changed this turn.
     worktree_root : Optional[Path], optional
-        The worktree, so an absolute path to the declaration file is
-        recognised. Relative paths match without it.
+        The worktree. Needed to match the declaration file at all (its
+        content decides), and to recognise an absolute path to it.
 
     Returns
     -------
@@ -3475,15 +3509,22 @@ def changed_dependency_manifests(
     from guardkit.orchestrator.toolchain_declaration import CONFIG_RELATIVE_PATH
 
     declaration = CONFIG_RELATIVE_PATH.as_posix()
+    declared: Optional[bool] = None  # read the declaration at most once
     matched: List[str] = []
     seen: set[str] = set()
     for raw in changed_paths:
         if not raw or raw in seen:
             continue
         name = Path(_strip_repo_prefix(raw)).name
-        if dependency_file_stack(name) is not None or (
-            _worktree_relative_path(raw, worktree_root) == declaration
+        is_declaration = False
+        if (
+            worktree_root is not None
+            and _worktree_relative_path(raw, worktree_root) == declaration
         ):
+            if declared is None:
+                declared = _declares_install(worktree_root)
+            is_declaration = declared
+        if dependency_file_stack(name) is not None or is_declaration:
             matched.append(raw)
             seen.add(raw)
     return matched

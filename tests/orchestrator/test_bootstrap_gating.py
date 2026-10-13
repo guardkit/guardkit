@@ -1058,6 +1058,26 @@ def test_a_component_cwd_escaping_through_a_symlink_stops_the_bootstrap(
     assert "'web'" in str(exc.value)
 
 
+def test_a_component_cwd_that_is_a_symlink_loop_stops_the_bootstrap(
+    tmp_path: Path,
+) -> None:
+    """A self-looping symlink as the declared ``cwd`` is refused (named by
+    component and path), not swallowed as a generic error in warning mode."""
+    import shutil
+
+    orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
+    worktree = _declared_web_worktree(tmp_path, "apps/web")
+    shutil.rmtree(worktree / "apps" / "web")
+    (worktree / "apps" / "web").symlink_to("web")
+
+    with patch("subprocess.run", _no_installs()) as run:
+        with pytest.raises(FeatureOrchestrationError) as exc:
+            orchestrator._bootstrap_environment(_FakeWorktree(worktree))
+    assert "'web'" in str(exc.value)
+    assert "apps/web" in str(exc.value)
+    assert not any(list(c.args[0]) == ["npm", "ci"] for c in run.call_args_list)
+
+
 def test_a_valid_component_cwd_bootstraps_as_today(tmp_path: Path) -> None:
     """Control: a relative ``cwd`` inside the worktree loads and installs."""
     orchestrator = _build_orchestrator(tmp_path, failure_mode="warn")
