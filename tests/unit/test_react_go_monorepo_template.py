@@ -606,6 +606,21 @@ def test_rendered_gitignore_keeps_installed_and_generated_output_out(
     assert sorted(result.stdout.splitlines()) == sorted(ignored)
 
 
+def test_guidance_keeps_browser_journeys_out_of_smoke_gates(
+    template_dir: Path, rendered: Path
+) -> None:
+    """Smoke gates have a 120 s default; browser journeys are the long feature_check."""
+    declaration = parse_toolchain_block(_rendered_config(rendered)["toolchain"])
+    assert declaration.feature_check == "bash scripts/check-feature.sh"
+    assert declaration.feature_check_timeout >= 1800
+    for name in (".claude/rules/foundation.md", ".claude/rules/web.md", "README.md"):
+        text = (template_dir / name).read_text(encoding="utf-8")
+        assert "Smoke gates use `bash scripts/check.sh`" in text, name
+        assert "`feature_check` (`bash scripts/check-feature.sh`)" in text, name
+        assert "`timeout: 600`" in text, name
+        assert "smoke gate for browser checks names" not in text, name
+
+
 def test_feature_check_stub_fails_until_foundation_supplies_it(rendered: Path) -> None:
     result = subprocess.run(
         ["bash", "scripts/check-feature.sh"],

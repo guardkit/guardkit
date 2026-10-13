@@ -20,7 +20,9 @@ toolchain:
   coverage: "bash scripts/coverage.sh"
   coverage_timeout: 1800
   # The connected browser/API/database journey. Supplied by the product
-  # foundation; the template's stub fails until then.
+  # foundation; the template's stub fails until then. GuardKit runs it after
+  # the last wave with this long limit (cold images and identity start-up in
+  # the sandbox); keep it out of smoke gates, which default to 120 s.
   feature_check: "bash scripts/check-feature.sh"
   feature_check_timeout: 1800
   runtime:
