@@ -15,8 +15,14 @@ toolchain:
   # reprints its old PASS lines.
   requires_ran_marker: true
   ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)'
+  # Coverage is measured and printed, never thresholded: exit 0 means the tests
+  # passed with coverage measured. Reports stay in git-ignored coverage/ folders.
+  coverage: "bash scripts/coverage.sh"
+  coverage_timeout: 1800
   # The connected browser/API/database journey. Supplied by the product
-  # foundation; the template's stub fails until then.
+  # foundation; the template's stub fails until then. GuardKit runs it after
+  # the last wave with this long limit (cold images and identity start-up in
+  # the sandbox); keep it out of smoke gates, which default to 120 s.
   feature_check: "bash scripts/check-feature.sh"
   feature_check_timeout: 1800
   runtime:
@@ -29,6 +35,8 @@ toolchain:
       test_timeout: 600
       requires_ran_marker: true
       ran_marker_regex: 'Tests\b[^\n]*?[1-9][0-9]* passed'
+      coverage: "npm run coverage"
+      coverage_timeout: 600
       runtime:
         node: "22.23.2"
     api:
@@ -40,6 +48,9 @@ toolchain:
       # files or `[no tests to run]` print no `--- PASS:` line. A cached
       # replay is refused even though -v reprints its old PASS lines.
       ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)'
+      # Prints the total line; a failing test or cover step fails the chain.
+      coverage: "export GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=readonly && mkdir -p coverage && go test -race -count=1 -coverprofile=coverage/go.out ./... && go tool cover -func=coverage/go.out > coverage/go-func.txt && tail -n 1 coverage/go-func.txt"
+      coverage_timeout: 900
       runtime:
         go: "1.26.9"
 # What the build shell receives. `settings` names variables copied from the

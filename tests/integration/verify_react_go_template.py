@@ -18,6 +18,10 @@ import sys
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
+from guardkit.orchestrator.toolchain_declaration import (  # noqa: E402
+    load_toolchain_declaration,
+    resolve_component_cwd,
+)
 from guardkit.templates.render import render_text  # noqa: E402
 
 TEMPLATE = REPO / "installer/core/templates/react-go-monorepo"
@@ -51,6 +55,31 @@ def materialise(output: Path) -> None:
 def run(command: list[str], cwd: Path, env: dict[str, str]) -> None:
     print("+ " + " ".join(command), flush=True)
     subprocess.run(command, cwd=cwd, env=env, check=True)
+
+
+def run_declared_coverage(output: Path, env: dict[str, str]) -> None:
+    """Run every declared coverage command as the coach does: shell, its cwd, exit 0."""
+    declaration = load_toolchain_declaration(output)
+    if declaration is None:
+        raise RuntimeError("Rendered .guardkit/config.yaml did not load")
+    targets = [("root", output, declaration.coverage)] + [
+        (name, resolve_component_cwd(output, component.cwd), component.coverage)
+        for name, component in sorted((declaration.components or {}).items())
+    ]
+    for name, cwd, command in targets:
+        if not command:
+            raise RuntimeError(f"No coverage declared for {name}")
+        print(f"+ ({name}) {command}", flush=True)
+        result = subprocess.run(command, shell=True, cwd=cwd, env=env, text=True, capture_output=True)
+        print(result.stdout + result.stderr, flush=True)
+        combined = result.stdout + result.stderr
+        if result.returncode != 0:
+            raise RuntimeError(f"Declared coverage failed for {name}: exit {result.returncode}")
+        totals = {"root": ("total:", "Statements"), "api": ("total:",), "web": ("Statements",)}
+        missing = [word for word in totals[name] if word not in combined]
+        if missing:
+            raise RuntimeError(f"Declared coverage for {name} printed no total: {missing}")
+    print("PASS: declared coverage commands exit 0 and print totals", flush=True)
 
 
 def reject_mutation(
@@ -97,6 +126,7 @@ def main() -> None:
     # The declared root install, then the declared aggregate test (.guardkit/config.yaml).
     run(["bash", "scripts/install.sh"], output, env)
     run(["bash", "scripts/check.sh"], output, env)
+    run_declared_coverage(output, env)
     negative = output / "apps/api/internal/notes/negative_control.go"
     reject_mutation(negative, 'package notes\nfunc invalidType() int { return "bad" }\n',
                     ["go", "build", "./..."], output / "apps/api", env, "cannot use")
