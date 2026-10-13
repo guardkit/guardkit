@@ -175,6 +175,7 @@ from guardkit.orchestrator.environment_bootstrap import (
     format_requires_python_remediation,
     probe_worktree_venv,
 )
+from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
 from guardkit.models.task_types import TaskType, normalise_task_type
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
@@ -1930,7 +1931,10 @@ class FeatureOrchestrator:
         ------
         FeatureOrchestrationError
             When ``bootstrap_failure_mode == "block"`` and the gate evaluates
-            to hard-fail (see :meth:`_should_hardfail_bootstrap`).
+            to hard-fail (see :meth:`_should_hardfail_bootstrap`). In every
+            mode, when the toolchain declaration cannot be read or declares a
+            component ``cwd`` that is refused, or when the bootstrap refused a
+            declared install input (one outside the worktree or unreadable).
         """
         try:
             python_extras: tuple[str, ...] = ()
@@ -1973,7 +1977,16 @@ class FeatureOrchestrator:
             bootstrapper = EnvironmentBootstrapper(worktree.path)
             result = bootstrapper.bootstrap(manifests)
 
-            if result.skipped:
+            # A refused declared input (outside the worktree, or unreadable)
+            # stops the build in every failure mode: nothing was installed and
+            # the inputs are unknown.
+            refused = getattr(result, "refused", None)
+            if isinstance(refused, str) and refused:
+                logger.error("Bootstrap refused: %s", refused)
+                console.print(f"[red]\u2717[/red] Bootstrap refused: {refused}")
+                raise FeatureOrchestrationError(refused)
+
+            if result.skipped and result.success:
                 console.print("[green]\u2713[/green] Environment already bootstrapped (hash match)")
             elif result.installs_failed == 0:
                 console.print(
@@ -2028,6 +2041,15 @@ class FeatureOrchestrator:
             logger.error("Bootstrap hard-fail (uv-sources require uv): %s", e)
             console.print(
                 f"[red]\u2717[/red] Bootstrap hard-fail: uv-sources require uv\n{e}"
+            )
+            raise FeatureOrchestrationError(str(e)) from e
+        except ToolchainDeclarationError as e:
+            # Follow-up fixes 2026-10-13 (3b): an unreadable declaration or a
+            # refused component ``cwd`` would otherwise drop the declaration
+            # and guess the install. Stop the build in every failure mode.
+            logger.error("Bootstrap hard-fail (toolchain declaration): %s", e)
+            console.print(
+                f"[red]\u2717[/red] Bootstrap hard-fail: toolchain declaration\n{e}"
             )
             raise FeatureOrchestrationError(str(e)) from e
         except Exception as e:

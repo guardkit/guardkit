@@ -374,6 +374,38 @@ class TestDeclaredInstallFailsSafely:
         assert result.success is False
         assert result.skipped is False
 
+    def test_an_unreadable_declaration_stops_the_build_in_warning_mode(
+        self, web_repo, unreadable
+    ):
+        """An existing ``.guardkit/config.yaml`` that cannot be read must not
+        drop the declaration and guess the install from the root lockfile.
+        Detection refuses, and ``_bootstrap_environment`` turns that into a
+        stopping error even in warning mode, before anything is installed."""
+        from guardkit.orchestrator.feature_orchestrator import (
+            FeatureOrchestrationError,
+            FeatureOrchestrator,
+        )
+        from guardkit.orchestrator.toolchain_declaration import (
+            ToolchainDeclarationError,
+        )
+
+        orchestrator = FeatureOrchestrator(
+            repo_root=web_repo.parent,
+            bootstrap_failure_mode="warn",
+            skip_validation=True,
+            worktree_manager=MagicMock(),
+        )
+        unreadable(web_repo / ".guardkit" / "config.yaml")
+
+        with pytest.raises(ToolchainDeclarationError):
+            ProjectEnvironmentDetector(web_repo)
+        with patch("subprocess.run", side_effect=_fake_run()) as mock_run:
+            with pytest.raises(FeatureOrchestrationError) as exc:
+                orchestrator._bootstrap_environment(SimpleNamespace(path=web_repo))
+        assert "config.yaml" in str(exc.value)
+        assert _declared_calls(mock_run) == []
+        assert not (web_repo / ".guardkit" / "bootstrap_state.json").exists()
+
     def test_a_component_cwd_that_escapes_through_a_symlink_fails(
         self, web_repo, tmp_path
     ):
