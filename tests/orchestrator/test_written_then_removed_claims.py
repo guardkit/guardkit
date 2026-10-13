@@ -267,6 +267,37 @@ async def test_a_write_without_a_call_id_that_is_missing_stays_critical(
         assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_call_id", ["c2", None], ids=["unanswered", "no-call-id"])
+async def test_a_later_unconfirmed_write_cancels_an_earlier_confirmation(
+    tmp_path: Path, later_call_id: Optional[str]
+) -> None:
+    """A confirmed write, the file removed, then another write to the same
+    path that is never confirmed (its result never arrives, or it has no
+    call id). The earlier confirmation must not excuse the later write."""
+    invoker = _invoker(tmp_path)
+    wt = invoker.worktree_path
+    probe = wt / PROBE
+    report, record = await _whole_path(
+        invoker,
+        f"TASK-LATER-{later_call_id or 'NOID'}",
+        [
+            _put(probe),
+            _use("c1", "write_file", probe),
+            _ok("c1"),
+            _remove(probe),
+            _use(later_call_id, "write_file", probe),
+        ],
+    )
+
+    assert PROBE in record["confirmed_write_paths"]
+    assert PROBE in record["unconfirmed_write_paths"]
+    for final in (report, record):
+        assert PROBE in final["files_created"]
+        assert final["files_written_then_removed"] == []
+        assert _is_fabricated_claim(_critical_for(wt, final, PROBE), PROBE)
+
+
 # ---------------------------------------------------------------------------
 # Kept guards: a named path is a claim (pass before and after)
 # ---------------------------------------------------------------------------

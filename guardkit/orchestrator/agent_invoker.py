@@ -1454,8 +1454,13 @@ class TaskWorkStreamParser:
         #     from text are NOT confirmed.
         #   * named in words: a path the builder named in its own text (the
         #     "Created:/Modified:" lines and the text-form tool patterns).
+        #   * unconfirmed: a path that ANY write reached without its own
+        #     successful result (no call id, a result that never arrived, or
+        #     parsed from text). One such write disqualifies the path, however
+        #     many confirmed writes it also had.
         self._confirmed_write_paths: set = set()
         self._named_in_words_paths: set = set()
+        self._unconfirmed_write_paths: set = set()
         self._arch_score: Optional[int] = None
         self._solid_score: Optional[int] = None
         self._dry_score: Optional[int] = None
@@ -1638,7 +1643,9 @@ class TaskWorkStreamParser:
         if isinstance(tool_use_id, str) and tool_use_id:
             self._pending_tool_writes[tool_use_id] = (tool_name, tool_args)
         else:
-            self._track_tool_call(tool_name, tool_args)
+            recorded = self._track_tool_call(tool_name, tool_args)
+            if recorded:
+                self._unconfirmed_write_paths.add(recorded)
 
     def record_tool_result(self, tool_use_id: Any, is_error: bool) -> None:
         """Record a held write/edit now its result has arrived.
@@ -1749,6 +1756,7 @@ class TaskWorkStreamParser:
                 # Parsed from text: named in words, never confirmed.
                 if recorded:
                     self._named_in_words_paths.add(recorded)
+                    self._unconfirmed_write_paths.add(recorded)
 
         # Track tool result messages (e.g., "File created successfully at: /path")
         for result_match in self.TOOL_RESULT_CREATED_PATTERN.finditer(message):
@@ -1760,6 +1768,7 @@ class TaskWorkStreamParser:
             ):
                 self._files_created.add(file_path)
                 self._named_in_words_paths.add(file_path)
+                self._unconfirmed_write_paths.add(file_path)
                 logger.debug(f"Tool result tracked - file created: {file_path}")
 
         for result_match in self.TOOL_RESULT_MODIFIED_PATTERN.finditer(message):
@@ -1771,6 +1780,7 @@ class TaskWorkStreamParser:
             ):
                 self._files_modified.add(file_path)
                 self._named_in_words_paths.add(file_path)
+                self._unconfirmed_write_paths.add(file_path)
                 logger.debug(f"Tool result tracked - file modified: {file_path}")
 
     def parse_message(self, message: str) -> None:
@@ -1943,9 +1953,12 @@ class TaskWorkStreamParser:
             - architectural_review: Dict with score and optional SOLID/DRY/YAGNI
               subscores (or absent if no arch review score found)
         """
-        # A write whose result never arrived stays on the list, as before.
+        # A write whose result never arrived stays on the list, as before,
+        # and is never a confirmed write.
         for tool_name, tool_args in self._pending_tool_writes.values():
-            self._track_tool_call(tool_name, tool_args)
+            recorded = self._track_tool_call(tool_name, tool_args)
+            if recorded:
+                self._unconfirmed_write_paths.add(recorded)
         self._pending_tool_writes = {}
 
         result: Dict[str, Any] = {}
@@ -1992,6 +2005,8 @@ class TaskWorkStreamParser:
             result["confirmed_write_paths"] = sorted(self._confirmed_write_paths)
         if self._named_in_words_paths:
             result["named_in_words_paths"] = sorted(self._named_in_words_paths)
+        if self._unconfirmed_write_paths:
+            result["unconfirmed_write_paths"] = sorted(self._unconfirmed_write_paths)
 
         if self._arch_score is not None:
             arch_review: Dict[str, Any] = {"score": self._arch_score}
@@ -2024,6 +2039,7 @@ class TaskWorkStreamParser:
         self._pending_tool_writes = {}
         self._confirmed_write_paths = set()
         self._named_in_words_paths = set()
+        self._unconfirmed_write_paths = set()
         self._arch_score = None
         self._solid_score = None
         self._dry_score = None
@@ -6325,6 +6341,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # older record, which then sets nothing aside.
         confirmed_write_paths: List[str] = []
         named_in_words_paths: List[str] = []
+        unconfirmed_write_paths: List[str] = []
 
         # Try to read task_work_results.json for richer data
         if task_work_results_path.exists():
@@ -6337,6 +6354,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 )
                 named_in_words_paths = list(
                     task_work_data.get("named_in_words_paths") or []
+                )
+                unconfirmed_write_paths = list(
+                    task_work_data.get("unconfirmed_write_paths") or []
                 )
 
                 # Map task-work fields to Player report fields
@@ -6730,7 +6750,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         # a claim. Every check runs here, once, after every list above has
         # been assembled; see ``_set_aside_written_then_removed``.
         written_then_removed = self._set_aside_written_then_removed(
-            report, confirmed_write_paths, named_in_words_paths
+            report,
+            confirmed_write_paths,
+            named_in_words_paths,
+            unconfirmed_write_paths,
         )
         report["files_written_then_removed"] = written_then_removed
         if written_then_removed:
@@ -6970,6 +6993,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         report: Dict[str, Any],
         confirmed_write_paths: Sequence[str],
         named_in_words_paths: Sequence[str],
+        unconfirmed_write_paths: Sequence[str] = (),
     ) -> List[str]:
         """Take a confirmed, unnamed, removed scratch write off the claim lists.
 
@@ -6982,8 +7006,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         has been assembled:
 
         * its write was CONFIRMED (``confirmed_write_paths``: a request with a
-          call id met its own successful result). A write with no call id,
-          one whose result never arrived, and one parsed from text are not;
+          call id met its own successful result), and NO write reached it
+          unconfirmed (``unconfirmed_write_paths``: no call id, a result that
+          never arrived, or parsed from text). An earlier confirmed write never
+          excuses a later unconfirmed one;
         * the builder never named it in its own words, and no completion
           promise names it;
         * it is a path inside the worktree, and nothing exists there now;
@@ -7011,6 +7037,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         try:
             named: Set[str] = {n for n in map(norm, named_in_words_paths) if n}
+            # Any unconfirmed write disqualifies the path, like a name does.
+            named.update(n for n in map(norm, unconfirmed_write_paths) if n)
             for promise in report.get("completion_promises") or []:
                 if not isinstance(promise, dict):
                     continue
@@ -14522,6 +14550,13 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 {
                     p
                     for p in (result_data.get("named_in_words_paths") or [])
+                    if isinstance(p, str) and p
+                }
+            ),
+            "unconfirmed_write_paths": sorted(
+                {
+                    p
+                    for p in (result_data.get("unconfirmed_write_paths") or [])
                     if isinstance(p, str) and p
                 }
             ),
