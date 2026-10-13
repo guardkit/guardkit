@@ -81,6 +81,7 @@ from guardkit.orchestrator.merge_environment import (
     read_merge_declarations,
 )
 from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
+from guardkit.orchestrator.process_group import run_in_own_group
 from guardkit.orchestrator.project_command_env import (
     project_command_environment,
 )
@@ -586,6 +587,7 @@ def perform_merge(
     manager: Optional[WorktreeManager] = None,
     branch: Optional[str] = None,
     working_folder: Optional[Path] = None,
+    merge_commit: Optional[str] = None,
 ) -> MergeReport:
     """Merge the build's branch into ``target_branch``.
 
@@ -605,6 +607,12 @@ def perform_merge(
     THERE, and the repository's main copy is never switched or merged into.
     The commits, the refs and the objects are the same either way: a working
     folder of a repository shares all three.
+
+    ``merge_commit`` (13 October 2026) is the commit to join, already
+    resolved from ``branch`` by the caller. Given it, that exact commit is
+    merged, so what was checked before the merge is what lands even if the
+    branch moves meanwhile; the report still names ``branch``. ``None``
+    merges ``branch`` as before.
     """
     branch = branch_to_merge(feature_id, branch)
     notes: List[str] = []
@@ -614,7 +622,11 @@ def perform_merge(
     tree_root = Path(working_folder) if working_folder is not None else Path(repo_root)
 
     pre_sha = _rev_parse(tree_root, target_branch)
-    branch_sha = _rev_parse(tree_root, branch)
+    branch_sha = (
+        _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
+        if merge_commit
+        else _rev_parse(tree_root, branch)
+    )
     if pre_sha is None or branch_sha is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -635,7 +647,9 @@ def perform_merge(
     # here reads the feature YAML either.
     worktree = Worktree(
         task_id=feature_id,
-        branch_name=branch,
+        # The ref ``git merge`` is given: the resolved commit when there is
+        # one, so the commit checked is the commit joined.
+        branch_name=branch_sha if merge_commit else branch,
         path=Path(repo_root) / ".guardkit" / "worktrees" / feature_id,
         base_branch=target_branch,
     )
@@ -800,6 +814,10 @@ def measure_pre_merge_baseline(
         timeout=timeout,
         env=env,
         ran_marker_regex=ran_marker_regex,
+        # The merge (which always hands in its own environment) runs the
+        # check in a process group of its own, so a timeout ends everything
+        # the check started; a direct caller keeps the old behaviour.
+        own_process_group=env is not None,
     )
     if result.status == "unverified":
         return MeasuredBaseline(
@@ -1059,6 +1077,10 @@ def verify_merged(
         timeout=timeout,
         env=env,
         ran_marker_regex=ran_marker_regex,
+        # The merge (which always hands in its own environment) runs the
+        # check in a process group of its own, so a timeout ends everything
+        # the check started; a direct caller keeps the old behaviour.
+        own_process_group=env is not None,
     )
 
     # The WHOLE output of the run, not the 2000-character excerpt kept for
@@ -1085,8 +1107,13 @@ def files_the_branch_changed(
 ) -> Tuple[Optional[List[str]], Optional[str]]:
     """The repository paths ``branch`` changed since it left ``target_branch``.
 
-    ``git diff --name-only --no-renames -z <merge-base> <branch tip>``.
-    Returns ``(paths, None)`` or ``(None, reason)`` when git cannot say.
+    ``git diff --name-only --no-renames --ignore-submodules=none -z
+    <merge-base> <branch> --``. ``branch`` is best given as the commit the
+    merge will join, so the files compared are the files merged. A
+    submodule pointer the build moved is listed whatever the repository's
+    ``diff.ignoreSubmodules`` setting says, and the ``--`` keeps git from
+    reading either commit as a path. Returns ``(paths, None)`` or
+    ``(None, reason)`` when git cannot say.
     """
     base = _run_git(tree_root, "merge-base", target_branch, branch)
     base_sha = base.stdout.strip() if base.returncode == 0 else ""
@@ -1097,7 +1124,15 @@ def files_the_branch_changed(
             f"judge it could not be checked"
         )
     diff = _run_git(
-        tree_root, "diff", "--name-only", "--no-renames", "-z", base_sha, branch
+        tree_root,
+        "diff",
+        "--name-only",
+        "--no-renames",
+        "--ignore-submodules=none",
+        "-z",
+        base_sha,
+        branch,
+        "--",
     )
     if diff.returncode != 0:
         return None, (
@@ -1113,6 +1148,7 @@ def pin_the_judge_on_target(
     target_branch: str,
     branch: str,
     verify_timeout: int = DEFAULT_VERIFY_TIMEOUT,
+    branch_commit: Optional[str] = None,
 ) -> Tuple[
     Optional[Tuple[Optional[str], str, Optional[StackTestProfile]]],
     Optional[str],
@@ -1137,6 +1173,10 @@ def pin_the_judge_on_target(
     ``problem`` is the plain reason nothing may run, before or after the
     merge. ``pinned`` is what runs both installs and both checks otherwise.
     The merged branch's own ``config.yaml`` is never read for any of them.
+
+    ``branch_commit`` is the commit the merge will join (resolved once by
+    :func:`execute_merge`); the changed files are read from it rather than
+    from wherever ``branch`` points by the time git is asked.
     """
     tree_root = Path(tree_root)
     switch_problem = checkout_branch(tree_root, target_branch)
@@ -1158,7 +1198,7 @@ def pin_the_judge_on_target(
 
     if pinned.judge_words:
         changed, problem = files_the_branch_changed(
-            tree_root, target_branch, branch
+            tree_root, target_branch, branch_commit or branch
         )
         if problem is not None or changed is None:
             return resolution, problem, None
@@ -1212,28 +1252,25 @@ def prepare_tree(
 
     text = pinned.install_text
     try:
-        proc = subprocess.run(
-            list(pinned.install_argv),
-            cwd=str(tree_root),
+        # In a process group of its own: a timeout ends everything the
+        # install started, not only its first process.
+        proc = run_in_own_group(
+            pinned.install_argv,
+            cwd=tree_root,
             env=env,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=pinned.install_timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return TreePreparation(
-            None,
-            f"the declared install (`{text}`) ran out of its "
-            f"{pinned.install_timeout} seconds on {where}",
         )
     except OSError as exc:
         return TreePreparation(
             None,
             f"the declared install (`{text}`) could not start on {where}: "
             f"{exc.strerror or type(exc).__name__}",
+        )
+    if proc.timed_out:
+        return TreePreparation(
+            None,
+            f"the declared install (`{text}`) ran out of its "
+            f"{pinned.install_timeout} seconds on {where}",
         )
     if proc.returncode != 0:
         return TreePreparation(
@@ -1366,9 +1403,11 @@ def execute_merge(
     # checks this too, but it does so AFTER the baseline run has already put
     # HEAD on the target branch and spent a whole suite; refusing here leaves
     # HEAD exactly where the caller had it, as a refusal always should.
-    if _rev_parse(tree_root, target_branch) is None or _rev_parse(
-        tree_root, branch
-    ) is None:
+    # The branch is resolved to a commit ONCE, here. That commit is what the
+    # changed files are read from and what the merge joins, so a branch that
+    # moves while the checks run cannot slip anything past them.
+    branch_commit = _rev_parse(tree_root, branch)
+    if _rev_parse(tree_root, target_branch) is None or branch_commit is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
             feature_id=feature_id,
@@ -1393,7 +1432,11 @@ def execute_merge(
     pinned: Optional[MergeEnvironment] = None
     if verify:
         resolution, resolution_problem, pinned = pin_the_judge_on_target(
-            tree_root, target_branch, branch, verify_timeout=verify_timeout
+            tree_root,
+            target_branch,
+            branch,
+            verify_timeout=verify_timeout,
+            branch_commit=branch_commit,
         )
     verify_command = (resolution[0] or None) if resolution else None
     verify_source = (resolution[1] or None) if resolution else None
@@ -1475,6 +1518,7 @@ def execute_merge(
         manager=manager,
         branch=branch,
         working_folder=working_folder,
+        merge_commit=branch_commit,
     )
     if report.outcome != OUTCOME_MERGED or not verify:
         return replace(

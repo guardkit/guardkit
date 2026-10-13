@@ -220,14 +220,23 @@ def judge_words(
     return tuple(plain), None
 
 
+_PIECE_SEPARATORS = re.compile(r"[,:]")
+
+
 def _match_keys(word: str) -> List[str]:
-    """The word as it stands, and the part after its first ``=``.
+    """The word as it stands, the part after its first ``=``, and the pieces
+    of both split on ``,`` and ``:`` (so ``--opt=a,check.sh`` and
+    ``--opt=a:check.sh`` name ``check.sh``).
 
     A leading ``./`` is dropped from each.
     """
-    keys = [word]
+    whole = [word]
     if "=" in word:
-        keys.append(word.split("=", 1)[1])
+        whole.append(word.split("=", 1)[1])
+    keys = list(whole)
+    for key in whole:
+        if _PIECE_SEPARATORS.search(key):
+            keys.extend(piece for piece in _PIECE_SEPARATORS.split(key) if piece)
     result: List[str] = []
     for key in keys:
         while key.startswith("./"):
@@ -240,8 +249,8 @@ def _match_keys(word: str) -> List[str]:
 def judge_files(changed: Sequence[str], words: Sequence[str]) -> List[str]:
     """The changed files that a pinned command's words name directly.
 
-    A file is a judge file when any word (or its part after the first ``=``)
-    equals its repository path, ends with ``/`` and its path, equals its file
+    A file is a judge file when any word (or its part after the first ``=``,
+    or a piece of either split on ``,`` and ``:``) equals its repository path, ends with ``/`` and its path, equals its file
     name, or ends with ``/`` and its file name. A named directory does not
     make the files under it judge files.
     """

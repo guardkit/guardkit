@@ -1144,3 +1144,255 @@ class TestDeclarationsAreReadFailClosed:
         assert report.verify_status == "unverified"
         assert report.verify_ran is False
         assert standin.ran() == set()
+
+
+# ---------------------------------------------------------------------------
+# Follow-up pass (coach findings, 13 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def _still_running(pid: int, wait: float = 3.0) -> bool:
+    """True while ``pid`` is a live process (a zombie counts as gone)."""
+    import time
+
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+                state = handle.read().rsplit(")", 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError, IndexError):
+            return False
+        if state == "Z":
+            return False
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(0.1)
+
+
+def _kill_quietly(pid: int) -> None:
+    import signal
+
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+class TestNothingOutlivesATimeout:
+    def test_a_timed_out_install_leaves_nothing_running(self, standin: Standin):
+        hanging_install = (
+            "#!/bin/sh\n"
+            'sleep 37 &\n'
+            'echo $! > "@MARKERS@/background.pid"\n'
+            "sleep 37\n"
+        )
+        standin.init(
+            files={"scripts/install.sh": standin.script(hanging_install)}
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=2)
+
+        pid = int(standin.lines("background.pid")[0])
+        try:
+            assert report.verify_status == "unverified"
+            assert "ran out of its 2 seconds" in report.verify_detail
+            assert not _still_running(pid), "the install's child outlived the merge"
+        finally:
+            _kill_quietly(pid)
+
+    def test_a_timed_out_check_leaves_nothing_running(self, standin: Standin):
+        hanging_check = (
+            "#!/bin/sh\n"
+            'sleep 37 &\n'
+            'echo $! > "@MARKERS@/background.pid"\n'
+            "sleep 37\n"
+        )
+        standin.init(
+            config=config_text(install=None, launch=None),
+            files={"scripts/check.sh": standin.script(hanging_check)},
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge(verify_timeout=2)
+
+        pid = int(standin.lines("background.pid")[0])
+        try:
+            assert report.verify_status == "unverified"
+            assert not _still_running(pid), "the check's child outlived the merge"
+        finally:
+            _kill_quietly(pid)
+
+
+class TestInstallPathsTheCoachProvedByHand:
+    def test_an_install_that_times_out_before_the_merge_is_could_not_run(
+        self, standin: Standin
+    ):
+        slow_install = "#!/bin/sh\nexec sleep 30\n"
+        standin.init(files={"scripts/install.sh": slow_install}).branch(
+            {"feature.txt": "built\n"}
+        )
+
+        report = standin.merge(verify_timeout=2)
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert report.baseline_measured is None
+        assert "ran out of its 2 seconds" in report.verify_detail
+        assert TARGET in report.verify_detail
+        assert "check-ran" not in standin.ran()
+
+    @pytest.mark.parametrize("how", ["baseline off", "baseline handed in"])
+    def test_a_single_install_when_no_baseline_is_measured(
+        self, standin: Standin, how: str
+    ):
+        standin.init().branch({"deps.txt": "alpha\nbeta\ngamma\n"})
+
+        if how == "baseline off":
+            report = standin.merge(measure_baseline=False)
+        else:
+            report = standin.merge(baseline_failing=[])
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert len(standin.lines("install-ran")) == 1
+        assert len(standin.lines("check-ran")) == 1
+        notes = " ".join(report.notes)
+        assert "ran on the merged result" in notes
+        assert f"ran on {TARGET}" not in notes
+
+    def test_an_install_that_dirties_the_merged_tree_is_could_not_run(
+        self, standin: Standin
+    ):
+        dirtying_on_merged = (
+            "#!/bin/sh\n"
+            'echo install >> "@MARKERS@/install-ran"\n'
+            "if grep -qx dirty deps.txt; then echo changed >> notes.txt; fi\n"
+            "mkdir -p installed\n"
+        )
+        standin.init(
+            config=config_text(launch=None),
+            files={
+                "scripts/install.sh": standin.script(dirtying_on_merged),
+                "deps.txt": "",
+            },
+        ).branch({"deps.txt": "dirty\n"})
+
+        report = standin.merge()
+
+        # Not a refusal: the join has already happened by then.
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "changed files" in report.verify_detail
+        assert "notes.txt" in report.verify_detail
+        assert "merged result" in report.verify_detail
+        assert len(standin.lines("install-ran")) == 2
+        assert "check-ran" in standin.ran()  # the baseline ran; nothing after
+
+    def test_an_install_command_that_cannot_start_is_could_not_run(
+        self, standin: Standin
+    ):
+        standin.init(
+            config=config_text(install="no-such-installer-7f3a scripts/install.sh")
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "could not start" in report.verify_detail
+        assert "no-such-installer-7f3a" in report.verify_detail
+        assert standin.ran() == set()
+
+
+class TestJudgeFilesInsideOptionLists:
+    @pytest.mark.parametrize("separator", [",", ":"])
+    def test_a_changed_script_named_inside_an_option_list_is_found(
+        self, standin: Standin, separator: str
+    ):
+        run_all = '#!/bin/sh\necho "STANDIN-PASS"\n'
+        standin.init(
+            config=config_text(
+                install=None, test=f"bash run-all.sh --with=a{separator}check.sh"
+            ),
+            files={"run-all.sh": run_all},
+        )
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert JUDGE_CHANGED in report.verify_detail
+        assert "scripts/check.sh" in report.verify_detail
+
+    def test_the_rule_matches_the_pieces_of_a_word(self):
+        from guardkit.orchestrator.merge_environment import judge_files
+
+        for word in ("--opt=a,check.sh", "--opt=a:check.sh", "x,./scripts/check.sh"):
+            assert judge_files(["scripts/check.sh"], [word]) == ["scripts/check.sh"]
+        assert judge_files(["src/other.sh"], ["--opt=a,check.sh"]) == []
+
+
+class TestTheChangedFilesComeFromTheMergedCommit:
+    def test_a_submodule_pointer_change_is_listed_whatever_the_config(
+        self, tmp_path: Path
+    ):
+        from guardkit.orchestrator.merge_executor import files_the_branch_changed
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "t@t.t")
+        _git(repo, "config", "user.name", "t")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a")
+        first = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "update-index", "--add", "--cacheinfo", f"160000,{first},vendor/sub")
+        _git(repo, "commit", "-q", "-m", "a submodule pointer")
+        _git(repo, "checkout", "-q", "-b", "autobuild/FEAT-S")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", "b.txt")
+        _git(repo, "commit", "-q", "-m", "b")
+        second = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "update-index", "--cacheinfo", f"160000,{second},vendor/sub")
+        _git(repo, "commit", "-q", "-m", "move the submodule pointer")
+        _git(repo, "checkout", "-q", "main")
+        # A repository may tell git to hide submodule changes from diffs.
+        _git(repo, "config", "diff.ignoreSubmodules", "all")
+        tip = _git(repo, "rev-parse", "autobuild/FEAT-S")
+
+        changed, problem = files_the_branch_changed(repo, "main", tip)
+
+        assert problem is None
+        assert "vendor/sub" in (changed or [])
+        assert "b.txt" in (changed or [])
+
+    def test_the_merge_joins_the_commit_that_was_compared(self, tmp_path: Path):
+        from guardkit.orchestrator.merge_executor import perform_merge
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "t@t.t")
+        _git(repo, "config", "user.name", "t")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a")
+        _git(repo, "checkout", "-q", "-b", f"autobuild/{FEATURE}")
+        (repo / "compared.txt").write_text("c\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "compared")
+        compared = _git(repo, "rev-parse", "HEAD")
+        # The branch moves on after the comparison.
+        (repo / "later.txt").write_text("l\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "later")
+        _git(repo, "checkout", "-q", "main")
+
+        report = perform_merge(repo, FEATURE, "main", merge_commit=compared)
+
+        assert report.outcome == OUTCOME_MERGED
+        assert (repo / "compared.txt").exists()
+        assert not (repo / "later.txt").exists()
+        assert report.branch == f"autobuild/{FEATURE}"

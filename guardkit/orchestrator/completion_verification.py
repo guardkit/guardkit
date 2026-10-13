@@ -276,6 +276,7 @@ def run_completion_verification(
     timeout: int = DEFAULT_VERIFY_TIMEOUT,
     env: Optional[dict] = None,
     ran_marker_regex: Optional[str] = None,
+    own_process_group: bool = False,
 ) -> VerificationResult:
     """Run the resolved verification command in the merge-target repo.
 
@@ -292,6 +293,11 @@ def run_completion_verification(
     show that tests really ran. When given, a run that would pass but whose
     output does not match it measured nothing, and is ``unverified``. Without
     it the result is exactly as before.
+
+    ``own_process_group`` (the merge passes it) runs the command in a process
+    group of its own, so a timeout ends everything the command started, not
+    only the shell (``process_group.run_in_own_group``). Off, the command
+    runs exactly as before.
     """
     cwd = str(repo_root)
     if not command:
@@ -311,6 +317,44 @@ def run_completion_verification(
         cwd,
         timeout,
     )
+    if own_process_group:
+        from guardkit.orchestrator.process_group import run_in_own_group
+
+        try:
+            run = run_in_own_group(
+                command,
+                shell=True,
+                cwd=cwd,
+                env=os.environ.copy() if env is None else dict(env),
+                timeout=timeout,
+            )
+        except OSError as exc:
+            return VerificationResult(
+                status="unverified",
+                command=command,
+                cwd=cwd,
+                returncode=None,
+                detail=f"verification command could not start: {exc}",
+                source=source,
+            )
+        if run.timed_out:
+            return VerificationResult(
+                status="failed",
+                command=command,
+                cwd=cwd,
+                returncode=None,
+                detail=f"verification timed out after {timeout}s",
+                output_tail=run.stdout[-2000:],
+                source=source,
+                full_output=run.stdout,
+            )
+        proc = subprocess.CompletedProcess(
+            command, run.returncode, run.stdout, run.stderr
+        )
+        return _verification_from_run(
+            proc, command, cwd, source, stack_profile, ran_marker_regex
+        )
+
     try:
         # TS-lane D.1b (design §B.5): the second declared-command shell site.
         # ``env=`` is now EXPLICIT (a verbatim copy of the daemon's own
@@ -353,6 +397,20 @@ def run_completion_verification(
             source=source,
         )
 
+    return _verification_from_run(
+        proc, command, cwd, source, stack_profile, ran_marker_regex
+    )
+
+
+def _verification_from_run(
+    proc: "subprocess.CompletedProcess",
+    command: str,
+    cwd: str,
+    source: str,
+    stack_profile: Optional[StackTestProfile],
+    ran_marker_regex: Optional[str],
+) -> VerificationResult:
+    """Classify a finished run into a :class:`VerificationResult`."""
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if stack_profile is not None:
         status, detail = _classify_stack(stack_profile, proc.returncode, output)
