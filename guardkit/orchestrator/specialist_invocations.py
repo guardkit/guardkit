@@ -30,7 +30,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, Sequence
 
 from guardkit.lib.pytest_summary import parse_pytest_summary
 from guardkit.orchestrator.baseline import NO_BASELINE_COMPARISON, failing_node_ids
@@ -162,6 +162,35 @@ _TEST_ORCHESTRATOR_SDK_TIMEOUT_CAP_SECONDS: int = 600
 _CODE_REVIEWER_SDK_TIMEOUT_CAP_SECONDS: int = int(
     os.environ.get("GUARDKIT_CODE_REVIEWER_TIMEOUT_CAP", "600")
 )
+
+# 13 October 2026 (bounded code review): the reviewer's step cap, using the
+# Coach evidence pass's mechanism (``_invoke_with_role(recursion_limit=...,
+# max_tool_result_chars=...)``). Before this nothing limited its steps: 30 of
+# 33 reviews on 12-13 October ran to the 600-second limit. LangGraph counts
+# about two steps per model call that uses tools plus one for the final
+# answer, so 24 steps allow about 11 rounds of tool calls; the prompt says 10
+# (``_code_reviewer_tool_rounds``) to leave a margin. LangGraph only: the SDK
+# harness ignores both and keeps its turn ceiling, as it does for the Coach.
+_CODE_REVIEWER_RECURSION_LIMIT: int = int(
+    os.environ.get("GUARDKIT_CODE_REVIEWER_RECURSION_LIMIT", "24")
+)
+_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS: int = int(
+    os.environ.get("GUARDKIT_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS", "12000")
+)
+
+# The reviewer prompt's own bounds. The acceptance criteria are shown whole up
+# to this many characters (the same list the Player and the Coach get); the
+# Player-reported file list shows at most this many names, each cut to this
+# many characters, inside a section of at most this many characters.
+_CODE_REVIEWER_CRITERIA_MAX_CHARS = 12_000
+_CODE_REVIEWER_MAX_FILES_SHOWN = 300
+_CODE_REVIEWER_FILE_NAME_MAX_CHARS = 300
+_CODE_REVIEWER_FILES_SECTION_MAX_CHARS = 120_000
+_CODE_REVIEWER_FILES_HEADING = (
+    "Files reported changed this turn (may be incomplete — read them with "
+    "your tools)"
+)
+_CODE_REVIEWER_NO_FILES_LINE = "No changed files were reported for this turn."
 
 # TASK-FIX-SPECHANG2: per-specialist no-model-activity watchdog ceiling.
 #
@@ -491,6 +520,9 @@ async def run_specialist(
     turn: Optional[int] = None,
     no_activity_watchdog_seconds: Optional[float] = None,
     capture_final_message: bool = False,
+    recursion_limit: Optional[int] = None,
+    max_tool_result_chars: Optional[int] = None,
+    tool_counter: Any = None,
 ) -> SpecialistInvocationResult:
     """Run a specialist agent under the orchestrator's control.
 
@@ -538,6 +570,15 @@ async def run_specialist(
             behaves exactly as before. The watchdog returns a completed
             invocation payload only on its clean-success path; hangs,
             cancellations, and exceptions cannot contribute stale text.
+        recursion_limit: Optional step cap for the run, passed to
+            ``_invoke_with_role`` exactly as the Coach evidence pass passes
+            it (LangGraph only; the SDK harness keeps its turn ceiling).
+            ``None`` (the default) leaves the call unchanged.
+        max_tool_result_chars: Optional per-tool-result size limit, passed
+            the same way. ``None`` (the default) leaves the call unchanged.
+        tool_counter: Optional ``ToolCallCounter`` handed to
+            ``_invoke_with_role`` so the caller can record which tools the run
+            used, even when it is cut off. ``None`` leaves the call unchanged.
 
     Returns:
         :class:`SpecialistInvocationResult` with ``status="passed"`` on
@@ -627,6 +668,14 @@ async def run_specialist(
     capturing = capture_final_message
     if capturing:
         invoke_kwargs["return_events"] = True
+    # 13 October 2026: the code reviewer's step cap and tool record. Added
+    # only when asked for, so every other caller's call is unchanged.
+    if recursion_limit is not None:
+        invoke_kwargs["recursion_limit"] = recursion_limit
+    if max_tool_result_chars is not None:
+        invoke_kwargs["max_tool_result_chars"] = max_tool_result_chars
+    if tool_counter is not None:
+        invoke_kwargs["tool_counter"] = tool_counter
 
     try:
         if watchdog_enabled:
@@ -736,13 +785,18 @@ def _bounded_redacted_review_evidence(
     }, None
 
 
-def _load_task_context(worktree_path: Path, task_id: str) -> str:
+def _load_task_context(
+    worktree_path: Path, task_id: str, *, include_acceptance: bool = True
+) -> str:
     """Best-effort read of the task markdown's Description + Acceptance.
 
     Searches ``tasks/{in_progress,backlog,in_review,blocked}`` recursively
     for a file whose name starts with ``{task_id}``. Returns the
     Description and Acceptance Criteria sections concatenated. Falls
     back to a one-line stub on any failure — this helper never raises.
+
+    ``include_acceptance=False`` returns the Description only: the code
+    reviewer passes it when it was handed the criteria list itself.
     """
     fallback = f"Task context unavailable for {task_id}"
     try:
@@ -771,7 +825,9 @@ def _load_task_context(worktree_path: Path, task_id: str) -> str:
         return fallback
 
     description = _extract_section(text, "Description")
-    acceptance = _extract_section(text, "Acceptance Criteria")
+    acceptance = (
+        _extract_section(text, "Acceptance Criteria") if include_acceptance else ""
+    )
 
     if not description and not acceptance:
         return fallback
@@ -1075,6 +1131,133 @@ def _prompt_count(summary: Any, key: str) -> str:
     return _UNKNOWN_COUNT if value is None else str(value)
 
 
+def _code_reviewer_tool_rounds(recursion_limit: int) -> int:
+    """Rounds of tool calls the reviewer prompt promises under its step cap.
+
+    LangGraph spends about two steps on each model call that uses tools and
+    one on the final answer, so ``(limit - 1) // 2`` rounds fit; one is held
+    back as a margin (24 steps give 10 rounds).
+    """
+    return max(1, (int(recursion_limit) - 1) // 2 - 1)
+
+
+def _quote_file_name(name: str) -> str:
+    """One quoted line for a file name, whatever characters it holds.
+
+    Quotes, backslashes and every unprintable character (newlines, tabs,
+    other line and paragraph separators) are escaped, so a name can neither
+    split into two lines nor look like a second name.
+    """
+    out: list[str] = []
+    for ch in name:
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch == "\r":
+            out.append("\\r")
+        elif not ch.isprintable():
+            code = ord(ch)
+            out.append(f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+@dataclass
+class _ReportedFilesSection:
+    """The reviewer prompt's file list, and the counts for the record."""
+
+    text: str
+    reported: int
+    shown: int
+    names_cut: int
+
+
+def _render_reported_files(
+    reported_files: Optional[Sequence[Any]],
+) -> _ReportedFilesSection:
+    """The Player-reported changed files, as a bounded list of literal names.
+
+    The names are what the Player reported, not a measured change, so the
+    heading says the list may be incomplete. At most
+    ``_CODE_REVIEWER_MAX_FILES_SHOWN`` names are shown, each cut to
+    ``_CODE_REVIEWER_FILE_NAME_MAX_CHARS`` characters with a note; repeated
+    names are shown once.
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in reported_files or ():
+        if item is None:
+            continue
+        name = str(item)
+        if not name.strip() or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    if not names:
+        return _ReportedFilesSection(_CODE_REVIEWER_NO_FILES_LINE, 0, 0, 0)
+
+    lines = [f"{_CODE_REVIEWER_FILES_HEADING}:"]
+    size = len(lines[0])
+    shown = 0
+    names_cut = 0
+    limit = _CODE_REVIEWER_FILE_NAME_MAX_CHARS
+    for name in names:
+        if shown >= _CODE_REVIEWER_MAX_FILES_SHOWN:
+            break
+        note = ""
+        if len(name) > limit:
+            note = f" (name cut to {limit} of {len(name)} characters)"
+            name = name[:limit]
+        line = f"- {_quote_file_name(name)}{note}"
+        if size + 1 + len(line) > _CODE_REVIEWER_FILES_SECTION_MAX_CHARS:
+            break
+        lines.append(line)
+        size += 1 + len(line)
+        shown += 1
+        if note:
+            names_cut += 1
+    not_listed = len(names) - shown
+    if not_listed:
+        lines.append(f"- and {not_listed} more not listed")
+    return _ReportedFilesSection("\n".join(lines), len(names), shown, names_cut)
+
+
+def _criteria_items(acceptance_criteria: Optional[Sequence[Any]]) -> list[str]:
+    """The non-blank criteria, as text."""
+    return [
+        str(item)
+        for item in acceptance_criteria or ()
+        if item is not None and str(item).strip()
+    ]
+
+
+def _render_acceptance_criteria(items: Sequence[str]) -> str:
+    """Every criterion, numbered, up to ``_CODE_REVIEWER_CRITERIA_MAX_CHARS``.
+
+    A longer list is cut with a visible note and a warning in the log.
+    """
+    body = "\n".join(f"{index}. {text}" for index, text in enumerate(items, 1))
+    limit = _CODE_REVIEWER_CRITERIA_MAX_CHARS
+    if len(body) > limit:
+        cut = len(body) - limit
+        body = (
+            body[:limit]
+            + f"\n[... acceptance criteria cut here: {cut} more characters "
+            "not shown]"
+        )
+        logger.warning(
+            "code-reviewer prompt: acceptance criteria cut at %d characters "
+            "(%d more not shown)",
+            limit,
+            cut,
+        )
+    return "Acceptance criteria (every one, from the task):\n" + body
+
+
 def _build_code_reviewer_prompt(
     task_id: str,
     task_context: str,
@@ -1082,19 +1265,32 @@ def _build_code_reviewer_prompt(
     *,
     canonical_root: Path,
     max_chars: int | None = None,
+    acceptance_criteria: Optional[Sequence[Any]] = None,
+    reported_files: Optional[Sequence[Any]] = None,
+    recursion_limit: int | None = None,
 ) -> str:
     """Render the prompt the code-reviewer specialist receives.
 
-    The agent definition (``installer/core/agents/code-reviewer.md``)
-    already encodes the review checklist. This prompt only carries
-    task-specific context plus the structured Phase 4 summary so the
-    reviewer can ground its review in the actual test outcomes.
+    The prompt says what to review and how long the reviewer has (13 October
+    2026): the acceptance criteria whole, the files the Player reported
+    changed this turn, the Phase 4 test summary, and the same instructions
+    for every stack, including the number of tool rounds worked out from the
+    step cap (``recursion_limit``, default
+    ``_CODE_REVIEWER_RECURSION_LIMIT``). The LangGraph harness never loads an
+    agent definition for the reviewer, so the prompt no longer points at one.
+
+    ``acceptance_criteria`` is the list autobuild gives the Player and the
+    Coach. When it is absent or empty, ``task_context`` is expected to carry
+    the task file's own criteria, as before.
 
     The string ``"Phase 4 summary"`` is part of the prompt contract — the
     unit test introspects for it (TASK-OSI-005 AC d).
 
     Two budget layers apply:
-    1. A ~2000-char seed cap (historic, trims task_context first).
+    1. A ~2000-char seed cap (historic, trims task_context first). It covers
+       everything except the criteria list and the file list, which have
+       their own bounds; so the description keeps its existing limit and the
+       criteria are no longer cut by it.
     2. An env-tunable overall backstop
        (``GUARDKIT_SPECIALIST_PROMPT_MAX_CHARS``, default 300000) applied
        after the seed cap. This is the **primary** budget for large task
@@ -1116,6 +1312,16 @@ def _build_code_reviewer_prompt(
 
     if max_chars is None:
         max_chars = SPECIALIST_PROMPT_MAX_CHARS
+    if recursion_limit is None:
+        recursion_limit = _CODE_REVIEWER_RECURSION_LIMIT
+    tool_rounds = _code_reviewer_tool_rounds(recursion_limit)
+
+    criteria = _criteria_items(acceptance_criteria)
+    criteria_section = (
+        "\n\n" + _render_acceptance_criteria(criteria) if criteria else ""
+    )
+    files_section = "\n\n" + _render_reported_files(reported_files).text
+    listed_sections = criteria_section + files_section
 
     summary_lines = (
         f"- tests_run: {_prompt_count(phase_4_summary, 'tests_run')}\n"
@@ -1140,28 +1346,32 @@ def _build_code_reviewer_prompt(
         "Phase 4 summary (test-orchestrator outcome):\n"
         f"{summary_lines}\n\n"
         "Your job:\n"
-        "1. Review the implementation in the worktree against the task's "
-        "acceptance criteria using Read/Search/Grep.\n"
-        "2. Apply the review checklist from your agent definition (build, "
-        "requirements, code quality, testing, security, performance, "
-        "documentation).\n"
-        "3. Report findings via your normal response stream — the "
-        "orchestrator records the review outcome in specialist_results.json.\n"
-        "Do NOT modify source files: the Write tool is intentionally "
-        "withheld from this invocation."
+        "1. Review the work against the acceptance criteria, starting with "
+        "any listed files.\n"
+        "2. Read other files only when you need them.\n"
+        "3. The tests have already run (Phase 4 summary above), and you "
+        "cannot run anything.\n"
+        f"4. You have at most {tool_rounds} rounds of tool calls. After that "
+        "the review is stopped and lost, so write your review before then.\n"
+        "5. For each criterion, say met, not met or cannot tell, naming the "
+        "file and line. Then list any defects.\n"
+        "6. End with `Verdict: approve` or `Verdict: changes needed`.\n"
+        "Do NOT modify source files: the Write tool is withheld."
     )
 
     def render(context: str) -> str:
-        return f"{required_prefix}{context}{required_suffix}"
+        return f"{required_prefix}{context}{listed_sections}{required_suffix}"
 
     prompt = render(task_context)
 
     # Layer 1: keep the historical seed cap by trimming only task context.
-    # The canonical root and the outer-snapshot warning are required context;
-    # no budget path may cut or replace them.
+    # The criteria and the file list sit outside it (they have their own
+    # bounds). The canonical root and the outer-snapshot warning are required
+    # context; no budget path may cut or replace them.
     seed_limit = 1999
-    if len(prompt) > seed_limit:
-        overflow = len(prompt) - seed_limit
+    seed_length = len(required_prefix) + len(task_context) + len(required_suffix)
+    if seed_length > seed_limit:
+        overflow = seed_length - seed_limit
         marker = "\n[...truncated]"
         keep = (
             seed_limit - len(required_prefix) - len(required_suffix) - len(marker)
@@ -1187,8 +1397,24 @@ def _build_code_reviewer_prompt(
             f"\n[...truncated: task context elided to fit within "
             f"{max_chars}-char budget.]"
         )
-        keep = max_chars - len(required_prefix) - len(required_suffix) - len(marker)
+        keep = (
+            max_chars
+            - len(required_prefix)
+            - len(listed_sections)
+            - len(required_suffix)
+            - len(marker)
+        )
         if keep < 0:
+            if keep + len(listed_sections) >= 0:
+                # The required context would fit; the criteria and the file
+                # list are what does not. Say so, in numbers only, and fail
+                # closed as before.
+                raise ValueError(
+                    "code-reviewer prompt: the acceptance criteria and file "
+                    f"list ({len(listed_sections)} characters) do not fit the "
+                    f"configured prompt limit ({max_chars} characters, "
+                    f"{SPECIALIST_PROMPT_MAX_CHARS_ENV})"
+                )
             raise ValueError(
                 "code-reviewer prompt budget cannot preserve the canonical root"
             )
@@ -1980,6 +2206,53 @@ async def invoke_test_orchestrator(
     return run_result
 
 
+def reported_changed_files(player_report: Any) -> Optional[list[str]]:
+    """The files the Player reported changed this turn, for the code reviewer.
+
+    ``files_created`` followed by ``files_modified`` from the Player's report
+    (13 October 2026). ``None`` when the report holds neither list. The names
+    are what the Player reported, not a measured change.
+    """
+    if not isinstance(player_report, dict):
+        return None
+    found = False
+    names: list[str] = []
+    for key in ("files_created", "files_modified"):
+        value = player_report.get(key)
+        if isinstance(value, list):
+            found = True
+            names.extend(str(item) for item in value if item is not None)
+    return names if found else None
+
+
+#: How a review ended, for its record. Only labels; the outcome is the
+#: phase's ``status`` and ``error``, exactly as before.
+_REVIEW_ENDED_FINISHED = "finished"
+_REVIEW_ENDED_STEP_LIMIT = "step_limit"
+_REVIEW_ENDED_TIME_LIMIT = "time_limit"
+_REVIEW_ENDED_HUNG = "hung"
+_REVIEW_ENDED_ERROR = "error"
+
+
+def _review_ended_by(run_result: SpecialistInvocationResult) -> str:
+    """Label how the reviewer's model run ended, from its error.
+
+    The step cap is recognised by LangGraph's "Recursion limit" message
+    (the harness wraps ``GraphRecursionError``), the time limit by the
+    timeout error types, and the "hung" check by its own reason text.
+    """
+    if run_result.status == "passed":
+        return _REVIEW_ENDED_FINISHED
+    error = run_result.error or ""
+    if "Recursion limit" in error or "GraphRecursionError" in error:
+        return _REVIEW_ENDED_STEP_LIMIT
+    if error.startswith(("SDKTimeoutError", "TimeoutError")):
+        return _REVIEW_ENDED_TIME_LIMIT
+    if error.startswith(_WATCHDOG_HANG_REASON_TEMPLATE.split("{", 1)[0]):
+        return _REVIEW_ENDED_HUNG
+    return _REVIEW_ENDED_ERROR
+
+
 async def invoke_code_reviewer(
     worktree_path: Path,
     task_id: str,
@@ -1989,6 +2262,8 @@ async def invoke_code_reviewer(
     cancellation_event: Optional[threading.Event] = None,
     *,
     turn: Optional[int] = None,
+    acceptance_criteria: Optional[Sequence[Any]] = None,
+    reported_files: Optional[Sequence[Any]] = None,
 ) -> SpecialistInvocationResult:
     """Run the Phase 5 code-reviewer specialist under orchestrator control.
 
@@ -2000,6 +2275,18 @@ async def invoke_code_reviewer(
     preserving the existing ``phase_4`` block. The function never raises
     into the caller on SDK / tool failures — the autobuild turn loop owns
     recovery.
+
+    Bounded review (13 October 2026): the prompt carries the acceptance
+    criteria whole and the files the Player reported changed, and the single
+    model run is capped at ``_CODE_REVIEWER_RECURSION_LIMIT`` steps with
+    ``_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS``-character tool results, the
+    Coach evidence pass's mechanism. A review cut off by the step cap, the
+    time limit, the "hung" check or any other failure is recorded exactly as
+    before: ``failed``, with no review evidence; the step-cap case gets a
+    plain error text. The ``phase_5`` block gains a ``review_record`` (how
+    the review ended, its preparation and model-run seconds, tool counts by
+    name and the file-list counts), and one log line gives the same facts
+    with no tool arguments, paths or file names.
 
     Defensive guard: if ``phase4_result.status != "passed"`` the function
     raises :class:`ValueError`. The turn-loop wiring (TASK-OSI-006) is
@@ -2027,6 +2314,12 @@ async def invoke_code_reviewer(
         cancellation_event: Optional :class:`threading.Event` that signals
             cancellation to the SDK monitor inside ``_invoke_with_role``.
         turn: Optional autobuild turn number forwarded for instrumentation.
+        acceptance_criteria: The criteria list autobuild gives the Player
+            and the Coach. ``None`` or empty keeps the old behaviour, which
+            reads them from the task file.
+        reported_files: The files the Player reported changed this turn
+            (:func:`reported_changed_files`). ``None`` or empty makes the
+            prompt say none were reported; the review still runs.
 
     Returns:
         :class:`SpecialistInvocationResult` with ``phase="5"``. The
@@ -2046,17 +2339,29 @@ async def invoke_code_reviewer(
             "when Phase 4 did not pass; this guard catches caller bugs."
         )
 
+    from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+    started_at = time.monotonic()
     autobuild_dir = Path(worktree_path) / ".guardkit" / "autobuild" / task_id
     specialist_results_path = autobuild_dir / "specialist_results.json"
 
-    task_context = _load_task_context(Path(worktree_path), task_id)
+    criteria_given = bool(_criteria_items(acceptance_criteria))
+    task_context = _load_task_context(
+        Path(worktree_path), task_id, include_acceptance=not criteria_given
+    )
     phase_4_summary = _read_phase_4_block(specialist_results_path)
+    recursion_limit = _CODE_REVIEWER_RECURSION_LIMIT
+    max_tool_result_chars = _CODE_REVIEWER_MAX_TOOL_RESULT_CHARS
     prompt = _build_code_reviewer_prompt(
         task_id=task_id,
         task_context=task_context,
         phase_4_summary=phase_4_summary,
         canonical_root=Path(worktree_path),
+        acceptance_criteria=acceptance_criteria,
+        reported_files=reported_files,
+        recursion_limit=recursion_limit,
     )
+    files_section = _render_reported_files(reported_files)
 
     # TASK-PERF-SPECLAT01: cap the caller-supplied sdk_timeout at the
     # code-reviewer-specific ceiling so an agentic review pass on a slow model
@@ -2072,6 +2377,9 @@ async def invoke_code_reviewer(
             capped_sdk_timeout,
         )
 
+    tool_counter = ToolCallCounter()
+    preparation_seconds = time.monotonic() - started_at
+    run_started_at = time.monotonic()
     run_result = await run_specialist(
         specialist_name="code-reviewer",
         worktree_path=Path(worktree_path),
@@ -2087,7 +2395,21 @@ async def invoke_code_reviewer(
         # duration timeout fires — same protection the test-orchestrator has.
         no_activity_watchdog_seconds=_SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS,
         capture_final_message=True,
+        # 13 October 2026: the step cap, as the Coach evidence pass passes it.
+        recursion_limit=recursion_limit,
+        max_tool_result_chars=max_tool_result_chars,
+        tool_counter=tool_counter,
     )
+    model_run_seconds = time.monotonic() - run_started_at
+
+    ended_by = _review_ended_by(run_result)
+    if ended_by == _REVIEW_ENDED_STEP_LIMIT:
+        # Today's outcome, with an error a person can read. It reaches the
+        # Coach through the existing "evidence ABSENT, not failed" note.
+        run_result.error = (
+            f"stopped at its step cap ({recursion_limit} steps) before "
+            "writing a review"
+        )
 
     review_evidence: Optional[dict[str, Any]] = None
     if run_result.status == "passed":
@@ -2104,16 +2426,57 @@ async def invoke_code_reviewer(
             # boundary. The durable evidence text is the safe representation.
             run_result.final_message = review_evidence["text"]
 
+    tool_counts = tool_counter.counts()
+    review_record: dict[str, Any] = {
+        "ended_by": ended_by,
+        # The bounds in force for this review, so a changed setting shows
+        # in the measurement.
+        "step_cap": recursion_limit,
+        "tool_result_limit": max_tool_result_chars,
+        "preparation_seconds": round(preparation_seconds, 3),
+        "model_run_seconds": round(model_run_seconds, 3),
+        "tool_counts": tool_counts,
+        "tool_calls_total": sum(tool_counts.values()),
+        "files_reported": files_section.reported,
+        "files_shown": files_section.shown,
+        "file_names_cut": files_section.names_cut,
+    }
+
     phase_5_block: dict[str, Any] = {
         "status": run_result.status,
         "duration_seconds": run_result.duration_seconds,
         "error": run_result.error,
         **_PHASE_5_AGENT_FIELD_DEFAULTS,
+        "review_record": review_record,
     }
     if review_evidence is not None:
         phase_5_block["review_evidence"] = review_evidence
         phase_5_block["output_summary"] = _PHASE_5_REVIEW_CAPTURED_SUMMARY
 
     _merge_specialist_block(specialist_results_path, "phase_5", phase_5_block)
+
+    # One line with the same facts plus the total time, including writing
+    # the record. Tool names and counts only (names already limited to plain
+    # names by the counter): no arguments, paths, file names or error text.
+    logger.info(
+        "[%s] code-reviewer review ended ended_by=%s status=%s "
+        "step_cap=%d tool_result_limit=%d "
+        "preparation=%.1fs model_run=%.1fs total=%.1fs tool_calls=%d "
+        "tools=%s files_reported=%d files_shown=%d file_names_cut=%d",
+        task_id,
+        ended_by,
+        run_result.status,
+        recursion_limit,
+        max_tool_result_chars,
+        preparation_seconds,
+        model_run_seconds,
+        time.monotonic() - started_at,
+        review_record["tool_calls_total"],
+        ",".join(f"{name}={count}" for name, count in sorted(tool_counts.items()))
+        or "none",
+        files_section.reported,
+        files_section.shown,
+        files_section.names_cut,
+    )
 
     return run_result

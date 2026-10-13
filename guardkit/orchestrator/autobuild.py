@@ -5770,6 +5770,13 @@ class AutoBuildOrchestrator:
                                 agent_invoker=self._agent_invoker,
                                 cancellation_event=self._cancellation_event,
                                 turn=turn,
+                                # 13 October 2026 (bounded code review): the
+                                # same criteria list the Coach gets below, and
+                                # the files the Player reported changed.
+                                acceptance_criteria=acceptance_criteria,
+                                reported_files=_si.reported_changed_files(
+                                    player_result.report
+                                ),
                             )
                         )
                     else:

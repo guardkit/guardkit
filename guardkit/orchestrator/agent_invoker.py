@@ -2046,6 +2046,132 @@ class TaskWorkStreamParser:
         self._yagni_score = None
 
 
+class ToolCallCounter:
+    """Counts one model run's tool calls by name (13 October 2026).
+
+    Handed to :meth:`AgentInvoker._invoke_with_role` by a caller that wants a
+    record of which tools a run used (the code reviewer). It is owned by the
+    caller, so the counts survive a run that is cut off.
+
+    Two sources feed it. On LangGraph it hangs on the harness's native tool
+    hook, which fires while the run is still going; it counts tool starts.
+    On the SDK harness it counts the tool events in the stream. LangGraph
+    also replays its tool events in the stream after a finished run, so the
+    native counts win whenever there are any.
+
+    Only tool names are kept, never arguments, paths or results. A name is
+    whatever the model wrote (a call to a tool that does not exist reaches
+    the stream as written), so a name is kept only when it is one of the
+    tools actually bound for this run (:meth:`bind`, called by
+    ``_invoke_with_role`` once the harness is chosen) and is a plain name —
+    letters, digits and ``_ . : -``, at most 64 characters. Every other name,
+    including any name seen before the tools are bound, is counted as
+    ``"other"``. No method raises: a fault in counting must never stop a run.
+    """
+
+    #: The shape a kept name must have, on top of being a bound tool.
+    _PLAIN_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+    OTHER = "other"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._native: Dict[str, int] = {}
+        self._streamed: Dict[str, int] = {}
+        self._bound: frozenset = frozenset()
+
+    def bind(self, tool_names: Any) -> None:
+        """Set the tools actually bound for this run; only these keep a name."""
+        try:
+            names = frozenset(
+                name for name in tool_names or ()
+                if isinstance(name, str) and self._PLAIN_NAME.fullmatch(name)
+            )
+        except Exception:  # noqa: BLE001 — counting must never raise
+            names = frozenset()
+        with self._lock:
+            self._bound = names
+
+    def _bump(self, table: Dict[str, int], name: object) -> None:
+        if isinstance(name, str) and name in self._bound:
+            key = name
+        else:
+            key = self.OTHER
+        table[key] = table.get(key, 0) + 1
+
+    def record_native(self, event: object) -> None:
+        """Count a native (LangGraph) tool event; only starts are counted."""
+        try:
+            if getattr(event, "phase", None) != "start":
+                return
+            with self._lock:
+                self._bump(self._native, getattr(event, "tool_name", None))
+        except Exception:  # noqa: BLE001 — counting must never raise
+            pass
+
+    def record_streamed(self, name: object) -> None:
+        """Count a tool call seen in the harness event stream."""
+        try:
+            with self._lock:
+                self._bump(self._streamed, name)
+        except Exception:  # noqa: BLE001 — counting must never raise
+            pass
+
+    def counts(self) -> Dict[str, int]:
+        """Tool name to number of calls."""
+        with self._lock:
+            return dict(self._native or self._streamed)
+
+    def total(self) -> int:
+        """Total number of tool calls."""
+        return sum(self.counts().values())
+
+
+def _bound_tool_names(harness: Any, allowed_tools: Any, role: str) -> frozenset:
+    """The tool names a harness binds for this invocation, for the counter.
+
+    The SDK harness binds the requested names themselves. The LangGraph
+    harness binds the DeepAgents tools its read-only table gives for a
+    read-only request (guardkitfactory ``read_only_allowlist``); for any other
+    request, or a guardkitfactory without that table, the names are not known
+    here and the set is empty, so every name counts as ``"other"``.
+    """
+    if type(harness).__module__.startswith("guardkitfactory"):
+        try:
+            from guardkitfactory.harness.langgraph_harness import (
+                read_only_allowlist,
+            )
+
+            return frozenset(read_only_allowlist(allowed_tools, role) or ())
+        except Exception:  # noqa: BLE001 — unknown names count as "other"
+            return frozenset()
+    return frozenset(
+        name for name in allowed_tools or () if isinstance(name, str)
+    )
+
+
+def _native_tool_sink(
+    debug_dir: Optional[Path],
+    preserve_event_checked: Any,
+    tool_counter: Optional[ToolCallCounter],
+) -> Optional[Any]:
+    """The LangGraph native tool hook: the debug copy, the counter, or both.
+
+    ``None`` when neither is wanted, which keeps the harness exactly as it
+    was without them. The counter runs first and never raises; the debug
+    copy keeps its existing fail-closed behaviour.
+    """
+    if debug_dir is None and tool_counter is None:
+        return None
+
+    def _sink(event: Any) -> None:
+        if tool_counter is not None:
+            tool_counter.record_native(event)
+        if debug_dir is not None:
+            preserve_event_checked(debug_dir, event)
+
+    return _sink
+
+
 @dataclass
 class AgentInvocationResult:
     """Result of an agent invocation.
@@ -5461,6 +5587,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         max_tool_result_chars: Optional[int] = None,
         event_role: Optional[str] = None,
         event_agent_name: Optional[str] = None,
+        tool_counter: Optional[ToolCallCounter] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -5534,6 +5661,11 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 the Coach). Defaults to ``agent_type``.
             event_agent_name: The agent's name for that event (the
                 specialist's name). ``None`` by default.
+            tool_counter: Optional :class:`ToolCallCounter` (13 October 2026,
+                the code reviewer's record). On LangGraph it is hung on the
+                native tool hook, alongside the debug copy when that is on;
+                on the SDK harness it counts the stream's tool events. It
+                keeps tool names only. ``None`` (the default) changes nothing.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5695,14 +5827,21 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # cadence (which froze ``_last_activity_monotonic`` and
                 # false-killed live specialists at 150 s — FEAT-9DDE run 3).
                 on_model_activity=self._bump_activity,
-                on_native_tool_event=(
-                    lambda event: _sdk_preserve_event_checked(_sdk_debug_dir, event)
-                ) if _sdk_debug_dir is not None else None,
+                on_native_tool_event=_native_tool_sink(
+                    _sdk_debug_dir, _sdk_preserve_event_checked, tool_counter
+                ),
                 harness_role=agent_type,
                 # The task's pinned `launch:` settings and scratch folders for
                 # the shell (LangGraph only). None without a task or a block.
                 launch_declaration=load_launch_snapshot(task_id, self.worktree_path),
             )
+
+            if tool_counter is not None:
+                # Only names of tools this harness actually binds are kept in
+                # the count; anything the model invents counts as "other".
+                tool_counter.bind(
+                    _bound_tool_names(harness, allowed_tools, agent_type)
+                )
 
             # TASK-FIX-ASPF-004 + TASK-FIX-CTOUT01: dispatch cancellation
             # to BOTH the substrate-agnostic ``harness.cancel()`` path
@@ -5884,6 +6023,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                                         if isinstance(event, ToolUseEvent):
                                             if self._progress_logger:
                                                 self._track_tool_use(event)
+                                            if tool_counter is not None:
+                                                tool_counter.record_streamed(
+                                                    getattr(event, "name", None)
+                                                )
 
                                         # API-error check + heartbeat ToolUseBlock
                                         # log still operate on the raw SDK shape:

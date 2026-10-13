@@ -572,3 +572,92 @@ async def test_sdk_ceiling_hit_circuit_breaker_env_var(
     )
     assert recorder.invocations[0].agent_type == "test-orchestrator"
     assert recorder.invocations[1].agent_type == "code-reviewer"
+
+
+# ---------------------------------------------------------------------------
+# Bounded code review (13 October 2026): the production turn hands the
+# reviewer the Coach's criteria list and the Player's reported files.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_phase_5_receives_criteria_and_reported_files(tmp_path: Path) -> None:
+    """Drives the real ``AutoBuildOrchestrator._execute_turn`` (not the
+    mirror helper above) with the Player, Coach and both specialists
+    stubbed at their call sites. ``invoke_code_reviewer`` must receive the
+    same criteria list the Coach receives, and the Player report's
+    ``files_created`` plus ``files_modified``."""
+    from unittest.mock import Mock
+
+    from guardkit.orchestrator import specialist_invocations as _si
+    from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+    from guardkit.worktrees import Worktree
+    from tests.unit.test_autobuild_timeout_budget import (
+        _make_coach_result,
+        _make_orchestrator,
+    )
+
+    worktree = Mock(spec=Worktree)
+    worktree.task_id = "TASK-AB-001"
+    worktree.path = tmp_path
+    worktree.branch_name = "autobuild/TASK-AB-001"
+    worktree.base_branch = "main"
+
+    orchestrator = _make_orchestrator(tmp_path, worktree)
+    orchestrator._agent_invoker._get_implementation_mode.return_value = "task-work"
+    orchestrator._agent_invoker._inject_specialist_records_into_task_work_results = Mock()
+
+    criteria = ["AC-001 the endpoint returns 200", "AC-002 errors are logged"]
+    player_result = AgentInvocationResult(
+        task_id="TASK-AB-001",
+        turn=1,
+        agent_type="player",
+        success=True,
+        report={
+            "files_created": ["src/new_module.py"],
+            "files_modified": ["src/existing.py", "README.md"],
+            "tests_passed": True,
+        },
+        duration_seconds=5.0,
+        error=None,
+    )
+
+    async def fake_invoke_test_orchestrator(**kwargs):
+        result = Mock()
+        result.status = "passed"
+        return result
+
+    reviewer_kwargs: dict[str, Any] = {}
+
+    async def fake_invoke_code_reviewer(**kwargs):
+        reviewer_kwargs.update(kwargs)
+        return Mock()
+
+    with patch.object(
+        orchestrator, "_invoke_player_safely", return_value=player_result
+    ), patch.object(
+        orchestrator, "_invoke_coach_safely", return_value=_make_coach_result()
+    ) as coach, patch.object(
+        orchestrator, "_build_player_summary", return_value="ok"
+    ), patch.object(
+        _si, "invoke_test_orchestrator", side_effect=fake_invoke_test_orchestrator
+    ), patch.object(
+        _si, "invoke_code_reviewer", side_effect=fake_invoke_code_reviewer
+    ):
+        orchestrator._execute_turn(
+            turn=1,
+            task_id="TASK-AB-001",
+            requirements="do stuff",
+            worktree=worktree,
+            previous_feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+    assert reviewer_kwargs, "the code reviewer was not invoked"
+    coach_criteria = coach.call_args.kwargs["acceptance_criteria"]
+    assert reviewer_kwargs["acceptance_criteria"] == coach_criteria == criteria
+    assert reviewer_kwargs["reported_files"] == [
+        "src/new_module.py",
+        "src/existing.py",
+        "README.md",
+    ]

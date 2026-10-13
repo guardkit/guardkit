@@ -2172,7 +2172,9 @@ class TestSpecialistPromptBudget:
         assert "[...truncated" not in prompt
 
     def test_seed_cap_unchanged_when_under_budget(self, tmp_path: Path):
-        """The existing ~2000-char seed cap behaviour is unchanged when under budget."""
+        """The ~2000-char seed cap still cuts the task description, but no
+        longer the criteria list or the file list (13 October 2026: those
+        sit outside it, with their own bounds)."""
         # A context that keeps the prompt over 2000 but well under 300k
         medium_context = "a" * 5000
         phase_4_summary = {
@@ -2183,6 +2185,8 @@ class TestSpecialistPromptBudget:
             "output_summary": "All tests passed.",
         }
         budget = 300_000
+        criteria = [f"criterion {i} " + "c" * 80 for i in range(40)]
+        files = [f"src/file_{i}.py" for i in range(20)]
 
         prompt = _build_code_reviewer_prompt(
             "TASK-TEST-001",
@@ -2190,12 +2194,21 @@ class TestSpecialistPromptBudget:
             phase_4_summary,
             canonical_root=tmp_path,
             max_chars=budget,
+            acceptance_criteria=criteria,
+            reported_files=files,
         )
 
-        # The prompt should be under 2000 chars due to the seed cap
-        assert len(prompt) < 2000, (
-            "seed cap should still apply at ~2000 chars when under overall budget"
+        # The description is cut at the seed cap...
+        assert "[...truncated]" in prompt
+        assert "a" * 5000 not in prompt
+        # ...and what is outside the criteria and file list stays within it.
+        start = prompt.index("\n\nAcceptance criteria (every one")
+        end = prompt.index("\n\nPhase 4 summary")
+        assert len(prompt[:start] + prompt[end:]) <= 1999, (
+            "seed cap should still apply at ~2000 chars to the description"
         )
+        for item in criteria + files:
+            assert item in prompt
 
     def test_backstop_applied_after_seed_cap(self, tmp_path: Path):
         """The env-tunable backstop is applied AFTER the 2000-char seed cap."""
@@ -2409,3 +2422,467 @@ async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
     assert block["tests_run"] == 7
     assert block["tests_failed"] == 0
     assert block["ran_and_failed"] is True
+
+
+# =============================================================================
+# Bounded code review (13 October 2026)
+# =============================================================================
+#
+# The reviewer was never told which files had
+# changed or when to stop, its acceptance criteria were cut off with the rest
+# of a 1,999-character prompt, and nothing limited its steps: 30 of 33 runs
+# on 12-13 October hit the 600-second limit. These tests pin the prompt that
+# says what to review, the step cap borrowed from the Coach evidence pass,
+# the unchanged outcome of a review that is cut off, and the record of how
+# each review ended.
+
+_FILES_HEADING = (
+    "Files reported changed this turn (may be incomplete — read them with "
+    "your tools)"
+)
+_NO_FILES_LINE = "No changed files were reported for this turn"
+
+
+def _seed_long_description_task(worktree: Path, task_id: str) -> Path:
+    """A task file whose 3,000-character description comes first."""
+    task_dir = worktree / "tasks" / "in_progress"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    task_file = task_dir / f"{task_id}-long.md"
+    task_file.write_text(
+        "---\n"
+        f"id: {task_id}\n"
+        "---\n\n"
+        "## Description\n\n"
+        + ("d" * 3000)
+        + "\n\n## Acceptance Criteria\n\n- [ ] only in the file\n",
+        encoding="utf-8",
+    )
+    return task_file
+
+
+def _file_list_lines(prompt: str) -> list[str]:
+    """The lines listed under the reported-files heading."""
+    lines = prompt.split("\n")
+    start = lines.index(_FILES_HEADING + ":")
+    listed: list[str] = []
+    for line in lines[start + 1:]:
+        if not line.strip():
+            break
+        listed.append(line)
+    return listed
+
+
+async def _review(tmp_path: Path, invoker, **extra):
+    _seed_specialist_results_with_phase_4(tmp_path, _TASK_ID_OSI_005)
+    return await invoke_code_reviewer(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_OSI_005,
+        phase4_result=_make_passed_phase4_result(),
+        sdk_timeout=2138,
+        agent_invoker=invoker,
+        **extra,
+    )
+
+
+def _phase_5_block(tmp_path: Path) -> dict:
+    path = (
+        tmp_path / ".guardkit" / "autobuild" / _TASK_ID_OSI_005
+        / "specialist_results.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))["phase_5"]
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_prompt_keeps_every_acceptance_criterion(
+    tmp_path: Path,
+) -> None:
+    """Every criterion reaches the reviewer word for word, even when the
+    description alone is longer than the old 1,999-character prompt."""
+    _seed_long_description_task(tmp_path, _TASK_ID_OSI_005)
+    criteria = [
+        f"AC-{i:03d}: the service handles case {i} and reports it plainly "
+        "to the caller with the documented status code"
+        for i in range(1, 60)
+    ]
+    criteria.append("AC-LAST: MARKER-LAST-CRITERION-7f3a")
+    invoker = _make_fake_agent_invoker()
+
+    result = await _review(tmp_path, invoker, acceptance_criteria=criteria)
+
+    assert result.status == "passed"
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    for criterion in criteria:
+        assert criterion in prompt, f"criterion cut from the prompt: {criterion!r}"
+    assert "MARKER-LAST-CRITERION-7f3a" in prompt
+    # The description keeps its existing limit; it was cut, the criteria not.
+    assert "d" * 3000 not in prompt
+    # The list replaces the task file's own criteria section.
+    assert "only in the file" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_prompt_lists_reported_files(tmp_path: Path) -> None:
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    files = ["src/service.py", "src/routes/users.py", "tests/test_service.py"]
+    invoker = _make_fake_agent_invoker()
+
+    await _review(tmp_path, invoker, reported_files=files)
+
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert _FILES_HEADING in prompt
+    listed = _file_list_lines(prompt)
+    assert listed == [f'- "{name}"' for name in files]
+    for name in files:
+        assert prompt.count(name) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("given", [[], None], ids=["empty-list", "no-list"])
+async def test_code_reviewer_prompt_says_when_no_files_reported(
+    tmp_path: Path, given
+) -> None:
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+    extra = {} if given is None else {"reported_files": given}
+
+    result = await _review(tmp_path, invoker, **extra)
+
+    invoker._invoke_with_role.assert_awaited_once()
+    assert result.status == "passed"
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert _NO_FILES_LINE in prompt
+    assert _FILES_HEADING not in prompt
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_file_names_are_literal(tmp_path: Path) -> None:
+    """A hostile name stays one quoted line; it cannot split or add a name."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    odd = 'src/we"ird\nname\twith*?[x]:(glob)'
+    files = ["src/a.py", odd, "src/b.py"]
+    invoker = _make_fake_agent_invoker()
+
+    await _review(tmp_path, invoker, reported_files=files)
+
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    listed = _file_list_lines(prompt)
+    assert len(listed) == len(files)
+    expected = '- "src/we\\"ird\\nname\\twith*?[x]:(glob)"'
+    assert listed[1] == expected
+    assert prompt.count(":(glob)") == 1
+    assert "name\twith" not in prompt
+    assert "\nname" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_file_list_bounds(tmp_path: Path) -> None:
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    files = [f"src/module_{i:03d}.py" for i in range(301)]
+    invoker = _make_fake_agent_invoker()
+
+    await _review(tmp_path, invoker, reported_files=files)
+
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    listed = _file_list_lines(prompt)
+    named = [line for line in listed if line.startswith('- "')]
+    assert len(named) == 300
+    assert "src/module_300.py" not in prompt
+    assert listed[-1] == "- and 1 more not listed"
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["files_reported"] == 301
+    assert record["files_shown"] == 300
+
+    long_name = "x" * 10_000
+    invoker = _make_fake_agent_invoker()
+    await _review(tmp_path, invoker, reported_files=[long_name])
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    (line,) = _file_list_lines(prompt)
+    assert line.startswith('- "' + "x" * 300 + '"')
+    assert "x" * 301 not in prompt
+    assert "cut to 300 of 10000 characters" in line
+    assert _phase_5_block(tmp_path)["review_record"]["file_names_cut"] == 1
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_prompt_states_step_allowance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The prompt names the tool rounds worked out from the cap setting."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+    await _review(tmp_path, invoker)
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert "at most 10 rounds of tool calls" in prompt
+    assert "write your review before then" in prompt
+
+    monkeypatch.setattr(
+        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 40
+    )
+    invoker = _make_fake_agent_invoker()
+    await _review(tmp_path, invoker)
+    prompt = invoker._invoke_with_role.await_args.kwargs["prompt"]
+    assert "at most 18 rounds of tool calls" in prompt
+    assert invoker._invoke_with_role.await_args.kwargs["recursion_limit"] == 40
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_passes_step_cap(tmp_path: Path) -> None:
+    """One call, with the Coach evidence pass's bounds; the timeout cap and
+    the "hung" check are unchanged."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    seen: dict[str, object] = {}
+
+    async def _capture(**kwargs: object):
+        seen.update(kwargs)
+        seen["timeout"] = invoker.sdk_timeout_seconds
+        return (None, [SimpleNamespace(type="assistant_message", text="ok")])
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_capture)
+    real_run_specialist = specialist_invocations.run_specialist
+    run_kwargs: dict[str, object] = {}
+
+    async def _spy(**kwargs: object):
+        run_kwargs.update(kwargs)
+        return await real_run_specialist(**kwargs)
+
+    with patch.object(specialist_invocations, "run_specialist", _spy):
+        await _review(tmp_path, invoker)
+
+    invoker._invoke_with_role.assert_awaited_once()
+    assert seen["recursion_limit"] == 24
+    assert seen["max_tool_result_chars"] == 12000
+    assert seen["timeout"] == 600
+    assert (
+        run_kwargs["no_activity_watchdog_seconds"]
+        == specialist_invocations._SPECIALIST_NO_ACTIVITY_WATCHDOG_SECONDS
+    )
+
+
+_RECURSION_ERROR_TEXT = (
+    "SDK invocation failed for coach (LangGraphHarnessError): LangGraphHarness: "
+    "agent.ainvoke failed for role='coach' model='reviewer-model': Recursion "
+    "limit of 24 reached without hitting a stop condition. You can increase "
+    "the limit by setting the `recursion_limit` config key."
+)
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_step_limit_gives_todays_outcome(
+    tmp_path: Path,
+) -> None:
+    from guardkit.orchestrator.exceptions import AgentInvocationError
+
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=AgentInvocationError(
+            _RECURSION_ERROR_TEXT, error_class="LangGraphHarnessError"
+        )
+    )
+
+    result = await _review(tmp_path, invoker)
+
+    invoker._invoke_with_role.assert_awaited_once()
+    assert result.status == "failed"
+    block = _phase_5_block(tmp_path)
+    assert block["status"] == "failed"
+    assert block["error"] == (
+        "stopped at its step cap (24 steps) before writing a review"
+    )
+    assert result.error == block["error"]
+    assert "review_evidence" not in block
+    assert block["output_summary"] == (
+        "No usable code-reviewer model report was captured."
+    )
+    assert block["review_record"]["ended_by"] == "step_limit"
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_time_limit_recorded(tmp_path: Path) -> None:
+    from guardkit.orchestrator.exceptions import SDKTimeoutError
+
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker(
+        invoke_side_effect=SDKTimeoutError(
+            "Agent invocation exceeded 600s timeout"
+        )
+    )
+
+    result = await _review(tmp_path, invoker)
+
+    assert result.status == "failed"
+    block = _phase_5_block(tmp_path)
+    assert block["status"] == "failed"
+    assert "600s timeout" in block["error"]
+    assert "review_evidence" not in block
+    assert block["review_record"]["ended_by"] == "time_limit"
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_records_tool_counts_and_durations(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from guardkit.orchestrator.exceptions import AgentInvocationError
+
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    secret_path = "/private/home/someone/src/secret_module.py"
+
+    async def _tools_then_fail(**kwargs: object):
+        counter = kwargs["tool_counter"]
+        # As _invoke_with_role does once the harness is chosen.
+        counter.bind({"read_file", "grep", "ls", "glob"})
+        for _ in range(3):
+            counter.record_native(SimpleNamespace(
+                phase="start", tool_name="read_file",
+                payload={"file_path": secret_path},
+            ))
+            counter.record_native(SimpleNamespace(
+                phase="end", tool_name="read_file", payload="file text",
+            ))
+        counter.record_native(SimpleNamespace(
+            phase="start", tool_name="grep", payload={"pattern": "secret"},
+        ))
+        raise AgentInvocationError("model connection dropped")
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_tools_then_fail)
+
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        result = await _review(
+            tmp_path, invoker, reported_files=["src/reported_name.py"]
+        )
+
+    assert result.status == "failed"
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["ended_by"] == "error"
+    assert record["tool_counts"] == {"read_file": 3, "grep": 1}
+    assert record["tool_calls_total"] == 4
+    assert isinstance(record["preparation_seconds"], float)
+    assert isinstance(record["model_run_seconds"], float)
+    assert record["preparation_seconds"] >= 0
+    assert record["model_run_seconds"] >= 0
+    assert record["files_reported"] == 1
+    assert record["files_shown"] == 1
+    assert record["file_names_cut"] == 0
+
+    lines = [
+        r.getMessage() for r in caplog.records
+        if "code-reviewer review ended" in r.getMessage()
+    ]
+    assert len(lines) == 1
+    line = lines[0]
+    assert "ended_by=step_limit" not in line
+    assert "ended_by=error" in line
+    assert "read_file=3" in line and "grep=1" in line
+    assert "total=" in line
+    assert secret_path not in line
+    assert "secret" not in line
+    assert "reported_name" not in line
+    assert str(tmp_path) not in line
+
+
+# Coach review of 99194bb8 (13 October 2026): model-written tool names, the
+# limits in force, and a prompt limit too small for the lists.
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_unplain_tool_names_never_reach_log_or_record(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A tool name the model wrote (a path, a newline and a forged log line)
+    is counted as "other" in the record and the log line, on the stream path
+    and the native path alike."""
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    forged = "/home/secret/x.py\nINFO fake line"
+
+    async def _bad_names(**kwargs: object):
+        counter = kwargs["tool_counter"]
+        counter.record_streamed(forged)
+        counter.record_streamed("src/other.py")
+        return (None, [SimpleNamespace(type="assistant_message", text="ok")])
+
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_bad_names)
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["tool_counts"] == {"other": 2}
+    (line,) = [
+        r.getMessage() for r in caplog.records
+        if "code-reviewer review ended" in r.getMessage()
+    ]
+    assert "tools=other=2" in line
+    assert "/home/secret" not in line
+    assert "fake line" not in line
+    assert "\n" not in line
+
+    async def _bad_native(**kwargs: object):
+        kwargs["tool_counter"].record_native(
+            SimpleNamespace(phase="start", tool_name=forged)
+        )
+        raise RuntimeError("cut off")
+
+    caplog.clear()
+    invoker = _make_fake_agent_invoker(invoke_side_effect=_bad_native)
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["tool_counts"] == {"other": 1}
+    assert "fake line" not in json.dumps(record)
+
+
+@pytest.mark.asyncio
+async def test_code_reviewer_record_states_limits_in_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _seed_task_markdown(tmp_path, _TASK_ID_OSI_005)
+    invoker = _make_fake_agent_invoker()
+    await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["step_cap"] == 24
+    assert record["tool_result_limit"] == 12000
+
+    monkeypatch.setattr(
+        specialist_invocations, "_CODE_REVIEWER_RECURSION_LIMIT", 40
+    )
+    monkeypatch.setattr(
+        specialist_invocations, "_CODE_REVIEWER_MAX_TOOL_RESULT_CHARS", 9000
+    )
+    invoker = _make_fake_agent_invoker()
+    with caplog.at_level("INFO", logger=specialist_invocations.logger.name):
+        await _review(tmp_path, invoker)
+    record = _phase_5_block(tmp_path)["review_record"]
+    assert record["step_cap"] == 40
+    assert record["tool_result_limit"] == 9000
+    kwargs = invoker._invoke_with_role.await_args.kwargs
+    assert kwargs["recursion_limit"] == 40
+    assert kwargs["max_tool_result_chars"] == 9000
+    (line,) = [
+        r.getMessage() for r in caplog.records
+        if "code-reviewer review ended" in r.getMessage()
+    ]
+    assert "step_cap=40" in line
+    assert "tool_result_limit=9000" in line
+
+
+def test_code_reviewer_prompt_limit_too_small_for_lists(tmp_path: Path) -> None:
+    """When the configured prompt limit leaves room for the required context
+    but not for the criteria and file list, the error says that, in numbers
+    only, and still fails closed."""
+    criteria = [f"SECRET-CRITERION-{i} " + "c" * 200 for i in range(20)]
+    with pytest.raises(ValueError) as excinfo:
+        _build_code_reviewer_prompt(
+            "TASK-TEST-001",
+            "context",
+            {"tests_run": 1},
+            canonical_root=tmp_path,
+            max_chars=3000,
+            acceptance_criteria=criteria,
+            reported_files=["src/secret_name.py"],
+        )
+    message = str(excinfo.value)
+    assert "do not fit the configured prompt limit (3000 characters" in message
+    assert "acceptance criteria and file list" in message
+    assert "canonical root" not in message
+    assert "SECRET-CRITERION" not in message
+    assert "secret_name" not in message
