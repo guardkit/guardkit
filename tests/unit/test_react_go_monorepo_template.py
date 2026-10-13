@@ -365,22 +365,79 @@ def test_rendered_toolchain_declaration_parses_through_real_parser(
 
     api = declaration.component("api")
     assert api is not None
-    for flag in ("-race", "-count=1", "GOTOOLCHAIN=local"):
-        assert flag in api.test
-    assert "go test -race -count=1 ./..." in (
+    for flag in ("-race", "-count=1", "-v", "GOTOOLCHAIN=local"):
+        assert flag in api.test.split()
+    assert "go test -race -count=1 -v ./..." in (
         rendered / "scripts" / "check.sh"
     ).read_text(encoding="utf-8")
     assert declaration.requires_ran_marker is True
 
 
-# Real outputs (12 October 2026, Go 1.26.9 and Vitest 4.0.15, colour codes kept).
-_GO_NO_TEST_FILES = "?   \texample.com/guardkit/react-go-api/cmd/api\t[no test files]\n"
-_GO_RAN = _GO_NO_TEST_FILES + "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.024s\n"
-_GO_CACHED = _GO_NO_TEST_FILES + "ok  \texample.com/guardkit/react-go-api/internal/notes\t(cached)\n"
-_GO_NO_TESTS_TO_RUN = (
-    _GO_NO_TEST_FILES
-    + "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.018s [no tests to run]\n"
+# Real `go test -race -count=1 -v` outputs (13 October 2026, Go 1.26.9, linux/arm64),
+# from a neutral probe module: every test skipped, pass plus skip (with a subtest),
+# no test files, `-run NoSuch`, and a failing test (exit 1).
+_GO_ALL_SKIPPED = (
+    "=== RUN   TestOne\n"
+    "    a_test.go:5: not yet\n"
+    "--- SKIP: TestOne (0.00s)\n"
+    "=== RUN   TestTwo\n"
+    "    a_test.go:6: not yet\n"
+    "--- SKIP: TestTwo (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/allskip\t1.011s\n"
 )
+_GO_PASS_AND_SKIP = (
+    "=== RUN   TestPasses\n"
+    "=== RUN   TestPasses/case\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "    --- PASS: TestPasses/case (0.00s)\n"
+    "=== RUN   TestSkipped\n"
+    "    m_test.go:8: not yet\n"
+    "--- SKIP: TestSkipped (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.013s\n"
+)
+_GO_NO_TEST_FILES = (
+    "?   \texample.com/probe/notests\t[no test files]\n"
+)
+_GO_NO_TESTS_TO_RUN = (
+    "testing: warning: no tests to run\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.009s [no tests to run]\n"
+)
+_GO_FAILING = (
+    "=== RUN   TestFails\n"
+    "    f_test.go:5: broken\n"
+    "--- FAIL: TestFails (0.00s)\n"
+    "FAIL\n"
+    "FAIL\texample.com/probe/failing\t0.009s\n"
+    "FAIL\n"
+)
+# The same package run twice without -count=1 (13 October 2026): a fresh run,
+# then Go's cached replay, which reprints the old PASS lines.
+_GO_FRESH_WITHOUT_COUNT = (
+    "=== RUN   TestPasses\n"
+    "=== RUN   TestPasses/case\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "    --- PASS: TestPasses/case (0.00s)\n"
+    "=== RUN   TestSkipped\n"
+    "    m_test.go:8: not yet\n"
+    "--- SKIP: TestSkipped (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t1.009s\n"
+)
+_GO_CACHED_REPLAY = (
+    "=== RUN   TestPasses\n"
+    "=== RUN   TestPasses/case\n"
+    "--- PASS: TestPasses (0.00s)\n"
+    "    --- PASS: TestPasses/case (0.00s)\n"
+    "=== RUN   TestSkipped\n"
+    "    m_test.go:8: not yet\n"
+    "--- SKIP: TestSkipped (0.00s)\n"
+    "PASS\n"
+    "ok  \texample.com/probe/mixed\t(cached)\n"
+)
+# Real Vitest 4.0.15 outputs (12 October 2026), colour codes kept.
 _VITEST_PASSED = (
     "\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m\x1b[90m (1)\x1b[39m\n"
     "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m2 passed\x1b[39m\x1b[22m\x1b[90m (2)\x1b[39m\n"
@@ -403,31 +460,41 @@ _VITEST_NO_FILES = "No test files found, exiting with code 0\n"
 
 
 @pytest.mark.parametrize(
-    ("target", "output", "ran"),
+    ("target", "output", "returncode", "ran"),
     [
-        ("api", _GO_RAN, True),
-        ("api", _GO_CACHED, False),
-        ("api", _GO_NO_TESTS_TO_RUN, False),
-        ("api", _GO_NO_TEST_FILES, False),
-        ("web", _VITEST_PASSED, True),
-        ("web", _VITEST_PASSED_PLAIN, True),
-        ("web", _VITEST_ONE_PASSED_ONE_SKIPPED, True),
-        ("web", _VITEST_ALL_SKIPPED, False),
-        ("web", _VITEST_TODO_ONLY, False),
-        ("web", _VITEST_NO_FILES, False),
-        ("root", _GO_RAN + _VITEST_PASSED, True),
-        ("root", _GO_RAN + _VITEST_ONE_PASSED_ONE_SKIPPED, True),
-        ("root", _GO_RAN + _VITEST_ALL_SKIPPED, False),
-        ("root", _GO_RAN + _VITEST_TODO_ONLY, False),
-        ("root", _GO_CACHED + _VITEST_PASSED, False),
-        ("root", _GO_NO_TESTS_TO_RUN + _VITEST_PASSED, False),
-        ("root", _VITEST_PASSED, False),
+        ("api", _GO_PASS_AND_SKIP, 0, True),
+        ("api", _GO_ALL_SKIPPED, 0, False),
+        ("api", _GO_NO_TEST_FILES, 0, False),
+        ("api", _GO_NO_TESTS_TO_RUN, 0, False),
+        ("api", _GO_FAILING, 1, True),
+        ("api", _GO_FRESH_WITHOUT_COUNT, 0, True),
+        ("api", _GO_CACHED_REPLAY, 0, False),
+        ("web", _VITEST_PASSED, 0, True),
+        ("web", _VITEST_PASSED_PLAIN, 0, True),
+        ("web", _VITEST_ONE_PASSED_ONE_SKIPPED, 0, True),
+        ("web", _VITEST_ALL_SKIPPED, 0, False),
+        ("web", _VITEST_TODO_ONLY, 0, False),
+        ("web", _VITEST_NO_FILES, 0, False),
+        ("root", _GO_PASS_AND_SKIP + _VITEST_PASSED, 0, True),
+        ("root", _GO_PASS_AND_SKIP + _VITEST_ONE_PASSED_ONE_SKIPPED, 0, True),
+        ("root", _GO_PASS_AND_SKIP + _VITEST_ALL_SKIPPED, 0, False),
+        ("root", _GO_PASS_AND_SKIP + _VITEST_TODO_ONLY, 0, False),
+        ("root", _GO_ALL_SKIPPED + _VITEST_PASSED, 0, False),
+        ("root", _GO_NO_TESTS_TO_RUN + _VITEST_PASSED, 0, False),
+        ("root", _GO_NO_TEST_FILES + _VITEST_PASSED, 0, False),
+        ("root", _VITEST_PASSED, 0, False),
+        ("root", _GO_FAILING, 1, True),
+        ("root", _GO_FRESH_WITHOUT_COUNT + _VITEST_PASSED, 0, True),
+        ("root", _GO_CACHED_REPLAY + _VITEST_PASSED, 0, False),
     ],
 )
 def test_declared_ran_markers_classify_real_outputs(
-    rendered: Path, target: str, output: str, ran: bool
+    rendered: Path, target: str, output: str, returncode: int, ran: bool
 ) -> None:
-    """A clean exit counts as a run only with real work, judged by GuardKit's own classifier."""
+    """GuardKit's own classifier: a clean exit counts only with real passing work.
+
+    ``ran`` with a non-zero exit is a genuine failure, never "not run".
+    """
     declaration = parse_toolchain_block(_rendered_config(rendered)["toolchain"])
     source = declaration if target == "root" else declaration.component(target)
     assert source is not None
@@ -442,7 +509,7 @@ def test_declared_ran_markers_classify_real_outputs(
         requires_ran_marker=source.requires_ran_marker,
     )
     assert profile is not None and profile.success_requires_ran_marker
-    assert classify_absent_for_stack(profile, 0, output) is (not ran)
+    assert classify_absent_for_stack(profile, returncode, output) is (not ran)
 
 
 def test_rendered_launch_block_declares_settings_and_scratch(rendered: Path) -> None:
