@@ -58,8 +58,12 @@ from pydantic import BaseModel, Field
 # Controlled Vocabulary Types
 # ============================================================================
 
-AgentRole = Literal["player", "coach", "resolver", "router"]
-"""Valid agent roles in the AutoBuild system."""
+AgentRole = Literal["player", "coach", "resolver", "router", "specialist"]
+"""Valid agent roles in the AutoBuild system.
+
+``specialist`` (13 October 2026) labels an orchestrator-run specialist such
+as the code reviewer, whose permission role is ``player`` or ``coach`` but
+which is neither; its name goes in ``LLMCallEvent.agent_name``."""
 
 FailureCategory = Literal[
     "knowledge_gap",
@@ -162,6 +166,8 @@ class LLMCallEvent(BaseEvent):
         prompt_profile: Prompt composition profile from controlled vocabulary.
         status: Call outcome (ok or error).
         error_type: Optional error classification when status is 'error'.
+        agent_name: Optional name of the agent within its role (for a
+            ``specialist``, the specialist's name, e.g. ``code-reviewer``).
     """
 
     provider: LLMProvider = Field(
@@ -195,6 +201,10 @@ class LLMCallEvent(BaseEvent):
     error_type: Optional[LLMCallErrorType] = Field(
         None,
         description="Error classification when status is 'error'",
+    )
+    agent_name: Optional[str] = Field(
+        None,
+        description="Name of the agent within its role, e.g. a specialist's name",
     )
 
 

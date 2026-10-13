@@ -105,6 +105,28 @@ class TestDetectProvider:
 
         assert detect_provider("https://api.openai.com/v1", "claude-sonnet-4-20250514") == "openai"
 
+    def test_a_model_prefix_names_its_own_provider(self) -> None:
+        """13 October 2026: the code reviewer's model, as recorded on the
+        first web fixture proof's events, was labelled ``anthropic`` because
+        the base URL was empty. The model's own prefix decides."""
+        from guardkit.orchestrator.instrumentation.llm_instrumentation import (
+            detect_provider,
+        )
+
+        assert detect_provider("", "openai:flash-next-t06") == "openai"
+        assert detect_provider(None, "openai:flash-next-t06") == "openai"
+        assert detect_provider("http://localhost:8000", "openai:flash-next-t06") == "openai"
+        assert detect_provider("https://api.openai.com/v1", "anthropic:claude-x") == "anthropic"
+
+    def test_an_unprefixed_or_unknown_prefix_model_uses_the_url_rules(self) -> None:
+        from guardkit.orchestrator.instrumentation.llm_instrumentation import (
+            detect_provider,
+        )
+
+        assert detect_provider("", "qwen36-workhorse") == "anthropic"
+        assert detect_provider("http://localhost:8000", "qwen36-workhorse") == "local-vllm"
+        assert detect_provider("http://vllm-server:8000/v1", "ollama:gemma") == "local-vllm"
+
 
 # ============================================================================
 # extract_token_usage tests

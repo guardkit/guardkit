@@ -57,24 +57,42 @@ _ALLOWED_TOOL_NAME = re.compile(r"[^A-Za-z0-9\-_. ]")
 # ============================================================================
 
 
+# A model string's own provider prefix (``"<provider>:<model>"``), mapped to
+# the provider vocabulary. Only prefixes the vocabulary can name are listed.
+_MODEL_PREFIX_PROVIDERS = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+}
+
+
 def detect_provider(base_url: Optional[str], model: Optional[str]) -> str:
-    """Detect LLM provider from base URL or model string.
+    """Detect LLM provider from the model string's prefix, else the base URL.
 
     Classification rules (applied in order):
+    0. A model with a known provider prefix (``openai:x`` → ``"openai"``,
+       ``anthropic:x`` → ``"anthropic"``) names its own provider (13 October
+       2026: an empty base URL labelled every ``openai:`` model
+       ``anthropic``).
     1. *None* or empty ``base_url`` → ``"anthropic"`` (default)
     2. Contains ``api.anthropic.com`` → ``"anthropic"``
     3. Contains ``openai`` → ``"openai"``
     4. Contains ``localhost`` or ``vllm`` → ``"local-vllm"``
     5. Otherwise → ``"anthropic"`` (safe default)
 
+    Rules 1-5 apply only to a model with no known prefix.
+
     Args:
         base_url: API base URL, or *None* for default Anthropic endpoint.
-        model: Model identifier string (currently unused; reserved for
-            future heuristic expansion).
+        model: Model identifier string, possibly ``"<provider>:<model>"``.
 
     Returns:
         One of ``"anthropic"``, ``"openai"``, or ``"local-vllm"``.
     """
+    if isinstance(model, str) and ":" in model:
+        prefix = model.split(":", 1)[0].strip().lower()
+        if prefix in _MODEL_PREFIX_PROVIDERS:
+            return _MODEL_PREFIX_PROVIDERS[prefix]
+
     if not base_url:
         return "anthropic"
 

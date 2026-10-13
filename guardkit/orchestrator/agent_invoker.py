@@ -5443,6 +5443,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         grammar: Optional[str] = None,
         recursion_limit: Optional[int] = None,
         max_tool_result_chars: Optional[int] = None,
+        event_role: Optional[str] = None,
+        event_agent_name: Optional[str] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -5509,6 +5511,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 uncapped (Player/synthesis behaviour). The Coach gather passes
                 a limit so a single ``read``/``grep``/``execute`` cannot dump
                 an unbounded payload into the running context. LangGraph-only.
+            event_role: The role written on the ``llm.call`` event, when it
+                is not the permission role ``agent_type`` (13 October 2026:
+                :func:`run_specialist` passes ``"specialist"``, because the
+                code reviewer runs with the Coach's permissions but is not
+                the Coach). Defaults to ``agent_type``.
+            event_agent_name: The agent's name for that event (the
+                specialist's name). ``None`` by default.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5966,13 +5975,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # Token extraction reads usage off the raw SDK ResultMessage
                 # objects that live in response_messages via event.raw.
                 self._emit_llm_call_event(
-                    agent_type=agent_type,
+                    agent_type=event_role or agent_type,
                     model=model,
                     latency_ms=latency.ms,
                     response_messages=response_messages,
                     status=call_status,
                     error=call_error,
                     task_id=heartbeat_task_id,
+                    agent_name=event_agent_name,
                 )
 
         except asyncio.TimeoutError:
@@ -6067,13 +6077,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
     def _emit_llm_call_event(
         self,
-        agent_type: Literal["player", "coach"],
+        agent_type: str,
         model: Optional[str],
         latency_ms: float,
         response_messages: List[Any],
         status: str,
         error: Optional[Exception],
         task_id: str,
+        agent_name: Optional[str] = None,
     ) -> None:
         """Construct and fire-and-forget an LLMCallEvent.
 
@@ -6082,13 +6093,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         the caller. (TASK-INST-005b)
 
         Args:
-            agent_type: Agent role ("player" or "coach").
+            agent_type: Role written on the event ("player", "coach" or
+                "specialist").
             model: Model identifier or None for CLI default.
             latency_ms: Wall-clock latency of the SDK call in milliseconds.
             response_messages: SDK response messages (for token extraction).
             status: "ok" or "error".
             error: The exception if status is "error", else None.
             task_id: Task identifier extracted from prompt.
+            agent_name: Optional agent name (a specialist's name).
         """
         try:
             input_tokens, output_tokens = extract_token_usage(response_messages)
@@ -6127,6 +6140,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 prompt_profile=prompt_profile,
                 status=status,
                 error_type=classify_error(error),
+                agent_name=agent_name,
             )
 
             async def _safe_emit() -> None:

@@ -594,3 +594,73 @@ class TestPromptProfile:
 
         assert len(emitter.events) == 1
         assert emitter.events[0].prompt_profile == "digest+rules_bundle"
+
+
+# ============================================================================
+# Test: a specialist's events name the specialist (13 October 2026)
+# ============================================================================
+
+
+class TestSpecialistEventLabels:
+    """The code reviewer runs with the Coach's permissions, and its timeouts
+    on the first web fixture proof were all recorded as ``agent_role: coach``.
+    The event now says ``specialist`` and names it."""
+
+    @pytest.mark.asyncio
+    async def test_a_timed_out_code_reviewer_is_labelled_as_the_specialist(
+        self, tmp_path: Path, mock_sdk: ModuleType,
+    ) -> None:
+        from guardkit.orchestrator.specialist_invocations import run_specialist
+
+        emitter = NullEmitter(capture=True)
+        invoker = _make_invoker(tmp_path, emitter=emitter)
+
+        async def fake_query(**kw: Any):
+            raise asyncio.TimeoutError("timed out")
+            yield  # pragma: no cover
+
+        mock_sdk.query = fake_query  # type: ignore[attr-defined]
+
+        result = await run_specialist(
+            specialist_name="code-reviewer",
+            worktree_path=invoker.worktree_path,
+            task_id="TASK-REVIEW-001",
+            sdk_timeout=600,
+            prompt="TASK-REVIEW-001 review the change",
+            allowed_tools=["Read", "Search", "Grep"],
+            agent_invoker=invoker,
+        )
+        await asyncio.sleep(0.05)
+
+        assert result.status == "failed"
+        assert len(emitter.events) == 1
+        event = emitter.events[0]
+        assert isinstance(event, LLMCallEvent)
+        assert event.status == "error"
+        assert event.error_type == "timeout"
+        assert event.agent_role == "specialist"
+        assert event.agent_name == "code-reviewer"
+
+    @pytest.mark.asyncio
+    async def test_the_coach_itself_is_still_the_coach(
+        self, tmp_path: Path, mock_sdk: ModuleType,
+    ) -> None:
+        emitter = NullEmitter(capture=True)
+        invoker = _make_invoker(tmp_path, emitter=emitter)
+        result_msg = _make_result_msg(mock_sdk)
+
+        async def fake_query(**kw: Any):
+            yield result_msg
+
+        mock_sdk.query = fake_query  # type: ignore[attr-defined]
+
+        await invoker._invoke_with_role(
+            prompt="TASK-TEST-001 review",
+            agent_type="coach",
+            allowed_tools=["Read"],
+            permission_mode="bypassPermissions",
+        )
+        await asyncio.sleep(0.05)
+
+        assert emitter.events[0].agent_role == "coach"
+        assert getattr(emitter.events[0], "agent_name", None) is None
