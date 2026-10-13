@@ -24,7 +24,7 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class TaskProgressLogger:
         task_id: str,
         repo_root: Path,
         interval: int = DEFAULT_LOG_INTERVAL,
+        measure_files_changed: Optional[Callable[[], Optional[int]]] = None,
     ):
         """Initialize TaskProgressLogger.
 
@@ -67,6 +68,9 @@ class TaskProgressLogger:
             Repository root directory (log written relative to this)
         interval : int, optional
             Seconds between snapshots (default: 60)
+        measure_files_changed : Optional[Callable[[], Optional[int]]]
+            Optional measurement of how many files have changed, read at each
+            snapshot (see :meth:`set_files_changed_measure`).
         """
         self.task_id = task_id
         self.interval = interval
@@ -75,6 +79,9 @@ class TaskProgressLogger:
         self._last_tool: Optional[str] = None
         self._files_changed: int = 0
         self._snapshot_count: int = 0
+        self._measure_files_changed: Optional[
+            Callable[[], Optional[int]]
+        ] = measure_files_changed
 
         # Create log directory and file
         log_dir = repo_root / ".guardkit" / "autobuild" / task_id
@@ -83,6 +90,33 @@ class TaskProgressLogger:
 
         # Open file handle for appending
         self._file = open(self.log_path, "a", encoding="utf-8")
+
+    def set_files_changed_measure(
+        self, measure: Optional[Callable[[], Optional[int]]]
+    ) -> None:
+        """Install (or clear, with ``None``) a measurement of files changed.
+
+        13 October 2026. The event counter only moves as tool events arrive,
+        and a harness that hands over its events after the run ends leaves it
+        at 0 for the whole run. When a measurement is installed and returns a
+        number, each snapshot writes that number, marked ``(git)``. When it is
+        absent or returns ``None``, the snapshot writes the event counter
+        exactly as before.
+        """
+        self._measure_files_changed = measure
+
+    def _measured_files_changed(self) -> Optional[int]:
+        measure = self._measure_files_changed
+        if measure is None:
+            return None
+        try:
+            value = measure()
+        except Exception as exc:  # noqa: BLE001 — a snapshot never crashes a turn
+            logger.debug(f"files-changed measurement failed for {self.task_id}: {exc}")
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
 
     def log_start(self, phase: str) -> None:
         """Log the start of a phase (e.g., SDK invocation).
@@ -123,6 +157,12 @@ class TaskProgressLogger:
         """
         self._current_phase = phase
         self._last_tool = last_tool or self._last_tool
+        measured = self._measured_files_changed()
+        if measured is not None:
+            files_changed = measured
+            files_text = f"{measured} (git)"
+        else:
+            files_text = f"{files_changed}"
         self._files_changed = files_changed
         self._snapshot_count += 1
 
@@ -131,7 +171,21 @@ class TaskProgressLogger:
         self._write(
             f"[{timestamp}] SNAPSHOT {self.task_id}: "
             f"elapsed={int(elapsed)}s, phase={phase}, "
-            f"files_changed={files_changed}{tool_info}"
+            f"files_changed={files_text}{tool_info}"
+        )
+
+    def log_turn_changes(self, turn: int, files_changed: Optional[int]) -> None:
+        """Write how many files the turn's builder changed, measured by git.
+
+        One line per turn, so every turn's log ends with the real count even
+        when the turn was shorter than one snapshot interval. ``None`` means
+        the count could not be measured, and says so.
+        """
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        count = "unmeasured" if files_changed is None else f"{files_changed} (git)"
+        self._write(
+            f"[{timestamp}] TURN_CHANGES {self.task_id}: "
+            f"turn={turn}, files_changed={count}"
         )
 
     def log_timeout(self, elapsed: float, last_state: Optional[str] = None) -> None:

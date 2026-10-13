@@ -1444,6 +1444,23 @@ class TaskWorkStreamParser:
         # 3 October 2026: write/edit requests waiting for their result, by
         # call id (see ``record_tool_request``).
         self._pending_tool_writes: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+        # 13 October 2026: where each listed path came from. Nothing is ever
+        # removed from the lists above because of these; they only let the
+        # final report tell a confirmed scratch write from a claim (see
+        # ``AgentInvoker._set_aside_written_then_removed``).
+        #   * confirmed: a write request whose own result arrived and was not
+        #     an error (the success branch of ``record_tool_result``). A write
+        #     with no call id, one whose result never came, and one parsed
+        #     from text are NOT confirmed.
+        #   * named in words: a path the builder named in its own text (the
+        #     "Created:/Modified:" lines and the text-form tool patterns).
+        #   * unconfirmed: a path that ANY write reached without its own
+        #     successful result (no call id, a result that never arrived, or
+        #     parsed from text). One such write disqualifies the path, however
+        #     many confirmed writes it also had.
+        self._confirmed_write_paths: set = set()
+        self._named_in_words_paths: set = set()
+        self._unconfirmed_write_paths: set = set()
         self._arch_score: Optional[int] = None
         self._solid_score: Optional[int] = None
         self._dry_score: Optional[int] = None
@@ -1626,7 +1643,9 @@ class TaskWorkStreamParser:
         if isinstance(tool_use_id, str) and tool_use_id:
             self._pending_tool_writes[tool_use_id] = (tool_name, tool_args)
         else:
-            self._track_tool_call(tool_name, tool_args)
+            recorded = self._track_tool_call(tool_name, tool_args)
+            if recorded:
+                self._unconfirmed_write_paths.add(recorded)
 
     def record_tool_result(self, tool_use_id: Any, is_error: bool) -> None:
         """Record a held write/edit now its result has arrived.
@@ -1647,9 +1666,15 @@ class TaskWorkStreamParser:
                 f"recorded as written."
             )
             return
-        self._track_tool_call(tool_name, tool_args)
+        recorded = self._track_tool_call(tool_name, tool_args)
+        # The one place a write is CONFIRMED: a request with a call id met
+        # its own result, and the result was not an error.
+        if recorded:
+            self._confirmed_write_paths.add(recorded)
 
-    def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+    def _track_tool_call(
+        self, tool_name: str, tool_args: Dict[str, Any]
+    ) -> Optional[str]:
         """Track file operations from a write-category tool call.
 
         Accepts ANY tool whose name maps to the ``"write"`` category in
@@ -1661,6 +1686,10 @@ class TaskWorkStreamParser:
         Args:
             tool_name: Name of the tool (e.g. ``"Write"``, ``"write_file"``)
             tool_args: Tool arguments dictionary containing the file path
+
+        Returns:
+            The path as recorded on the lists, or ``None`` when nothing was
+            recorded.
         """
         # TASK-FIX-PIPELINE: Try multiple key names for file path (Fix 1)
         # Claude Code SDK tools may use different key names
@@ -1675,15 +1704,15 @@ class TaskWorkStreamParser:
                 f"Tool {tool_name} call has no recognizable file path key. "
                 f"Available keys: {list(tool_args.keys())}"
             )
-            return
+            return None
 
         if _runtime_tool_category(tool_name) != "write":
             logger.debug(f"Tool {tool_name} is not a write tool; not tracked.")
-            return
+            return None
 
         if self._in_scratch(file_path):
             logger.debug(f"Scratch-folder write not tracked: {file_path}")
-            return
+            return None
 
         recorded = self._record_authored_path(file_path)
         # Which side of the created/modified split this call lands on, read off
@@ -1704,6 +1733,7 @@ class TaskWorkStreamParser:
         else:
             self._files_modified.add(recorded)
             logger.debug(f"Tool call tracked - file modified: {recorded}")
+        return recorded
 
     def _parse_tool_invocations(self, message: str) -> None:
         """Parse tool invocations from message and track file operations.
@@ -1722,7 +1752,11 @@ class TaskWorkStreamParser:
             file_path_match = self._match_pattern(self.TOOL_FILE_PATH_PATTERN, message)
             if file_path_match:
                 file_path = file_path_match.group(1).strip()
-                self._track_tool_call(tool_name, {"file_path": file_path})
+                recorded = self._track_tool_call(tool_name, {"file_path": file_path})
+                # Parsed from text: named in words, never confirmed.
+                if recorded:
+                    self._named_in_words_paths.add(recorded)
+                    self._unconfirmed_write_paths.add(recorded)
 
         # Track tool result messages (e.g., "File created successfully at: /path")
         for result_match in self.TOOL_RESULT_CREATED_PATTERN.finditer(message):
@@ -1733,6 +1767,8 @@ class TaskWorkStreamParser:
                 and not self._in_scratch(file_path)
             ):
                 self._files_created.add(file_path)
+                self._named_in_words_paths.add(file_path)
+                self._unconfirmed_write_paths.add(file_path)
                 logger.debug(f"Tool result tracked - file created: {file_path}")
 
         for result_match in self.TOOL_RESULT_MODIFIED_PATTERN.finditer(message):
@@ -1743,6 +1779,8 @@ class TaskWorkStreamParser:
                 and not self._in_scratch(file_path)
             ):
                 self._files_modified.add(file_path)
+                self._named_in_words_paths.add(file_path)
+                self._unconfirmed_write_paths.add(file_path)
                 logger.debug(f"Tool result tracked - file modified: {file_path}")
 
     def parse_message(self, message: str) -> None:
@@ -1868,12 +1906,14 @@ class TaskWorkStreamParser:
             file_path = file_match.group(1)
             if self._is_valid_file_path(file_path) and not self._in_scratch(file_path):
                 self._files_modified.add(file_path)
+                self._named_in_words_paths.add(file_path)
                 logger.debug(f"File modified: {file_path}")
 
         for file_match in self.FILES_CREATED_PATTERN.finditer(message):
             file_path = file_match.group(1)
             if self._is_valid_file_path(file_path) and not self._in_scratch(file_path):
                 self._files_created.add(file_path)
+                self._named_in_words_paths.add(file_path)
                 logger.debug(f"File created: {file_path}")
 
         # Architectural review scores
@@ -1913,9 +1953,12 @@ class TaskWorkStreamParser:
             - architectural_review: Dict with score and optional SOLID/DRY/YAGNI
               subscores (or absent if no arch review score found)
         """
-        # A write whose result never arrived stays on the list, as before.
+        # A write whose result never arrived stays on the list, as before,
+        # and is never a confirmed write.
         for tool_name, tool_args in self._pending_tool_writes.values():
-            self._track_tool_call(tool_name, tool_args)
+            recorded = self._track_tool_call(tool_name, tool_args)
+            if recorded:
+                self._unconfirmed_write_paths.add(recorded)
         self._pending_tool_writes = {}
 
         result: Dict[str, Any] = {}
@@ -1957,6 +2000,14 @@ class TaskWorkStreamParser:
         if self._test_files_created:
             result["test_files_created"] = sorted(list(self._test_files_created))
 
+        # 13 October 2026: where the listed paths came from (see __init__).
+        if self._confirmed_write_paths:
+            result["confirmed_write_paths"] = sorted(self._confirmed_write_paths)
+        if self._named_in_words_paths:
+            result["named_in_words_paths"] = sorted(self._named_in_words_paths)
+        if self._unconfirmed_write_paths:
+            result["unconfirmed_write_paths"] = sorted(self._unconfirmed_write_paths)
+
         if self._arch_score is not None:
             arch_review: Dict[str, Any] = {"score": self._arch_score}
             if self._solid_score is not None:
@@ -1986,6 +2037,9 @@ class TaskWorkStreamParser:
         self._files_authored = set()
         self._test_files_created = set()
         self._pending_tool_writes = {}
+        self._confirmed_write_paths = set()
+        self._named_in_words_paths = set()
+        self._unconfirmed_write_paths = set()
         self._arch_score = None
         self._solid_score = None
         self._dry_score = None
@@ -5405,6 +5459,8 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         grammar: Optional[str] = None,
         recursion_limit: Optional[int] = None,
         max_tool_result_chars: Optional[int] = None,
+        event_role: Optional[str] = None,
+        event_agent_name: Optional[str] = None,
     ) -> Optional[Tuple[None, List[HarnessEvent]]]:
         """Low-level SDK invocation with role-based permissions.
 
@@ -5471,6 +5527,13 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 uncapped (Player/synthesis behaviour). The Coach gather passes
                 a limit so a single ``read``/``grep``/``execute`` cannot dump
                 an unbounded payload into the running context. LangGraph-only.
+            event_role: The role written on the ``llm.call`` event, when it
+                is not the permission role ``agent_type`` (13 October 2026:
+                :func:`run_specialist` passes ``"specialist"``, because the
+                code reviewer runs with the Coach's permissions but is not
+                the Coach). Defaults to ``agent_type``.
+            event_agent_name: The agent's name for that event (the
+                specialist's name). ``None`` by default.
 
         Returns:
             ``None`` by default. ``(None, harness_events)`` when
@@ -5928,13 +5991,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 # Token extraction reads usage off the raw SDK ResultMessage
                 # objects that live in response_messages via event.raw.
                 self._emit_llm_call_event(
-                    agent_type=agent_type,
+                    agent_type=event_role or agent_type,
                     model=model,
                     latency_ms=latency.ms,
                     response_messages=response_messages,
                     status=call_status,
                     error=call_error,
                     task_id=heartbeat_task_id,
+                    agent_name=event_agent_name,
                 )
 
         except asyncio.TimeoutError:
@@ -6029,13 +6093,14 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
     def _emit_llm_call_event(
         self,
-        agent_type: Literal["player", "coach"],
+        agent_type: str,
         model: Optional[str],
         latency_ms: float,
         response_messages: List[Any],
         status: str,
         error: Optional[Exception],
         task_id: str,
+        agent_name: Optional[str] = None,
     ) -> None:
         """Construct and fire-and-forget an LLMCallEvent.
 
@@ -6044,13 +6109,15 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         the caller. (TASK-INST-005b)
 
         Args:
-            agent_type: Agent role ("player" or "coach").
+            agent_type: Role written on the event ("player", "coach" or
+                "specialist").
             model: Model identifier or None for CLI default.
             latency_ms: Wall-clock latency of the SDK call in milliseconds.
             response_messages: SDK response messages (for token extraction).
             status: "ok" or "error".
             error: The exception if status is "error", else None.
             task_id: Task identifier extracted from prompt.
+            agent_name: Optional agent name (a specialist's name).
         """
         try:
             input_tokens, output_tokens = extract_token_usage(response_messages)
@@ -6089,6 +6156,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 prompt_profile=prompt_profile,
                 status=status,
                 error_type=classify_error(error),
+                agent_name=agent_name,
             )
 
             async def _safe_emit() -> None:
@@ -6268,11 +6336,28 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             "sdk_ceiling_hit": None,
         }
 
+        # 13 October 2026: where the listed paths came from, read from the
+        # results file (see ``_set_aside_written_then_removed``). Absent in an
+        # older record, which then sets nothing aside.
+        confirmed_write_paths: List[str] = []
+        named_in_words_paths: List[str] = []
+        unconfirmed_write_paths: List[str] = []
+
         # Try to read task_work_results.json for richer data
         if task_work_results_path.exists():
             try:
                 with open(task_work_results_path, "r") as f:
                     task_work_data = json.load(f)
+
+                confirmed_write_paths = list(
+                    task_work_data.get("confirmed_write_paths") or []
+                )
+                named_in_words_paths = list(
+                    task_work_data.get("named_in_words_paths") or []
+                )
+                unconfirmed_write_paths = list(
+                    task_work_data.get("unconfirmed_write_paths") or []
+                )
 
                 # Map task-work fields to Player report fields
                 report["files_modified"] = task_work_data.get("files_modified", [])
@@ -6660,6 +6745,23 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 f"Orchestrator-managed-path filter failed for {task_id}: {exc}"
             )
 
+        # 13 October 2026: a scratch file the builder wrote (confirmed by its
+        # own successful result), never named, and then removed again is not
+        # a claim. Every check runs here, once, after every list above has
+        # been assembled; see ``_set_aside_written_then_removed``.
+        written_then_removed = self._set_aside_written_then_removed(
+            report,
+            confirmed_write_paths,
+            named_in_words_paths,
+            unconfirmed_write_paths,
+        )
+        report["files_written_then_removed"] = written_then_removed
+        if written_then_removed:
+            logger.info(
+                f"Set aside {len(written_then_removed)} file(s) {task_id} wrote "
+                f"and removed again without naming them: {written_then_removed}"
+            )
+
         # Write Player report
         with open(player_report_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -6694,6 +6796,29 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 if len(report.get("tests_written", [])) > len(task_work_data.get("tests_written", [])):
                     task_work_data["tests_written"] = report["tests_written"]
                     updated = True
+
+                # 13 October 2026: the Coach's honesty checks read THIS file,
+                # so a path set aside above is taken out of the same three
+                # lists here. ``files_authored`` is never shortened.
+                removed_set = set(written_then_removed)
+                if task_work_data.get("files_written_then_removed") != written_then_removed:
+                    task_work_data["files_written_then_removed"] = written_then_removed
+                    updated = True
+                if removed_set:
+                    for key in ("files_created", "files_modified", "tests_written"):
+                        before = list(task_work_data.get(key) or [])
+                        after = [
+                            entry
+                            for entry in before
+                            if not (
+                                isinstance(entry, str)
+                                and _normalise_relpath(entry, str(self.worktree_path))
+                                in removed_set
+                            )
+                        ]
+                        if after != before:
+                            task_work_data[key] = after
+                            updated = True
 
                 # TASK-FIX-RWOP1.3.1: re-run the agent-invocations gate against
                 # the enriched data. Idempotent when phases/invocations haven't
@@ -6862,6 +6987,137 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     repo.name,
                     base[:8] if base else "(no git HEAD)",
                 )
+
+    def _set_aside_written_then_removed(
+        self,
+        report: Dict[str, Any],
+        confirmed_write_paths: Sequence[str],
+        named_in_words_paths: Sequence[str],
+        unconfirmed_write_paths: Sequence[str] = (),
+    ) -> List[str]:
+        """Take a confirmed, unnamed, removed scratch write off the claim lists.
+
+        13 October 2026 (first web fixture proof). The builder wrote a probe
+        test file, edited it, and removed it. The write tracker had listed the
+        path, nothing removed it, and the claim audit called the missing file
+        fabricated: a critical finding on a turn whose tests passed.
+
+        A path is set aside only when ALL of these hold now, after every list
+        has been assembled:
+
+        * its write was CONFIRMED (``confirmed_write_paths``: a request with a
+          call id met its own successful result), and NO write reached it
+          unconfirmed (``unconfirmed_write_paths``: no call id, a result that
+          never arrived, or parsed from text). An earlier confirmed write never
+          excuses a later unconfirmed one;
+        * the builder never named it in its own words, and no completion
+          promise names it;
+        * it is a path inside the worktree, and nothing exists there now;
+        * ``git status`` lists nothing for it (so it is not a tracked
+          deletion, and not otherwise changed); and
+        * ``git ls-files --error-unmatch`` says git does not track it.
+
+        Only then is it taken out of ``files_created``, ``files_modified`` and
+        ``tests_written``, the lists the claim audit and the existence check
+        read. ``files_authored`` is never shortened: it is the record of real
+        write calls, and the contention detector reads it as authoritative.
+        Any failure to check sets nothing aside, which is the behaviour before
+        this existed. Returns the paths set aside, worktree-relative and
+        sorted.
+        """
+        import subprocess
+        from pathlib import PurePosixPath
+
+        root = Path(self.worktree_path)
+
+        def norm(path: Any) -> Optional[str]:
+            if not isinstance(path, str) or not path.strip():
+                return None
+            return _normalise_relpath(path, str(root)) or None
+
+        try:
+            named: Set[str] = {n for n in map(norm, named_in_words_paths) if n}
+            # Any unconfirmed write disqualifies the path, like a name does.
+            named.update(n for n in map(norm, unconfirmed_write_paths) if n)
+            for promise in report.get("completion_promises") or []:
+                if not isinstance(promise, dict):
+                    continue
+                for entry in promise.get("implementation_files") or []:
+                    n = norm(entry)
+                    if n:
+                        named.add(n)
+                test_file = promise.get("test_file")
+                if isinstance(test_file, str):
+                    for part in test_file.split(","):
+                        n = norm(part.strip())
+                        if n:
+                            named.add(n)
+
+            candidates: List[str] = []
+            for path in confirmed_write_paths:
+                n = norm(path)
+                if not n or n in named or n in candidates:
+                    continue
+                pure = PurePosixPath(n)
+                if pure.is_absolute() or ".." in pure.parts:
+                    continue
+                if os.path.lexists(root / n):
+                    continue
+                candidates.append(n)
+            if not candidates:
+                return []
+
+            with self._git_lock:
+                status = subprocess.run(
+                    [
+                        "git", "--literal-pathspecs", "status",
+                        "--porcelain=v1", "--untracked-files=all", "-z",
+                        "--", *candidates,
+                    ],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if status.returncode != 0:
+                    return []
+                # Over-collect on purpose: anything git mentions is kept.
+                listed: Set[str] = set()
+                for token in status.stdout.split("\0"):
+                    if token:
+                        listed.add(token)
+                        listed.add(token[3:])
+
+                removed: List[str] = []
+                for n in candidates:
+                    if n in listed:
+                        continue
+                    tracked = subprocess.run(
+                        [
+                            "git", "--literal-pathspecs", "ls-files",
+                            "--error-unmatch", "--", n,
+                        ],
+                        cwd=str(root),
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    # 0 = tracked, 1 = git does not know it, anything else is
+                    # a failure to check.
+                    if tracked.returncode == 1:
+                        removed.append(n)
+        except Exception as exc:  # noqa: BLE001 — never block the report
+            logger.warning(f"Written-then-removed check failed: {exc}")
+            return []
+
+        if not removed:
+            return []
+        removed_set = set(removed)
+        for key in ("files_created", "files_modified", "tests_written"):
+            entries = report.get(key)
+            if isinstance(entries, list):
+                report[key] = [e for e in entries if norm(e) not in removed_set]
+        return sorted(removed)
 
     def _detect_git_changes(self) -> Dict[str, list]:
         """Detect git changes in worktree.
@@ -14240,8 +14496,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "tests_passing": tests_failed == 0 if tests_failed is not None else None,
                 "tests_passed": tests_passed,
                 "tests_failed": tests_failed,
+                # ``coverage`` is the last percentage the builder's TEXT
+                # matched, kept for information only. It is not a measurement
+                # of the project's gate (Go alone prints a 0.0% line for a
+                # package with no tests before the real one), and 80 is not
+                # the project's number. So no verdict is drawn from it: the
+                # Coach runs the project's declared ``toolchain.coverage``
+                # when there is one, and otherwise coverage stays UNKNOWN,
+                # which cannot approve.
                 "coverage": coverage,
-                "coverage_met": coverage >= 80 if coverage is not None else None,
+                "coverage_met": None,
                 "all_passed": quality_gates_passed,
             },
             # Deduplicate file lists using set conversion
@@ -14272,6 +14536,30 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 result_data.get(_AUTHORED_SHELL_COUNT_KEY)
             ),
             "tests_written": sorted(list(set(result_data.get("tests_written", [])))),
+            # 13 October 2026: where the listed paths came from (see
+            # ``TaskWorkStreamParser.__init__``). Read only by
+            # ``_set_aside_written_then_removed`` when the report is built.
+            "confirmed_write_paths": sorted(
+                {
+                    p
+                    for p in (result_data.get("confirmed_write_paths") or [])
+                    if isinstance(p, str) and p
+                }
+            ),
+            "named_in_words_paths": sorted(
+                {
+                    p
+                    for p in (result_data.get("named_in_words_paths") or [])
+                    if isinstance(p, str) and p
+                }
+            ),
+            "unconfirmed_write_paths": sorted(
+                {
+                    p
+                    for p in (result_data.get("unconfirmed_write_paths") or [])
+                    if isinstance(p, str) and p
+                }
+            ),
             "summary": self._generate_summary(result_data),
         }
 

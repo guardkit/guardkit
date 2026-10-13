@@ -180,3 +180,176 @@ class TestTaskProgressLogger:
         # Should not raise
         logger.log_start("late start")
         logger.log_snapshot(elapsed=60, phase="late phase")
+
+
+# ---------------------------------------------------------------------------
+# 13 October 2026, first web fixture proof: every snapshot of a five-turn task
+# read files_changed=0, because the local harness hands over its tool events
+# only after the run ends and the event counter moves only as they arrive.
+# The snapshot now reads the same git measurement the turn record uses.
+# ---------------------------------------------------------------------------
+
+
+def _lines(logger: TaskProgressLogger, kind: str) -> list:
+    """The log's lines of one kind, with the timestamp taken off."""
+    return [
+        line.split("] ", 1)[1]
+        for line in logger.log_path.read_text().splitlines()
+        if f"] {kind} " in line
+    ]
+
+
+class TestGitMeasuredFilesChanged:
+    def test_snapshot_uses_the_git_measurement_when_events_are_buffered(
+        self, tmp_repo
+    ):
+        logger = TaskProgressLogger(
+            task_id="TASK-GIT", repo_root=tmp_repo, measure_files_changed=lambda: 2
+        )
+        logger.log_start("Player invocation")
+        # The event counter is still at its starting value of 0.
+        logger.log_snapshot(
+            elapsed=60.0, phase="Player invocation", files_changed=0
+        )
+        logger.close()
+
+        assert _lines(logger, "SNAPSHOT") == [
+            "SNAPSHOT TASK-GIT: elapsed=60s, phase=Player invocation, "
+            "files_changed=2 (git)"
+        ]
+
+    def test_with_no_measurement_the_snapshot_is_unchanged(self, tmp_repo):
+        """Byte-identical to the line written before the measurement existed
+        (passes before and after)."""
+        logger = TaskProgressLogger(task_id="TASK-SAME", repo_root=tmp_repo)
+        logger.log_start("Player invocation")
+        logger.log_snapshot(
+            elapsed=60.0, phase="Player invocation", files_changed=3, last_tool="Edit"
+        )
+        logger.close()
+
+        assert _lines(logger, "SNAPSHOT") == [
+            "SNAPSHOT TASK-SAME: elapsed=60s, phase=Player invocation, "
+            "files_changed=3, last_tool=Edit"
+        ]
+
+    def test_a_measurement_that_cannot_answer_changes_nothing(self, tmp_repo):
+        def broken() -> None:
+            raise RuntimeError("git unavailable")
+
+        logger = TaskProgressLogger(
+            task_id="TASK-SAME", repo_root=tmp_repo, measure_files_changed=lambda: None
+        )
+        logger.log_start("Player invocation")
+        logger.log_snapshot(
+            elapsed=60.0, phase="Player invocation", files_changed=3, last_tool="Edit"
+        )
+        logger.set_files_changed_measure(broken)
+        logger.log_snapshot(
+            elapsed=60.0, phase="Player invocation", files_changed=3, last_tool="Edit"
+        )
+        logger.close()
+
+        assert _lines(logger, "SNAPSHOT") == [
+            "SNAPSHOT TASK-SAME: elapsed=60s, phase=Player invocation, "
+            "files_changed=3, last_tool=Edit"
+        ] * 2
+
+    def test_a_turn_with_buffered_events_ends_with_the_git_count(self, tmp_path):
+        """Through ``AutoBuildOrchestrator._execute_turn``: a stand-in Player
+        writes one file and delivers no tool events until it returns. A
+        snapshot taken while it runs (as the heartbeat would, with the event
+        counter at 0) and the turn's closing line both carry the git count."""
+        import subprocess
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+        from guardkit.orchestrator.agent_invoker import AgentInvocationResult
+        from guardkit.orchestrator.autobuild import AutoBuildOrchestrator
+
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        (worktree / "README.md").write_text("base\n")
+        for args in (
+            ["init", "--initial-branch=main"],
+            ["add", "-A"],
+            ["-c", "user.name=t", "-c", "user.email=t@example.invalid",
+             "commit", "-m", "base"],
+        ):
+            subprocess.run(["git", *args], cwd=worktree, check=True,
+                           capture_output=True)
+
+        progress = TaskProgressLogger(task_id="TASK-TURN", repo_root=worktree)
+
+        # Every git command the orchestrator runs, and whether it ran while
+        # the stand-in Player was working.
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        real_run = subprocess.run
+        git_calls = []
+        in_player = {"now": False}
+
+        def recording_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and cmd[:1] == ["git"]:
+                git_calls.append((in_player["now"], cmd, kwargs.get("env")))
+            return real_run(cmd, *args, **kwargs)
+
+        def player(*args, **kwargs):
+            (worktree / "notes.go").write_text("package notes\n")
+            in_player["now"] = True
+            progress.log_snapshot(
+                elapsed=60.0, phase="task-work implementation",
+                files_changed=progress._files_changed,
+            )
+            in_player["now"] = False
+            return AgentInvocationResult(
+                task_id="TASK-TURN", turn=1, agent_type="player", success=True,
+                report={"task_id": "TASK-TURN", "files_modified": [],
+                        "files_created": ["notes.go"], "tests_written": []},
+                duration_seconds=1.0,
+            )
+
+        coach = AgentInvocationResult(
+            task_id="TASK-TURN", turn=1, agent_type="coach", success=True,
+            report={"decision": "approve", "issues": [], "rationale": "ok"},
+            duration_seconds=1.0,
+        )
+        invoker = Mock()
+        invoker.invoke_player = AsyncMock()
+        invoker.invoke_coach = AsyncMock()
+        invoker._get_implementation_mode.return_value = "direct"
+        manager = Mock()
+        manager.worktrees_dir = worktree
+        orch = AutoBuildOrchestrator(
+            repo_root=worktree,
+            max_turns=5,
+            worktree_manager=manager,
+            agent_invoker=invoker,
+            progress_display=MagicMock(),
+            enable_pre_loop=False,
+            enable_checkpoints=False,
+            progress_logger=progress,
+        )
+        with patch.object(orch, "_invoke_player_safely", side_effect=player), \
+                patch.object(orch, "_invoke_coach_safely", return_value=coach), \
+                patch.object(autobuild_module.subprocess, "run", side_effect=recording_run):
+            orch._execute_turn(
+                turn=1, task_id="TASK-TURN", requirements="Add notes",
+                worktree=SimpleNamespace(path=worktree), previous_feedback=None,
+            )
+        # Cleared before the Coach phase: later snapshots read the counter.
+        progress.log_snapshot(elapsed=120.0, phase="coach", files_changed=0)
+        progress.close()
+
+        snapshots = _lines(progress, "SNAPSHOT")
+        assert snapshots[0].endswith("files_changed=1 (git)")
+        assert snapshots[-1].endswith("files_changed=0")
+        assert _lines(progress, "TURN_CHANGES") == [
+            "TURN_CHANGES TASK-TURN: turn=1, files_changed=1 (git)"
+        ]
+        # While the Player works, the snapshot's git commands never take the
+        # index lock; the photographs either side of the Player run as before.
+        during = [(cmd, env) for now, cmd, env in git_calls if now]
+        assert [cmd[1] for cmd, _ in during] == ["status", "diff"]
+        assert all(env["GIT_OPTIONAL_LOCKS"] == "0" for _, env in during)
+        assert any(not now and env is None for now, _, env in git_calls)

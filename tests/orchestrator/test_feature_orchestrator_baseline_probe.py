@@ -176,18 +176,21 @@ def test_no_smoke_gates_skips_probe(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _declare_test_command(root: Path, command: str) -> None:
+def _declare_test_command(root: Path, command: str, **extra) -> None:
     """Write a repository's toolchain declaration under ``root``.
 
     Tests pass the REPOSITORY ROOT for the real declaration, and the worktree
     path only when they are deliberately planting one the probe must ignore.
+    ``extra`` adds further ``toolchain`` keys (for example a declared
+    ``ran_marker_regex``).
     """
     import yaml
 
     config_dir = root / ".guardkit"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.yaml").write_text(
-        yaml.safe_dump({"toolchain": {"test": command}}), encoding="utf-8"
+        yaml.safe_dump({"toolchain": {"test": command, **extra}}),
+        encoding="utf-8",
     )
 
 
@@ -1631,3 +1634,180 @@ def test_the_b463_shape_is_recorded_unmeasured(tmp_path, monkeypatch, caplog):
     text = " ".join(r.getMessage() for r in caplog.records)
     assert "BASELINE UNMEASURED" in text
     assert "pre-existing test failure" not in text
+
+
+# ---------------------------------------------------------------------------
+# A project's own declared ran-marker reads a passing non-pytest run
+# (13 October 2026, first web fixture proof). The fixture's declared
+# ``bash scripts/check.sh`` passed, but the probe could only read pytest's
+# summary, called the run "did not measure", and fell back to a smoke command
+# that needed a running stack. Every output below is real: the W5 run of the
+# fixture's check.sh, and the Go probe outputs already in
+# tests/fixtures/stack_test_outputs.
+# ---------------------------------------------------------------------------
+
+_STACK_OUTPUTS = Path(__file__).resolve().parents[1] / "fixtures" / "stack_test_outputs"
+
+# Copied from the fixture's .guardkit/config.yaml (and the react-go-monorepo
+# template): a verbose Go ``--- PASS:`` line and a Vitest ``Tests ... N
+# passed`` line, and never a cached Go replay.
+_FIXTURE_ROOT_MARKER = (
+    r"(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)"
+    r"(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)"
+)
+
+
+def _real_output(name: str) -> str:
+    return (_STACK_OUTPUTS / name).read_text(encoding="utf-8")
+
+
+def _declare_fixture_marker(root: Path, command: str) -> None:
+    _declare_test_command(
+        root,
+        command,
+        requires_ran_marker=True,
+        ran_marker_regex=_FIXTURE_ROOT_MARKER,
+    )
+
+
+def test_a_passing_run_that_matches_the_declared_ran_marker_is_a_measured_base(
+    tmp_path, monkeypatch, caplog
+):
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_fixture_marker(tmp_path, "bash scripts/check.sh")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("bash scripts/check-feature.sh")
+    calls = _runner_by_command(
+        monkeypatch,
+        {
+            "bash scripts/check.sh": _smoke_result(
+                "bash scripts/check.sh", stdout=_real_output("check-sh-pass.txt")
+            ),
+            "bash scripts/check-feature.sh": _smoke_result(
+                "bash scripts/check-feature.sh", passed=False, exit_code=1,
+                stdout="smoke must never run here\n",
+            ),
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["bash scripts/check.sh"]
+    recorded = read_baseline_from_worktree(wt)
+    assert recorded is not None
+    assert recorded.command == "bash scripts/check.sh"
+    assert recorded.source == SOURCE_REPOSITORY_TEST
+    assert recorded.failing_node_ids == []
+    assert "did not measure" not in _warnings(caplog)
+
+
+@pytest.mark.parametrize(
+    "fixture", ["go-cached.txt", "go-allskip.txt", "go-notests-only.txt"]
+)
+def test_a_cached_or_testless_pass_is_still_not_measured(
+    tmp_path, monkeypatch, caplog, fixture
+):
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_fixture_marker(tmp_path, "bash scripts/check.sh")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("bash scripts/check-feature.sh")
+    calls = _runner_by_command(
+        monkeypatch,
+        {
+            "bash scripts/check.sh": _smoke_result(
+                "bash scripts/check.sh", stdout=_real_output(fixture)
+            ),
+            "bash scripts/check-feature.sh": _smoke_result(
+                "bash scripts/check-feature.sh", stdout="smoke: fine\n"
+            ),
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["bash scripts/check.sh", "bash scripts/check-feature.sh"]
+    assert "did not measure" in _warnings(caplog)
+    recorded = read_baseline_from_worktree(wt)
+    assert recorded is not None
+    assert recorded.source == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+
+
+def test_an_undeclared_marker_changes_nothing(tmp_path, monkeypatch, caplog):
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    _declare_test_command(tmp_path, "bash scripts/check.sh")
+    orch = _orchestrator(tmp_path)
+    feature = _feature("bash scripts/check-feature.sh")
+    calls = _runner_by_command(
+        monkeypatch,
+        {
+            "bash scripts/check.sh": _smoke_result(
+                "bash scripts/check.sh", stdout=_real_output("check-sh-pass.txt")
+            ),
+            "bash scripts/check-feature.sh": _smoke_result(
+                "bash scripts/check-feature.sh", stdout="smoke: fine\n"
+            ),
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["bash scripts/check.sh", "bash scripts/check-feature.sh"]
+    assert "did not measure" in _warnings(caplog)
+    assert (
+        read_baseline_from_worktree(wt).source
+        == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+    )
+
+
+@pytest.mark.parametrize("declare_root_marker", [False, True])
+def test_an_inherited_checkmark_marker_never_measures_the_base(
+    tmp_path, monkeypatch, caplog, declare_root_marker
+):
+    """Real checkmark-only output with no test in it, in a package.json root.
+
+    The Node row's inherited marker matches this text (asserted below), so a
+    rule that read inherited markers would call it measured. Only a marker
+    the repository-root declaration itself sets may count, and the fixture's
+    own root marker does not match this text.
+    """
+    from guardkit.orchestrator.quality_gates.stack_test_execution import (
+        detect_stack_profile,
+    )
+
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / "package.json").write_text('{"name": "sample"}\n', encoding="utf-8")
+    vite_build = _real_output("vite-build-checkmarks-no-tests.txt")
+    node_row = detect_stack_profile(wt)
+    assert node_row is not None and node_row.ran_marker_regex
+    import re
+
+    assert re.search(node_row.ran_marker_regex, vite_build)
+
+    if declare_root_marker:
+        _declare_fixture_marker(tmp_path, "npm run build")
+    else:
+        _declare_test_command(tmp_path, "npm run build", requires_ran_marker=True)
+    orch = _orchestrator(tmp_path)
+    feature = _feature("bash scripts/check-feature.sh")
+    calls = _runner_by_command(
+        monkeypatch,
+        {
+            "npm run build": _smoke_result("npm run build", stdout=vite_build),
+            "bash scripts/check-feature.sh": _smoke_result(
+                "bash scripts/check-feature.sh", stdout="smoke: fine\n"
+            ),
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        orch._run_baseline_probe(feature, _worktree(wt))
+
+    assert calls == ["npm run build", "bash scripts/check-feature.sh"]
+    assert "did not measure" in _warnings(caplog)
+    assert (
+        read_baseline_from_worktree(wt).source
+        == SOURCE_SMOKE_AFTER_UNREADABLE_DECLARED
+    )

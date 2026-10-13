@@ -617,6 +617,11 @@ async def run_specialist(
         "task_id": task_id,
         "turn": turn,
         "heartbeat_label_override": heartbeat_label_override,
+        # 13 October 2026: the llm.call event names the specialist. Its
+        # permission role (``agent_type``) is "coach" for the code reviewer,
+        # which wrongly put the reviewer's timeouts on the Coach's record.
+        "event_role": "specialist",
+        "event_agent_name": specialist_name,
     }
 
     capturing = capture_final_message

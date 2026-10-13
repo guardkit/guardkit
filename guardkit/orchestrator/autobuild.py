@@ -438,6 +438,8 @@ absence of a measurement must not be readable as absence of work.
 def _worktree_change_snapshot(
     worktree_path: Path,
     timeout_s: int = WORKTREE_CHANGE_PROBE_TIMEOUT_S,
+    *,
+    no_optional_locks: bool = False,
 ) -> Optional[Dict[str, str]]:
     """Take a git snapshot of everything uncommitted in ``worktree_path``.
 
@@ -466,6 +468,12 @@ def _worktree_change_snapshot(
     The leavings of a test run (``__pycache__``, ``.coverage``, ``htmlcov`` and
     the like) are dropped for the same reason — the generator runs tests inside
     its own turn, so those land between the two photographs.
+
+    ``no_optional_locks`` (13 October 2026) runs both git commands with
+    ``GIT_OPTIONAL_LOCKS=0``, so ``git status`` never takes the index lock to
+    refresh it. The progress log's snapshots use it, because they run while
+    the Player is working in the same worktree and must never make one of
+    its own git commands fail on a held lock.
     """
     try:
         from guardkit.orchestrator.agent_invoker import (
@@ -482,6 +490,10 @@ def _worktree_change_snapshot(
     if not worktree_path.exists():
         return None
 
+    git_env: Optional[Dict[str, str]] = None
+    if no_optional_locks:
+        git_env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+
     def _git(args: List[str]) -> Optional[str]:
         try:
             proc = subprocess.run(
@@ -491,6 +503,7 @@ def _worktree_change_snapshot(
                 text=True,
                 check=False,
                 timeout=timeout_s,
+                env=git_env,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             logger.warning(
@@ -4549,21 +4562,25 @@ class AutoBuildOrchestrator:
                 # Execute single turn
                 # Skip arch review when pre-loop is disabled (implement-only mode)
                 # because Phase 2.5B (Architectural Review) doesn't run
-                turn_record = self._execute_turn(
-                    turn=turn,
-                    task_id=task_id,
-                    requirements=requirements,
-                    worktree=worktree,
-                    previous_feedback=previous_feedback,
-                    task_type=task_type,
-                    skip_arch_review=not self.enable_pre_loop,
-                    acceptance_criteria=acceptance_criteria,
-                    requires_infrastructure=requires_infrastructure,
-                    consumer_context=consumer_context,
-                    remaining_budget=remaining_budget,
-                    behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                    component=component,  # per-component seam
-                )
+                try:
+                    turn_record = self._execute_turn(
+                        turn=turn,
+                        task_id=task_id,
+                        requirements=requirements,
+                        worktree=worktree,
+                        previous_feedback=previous_feedback,
+                        task_type=task_type,
+                        skip_arch_review=not self.enable_pre_loop,
+                        acceptance_criteria=acceptance_criteria,
+                        requires_infrastructure=requires_infrastructure,
+                        consumer_context=consumer_context,
+                        remaining_budget=remaining_budget,
+                        behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                        component=component,  # per-component seam
+                    )
+                finally:
+                    # The Player-phase measurement never outlives its turn.
+                    self._set_progress_files_measure(None)
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
@@ -5098,6 +5115,16 @@ class AutoBuildOrchestrator:
         )
         return None
 
+    def _set_progress_files_measure(self, measure: Optional[Any]) -> None:
+        """Install or clear the progress log's files-changed measurement."""
+        progress_logger = getattr(self, "_progress_logger", None)
+        setter = getattr(progress_logger, "set_files_changed_measure", None)
+        if callable(setter):
+            try:
+                setter(measure)
+            except Exception as exc:  # noqa: BLE001 — never ends a turn
+                logger.debug("progress log measurement not set: %s", exc)
+
     def _execute_turn(
         self,
         turn: int,
@@ -5179,6 +5206,19 @@ class AutoBuildOrchestrator:
             _worktree_change_snapshot(worktree.path)
             if worktree is not None
             else None
+        )
+        # 13 October 2026: progress.log snapshots during the Player phase
+        # read this same git measurement, because a harness that hands over
+        # its tool events only after the run leaves the event counter at 0.
+        # Cleared before the Coach phase, and by the caller on every exit.
+        self._set_progress_files_measure(
+            None
+            if worktree is None or pre_turn_snapshot is None
+            else lambda: count_changed_paths(
+                pre_turn_snapshot,
+                # Runs while the Player works: never take the index lock.
+                _worktree_change_snapshot(worktree.path, no_optional_locks=True),
+            )
         )
 
         # ===== Player Phase =====
@@ -5824,6 +5864,13 @@ class AutoBuildOrchestrator:
             if files_changed_this_turn is None
             else files_changed_this_turn,
         )
+        self._set_progress_files_measure(None)
+        _turn_progress_logger = getattr(self, "_progress_logger", None)
+        if _turn_progress_logger is not None:
+            try:
+                _turn_progress_logger.log_turn_changes(turn, files_changed_this_turn)
+            except Exception as exc:  # noqa: BLE001 — a log line never ends a turn
+                logger.debug("progress log TURN_CHANGES failed: %s", exc)
 
         # ===== Coach Phase =====
 
