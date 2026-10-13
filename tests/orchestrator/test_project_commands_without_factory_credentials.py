@@ -1717,7 +1717,8 @@ def _helper_shaped(
 
 
 def _wrappers(modules: List[_Module]) -> set:
-    """Functions whose every return is an inline helper call, by dotted name."""
+    """Functions whose whole body (after a docstring) is one ``return`` of an
+    inline helper call, by dotted name."""
     found: set = set()
     changed = True
     while changed:
@@ -1729,13 +1730,21 @@ def _wrappers(modules: List[_Module]) -> set:
                 full = f"{mod.dotted}.{_qualname(mod, node)}"
                 if full in found:
                     continue
-                returns = [
-                    r for r in ast.walk(node)
-                    if isinstance(r, ast.Return) and _enclosing_function(mod, r) is node
-                ]
-                if returns and all(
-                    isinstance(r.value, ast.Call) and _inline_helper(r.value, mod, found)
-                    for r in returns
+                body = list(node.body)
+                if (
+                    body
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)
+                ):
+                    body = body[1:]  # a leading docstring
+                # Exactly one statement, ``return <helper call>``: nothing can
+                # fall through to an implicit None (which would inherit).
+                if (
+                    len(body) == 1
+                    and isinstance(body[0], ast.Return)
+                    and isinstance(body[0].value, ast.Call)
+                    and _inline_helper(body[0].value, mod, found)
                 ):
                     found.add(full)
                     changed = True
@@ -2257,6 +2266,44 @@ GUARD_PROBES = textwrap.dedent(
         return env
 
 
+    def _falls_through_on_error(wf):
+        try:
+            return project_command_environment(wf, None)
+        except OSError:
+            pass
+
+
+    def _returns_only_sometimes(wf, ready):
+        if ready:
+            return project_command_environment(wf, None)
+
+
+    def _does_something_first(wf):
+        os.environ["OPENAI_API_KEY"] = "x"
+        return project_command_environment(wf, None)
+
+
+    def _single_return_wrapper(wf):
+        """A docstring is fine."""
+        return project_command_environment(wf, None, additions={"X": "1"})
+
+
+    def v46_wrapper_falls_through_on_error(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_falls_through_on_error(wf))
+
+
+    def v47_wrapper_returns_only_sometimes(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_returns_only_sometimes(wf, True))
+
+
+    def v48_wrapper_does_something_first(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_does_something_first(wf))
+
+
+    def ok_single_return_wrapper(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_single_return_wrapper(wf))
+
+
     def ok_single_use_named_env(cmd, wf):
         env = project_command_environment(wf, None)
         subprocess.run(cmd, shell=True, env=env)
@@ -2326,7 +2373,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
     assert not {
         "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
-        "ok_single_use_named_env", "ok_inline_env",
+        "ok_single_use_named_env", "ok_inline_env", "ok_single_return_wrapper",
     } & named, problems
 
 

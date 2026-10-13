@@ -159,9 +159,11 @@ def _hermetic_env(
     :func:`_command_env` with ``PYTHONPATH`` set to the worktree alone (the
     factory's addition), and ``overlay`` the project's ``worktree_env``.
     """
-    adds = {"PYTHONPATH": str(worktree)}
-    adds.update(additions or {})
-    return _command_env(worktree, additions=adds, overlay=overlay)
+    return _command_env(
+        worktree,
+        additions={"PYTHONPATH": str(worktree), **(additions or {})},
+        overlay=overlay,
+    )
 
 
 def _could_not_run(entry: BootSmokeEntry, reason: str) -> BootSmokeEntryResult:

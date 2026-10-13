@@ -330,6 +330,13 @@ except Exception as _wiring_import_error:  # noqa: BLE001
     analyze_wiring = None  # type: ignore[misc,assignment]
     _WIRING_FACTORY_AVAILABLE = False
 
+def _worktree_venv_bin(worktree_path: Path) -> Tuple[str, ...]:
+    """The worktree venv's ``bin`` to put first on PATH, or nothing."""
+    from guardkit.orchestrator.quality_gates.command_models import venv_path_first
+
+    return venv_path_first(worktree_path)
+
+
 def _is_wiring_factory_available() -> bool:
     """Return True when the guardkitfactory wiring analyzer is importable.
 
@@ -6591,12 +6598,8 @@ class CoachValidator:
         resolves inside the bootstrap environment. Built from nothing
         (:meth:`_project_env`), with this task's test-service URLs.
         """
-        from guardkit.orchestrator.quality_gates.command_models import (
-            venv_path_first,
-        )
-
         return self._project_env(
-            path_first=venv_path_first(self.worktree_path),
+            path_first=_worktree_venv_bin(self.worktree_path),
             fixtures=True,
             git_ceiling=git_ceiling,
         )
@@ -6650,21 +6653,33 @@ class CoachValidator:
         cannot be given its environment; every caller treats that as "the
         command could not start".
         """
+        return project_command_environment(
+            self.worktree_path,
+            self._launch_declaration(main_checkout),
+            additions=self._command_additions(additions, fixtures, git_ceiling),
+            path_first=path_first,
+        )
+
+    def _launch_declaration(self, main_checkout: bool) -> Any:
+        """The task's pinned ``launch:`` block, or the main checkout's."""
         if main_checkout:
-            declaration = load_launch_declaration(main_checkout_root(self.worktree_path))
-        else:
-            declaration = load_launch_snapshot(
-                getattr(self, "task_id", None), self.worktree_path
-            )
+            return load_launch_declaration(main_checkout_root(self.worktree_path))
+        return load_launch_snapshot(getattr(self, "task_id", None), self.worktree_path)
+
+    def _command_additions(
+        self,
+        additions: Optional[Dict[str, str]],
+        fixtures: bool,
+        git_ceiling: Optional[Path],
+    ) -> Dict[str, str]:
+        """The factory's own additions for one of the checker's commands."""
         adds: Dict[str, str] = {}
         if fixtures:
             adds.update(getattr(self, "_fixture_env", {}) or {})
         if git_ceiling is not None:
             adds["GIT_CEILING_DIRECTORIES"] = str(git_ceiling)
         adds.update(additions or {})
-        return project_command_environment(
-            self.worktree_path, declaration, additions=adds, path_first=path_first
-        )
+        return adds
 
     # ------------------------------------------------------------------
     # TASK-ABFIX-011: gated per-test pytest-timeout injection

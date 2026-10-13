@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.launch_declaration import (
     load_launch_declaration,
@@ -521,6 +521,16 @@ class DetectedManifest:
             return poetry_value
 
         return None
+
+
+def _venv_additions(worktree_venv: Optional[Path]) -> Dict[str, str]:
+    """``VIRTUAL_ENV`` naming the worktree venv, when one is named."""
+    return {} if worktree_venv is None else {"VIRTUAL_ENV": str(worktree_venv)}
+
+
+def _venv_path_first(worktree_venv: Optional[Path]) -> Tuple[str, ...]:
+    """The worktree venv's ``bin`` to put first on PATH, when one is named."""
+    return () if worktree_venv is None else (str(Path(worktree_venv) / "bin"),)
 
 
 def _with_note(excerpt: str, note: str) -> str:
@@ -2795,10 +2805,12 @@ class EnvironmentBootstrapper:
         the install. Every other command gets the same environment without
         those two.
         """
-        if manifest.stack != "python" or self._venv_python is None:
-            return self._project_env()
         # _venv_python is <venv_dir>/bin/python; venv_dir is .parent.parent.
-        return self._project_env(self._venv_python.parent.parent)
+        return self._project_env(
+            self._venv_python.parent.parent
+            if manifest.stack == "python" and self._venv_python is not None
+            else None
+        )
 
     def _isolated_env(self, worktree_venv: Path) -> Dict[str, str]:
         """
@@ -2819,9 +2831,11 @@ class EnvironmentBootstrapper:
         """The environment for one dependency install: VIRTUAL_ENV pointing
         at the worktree venv for a Python pip command, so an inherited parent
         venv cannot receive the install; built from nothing either way."""
-        if is_python_cmd and self._venv_python is not None:
-            return self._isolated_env(self._venv_python.parent.parent)
-        return self._project_env()
+        return self._project_env(
+            self._venv_python.parent.parent
+            if is_python_cmd and self._venv_python is not None
+            else None
+        )
 
     def _held_back_note(self) -> str:
         """Which settings the install's environment held back, by name only
@@ -2854,14 +2868,11 @@ class EnvironmentBootstrapper:
             a proxy setting carrying credentials. Every caller already treats
             "the command could not start" as the install's failure.
         """
-        declaration = load_launch_declaration(main_checkout_root(self._root))
-        if worktree_venv is None:
-            return project_command_environment(self._root, declaration)
         return project_command_environment(
             self._root,
-            declaration,
-            additions={"VIRTUAL_ENV": str(worktree_venv)},
-            path_first=(str(Path(worktree_venv) / "bin"),),
+            load_launch_declaration(main_checkout_root(self._root)),
+            additions=_venv_additions(worktree_venv),
+            path_first=_venv_path_first(worktree_venv),
         )
 
     def _run_install(self, manifest: DetectedManifest) -> bool:

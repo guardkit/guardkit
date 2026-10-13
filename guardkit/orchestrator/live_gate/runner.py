@@ -37,6 +37,7 @@ from guardkit.qa.formats.gate_registry import (
 from guardkit.qa.formats.leak_sweep import LeakSweepManifest
 
 from guardkit.orchestrator.live_gate.errors import LiveGateError, LiveGateStubError
+from guardkit.orchestrator.project_command_env import main_checkout_environment
 from guardkit.orchestrator.live_gate.evidence import (
     EvidenceCollector,
     ensure_evidence_dir,
@@ -206,16 +207,7 @@ class LiveGateRunner:
         the gates' checked addresses (:meth:`_gate_addresses`): the registry
         is the project's own statement that its gates read them.
         """
-        from guardkit.orchestrator.project_command_env import (
-            main_checkout_environment,
-        )
-
-        try:
-            return main_checkout_environment(self.repo_root, additions=dict(addresses))
-        except OSError as exc:
-            raise LiveGateError(
-                f"the gate scripts could not be given their environment: {exc}"
-            ) from exc
+        return main_checkout_environment(self.repo_root, additions=dict(addresses))
 
     def _history_dir(self) -> Path:
         return self.repo_root.joinpath(*HISTORY_DIRNAME)
@@ -288,11 +280,17 @@ class LiveGateRunner:
 
         if classification is None:
             # Pre-flight green: exercise the deployed app.
+            try:
+                env = self._gate_script_env(addresses)
+            except OSError as exc:
+                raise LiveGateError(
+                    f"the gate scripts could not be given their environment: {exc}"
+                ) from exc
             gate_results = execute_gates(
                 gates,
                 repo_root=self.repo_root,
                 runner=self.gate_runner,
-                env=self._gate_script_env(addresses),
+                env=env,
                 timeout_s=self.gate_timeout_s,
             )
             collector.add_from_gate_results(gate_results)

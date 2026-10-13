@@ -282,10 +282,9 @@ def main_checkout_environment(
     ``LaunchDeclarationError`` (also a ``LaunchEnvironmentError``) for a
     malformed block.
     """
-    folder = Path(work_folder)
     return project_command_environment(
-        folder,
-        load_launch_declaration(main_checkout_root(folder)),
+        Path(work_folder),
+        load_launch_declaration(main_checkout_root(Path(work_folder))),
         additions=additions,
         path_first=path_first,
     )
