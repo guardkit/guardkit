@@ -1,8 +1,8 @@
 """The environment a project's own command runs with, built from nothing.
 
-13 October 2026. Design: ``docs/designs/factory-merge-install-and-honest-baseline-2026-10-13.md``
-item 2a (ai-transition), with the one addition accepted for
-``factory-project-commands-without-factory-credentials-2026-10-13.md``.
+13 October 2026. Written for the merge's install and check (the merge design's
+item 2a), and shaped so that every place GuardKit runs a project command can
+share it.
 
 GuardKit's own process holds the factory's credentials (Forge hands it
 ``GUARDKIT_NATS_PASSWORD``, ``FLEET_MEMORY_PG_DSN``, ``OPENAI_API_KEY`` and

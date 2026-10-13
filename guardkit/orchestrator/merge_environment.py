@@ -1,8 +1,7 @@
 """What the merge runs its install and its checks with (13 October 2026).
 
-Design: ``docs/designs/factory-merge-install-and-honest-baseline-2026-10-13.md``
-(ai-transition). Build E joined in a working folder with nothing installed:
-the merge never ran the project's declared install, never applied its
+A factory build was joined in a working folder with nothing installed: the
+merge never ran the project's declared install, never applied its
 declared launch settings, and handed the project's commands every setting
 GuardKit itself had, factory credentials included. This module holds the
 three pieces the merge now pins on the TARGET branch, before anything lands
@@ -111,6 +110,9 @@ def read_merge_declarations(
 ) -> Tuple[Optional[MergeDeclarations], Optional[str]]:
     """Read ``toolchain:`` and ``launch:`` from ``tree_root`` once, fail-closed.
 
+    A key that is missing means "not declared". A key that is present is
+    validated, even when its value is empty.
+
     Returns ``(declarations, problem)``. ``problem`` is a plain sentence when
     the file or a block is invalid; ``declarations`` is then ``None`` and the
     caller runs nothing and looks for no other command.
@@ -137,9 +139,12 @@ def read_merge_declarations(
             f"{type(data).__name__})"
         )
 
+    # A key that is present is validated even when its value is empty: a
+    # bare ``toolchain:`` or ``launch: null`` is a mistake in the file, not a
+    # declaration that is absent, and must never fall back to a stack default.
     toolchain: Optional[ToolchainDeclaration] = None
-    raw_toolchain: Any = data.get(TOOLCHAIN_KEY)
-    if raw_toolchain is not None:
+    if TOOLCHAIN_KEY in data:
+        raw_toolchain: Any = data[TOOLCHAIN_KEY]
         try:
             toolchain = parse_toolchain_block(raw_toolchain)
         except ValueError as exc:
@@ -151,9 +156,13 @@ def read_merge_declarations(
             toolchain = None
 
     launch: Optional[LaunchDeclaration] = None
-    raw_launch: Any = data.get(LAUNCH_KEY)
-    if raw_launch is not None:
+    if LAUNCH_KEY in data:
+        raw_launch: Any = data[LAUNCH_KEY]
         try:
+            if raw_launch is None:
+                # ``parse_launch_block`` reads None as "declares nothing";
+                # here a present key must be a mapping.
+                raise ValueError("`launch:` is present but empty")
             launch = parse_launch_block(raw_launch)
         except ValueError as exc:
             return None, (

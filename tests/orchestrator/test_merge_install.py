@@ -1,8 +1,7 @@
 """The merge installs before it checks, and its baseline is honest.
 
-Design: ``docs/designs/factory-merge-install-and-honest-baseline-2026-10-13.md``
-(ai-transition). Build E (FEAT-1F44) joined in a working folder that had no
-installed dependencies: the merge never ran the project's declared install,
+The merge design of 13 October 2026. A factory build was joined in a working
+folder that had no installed dependencies: the merge never ran the project's declared install,
 never applied its declared launch settings, and then recorded a failed run
 that named no test as "0 failing, 0 passing".
 
@@ -726,9 +725,10 @@ class TestTheJudgeFiles:
     def test_the_commands_in_use_today_are_accepted(self):
         from guardkit.orchestrator.merge_environment import judge_words
 
-        # Copied from the declarations on 13 October 2026: api_test's
-        # .guardkit/config.yaml, and guardkit/react-go-notes-fixture's
-        # (root install and test, and its two components' tests).
+        # Copied on 13 October 2026 from the declarations of the two projects
+        # the factory builds today: a Python service's test script, and a
+        # web-and-Go project's root install and test and its two components'
+        # tests.
         test_commands = [
             "qa/run-suite.sh",
             "bash scripts/check.sh",
@@ -1094,6 +1094,10 @@ INVALID_DECLARATIONS = {
     + 'launch:\n  settings: "PATH_X"\n',
     "top level is a list": "- toolchain\n- launch\n",
     "broken yaml": "toolchain:\n  test: [unclosed\n",
+    # Present but empty is not the same as absent (implementation review R1).
+    "toolchain is null": "toolchain: null\n",
+    "toolchain is bare": "toolchain:\n",
+    "launch is null": _VALID_TOOLCHAIN + "launch: null\n",
 }
 
 
@@ -1396,3 +1400,61 @@ class TestTheChangedFilesComeFromTheMergedCommit:
         assert (repo / "compared.txt").exists()
         assert not (repo / "later.txt").exists()
         assert report.branch == f"autobuild/{FEATURE}"
+
+
+class TestAnUnverifiedRunChargesNothing:
+    """Implementation review R2: a run that measured nothing charges nothing."""
+
+    FAILED_WITHOUT_MARKER = (
+        "#!/bin/sh\n"
+        'echo "FAILED tests/test_new.py::test_new - looks like a failure"\n'
+        "exit 0\n"
+    )
+
+    @pytest.mark.parametrize("how", ["baseline handed in", "baseline off"])
+    def test_a_check_without_the_declared_marker_charges_nothing(
+        self, standin: Standin, how: str
+    ):
+        standin.init(
+            config=config_text(
+                install=None,
+                extra_toolchain='  ran_marker_regex: "NEVER-PRINTED"\n',
+                launch=None,
+            ),
+            files={"scripts/check.sh": self.FAILED_WITHOUT_MARKER},
+        ).branch({"feature.txt": "built\n"})
+
+        if how == "baseline handed in":
+            report = standin.merge(baseline_failing=[])
+        else:
+            report = standin.merge(measure_baseline=False)
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert "measured nothing" in report.verify_detail
+        assert report.charged_failures == ()
+        data = report.to_dict()
+        assert data["charged_failures"] == []
+        receipt = "\n".join(report.receipt_lines())
+        assert "tests/test_new.py::test_new" not in receipt
+        assert "charged to this merge" not in receipt
+        assert "diff unavailable" not in receipt
+        assert not any("failure" in note for note in report.notes), report.notes
+
+    def test_the_baseline_reads_no_names_from_a_run_that_measured_nothing(
+        self, standin: Standin
+    ):
+        standin.init(
+            config=config_text(
+                install=None,
+                extra_toolchain='  ran_marker_regex: "NEVER-PRINTED"\n',
+                launch=None,
+            ),
+            files={"scripts/check.sh": self.FAILED_WITHOUT_MARKER},
+        ).branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified"
+        assert report.baseline_measured is None
+        assert report.charged_failures == ()
+        assert "tests/test_new.py::test_new" not in _report_text(report)

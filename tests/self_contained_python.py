@@ -1,8 +1,7 @@
 """This test session's interpreter, with its packages, that does not need HOME.
 
 Since 13 October 2026 the merge runs a project's install and check with a
-private ``HOME`` (design ``factory-merge-install-and-honest-baseline``, item
-2a): a merge check may not read ``~/.docker/config.json``,
+private ``HOME`` (the merge design's item 2a): a merge check may not read ``~/.docker/config.json``,
 ``~/.git-credentials``, ``~/.netrc`` and the like. The merge tests' fake
 projects run "this test session's own interpreter" with pytest (the intent of
 ``f78ec033``, 6 September 2026). When that interpreter finds pytest only

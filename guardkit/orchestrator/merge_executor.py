@@ -1088,6 +1088,13 @@ def verify_merged(
     # excerpt, and a failure whose name fell off the end would be charged to
     # nobody. ``execute_merge`` cross-checks the names read here against the
     # number of failures the runner itself counted.
+    #
+    # A run that measured nothing (``unverified``: it could not start, or it
+    # passed without the declared marker that tests ran) is not read for
+    # failures at all. Its output can still look like a test report, and
+    # charging names from it would turn "could not run" into a red result.
+    if verification.status == "unverified":
+        return validate_valid, verification, [], notes
     charged, charge_notes = charged_failures_from_output(
         repo_root, verification.output_for_parsing, baseline_failing
     )
@@ -1098,7 +1105,7 @@ def verify_merged(
 
 # ---------------------------------------------------------------------------
 # What judges the merge, pinned on the target; and preparing each tree
-# (13 October 2026 — docs/designs/factory-merge-install-and-honest-baseline)
+# (the merge design of 13 October 2026)
 # ---------------------------------------------------------------------------
 
 
@@ -1356,8 +1363,8 @@ def execute_merge(
     red. A wasted run on a conflicting branch is cheaper than a false red on
     a good one, and a conflict already needs a person.
 
-    Since 13 October 2026 (design ``factory-merge-install-and-honest-baseline``)
-    the target's declared install and ``launch:`` block are pinned with the
+    Since 13 October 2026 (the merge install and honest-baseline design) the
+    target's declared install and ``launch:`` block are pinned with the
     test command (:func:`pin_the_judge_on_target`). Before each check — the
     baseline on the target and the check on the merged result — the tree is
     prepared once (:func:`prepare_tree`): a minimal environment built from
@@ -1603,7 +1610,9 @@ def execute_merge(
     )
     notes = post_merge_notes + notes
 
-    merged_output = verification.output_for_parsing
+    # Nothing is read out of a run that measured nothing (see verify_merged).
+    measured_run = verification.status != "unverified"
+    merged_output = verification.output_for_parsing if measured_run else ""
     observed = failing_node_ids(merged_output)
     # Two readings have to be complete before a failed suite may be excused:
     # the merged run's own (the new red could be one of the names that fell
@@ -1616,7 +1625,7 @@ def execute_merge(
             f"({reported_failure_count(merged_output)} counted, "
             f"{len(observed)} named), so none of them were excused"
         )
-    if baseline is not None and not baseline.names_complete:
+    if measured_run and baseline is not None and not baseline.names_complete:
         reading_complete = False
         notes.append(
             f"the pre-merge run on {target_branch} reported more failures "
