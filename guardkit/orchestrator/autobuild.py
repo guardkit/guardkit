@@ -4549,21 +4549,25 @@ class AutoBuildOrchestrator:
                 # Execute single turn
                 # Skip arch review when pre-loop is disabled (implement-only mode)
                 # because Phase 2.5B (Architectural Review) doesn't run
-                turn_record = self._execute_turn(
-                    turn=turn,
-                    task_id=task_id,
-                    requirements=requirements,
-                    worktree=worktree,
-                    previous_feedback=previous_feedback,
-                    task_type=task_type,
-                    skip_arch_review=not self.enable_pre_loop,
-                    acceptance_criteria=acceptance_criteria,
-                    requires_infrastructure=requires_infrastructure,
-                    consumer_context=consumer_context,
-                    remaining_budget=remaining_budget,
-                    behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                    component=component,  # per-component seam
-                )
+                try:
+                    turn_record = self._execute_turn(
+                        turn=turn,
+                        task_id=task_id,
+                        requirements=requirements,
+                        worktree=worktree,
+                        previous_feedback=previous_feedback,
+                        task_type=task_type,
+                        skip_arch_review=not self.enable_pre_loop,
+                        acceptance_criteria=acceptance_criteria,
+                        requires_infrastructure=requires_infrastructure,
+                        consumer_context=consumer_context,
+                        remaining_budget=remaining_budget,
+                        behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                        component=component,  # per-component seam
+                    )
+                finally:
+                    # The Player-phase measurement never outlives its turn.
+                    self._set_progress_files_measure(None)
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
@@ -5098,6 +5102,16 @@ class AutoBuildOrchestrator:
         )
         return None
 
+    def _set_progress_files_measure(self, measure: Optional[Any]) -> None:
+        """Install or clear the progress log's files-changed measurement."""
+        progress_logger = getattr(self, "_progress_logger", None)
+        setter = getattr(progress_logger, "set_files_changed_measure", None)
+        if callable(setter):
+            try:
+                setter(measure)
+            except Exception as exc:  # noqa: BLE001 — never ends a turn
+                logger.debug("progress log measurement not set: %s", exc)
+
     def _execute_turn(
         self,
         turn: int,
@@ -5179,6 +5193,17 @@ class AutoBuildOrchestrator:
             _worktree_change_snapshot(worktree.path)
             if worktree is not None
             else None
+        )
+        # 13 October 2026: progress.log snapshots during the Player phase
+        # read this same git measurement, because a harness that hands over
+        # its tool events only after the run leaves the event counter at 0.
+        # Cleared before the Coach phase, and by the caller on every exit.
+        self._set_progress_files_measure(
+            None
+            if worktree is None or pre_turn_snapshot is None
+            else lambda: count_changed_paths(
+                pre_turn_snapshot, _worktree_change_snapshot(worktree.path)
+            )
         )
 
         # ===== Player Phase =====
@@ -5824,6 +5849,13 @@ class AutoBuildOrchestrator:
             if files_changed_this_turn is None
             else files_changed_this_turn,
         )
+        self._set_progress_files_measure(None)
+        _turn_progress_logger = getattr(self, "_progress_logger", None)
+        if _turn_progress_logger is not None:
+            try:
+                _turn_progress_logger.log_turn_changes(turn, files_changed_this_turn)
+            except Exception as exc:  # noqa: BLE001 — a log line never ends a turn
+                logger.debug("progress log TURN_CHANGES failed: %s", exc)
 
         # ===== Coach Phase =====
 
