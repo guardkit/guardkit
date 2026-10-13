@@ -138,10 +138,11 @@ class LiveGateRunner:
         self.instrument_check = instrument_check
         self.reservation_resource = reservation_resource
         self.broker_contract_ref = broker_contract_ref
-        # ``None``: each run builds the gate scripts' environment from nothing
+        # The gate scripts' environment is always built from nothing
         # (:meth:`_gate_script_env`), never a copy of this process's, which
-        # holds the factory's credentials. A caller may hand in a whole
-        # environment instead.
+        # holds the factory's credentials. ``gate_env``, when a caller hands
+        # one in, is where the reachability check and the gates' declared
+        # base URLs are read from instead of this process's environment.
         self.gate_env = gate_env
         self.gate_timeout_s = gate_timeout_s
         self.now_fn = now_fn
@@ -151,21 +152,45 @@ class LiveGateRunner:
 
         ``project_command_env`` with the repository's ``launch:`` block. The
         one thing added is each selected gate's registry ``base_url_env``,
-        when it is set here and is a name a project may declare: the
-        registry is the project's own statement that its gates read it, and
-        it is an address, not a credential. Values are never printed.
+        when it is set (in ``gate_env`` when a caller handed one in, else in
+        this process) and is a name a project may declare: the registry is
+        the project's own statement that its gates read it, and it is an
+        address, not a credential. An address that carries a user name and
+        password is refused by name, as a proxy setting is. Values are never
+        printed.
         """
         from guardkit.orchestrator.launch_declaration import declared_setting_refusal
         from guardkit.orchestrator.project_command_env import (
             main_checkout_environment,
         )
 
+        from urllib.parse import urlsplit
+
+        source = self.gate_env if self.gate_env is not None else os.environ
         additions = {}
         for gate in gates:
             name = gate.target.base_url_env
-            value = os.environ.get(name)
-            if value is not None and declared_setting_refusal(name) is None:
-                additions[name] = value
+            value = source.get(name)
+            if value is None or declared_setting_refusal(name) is not None:
+                continue
+            try:
+                parts = urlsplit(value)
+                carries_login = (
+                    parts.username is not None
+                    or parts.password is not None
+                    or "@" in parts.netloc
+                )
+            except ValueError:
+                carries_login = "@" in value
+            if carries_login:
+                # The same rule as a proxy setting: a login is never passed
+                # to a project's program, and the value is never printed.
+                raise LiveGateError(
+                    f"could not run: the gate address setting {name} carries a "
+                    f"user name and password, and the factory does not pass "
+                    f"credentials to project commands"
+                )
+            additions[name] = value
         try:
             return main_checkout_environment(self.repo_root, additions=additions)
         except OSError as exc:
@@ -244,11 +269,7 @@ class LiveGateRunner:
                 gates,
                 repo_root=self.repo_root,
                 runner=self.gate_runner,
-                env=(
-                    self.gate_env
-                    if self.gate_env is not None
-                    else self._gate_script_env(gates)
-                ),
+                env=self._gate_script_env(gates),
                 timeout_s=self.gate_timeout_s,
             )
             collector.add_from_gate_results(gate_results)

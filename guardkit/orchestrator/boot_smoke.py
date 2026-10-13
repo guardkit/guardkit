@@ -404,6 +404,11 @@ def _env_prereqs_met(entry: BootSmokeEntry, worktree: Path) -> tuple[bool, List[
                 rc = subprocess.run(cmd, shell=True, cwd=str(worktree),
                                     capture_output=True, timeout=15,
                                     env=_command_env(worktree)).returncode
+            except LaunchEnvironmentError:
+                # The probe could not be given its environment: that is not
+                # an unmet prerequisite, it is "could not run" (the caller
+                # says so, naming the setting).
+                raise
             except (OSError, subprocess.SubprocessError):
                 rc = 1
             if rc != 0:
@@ -488,7 +493,12 @@ def run_boot_smoke(
 
         # Full-env arm: env prereqs unmet → honest ABSENT (never silent).
         if entry.env_required:
-            met, unmet = _env_prereqs_met(entry, worktree)
+            try:
+                met, unmet = _env_prereqs_met(entry, worktree)
+            except LaunchEnvironmentError as exc:
+                results.append(_could_not_run(entry, str(exc)))
+                followups.append(f"boot smoke '{entry.id}' could not run: {exc}")
+                continue
             if not met:
                 # ENV_PREREQ_TAMPER: satisfied at bootstrap-end but unmet now →
                 # positive evidence of mid-run removal → ran-and-failed.

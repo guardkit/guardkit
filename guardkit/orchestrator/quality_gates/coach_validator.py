@@ -314,6 +314,20 @@ except ImportError:
     analyze_stub_scan = None  # type: ignore[misc,assignment]
     analyze_wiring = None  # type: ignore[misc,assignment]
     _WIRING_FACTORY_AVAILABLE = False
+except Exception as _wiring_import_error:  # noqa: BLE001
+    # 13 October 2026: guardkitfactory failing while it imports (for
+    # example a plugin's checks failing at registration) must not take down
+    # the Coach. The analyzer is then unavailable, exactly as when the
+    # package is not installed, and the reason is logged.
+    logging.getLogger(__name__).warning(
+        "guardkitfactory could not be imported, so the wiring analyzer is "
+        "unavailable: %s: %s",
+        type(_wiring_import_error).__name__,
+        _wiring_import_error,
+    )
+    analyze_stub_scan = None  # type: ignore[misc,assignment]
+    analyze_wiring = None  # type: ignore[misc,assignment]
+    _WIRING_FACTORY_AVAILABLE = False
 
 def _is_wiring_factory_available() -> bool:
     """Return True when the guardkitfactory wiring analyzer is importable.
