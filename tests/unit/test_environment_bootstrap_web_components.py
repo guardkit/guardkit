@@ -8,7 +8,8 @@ covers only the declaration file, so a builder who changes
 ``apps/web/package-lock.json`` or ``apps/api/go.sum`` leaves the verifier on
 the old dependencies. The repair belongs to the reliability lane (web
 readiness design review, finding R7); these tests state the behaviour it must
-deliver and flip loudly (``xfail(strict=True)``) once it lands.
+deliver. They were written as strict xfails and the marks were removed when
+the follow-up fixes of 13 October 2026 landed.
 
 1. The marker for a declared install covers the declaration file, the
    recognised dependency files (manifests and lockfiles) at the root, the same
@@ -51,8 +52,8 @@ the files on disk. "The install ran" means the declared command reached
 ``subprocess.run``, so an implementation may probe tools that way; nothing is
 ever installed.
 
-Tests without the xfail mark already pass today and guard properties the
-implementation must keep.
+Eleven of these tests passed before the repair (the guards); they pin
+properties the implementation must keep.
 """
 
 from __future__ import annotations
@@ -78,15 +79,6 @@ from guardkit.orchestrator.environment_bootstrap import (
 _REAL_RUN = subprocess.run
 
 _DECLARED_INSTALL = ["npm", "ci"]
-
-_R7 = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "reliability lane: declared component install cache — "
-        "web readiness R7"
-    ),
-)
-
 
 def _declare(root: Path, components: dict, runtime: dict | None = None) -> None:
     block: dict = {"install": " ".join(_DECLARED_INSTALL), "components": components}
@@ -183,7 +175,6 @@ def _reruns(root: Path) -> bool:
 
 
 class TestDeclaredInstallReruns:
-    @_R7
     def test_reruns_after_a_root_lock_change(self, web_repo):
         _installed_once(web_repo)
         (web_repo / "package-lock.json").write_text(
@@ -191,7 +182,6 @@ class TestDeclaredInstallReruns:
         )
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_after_a_web_component_lock_change(self, web_repo):
         _installed_once(web_repo)
         (web_repo / "apps" / "web" / "package-lock.json").write_text(
@@ -199,7 +189,6 @@ class TestDeclaredInstallReruns:
         )
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_after_an_api_component_go_sum_change(self, web_repo):
         _installed_once(web_repo)
         (web_repo / "apps" / "api" / "go.sum").write_text(
@@ -207,7 +196,6 @@ class TestDeclaredInstallReruns:
         )
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_after_a_component_manifest_is_added(self, web_repo):
         (web_repo / "apps" / "api" / "go.sum").unlink()
         _installed_once(web_repo)
@@ -216,13 +204,11 @@ class TestDeclaredInstallReruns:
         )
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_after_a_component_manifest_is_removed(self, web_repo):
         _installed_once(web_repo)
         (web_repo / "apps" / "web" / "package-lock.json").unlink()
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_after_a_workspace_manifest_between_component_and_root(
         self, web_repo
     ):
@@ -244,7 +230,6 @@ class TestDeclaredInstallReruns:
         )
         assert _reruns(web_repo)
 
-    @_R7
     def test_after_a_component_cwd_change_the_new_directory_is_tracked(
         self, web_repo
     ):
@@ -274,7 +259,6 @@ class TestDeclaredInstallReruns:
         _declare(web_repo, _COMPONENTS, dict(_RUNTIME, node="v22.24.0"))
         assert _reruns(web_repo)
 
-    @_R7
     def test_reruns_when_the_image_identity_changes(self, web_repo, monkeypatch):
         """An execution-identity change: the build container was replaced by
         another image. The old marker belongs to the old image."""
@@ -299,7 +283,6 @@ class TestDeclaredInstallReruns:
         result, calls = _bootstrap(web_repo)
         assert calls == [] and result.success is True
 
-    @_R7
     def test_a_builder_edit_to_a_component_lock_refreshes_before_verification(
         self, web_repo
     ):
@@ -374,7 +357,6 @@ def unreadable(request):
 
 
 class TestDeclaredInstallFailsSafely:
-    @_R7
     def test_an_unreadable_component_lock_fails_the_first_bootstrap(
         self, web_repo, unreadable
     ):
@@ -383,7 +365,6 @@ class TestDeclaredInstallFailsSafely:
         assert result.success is False
         assert result.error
 
-    @_R7
     def test_an_unreadable_component_lock_is_never_a_cache_hit(
         self, web_repo, unreadable
     ):
@@ -393,7 +374,6 @@ class TestDeclaredInstallFailsSafely:
         assert result.success is False
         assert result.skipped is False
 
-    @_R7
     def test_a_component_cwd_that_escapes_through_a_symlink_fails(
         self, web_repo, tmp_path
     ):
@@ -439,7 +419,6 @@ class TestDeclaredInstallFailsSafely:
         assert len(_declared_calls(retried)) == 1
         assert result.success is True
 
-    @_R7
     @pytest.mark.parametrize("root_label", ["node", "declared"])
     def test_a_failing_declared_install_fails_the_per_turn_refresh(
         self, web_repo, root_label
@@ -471,7 +450,6 @@ class TestDeclaredInstallFailsSafely:
         assert result.success is False
         assert result.installs_failed >= 1
 
-    @_R7
     def test_the_real_per_turn_caller_reports_a_failing_declared_install(
         self, web_repo
     ):
@@ -495,7 +473,6 @@ class TestDeclaredInstallFailsSafely:
         assert len(_declared_calls(mock_run)) == 1
         assert feedback, "a failed declared install was swallowed into a silent pass"
 
-    @_R7
     @pytest.mark.parametrize("escaping", ["../outside-web", "/srv/outside-web"])
     def test_a_dot_dot_or_absolute_component_cwd_is_refused_visibly(
         self, web_repo, escaping

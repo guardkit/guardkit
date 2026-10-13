@@ -1642,7 +1642,12 @@ class TestEnvironmentBootstrapperRetryLogic:
     def test_bootstrap_skips_on_hash_match_previous_failure_within_cooldown(
         self, tmp_path: Path
     ) -> None:
-        """bootstrap() skips install when hash matches, previous failed, within cooldown."""
+        """bootstrap() skips install when hash matches, previous failed, within cooldown.
+
+        Nothing runs, and the recorded failure is returned: a failed install is
+        never reported as success later, even inside the retry cooldown
+        (follow-up fixes 2026-10-13, 1c; this test asserted success=True before).
+        """
         f = tmp_path / "requirements.txt"
         f.write_text("flask\n")
         m = make_manifest(f)
@@ -1653,7 +1658,7 @@ class TestEnvironmentBootstrapperRetryLogic:
             result = bootstrapper.bootstrap([m])
         mock_run.assert_not_called()
         assert result.skipped is True
-        assert result.success is True
+        assert result.success is False
 
     def test_bootstrap_runs_on_hash_change_regardless_of_previous_success(
         self, tmp_path: Path
