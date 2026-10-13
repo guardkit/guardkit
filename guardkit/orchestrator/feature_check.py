@@ -1234,9 +1234,11 @@ def completion_verdict(
     if receipt is None:
         return CompletionVerdict(
             blocks=True,
+            # Named by the fixed label, never the command (13 October 2026):
+            # this reason reaches the log, the console and the build's error.
             reason=(
                 "this project declares a whole-feature check "
-                f"({declaration.command}) and no receipt of it was written, "
+                f"({PUBLIC_LABEL}) and no receipt of it was written, "
                 "so nothing proved the finished feature"
             ),
         )

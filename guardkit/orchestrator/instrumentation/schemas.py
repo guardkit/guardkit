@@ -102,13 +102,15 @@ GraphitiQueryType = Literal["context_loader", "nearest_neighbours", "adr_lookup"
 """Types of Graphiti knowledge graph queries."""
 
 GraphitiStatus = Literal["ok", "error"]
+"""Graphiti query outcome status."""
 
-#: How one attempt of the project's whole-feature check failed. Chosen by
-#: central code from its own branches, never from the command's output.
 FeatureCheckFailureKind = Literal[
     "exit_nonzero", "timed_out", "could_not_start", "missing_twins"
 ]
-"""Graphiti query outcome status."""
+"""How one attempt of the project's whole-feature check failed.
+
+Chosen by central code from its own branches, never from the command's output.
+"""
 
 
 # ============================================================================
