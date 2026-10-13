@@ -1767,6 +1767,10 @@ class EnvironmentBootstrapper:
         # the helpers can retain their bool return type (and existing tests
         # that assert ``is True`` / ``is False`` don't regress).
         self._last_failure_stderr: str = ""
+        # True once this bootstrapper has itself started the failing command
+        # with the project-command environment, so only then does its failure
+        # detail name the settings that were held back.
+        self._ran_project_command: bool = False
         self._last_failure_is_pep668: bool = False
 
     def bootstrap(
@@ -2823,6 +2827,8 @@ class EnvironmentBootstrapper:
         """Which settings the install's environment held back, by name only
         (``project_command_env.minimal_environment_note``); empty when the
         environment cannot be built at all, which the failure already says."""
+        if not self._ran_project_command:
+            return ""
         try:
             return minimal_environment_note(self._project_env())
         except OSError:
@@ -2897,6 +2903,7 @@ class EnvironmentBootstrapper:
         # see stale values from a previous install.
         self._last_failure_stderr = ""
         self._last_failure_is_pep668 = False
+        self._ran_project_command = False
         cmd = list(manifest.install_command)
         is_python_cmd = cmd and cmd[0] == sys.executable
 
@@ -2928,6 +2935,7 @@ class EnvironmentBootstrapper:
             # main checkout, and for a Python install with a venv,
             # VIRTUAL_ENV pointing at it. A malformed block or a missing
             # scratch folder fails this install with the reason.
+            self._ran_project_command = True
             proc = process_group.run_project_command(
                 cmd,
                 cwd=cwd,
@@ -2964,6 +2972,7 @@ class EnvironmentBootstrapper:
                     manifest.path.name,
                     " ".join(retry_cmd),
                 )
+                self._ran_project_command = True
                 retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=cwd,
@@ -3035,6 +3044,7 @@ class EnvironmentBootstrapper:
                     venv_dir,
                     " ".join(retry_cmd),
                 )
+                self._ran_project_command = True
                 retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=cwd,
@@ -3131,6 +3141,7 @@ class EnvironmentBootstrapper:
         """
         self._last_failure_stderr = ""
         self._last_failure_is_pep668 = False
+        self._ran_project_command = False
 
         run_cmd = list(cmd)
         is_python_cmd = run_cmd and run_cmd[0] == sys.executable
@@ -3145,6 +3156,7 @@ class EnvironmentBootstrapper:
             # Built from nothing, as in ``_run_install``. Python pip commands
             # get VIRTUAL_ENV pointing at the worktree venv so an inherited
             # parent venv cannot receive the install.
+            self._ran_project_command = True
             proc = process_group.run_project_command(
                 run_cmd,
                 cwd=str(cwd),
@@ -3170,6 +3182,7 @@ class EnvironmentBootstrapper:
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )
+                self._ran_project_command = True
                 retry_proc = process_group.run_project_command(
                     retry_cmd,
                     cwd=str(cwd),
