@@ -69,6 +69,7 @@ from guardkit.orchestrator.worktree_checkpoints import (
     # of this list is exactly the drift 706589f7 had to fix in two places.
     _CHECKPOINT_ADD_ARGV,
     SubprocessGitExecutor,
+    unstage_private_records,
 )
 from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError, TaskParseError
 
@@ -744,6 +745,11 @@ def commit_outer_tree(
         info["head_before"] = (getattr(before, "stdout", "") or "").strip() or None
 
         _run(list(_CHECKPOINT_ADD_ARGV))
+        # GuardKit's private records never enter this commit, even when they
+        # were staged before the add (13 October 2026). Done before the
+        # emptiness test, so a tree whose only staged change was a private
+        # record is "nothing to commit", not a failed empty commit.
+        unstage_private_records(executor, repo_root)
 
         staged = _run(["git", "diff", "--cached", "--quiet"], check=False)
         if getattr(staged, "returncode", 0) == 0:

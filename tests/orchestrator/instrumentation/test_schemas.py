@@ -944,3 +944,133 @@ class TestCrossEventValidation:
         import json
         json_str = json.dumps(dumped)
         assert json_str  # non-empty
+
+
+# ============================================================================
+# FeatureCheckAttemptEvent (13 October 2026)
+# ============================================================================
+#
+# One event per failed attempt of the project's whole-feature check. The
+# declared command and the check's output can both carry a credential, so the
+# event holds only fixed words, numbers, true/false values and a commit id.
+# The class is imported inside each test so the rest of this file still runs
+# on a GuardKit that does not have it yet.
+
+
+def _feature_check_attempt_event_class():
+    from guardkit.orchestrator.instrumentation import schemas
+
+    assert "FeatureCheckAttemptEvent" in schemas.__all__
+    return schemas.FeatureCheckAttemptEvent
+
+
+@pytest.fixture
+def valid_feature_check_attempt() -> dict:
+    return {
+        "run_id": "run-FEAT-1F44",
+        "feature_id": "FEAT-1F44",
+        "task_id": "FEAT-1F44",
+        "agent_role": "router",
+        "attempt": 1,
+        "timestamp": "2026-10-13T17:07:51",
+        "check_attempt": 1,
+        "failure_kind": "exit_nonzero",
+        "exit_code": 1,
+        "timed_out": False,
+        "duration_seconds": 12.5,
+        "candidate_sha": "a0bf5590c0ffee1234567890abcdef1234567890",
+        "wave_number": 3,
+        "repair_follows": True,
+        "stdout_bytes": 120,
+        "stdout_lines": 4,
+        "stderr_bytes": 64,
+        "stderr_lines": 1,
+    }
+
+
+class TestFeatureCheckAttemptEvent:
+    """The per-attempt record of a failed whole-feature check."""
+
+    def test_round_trips(self, valid_feature_check_attempt: dict) -> None:
+        cls = _feature_check_attempt_event_class()
+        event = cls(**valid_feature_check_attempt)
+        again = cls.model_validate_json(event.model_dump_json())
+        assert again == event
+        assert again.model_dump()["failure_kind"] == "exit_nonzero"
+
+    def test_rejects_check_attempt_zero(
+        self, valid_feature_check_attempt: dict
+    ) -> None:
+        cls = _feature_check_attempt_event_class()
+        with pytest.raises(ValidationError):
+            cls(**{**valid_feature_check_attempt, "check_attempt": 0})
+
+    def test_rejects_a_failure_kind_outside_the_fixed_four(
+        self, valid_feature_check_attempt: dict
+    ) -> None:
+        cls = _feature_check_attempt_event_class()
+        for kind in ("exit_nonzero", "timed_out", "could_not_start", "missing_twins"):
+            assert cls(
+                **{**valid_feature_check_attempt, "failure_kind": kind}
+            ).failure_kind == kind
+        with pytest.raises(ValidationError):
+            cls(
+                **{
+                    **valid_feature_check_attempt,
+                    "failure_kind": "exit=1, expected=0",
+                }
+            )
+
+    def test_has_no_field_that_holds_command_or_output_text(self) -> None:
+        import typing
+
+        cls = _feature_check_attempt_event_class()
+        own_fields = {
+            name: info
+            for name, info in cls.model_fields.items()
+            if name not in BaseEvent.model_fields
+        }
+        assert set(own_fields) == {
+            "check_attempt",
+            "failure_kind",
+            "exit_code",
+            "timed_out",
+            "duration_seconds",
+            "candidate_sha",
+            "wave_number",
+            "repair_follows",
+            "stdout_bytes",
+            "stdout_lines",
+            "stderr_bytes",
+            "stderr_lines",
+        }
+
+        def _holds_free_text(annotation) -> bool:
+            if annotation is str:
+                return True
+            origin = typing.get_origin(annotation)
+            if origin is typing.Literal:
+                return False
+            return any(_holds_free_text(arg) for arg in typing.get_args(annotation))
+
+        for name, info in own_fields.items():
+            if name == "candidate_sha":
+                continue
+            assert not _holds_free_text(info.annotation), (
+                f"{name} could carry free text"
+            )
+
+    def test_the_commit_id_cannot_carry_free_text(
+        self, valid_feature_check_attempt: dict
+    ) -> None:
+        cls = _feature_check_attempt_event_class()
+        assert cls(
+            **{**valid_feature_check_attempt, "candidate_sha": "unknown"}
+        ).candidate_sha == "unknown"
+        with pytest.raises(ValidationError):
+            cls(
+                **{
+                    **valid_feature_check_attempt,
+                    "candidate_sha": "password=out-secret-2",
+                }
+            )

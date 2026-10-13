@@ -529,6 +529,9 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/.guardkit-git.lock",
             # The HEAD record (head_identity, 12 October 2026).
             ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+            # GuardKit's private records (13 October 2026): the final
+            # feature-check record can carry a credential in its output tails.
+            ":(exclude,glob)**/.guardkit/autobuild-private/**",
         )
         for spec in wc.CHECKPOINT_EXCLUDE_PATHSPECS:
             assert spec.startswith(":(exclude,glob)"), (

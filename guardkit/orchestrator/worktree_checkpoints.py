@@ -54,7 +54,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Protocol, Tuple
+from typing import ClassVar, Dict, List, Optional, Protocol, Set, Tuple
 
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.head_identity import record_git_operation
@@ -197,6 +197,15 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # ride into the candidate, and a rollback's ``reset --hard`` would rewind
     # the very lines that explain the rollback. Untracked, a reset leaves it.
     ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+    # GuardKit's private records (13 October 2026). The final whole-feature
+    # check record keeps the last 40 lines of the project's check output,
+    # which can carry a credential; a project whose ignore file does not
+    # cover this folder would otherwise have it
+    # committed and carried towards a public history. This stops ``git add``
+    # picking new files up there; :func:`unstage_private_records` is what
+    # guarantees the commit, because anything ALREADY staged survives an
+    # excluding ``git add``.
+    ":(exclude,glob)**/.guardkit/autobuild-private/**",
 )
 
 # The full ``git add`` argv prefix shared by both add sites.
@@ -207,6 +216,97 @@ _CHECKPOINT_ADD_ARGV: Tuple[str, ...] = (
     "--",
     ".",
 ) + CHECKPOINT_EXCLUDE_PATHSPECS
+
+
+# ============================================================================
+# Private records never enter a factory commit (13 October 2026)
+# ============================================================================
+
+#: Everything under any ``.guardkit/autobuild-private/`` folder, at any depth.
+PRIVATE_RECORDS_PATHSPEC: str = ":(glob)**/.guardkit/autobuild-private/**"
+
+#: ``(repository, path)`` pairs already warned about in this process, so an
+#: older tracked copy is reported once rather than at every checkpoint.
+_warned_tracked_private_records: Set[Tuple[str, str]] = set()
+_warned_tracked_private_records_lock = threading.Lock()
+
+
+def unstage_private_records(
+    git_executor: "GitCommandExecutor",
+    cwd: Path,
+    *,
+    timeout: Optional[int] = None,
+) -> List[str]:
+    """Take every private record out of the index just before a commit.
+
+    Called at each of GuardKit's three commit sites, after their ``git add``
+    and before ``git commit``. Excluding the folder from ``git add`` is not
+    enough: an entry that is already staged (by a Player, a tool or an earlier
+    run) still goes into the next commit. So this:
+
+    1. lists what is staged under :data:`PRIVATE_RECORDS_PATHSPEC`;
+    2. unstages it with ``git reset -q -- <pathspec>``. Files on disk are
+       kept. A new file leaves the index; a tracked file's index entry goes
+       back to ``HEAD``'s copy, so its change is not committed;
+    3. for each listed path that ``HEAD`` already tracks, warns once per
+       process that an older copy is tracked here, that its committed content
+       is left as it is, and that new content is not committed.
+
+    It does not remove records a repository already tracks, and it does not
+    rewrite history. Returns the paths it unstaged.
+
+    Raises ``subprocess.CalledProcessError`` when the listing or the unstaging
+    fails, so the caller's commit does not go ahead with a record still
+    staged: each caller already treats a failed git step as a failed commit.
+    """
+    list_argv = [
+        "git", "diff", "--cached", "--name-only", "-z", "--",
+        PRIVATE_RECORDS_PATHSPEC,
+    ]
+    listed = git_executor.execute(
+        list_argv, cwd=cwd, check=False, timeout=timeout
+    )
+    if listed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            listed.returncode, list_argv, listed.stdout, listed.stderr
+        )
+    paths = [p for p in (listed.stdout or "").split("\0") if p.strip()]
+    if not paths:
+        return []
+
+    reset_argv = ["git", "reset", "-q", "--", PRIVATE_RECORDS_PATHSPEC]
+    reset = git_executor.execute(
+        reset_argv, cwd=cwd, check=False, timeout=timeout
+    )
+    if reset.returncode != 0:
+        raise subprocess.CalledProcessError(
+            reset.returncode, reset_argv, reset.stdout, reset.stderr
+        )
+
+    repository = str(Path(cwd).resolve())
+    for path in paths:
+        key = (repository, path)
+        with _warned_tracked_private_records_lock:
+            if key in _warned_tracked_private_records:
+                continue
+        tracked = git_executor.execute(
+            ["git", "cat-file", "-e", f"HEAD:{path}"],
+            cwd=cwd, check=False, timeout=timeout,
+        )
+        if tracked.returncode != 0:
+            continue
+        with _warned_tracked_private_records_lock:
+            if key in _warned_tracked_private_records:
+                continue
+            _warned_tracked_private_records.add(key)
+        logger.warning(
+            "An older copy of GuardKit's private record %s is tracked in the "
+            "repository at %s. Its committed content is left as it is; new "
+            "content in it is not committed.",
+            path,
+            repository,
+        )
+    return paths
 
 
 # ============================================================================
@@ -681,6 +781,9 @@ class WorktreeCheckpointManager:
             list(_CHECKPOINT_ADD_ARGV),
             cwd=self.worktree_path,
         )
+        # Nothing under .guardkit/autobuild-private/ enters the commit, even
+        # if it was staged before the add above (13 October 2026).
+        unstage_private_records(self.git_executor, self.worktree_path)
 
         # Create checkpoint commit message
         status = format_test_status(tests_passed)
@@ -934,6 +1037,13 @@ class WorktreeCheckpointManager:
                     list(_CHECKPOINT_ADD_ARGV),
                     cwd=repo.root,
                     check=False,
+                    timeout=_EVIDENCE_GIT_TIMEOUT_S,
+                )
+                # As at the worktree checkpoint. A failure here raises, and
+                # the caller records this repo as unversioned for the turn
+                # rather than committing a private record.
+                unstage_private_records(
+                    self.git_executor, repo.root,
                     timeout=_EVIDENCE_GIT_TIMEOUT_S,
                 )
                 self.git_executor.execute(

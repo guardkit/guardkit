@@ -43,7 +43,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
 from guardkit.orchestrator.launch_declaration import (
@@ -69,6 +69,21 @@ RECEIPT_RELATIVE_PATH = (
 #: The optional stdout line the command may print to name what it covered:
 #: ``{"guardkit_feature_check": {"scenarios_covered": ["...", "..."]}}``
 STDOUT_JSON_KEY = "guardkit_feature_check"
+
+#: How the declared check is named wherever GuardKit PUBLISHES it: the log,
+#: the console, the gate result, the build's error and events.jsonl
+#: (13 October 2026). The declared command is any string a project writes, so
+#: it can carry a credential; a project declares exactly one check, so this
+#: fixed label names it without ambiguity. The command itself stays in the
+#: final record and the Player's feedback, which stay on the owner's machines.
+PUBLIC_LABEL = "the project's declared feature check"
+
+#: The fixed words for how one attempt failed. Central code chooses one from
+#: its own branches, never from the command's output.
+FAILURE_KIND_EXIT_NONZERO = "exit_nonzero"
+FAILURE_KIND_TIMED_OUT = "timed_out"
+FAILURE_KIND_COULD_NOT_START = "could_not_start"
+FAILURE_KIND_MISSING_TWINS = "missing_twins"
 
 #: The three outcomes of one attempt, by name (2026-09-21). "Not checked" is
 #: never one of them: it is a LIST carried beside the outcome, and nothing that
@@ -207,6 +222,16 @@ class FeatureCheckAttempt:
     #: the raw container events of the interval. Evidence only; no outcome is
     #: read from it. Empty for an attempt that ran no command.
     run_evidence: Dict[str, Any] = field(default_factory=dict)
+    #: In memory only, never written by :meth:`to_dict` (13 October 2026):
+    #: the fixed word for how this attempt failed (one of the
+    #: ``FAILURE_KIND_*`` values; None when it did not fail) and the size of
+    #: each output stream. They feed the per-attempt warning and event, which
+    #: publish no text from the project.
+    failure_kind: Optional[str] = None
+    stdout_bytes: int = 0
+    stdout_lines: int = 0
+    stderr_bytes: int = 0
+    stderr_lines: int = 0
 
     @property
     def resolved_outcome(self) -> str:
@@ -459,6 +484,12 @@ def read_feature_check_receipt(root: Path) -> Optional[Dict[str, Any]]:
 # =========================================================================
 # Running the declared command
 # =========================================================================
+
+
+def output_size(text: Optional[str]) -> Tuple[int, int]:
+    """``(bytes, lines)`` of one output stream; the text itself is not kept."""
+    text = text or ""
+    return len(text.encode("utf-8", errors="replace")), len(text.splitlines())
 
 
 def tail_lines(text: str, count: int = OUTPUT_TAIL_LINES) -> str:
@@ -1203,9 +1234,11 @@ def completion_verdict(
     if receipt is None:
         return CompletionVerdict(
             blocks=True,
+            # Named by the fixed label, never the command (13 October 2026):
+            # this reason reaches the log, the console and the build's error.
             reason=(
                 "this project declares a whole-feature check "
-                f"({declaration.command}) and no receipt of it was written, "
+                f"({PUBLIC_LABEL}) and no receipt of it was written, "
                 "so nothing proved the finished feature"
             ),
         )

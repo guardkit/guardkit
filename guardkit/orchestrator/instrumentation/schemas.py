@@ -12,6 +12,7 @@ Architecture:
     ├── TaskCompletedEvent     (task.completed)
     ├── TaskFailedEvent        (task.failed)
     ├── WaveCompletedEvent     (wave completion metrics)
+    ├── FeatureCheckAttemptEvent (one failed whole-feature check attempt)
     └── GraphitiQueryEvent     (knowledge graph queries)
 
 Controlled Vocabularies:
@@ -23,6 +24,7 @@ Controlled Vocabularies:
     - LLMCallErrorType: rate_limited | timeout | tool_error | other
     - GraphitiQueryType: context_loader | nearest_neighbours | adr_lookup
     - GraphitiStatus: ok | error
+    - FeatureCheckFailureKind: exit_nonzero | timed_out | could_not_start | missing_twins
 
 Example:
     >>> from guardkit.orchestrator.instrumentation.schemas import LLMCallEvent
@@ -101,6 +103,14 @@ GraphitiQueryType = Literal["context_loader", "nearest_neighbours", "adr_lookup"
 
 GraphitiStatus = Literal["ok", "error"]
 """Graphiti query outcome status."""
+
+FeatureCheckFailureKind = Literal[
+    "exit_nonzero", "timed_out", "could_not_start", "missing_twins"
+]
+"""How one attempt of the project's whole-feature check failed.
+
+Chosen by central code from its own branches, never from the command's output.
+"""
 
 
 # ============================================================================
@@ -331,6 +341,68 @@ class WaveCompletedEvent(BaseEvent):
 
 
 # ============================================================================
+# Feature Check Attempt Event
+# ============================================================================
+
+
+class FeatureCheckAttemptEvent(BaseEvent):
+    """Event emitted when one attempt of the whole-feature check fails.
+
+    Emitted as soon as the attempt fails, before any repair round, so a
+    failure is visible while the build is still running (13 October 2026,
+    build FEAT-1F44: a failure sat unrecorded for 50 minutes).
+
+    It carries no text from the project. The declared command and the check's
+    output can both hold a credential, so every field here is a fixed word, a
+    number, a true/false value or a git commit id. The full output stays where
+    it already was: the final record and the Player's feedback.
+
+    Attributes:
+        check_attempt: 1-indexed attempt of the whole-feature check.
+        failure_kind: How the attempt failed, from a fixed list.
+        exit_code: The command's exit status; None when it never ran or
+            never started.
+        timed_out: Whether the attempt was cut off by its time limit.
+        duration_seconds: How long the command ran.
+        candidate_sha: The commit checked, or ``unknown``.
+        wave_number: The wave a repair round would re-enter.
+        repair_follows: Whether a repair round follows this attempt.
+        stdout_bytes: Size of the command's standard output.
+        stdout_lines: Line count of the command's standard output.
+        stderr_bytes: Size of the command's standard error.
+        stderr_lines: Line count of the command's standard error.
+    """
+
+    check_attempt: int = Field(
+        ge=1, description="1-indexed attempt of the whole-feature check"
+    )
+    failure_kind: FeatureCheckFailureKind = Field(
+        description="How the attempt failed, from a fixed list"
+    )
+    exit_code: Optional[int] = Field(
+        None, description="Exit status; None when the command did not run"
+    )
+    timed_out: bool = Field(description="Whether the attempt timed out")
+    duration_seconds: float = Field(
+        ge=0, description="How long the command ran, in seconds"
+    )
+    candidate_sha: str = Field(
+        pattern=r"^(?:[0-9a-f]{7,64}|unknown)$",
+        description="The commit checked (hex), or 'unknown'",
+    )
+    wave_number: int = Field(
+        ge=0, description="The wave a repair round would re-enter"
+    )
+    repair_follows: bool = Field(
+        description="Whether a repair round follows this attempt"
+    )
+    stdout_bytes: int = Field(ge=0, description="Bytes of standard output")
+    stdout_lines: int = Field(ge=0, description="Lines of standard output")
+    stderr_bytes: int = Field(ge=0, description="Bytes of standard error")
+    stderr_lines: int = Field(ge=0, description="Lines of standard error")
+
+
+# ============================================================================
 # Graphiti Query Event
 # ============================================================================
 
@@ -376,6 +448,7 @@ __all__ = [
     "TaskCompletedEvent",
     "TaskFailedEvent",
     "WaveCompletedEvent",
+    "FeatureCheckAttemptEvent",
     "GraphitiQueryEvent",
     # Controlled vocabularies
     "AgentRole",
@@ -386,4 +459,5 @@ __all__ = [
     "LLMCallErrorType",
     "GraphitiQueryType",
     "GraphitiStatus",
+    "FeatureCheckFailureKind",
 ]

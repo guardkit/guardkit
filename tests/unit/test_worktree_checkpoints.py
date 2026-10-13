@@ -33,6 +33,22 @@ from guardkit.orchestrator.worktree_checkpoints import (
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _no_private_records_step(monkeypatch):
+    """Leave the scripted git replies to add, commit and rev-parse.
+
+    These tests script the executor's replies call by call to prove rollback
+    and pollution logic. The step that unstages GuardKit's private records
+    before each commit (13 October 2026) is proven on real git in
+    ``tests/orchestrator/test_private_records_never_committed.py``.
+    """
+    from guardkit.orchestrator import worktree_checkpoints
+
+    monkeypatch.setattr(
+        worktree_checkpoints, "unstage_private_records", lambda *a, **k: []
+    )
+
+
 @pytest.fixture
 def mock_git_executor():
     """Create mock git executor for testing."""
@@ -127,6 +143,7 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/.guardkit-git.lock",
         # The HEAD record (head_identity, 12 October 2026).
         ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+        ":(exclude,glob)**/.guardkit/autobuild-private/**",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the
@@ -1027,6 +1044,7 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/.guardkit-git.lock",
         # The HEAD record (head_identity, 12 October 2026).
         ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+        ":(exclude,glob)**/.guardkit/autobuild-private/**",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the

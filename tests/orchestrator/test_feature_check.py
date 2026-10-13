@@ -32,7 +32,10 @@ under ``tests/integration/`` would be silently skipped.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import logging
+import re
 import subprocess
 from contextlib import ExitStack
 from pathlib import Path
@@ -41,6 +44,7 @@ from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.console import Console
 
 from guardkit.orchestrator import feature_check
 from guardkit.orchestrator.feature_check import (
@@ -57,6 +61,8 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
     WaveExecutionResult,
 )
+from guardkit.orchestrator.instrumentation.emitter import NullEmitter
+from guardkit.orchestrator.smoke_gates import SmokeGateResult
 from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
 from guardkit.worktrees import Worktree
 
@@ -148,13 +154,15 @@ def _declaration(command: str, *, timeout: Optional[int] = None) -> str:
     return body
 
 
-def _make_orchestrator(repo_root: Path) -> FeatureOrchestrator:
-    return FeatureOrchestrator(
+def _make_orchestrator(repo_root: Path, **overrides: Any) -> FeatureOrchestrator:
+    kwargs: dict = dict(
         repo_root=repo_root,
         max_turns=1,
         worktree_manager=MagicMock(),
         quiet=True,
     )
+    kwargs.update(overrides)
+    return FeatureOrchestrator(**kwargs)
 
 
 def _make_worktree(path: Path) -> Worktree:
@@ -266,9 +274,10 @@ def _run_build(
     recorder: _WaveRecorder,
     *,
     finalize: bool = True,
+    orchestrator_kwargs: Optional[dict] = None,
 ):
     """Run the wave phase (and the finaliser) with no model in the loop."""
-    orchestrator = _make_orchestrator(repo_root)
+    orchestrator = _make_orchestrator(repo_root, **(orchestrator_kwargs or {}))
     worktree = _make_worktree(worktree_path)
     with ExitStack() as stack:
         for _cm in _common_patches(orchestrator):
@@ -997,3 +1006,311 @@ def test_a_project_with_no_declared_check_is_not_held_to_its_pass_bars(
     _, _, result = _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
 
     assert result.status == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Each failed attempt is recorded as it happens (13 October 2026)
+# ---------------------------------------------------------------------------
+#
+# During build FEAT-1F44 a failed check sat invisible for 50 minutes: the only
+# trace before the final record was a console line. Each failed attempt now
+# leaves a WARNING in the log and one event in events.jsonl straight away.
+# Neither carries the declared command or any of its output: both can hold a
+# credential, and both are published beyond the sandbox.
+
+FIXED_LABEL = "the project's declared feature check"
+ORCHESTRATOR_LOGGER = "guardkit.orchestrator.feature_orchestrator"
+
+
+def _attempt_events(emitter: NullEmitter) -> list:
+    return [
+        e for e in emitter.events
+        if type(e).__name__ == "FeatureCheckAttemptEvent"
+    ]
+
+
+def test_a_failed_attempt_is_logged_as_a_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    feature = _make_feature(worktree)
+    caplog.set_level(logging.DEBUG, logger=ORCHESTRATOR_LOGGER)
+
+    _run_build(repo_root, worktree, feature, _WaveRecorder(worktree))
+
+    warnings = [
+        r.getMessage() for r in caplog.records
+        if r.name == ORCHESTRATOR_LOGGER
+        and r.levelno == logging.WARNING
+        and FIXED_LABEL in r.getMessage()
+    ]
+    assert warnings, "a failed attempt must leave a WARNING in the log"
+    first = warnings[0]
+    assert "attempt 1" in first
+    assert "failure_kind=exit_nonzero" in first
+    assert "exit_code=1" in first
+    assert "repair_follows=True" in first
+    stderr_bytes = int(re.search(r"stderr_bytes=(\d+)", first).group(1))
+    stderr_lines = int(re.search(r"stderr_lines=(\d+)", first).group(1))
+    assert stderr_bytes > 0 and stderr_lines > 0
+
+
+def test_the_finaliser_still_recognises_a_failed_feature_check(
+    tmp_path: Path,
+) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    feature = _make_feature(worktree)
+    summary = (
+        "the whole-feature check failed (exit=1, expected=0) after 2 "
+        f"attempt(s): {FIXED_LABEL}"
+    )
+    wave = _succeeding_wave(1, ["TASK-001"])
+    wave.smoke_gate_result = SmokeGateResult(
+        passed=False,
+        exit_code=1,
+        stdout="",
+        stderr=summary,
+        timed_out=False,
+        command=f"whole-feature check (toolchain.feature_check): {FIXED_LABEL}",
+        timeout=600,
+        after_wave=1,
+    )
+    orchestrator = _make_orchestrator(repo_root)
+    with ExitStack() as stack:
+        for _cm in _common_patches(orchestrator):
+            stack.enter_context(_cm)
+        stack.enter_context(patch.object(orchestrator, "_display_summary"))
+        result = orchestrator._finalize_phase(
+            feature, [wave], _make_worktree(worktree)
+        )
+
+    assert result.status == "failed"
+    assert result.error == summary
+
+
+def test_every_failed_attempt_emits_one_event(tmp_path: Path) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    feature = _make_feature(worktree)
+    emitter = NullEmitter(capture=True)
+    seen_at_reentry: List[int] = []
+    recorder = _WaveRecorder(
+        worktree,
+        on_reentry=lambda _n: seen_at_reentry.append(
+            len(_attempt_events(emitter))
+        ),
+    )
+
+    _, _, result = _run_build(
+        repo_root, worktree, feature, recorder,
+        orchestrator_kwargs={"emitter": emitter},
+    )
+
+    assert result.status == "failed"
+    events = _attempt_events(emitter)
+    assert [e.check_attempt for e in events] == [1, 2]
+    assert [e.repair_follows for e in events] == [True, False]
+    assert [e.exit_code for e in events] == [1, 1]
+    assert [e.failure_kind for e in events] == ["exit_nonzero", "exit_nonzero"]
+    assert seen_at_reentry == [1], (
+        "the first failure must be published before the repair round starts"
+    )
+    for event in events:
+        assert event.agent_role == "router"
+        assert event.task_id == feature.id
+        assert event.run_id == f"run-{feature.id}"
+        assert event.attempt == event.check_attempt
+        assert event.wave_number == 1
+        assert event.timed_out is False
+        assert event.stderr_bytes > 0 and event.stderr_lines > 0
+
+
+#: A check that prints credentials in several forms, on both streams, and the
+#: fixture's own failure line. None of it may be published.
+SECRET_PRINTING_CHECK = """#!/bin/sh
+echo "--password out-secret-1"
+echo "password=out-secret-2"
+echo "Password: Out-Secret-3" >&2
+echo '{"password": "out-secret-4"}'
+echo "PASSWORD='out secret 5'" >&2
+echo "Authorization: Bearer out-secret-6abcdefghij" >&2
+echo "GET /users/created-per-day answered 404" >&2
+if [ -f THE_FEATURE_IS_FIXED ]; then
+  exit 0
+fi
+exit 1
+"""
+
+NEVER_PUBLISHED = (
+    "cmd-secret-1",
+    "Cmd-Secret-2",
+    "cmd secret 3",
+    "out-secret-1",
+    "out-secret-2",
+    "Out-Secret-3",
+    "out-secret-4",
+    "out secret 5",
+    "out-secret-6abcdefghij",
+    "answered 404",
+    "qa/feature-check.sh",
+)
+
+
+def _normalise(text: str) -> str:
+    return text.lower().replace("'", "").replace('"', "")
+
+
+def _assert_nothing_secret_published(
+    caplog: pytest.LogCaptureFixture,
+    recording: Console,
+    result: Any,
+    wave_results: List[WaveExecutionResult],
+    emitter: NullEmitter,
+) -> List[str]:
+    """Collect every published surface and prove no secret reached it.
+
+    The surfaces: every GuardKit log entry at every level, everything printed
+    to the console, the build's error, each gate's command and stderr, and
+    each per-attempt event. Compared without regard to case or quotes.
+    """
+    published: List[str] = [
+        r.getMessage() for r in caplog.records if r.name.startswith("guardkit")
+    ]
+    console_text = recording.export_text()
+    assert "whole-feature check" in console_text.lower() or "not completed" in (
+        console_text.lower()
+    ), "the console was captured, so its silence proves something"
+    published.append(console_text)
+    published.append(result.error or "")
+    for wave in wave_results:
+        gate = wave.smoke_gate_result
+        if gate is not None:
+            published.append(str(gate.command))
+            published.append(str(gate.stderr))
+    published.extend(e.model_dump_json() for e in _attempt_events(emitter))
+
+    everything = _normalise("\n".join(published))
+    for secret in NEVER_PUBLISHED:
+        assert _normalise(secret) not in everything, (
+            f"{secret!r} was published"
+        )
+    return published
+
+
+SECRET_COMMANDS = [
+    "sh qa/feature-check.sh --password cmd-secret-1",
+    "PASSWORD=Cmd-Secret-2 sh qa/feature-check.sh",
+    "sh qa/feature-check.sh --token 'cmd secret 3'",
+]
+SECRET_COMMAND_IDS = ["password-argument", "password-variable", "quoted-token"]
+
+
+@pytest.mark.parametrize(
+    "record_write_fails", [False, True], ids=["record-written", "record-write-fails"]
+)
+@pytest.mark.parametrize("check_passes", [False, True], ids=["fails", "passes"])
+@pytest.mark.parametrize("command", SECRET_COMMANDS, ids=SECRET_COMMAND_IDS)
+def test_a_failed_attempt_publishes_neither_its_command_nor_its_output(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    command: str,
+    check_passes: bool,
+    record_write_fails: bool,
+) -> None:
+    repo_root, worktree = _make_project(tmp_path, declaration=_declaration(command))
+    _write(worktree, "qa/feature-check.sh", SECRET_PRINTING_CHECK)
+    if check_passes:
+        _write(worktree, "THE_FEATURE_IS_FIXED", "")
+    feature = _make_feature(worktree)
+    emitter = NullEmitter(capture=True)
+    recording = Console(record=True, file=io.StringIO(), width=400)
+    caplog.set_level(logging.DEBUG)
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch("guardkit.orchestrator.feature_orchestrator.console", recording)
+        )
+        if record_write_fails:
+            # The record cannot be written, so the completion rule finds no
+            # record and says why: that reason reaches the log, the console
+            # and the build's error too.
+            stack.enter_context(
+                patch(
+                    "guardkit.orchestrator.feature_orchestrator."
+                    "write_feature_check_receipt",
+                    side_effect=OSError("disk full"),
+                )
+            )
+        _, wave_results, result = _run_build(
+            repo_root, worktree, feature, _WaveRecorder(worktree),
+            orchestrator_kwargs={"emitter": emitter, "quiet": False},
+        )
+
+    completes = check_passes and not record_write_fails
+    assert result.status == ("completed" if completes else "failed")
+    published = _assert_nothing_secret_published(
+        caplog, recording, result, wave_results, emitter
+    )
+    if not check_passes:
+        assert len(_attempt_events(emitter)) == 2, "both failed attempts are published"
+    if not completes:
+        assert FIXED_LABEL in (result.error or ""), result.error
+    assert any(FIXED_LABEL in text for text in published)
+
+
+@pytest.mark.parametrize("command", SECRET_COMMANDS, ids=SECRET_COMMAND_IDS)
+def test_a_resumed_build_with_no_record_does_not_publish_the_command(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, command: str
+) -> None:
+    """Every wave already done, the check never ran here, and no record.
+
+    The finaliser's completion rule refuses the feature because nothing proved
+    it, and says so in the log, on the console and in the build's error,
+    naming the check by its fixed label.
+    """
+    repo_root, worktree = _make_project(tmp_path, declaration=_declaration(command))
+    feature = _make_feature(worktree)
+    emitter = NullEmitter(capture=True)
+    recording = Console(record=True, file=io.StringIO(), width=400)
+    caplog.set_level(logging.DEBUG)
+    waves = [_succeeding_wave(1, ["TASK-001"])]
+    orchestrator = _make_orchestrator(repo_root, emitter=emitter, quiet=False)
+    with ExitStack() as stack:
+        for _cm in _common_patches(orchestrator):
+            stack.enter_context(_cm)
+        stack.enter_context(patch.object(orchestrator, "_display_summary"))
+        stack.enter_context(
+            patch("guardkit.orchestrator.feature_orchestrator.console", recording)
+        )
+        result = orchestrator._finalize_phase(
+            feature, waves, _make_worktree(worktree)
+        )
+
+    assert not (worktree / RECEIPT_RELATIVE_PATH).exists()
+    assert result.status == "failed"
+    assert FIXED_LABEL in (result.error or ""), result.error
+    _assert_nothing_secret_published(caplog, recording, result, waves, emitter)
+
+
+def test_the_record_is_not_written_before_the_repair_round(tmp_path: Path) -> None:
+    repo_root, worktree = _make_project(
+        tmp_path, declaration=_declaration("sh qa/feature-check.sh")
+    )
+    feature = _make_feature(worktree)
+    record_present_at_reentry: List[bool] = []
+    recorder = _WaveRecorder(
+        worktree,
+        on_reentry=lambda _n: record_present_at_reentry.append(
+            (worktree / RECEIPT_RELATIVE_PATH).exists()
+        ),
+    )
+
+    _run_build(repo_root, worktree, feature, recorder)
+
+    assert record_present_at_reentry == [False]
+    assert (worktree / RECEIPT_RELATIVE_PATH).exists(), "written once, at the end"
