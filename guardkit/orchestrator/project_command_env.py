@@ -22,11 +22,15 @@ from an empty dictionary, and it holds exactly:
   (a value that does refuses the command; the value is never quoted);
 * the project's declared ``launch.settings`` names, when set;
 * the project's declared ``launch.scratch`` folders;
-* ``GUARDKIT_RUN_OWNER`` when GuardKit has it. It is a build id, not a
-  secret: Forge's stop sweep finds a cancelled build's leftover processes by
-  reading it from ``/proc/<pid>/environ``;
-* then ``named``: values the factory itself sets for this one command. A
-  credential-shaped name there is a programming error and raises.
+* ``named``: values the factory itself sets for this one command. A
+  credential-shaped name there, or ``GUARDKIT_RUN_OWNER``, is a programming
+  error and raises;
+* last, ``GUARDKIT_RUN_OWNER`` exactly as GuardKit's own environment has it:
+  set when the parent has it, absent when it does not, whatever the caller
+  or the project's declarations added. It is a build id, not a secret:
+  Forge's stop sweep finds a cancelled build's leftover processes by reading
+  it from ``/proc/<pid>/environ``, so only the authoritative parent value
+  may ever reach a project command.
 
 Nothing else. Anything else a project needs, it declares in
 ``launch.settings``. Nothing here names a stack.
@@ -69,6 +73,11 @@ def _named_refusal(name: object) -> Optional[str]:
     if not isinstance(name, str) or not DECLARED_NAME_PATTERN.fullmatch(name):
         return f"{name!r} is not the shape of a setting name"
     upper = name.upper()
+    if upper == RUN_OWNER_NAME:
+        return (
+            f"{name!r} comes only from GuardKit's own environment, never from "
+            f"a caller"
+        )
     for word in RESERVED_CREDENTIAL_WORDS:
         if word in upper:
             return f"{name!r} is credential-shaped (it contains {word!r})"
@@ -125,9 +134,6 @@ def project_command_environment(
                 f"not run"
             )
         env[name] = value
-    owner = source.get(RUN_OWNER_NAME)
-    if owner is not None:
-        env[RUN_OWNER_NAME] = owner
 
     from guardkit.orchestrator.paths import prepare_builder_scratch_dir
 
@@ -147,4 +153,11 @@ def project_command_environment(
     result = apply_launch_environment(env, declaration, Path(work_folder))
     final = dict(result if result is not None else env)
     final.update({name: str(value) for name, value in named.items()})
+    # Applied last, from the parent only: set when the parent has it, absent
+    # when it does not, whatever was added above.
+    for name in [key for key in final if key.upper() == RUN_OWNER_NAME]:
+        del final[name]
+    owner = source.get(RUN_OWNER_NAME)
+    if owner is not None:
+        final[RUN_OWNER_NAME] = owner
     return final

@@ -770,6 +770,40 @@ class TestNoFactoryCredentials:
             with pytest.raises(ValueError):
                 project_command_environment(folder, None, named={bad: "v"})
 
+    def test_an_addition_may_not_set_the_run_owner(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        monkeypatch.setenv("GUARDKIT_RUN_OWNER", "build-x")
+        standin.init()
+        folder = standin.join_folder()
+
+        for name in ("GUARDKIT_RUN_OWNER", "guardkit_run_owner"):
+            with pytest.raises(ValueError):
+                project_command_environment(folder, None, named={name: "build-forged"})
+        env = project_command_environment(folder, None)
+        assert env["GUARDKIT_RUN_OWNER"] == "build-x"
+
+    def test_without_a_parent_marker_there_is_no_run_owner(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        monkeypatch.delenv("GUARDKIT_RUN_OWNER", raising=False)
+        standin.init()
+        folder = standin.join_folder()
+
+        env = project_command_environment(
+            folder, None, named={"GUARDKIT_FEATURE_ID": "FEAT-I"}
+        )
+        assert "GUARDKIT_RUN_OWNER" not in env
+        assert not any(key.upper() == "GUARDKIT_RUN_OWNER" for key in env)
+
     def test_a_proxy_with_credentials_is_not_passed(
         self, standin: Standin, monkeypatch: pytest.MonkeyPatch
     ):
