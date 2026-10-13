@@ -74,6 +74,15 @@ class StackTestProfile:
     # stacks whose zero-test phrase is unambiguous (those live in
     # ``absent_substrings`` directly, e.g. dotnet "No test is available").
     ambiguous_zero_test_substrings: tuple[str, ...] = ()
+    # When True, ``ambiguous_zero_test_substrings`` can make only a CLEAN run
+    # (returncode == 0) absent. Set for runners whose zero-test case exits 0:
+    # ``go test`` exits 0 when packages merely have no tests, so a non-zero Go
+    # exit is a failure even when another package printed ``[no test files]``
+    # (12 October 2026; a declared marker that matches only passing output
+    # used to turn such a failure into "absent"). Kept False for runners that
+    # legitimately exit non-zero on zero tests (Vitest "No test files found").
+    # A declaration's overlay keeps the row's value.
+    ambiguous_zero_only_on_success: bool = False
     # A regex (already carrying its own (?mi) flags) matching output that proves
     # at least one test executed. Used (a) to disambiguate
     # ``ambiguous_zero_test_substrings`` and (b) as the success precondition when
@@ -192,6 +201,7 @@ STACK_TEST_PROFILES: tuple[StackTestProfile, ...] = (
         # ``[no test files]`` co-occurs with passing packages in a mixed module,
         # so it is absent ONLY when no ``ok <pkg>`` pass-line is present.
         ambiguous_zero_test_substrings=("[no test files]",),
+        ambiguous_zero_only_on_success=True,
         ran_marker_regex=_GO_RAN_MARKER,
         # Like node: ``go test`` can exit 0 having run nothing (an empty
         # output, or only cached results), so a clean exit needs the marker.
@@ -334,7 +344,9 @@ def classify_absent_for_stack(
     lowered = (combined_output or "").lower()
     if any(sub in lowered for sub in profile.absent_substrings):
         return True
-    if profile.ambiguous_zero_test_substrings:
+    if profile.ambiguous_zero_test_substrings and not (
+        profile.ambiguous_zero_only_on_success and returncode != 0
+    ):
         has_zero_test = any(
             sub in lowered for sub in profile.ambiguous_zero_test_substrings
         )

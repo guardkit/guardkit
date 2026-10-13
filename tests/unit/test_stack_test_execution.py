@@ -236,10 +236,13 @@ class TestGoRanMarker:
         )
         assert classify_absent_for_stack(_profile("go"), 1, out) is False
 
-    def test_the_bare_closing_fail_line_proves_nothing(self):
-        """``FAIL`` alone names no package; it is not a run marker."""
+    def test_a_non_zero_go_exit_is_never_absent_through_no_test_files(self):
+        """``go test`` exits 0 when packages merely have no tests, so for Go a
+        non-zero exit is decided by the exit, whatever else was printed
+        (13 October 2026, R9)."""
         out = "?   \tex/cmd\t[no test files]\nFAIL\n"
-        assert classify_absent_for_stack(_profile("go"), 1, out) is True
+        assert classify_absent_for_stack(_profile("go"), 1, out) is False
+        assert _profile("go").ambiguous_zero_only_on_success is True
 
     def test_failure_beside_testless_package_is_ran_and_failed(self):
         out = (
@@ -425,3 +428,102 @@ class TestOverlayDeclaredProfile:
         assert classify_absent_for_stack(overlaid, 0, "No test files found") is True
         assert classify_absent_for_stack(overlaid, 0, "5 passed") is False
         assert classify_absent_for_stack(overlaid, 127, "") is True
+
+
+
+# ============================================================================
+# Real outputs (13 October 2026, R9)
+# ============================================================================
+# Captured with Go 1.26.9, Node 22.23.2 and the React/Go template's own
+# ``scripts/check.sh`` (with one injected defect per case), then saved under
+# tests/fixtures/stack_test_outputs. Only the probe's folder path in npm's
+# error lines was replaced with ``/work``. The ``api`` component and the root
+# are classified with the profiles GuardKit really builds for them: the
+# matched stack row overlaid with the template's declared markers.
+
+_OUTPUTS = Path(__file__).resolve().parents[1] / "fixtures" / "stack_test_outputs"
+
+#: The react-go-monorepo template's declared markers (its config.yaml).
+_API_MARKER = r"(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)"
+_ROOT_MARKER = (
+    r"(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)"
+    r"(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)"
+)
+
+
+def _output(name: str) -> str:
+    return (_OUTPUTS / name).read_text(encoding="utf-8")
+
+
+def _declared(tmp_path: Path, marker_file: str, regex: str, command: str):
+    (tmp_path / marker_file).write_text("x")
+    return overlay_declared_profile(
+        detect_stack_profile(tmp_path),
+        command=command,
+        ran_marker_regex=regex,
+        requires_ran_marker=True,
+    )
+
+
+class TestDeclaredGoComponentOnRealOutput:
+    """The template's ``api`` component: the go row plus a PASS-only marker."""
+
+    @pytest.fixture()
+    def api(self, tmp_path: Path) -> StackTestProfile:
+        profile = _declared(tmp_path, "go.mod", _API_MARKER, "go test -v ./...")
+        assert profile.stack == "go"
+        return profile
+
+    def test_the_overlay_keeps_the_go_rows_exit_rule(self, api):
+        assert api.ambiguous_zero_only_on_success is True
+
+    @pytest.mark.parametrize(
+        "name,returncode,absent",
+        [
+            # Failures beside a package with no test files stay failures.
+            ("go-failing-notests.txt", 1, False),
+            ("go-buildfail-notests.txt", 1, False),
+            # Clean exits with no evidence a test passed are not runs.
+            ("go-notests-only.txt", 0, True),
+            ("go-allskip.txt", 0, True),
+            ("go-cached.txt", 0, True),
+            # A fresh pass beside a skip and a testless package is a run.
+            ("go-mixed-notests.txt", 0, False),
+        ],
+    )
+    def test_real_go_output(self, api, name, returncode, absent):
+        assert classify_absent_for_stack(api, returncode, _output(name)) is absent
+
+    @pytest.mark.parametrize(
+        "name", ["go-failing-notests.txt", "go-buildfail-notests.txt"]
+    )
+    def test_the_generic_go_row_agrees_on_failures(self, name):
+        assert classify_absent_for_stack(_profile("go"), 1, _output(name)) is False
+
+
+class TestTemplateRootCheckOnRealOutput:
+    """The template's root ``bash scripts/check.sh``: the root holds
+    ``package.json`` (and no ``go.mod``), so it gets the node row plus the
+    declared aggregate marker. Each failing run printed ``[no test files]``
+    for the Go command package before failing."""
+
+    @pytest.fixture()
+    def root(self, tmp_path: Path) -> StackTestProfile:
+        profile = _declared(
+            tmp_path, "package.json", _ROOT_MARKER, "bash scripts/check.sh"
+        )
+        assert profile.stack == "node"
+        return profile
+
+    @pytest.mark.parametrize(
+        "name,returncode",
+        [
+            ("check-sh-go-fail.txt", 1),
+            ("check-sh-vitest-fail.txt", 1),
+            ("check-sh-tsc-fail.txt", 2),
+        ],
+    )
+    def test_a_failing_check_is_a_failure(self, root, name, returncode):
+        out = _output(name)
+        assert "[no test files]" in out
+        assert classify_absent_for_stack(root, returncode, out) is False

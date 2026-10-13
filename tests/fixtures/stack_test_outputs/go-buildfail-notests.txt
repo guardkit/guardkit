@@ -1,0 +1,5 @@
+# example.com/probe/buildfail [example.com/probe/buildfail.test]
+buildfail/b_test.go:5:33: undefined: undefinedThing
+FAIL	example.com/probe/buildfail [build failed]
+?   	example.com/probe/notests	[no test files]
+FAIL

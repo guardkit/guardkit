@@ -1,0 +1,17 @@
+all modules verified
+?   	example.com/guardkit/react-go-api/cmd/api	[no test files]
+=== RUN   TestRejectsInvalidJSONBeforePersistence
+--- PASS: TestRejectsInvalidJSONBeforePersistence (0.00s)
+=== RUN   TestCreatePreservesContextAndWireShape
+--- PASS: TestCreatePreservesContextAndWireShape (0.00s)
+=== RUN   TestPersistenceFailureIsPrivate
+2026/10/13 07:40:42 ERROR create note failed
+--- PASS: TestPersistenceFailureIsPrivate (0.00s)
+=== RUN   TestMethodsAndHealth
+--- PASS: TestMethodsAndHealth (0.00s)
+=== RUN   TestR9ProbeFails
+    handler_test.go:107: r9 probe failure
+--- FAIL: TestR9ProbeFails (0.00s)
+FAIL
+FAIL	example.com/guardkit/react-go-api/internal/notes	0.013s
+FAIL
