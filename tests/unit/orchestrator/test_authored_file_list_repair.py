@@ -930,3 +930,56 @@ class TestScratchFolder:
         assert f"Put throwaway scripts in `{scratch}`" in given
         assert "throwaway scripts" not in not_given
         assert "{scratch_folder}" not in given + not_given
+
+
+# ---------------------------------------------------------------------------
+# 13 October 2026, first web fixture proof: the builder wrote a probe test
+# file, edited it and removed it again. Both writes were confirmed by their
+# own successful results and the builder never named the file. The tracker
+# kept it listed, and the claim audit called the missing file fabricated (a
+# critical finding on a turn whose tests passed). It is now set aside in the
+# final report, and still recorded as authored.
+# ---------------------------------------------------------------------------
+
+
+class TestWrittenThenRemoved:
+    @pytest.mark.asyncio
+    async def test_a_file_written_then_removed_is_set_aside_not_claimed(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = _git_invoker(tmp_path)
+        wt = invoker.worktree_path
+        probe = wt / "apps" / "web" / "src" / "zzprobe.test.tsx"
+        task_id = "TASK-PROBE-REMOVED"
+        events = [
+            _put(probe),
+            _use("c1", "Write", probe),
+            _ok("c1"),
+            _use("c2", "Edit", probe),
+            _ok("c2"),
+            lambda: probe.unlink(),
+        ]
+        harness = _harness_yielding(events)
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            return_value=harness,
+        ):
+            result = await invoker._invoke_task_work_implement(
+                task_id=task_id, mode="standard"
+            )
+        assert result.success is True
+        assert not probe.exists()
+
+        invoker._create_player_report_from_task_work(task_id, 1, result)
+
+        folder = wt / ".guardkit" / "autobuild" / task_id
+        report = json.loads((folder / "player_turn_1.json").read_text())
+        record = json.loads((folder / "task_work_results.json").read_text())
+        rel = "apps/web/src/zzprobe.test.tsx"
+        for final in (report, record):
+            assert final["files_written_then_removed"] == [rel]
+            assert rel not in final["files_created"]
+            assert rel not in final["files_modified"]
+            assert rel not in final.get("tests_written", [])
+        assert rel in report["files_authored"]
+        assert rel in record["files_authored"]
