@@ -46,6 +46,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
+from guardkit.orchestrator.launch_declaration import (
+    apply_launch_environment,
+    load_launch_declaration,
+)
 from guardkit.orchestrator.toolchain_declaration import load_toolchain_declaration
 
 logger = logging.getLogger(__name__)
@@ -759,6 +763,7 @@ def run_feature_check_command(
     env_extra: Optional[Dict[str, str]] = None,
     venv_python: Optional[str] = None,
     evidence: Optional[EvidenceRequest] = None,
+    launch_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Run the declared command in the feature worktree; report what happened.
 
@@ -769,6 +774,12 @@ def run_feature_check_command(
 
     The result also carries ``run_evidence`` (repair 7): what the command ran
     against, recorded around the run and never read for the outcome.
+
+    ``launch_root`` is the main checkout whose ``launch:`` block applies
+    (read like the check command itself, never from the worktree); its
+    settings and scratch folders (under ``cwd``'s scratch folder) are added
+    on top. A malformed block or a scratch folder that cannot be prepared
+    means the check could not start. ``None``, or no block: unchanged.
     """
     env = os.environ.copy()
     if venv_python:
@@ -776,11 +787,28 @@ def run_feature_check_command(
             str(Path(venv_python).parent) + os.pathsep + env.get("PATH", "")
         )
     env.update(env_extra or {})
+    try:
+        if launch_root is not None:
+            env = apply_launch_environment(
+                env, load_launch_declaration(Path(launch_root)), cwd
+            )
+        launch_fault: Optional[OSError] = None
+    except OSError as exc:
+        launch_fault = exc
 
     record = start_command_evidence(
         evidence, command=command, execution_root=cwd, cwd=cwd, env=env
     )
     started = time.monotonic()
+    if launch_fault is not None:
+        return {
+            "exit_code": None,
+            "timed_out": False,
+            "stdout": "",
+            "stderr": f"the feature check command could not start: {launch_fault}",
+            "duration_seconds": 0.0,
+            "run_evidence": record.finish(),
+        }
     try:
         proc = subprocess.run(
             command,

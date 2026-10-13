@@ -104,12 +104,16 @@ def phase_4_ran_and_failed(block: object) -> bool:
     reports a positive count of failing tests. That is evidence about the
     code — the opposite of a test phase that hung, crashed or ran nothing,
     which reports ``failed`` with no failing tests and is an absent signal
-    about the code. Reads only the counts the test phase itself wrote.
+    about the code. Reads only the counts the test phase itself wrote — or,
+    when the record carries it, its explicit :data:`RAN_AND_FAILED` mark,
+    which holds even when the count could not be read or read 0.
     """
     if not isinstance(block, dict):
         return False
     if block.get("status") != "failed" or block.get("signal_absent"):
         return False
+    if block.get(RAN_AND_FAILED) is True:  # 12 Oct 2026: the run's own word
+        return True
     failed = block.get("tests_failed")
     return isinstance(failed, int) and not isinstance(failed, bool) and failed > 0
 

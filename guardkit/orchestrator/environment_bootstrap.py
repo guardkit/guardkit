@@ -48,6 +48,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence
 
+from guardkit.orchestrator.launch_declaration import (
+    apply_main_checkout_launch_environment,
+)
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from guardkit.orchestrator.toolchain_declaration import ToolchainDeclaration
 
@@ -2492,6 +2496,11 @@ class EnvironmentBootstrapper:
             " ".join(cmd),
         )
         try:
+            # The project's `launch:` settings and scratch folders (12
+            # October 2026), read from the main checkout, never the worktree
+            # the Player edits. Unchanged without a block; a malformed one or
+            # a missing scratch folder fails this install with the reason.
+            env = apply_main_checkout_launch_environment(env, self._root)
             proc = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -2715,6 +2724,8 @@ class EnvironmentBootstrapper:
 
         logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
+            # The project's `launch:` block, as in ``_run_install``.
+            env = apply_main_checkout_launch_environment(env, self._root)
             proc = subprocess.run(
                 run_cmd,
                 cwd=str(cwd),

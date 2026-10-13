@@ -44,6 +44,7 @@ from guardkit.orchestrator.failing_test_feedback import (
     MUST_FIX_MARKER,
     QG_FAILING_TESTS,
     QG_FAILURE_SUMMARY,
+    RAN_AND_FAILED,
     describe_failing_tests,
     must_fix_items,
 )
@@ -911,3 +912,66 @@ def test_long_test_names_never_push_out_the_failure_line(tmp_path: Path) -> None
     assert all(n in names for n in listed_names), "a name was cut"
     assert omitted == f"{10 - len(listed_names)} more."
     assert FAILING_TESTS_TEXT_BUDGET < MUST_FIX_ITEM_LIMIT
+
+
+
+# ---------------------------------------------------------------------------
+# A failed run whose failure COUNT is unknown or 0 (12 October 2026)
+# ---------------------------------------------------------------------------
+# The record keeps exactly the count the output gave, and the failure still
+# reaches the Player through the record's own ``ran_and_failed`` mark.
+
+
+def test_plain_go_failure_keeps_its_count_unknown_and_still_feeds_back(
+    tmp_path: Path,
+) -> None:
+    root, worktree = _leg_repo(tmp_path)
+    _declare_suite(
+        root, worktree,
+        "--- FAIL: TestTotals (0.00s)\nFAIL\nFAIL\tex/orders\t0.01s\nFAIL\n", 1,
+    )
+    results_path = _player_claimed_green(worktree, ["app/orders.py"])
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert block["tests_run"] is None
+    assert block["tests_failed"] is None
+    assert block[RAN_AND_FAILED] is True
+
+    # The receipt read back for the code reviewer says unknown, never 0 or 1.
+    phase_4 = si._read_phase_4_block(
+        TaskArtifactPaths.ensure_autobuild_dir(_LEG_TASK, worktree)
+        / "specialist_results.json"
+    )
+    assert phase_4["tests_failed"] is None
+    prompt = si._build_code_reviewer_prompt(
+        _LEG_TASK, "context", phase_4, canonical_root=worktree
+    )
+    assert "- tests_failed: unknown" in prompt
+    assert "- tests_run: unknown" in prompt
+
+    _, _, must_fix = _next_turn_must_fix(worktree, results_path)
+    assert "What the test run said" in must_fix[0]
+
+
+def test_tests_passed_then_type_check_failed_keeps_zero_and_feeds_back(
+    tmp_path: Path,
+) -> None:
+    root, worktree = _leg_repo(tmp_path)
+    _declare_suite(
+        root, worktree,
+        " Test Files  3 passed (3)\n"
+        "      Tests  7 passed (7)\n"
+        "src/orders.ts(3,1): error TS2304: Cannot find name totals.\n",
+        2,
+    )
+    results_path = _player_claimed_green(worktree, ["app/orders.py"])
+
+    block = _run_test_phase(worktree)
+    assert block["status"] == "failed"
+    assert block["tests_run"] == 7
+    assert block["tests_failed"] == 0
+    assert block[RAN_AND_FAILED] is True
+
+    _, _, must_fix = _next_turn_must_fix(worktree, results_path)
+    assert "What the test run said" in must_fix[0]

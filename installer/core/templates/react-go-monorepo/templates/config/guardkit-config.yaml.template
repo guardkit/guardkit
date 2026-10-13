@@ -1,0 +1,50 @@
+# GuardKit toolchain declaration (schema: guardkit/orchestrator/toolchain_declaration.py).
+# Exit code is the verdict. GuardKit snapshots this block before a build starts.
+toolchain:
+  # Locked npm and Go module installs under the exact toolchain guards.
+  install: "bash scripts/install.sh"
+  install_timeout: 1200
+  # The aggregate check: format, vet, Staticcheck, race tests, Go build,
+  # TypeScript, ESLint, Prettier, Vitest and the Vite build.
+  test: "bash scripts/check.sh"
+  test_timeout: 1800
+  # Both suites must report real work: a verbose Go `--- PASS:` line and a
+  # Vitest "Tests ... N passed" line with N >= 1 (colour codes tolerated), so
+  # neither an all-skipped Go suite nor an all-skipped web suite can pass. A
+  # cached Go replay (`ok <pkg> (cached)`) never counts, even though -v
+  # reprints its old PASS lines.
+  requires_ran_marker: true
+  ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)(?=.*Tests\b[^\n]*?[1-9][0-9]* passed)'
+  # The connected browser/API/database journey. Supplied by the product
+  # foundation; the template's stub fails until then.
+  feature_check: "bash scripts/check-feature.sh"
+  feature_check_timeout: 1800
+  runtime:
+    go: "1.26.9"
+    node: "22.23.2"
+  components:
+    web:
+      cwd: "apps/web"
+      test: "npm run test"
+      test_timeout: 600
+      requires_ran_marker: true
+      ran_marker_regex: 'Tests\b[^\n]*?[1-9][0-9]* passed'
+      runtime:
+        node: "22.23.2"
+    api:
+      cwd: "apps/api"
+      test: "GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=readonly go test -race -count=1 -v ./..."
+      test_timeout: 900
+      requires_ran_marker: true
+      # At least one passing test or subtest; an all-skipped suite, no test
+      # files or `[no tests to run]` print no `--- PASS:` line. A cached
+      # replay is refused even though -v reprints its old PASS lines.
+      ran_marker_regex: '(?ms)\A(?!.*^ok\s+\S+\s+\(cached\))(?=.*^\s*--- PASS: \S+)'
+      runtime:
+        go: "1.26.9"
+# What the build shell receives. `settings` names variables copied from the
+# launching process (values never live here); each `scratch` name is set to
+# <worktree scratch folder>/toolchain/<NAME>, outside the project tree.
+launch:
+  settings: [PLAYWRIGHT_BROWSERS_PATH]
+  scratch: [GOPATH, GOCACHE, npm_config_cache, XDG_CONFIG_HOME, XDG_CACHE_HOME, NODE_COMPILE_CACHE]

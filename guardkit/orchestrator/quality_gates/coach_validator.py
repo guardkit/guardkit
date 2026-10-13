@@ -81,6 +81,7 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     detect_stack_profile,
     overlay_declared_profile,
 )
+from guardkit.orchestrator.launch_declaration import apply_task_launch_environment
 from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
     ToolchainDeclaration,
@@ -3792,11 +3793,21 @@ class CoachValidator:
                     }
                 )
             else:
+                # 12 October 2026: the task's declared component, and whether
+                # the project declares a toolchain at all, travel with it, so a
+                # non-Python component is never given a root pytest.
                 coverage_dict = run_coverage_gate_for_bundle(
                     worktree_path=self.worktree_path,
                     authored_files=authored,
                     task_type=task_type.value,
                     timeout=self.test_timeout,
+                    component=getattr(self, "_component", None),
+                    component_cwd=getattr(
+                        getattr(self, "_component_toolchain", None), "cwd", None
+                    ),
+                    toolchain_declared=(
+                        getattr(self, "_toolchain", None) is not None
+                    ),
                 )
             if coverage_dict is not None:
                 logger.info(
@@ -6582,7 +6593,9 @@ class CoachValidator:
 
         env = build_venv_env(self.worktree_path) or dict(os.environ)
         env.update(getattr(self, "_fixture_env", {}))
-        return env
+        return apply_task_launch_environment(
+            env, getattr(self, "task_id", None), self.worktree_path
+        )
 
     # ------------------------------------------------------------------
     # TASK-ABFIX-011: gated per-test pytest-timeout injection
@@ -10493,7 +10506,9 @@ class CoachValidator:
         """
         env = os.environ.copy()
         env.update(getattr(self, "_fixture_env", {}))
-        return env
+        return apply_task_launch_environment(
+            env, getattr(self, "task_id", None), self.worktree_path
+        )
 
     def _describe_detection_absence(self) -> str:
         """Build the actionable message for the deleted pytest default.

@@ -1,0 +1,25 @@
+all modules verified
+?   	example.com/guardkit/react-go-api/cmd/api	[no test files]
+=== RUN   TestRejectsInvalidJSONBeforePersistence
+--- PASS: TestRejectsInvalidJSONBeforePersistence (0.00s)
+=== RUN   TestCreatePreservesContextAndWireShape
+--- PASS: TestCreatePreservesContextAndWireShape (0.00s)
+=== RUN   TestPersistenceFailureIsPrivate
+2026/10/13 07:40:49 ERROR create note failed
+--- PASS: TestPersistenceFailureIsPrivate (0.00s)
+=== RUN   TestMethodsAndHealth
+--- PASS: TestMethodsAndHealth (0.00s)
+PASS
+ok  	example.com/guardkit/react-go-api/internal/notes	1.011s
+
+> sample-web@0.1.0 typecheck
+> tsc --noEmit
+
+src/api.ts(38,14): error TS2322: Type 'string' is not assignable to type 'number'.
+npm error Lifecycle script `typecheck` failed with error:
+npm error code 2
+npm error path /work/case-tsc-fail/apps/web
+npm error workspace sample-web@0.1.0
+npm error location /work/case-tsc-fail/apps/web
+npm error command failed
+npm error command sh -c tsc --noEmit

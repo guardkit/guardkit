@@ -1,0 +1,7 @@
+=== RUN   TestFails
+    f_test.go:5: broken
+--- FAIL: TestFails (0.00s)
+FAIL
+FAIL	example.com/probe/failing	0.003s
+?   	example.com/probe/notests	[no test files]
+FAIL

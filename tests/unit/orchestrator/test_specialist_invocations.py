@@ -1758,13 +1758,67 @@ def test_phase4_execution_mode_unknown_degrades_to_subprocess(monkeypatch):
         # All-skipped run (the FEAT-ABL-001 R1 shape: missing optional extra
         # silently turns every test into a skip; pytest exits 0).
         ("===== 4 skipped in 0.5s =====", (0, 0, 4)),
-        ("", (0, 0, None)),
-        (None, (0, 0, None)),
-        ("no recognisable summary here", (0, 0, None)),
+        # 12 October 2026: an unread count is UNKNOWN, never 0.
+        ("", (None, None, None)),
+        (None, (None, None, None)),
+        ("no recognisable summary here", (None, None, None)),
+        # Vitest: the Tests line, never the Test Files line.
+        (
+            " Test Files  3 passed (3)\n      Tests  7 passed (7)\n",
+            (7, 0, 0),
+        ),
+        # ...including when there are more files than passing tests.
+        (
+            " Test Files  5 passed (5)\n      Tests  3 passed | 4 skipped (7)\n",
+            (3, 0, 4),
+        ),
+        # Plain go test output prints no count at all.
+        ("ok  \tex/a\t0.012s\n?   \tex/b\t[no test files]\n", (None, None, None)),
     ],
 )
 def test_parse_pytest_counts(output, expected):
     assert _parse_pytest_counts(output) == expected
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_unread_counts_stay_unknown(tmp_path, monkeypatch):
+    """A run whose output carries no count (plain ``go test``) is recorded with
+    unknown counts, never "0 tests run" (12 October 2026)."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    for passed, expected_status in ((True, "passed"), (False, "failed")):
+        _patch_run_independent_tests(
+            monkeypatch,
+            IndependentTestResult(
+                tests_passed=passed,
+                test_command="go test ./...",
+                test_output_summary="ok  \tex/a\t0.012s",
+                duration_seconds=0.4,
+                raw_output=(
+                    "ok  \tex/a\t0.012s\n"
+                    if passed
+                    else "--- FAIL: TestX (0.00s)\nFAIL\tex/a\t0.01s\n"
+                ),
+                signal_absent=False,
+            ),
+        )
+        result = await invoke_test_orchestrator(
+            worktree_path=tmp_path,
+            task_id=_TASK_ID_DET,
+            sdk_timeout=900,
+            agent_invoker=_make_fake_agent_invoker(),
+        )
+
+        assert result.status == expected_status
+        block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+        assert block["status"] == expected_status
+        assert block["tests_run"] is None
+        assert block["tests_skipped"] is None
+        if not passed:
+            # Unknown stays unknown; the verdict travels as its own flag.
+            assert block["tests_failed"] is None
+            assert block["ran_and_failed"] is True
+        else:
+            assert "ran_and_failed" not in block
 
 
 # --- result mapping (the absence-of-failure-critical surface) ---------------
@@ -2249,3 +2303,109 @@ async def test_capture_stays_none_when_there_is_nothing_to_read(
     )
 
     assert result.final_message is None
+
+
+# --- unknown phase-4 counts reach the code-reviewer as unknown --------------
+# 12 October 2026: the readers used to fill a missing or null count with the
+# 0 default, so the code-reviewer prompt said "tests_run: 0" about a run whose
+# count nobody could read.
+
+from guardkit.orchestrator.specialist_invocations import (  # noqa: E402
+    _read_phase_4_block,
+    _read_phase_4_summary,
+)
+
+
+def test_read_phase_4_block_keeps_null_counts_unknown(tmp_path: Path):
+    path = tmp_path / "specialist_results.json"
+    path.write_text(json.dumps({"phase_4": {
+        "status": "passed", "tests_run": None, "tests_failed": None,
+        "output_summary": "ok  \tex/a\t0.01s",
+    }}))
+
+    block = _read_phase_4_block(path)
+
+    assert block["tests_run"] is None
+    assert block["tests_failed"] is None
+    assert block["output_summary"] == "ok  \tex/a\t0.01s"
+
+
+def test_read_phase_4_block_with_no_record_has_unknown_counts(tmp_path: Path):
+    block = _read_phase_4_block(tmp_path / "missing.json")
+    assert block["tests_run"] is None
+    assert block["tests_failed"] is None
+    assert block["quality_gates_passed"] is False
+
+
+def test_read_phase_4_block_keeps_real_counts(tmp_path: Path):
+    path = tmp_path / "specialist_results.json"
+    path.write_text(json.dumps({"phase_4": {"tests_run": 7, "tests_failed": 0}}))
+    block = _read_phase_4_block(path)
+    assert (block["tests_run"], block["tests_failed"]) == (7, 0)
+
+
+def test_read_phase_4_summary_missing_counts_are_unknown(tmp_path: Path):
+    path = tmp_path / "phase_4_summary.json"
+    path.write_text(json.dumps({"output_summary": "ran", "coverage_pct": 50}))
+
+    fields = _read_phase_4_summary(path)
+
+    assert fields["tests_run"] is None
+    assert fields["tests_failed"] is None
+    assert fields["coverage_pct"] == 50.0
+    assert _read_phase_4_summary(tmp_path / "absent.json")["tests_run"] is None
+
+
+def test_code_reviewer_prompt_says_unknown_never_zero(tmp_path: Path):
+    path = tmp_path / "specialist_results.json"
+    path.write_text(json.dumps({"phase_4": {
+        "status": "passed", "tests_run": None, "tests_failed": None,
+    }}))
+
+    prompt = _build_code_reviewer_prompt(
+        "TASK-TEST-001",
+        "context",
+        _read_phase_4_block(path),
+        canonical_root=tmp_path,
+    )
+
+    assert "- tests_run: unknown" in prompt
+    assert "- tests_failed: unknown" in prompt
+    assert "tests_run: 0" not in prompt
+
+
+
+@pytest.mark.asyncio
+async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
+    tmp_path, monkeypatch
+):
+    """A red run whose output counted 7 passing tests and no failure (a later
+    type-check step failed) records the 0 it read, never 7 and never an
+    invented 1; the failure is carried by its own flag."""
+    monkeypatch.setenv("GUARDKIT_PHASE4_TEST_EXECUTION", "subprocess")
+    _patch_run_independent_tests(
+        monkeypatch,
+        IndependentTestResult(
+            tests_passed=False,
+            test_command="npm test",
+            test_output_summary="Tests  7 passed (7)",
+            duration_seconds=0.4,
+            raw_output=(
+                " Test Files  3 passed (3)\n      Tests  7 passed (7)\n"
+                "src/a.ts(3,1): error TS2304: Cannot find name 'x'.\n"
+            ),
+            signal_absent=False,
+        ),
+    )
+    await invoke_test_orchestrator(
+        worktree_path=tmp_path,
+        task_id=_TASK_ID_DET,
+        sdk_timeout=900,
+        agent_invoker=_make_fake_agent_invoker(),
+    )
+
+    block = json.loads(_det_results_path(tmp_path).read_text())["phase_4"]
+    assert block["status"] == "failed"
+    assert block["tests_run"] == 7
+    assert block["tests_failed"] == 0
+    assert block["ran_and_failed"] is True
