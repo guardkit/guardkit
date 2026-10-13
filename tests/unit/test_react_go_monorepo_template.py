@@ -340,12 +340,24 @@ def test_rendered_toolchain_declaration_parses_through_real_parser(
     assert declaration.install == "bash scripts/install.sh"
     assert declaration.test == "bash scripts/check.sh"
     assert declaration.feature_check == "bash scripts/check-feature.sh"
-    for key in ("install_timeout", "test_timeout", "feature_check_timeout"):
+    assert declaration.coverage == "bash scripts/coverage.sh"
+    for key in (
+        "install_timeout",
+        "test_timeout",
+        "coverage_timeout",
+        "feature_check_timeout",
+    ):
         assert key in raw["toolchain"], f"root {key} must be explicit"
     assert declaration.runtime is not None
     assert declaration.runtime.go == (rendered / ".go-version").read_text().strip()
     assert declaration.runtime.node == (rendered / ".nvmrc").read_text().strip()
-    for script in ("install.sh", "check.sh", "check-feature.sh", "require-tools.sh"):
+    for script in (
+        "install.sh",
+        "check.sh",
+        "check-feature.sh",
+        "coverage.sh",
+        "require-tools.sh",
+    ):
         assert (rendered / "scripts" / script).is_file()
 
     assert declaration.component_names == ["api", "web"]
@@ -360,6 +372,8 @@ def test_rendered_toolchain_declaration_parses_through_real_parser(
         assert component.test
         assert component.install is None, "component installs are not consumed"
         assert "test_timeout" in raw["toolchain"]["components"][name]
+        assert component.coverage
+        assert "coverage_timeout" in raw["toolchain"]["components"][name]
         assert component.requires_ran_marker is True
         assert component.ran_marker_regex
 
@@ -371,6 +385,26 @@ def test_rendered_toolchain_declaration_parses_through_real_parser(
         rendered / "scripts" / "check.sh"
     ).read_text(encoding="utf-8")
     assert declaration.requires_ran_marker is True
+
+    # Coverage is measured, never thresholded, and lands in git-ignored folders.
+    web = declaration.component("web")
+    assert web is not None and web.coverage == "npm run coverage"
+    web_package = json.loads((rendered / "apps/web/package.json").read_text())
+    assert web_package["scripts"]["coverage"].startswith("vitest run --coverage")
+    assert "@vitest/coverage-v8" in web_package["devDependencies"]
+    lock = json.loads((rendered / "package-lock.json").read_text())
+    assert (
+        lock["packages"]["node_modules/@vitest/coverage-v8"]["version"]
+        == web_package["devDependencies"]["@vitest/coverage-v8"]
+    )
+    assert "-coverprofile=coverage/go.out" in api.coverage
+    assert "go tool cover -func=coverage/go.out" in api.coverage
+    script = (rendered / "scripts" / "coverage.sh").read_text(encoding="utf-8")
+    assert "set -euo pipefail" in script
+    assert "npm --workspace sample-web run coverage" in script
+    commands = [line for line in script.splitlines() if not line.startswith("#")]
+    for text in (*commands, api.coverage, web_package["scripts"]["coverage"]):
+        assert "threshold" not in text and "fail-under" not in text
 
 
 # Real `go test -race -count=1 -v` outputs (13 October 2026, Go 1.26.9, linux/arm64),
@@ -546,6 +580,7 @@ def test_rendered_gitignore_keeps_installed_and_generated_output_out(
         "playwright-report/index.html",
         "apps/web/tsconfig.tsbuildinfo",
         ".cache/staticcheck/cache.json",
+        "apps/api/coverage/go.out",
     ]
     kept = [
         ".gitignore",

@@ -9,3 +9,4 @@ paths:
 - Use strict TypeScript, typed event handlers, checked promises and React Hooks rules. Preserve loading, error and success states. Keep effects cancellable.
 - For product identity, use OIDC authorization code with PKCE. Do not put a client secret in browser code or use the password grant. Decide token storage and refresh from the product threat model.
 - Avoid adding state libraries, component suites or plugins before a feature needs them.
+- Browser journeys run ONLY through `bash scripts/check-feature.sh`, which starts and stops the isolated stack. Never run `npx playwright test` directly. A feature plan's smoke gate for browser checks names `bash scripts/check-feature.sh`.

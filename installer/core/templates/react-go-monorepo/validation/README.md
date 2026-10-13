@@ -13,7 +13,7 @@ The deterministic suite covers Go format, module verification, vet, Staticcheck,
 This verifies source compilation and handler/browser-boundary unit behavior. It does not establish PostgreSQL migration/query execution, Keycloak authentication or authorization, browser journeys, containers, deployment or factory sandbox runtime. Those remain foundation acceptance gates. No shared services are required for this fixture.
 
 
-Template 1.1.0 (2026-10-12) adds the toolchain declaration, `scripts/install.sh`, the shared version guard `scripts/require-tools.sh` and a failing `scripts/check-feature.sh` stub that the product foundation replaces. The 2026-10-11 evidence below is for 1.0.0, whose source, locks and checks are otherwise unchanged.
+Template 1.1.0 (2026-10-12) adds the toolchain declaration, `scripts/install.sh`, the shared version guard `scripts/require-tools.sh` and a failing `scripts/check-feature.sh` stub that the product foundation replaces. On 2026-10-13 it also gained declared coverage commands (`scripts/coverage.sh`, the web `coverage` script) and the pinned `@vitest/coverage-v8` 4.0.15 in the npm lockfile. The 2026-10-11 evidence below is for 1.0.0, whose source, locks and checks are otherwise unchanged.
 
 Verified on macOS arm64 on 2026-10-11: all native checks passed with Go 1.26.9, Staticcheck 0.8.1 and Node 22.23.2. Four Go handler tests (including invalid-input cases) ran with the race detector; two Vitest tests and the frontend production build passed. All four deliberate-defect controls failed as intended; manifests and checksums stayed unchanged. The focused GuardKit integration/regression suite passed 276 tests, including actual installed-agent discovery and default mixed-stack Player context.
 

@@ -23,5 +23,6 @@
   "scripts/require-tools.sh.template": "scripts/require-tools.sh",
   "scripts/install.sh.template": "scripts/install.sh",
   "scripts/check.sh.template": "scripts/check.sh",
+  "scripts/coverage.sh.template": "scripts/coverage.sh",
   "scripts/check-feature.sh.template": "scripts/check-feature.sh"
 }
