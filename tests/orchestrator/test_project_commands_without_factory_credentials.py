@@ -1270,6 +1270,50 @@ def test_a_timed_out_bdd_run_leaves_nothing_running(project: Project) -> None:
     _nothing_left(pid)
 
 
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_serve_probe_that_never_gets_ready_leaves_no_stubborn_worker(project: Project) -> None:
+    """The leader exits on SIGTERM; its worker ignores SIGTERM. The group,
+    not the leader, decides when cleanup is finished."""
+    from guardkit.orchestrator.boot_smoke import run_boot_smoke
+
+    pid = project.out / "stubborn-serve.pid"
+    (project.repo / "standin_stubborn.py").write_text(
+        textwrap.dedent(
+            f"""\
+            import subprocess, time
+            child = subprocess.Popen(["sh", "-c", 'trap "" TERM; exec sleep 300'])
+            open({str(pid)!r}, "w").write(str(child.pid))
+            time.sleep(300)
+            """
+        ),
+        encoding="utf-8",
+    )
+    result = run_boot_smoke(
+        _boot_config([{"id": "s", "kind": "serve", "target": "standin_stubborn",
+                       "readiness": {"kind": "port", "timeout_s": 2}}]),
+        project.repo,
+    )
+    assert result.entries[0].verdict == "ran_and_failed", result.entries[0]
+    _nothing_left(pid)
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_a_timed_out_command_leaves_no_stubborn_worker(project: Project) -> None:
+    """The same for the generic runner: the shell exits on SIGTERM, the
+    worker it started ignores SIGTERM and is still ended."""
+    from guardkit.orchestrator import process_group
+    from guardkit.orchestrator.project_command_env import project_command_environment
+
+    pid = project.out / "stubborn-command.pid"
+    command = f'(trap "" TERM; exec sleep 300) & echo $! > "{pid}"; wait'
+    with pytest.raises(subprocess.TimeoutExpired):
+        process_group.run_project_command(
+            command, shell=True, cwd=project.repo, timeout=1, capture_output=True,
+            env=project_command_environment(project.repo, None),
+        )
+    _nothing_left(pid)
+
+
 # ---------------------------------------------------------------------------
 # Section 5: every process launch in the package is accounted for
 # ---------------------------------------------------------------------------
@@ -1293,6 +1337,18 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/run_evidence.py", "docker_events_between"): "the container engine through a variable (docker events)",
     # Generic runners: each call to them is checked below.
     ("orchestrator/run_evidence.py", "_default_runner"): "generic runner; every call is checked",
+    ("orchestrator/run_evidence.py", "DockerProbe"): (
+        "holds _default_runner as the probe's runner; every call through "
+        "runner / probe.runner in this file is checked"
+    ),
+    ("orchestrator/run_evidence.py", "_source_manifest"): (
+        "falls back to _default_runner in a local runner; every call through "
+        "runner in this file is checked"
+    ),
+    ("orchestrator/run_evidence.py", "_originating_worktree_identity"): (
+        "falls back to _default_runner in a local runner; every call through "
+        "runner in this file is checked"
+    ),
     ("orchestrator/quality_gates/coach_validator.py", "_run_recorded"): "generic runner; every call is checked",
     ("orchestrator/worktree_checkpoints.py", "execute"): "worktree executor (git); every call is checked",
     ("worktrees/manager.py", "run"): "worktree executor (git); every call is checked",
@@ -1840,6 +1896,17 @@ def unaccounted_launches(package: Path) -> List[str]:
         _TRUSTED_CALLEES.update(spec.get("names", ()))
     wrappers = _wrappers(modules)
     problems: List[str] = []
+    runner_ids = {
+        _runner_identity(package.name, rel, fname) for rel, fname in GENERIC_RUNNERS
+    }
+    # Method-style runners (``x._run_recorded``) by name; plainly named ones
+    # such as ``runner`` in one file are left to their scoped call check.
+    runner_attrs = {
+        name
+        for spec in GENERIC_RUNNERS.values()
+        if not spec.get("scope")
+        for name in spec.get("names", ())
+    }
 
     def place(mod: _Module, node: ast.AST) -> Tuple[Optional[ast.AST], str]:
         func = _enclosing_function(mod, node)
@@ -1901,6 +1968,23 @@ def unaccounted_launches(package: Path) -> List[str]:
                             f"looked up with getattr, so its env= cannot be checked"
                         )
             elif isinstance(node, (ast.Attribute, ast.Name)) and id(node) not in called:
+                if isinstance(getattr(node, "ctx", None), ast.Load) and not isinstance(
+                    mod.parents.get(id(node)), ast.Attribute
+                ):
+                    target = _resolve(mod, node, node)
+                    as_runner = target in runner_ids or (
+                        isinstance(node, ast.Attribute) and node.attr in runner_attrs
+                    )
+                    if as_runner:
+                        _, fname = place(mod, node)
+                        if (mod.rel, fname) not in ALLOWED:
+                            problems.append(
+                                f"{mod.rel}:{node.lineno} in {fname}: the generic "
+                                f"runner {_dotted(node)} is used as a value (held in "
+                                f"a variable, passed on or wrapped), so its env= "
+                                f"cannot be checked"
+                            )
+                        continue
                 kind = _launch_kind(mod, node)
                 if kind and isinstance(getattr(node, "ctx", None), ast.Load):
                     parent = mod.parents.get(id(node))
@@ -2068,6 +2152,22 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(cmd, shell=True, env=env)
 
 
+    from guardkit.orchestrator.process_group import run_project_command
+
+
+    def v24_generic_runner_held_in_a_variable(cmd):
+        invoke = run_project_command
+        invoke(cmd, shell=True, env=dict(os.environ))
+
+
+    def v25_generic_runner_partially_applied(cmd):
+        functools.partial(run_project_command, shell=True)(cmd, env=dict(os.environ))
+
+
+    def ok_runner(cmd, wf):
+        run_project_command(cmd, shell=True, env=project_command_environment(wf, None))
+
+
     def v16_empty_dict_item_filled(cmd):
         env = {}
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
@@ -2117,7 +2217,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
-    assert not {"ok_helper", "ok_git", "ok_wrapper", "ok_finish"} & named, problems
+    assert not {"ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner"} & named, problems
 
 
 def test_every_process_launch_is_accounted_for() -> None:
@@ -2136,7 +2236,8 @@ def test_the_allowed_list_names_only_real_places() -> None:
     for rel, fname in list(ALLOWED) + list(GENERIC_RUNNERS):
         mod = modules.get(rel)
         names = {
-            n.name for n in ast.walk(mod.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            n.name for n in ast.walk(mod.tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
         } if mod else set()
         if fname not in names:
             missing.append(f"{rel}:{fname}")

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Dict, Mapping, Optional, Sequence, Union
 
-__all__ = ["GroupRun", "run_in_own_group", "run_project_command"]
+__all__ = ["GroupRun", "end_process_group", "run_in_own_group", "run_project_command"]
 
 _GRACE_SECONDS = 2.0
 _DRAIN_SECONDS = 5.0
@@ -47,8 +47,24 @@ def _group_alive(pgid: int) -> bool:
     return True
 
 
+def end_process_group(proc: subprocess.Popen, grace: float = _GRACE_SECONDS) -> None:
+    """End every process in the group ``proc`` leads (started with
+    ``start_new_session=True``), whether or not ``proc`` itself is still alive.
+
+    SIGTERM goes to the whole group; then the group itself (never only the
+    leader) is watched, and anything still in it after ``grace`` seconds,
+    such as a worker that ignores SIGTERM after the leader has exited, is
+    sent SIGKILL. GuardKit's own group is never signalled.
+    """
+    _end_group(proc, grace)
+
+
 def _end_group(proc: subprocess.Popen, grace: float) -> None:
-    """SIGTERM the command's own group, wait briefly, then SIGKILL it."""
+    """SIGTERM the command's own group, wait briefly, then SIGKILL it.
+
+    Judged on the group's original id, not on the leader: the leader may
+    exit on SIGTERM while a member that ignores it lives on.
+    """
     pgid = proc.pid  # a session leader's group id is its own pid
     if pgid == os.getpgrp():  # pragma: no cover - start_new_session prevents it
         proc.kill()

@@ -368,22 +368,18 @@ def _run_command(entry: BootSmokeEntry, worktree: Path) -> BootSmokeEntryResult:
 
 
 def _terminate(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.terminate()
-        except OSError:
-            return
+    """End the serve probe's whole process group (13 October 2026).
+
+    The probe was started in a session of its own, so its group id is its
+    pid. The group is signalled and watched as a group, even when the leader
+    has already exited: a worker that ignores SIGTERM is sent SIGKILL after
+    the grace period (``process_group.end_process_group``).
+    """
+    process_group.end_process_group(proc, grace=5.0)
     try:
         proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            proc.kill()
+    except subprocess.TimeoutExpired:  # pragma: no cover - SIGKILL was sent
+        proc.kill()
 
 
 # ---------------------------------------------------------------------------
