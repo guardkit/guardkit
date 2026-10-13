@@ -926,7 +926,9 @@ class TestCoachResultsValidation:
             assert results["quality_gates"]["tests_passed"] == 15
             assert results["quality_gates"]["tests_failed"] == 0
             assert results["quality_gates"]["coverage"] == 92.5
-            assert results["quality_gates"]["coverage_met"] is True
+            # Recorded, not judged: the Coach decides coverage from the
+            # project's declared command, or leaves it UNKNOWN.
+            assert results["quality_gates"]["coverage_met"] is None
             assert results["quality_gates"]["tests_passing"] is True
 
         run_async(run_test())

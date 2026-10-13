@@ -1789,7 +1789,10 @@ class TestInvokeTaskWorkImplement:
         assert quality_gates["tests_passed"] == 15
         assert quality_gates["tests_failed"] == 0
         assert quality_gates["coverage"] == 92.5
-        assert quality_gates["coverage_met"] is True
+        # A number in the builder's text is recorded, never a verdict: the
+        # Coach decides coverage from the project's declared command, or
+        # leaves it UNKNOWN (first web fixture proof, 13 October 2026).
+        assert quality_gates["coverage_met"] is None
         assert quality_gates["tests_passing"] is True
 
 
@@ -5295,7 +5298,8 @@ class TestWriteTaskWorkResults:
         assert qg["tests_passed"] == 12
         assert qg["tests_failed"] == 0
         assert qg["coverage"] == 85.5
-        assert qg["coverage_met"] is True
+        # Recorded, not judged: no fixed 80 rule applies to narrated text.
+        assert qg["coverage_met"] is None
         assert qg["all_passed"] is True
 
     def test_write_includes_phases(self, invoker, worktree_path):

@@ -370,25 +370,38 @@ class TestQualityGatesStructure:
         results = json.loads(result_path.read_text())
         assert results["quality_gates"]["tests_passing"] is False
 
-    def test_coverage_met_when_above_threshold(self, agent_invoker, valid_result_data):
-        """Test that coverage_met is True when coverage >= 80."""
-        task_id = "TASK-017"
+    def test_a_coverage_number_in_the_builders_text_is_not_a_verdict(
+        self, agent_invoker
+    ):
+        """A percentage the builder's text happens to print is not the
+        project's coverage gate, and 80 is not the project's number.
+
+        Replaces ``test_coverage_met_when_above_threshold`` and
+        ``test_coverage_met_false_when_below_threshold``, which encoded the
+        fixed 80 rule this removes (first web fixture proof, 13 October 2026).
+        The two lines are real Go output from the fixture's coverage run: a
+        package with no tests prints 0.0% before the real package line.
+        The number is still recorded, for information; the verdict is left
+        UNKNOWN so the Coach runs the project's own declared coverage command,
+        or keeps the gate UNKNOWN, which cannot approve.
+        """
+        from guardkit.orchestrator.agent_invoker import TaskWorkStreamParser
+
+        parser = TaskWorkStreamParser()
+        parser.parse_message(
+            "\texample.com/guardkit/react-go-api/cmd/api\t\tcoverage: 0.0% of statements"
+        )
+        parser.parse_message(
+            "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.016s"
+            "\tcoverage: 66.7% of statements"
+        )
         result_path = agent_invoker._write_task_work_results(
-            task_id, valid_result_data, "standard"
+            "TASK-017", parser.to_result(), "standard"
         )
 
-        results = json.loads(result_path.read_text())
-        assert results["quality_gates"]["coverage_met"] is True
-
-    def test_coverage_met_false_when_below_threshold(self, agent_invoker, partial_result_data):
-        """Test that coverage_met is False when coverage < 80."""
-        task_id = "TASK-018"
-        result_path = agent_invoker._write_task_work_results(
-            task_id, partial_result_data, "standard"
-        )
-
-        results = json.loads(result_path.read_text())
-        assert results["quality_gates"]["coverage_met"] is False
+        gates = json.loads(result_path.read_text())["quality_gates"]
+        assert gates["coverage_met"] is None
+        assert gates["coverage"] == 66.7
 
     def test_all_passed_matches_input_quality_gates_passed(
         self, agent_invoker, valid_result_data

@@ -285,6 +285,56 @@ class TestDeclaredCoverageCommand:
         assert resolved.coverage_met is None
         assert resolved.coverage_receipt is None
 
+    @pytest.mark.parametrize("declared", [True, False])
+    def test_a_declared_coverage_command_decides_even_when_the_text_named_a_number(
+        self, tmp_path, declared
+    ):
+        """First web fixture proof (13 October 2026): the builder's text named
+        a coverage percentage (real Go lines from the fixture's coverage run),
+        and the report turned it into ``coverage_met: False`` against a fixed
+        80. That boolean stopped the Coach from ever running the project's
+        own coverage command. The report now records the number and leaves
+        the verdict UNKNOWN, so the declared command decides; with no
+        declaration the gate stays UNKNOWN and cannot approve."""
+        from guardkit.orchestrator.agent_invoker import (
+            AgentInvoker,
+            TaskWorkStreamParser,
+        )
+
+        if declared:
+            worktree = _make_shell_project(tmp_path, exit_code=0)
+        else:
+            worktree = tmp_path / "plain"
+            worktree.mkdir()
+        parser = TaskWorkStreamParser()
+        parser.parse_message(
+            "\texample.com/guardkit/react-go-api/cmd/api\t\tcoverage: 0.0% of statements"
+        )
+        parser.parse_message(
+            "ok  \texample.com/guardkit/react-go-api/internal/notes\t1.016s"
+            "\tcoverage: 66.7% of statements"
+        )
+        written = AgentInvoker(worktree_path=worktree)._write_task_work_results(
+            "TASK-B9C", parser.to_result(), "standard"
+        )
+        report = json.loads(written.read_text())
+        assert report["quality_gates"]["coverage"] == 66.7
+
+        v = _validator(worktree)
+        gates = v.verify_quality_gates(
+            _results(quality_gates=report["quality_gates"]),
+            profile=get_profile(TaskType.FEATURE),
+        )
+        resolved = v.apply_declared_coverage(gates)
+        if declared:
+            assert resolved.coverage_met is True
+            assert resolved.coverage_receipt["command"] == "./coverage.sh"
+            assert resolved.coverage_receipt["exit_code"] == 0
+        else:
+            assert resolved.coverage_met is None
+            assert resolved.coverage_receipt is None
+            assert resolved.all_gates_passed is False
+
     def test_a_measured_value_is_never_overwritten_by_the_command(self, tmp_path):
         worktree = _make_shell_project(tmp_path, exit_code=1)
         v = _validator(worktree)

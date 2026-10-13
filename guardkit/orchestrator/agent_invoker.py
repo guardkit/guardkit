@@ -14240,8 +14240,16 @@ This summary will be parsed automatically. Use the exact marker formats shown ab
                 "tests_passing": tests_failed == 0 if tests_failed is not None else None,
                 "tests_passed": tests_passed,
                 "tests_failed": tests_failed,
+                # ``coverage`` is the last percentage the builder's TEXT
+                # matched, kept for information only. It is not a measurement
+                # of the project's gate (Go alone prints a 0.0% line for a
+                # package with no tests before the real one), and 80 is not
+                # the project's number. So no verdict is drawn from it: the
+                # Coach runs the project's declared ``toolchain.coverage``
+                # when there is one, and otherwise coverage stays UNKNOWN,
+                # which cannot approve.
                 "coverage": coverage,
-                "coverage_met": coverage >= 80 if coverage is not None else None,
+                "coverage_met": None,
                 "all_passed": quality_gates_passed,
             },
             # Deduplicate file lists using set conversion
