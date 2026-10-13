@@ -52,6 +52,7 @@ __all__ = [
     "VerificationResult",
     "declared_toolchain_test_command",
     "resolve_verify_command",
+    "resolve_verify_command_with_declaration",
     "run_completion_verification",
     "sweep_completion_against_ledger",
 ]
@@ -194,7 +195,23 @@ def resolve_verify_command(
         return override, "--verify-cmd override", None
     if smoke_command:
         return smoke_command, "feature smoke_gates.command", None
-    declared = declared_toolchain_test_command(repo_root)
+    return resolve_verify_command_with_declaration(
+        repo_root, declared_toolchain_test_command(repo_root)
+    )
+
+
+def resolve_verify_command_with_declaration(
+    repo_root: Path, declared: Optional[str]
+) -> Tuple[Optional[str], str, Optional[StackTestProfile]]:
+    """The rest of :func:`resolve_verify_command`, given the declared command.
+
+    ``declared`` is the repository's declared test command as the caller has
+    ALREADY read it, or ``None`` when nothing is declared. The merge reads
+    ``.guardkit/config.yaml`` once with its own fail-closed reader
+    (``merge_environment.read_merge_declarations``) and hands the command in
+    here, so the file is not read a second time by the forgiving reader.
+    Without a declared command the stack defaults follow, as before.
+    """
     if declared:
         return declared, "repository toolchain declaration", None
     if _looks_python(repo_root):
@@ -257,12 +274,30 @@ def run_completion_verification(
     source: str,
     stack_profile: Optional[StackTestProfile] = None,
     timeout: int = DEFAULT_VERIFY_TIMEOUT,
+    env: Optional[dict] = None,
+    ran_marker_regex: Optional[str] = None,
+    own_process_group: bool = False,
 ) -> VerificationResult:
     """Run the resolved verification command in the merge-target repo.
 
     Never raises: every outcome (including a missing command, a timeout, or a
     subprocess error) is a :class:`VerificationResult`. Only ``passed`` may
     ever be rendered as success.
+
+    ``env`` is the command's whole environment. ``None`` (every caller but
+    the merge) keeps a copy of this process's own. The merge passes the
+    minimal environment it builds from nothing, so the project's command
+    never sees the factory's credentials (13 October 2026, item 2a).
+
+    ``ran_marker_regex`` is a repository-root marker the project declared to
+    show that tests really ran. When given, a run that would pass but whose
+    output does not match it measured nothing, and is ``unverified``. Without
+    it the result is exactly as before.
+
+    ``own_process_group`` (the merge passes it) runs the command in a process
+    group of its own, so a timeout ends everything the command started, not
+    only the shell (``process_group.run_in_own_group``). Off, the command
+    runs exactly as before.
     """
     cwd = str(repo_root)
     if not command:
@@ -282,13 +317,52 @@ def run_completion_verification(
         cwd,
         timeout,
     )
+    if own_process_group:
+        from guardkit.orchestrator.process_group import run_in_own_group
+
+        try:
+            run = run_in_own_group(
+                command,
+                shell=True,
+                cwd=cwd,
+                env=os.environ.copy() if env is None else dict(env),
+                timeout=timeout,
+            )
+        except OSError as exc:
+            return VerificationResult(
+                status="unverified",
+                command=command,
+                cwd=cwd,
+                returncode=None,
+                detail=f"verification command could not start: {exc}",
+                source=source,
+            )
+        if run.timed_out:
+            return VerificationResult(
+                status="failed",
+                command=command,
+                cwd=cwd,
+                returncode=None,
+                detail=f"verification timed out after {timeout}s",
+                output_tail=run.stdout[-2000:],
+                source=source,
+                full_output=run.stdout,
+            )
+        proc = subprocess.CompletedProcess(
+            command, run.returncode, run.stdout, run.stderr
+        )
+        return _verification_from_run(
+            proc, command, cwd, source, stack_profile, ran_marker_regex
+        )
+
     try:
         # TS-lane D.1b (design §B.5): the second declared-command shell site.
         # ``env=`` is now EXPLICIT (a verbatim copy of the daemon's own
         # environment — byte-equivalent to the previous implicit inherit) so
         # the resolution rule is visible where the command runs: worktree/repo
         # cwd + the daemon PATH, on which node resolves ONLY via the D.0
-        # symlink fence. Never source nvm here.
+        # symlink fence. Never source nvm here. A caller that hands in ``env``
+        # (the merge, 13 October 2026) chooses the whole environment instead.
         proc = subprocess.run(
             command,
             shell=True,
@@ -296,7 +370,7 @@ def run_completion_verification(
             capture_output=True,
             text=True,
             timeout=timeout,
-            env=os.environ.copy(),
+            env=os.environ.copy() if env is None else dict(env),
         )
     except subprocess.TimeoutExpired as exc:
         # Ran-and-hung is a genuine defect (runtime-parity L3 precedent):
@@ -323,6 +397,20 @@ def run_completion_verification(
             source=source,
         )
 
+    return _verification_from_run(
+        proc, command, cwd, source, stack_profile, ran_marker_regex
+    )
+
+
+def _verification_from_run(
+    proc: "subprocess.CompletedProcess",
+    command: str,
+    cwd: str,
+    source: str,
+    stack_profile: Optional[StackTestProfile],
+    ran_marker_regex: Optional[str],
+) -> VerificationResult:
+    """Classify a finished run into a :class:`VerificationResult`."""
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if stack_profile is not None:
         status, detail = _classify_stack(stack_profile, proc.returncode, output)
@@ -330,6 +418,18 @@ def run_completion_verification(
         status, detail = _classify_pytest(proc.returncode, output)
     else:
         status, detail = _classify_custom(proc.returncode)
+
+    if status == "passed" and ran_marker_regex:
+        try:
+            marked = re.search(ran_marker_regex, output) is not None
+        except re.error:
+            marked = False
+        if not marked:
+            status = "unverified"
+            detail = (
+                f"the check passed but printed nothing matching the declared "
+                f"ran_marker_regex, so it measured nothing ({detail})"
+            )
 
     return VerificationResult(
         status=status,

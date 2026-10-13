@@ -59,7 +59,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.baseline import (
     compute_charged_failures,
@@ -70,7 +70,20 @@ from guardkit.orchestrator.completion_verification import (
     DEFAULT_VERIFY_TIMEOUT,
     VerificationResult,
     resolve_verify_command,
+    resolve_verify_command_with_declaration,
     run_completion_verification,
+)
+from guardkit.orchestrator.merge_environment import (
+    JUDGE_FILES_CHANGED,
+    MergeEnvironment,
+    judge_files,
+    pin_merge_environment,
+    read_merge_declarations,
+)
+from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
+from guardkit.orchestrator.process_group import run_in_own_group
+from guardkit.orchestrator.project_command_env import (
+    project_command_environment,
 )
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
     StackTestProfile,
@@ -142,9 +155,12 @@ class MeasuredBaseline:
 
     Measured by running the SAME resolved test command on the target branch,
     so the merged result is judged on "no new red" rather than "no red".
-    ``ran`` is False when the command could not start at all — in that case
-    there is no baseline, and the whole check is reported as "could not run"
-    rather than being quietly treated as a clean baseline.
+    ``ran`` is False when the run measured nothing: the command could not
+    start, it failed but named no failing test, or it passed without the
+    marker the project declared to show tests ran. In that case there is no
+    baseline, and the whole check is reported as "could not run" rather than
+    being quietly treated as a clean baseline (13 October 2026: a failed run
+    that named nothing was once recorded as "0 failing, 0 passing").
     """
 
     command: str
@@ -571,6 +587,7 @@ def perform_merge(
     manager: Optional[WorktreeManager] = None,
     branch: Optional[str] = None,
     working_folder: Optional[Path] = None,
+    merge_commit: Optional[str] = None,
 ) -> MergeReport:
     """Merge the build's branch into ``target_branch``.
 
@@ -590,6 +607,12 @@ def perform_merge(
     THERE, and the repository's main copy is never switched or merged into.
     The commits, the refs and the objects are the same either way: a working
     folder of a repository shares all three.
+
+    ``merge_commit`` (13 October 2026) is the commit to join, already
+    resolved from ``branch`` by the caller. Given it, that exact commit is
+    merged, so what was checked before the merge is what lands even if the
+    branch moves meanwhile; the report still names ``branch``. ``None``
+    merges ``branch`` as before.
     """
     branch = branch_to_merge(feature_id, branch)
     notes: List[str] = []
@@ -599,7 +622,11 @@ def perform_merge(
     tree_root = Path(working_folder) if working_folder is not None else Path(repo_root)
 
     pre_sha = _rev_parse(tree_root, target_branch)
-    branch_sha = _rev_parse(tree_root, branch)
+    branch_sha = (
+        _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
+        if merge_commit
+        else _rev_parse(tree_root, branch)
+    )
     if pre_sha is None or branch_sha is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -620,7 +647,9 @@ def perform_merge(
     # here reads the feature YAML either.
     worktree = Worktree(
         task_id=feature_id,
-        branch_name=branch,
+        # The ref ``git merge`` is given: the resolved commit when there is
+        # one, so the commit checked is the commit joined.
+        branch_name=branch_sha if merge_commit else branch,
         path=Path(repo_root) / ".guardkit" / "worktrees" / feature_id,
         base_branch=target_branch,
     )
@@ -734,6 +763,8 @@ def measure_pre_merge_baseline(
     resolved_command: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None,
+    env: Optional[Dict[str, str]] = None,
+    ran_marker_regex: Optional[str] = None,
 ) -> MeasuredBaseline:
     """Run the resolved test command on ``target_branch`` before any merge.
 
@@ -747,8 +778,15 @@ def measure_pre_merge_baseline(
     the switch, which comes to the same thing.
 
     ``ran`` is False when the command could not start (or no runner could be
-    found at all). There is then no baseline: the caller must report the
-    whole check as "could not run", never as a clean baseline.
+    found at all), and when it failed but named no failing test — the same
+    rule the build's own baseline probe applies
+    (``feature_orchestrator._declared_probe_measured``). There is then no
+    baseline: the caller must report the whole check as "could not run",
+    never as a clean baseline.
+
+    ``env`` and ``ran_marker_regex`` are passed to
+    :func:`run_completion_verification` unchanged; ``None`` for both is the
+    behaviour before they existed.
     """
     repo_root = Path(repo_root)
 
@@ -769,7 +807,17 @@ def measure_pre_merge_baseline(
         else resolve_verify_command(repo_root)
     )
     result = run_completion_verification(
-        repo_root, command, source, stack_profile=profile, timeout=timeout
+        repo_root,
+        command,
+        source,
+        stack_profile=profile,
+        timeout=timeout,
+        env=env,
+        ran_marker_regex=ran_marker_regex,
+        # The merge (which always hands in its own environment) runs the
+        # check in a process group of its own, so a timeout ends everything
+        # the check started; a direct caller keeps the old behaviour.
+        own_process_group=env is not None,
     )
     if result.status == "unverified":
         return MeasuredBaseline(
@@ -782,6 +830,25 @@ def measure_pre_merge_baseline(
 
     text = result.output_for_parsing
     failing = tuple(failing_node_ids(text))
+    if result.status == "failed" and not failing:
+        # A red run that names nothing is not a measurement: subtracting an
+        # empty list from the merged run would excuse nothing and then report
+        # "0 failing, 0 passing" as if the target had been green.
+        how = (
+            f"exit {result.returncode}"
+            if result.returncode is not None
+            else result.detail
+        )
+        return MeasuredBaseline(
+            command=command or "",
+            source=source,
+            ran=False,
+            detail=(
+                f"the pre-merge check on {target_branch} failed ({how}) but "
+                f"named no failing test, so it measured nothing"
+            ),
+            stack_profile=profile,
+        )
     return MeasuredBaseline(
         command=result.command,
         source=source,
@@ -967,6 +1034,8 @@ def verify_merged(
     resolved_command: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None,
+    env: Optional[Dict[str, str]] = None,
+    ran_marker_regex: Optional[str] = None,
 ) -> Tuple[Optional[bool], VerificationResult, List[str], List[str]]:
     """The three post-merge checks, in order.
 
@@ -987,6 +1056,11 @@ def verify_merged(
     :func:`execute_merge` always passes it. Omit it — a direct caller
     verifying a tree it already trusts — and the command is resolved here,
     against the tree as it now stands.
+
+    ``env`` and ``ran_marker_regex`` go to the test run unchanged (``None``
+    keeps the behaviour before they existed); :func:`execute_merge` passes
+    the minimal environment and the target's declared marker. The feature
+    validation is GuardKit's own command and keeps GuardKit's environment.
     """
     validate_valid, notes = validate_with_notes(
         repo_root, feature_id, validate_command=validate_command
@@ -1001,6 +1075,12 @@ def verify_merged(
         source,
         stack_profile=profile,
         timeout=timeout,
+        env=env,
+        ran_marker_regex=ran_marker_regex,
+        # The merge (which always hands in its own environment) runs the
+        # check in a process group of its own, so a timeout ends everything
+        # the check started; a direct caller keeps the old behaviour.
+        own_process_group=env is not None,
     )
 
     # The WHOLE output of the run, not the 2000-character excerpt kept for
@@ -1008,12 +1088,224 @@ def verify_merged(
     # excerpt, and a failure whose name fell off the end would be charged to
     # nobody. ``execute_merge`` cross-checks the names read here against the
     # number of failures the runner itself counted.
+    #
+    # A run that measured nothing (``unverified``: it could not start, or it
+    # passed without the declared marker that tests ran) is not read for
+    # failures at all. Its output can still look like a test report, and
+    # charging names from it would turn "could not run" into a red result.
+    if verification.status == "unverified":
+        return validate_valid, verification, [], notes
     charged, charge_notes = charged_failures_from_output(
         repo_root, verification.output_for_parsing, baseline_failing
     )
     notes.extend(charge_notes)
 
     return validate_valid, verification, charged, notes
+
+
+# ---------------------------------------------------------------------------
+# What judges the merge, pinned on the target; and preparing each tree
+# (the merge design of 13 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def files_the_branch_changed(
+    tree_root: Path, target_branch: str, branch: str
+) -> Tuple[Optional[List[str]], Optional[str]]:
+    """The repository paths ``branch`` changed since it left ``target_branch``.
+
+    ``git diff --name-only --no-renames --ignore-submodules=none -z
+    <merge-base> <branch> --``. ``branch`` is best given as the commit the
+    merge will join, so the files compared are the files merged. A
+    submodule pointer the build moved is listed whatever the repository's
+    ``diff.ignoreSubmodules`` setting says, and the ``--`` keeps git from
+    reading either commit as a path. Returns ``(paths, None)`` or
+    ``(None, reason)`` when git cannot say.
+    """
+    base = _run_git(tree_root, "merge-base", target_branch, branch)
+    base_sha = base.stdout.strip() if base.returncode == 0 else ""
+    if not base_sha:
+        return None, (
+            f"the files the build changed could not be listed (no common "
+            f"commit of {target_branch} and {branch}), so the commands that "
+            f"judge it could not be checked"
+        )
+    diff = _run_git(
+        tree_root,
+        "diff",
+        "--name-only",
+        "--no-renames",
+        "--ignore-submodules=none",
+        "-z",
+        base_sha,
+        branch,
+        "--",
+    )
+    if diff.returncode != 0:
+        return None, (
+            f"the files the build changed could not be listed (git diff "
+            f"exited {diff.returncode}), so the commands that judge it could "
+            f"not be checked"
+        )
+    return [p for p in diff.stdout.split("\0") if p], None
+
+
+def pin_the_judge_on_target(
+    tree_root: Path,
+    target_branch: str,
+    branch: str,
+    verify_timeout: int = DEFAULT_VERIFY_TIMEOUT,
+    branch_commit: Optional[str] = None,
+) -> Tuple[
+    Optional[Tuple[Optional[str], str, Optional[StackTestProfile]]],
+    Optional[str],
+    Optional[MergeEnvironment],
+]:
+    """Choose everything that judges this merge, on the TARGET, before it.
+
+    Returns ``(resolution, problem, pinned)``. Rule 11, extended on 13
+    October 2026 from the test command to the install and the launch block:
+
+    * HEAD is put on the target branch;
+    * ``.guardkit/config.yaml`` is read ONCE, fail-closed
+      (:func:`read_merge_declarations`): an invalid file or block means no
+      command is looked for anywhere else, so ``resolution`` is ``None``;
+    * the test command comes from that reading (or the stack defaults when
+      nothing is declared);
+    * the test command and the install must be plain text the factory can
+      follow (:func:`judge_words`);
+    * a file the build changed that those commands name directly (a judge
+      file) means no automatic verdict.
+
+    ``problem`` is the plain reason nothing may run, before or after the
+    merge. ``pinned`` is what runs both installs and both checks otherwise.
+    The merged branch's own ``config.yaml`` is never read for any of them.
+
+    ``branch_commit`` is the commit the merge will join (resolved once by
+    :func:`execute_merge`); the changed files are read from it rather than
+    from wherever ``branch`` points by the time git is asked.
+    """
+    tree_root = Path(tree_root)
+    switch_problem = checkout_branch(tree_root, target_branch)
+    if switch_problem is not None:
+        return None, switch_problem, None
+
+    declarations, problem = read_merge_declarations(tree_root)
+    if problem is not None or declarations is None:
+        return None, problem or "the declarations could not be read", None
+
+    resolution = resolve_verify_command_with_declaration(
+        tree_root, declarations.declared_test
+    )
+    pinned, problem = pin_merge_environment(
+        declarations, resolution[0], verify_timeout
+    )
+    if problem is not None or pinned is None:
+        return resolution, problem, None
+
+    if pinned.judge_words:
+        changed, problem = files_the_branch_changed(
+            tree_root, target_branch, branch_commit or branch
+        )
+        if problem is not None or changed is None:
+            return resolution, problem, None
+        hits = judge_files(changed, pinned.judge_words)
+        if hits:
+            return resolution, f"{JUDGE_FILES_CHANGED}: {', '.join(hits)}", None
+
+    return resolution, None, pinned
+
+
+class TreePreparation(NamedTuple):
+    """What :func:`prepare_tree` produced for one tree."""
+
+    env: Optional[Dict[str, str]]
+    problem: Optional[str]
+    # True when the problem is that the install changed the working tree.
+    tree_changed: bool = False
+    note: Optional[str] = None
+
+
+_INSTALL_TAIL_LINES = 5
+_INSTALL_TAIL_CHARS = 600
+
+
+def _last_lines(text: str) -> str:
+    lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
+    tail = " | ".join(lines[-_INSTALL_TAIL_LINES:])
+    if len(tail) > _INSTALL_TAIL_CHARS:
+        tail = "..." + tail[-_INSTALL_TAIL_CHARS:]
+    return tail or "(no output)"
+
+
+def prepare_tree(
+    tree_root: Path, pinned: MergeEnvironment, where: str
+) -> TreePreparation:
+    """Build the check's environment for ``tree_root`` and run the install.
+
+    The environment is built from nothing
+    (``project_command_env.project_command_environment``). A
+    declared install runs as an argument list with no shell, in
+    ``tree_root``, with that environment and the pinned time limit. A tree
+    the install changed is a problem: the check would no longer be judging
+    the commit. Never raises.
+    """
+    try:
+        env = project_command_environment(Path(tree_root), pinned.launch)
+    except LaunchEnvironmentError as exc:
+        return TreePreparation(None, str(exc))
+    if not pinned.install_argv:
+        return TreePreparation(env, None)
+
+    text = pinned.install_text
+    try:
+        # In a process group of its own: a timeout ends everything the
+        # install started, not only its first process.
+        proc = run_in_own_group(
+            pinned.install_argv,
+            cwd=tree_root,
+            env=env,
+            timeout=pinned.install_timeout,
+        )
+    except OSError as exc:
+        return TreePreparation(
+            None,
+            f"the declared install (`{text}`) could not start on {where}: "
+            f"{exc.strerror or type(exc).__name__}",
+        )
+    if proc.timed_out:
+        return TreePreparation(
+            None,
+            f"the declared install (`{text}`) ran out of its "
+            f"{pinned.install_timeout} seconds on {where}",
+        )
+    if proc.returncode != 0:
+        return TreePreparation(
+            None,
+            f"the declared install (`{text}`) failed on {where} (exit "
+            f"{proc.returncode}): {_last_lines(proc.stderr or proc.stdout)}",
+        )
+
+    porcelain = _porcelain_status(Path(tree_root))
+    if porcelain is None:
+        return TreePreparation(
+            None,
+            f"git status could not be read after the declared install "
+            f"(`{text}`) ran on {where}",
+        )
+    if porcelain.strip():
+        rows = [ln for ln in porcelain.splitlines() if ln.strip()]
+        shown = "; ".join(rows[:5])
+        more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
+        return TreePreparation(
+            None,
+            f"the declared install (`{text}`) changed files in the working "
+            f"folder on {where}: {shown}{more}",
+            tree_changed=True,
+        )
+    return TreePreparation(
+        env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1046,8 +1338,8 @@ def execute_merge(
     before the merge on EVERY path — a baseline measured, a baseline handed
     in, or measuring turned off — and that one resolution is what verifies
     the merged tree. A branch cannot choose the command that judges it
-    (2026-09-06 spec, rule 11; see
-    :func:`resolve_verify_command_on_target`). ``verify_command`` and
+    (2026-09-06 spec, rule 11; see :func:`pin_the_judge_on_target`, and
+    :func:`resolve_verify_command_on_target` for why). ``verify_command`` and
     ``verify_source`` in the report are that pre-merge resolution.
 
     When no ``baseline_failing`` is handed in, verification is on, and
@@ -1070,6 +1362,18 @@ def execute_merge(
     would mean a wrong guess skips the baseline and reports a clean merge as
     red. A wasted run on a conflicting branch is cheaper than a false red on
     a good one, and a conflict already needs a person.
+
+    Since 13 October 2026 (the merge install and honest-baseline design) the
+    target's declared install and ``launch:`` block are pinned with the
+    test command (:func:`pin_the_judge_on_target`). Before each check — the
+    baseline on the target and the check on the merged result — the tree is
+    prepared once (:func:`prepare_tree`): a minimal environment built from
+    nothing, then the declared install. An install that fails, or settings
+    that cannot be passed safely, make the check "could not run", never a
+    test result; an install that dirties the tree before the merge refuses
+    the merge. A build that changed a file the pinned commands name, or
+    commands the factory cannot follow, gets no automatic verdict: the join
+    still happens and nothing is installed or run.
 
     ``working_folder`` (22 September 2026) is a working folder of this same
     repository, made at the commit being joined onto. Handed one, EVERYTHING
@@ -1106,9 +1410,11 @@ def execute_merge(
     # checks this too, but it does so AFTER the baseline run has already put
     # HEAD on the target branch and spent a whole suite; refusing here leaves
     # HEAD exactly where the caller had it, as a refusal always should.
-    if _rev_parse(tree_root, target_branch) is None or _rev_parse(
-        tree_root, branch
-    ) is None:
+    # The branch is resolved to a commit ONCE, here. That commit is what the
+    # changed files are read from and what the merge joins, so a branch that
+    # moves while the checks run cannot slip anything past them.
+    branch_commit = _rev_parse(tree_root, branch)
+    if _rev_parse(tree_root, target_branch) is None or branch_commit is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
             feature_id=feature_id,
@@ -1119,52 +1425,98 @@ def execute_merge(
             ),
         )
 
-    # Rule 11. The command that judges this merge is chosen HERE: on the
+    # Rule 11. Everything that judges this merge is chosen HERE: on the
     # target branch, before anything lands, whether or not a baseline is
-    # measured or handed in. Resolving it later would let the merged branch's
-    # own .guardkit/config.yaml name the command that judges it.
+    # measured or handed in — the test command, and since 13 October 2026
+    # the declared install and launch block as well, read once from the
+    # target's .guardkit/config.yaml by a reader that fails closed. A build
+    # that changed a file those commands name (a judge file), or commands the
+    # factory cannot follow, gets no automatic verdict.
     resolution: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None
     resolution_problem: Optional[str] = None
+    pinned: Optional[MergeEnvironment] = None
     if verify:
-        resolution, resolution_problem = resolve_verify_command_on_target(
-            tree_root, target_branch
+        resolution, resolution_problem, pinned = pin_the_judge_on_target(
+            tree_root,
+            target_branch,
+            branch,
+            verify_timeout=verify_timeout,
+            branch_commit=branch_commit,
         )
     verify_command = (resolution[0] or None) if resolution else None
     verify_source = (resolution[1] or None) if resolution else None
+    ran_marker_regex = pinned.ran_marker_regex if pinned is not None else None
 
     baseline: Optional[MeasuredBaseline] = None
     resolved_command = resolution
     pre_merge_notes: List[str] = []
+    # A reason nothing could be run before the merge, so nothing is run
+    # after it either.
+    pre_merge_problem: Optional[str] = None
     if resolution_problem is not None:
         # No trustworthy command could be chosen, so no check may be run:
         # falling back to whatever the merged tree declares is exactly the
         # hole rule 11 closes.
+        pre_merge_problem = resolution_problem
         pre_merge_notes.append(
-            f"the test command could not be chosen on {target_branch} "
-            f"before the merge, so no test run was attempted: "
-            f"{resolution_problem}"
+            f"nothing that judges this merge could be settled on "
+            f"{target_branch} before the merge, so no install and no test "
+            f"run was attempted, before or after it: {resolution_problem}"
         )
     elif verify and measure_baseline and baseline_failing is None:
-        baseline = measure_pre_merge_baseline(
-            tree_root,
-            target_branch=target_branch,
-            timeout=verify_timeout,
-            resolved_command=resolution,
-        )
-        if baseline.ran:
-            baseline_failing = list(baseline.failing)
-            pre_merge_notes.append(
-                f"the pre-merge baseline was measured on {target_branch}: "
-                f"{len(baseline.failing)} failing, {baseline.passed} passing"
+        assert pinned is not None
+        env: Optional[Dict[str, str]] = None
+        if verify_command:
+            prepared = prepare_tree(tree_root, pinned, target_branch)
+            if prepared.tree_changed:
+                # The existing law: never merge over uncommitted changes.
+                return MergeReport(
+                    outcome=OUTCOME_REFUSED,
+                    feature_id=feature_id,
+                    target_branch=target_branch,
+                    branch=branch,
+                    refusal_reason=(
+                        f"{prepared.problem} — refuse to merge over "
+                        f"uncommitted changes"
+                    ),
+                    verify_command=verify_command,
+                    verify_source=verify_source,
+                )
+            if prepared.problem is not None:
+                pre_merge_problem = prepared.problem
+                pre_merge_notes.append(
+                    f"the pre-merge test run on {target_branch} was not "
+                    f"attempted, so there is no baseline and the post-merge "
+                    f"test run was not attempted either: {prepared.problem}"
+                )
+            else:
+                env = prepared.env
+                if prepared.note:
+                    pre_merge_notes.append(prepared.note)
+        if pre_merge_problem is None:
+            baseline = measure_pre_merge_baseline(
+                tree_root,
+                target_branch=target_branch,
+                timeout=verify_timeout,
+                resolved_command=resolution,
+                env=env,
+                ran_marker_regex=ran_marker_regex,
             )
-        else:
-            pre_merge_notes.append(
-                f"the pre-merge test run on {target_branch} could not start, "
-                f"so there is no baseline and the post-merge test run was "
-                f"not attempted: {baseline.detail}"
-            )
+            if baseline.ran:
+                baseline_failing = list(baseline.failing)
+                pre_merge_notes.append(
+                    f"the pre-merge baseline was measured on {target_branch}: "
+                    f"{len(baseline.failing)} failing, {baseline.passed} passing"
+                )
+            else:
+                pre_merge_problem = baseline.detail
+                pre_merge_notes.append(
+                    f"the pre-merge test run on {target_branch} measured "
+                    f"nothing, so there is no baseline and the post-merge test "
+                    f"run was not attempted: {baseline.detail}"
+                )
 
     report = perform_merge(
         repo_root,
@@ -1173,6 +1525,7 @@ def execute_merge(
         manager=manager,
         branch=branch,
         working_folder=working_folder,
+        merge_commit=branch_commit,
     )
     if report.outcome != OUTCOME_MERGED or not verify:
         return replace(
@@ -1185,17 +1538,14 @@ def execute_merge(
             notes=tuple(list(report.notes) + pre_merge_notes),
         )
 
-    # Nothing could be run before the merge — either no command could be
-    # chosen on the target branch, or the chosen one would not start — so
-    # nothing is run after it either. Say "could not run" once, in the run's
-    # own words, and charge nothing. ``verify_ran`` is False because no
-    # post-merge run was attempted (2026-09-06 spec, rule 12).
-    could_not_run_detail: Optional[str] = None
-    if resolution_problem is not None:
-        could_not_run_detail = resolution_problem
-    elif baseline is not None and not baseline.ran:
-        could_not_run_detail = baseline.detail
-    if could_not_run_detail is not None:
+    def could_not_run(detail: str, more_notes: Sequence[str] = ()) -> MergeReport:
+        """The merged report when no post-merge run was attempted.
+
+        Say "could not run" once, in the run's own words, and charge
+        nothing. ``verify_ran`` is False because no post-merge run was
+        attempted (2026-09-06 spec, rule 12), and an "unverified" result
+        files no repair.
+        """
         validate_valid, validate_notes = validate_with_notes(
             tree_root, feature_id, validate_command=validate_command
         )
@@ -1208,7 +1558,7 @@ def execute_merge(
             post_sha=report.post_sha,
             verify_ran=False,
             verify_status="unverified",
-            verify_detail=could_not_run_detail,
+            verify_detail=detail,
             verify_suite_status="unverified",
             validate_valid=validate_valid,
             charged_failures=(),
@@ -1216,9 +1566,37 @@ def execute_merge(
             verify_command=verify_command,
             verify_source=verify_source,
             notes=tuple(
-                list(report.notes) + pre_merge_notes + validate_notes
+                list(report.notes)
+                + pre_merge_notes
+                + list(more_notes)
+                + validate_notes
             ),
         )
+
+    # Nothing could be run before the merge — nothing that judges it could
+    # be settled on the target branch, the install there failed, or the
+    # chosen command measured nothing — so nothing is run after it either.
+    if pre_merge_problem is not None:
+        return could_not_run(pre_merge_problem)
+
+    # Install the merged tree again (a dependency the branch adds must be
+    # there) with the TARGET's pinned install and launch block.
+    assert pinned is not None
+    env = None
+    post_merge_notes: List[str] = []
+    if verify_command:
+        prepared = prepare_tree(tree_root, pinned, "the merged result")
+        if prepared.problem is not None:
+            return could_not_run(
+                prepared.problem,
+                [
+                    f"the post-merge test run was not attempted: "
+                    f"{prepared.problem}"
+                ],
+            )
+        env = prepared.env
+        if prepared.note:
+            post_merge_notes.append(prepared.note)
 
     validate_valid, verification, charged, notes = verify_merged(
         tree_root,
@@ -1227,9 +1605,14 @@ def execute_merge(
         timeout=verify_timeout,
         validate_command=validate_command,
         resolved_command=resolved_command,
+        env=env,
+        ran_marker_regex=ran_marker_regex,
     )
+    notes = post_merge_notes + notes
 
-    merged_output = verification.output_for_parsing
+    # Nothing is read out of a run that measured nothing (see verify_merged).
+    measured_run = verification.status != "unverified"
+    merged_output = verification.output_for_parsing if measured_run else ""
     observed = failing_node_ids(merged_output)
     # Two readings have to be complete before a failed suite may be excused:
     # the merged run's own (the new red could be one of the names that fell
@@ -1242,7 +1625,7 @@ def execute_merge(
             f"({reported_failure_count(merged_output)} counted, "
             f"{len(observed)} named), so none of them were excused"
         )
-    if baseline is not None and not baseline.names_complete:
+    if measured_run and baseline is not None and not baseline.names_complete:
         reading_complete = False
         notes.append(
             f"the pre-merge run on {target_branch} reported more failures "
@@ -1307,5 +1690,9 @@ __all__ = [
     "charged_failures_from_output",
     "validate_with_notes",
     "verify_merged",
+    "files_the_branch_changed",
+    "pin_the_judge_on_target",
+    "prepare_tree",
+    "TreePreparation",
     "execute_merge",
 ]

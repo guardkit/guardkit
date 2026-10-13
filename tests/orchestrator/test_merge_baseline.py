@@ -19,10 +19,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
 from guardkit.orchestrator.baseline import failing_node_ids
+from tests.self_contained_python import self_contained_python
 from guardkit.orchestrator.completion_verification import (
     resolve_verify_command,
     run_completion_verification,
@@ -60,8 +62,17 @@ def _git(repo: Path, *args: str) -> str:
     return proc.stdout.strip()
 
 
-def declared_command(python: str = sys.executable) -> str:
-    """The repository's declared test command, run by a named interpreter."""
+def declared_command(python: Optional[str] = None) -> str:
+    """The repository's declared test command, run by a named interpreter.
+
+    By default this test session's own interpreter and packages, made
+    independent of the real HOME (``tests.self_contained_python``): since 13
+    October 2026 the merge runs the check with a private HOME, so an
+    interpreter that finds pytest only in the user's own site folder would no
+    longer find it there.
+    """
+    if python is None:
+        python = self_contained_python()
     return f'"{python}" -m pytest -q -p no:cacheprovider tests/'
 
 
