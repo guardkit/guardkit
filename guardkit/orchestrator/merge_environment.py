@@ -110,8 +110,9 @@ def read_merge_declarations(
 ) -> Tuple[Optional[MergeDeclarations], Optional[str]]:
     """Read ``toolchain:`` and ``launch:`` from ``tree_root`` once, fail-closed.
 
-    A key that is missing means "not declared". A key that is present is
-    validated, even when its value is empty.
+    A key that is missing, or a file with no content but comments, means
+    "not declared". A key that is present is validated, even when its value
+    is empty, and a whole document that is an explicit null is invalid.
 
     Returns ``(declarations, problem)``. ``problem`` is a plain sentence when
     the file or a block is invalid; ``declarations`` is then ``None`` and the
@@ -132,7 +133,20 @@ def read_merge_declarations(
     except yaml.YAMLError as exc:
         return None, f"{_CONFIG_NAME} is not valid YAML ({_why(exc)})"
     if data is None:
-        return MergeDeclarations(), None
+        # An empty document (nothing, or only comments and blank lines)
+        # declares nothing. A document that is an explicit null (``null``,
+        # ``~``) is a file someone wrote wrongly, and must not fall back to
+        # a stack default.
+        try:
+            node = yaml.compose(text, Loader=yaml.SafeLoader)
+        except yaml.YAMLError as exc:  # pragma: no cover - safe_load passed
+            return None, f"{_CONFIG_NAME} is not valid YAML ({_why(exc)})"
+        if node is None:
+            return MergeDeclarations(), None
+        return None, (
+            f"{_CONFIG_NAME} is an explicit null rather than a mapping of "
+            f"declarations"
+        )
     if not isinstance(data, dict):
         return None, (
             f"{_CONFIG_NAME} must be a mapping at the top level (it reads as "

@@ -1098,6 +1098,11 @@ INVALID_DECLARATIONS = {
     "toolchain is null": "toolchain: null\n",
     "toolchain is bare": "toolchain:\n",
     "launch is null": _VALID_TOOLCHAIN + "launch: null\n",
+    # A whole document that is an explicit null is not an empty file
+    # (implementation review R4).
+    "whole document null": "null\n",
+    "whole document tilde": "~\n",
+    "whole document null with comments": "# settings\nnull\n",
 }
 
 
@@ -1127,7 +1132,9 @@ class TestDeclarationsAreReadFailClosed:
         assert report.verify_command is None
         assert "stack default" not in (report.verify_source or "")
 
-    @pytest.mark.parametrize("shape", ["no file", "empty file", "no keys"])
+    @pytest.mark.parametrize(
+        "shape", ["no file", "empty file", "comments only", "no keys"]
+    )
     def test_a_missing_or_empty_declaration_is_today_behaviour(
         self, standin: Standin, shape: str
     ):
@@ -1135,6 +1142,8 @@ class TestDeclarationsAreReadFailClosed:
             standin.init(with_config=False)
         elif shape == "empty file":
             standin.init(config="")
+        elif shape == "comments only":
+            standin.init(config="# nothing declared yet\n\n   \n# still nothing\n")
         else:
             standin.init(config="qa:\n  enforce_tier1: false\n")
         standin.branch({"feature.txt": "built\n"})
