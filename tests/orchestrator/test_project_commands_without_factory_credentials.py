@@ -1096,6 +1096,7 @@ def test_a_reachability_probe_that_cannot_be_given_its_environment_could_not_run
     entry = result.entries[0]
     assert entry.finding_kind == "BOOT_SMOKE_COULD_NOT_RUN", entry
     assert "could not run" in entry.detail and "HTTPS_PROXY" in entry.detail
+    assert entry.detail.count("could not run") == 1, entry.detail
     assert MARK not in entry.detail
     assert not (project.out / "never.env").exists()
 
@@ -1339,6 +1340,9 @@ _ANY_RECEIVER_LAUNCHES = {
 }
 #: Methods that change a dictionary in place.
 _MUTATORS = {"update", "setdefault", "__setitem__", "__ior__"}
+#: Functions an environment may be handed to before the launch: they only
+#: read it (or are the helper, a launch or a generic runner, judged anyway).
+_READS_ONLY = {"dict", "len", "sorted", "list", "minimal_environment_note", "withheld_settings"}
 
 
 class _Module(SimpleNamespace):
@@ -1524,9 +1528,46 @@ def _mutated(func: ast.AST, name: str) -> bool:
     return False
 
 
+def _in_return(func: ast.AST, target: ast.AST) -> bool:
+    """True when ``target`` is part of a ``return`` value in ``func``: the
+    function has left on that path, so nothing after it is launched."""
+    for node in ast.walk(func):
+        if isinstance(node, ast.Return) and node.value is not None:
+            if any(sub is target for sub in ast.walk(node.value)):
+                return True
+    return False
+
+
+def _escapes(func: ast.AST, name: str, before_line: Optional[int], trusted: set) -> bool:
+    """True when the dictionary ``name`` could be widened through another
+    name: bound to a second name (``other = env``), or handed to a function
+    that is not known to only read it, before the launch at ``before_line``
+    (a call that is itself returned does not count: nothing follows it)."""
+    for node in ast.walk(func):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            value = node.value
+            if isinstance(value, ast.Name) and value.id == name:
+                return True
+        if isinstance(node, ast.Call) and (before_line is None or node.lineno < before_line):
+            callee = _last_name(node.func)
+            if callee in _READS_ONLY or callee in trusted or _in_return(func, node):
+                continue
+            handed = list(node.args) + [kw.value for kw in node.keywords]
+            for arg in handed:
+                for sub in [arg, *([arg.body, arg.orelse] if isinstance(arg, ast.IfExp) else [])]:
+                    if isinstance(sub, ast.Name) and sub.id == name:
+                        return True
+    return False
+
+
+#: Callees an environment may be handed to: launches and generic runners are
+#: judged on their own ``env=``; filled in by :func:`unaccounted_launches`.
+_TRUSTED_CALLEES: set = set()
+
+
 def _helper_shaped(
     node: Optional[ast.AST], mod: _Module, func: Optional[ast.AST], wrappers: set,
-    none_is_safe: bool = False,
+    none_is_safe: bool = False, before_line: Optional[int] = None,
 ) -> bool:
     """True when ``node`` (an ``env=`` value) can only be the helper's result."""
     if node is None:
@@ -1535,15 +1576,17 @@ def _helper_shaped(
         target = _resolve(mod, node.func, node)
         return target in HELPERS or target in wrappers
     if isinstance(node, ast.IfExp):
-        return _helper_shaped(node.body, mod, func, wrappers, none_is_safe) and _helper_shaped(
-            node.orelse, mod, func, wrappers, none_is_safe
-        )
+        return _helper_shaped(
+            node.body, mod, func, wrappers, none_is_safe, before_line
+        ) and _helper_shaped(node.orelse, mod, func, wrappers, none_is_safe, before_line)
     if isinstance(node, ast.Constant) and node.value is None:
         return none_is_safe
     if isinstance(node, ast.Dict) and not node.keys:
         return True  # an empty environment holds nothing, unless it is filled later
     if isinstance(node, ast.Name) and func is not None:
         if _is_parameter(func, node.id) or _mutated(func, node.id):
+            return False
+        if _escapes(func, node.id, before_line, _TRUSTED_CALLEES):
             return False
         values = _assignments(func, node.id)
         return bool(values) and all(
@@ -1664,12 +1707,21 @@ def _callee_name(call: ast.Call) -> str:
 def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
     constants = _module_constants(modules)
+    _TRUSTED_CALLEES.clear()
+    for launches in _LAUNCHES.values():
+        _TRUSTED_CALLEES.update(launches)
+    _TRUSTED_CALLEES.update(_ANY_RECEIVER_LAUNCHES)
+    for _rel, _fname in GENERIC_RUNNERS:
+        _TRUSTED_CALLEES.add(_fname)
+    for spec in GENERIC_RUNNERS.values():
+        _TRUSTED_CALLEES.update(spec.get("names", ()))
     wrappers = _wrappers(modules)
     problems: List[str] = []
 
     def place(mod: _Module, node: ast.AST) -> Tuple[Optional[ast.AST], str]:
         func = _enclosing_function(mod, node)
-        return func, getattr(func, "name", "<module>")
+        named = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        return func, getattr(named, "name", "<module>")
 
     def judge(
         mod: _Module, call: ast.Call, what: str, *, default_is_safe=False,
@@ -1683,7 +1735,7 @@ def unaccounted_launches(package: Path) -> List[str]:
         env = _env_keyword(call, env_position)
         if env is None and default_is_safe:
             return
-        if _helper_shaped(env, mod, func, wrappers, none_is_safe):
+        if _helper_shaped(env, mod, func, wrappers, none_is_safe, call.lineno):
             return
         reason = "no env= (it inherits everything)" if env is None else "env= is not the helper's"
         problems.append(f"{mod.rel}:{call.lineno} in {fname}: {what}: {reason}")
@@ -1696,6 +1748,19 @@ def unaccounted_launches(package: Path) -> List[str]:
                 kind = _launch_kind(mod, node.func)
                 if kind:
                     judge(mod, node, f"process launch {kind}")
+                elif (
+                    _dotted(node.func) in ("__import__", "importlib.import_module", "import_module")
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and str(node.args[0].value).split(".")[0] in _LAUNCHES
+                ):
+                    _, fname = place(mod, node)
+                    if (mod.rel, fname) not in ALLOWED:
+                        problems.append(
+                            f"{mod.rel}:{node.lineno} in {fname}: the launch module "
+                            f"{node.args[0].value} is imported by name, so its "
+                            f"launches cannot be checked"
+                        )
                 elif (
                     _dotted(node.func) == "getattr"
                     and len(node.args) >= 2
@@ -1835,6 +1900,31 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(cmd, shell=True)
 
 
+    def _widen(env):
+        env.update(os.environ)
+
+
+    def v18_widened_through_an_alias(cmd, wf):
+        env = project_command_environment(wf, None)
+        other = env
+        other.update(os.environ)
+        subprocess.run(cmd, shell=True, env=env)
+
+
+    def v19_handed_to_a_function_first(cmd, wf):
+        env = project_command_environment(wf, None)
+        _widen(env)
+        subprocess.run(cmd, shell=True, env=env)
+
+
+    def v20_dunder_import(cmd):
+        __import__("subprocess").run(cmd, shell=True)
+
+
+    class v21_PopenSubclass(subprocess.Popen):
+        pass
+
+
     def v16_empty_dict_item_filled(cmd):
         env = {}
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
@@ -1881,7 +1971,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
     named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems}
     expected = {
         n.name for n in ast.walk(ast.parse(GUARD_PROBES))
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("v")
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
     assert not {"ok_helper", "ok_git", "ok_wrapper"} & named, problems

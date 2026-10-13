@@ -165,11 +165,14 @@ def _hermetic_env(
 
 def _could_not_run(entry: BootSmokeEntry, reason: str) -> BootSmokeEntryResult:
     """An entry that was never started, with the plain reason (names only)."""
+    prefix = "could not run: "
+    if reason.startswith(prefix):
+        reason = reason[len(prefix):]
     return BootSmokeEntryResult(
         entry.id,
         entry.kind,
         _ABSENT,
-        detail=f"could not run: {reason}",
+        detail=f"{prefix}{reason}",
         finding_kind="BOOT_SMOKE_COULD_NOT_RUN",
     )
 

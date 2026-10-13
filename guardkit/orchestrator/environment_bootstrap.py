@@ -2915,7 +2915,7 @@ class EnvironmentBootstrapper:
             # VIRTUAL_ENV pointing at it. A malformed block or a missing
             # scratch folder fails this install with the reason.
             env = self._python_install_env(manifest)
-            self._last_failure_env = env
+            self._last_failure_env = dict(env)  # a copy: the note reads names only
             proc = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -2947,7 +2947,7 @@ class EnvironmentBootstrapper:
                 # PEP 668 venv (<root>/.guardkit/venv) as the worktree-local
                 # interpreter root.
                 retry_env = self._isolated_env(venv_python.parent.parent)
-                self._last_failure_env = retry_env
+                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "PEP 668: retrying install for %s (%s): %s",
                     manifest.stack,
@@ -3019,7 +3019,7 @@ class EnvironmentBootstrapper:
                 # future precedence changes). Observable shape preserved:
                 # VIRTUAL_ENV set to <cwd>/.venv, PATH prepended.
                 retry_env = self._isolated_env(venv_dir)
-                self._last_failure_env = retry_env
+                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "uv-sources: retrying install for %s (%s) with VIRTUAL_ENV=%s: %s",
                     manifest.stack,
@@ -3142,7 +3142,7 @@ class EnvironmentBootstrapper:
                 env = self._isolated_env(self._venv_python.parent.parent)
             else:
                 env = self._project_env()
-            self._last_failure_env = env
+            self._last_failure_env = dict(env)  # a copy: the note reads names only
             proc = subprocess.run(
                 run_cmd,
                 cwd=str(cwd),
@@ -3166,7 +3166,7 @@ class EnvironmentBootstrapper:
                 retry_cmd[0] = str(venv_python)
                 # FFC6 (AC-004): retry must also receive isolated env.
                 retry_env = self._isolated_env(venv_python.parent.parent)
-                self._last_failure_env = retry_env
+                self._last_failure_env = dict(retry_env)  # a copy: the note reads names only
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )
