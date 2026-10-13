@@ -45,6 +45,22 @@ from guardkit.orchestrator.worktree_checkpoints import (
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _no_private_records_step(monkeypatch):
+    """Leave the scripted git replies to add, commit and rev-parse.
+
+    These tests script the executor's replies call by call to prove rollback
+    and pollution logic. The step that unstages GuardKit's private records
+    before each commit (13 October 2026) is proven on real git in
+    ``tests/orchestrator/test_private_records_never_committed.py``.
+    """
+    from guardkit.orchestrator import worktree_checkpoints
+
+    monkeypatch.setattr(
+        worktree_checkpoints, "unstage_private_records", lambda *a, **k: []
+    )
+
+
 @pytest.fixture
 def tmp_worktree(tmp_path):
     """Create a temporary worktree directory."""
