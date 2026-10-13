@@ -3,8 +3,8 @@
 Plain words: the final whole-feature check record lives under
 ``.guardkit/autobuild-private/`` in the build's worktree, and it keeps the
 last 40 lines of whatever the project's check printed. Those lines can carry a
-credential. A project whose ignore file does not cover that folder (api_test's
-does not) would otherwise have it staged and committed by the factory's own
+credential. A project whose ignore file does not cover that folder would
+otherwise have it staged and committed by the factory's own
 commits, and from there it could reach a public repository's history.
 
 GuardKit commits in exactly three places:

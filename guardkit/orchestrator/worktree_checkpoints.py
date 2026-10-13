@@ -200,7 +200,7 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # GuardKit's private records (13 October 2026). The final whole-feature
     # check record keeps the last 40 lines of the project's check output,
     # which can carry a credential; a project whose ignore file does not
-    # cover this folder (api_test's does not) would otherwise have it
+    # cover this folder would otherwise have it
     # committed and carried towards a public history. This stops ``git add``
     # picking new files up there; :func:`unstage_private_records` is what
     # guarantees the commit, because anything ALREADY staged survives an
