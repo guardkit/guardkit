@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import resource
 import shutil
 import threading
@@ -176,6 +177,12 @@ from guardkit.orchestrator.environment_bootstrap import (
     probe_worktree_venv,
 )
 from guardkit.orchestrator.toolchain_declaration import ToolchainDeclarationError
+from guardkit.orchestrator.quality_gates.stack_test_execution import (
+    StackTestProfile,
+    classify_absent_for_stack,
+    detect_stack_profile,
+    overlay_declared_profile,
+)
 from guardkit.models.task_types import TaskType, normalise_task_type
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.orchestrator.parallel_strategy import (
@@ -275,8 +282,50 @@ def _what_downstream_will_read(worktree_path: Path) -> str:
     )
 
 
+def _declared_baseline_profile(
+    repo_root: Path, worktree_path: Path, command: str
+) -> Optional[StackTestProfile]:
+    """The stack profile a declared ran-marker can measure the base with.
+
+    Built the way the Coach builds it (``detect_stack_profile`` on the
+    worktree root, overlaid with the declaration's ``ran_marker_regex``,
+    ``requires_ran_marker`` and ``absent_substrings``), but from the
+    REPOSITORY-ROOT declaration, the same copy the probe's command comes from.
+
+    Returns ``None`` unless that declaration ITSELF sets ``ran_marker_regex``.
+    A marker the profile would only inherit from a stack row never counts:
+    the Node row accepts any checkmark, and a build tool prints checkmarks
+    without running a test. With a declared marker the overlay replaces the
+    row's, so the returned profile's ``ran_marker_regex`` is the declared one.
+
+    Never raises: any failure to load the declaration is "no profile", which
+    is the behaviour before this existed.
+    """
+    try:
+        from guardkit.orchestrator.toolchain_declaration import (
+            load_toolchain_declaration,
+        )
+
+        declaration = load_toolchain_declaration(Path(repo_root))
+        if declaration is None or declaration.ran_marker_regex is None:
+            return None
+        return overlay_declared_profile(
+            detect_stack_profile(Path(worktree_path)),
+            command=command,
+            absent_substrings=declaration.absent_substrings,
+            ran_marker_regex=declaration.ran_marker_regex,
+            requires_ran_marker=declaration.requires_ran_marker,
+        )
+    except Exception as exc:  # noqa: BLE001 — the probe never blocks a build
+        logger.debug("Baseline probe: no declared profile for %s: %s", repo_root, exc)
+        return None
+
+
 def _declared_probe_measured(
-    result: SmokeGateResult, measured: BaselineResult, output: str
+    result: SmokeGateResult,
+    measured: BaselineResult,
+    output: str,
+    declared_profile: Optional[StackTestProfile] = None,
 ) -> bool:
     """Did the declared command actually measure this repository's base?
 
@@ -292,7 +341,15 @@ def _declared_probe_measured(
       and the work leg subtract before charging a task with a failure; or
     * it passed AND the output shows tests really ran, which is pytest's own
       "N passed" summary — the same positive evidence the merge check demands
-      before it will call a run a pass.
+      before it will call a run a pass; or
+    * it passed AND the repository's OWN declared ran-marker matches the
+      output, and the declared stack profile does not classify the run as
+      absent (``declared_profile``, built by :func:`_declared_baseline_profile`
+      only when the repository-root declaration itself sets
+      ``ran_marker_regex``). This is how a project whose runner does not
+      print pytest's summary (Go's ``--- PASS:`` lines, Vitest's coloured
+      ``Tests  2 passed``) says what a real run looks like. A marker only
+      inherited from a stack row never reaches here.
 
     Everything else measured nothing: a timeout, a command the shell could not
     run at all, a suite that collected no tests, an interpreter with no pytest
@@ -306,10 +363,18 @@ def _declared_probe_measured(
         return False
     if measured.failing_node_ids:
         return True
-    return bool(
-        measured.passed
-        and result.exit_code == 0
-        and _PYTEST_PASSED_RE.search(output or "")
+    if not (measured.passed and result.exit_code == 0):
+        return False
+    if _PYTEST_PASSED_RE.search(output or ""):
+        return True
+    if declared_profile is None or not declared_profile.ran_marker_regex:
+        return False
+    try:
+        ran = re.search(declared_profile.ran_marker_regex, output or "")
+    except re.error:
+        return False
+    return bool(ran) and not classify_absent_for_stack(
+        declared_profile, 0, output or ""
     )
 
 
@@ -5442,7 +5507,12 @@ The detailed specifications are in the task markdown file.
         # did before any baseline existed. The feature's own smoke path is
         # deliberately left exactly as it was.
         if source == SOURCE_REPOSITORY_TEST and not _declared_probe_measured(
-            smoke_result, result, combined
+            smoke_result,
+            result,
+            combined,
+            _declared_baseline_profile(
+                self.repo_root, worktree.path, probe_config.command
+            ),
         ):
             if smoke_result.timed_out:
                 why = f"it ran out of its {probe_config.timeout} seconds"
