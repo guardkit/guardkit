@@ -281,12 +281,27 @@ class TestGitMeasuredFilesChanged:
 
         progress = TaskProgressLogger(task_id="TASK-TURN", repo_root=worktree)
 
+        # Every git command the orchestrator runs, and whether it ran while
+        # the stand-in Player was working.
+        import guardkit.orchestrator.autobuild as autobuild_module
+
+        real_run = subprocess.run
+        git_calls = []
+        in_player = {"now": False}
+
+        def recording_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and cmd[:1] == ["git"]:
+                git_calls.append((in_player["now"], cmd, kwargs.get("env")))
+            return real_run(cmd, *args, **kwargs)
+
         def player(*args, **kwargs):
             (worktree / "notes.go").write_text("package notes\n")
+            in_player["now"] = True
             progress.log_snapshot(
                 elapsed=60.0, phase="task-work implementation",
                 files_changed=progress._files_changed,
             )
+            in_player["now"] = False
             return AgentInvocationResult(
                 task_id="TASK-TURN", turn=1, agent_type="player", success=True,
                 report={"task_id": "TASK-TURN", "files_modified": [],
@@ -316,7 +331,8 @@ class TestGitMeasuredFilesChanged:
             progress_logger=progress,
         )
         with patch.object(orch, "_invoke_player_safely", side_effect=player), \
-                patch.object(orch, "_invoke_coach_safely", return_value=coach):
+                patch.object(orch, "_invoke_coach_safely", return_value=coach), \
+                patch.object(autobuild_module.subprocess, "run", side_effect=recording_run):
             orch._execute_turn(
                 turn=1, task_id="TASK-TURN", requirements="Add notes",
                 worktree=SimpleNamespace(path=worktree), previous_feedback=None,
@@ -331,3 +347,9 @@ class TestGitMeasuredFilesChanged:
         assert _lines(progress, "TURN_CHANGES") == [
             "TURN_CHANGES TASK-TURN: turn=1, files_changed=1 (git)"
         ]
+        # While the Player works, the snapshot's git commands never take the
+        # index lock; the photographs either side of the Player run as before.
+        during = [(cmd, env) for now, cmd, env in git_calls if now]
+        assert [cmd[1] for cmd, _ in during] == ["status", "diff"]
+        assert all(env["GIT_OPTIONAL_LOCKS"] == "0" for _, env in during)
+        assert any(not now and env is None for now, _, env in git_calls)

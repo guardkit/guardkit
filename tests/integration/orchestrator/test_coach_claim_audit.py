@@ -693,9 +693,25 @@ def test_fabricated_src_claim_still_aborts(git_worktree: Path) -> None:
 def test_deleted_project_file_still_trips_the_checks_unchanged(
     git_worktree: Path,
 ) -> None:
-    """Unchanged on purpose: a throwaway script written INSIDE the project
-    and deleted stays listed, and so does a tracked file the builder
-    deleted; the existence and claim checks still report them."""
+    """A tracked file the builder deleted still trips the checks; a removed
+    scratch script inside the project no longer does.
+
+    Until 13 October 2026 both stayed listed. The first web fixture proof
+    showed why the scratch half was wrong: a probe file the builder wrote,
+    removed and never named was reported as a fabricated claim and aborted
+    evidence gathering. Now a write confirmed by its own successful result,
+    never named by the builder or a promise, missing on disk and unknown to
+    git is set aside under ``files_written_then_removed`` (still recorded in
+    ``files_authored``). The tracked ``a.md`` deletion is unchanged on
+    purpose: git tracks it, so it stays listed, the existence check still
+    reports it missing as a critical finding, and the turn still cannot be
+    approved. It now ends as ``feedback`` instead of aborting evidence
+    gathering (``partial_honesty_abort``), because the scratch script no
+    longer adds its own critical findings: a lone critical
+    ``file_existence`` finding is reported to the builder as a should-fix
+    honesty issue by the Coach's existing rule (TASK-FIX-1B4A), and the
+    gates then run and refuse the turn.
+    """
     task_id = "TASK-E592-OLD-SHAPE"
     script = git_worktree / ".tmp" / "verify.py"
     (git_worktree / "a.md").write_text("a\n")
@@ -713,12 +729,46 @@ def test_deleted_project_file_still_trips_the_checks_unchanged(
     ]
     _run_builder_turn(git_worktree, task_id, steps)
 
-    results, report = _records(git_worktree, task_id)
-    assert ".tmp/verify.py" in results["files_created"]
-    assert "a.md" in results["files_modified"]
+    for record in _records(git_worktree, task_id):
+        # The removed scratch script is set aside, and still authored.
+        assert ".tmp/verify.py" not in record["files_created"]
+        assert ".tmp/verify.py" not in record["files_modified"]
+        assert record["files_written_then_removed"] == [".tmp/verify.py"]
+        assert ".tmp/verify.py" in record["files_authored"]
+        # The tracked deletion keeps its place and its authorship.
+        assert "a.md" in record["files_modified"]
+        assert "a.md" in record["files_authored"]
+
+    # The checks themselves: the tracked deletion is still a critical
+    # "file does not exist"; the set-aside script raises nothing.
+    from guardkit.orchestrator.coach_verification import CoachVerifier
+
+    results, _ = _records(git_worktree, task_id)
+    verifier = CoachVerifier(git_worktree)
+    found = verifier._verify_files_exist(results) + verifier._verify_claims_were_staged(
+        results
+    )
+    assert any(
+        d.claim_type == "file_existence"
+        and d.player_claim == "files_modified: a.md"
+        and d.actual_value == "File does not exist"
+        and d.severity == "critical"
+        for d in found
+    ), found
+    assert not any(".tmp/verify.py" in d.player_claim for d in found), found
+
     coach_result, bundle = _coach(git_worktree, task_id)
-    assert coach_result.quality_gates is None
-    assert bundle.gathering_status == "partial_honesty_abort"
+    assert coach_result.decision == "feedback"
+    assert bundle.gathering_status != "complete"
+    honesty = [i for i in coach_result.issues if i.get("category") == "honesty"]
+    assert [i["details"] for i in honesty] == [
+        {
+            "claim_type": "file_existence",
+            "player_claim": "files_modified: a.md",
+            "actual_value": "File does not exist",
+        }
+    ]
+    assert ".tmp/verify.py" not in json.dumps(coach_result.issues)
 
 
 def test_symlinked_scratch_folder_cannot_hide_a_fabricated_src_claim(
