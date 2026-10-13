@@ -1173,3 +1173,151 @@ class TestDcodePlayerRealRoutes:
         _assert_dcode_http_evidence(script)
         assert activity
         _assert_owned_clients_closed(clients)
+
+
+class TestToolCallCounter:
+    """13 October 2026 (bounded code review): ``_invoke_with_role`` counts a
+    run's tool calls by name when handed a counter — on LangGraph through the
+    native tool hook (which survives a cut-off run), on the SDK harness from
+    the stream — and changes nothing when it is not."""
+
+    @staticmethod
+    def _harness(selection: dict[str, Any], *, native: list, streamed: list,
+                 fail: Optional[Exception] = None):
+        from guardkit.orchestrator.harness.adapter import ToolUseEvent
+
+        class Harness:
+            supports_resume = False
+
+            async def invoke(self, prompt, role, tools, cwd, *, timeout_seconds):
+                sink = selection.get("on_native_tool_event")
+                for event in native:
+                    if sink is not None:
+                        sink(event)
+                if fail is not None:
+                    raise fail
+                for index, name in enumerate(streamed):
+                    yield ToolUseEvent(tool_use_id=f"t{index}", name=name)
+                yield AssistantMessageEvent(text="Verdict: approve", raw=None)
+                yield ResultMessageEvent(session_id=None, raw=None)
+
+            async def cancel(self) -> None:
+                return None
+
+        return Harness()
+
+    @staticmethod
+    def _start(name: str) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            phase="start", run_id=name, parent_run_id=None, tool_name=name,
+            payload={"file_path": "/home/someone/private.py"},
+        )
+
+    async def _run(self, tmp_path, *, native, streamed, counter, fail=None):
+        invoker = _make_invoker(tmp_path, emitter=NullEmitter(capture=True))
+        selection: dict[str, Any] = {}
+        harness = self._harness(
+            selection, native=native, streamed=streamed, fail=fail
+        )
+
+        def capture_selection(**kwargs: Any) -> Any:
+            selection.update(kwargs)
+            return harness
+
+        with patch(
+            "guardkit.orchestrator.agent_invoker.select_harness",
+            side_effect=capture_selection,
+        ):
+            try:
+                await invoker._invoke_with_role(
+                    prompt="TASK-COUNT-001 review",
+                    agent_type="coach",
+                    allowed_tools=["Read", "Search", "Grep"],
+                    permission_mode="bypassPermissions",
+                    tool_counter=counter,
+                )
+            except AgentInvocationError:
+                if fail is None:
+                    raise
+        return selection
+
+    @pytest.mark.asyncio
+    async def test_native_starts_counted_and_survive_a_cut_off_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+
+        from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", raising=False)
+        counter = ToolCallCounter()
+        native = [
+            self._start("read_file"),
+            SimpleNamespace(phase="end", tool_name="read_file"),
+            self._start("read_file"),
+            self._start("grep"),
+            SimpleNamespace(phase="error", tool_name="grep"),
+        ]
+
+        selection = await self._run(
+            tmp_path, native=native, streamed=[], counter=counter,
+            fail=RuntimeError("Recursion limit of 24 reached"),
+        )
+
+        assert callable(selection["on_native_tool_event"])
+        assert counter.counts() == {"read_file": 2, "grep": 1}
+        assert counter.total() == 3
+
+    @pytest.mark.asyncio
+    async def test_langgraph_replay_is_not_counted_twice(
+        self, tmp_path: Path
+    ) -> None:
+        from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+        counter = ToolCallCounter()
+        await self._run(
+            tmp_path,
+            native=[self._start("read_file"), self._start("grep")],
+            streamed=["read_file", "grep"],
+            counter=counter,
+        )
+        assert counter.counts() == {"read_file": 1, "grep": 1}
+
+    @pytest.mark.asyncio
+    async def test_sdk_stream_tool_events_counted(self, tmp_path: Path) -> None:
+        from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+        counter = ToolCallCounter()
+        await self._run(
+            tmp_path, native=[], streamed=["Read", "Read", "Grep"],
+            counter=counter,
+        )
+        assert counter.counts() == {"Read": 2, "Grep": 1}
+
+    @pytest.mark.asyncio
+    async def test_no_counter_and_no_debug_leaves_the_hook_off(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GUARDKIT_AUTOBUILD_PRESERVE_DEBUG", raising=False)
+        selection = await self._run(
+            tmp_path, native=[], streamed=["Read"], counter=None,
+        )
+        assert selection["on_native_tool_event"] is None
+        assert "recursion_limit" in selection
+        assert selection["recursion_limit"] is None
+
+    def test_counter_never_raises(self) -> None:
+        from guardkit.orchestrator.agent_invoker import ToolCallCounter
+
+        class Exploding:
+            @property
+            def phase(self):
+                raise RuntimeError("boom")
+
+        counter = ToolCallCounter()
+        counter.record_native(Exploding())
+        counter.record_native(None)
+        counter.record_streamed(None)
+        assert counter.counts() == {"unknown": 1}

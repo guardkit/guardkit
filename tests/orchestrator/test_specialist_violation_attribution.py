@@ -417,3 +417,137 @@ class TestGenuineFabricationStillShortCircuits:
         assert len(critical) == 1
         assert critical[0].claim_type == "claim_audit"
         assert "tests/test_never_written.py" in critical[0].player_claim
+
+
+class TestCappedReviewReachesCoachAsEvidenceAbsent:
+    """13 October 2026 (bounded code review): a review cut off by its step cap
+    keeps today's outcome all the way to the Coach — failed, no evidence, one
+    non-blocking note — even when the model had already written an approval
+    before it was stopped."""
+
+    def test_capped_review_reaches_coach_as_evidence_absent(
+        self, worktree: Path
+    ) -> None:
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock
+
+        from guardkit.orchestrator.exceptions import AgentInvocationError
+
+        results = _run2_task_work_results(worktree)
+        results["agent_invocations"] = []
+        results["agent_invocations_validation"] = {"status": "passed"}
+        _write_results(worktree, results)
+        specialist_path = (
+            worktree / ".guardkit" / "autobuild" / TASK_ID
+            / "specialist_results.json"
+        )
+        specialist_path.write_text(json.dumps({
+            "phase_4": {
+                "status": "passed",
+                "duration_seconds": 3.0,
+                "error": None,
+                "tests_run": 25,
+                "tests_failed": 0,
+                "coverage_pct": 85.0,
+                "output_summary": "ok",
+                "quality_gates_passed": True,
+            },
+        }))
+
+        approve_text = "All criteria met.\nVerdict: approve"
+        cut_off = AgentInvocationError(
+            "SDK invocation failed for coach (LangGraphHarnessError): "
+            "LangGraphHarness: agent.ainvoke failed for role='coach' "
+            "model='reviewer-model': Recursion limit of 24 reached without "
+            "hitting a stop condition.",
+            error_class="LangGraphHarnessError",
+        )
+        # What the model had said before the cap stopped it rides on the
+        # error, as LangGraph's failed graph does.
+        cut_off.raw_result = {"messages": [SimpleNamespace(content=approve_text)]}
+
+        async def _approve_then_cap(**kwargs):
+            kwargs["tool_counter"].record_native(
+                SimpleNamespace(phase="start", tool_name="read_file", payload={})
+            )
+            raise cut_off
+
+        invoker = MagicMock(name="AgentInvoker")
+        invoker.sdk_timeout_seconds = 1200
+        invoker._cancellation_event = None
+        invoker._invoke_with_role = AsyncMock(side_effect=_approve_then_cap)
+        invoker._kill_child_claude_processes = MagicMock()
+
+        phase4 = specialist_invocations.SpecialistInvocationResult(
+            specialist_name="test-orchestrator",
+            phase="4",
+            status="passed",
+            duration_seconds=3.0,
+            result_file=None,
+            error=None,
+        )
+        review = asyncio.run(
+            specialist_invocations.invoke_code_reviewer(
+                worktree_path=worktree,
+                task_id=TASK_ID,
+                phase4_result=phase4,
+                sdk_timeout=600,
+                agent_invoker=invoker,
+                acceptance_criteria=["AC-018 existing suites green"],
+                reported_files=["guardkit_mod.py"],
+            )
+        )
+        assert review.status == "failed"
+        assert invoker._invoke_with_role.await_count == 1
+
+        AgentInvoker(
+            worktree_path=worktree
+        )._inject_specialist_records_into_task_work_results(TASK_ID)
+        merged = json.loads(
+            (worktree / ".guardkit" / "autobuild" / TASK_ID
+             / "task_work_results.json").read_text()
+        )
+        phase_5 = [
+            inv for inv in merged["agent_invocations"]
+            if str(inv.get("phase")) == "5"
+        ]
+        assert len(phase_5) == 1
+        # Not credited.
+        assert phase_5[0]["status"] == "failed"
+        assert "review_evidence" not in phase_5[0]
+        assert "5" in merged["agent_invocations_validation"]["missing_phases"]
+
+        bundle = _gather(worktree)
+
+        reviewer_notes = [
+            i for i in bundle.advisory_issues
+            if i.get("details", {}).get("agent") == "code-reviewer"
+        ]
+        assert len(reviewer_notes) == 1
+        note = reviewer_notes[0]
+        assert note["category"] == "specialist_substrate"
+        assert note["severity"] == "should_fix"
+        assert "code-reviewer" in note["description"]
+        assert "step cap (24 steps)" in note["description"]
+        assert "ABSENT, not failed" in note["description"]
+        # No review evidence reaches the Coach.
+        assert [
+            i for i in bundle.advisory_issues
+            if i.get("category") == "code_reviewer_model_report"
+        ] == []
+        rendered = json.dumps(bundle.advisory_issues)
+        rendered += object.__new__(AgentInvoker)._render_evidence_bundle_section(
+            bundle
+        )
+        assert "Verdict: approve" not in rendered
+        assert "Recursion limit" not in rendered
+        # Nothing blocks.
+        assert bundle.gathering_status != "partial_honesty_abort"
+        assert [
+            d for d in bundle.honesty.discrepancies if d.severity == "critical"
+        ] == []
+        assert not [
+            i for i in bundle.advisory_issues
+            if i.get("severity") in ("must_fix", "critical", "blocking")
+        ]
