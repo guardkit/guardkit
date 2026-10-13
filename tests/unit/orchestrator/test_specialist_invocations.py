@@ -2428,8 +2428,7 @@ async def test_deterministic_phase4_never_copies_tests_run_into_tests_failed(
 # Bounded code review (13 October 2026)
 # =============================================================================
 #
-# Design: docs/designs/factory-code-reviewer-bounded-review-2026-10-13.md in
-# the ai-transition repository. The reviewer was never told which files had
+# The reviewer was never told which files had
 # changed or when to stop, its acceptance criteria were cut off with the rest
 # of a 1,999-character prompt, and nothing limited its steps: 30 of 33 runs
 # on 12-13 October hit the 600-second limit. These tests pin the prompt that
