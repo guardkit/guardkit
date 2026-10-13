@@ -422,7 +422,8 @@ class TestVenvPathInjection:
         assert call_kwargs["env"]["PATH"].startswith(str(venv_bin))
 
     def test_no_venv_no_env_override(self, orchestrator, worktree_path):
-        """When no .venv/bin/ exists, env should be None (inherit parent)."""
+        """When no .venv/bin/ exists, nothing is put in front of PATH, and the
+        env is built from nothing (13 October 2026), never None (inherit)."""
         report = {"requirements_addressed": [], "_synthetic": True}
         criteria = ["`pytest tests/ -v` runs successfully"]
 
@@ -435,7 +436,8 @@ class TestVenvPathInjection:
             )
 
         call_kwargs = mock_run.call_args.kwargs
-        assert call_kwargs["env"] is None
+        assert call_kwargs["env"] is not None
+        assert call_kwargs["env"]["PATH"] == os.environ["PATH"]
 
     def test_venv_path_uses_os_pathsep(self, orchestrator, worktree_path):
         """PATH separator should use os.pathsep for platform compatibility."""

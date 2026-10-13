@@ -449,8 +449,15 @@ def _evaluate_assert_command(
     rule: AssertCommandRule,
     subject_root: Path,
 ) -> Optional[Dict[str, Any]]:
-    """Evaluate one assert_command rule. Returns a failure dict or ``None``."""
+    """Evaluate one assert_command rule. Returns a failure dict or ``None``.
+
+    The command is the project's, so it runs in the project-command
+    environment built from nothing (13 October 2026), never the factory's.
+    """
+    from guardkit.orchestrator.project_command_env import main_checkout_environment
+
     try:
+        env = main_checkout_environment(Path(subject_root))
         completed = subprocess.run(
             rule.command,
             shell=True,
@@ -458,7 +465,14 @@ def _evaluate_assert_command(
             capture_output=True,
             text=True,
             timeout=rule.timeout,
+            env=env,
         )
+    except OSError as exc:
+        return {
+            "rule_id": rule.id,
+            "kind": "assert_command",
+            "detail": f"Command could not start: {exc}",
+        }
     except subprocess.TimeoutExpired:
         return {
             "rule_id": rule.id,

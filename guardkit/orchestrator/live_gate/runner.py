@@ -36,7 +36,7 @@ from guardkit.qa.formats.gate_registry import (
 )
 from guardkit.qa.formats.leak_sweep import LeakSweepManifest
 
-from guardkit.orchestrator.live_gate.errors import LiveGateStubError
+from guardkit.orchestrator.live_gate.errors import LiveGateError, LiveGateStubError
 from guardkit.orchestrator.live_gate.evidence import (
     EvidenceCollector,
     ensure_evidence_dir,
@@ -138,9 +138,40 @@ class LiveGateRunner:
         self.instrument_check = instrument_check
         self.reservation_resource = reservation_resource
         self.broker_contract_ref = broker_contract_ref
-        self.gate_env = gate_env if gate_env is not None else dict(os.environ)
+        # ``None``: each run builds the gate scripts' environment from nothing
+        # (:meth:`_gate_script_env`), never a copy of this process's, which
+        # holds the factory's credentials. A caller may hand in a whole
+        # environment instead.
+        self.gate_env = gate_env
         self.gate_timeout_s = gate_timeout_s
         self.now_fn = now_fn
+
+    def _gate_script_env(self, gates: Sequence[GateEntry]) -> dict:
+        """The gate scripts' environment, built from nothing (13 October 2026).
+
+        ``project_command_env`` with the repository's ``launch:`` block. The
+        one thing added is each selected gate's registry ``base_url_env``,
+        when it is set here and is a name a project may declare: the
+        registry is the project's own statement that its gates read it, and
+        it is an address, not a credential. Values are never printed.
+        """
+        from guardkit.orchestrator.launch_declaration import declared_setting_refusal
+        from guardkit.orchestrator.project_command_env import (
+            main_checkout_environment,
+        )
+
+        additions = {}
+        for gate in gates:
+            name = gate.target.base_url_env
+            value = os.environ.get(name)
+            if value is not None and declared_setting_refusal(name) is None:
+                additions[name] = value
+        try:
+            return main_checkout_environment(self.repo_root, additions=additions)
+        except OSError as exc:
+            raise LiveGateError(
+                f"the gate scripts could not be given their environment: {exc}"
+            ) from exc
 
     def _history_dir(self) -> Path:
         return self.repo_root.joinpath(*HISTORY_DIRNAME)
@@ -213,7 +244,11 @@ class LiveGateRunner:
                 gates,
                 repo_root=self.repo_root,
                 runner=self.gate_runner,
-                env=self.gate_env,
+                env=(
+                    self.gate_env
+                    if self.gate_env is not None
+                    else self._gate_script_env(gates)
+                ),
                 timeout_s=self.gate_timeout_s,
             )
             collector.add_from_gate_results(gate_results)

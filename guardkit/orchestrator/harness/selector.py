@@ -46,6 +46,10 @@ from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.harness.adapter import HarnessAdapter
 from guardkit.orchestrator.m0_fence import enforce_effective_seat
 
+#: Set (to any non-empty value) when the factory launched this GuardKit
+#: (``guardkit.knowledge.memory_project.FACTORY_LAUNCH_ENV``).
+_FACTORY_LAUNCH_ENV = "GUARDKIT_FACTORY_LAUNCH"
+
 logger = logging.getLogger(__name__)
 
 # TASK-HMIG-011 (cutover ceremony, 2026-06-16): single source of truth for the
@@ -1176,6 +1180,18 @@ def select_harness(
     # receipts REPORT it instead of re-deriving one; GUARDKIT_ALLOW_FRONTIER=1
     # proceeds, but only with the loud stderr echo.
     enforce_effective_seat(harness_kwargs.get("model"), harness=name)
+
+    # 13 October 2026 (design ``factory-project-commands-without-factory-
+    # credentials``): the hosted SDK harness's shell inherits this process's
+    # whole environment (``ClaudeAgentOptions.env`` can only add names), so a
+    # project command it runs would see the factory's credentials. A build
+    # the factory launched never uses it.
+    if name == "sdk" and str(os.environ.get(_FACTORY_LAUNCH_ENV) or "").strip():
+        raise AgentInvocationError(
+            "the hosted SDK harness passes the factory's whole environment to "
+            "its shell, so a factory build does not use it (GUARDKIT_HARNESS=sdk "
+            "was asked for on a factory launch)"
+        )
 
     if name == "sdk":
         # Lazy import keeps the package importable when claude_agent_sdk

@@ -1564,12 +1564,20 @@ class CoachVerifier:
 
         # Detect test framework and run appropriate command
         try:
+            # Built from nothing (13 October 2026): the project's tests never
+            # see the factory's credentials.
+            from guardkit.orchestrator.project_command_env import (
+                main_checkout_environment,
+            )
+
+            env = main_checkout_environment(Path(self.worktree_path))
             result = subprocess.run(
                 cmd,
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=env,
             )
             test_result = TestResult(
                 passed=result.returncode == 0,
@@ -1597,6 +1605,7 @@ class CoachVerifier:
                         capture_output=True,
                         text=True,
                         timeout=timeout,
+                        env=env,
                     )
                     test_result = TestResult(
                         passed=result.returncode == 0,

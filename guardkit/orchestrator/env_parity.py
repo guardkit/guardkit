@@ -132,9 +132,23 @@ def _run_resolution_probe(
         "    out[name] = e\n"
         "print(json.dumps(out))\n"
     )
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env["PYTHONPATH"] = str(worktree)
+    from guardkit.orchestrator.launch_declaration import (
+        load_launch_declaration,
+        main_checkout_root,
+    )
+    from guardkit.orchestrator.project_command_env import (
+        project_command_environment,
+    )
+
     try:
+        # Built from nothing (13 October 2026): a clean worktree-only
+        # PYTHONPATH as the factory's one addition, never this process's
+        # environment with the factory's credentials.
+        env = project_command_environment(
+            Path(worktree),
+            load_launch_declaration(main_checkout_root(Path(worktree))),
+            additions={"PYTHONPATH": str(worktree)},
+        )
         proc = subprocess.run(
             [venv_python, "-c", script],
             cwd=str(worktree), env=env, capture_output=True, text=True, timeout=120,

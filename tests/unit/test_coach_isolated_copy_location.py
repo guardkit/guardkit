@@ -430,12 +430,24 @@ class TestRoutedFromAParallelWave:
 
 
 class TestGitCeiling:
-    def test_sets_the_ceiling_to_the_holder(self, tmp_path):
-        env = CoachValidator._with_git_ceiling({"A": "1"}, tmp_path)
-        assert env == {"A": "1", "GIT_CEILING_DIRECTORIES": str(tmp_path)}
+    """13 October 2026: the ceiling is the factory's own addition to an
+    environment built from nothing, so there is no inherited ceiling to keep."""
 
-    def test_keeps_an_existing_ceiling_and_does_not_mutate_the_input(self, tmp_path):
-        original = {"GIT_CEILING_DIRECTORIES": "/elsewhere"}
-        env = CoachValidator._with_git_ceiling(original, tmp_path)
-        assert env["GIT_CEILING_DIRECTORIES"] == f"{tmp_path}{os.pathsep}/elsewhere"
-        assert original == {"GIT_CEILING_DIRECTORIES": "/elsewhere"}
+    def test_sets_the_ceiling_to_the_holder(self, tmp_path):
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        validator = CoachValidator(str(worktree))
+        for env in (
+            validator._pytest_env(git_ceiling=tmp_path),
+            validator._declared_command_env(git_ceiling=tmp_path),
+        ):
+            assert env["GIT_CEILING_DIRECTORIES"] == str(tmp_path)
+
+    def test_an_inherited_ceiling_does_not_reach_the_command(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", "/elsewhere")
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        validator = CoachValidator(str(worktree))
+        assert "GIT_CEILING_DIRECTORIES" not in validator._declared_command_env()
+        env = validator._declared_command_env(git_ceiling=tmp_path)
+        assert env["GIT_CEILING_DIRECTORIES"] == str(tmp_path)

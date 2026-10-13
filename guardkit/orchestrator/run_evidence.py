@@ -1048,12 +1048,28 @@ def run_environment_inventory(
     limits: EvidenceLimits = DEFAULT_LIMITS,
     runner: Optional[Runner] = None,
 ) -> Dict[str, Any]:
-    """Run the declared inventory command and keep its output. Never raises."""
+    """Run the declared inventory command and keep its output. Never raises.
+
+    ``env`` is the environment of the command this record is for, which every
+    caller builds with ``project_command_env``. The inventory is the project's
+    own command and its output is kept in receipts, so it never runs with
+    ``None`` (which would inherit the factory's whole environment, credentials
+    included): it is recorded as not run instead.
+    """
     if not request.inventory_looked_up:
         return {"status": NOT_LOOKED_UP}
     command = request.environment_inventory
     if not command:
         return {"status": request.not_declared or NOT_DECLARED}
+    if env is None:
+        return {
+            "command": command,
+            "directory": str(cwd),
+            "status": (
+                "not recorded: the command this record is for had no project "
+                "environment, and the inventory never runs with the factory's"
+            ),
+        }
     runner = runner or _default_runner
     record: Dict[str, Any] = {"command": command, "directory": str(cwd)}
     try:
@@ -1265,8 +1281,12 @@ class CommandEvidence:
         docker: Optional[DockerProbe] = None,
         limits: Optional[EvidenceLimits] = None,
         clock: Callable[[], float] = time.time,
+        declared_settings: Sequence[str] = (),
     ) -> None:
         self.request = request or EvidenceRequest(kind="declared command", inventory_looked_up=False)
+        #: The project's ``launch.settings`` names, so the record can say
+        #: which of them were not set where the factory runs (names only).
+        self.declared_settings = tuple(declared_settings or ())
         self.command = command
         self.execution_root = Path(execution_root)
         self.cwd = Path(cwd) if cwd is not None else self.execution_root
@@ -1471,10 +1491,27 @@ class CommandEvidence:
                 "manifest": manifest_copy,
             },
             "container_events": events,
+            "environment": self._environment_names(),
         }
         if self._errors:
             record["capture_errors"] = list(self._errors)
         return record
+
+    def _environment_names(self) -> Dict[str, Any]:
+        """What the command's environment held, by name only, never value."""
+        if self.env is None:
+            return {"status": "not recorded: the command was given no environment"}
+        names = sorted(str(name) for name in self.env)
+        missing = [name for name in self.declared_settings if name not in self.env]
+        out: Dict[str, Any] = {"names": names}
+        if missing:
+            out["declared_but_not_set"] = missing
+            out["sentences"] = [
+                f"the project declares `{name}` in `launch.settings`, but it is "
+                f"not set where the factory runs, so the command ran without it"
+                for name in missing
+            ]
+        return out
 
 
 def start_command_evidence(request: Optional[EvidenceRequest], **kwargs: Any) -> CommandEvidence:

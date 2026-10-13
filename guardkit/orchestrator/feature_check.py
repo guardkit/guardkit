@@ -46,8 +46,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.run_evidence import EvidenceRequest, start_command_evidence
+from guardkit.orchestrator.process_group import run_in_own_group
+from guardkit.orchestrator.project_command_env import (
+    minimal_environment_note,
+    project_command_environment,
+)
 from guardkit.orchestrator.launch_declaration import (
-    apply_launch_environment,
     load_launch_declaration,
 )
 from guardkit.orchestrator.toolchain_declaration import load_toolchain_declaration
@@ -799,9 +803,11 @@ def run_feature_check_command(
     """Run the declared command in the feature worktree; report what happened.
 
     ``shell=True`` for the same reason the smoke gate uses it: the project
-    wrote a command line, not an argv. The environment is the daemon's plus
-    the four ``GUARDKIT_*`` names the check is promised, plus (when known) the
-    bootstrap venv on PATH so a bare ``python`` means the project's python.
+    wrote a command line, not an argv. The environment is built from nothing
+    (``project_command_env``, 13 October 2026), never the daemon's own with
+    its credentials: the four ``GUARDKIT_*`` names the check is promised are
+    the factory's additions, plus (when known) the bootstrap venv on PATH so a
+    bare ``python`` means the project's python.
 
     The result also carries ``run_evidence`` (repair 7): what the command ran
     against, recorded around the run and never read for the outcome.
@@ -812,23 +818,34 @@ def run_feature_check_command(
     on top. A malformed block or a scratch folder that cannot be prepared
     means the check could not start. ``None``, or no block: unchanged.
     """
-    env = os.environ.copy()
-    if venv_python:
-        env["PATH"] = (
-            str(Path(venv_python).parent) + os.pathsep + env.get("PATH", "")
-        )
-    env.update(env_extra or {})
+    # Never None (that would inherit everything): empty until the helper
+    # has built it, and the command does not run unless it has.
+    env: Dict[str, str] = {}
+    declared: Sequence[str] = ()
     try:
-        if launch_root is not None:
-            env = apply_launch_environment(
-                env, load_launch_declaration(Path(launch_root)), cwd
-            )
+        declaration = (
+            load_launch_declaration(Path(launch_root))
+            if launch_root is not None
+            else None
+        )
+        declared = declaration.settings if declaration is not None else ()
+        env = project_command_environment(
+            Path(cwd),
+            declaration,
+            additions=dict(env_extra or {}),
+            path_first=(str(Path(venv_python).parent),) if venv_python else (),
+        )
         launch_fault: Optional[OSError] = None
     except OSError as exc:
         launch_fault = exc
 
     record = start_command_evidence(
-        evidence, command=command, execution_root=cwd, cwd=cwd, env=env
+        evidence,
+        command=command,
+        execution_root=cwd,
+        cwd=cwd,
+        env=env if launch_fault is None else None,
+        declared_settings=declared,
     )
     started = time.monotonic()
     if launch_fault is not None:
@@ -841,25 +858,16 @@ def run_feature_check_command(
             "run_evidence": record.finish(),
         }
     try:
-        proc = subprocess.run(
+        # A process group of its own (13 October 2026): a timeout ends
+        # everything the check started (a server, a ``sleep``), not only the
+        # shell, and never touches GuardKit's own group.
+        proc = run_in_own_group(
             command,
             shell=True,
             cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
             env=env,
+            timeout=timeout,
         )
-    except subprocess.TimeoutExpired as exc:
-        duration = time.monotonic() - started
-        return {
-            "exit_code": None,
-            "timed_out": True,
-            "stdout": _decode(exc.stdout),
-            "stderr": _decode(exc.stderr),
-            "duration_seconds": duration,
-            "run_evidence": record.finish(),
-        }
     except OSError as exc:
         duration = time.monotonic() - started
         # A command that cannot even start (no such shell, unreadable cwd) is
@@ -873,6 +881,15 @@ def run_feature_check_command(
             "run_evidence": record.finish(),
         }
     duration = time.monotonic() - started
+    if proc.timed_out:
+        return {
+            "exit_code": None,
+            "timed_out": True,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "duration_seconds": duration,
+            "run_evidence": record.finish(),
+        }
     return {
         "exit_code": proc.returncode,
         "timed_out": False,
@@ -880,6 +897,11 @@ def run_feature_check_command(
         "stderr": proc.stderr or "",
         "duration_seconds": duration,
         "run_evidence": record.finish(),
+        # Names only, never values: what the factory held back, for the
+        # failure detail of a command that did not pass.
+        "environment_note": (
+            minimal_environment_note(env) if proc.returncode != 0 else ""
+        ),
     }
 
 

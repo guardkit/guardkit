@@ -51,7 +51,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence
 
 from guardkit.orchestrator.launch_declaration import (
-    apply_main_checkout_launch_environment,
+    load_launch_declaration,
+    main_checkout_root,
+)
+from guardkit.orchestrator.project_command_env import (
+    minimal_environment_note,
+    project_command_environment,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -515,6 +520,13 @@ class DetectedManifest:
             return poetry_value
 
         return None
+
+
+def _with_note(excerpt: str, note: str) -> str:
+    """``excerpt`` with the minimal-environment ``note`` after it, if any."""
+    if not note:
+        return excerpt
+    return f"{excerpt}\n{note}" if excerpt else note
 
 
 @dataclass
@@ -1754,6 +1766,9 @@ class EnvironmentBootstrapper:
         # the helpers can retain their bool return type (and existing tests
         # that assert ``is True`` / ``is False`` don't regress).
         self._last_failure_stderr: str = ""
+        # The environment the last failing command ran with, so its failure
+        # detail can name (never show) the settings that were held back.
+        self._last_failure_env: Optional[Dict[str, str]] = None
         self._last_failure_is_pep668: bool = False
 
     def bootstrap(
@@ -1934,7 +1949,10 @@ class EnvironmentBootstrapper:
                 BootstrapFailureDetail(
                     stack=manifest.stack,
                     manifest_path=str(manifest.path),
-                    stderr_excerpt=self._last_failure_stderr,
+                    stderr_excerpt=_with_note(
+                        self._last_failure_stderr,
+                        minimal_environment_note(self._last_failure_env),
+                    ),
                     is_pep668=self._last_failure_is_pep668,
                     requires_python=manifest.get_requires_python(),
                     essential=essential,
@@ -2565,6 +2583,7 @@ class EnvironmentBootstrapper:
             subprocess.run(
                 [sys.executable, "-m", "venv", str(venv_dir)],
                 check=True,
+                env=self._project_env(),
             )
         else:
             logger.info(
@@ -2651,6 +2670,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=300,
+                env=self._project_env(),
             )
         else:
             logger.info(
@@ -2758,73 +2778,70 @@ class EnvironmentBootstrapper:
             capture_output=True,
             text=True,
             timeout=300,
+            env=self._project_env(),
         )
         return venv_python
 
-    def _python_install_env(
-        self, manifest: DetectedManifest
-    ) -> Optional[Dict[str, str]]:
+    def _python_install_env(self, manifest: DetectedManifest) -> Dict[str, str]:
         """
-        Compute the subprocess env override for a Python install command.
+        The environment for one install command (13 October 2026).
 
-        Returns ``None`` for non-Python manifests (so they inherit
-        ``os.environ`` unchanged). Returns ``None`` for Python manifests
-        when ``self._venv_python`` is not set (test fixtures calling
-        ``_run_install`` directly without going through ``bootstrap()``,
-        and the legacy PEP 668 first-try call where the venv hasn't been
-        created yet — the retry call constructs its own env from the
-        just-created venv).
-
-        Otherwise returns ``self._isolated_env(<venv_dir>)`` where
-        ``<venv_dir>`` is the parent of ``<venv>/bin/python``.
+        Always the project-command environment built from nothing
+        (:meth:`_project_env`). For a Python manifest with a worktree venv
+        already made, ``VIRTUAL_ENV`` names that venv and its ``bin`` is put
+        in front of ``PATH``, so an inherited parent venv can never receive
+        the install. Every other command gets the same environment without
+        those two.
         """
-        if manifest.stack != "python":
-            return None
-        if self._venv_python is None:
-            return None
+        if manifest.stack != "python" or self._venv_python is None:
+            return self._project_env()
         # _venv_python is <venv_dir>/bin/python; venv_dir is .parent.parent.
-        venv_dir = self._venv_python.parent.parent
-        return self._isolated_env(venv_dir)
+        return self._project_env(self._venv_python.parent.parent)
 
     def _isolated_env(self, worktree_venv: Path) -> Dict[str, str]:
         """
-        Build a subprocess env dict that forces ``VIRTUAL_ENV`` to point
-        at the worktree-local venv.
-
-        Strips inherited ``VIRTUAL_ENV`` first so we never accidentally
-        fall through to the parent shell's venv even if a future uv
-        version changes precedence between ``$VIRTUAL_ENV`` and
-        explicit args. The strip-then-set order matters — relying solely
-        on ``{**os.environ, "VIRTUAL_ENV": ...}`` semantics works today
-        but is brittle to future runtime changes.
+        The project-command environment with ``VIRTUAL_ENV`` set to the
+        worktree-local venv and its ``bin`` first on ``PATH``.
 
         Parameters
         ----------
         worktree_venv : Path
             Absolute path to the worktree-local venv directory (NOT the
-            interpreter path). For the eager-creation path this is
+            interpreter). For the uv-sources retry path this is
             ``<worktree>/.venv``; for PEP 668 fallback it is
             ``<worktree>/.guardkit/venv``.
-
-        Returns
-        -------
-        Dict[str, str]
-            Subprocess env dict with ``VIRTUAL_ENV`` set and
-            ``<worktree_venv>/bin`` prepended to ``PATH``.
-
-        Notes
-        -----
-        See:
-            - TASK-FIX-FF61 AC-002
-            - .claude/rules/namespace-hygiene.md (parent venv as
-              externally-defined namespace)
         """
-        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        env["VIRTUAL_ENV"] = str(worktree_venv)
-        env["PATH"] = (
-            str(worktree_venv / "bin") + os.pathsep + env.get("PATH", "")
+        return self._project_env(worktree_venv)
+
+    def _project_env(self, worktree_venv: Optional[Path] = None) -> Dict[str, str]:
+        """
+        The environment every command this bootstrapper runs gets.
+
+        Built from nothing by ``project_command_env.project_command_environment``
+        (design ``factory-project-commands-without-factory-credentials``): the
+        factory's credentials are never passed to the project's install. The
+        project's ``launch:`` block is read from the main checkout the
+        worktree was cut from, never from the worktree the builder edits, so
+        the declared settings and scratch folders reach every install,
+        including the retries. ``VIRTUAL_ENV`` and the venv's ``bin`` are the
+        only things the factory adds, and only when a venv is named.
+
+        Raises
+        ------
+        LaunchEnvironmentError
+            An ``OSError``: no scratch folder, a malformed ``launch:`` block or
+            a proxy setting carrying credentials. Every caller already treats
+            "the command could not start" as the install's failure.
+        """
+        declaration = load_launch_declaration(main_checkout_root(self._root))
+        if worktree_venv is None:
+            return project_command_environment(self._root, declaration)
+        return project_command_environment(
+            self._root,
+            declaration,
+            additions={"VIRTUAL_ENV": str(worktree_venv)},
+            path_first=(str(Path(worktree_venv) / "bin"),),
         )
-        return env
 
     def _run_install(self, manifest: DetectedManifest) -> bool:
         """
@@ -2875,11 +2892,7 @@ class EnvironmentBootstrapper:
         if self._venv_python and is_python_cmd:
             cmd[0] = str(self._venv_python)
 
-        # FFC6 (AC-004): for Python install commands, pass env= with
-        # VIRTUAL_ENV pointing at the worktree-local venv. Strips inherited
-        # parent VIRTUAL_ENV. Non-Python commands (npm, dotnet, cargo, ...)
-        # inherit env unchanged.
-        env = self._python_install_env(manifest)
+        self._last_failure_env = None
 
         # TS-lane D.1b: a DECLARED command runs at the repo root (its ``path``
         # is .guardkit/config.yaml, which exists only for content hashing) and
@@ -2896,11 +2909,13 @@ class EnvironmentBootstrapper:
             " ".join(cmd),
         )
         try:
-            # The project's `launch:` settings and scratch folders (12
-            # October 2026), read from the main checkout, never the worktree
-            # the Player edits. Unchanged without a block; a malformed one or
-            # a missing scratch folder fails this install with the reason.
-            env = apply_main_checkout_launch_environment(env, self._root)
+            # The environment built from nothing (13 October 2026): the
+            # project's `launch:` settings and scratch folders, read from the
+            # main checkout, and for a Python install with a venv,
+            # VIRTUAL_ENV pointing at it. A malformed block or a missing
+            # scratch folder fails this install with the reason.
+            env = self._python_install_env(manifest)
+            self._last_failure_env = env
             proc = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -2932,6 +2947,7 @@ class EnvironmentBootstrapper:
                 # PEP 668 venv (<root>/.guardkit/venv) as the worktree-local
                 # interpreter root.
                 retry_env = self._isolated_env(venv_python.parent.parent)
+                self._last_failure_env = retry_env
                 logger.info(
                     "PEP 668: retrying install for %s (%s): %s",
                     manifest.stack,
@@ -3003,6 +3019,7 @@ class EnvironmentBootstrapper:
                 # future precedence changes). Observable shape preserved:
                 # VIRTUAL_ENV set to <cwd>/.venv, PATH prepended.
                 retry_env = self._isolated_env(venv_dir)
+                self._last_failure_env = retry_env
                 logger.info(
                     "uv-sources: retrying install for %s (%s) with VIRTUAL_ENV=%s: %s",
                     manifest.stack,
@@ -3115,17 +3132,17 @@ class EnvironmentBootstrapper:
         if self._venv_python and is_python_cmd:
             run_cmd[0] = str(self._venv_python)
 
-        # FFC6 (AC-004): Python pip commands receive isolated env so
-        # inherited parent VIRTUAL_ENV cannot route the install into the
-        # parent venv. Non-Python commands inherit env unchanged.
-        env: Optional[Dict[str, str]] = None
-        if is_python_cmd and self._venv_python is not None:
-            env = self._isolated_env(self._venv_python.parent.parent)
-
+        self._last_failure_env = None
         logger.info("Running dep-install: %s", " ".join(run_cmd))
         try:
-            # The project's `launch:` block, as in ``_run_install``.
-            env = apply_main_checkout_launch_environment(env, self._root)
+            # Built from nothing, as in ``_run_install``. Python pip commands
+            # get VIRTUAL_ENV pointing at the worktree venv so an inherited
+            # parent venv cannot receive the install.
+            if is_python_cmd and self._venv_python is not None:
+                env = self._isolated_env(self._venv_python.parent.parent)
+            else:
+                env = self._project_env()
+            self._last_failure_env = env
             proc = subprocess.run(
                 run_cmd,
                 cwd=str(cwd),
@@ -3149,6 +3166,7 @@ class EnvironmentBootstrapper:
                 retry_cmd[0] = str(venv_python)
                 # FFC6 (AC-004): retry must also receive isolated env.
                 retry_env = self._isolated_env(venv_python.parent.parent)
+                self._last_failure_env = retry_env
                 logger.info(
                     "PEP 668: retrying dep-install: %s", " ".join(retry_cmd)
                 )

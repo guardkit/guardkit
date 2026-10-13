@@ -2003,7 +2003,33 @@ def _check_direct_mode_bin_entries(
     # let guardkit's own installed ``src`` satisfy an import the producer is
     # actually missing, masking the failure (the false-green this gate closes).
     # cwd is the worktree, not the host (TASK-FIX-COACHCWD01 cwd-leak lesson).
-    probe_env = {**os.environ, "PYTHONPATH": str(worktree)}
+    # Built from nothing (13 October 2026): the producer is the build's code
+    # and never sees the factory's credentials.
+    from guardkit.orchestrator.launch_declaration import (
+        load_launch_declaration,
+        main_checkout_root,
+    )
+    from guardkit.orchestrator.project_command_env import (
+        project_command_environment,
+    )
+
+    try:
+        probe_env = project_command_environment(
+            worktree,
+            load_launch_declaration(main_checkout_root(worktree)),
+            additions={"PYTHONPATH": str(worktree)},
+        )
+    except OSError as exc:
+        return [
+            {
+                "severity": "should_fix",
+                "category": "direct_mode_bin_entry_unverifiable",
+                "description": (
+                    f"Registered bin-entries could not be probed: {exc} "
+                    f"(absent signal)."
+                ),
+            }
+        ]
 
     issues: List[Dict[str, Any]] = []
     for rel_path in targets:
@@ -6317,7 +6343,21 @@ class AutoBuildOrchestrator:
         if not command:
             logger.debug("machine-verify: no recorded suite command; reds unavailable")
             return None
+        from guardkit.orchestrator.launch_declaration import (
+            load_launch_declaration,
+            main_checkout_root,
+        )
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
         try:
+            # Built from nothing (13 October 2026): the recorded suite is the
+            # project's command and never sees the factory's credentials.
+            env = project_command_environment(
+                Path(worktree.path),
+                load_launch_declaration(main_checkout_root(Path(worktree.path))),
+            )
             proc = subprocess.run(
                 command,
                 cwd=str(worktree.path),
@@ -6325,6 +6365,7 @@ class AutoBuildOrchestrator:
                 capture_output=True,
                 text=True,
                 timeout=1800,
+                env=env,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             logger.warning(

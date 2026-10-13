@@ -41,13 +41,26 @@ from an empty dictionary, in five steps, each working on the one before:
 Steps 2 to 5 are :func:`finish_project_environment`, for a caller that builds
 its own base. Nothing else is passed. Anything else a project needs, it
 declares in ``launch.settings``. Nothing here names a stack.
+
+Every place GuardKit runs a project's command builds its environment here
+(design ``factory-project-commands-without-factory-credentials-2026-10-13``).
+``test_every_process_launch_is_accounted_for`` in
+``tests/orchestrator/test_project_commands_without_factory_credentials.py``
+fails on any process launch in the package that neither uses this module nor
+is one of the factory's own programs.
+
+What the project is told (names only, never values):
+:func:`declared_settings_not_set` and :func:`declared_not_set_sentence` for a
+declared setting that is not set where the factory runs, and
+:func:`minimal_environment_note` for a failed command.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from guardkit.orchestrator.launch_declaration import (
     DECLARED_NAME_PATTERN,
@@ -58,14 +71,23 @@ from guardkit.orchestrator.launch_declaration import (
     _private_directory,
     apply_launch_environment,
     declared_setting_refusal,
+    load_launch_declaration,
+    main_checkout_root,
 )
 
 __all__ = [
     "PROXY_NAMES",
     "RUN_OWNER_NAME",
+    "declared_not_set_sentence",
+    "declared_settings_not_set",
     "finish_project_environment",
+    "main_checkout_environment",
+    "minimal_environment_note",
     "project_command_environment",
+    "withheld_settings",
 ]
+
+logger = logging.getLogger(__name__)
 
 #: The marker Forge's stop sweep reads; only ever taken from the parent.
 RUN_OWNER_NAME = "GUARDKIT_RUN_OWNER"
@@ -97,6 +119,19 @@ def _addition_refusal(name: object) -> Optional[str]:
         if word in upper:
             return f"{name!r} is credential-shaped (it contains {word!r})"
     return None
+
+
+def _scratch_folder(work_folder: Path) -> Optional[Path]:
+    """The work folder's scratch folder (outside the project), or ``None``.
+
+    ``paths.prepare_builder_scratch_dir``: inside the work folder's own git
+    directory. ``None`` when the work folder is not a git checkout, and the
+    command then does not run. (One function so the test suite's plain
+    temporary folders, which are not git checkouts, can be given one.)
+    """
+    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
+
+    return prepare_builder_scratch_dir(work_folder)
 
 
 def finish_project_environment(
@@ -146,9 +181,9 @@ def finish_project_environment(
     )
     if carrying:
         raise LaunchEnvironmentError(
-            f"the proxy setting {', '.join(carrying)} carries a user name or "
-            f"password, so it is not passed to the project's commands and they "
-            f"were not run"
+            f"could not run: the proxy setting {', '.join(carrying)} carries a "
+            f"user name and password, and the factory does not pass credentials "
+            f"to project commands"
         )
 
     for name in [key for key in result if key.upper() == RUN_OWNER_NAME]:
@@ -204,9 +239,7 @@ def project_command_environment(
         if value is not None:
             env[name] = value
 
-    from guardkit.orchestrator.paths import prepare_builder_scratch_dir
-
-    scratch = prepare_builder_scratch_dir(Path(work_folder))
+    scratch = _scratch_folder(Path(work_folder))
     if scratch is None:
         raise LaunchEnvironmentError(
             f"the work folder {work_folder} has no usable scratch folder for "
@@ -221,6 +254,7 @@ def project_command_environment(
     # taken for ``env=None``).
     result = apply_launch_environment(env, declaration, Path(work_folder))
     composed = dict(result if result is not None else env)
+    _say_declared_not_set(declaration)
 
     # Steps 2 to 5.
     return finish_project_environment(
@@ -228,4 +262,114 @@ def project_command_environment(
         additions=additions,
         overlay=overlay,
         scratch_names=declaration.scratch if declaration is not None else (),
+    )
+
+
+
+def main_checkout_environment(
+    work_folder: Path,
+    *,
+    additions: Mapping[str, str] = {},  # noqa: B006 - read only, never mutated
+    path_first: Sequence[str] = (),
+) -> Dict[str, str]:
+    """:func:`project_command_environment` with the main checkout's block.
+
+    For a site that holds no declaration of its own: the ``launch:`` block is
+    read from the checkout ``work_folder`` was cut from
+    (``launch_declaration.main_checkout_root``), never from the worktree the
+    builder edits. The same policy, not a second one. Raises as
+    :func:`project_command_environment` does, and
+    ``LaunchDeclarationError`` (also a ``LaunchEnvironmentError``) for a
+    malformed block.
+    """
+    folder = Path(work_folder)
+    return project_command_environment(
+        folder,
+        load_launch_declaration(main_checkout_root(folder)),
+        additions=additions,
+        path_first=path_first,
+    )
+
+# =========================================================================
+# What the project is told: names only, never values (design section 4)
+# =========================================================================
+
+#: Shell bookkeeping a person never means to pass; left out of the list a
+#: failed command offers, so the names that matter are not buried.
+_SHELL_BOOKKEEPING = frozenset({"_", "PWD", "OLDPWD", "SHLVL"})
+
+#: Declared names already reported as not set, so a long build says it once.
+_ALREADY_SAID: set = set()
+
+
+def declared_settings_not_set(
+    declaration: Optional[LaunchDeclaration],
+) -> List[str]:
+    """The ``launch.settings`` names that are not set where the factory runs."""
+    if declaration is None:
+        return []
+    return [name for name in declaration.settings if name not in os.environ]
+
+
+def declared_not_set_sentence(name: str) -> str:
+    """The plain sentence for one declared setting that is not set."""
+    return (
+        f"the project declares `{name}` in `launch.settings`, but it is not set "
+        f"where the factory runs, so the command ran without it"
+    )
+
+
+def _say_declared_not_set(declaration: Optional[LaunchDeclaration]) -> None:
+    for name in declared_settings_not_set(declaration):
+        if name in _ALREADY_SAID:
+            continue
+        _ALREADY_SAID.add(name)
+        logger.warning(declared_not_set_sentence(name))
+
+
+def withheld_settings(env: Mapping[str, str]) -> Tuple[List[str], int]:
+    """Settings GuardKit holds that a command with ``env`` did not get.
+
+    Returns the names a project is allowed to declare (they pass
+    ``declared_setting_refusal``), sorted, and how many of the factory's own
+    reserved names were also held back. Those are counted, never named as
+    something to declare. Values are never read out.
+    """
+    offerable: List[str] = []
+    own = 0
+    for name in os.environ:
+        if name in env or name in _SHELL_BOOKKEEPING:
+            continue
+        if declared_setting_refusal(name) is None:
+            offerable.append(name)
+        else:
+            own += 1
+    return sorted(offerable), own
+
+
+def minimal_environment_note(env: Optional[Mapping[str, str]]) -> str:
+    """The sentence added to a failed project command's detail.
+
+    Empty when ``env`` is ``None`` (the command never had an environment).
+    Names only: no value of any setting appears in it.
+    """
+    if env is None:
+        return ""
+    offerable, own = withheld_settings(env)
+    listed = ", ".join(f"`{name}`" for name in offerable)
+    held = (
+        f"Settings the factory holds that were not given to it: {listed}."
+        if offerable
+        else "The factory holds no other setting a project could declare."
+    )
+    if own:
+        held += (
+            f" ({own} of the factory's own settings were also held back; a "
+            f"project cannot declare those.)"
+        )
+    return (
+        "This command ran with the factory's minimal environment. "
+        + held
+        + " If the command needs one, add its name to `launch.settings` in "
+        "`.guardkit/config.yaml`."
     )

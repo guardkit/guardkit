@@ -224,7 +224,9 @@ class TestRunBddAuthoringSweep:
 
         argv = captured["argv"]
         assert "-m" not in argv
-        assert captured["env"] is None  # inherited env; no task-id injection
+        # Built from nothing (13 October 2026), and no task-id injection.
+        assert captured["env"] is not None
+        assert "GUARDKIT_BDD_TASK_ID" not in captured["env"]
         assert any(str(owned_glue) == a for a in argv)
         assert any("_authoring_junit.xml" in a for a in argv)
 

@@ -52,6 +52,20 @@ from guardkit.orchestrator.run_evidence import (
 from guardkit.orchestrator.toolchain_declaration import parse_toolchain_block
 
 
+#: The environment of the command a record is for. Since 13 October 2026 the
+#: inventory runs only with that environment (always the project-command
+#: helper's in GuardKit), never with ``None``, which would inherit the
+#: factory's own.
+_PROJECT_ENV = {"PATH": os.environ.get("PATH", "")}
+
+
+def test_the_inventory_never_inherits_the_factory_environment(tmp_path):
+    request = EvidenceRequest(kind="t", environment_inventory="printf ran > ran.txt")
+    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    assert record["status"].startswith("not recorded: the command this record is for had no")
+    assert not (tmp_path / "ran.txt").exists()
+
+
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True
@@ -232,7 +246,7 @@ def test_origin_identity_of_a_plain_directory_says_so(tmp_path):
 
 def test_declared_inventory_is_saved_with_its_hash(tmp_path):
     request = EvidenceRequest(kind="t", environment_inventory="printf 'pkg==1.0\\n'")
-    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    record = run_environment_inventory(request, cwd=tmp_path, env=_PROJECT_ENV)
 
     assert record["status"] == "recorded"
     assert record["output"] == "pkg==1.0\n"
@@ -243,7 +257,7 @@ def test_declared_inventory_is_saved_with_its_hash(tmp_path):
 def test_inventory_output_is_capped_but_hashed_whole(tmp_path):
     request = EvidenceRequest(kind="t", environment_inventory="printf 'abcdefghij'")
     record = run_environment_inventory(
-        request, cwd=tmp_path, env=None, limits=EvidenceLimits(inventory_output_bytes=4)
+        request, cwd=tmp_path, env=_PROJECT_ENV, limits=EvidenceLimits(inventory_output_bytes=4)
     )
     assert record["output"] == "abcd" and record["output_truncated"] is True
     assert record["output_sha256"] == hashlib.sha256(b"abcdefghij").hexdigest()
@@ -294,7 +308,7 @@ def test_inventory_runs_before_the_first_source_observation(repo):
         kind="t", environment_inventory="printf x > inventory-side-effect.txt"
     )
     record = CommandEvidence(
-        request, command="x", execution_root=repo, docker=_no_docker()
+        request, command="x", execution_root=repo, docker=_no_docker(), env=_PROJECT_ENV
     ).begin().finish()
     # The inventory's own write lands before the "before" observation, so it
     # is not reported as a change made during the command.
@@ -423,7 +437,7 @@ def test_a_helper_limit_holds_even_when_a_setsid_child_keeps_the_pipes(tmp_path)
         kind="t", environment_inventory="setsid sleep 12 & sleep 60", inventory_timeout=1
     )
     started = _time.monotonic()
-    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    record = run_environment_inventory(request, cwd=tmp_path, env=_PROJECT_ENV)
     elapsed = _time.monotonic() - started
 
     assert record["status"] == "not recorded: timed out after 1s"
@@ -631,7 +645,7 @@ def test_excessive_helper_output_is_streamed_kept_bounded_and_hashed_whole(tmp_p
     assert run.stdout_sha256 == hashlib.sha256(b"\0" * size).hexdigest()
     assert run.stdout_truncated is True and run.returncode == 0
 
-    record = run_environment_inventory(request, cwd=tmp_path, env=None)
+    record = run_environment_inventory(request, cwd=tmp_path, env=_PROJECT_ENV)
     assert record["status"] == "recorded"
     assert record["output_bytes"] == size and record["output_truncated"] is True
     assert len(record["output"]) == EvidenceLimits().inventory_output_bytes

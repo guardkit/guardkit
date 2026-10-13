@@ -637,6 +637,13 @@ def run_repo_tests(
     interpreter = _resolve_repo_interpreter(repo)
     argv, shell = _build_repo_test_argv(repo.test_command, interpreter)
     try:
+        # Built from nothing (13 October 2026), with the sibling repo's own
+        # ``launch:`` block: its tests never see the factory's credentials.
+        from guardkit.orchestrator.project_command_env import (
+            main_checkout_environment,
+        )
+
+        env = main_checkout_environment(Path(repo.root))
         proc = subprocess.run(
             argv,
             cwd=str(repo.root),
@@ -644,6 +651,7 @@ def run_repo_tests(
             text=True,
             timeout=timeout,
             shell=shell,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return EvidenceTestResult(

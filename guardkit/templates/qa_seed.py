@@ -95,12 +95,18 @@ class SuiteObservation:
 
 
 def _default_suite_runner(argv: List[str], cwd: Path) -> Tuple[int, str]:
+    # The source suite is a project's code: it runs in the project-command
+    # environment built from nothing (13 October 2026), never the factory's.
+    from guardkit.orchestrator.project_command_env import main_checkout_environment
+
+    env = main_checkout_environment(Path(cwd))
     proc = subprocess.run(
         argv,
         cwd=str(cwd),
         capture_output=True,
         text=True,
         timeout=_DEFAULT_OBSERVE_TIMEOUT,
+        env=env,
     )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 

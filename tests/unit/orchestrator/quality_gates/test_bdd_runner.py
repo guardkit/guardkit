@@ -10,6 +10,7 @@ and the public ``run_bdd_for_task`` wiring with crafted JUnit XML payloads.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import List
@@ -638,8 +639,9 @@ class TestBddTaskIdEnvThreading:
     def test_invoke_preserves_inherited_env(
         self, tmp_path: Path, monkeypatch
     ):
-        # AC: setting GUARDKIT_BDD_TASK_ID must not strip the parent env
-        # (PATH, PYTHONPATH, etc.). os.environ.copy() then update.
+        # AC: setting GUARDKIT_BDD_TASK_ID keeps PATH. Since 13 October 2026
+        # the rest of this process's environment is NOT inherited: it is
+        # built from nothing, so an undeclared setting stays out.
         monkeypatch.setenv("GUARDKIT_BDD_PROBE_VAR", "probe-value")
         feature = tmp_path / "x.feature"
         feature.write_text(_PASS_FEATURE, encoding="utf-8")
@@ -657,16 +659,16 @@ class TestBddTaskIdEnvThreading:
 
         env = captured["env"]
         assert env is not None
-        assert env.get("GUARDKIT_BDD_PROBE_VAR") == "probe-value"
+        assert "GUARDKIT_BDD_PROBE_VAR" not in env
+        assert env["PATH"] == os.environ["PATH"]
         assert env[bdd_runner._BDD_TASK_ID_ENV] == "TASK-FG-002"
 
     def test_invoke_without_task_id_inherits_env_unchanged(
         self, tmp_path: Path, monkeypatch
     ):
-        # AC (regression): the legacy single-task path (task_id=None) must
-        # leave the subprocess env exactly inherited — passing env=None to
-        # subprocess.run delegates that to the OS rather than constructing
-        # a clean dict, which is the pre-AB-004 behaviour.
+        # AC (regression): the legacy single-task path (task_id=None) sets
+        # no task id. Since 13 October 2026 it no longer inherits this
+        # process's environment either: it gets one built from nothing.
         feature = tmp_path / "x.feature"
         feature.write_text(_PASS_FEATURE, encoding="utf-8")
         junit = tmp_path / "junit.xml"
@@ -681,8 +683,9 @@ class TestBddTaskIdEnvThreading:
             task_id=None,
         )
 
-        # env=None preserves pre-fix behaviour (subprocess inherits parent).
-        assert captured["env"] is None
+        assert captured["env"] is not None
+        assert bdd_runner._BDD_TASK_ID_ENV not in captured["env"]
+        assert captured["env"]["PATH"] == os.environ["PATH"]
 
 
 # ---------------------------------------------------------------------------
@@ -1156,27 +1159,33 @@ class TestBDDResultSerialisation:
 
 
 class TestHasPytestBdd:
-    def test_subprocess_path_returncode_zero_means_available(self, monkeypatch):
+    def test_subprocess_path_returncode_zero_means_available(self, monkeypatch, tmp_path):
         # Drive the subprocess branch of has_pytest_bdd.
         class _Proc:
             returncode = 0
 
         monkeypatch.setattr(bdd_runner.subprocess, "run", lambda *a, **k: _Proc())
-        assert bdd_runner.has_pytest_bdd(python_executable="/usr/bin/python") is True
+        assert bdd_runner.has_pytest_bdd(
+            python_executable="/usr/bin/python", work_folder=tmp_path
+        ) is True
 
-    def test_subprocess_path_returncode_nonzero_means_unavailable(self, monkeypatch):
+    def test_subprocess_path_returncode_nonzero_means_unavailable(self, monkeypatch, tmp_path):
         class _Proc:
             returncode = 1
 
         monkeypatch.setattr(bdd_runner.subprocess, "run", lambda *a, **k: _Proc())
-        assert bdd_runner.has_pytest_bdd(python_executable="/usr/bin/python") is False
+        assert bdd_runner.has_pytest_bdd(
+            python_executable="/usr/bin/python", work_folder=tmp_path
+        ) is False
 
-    def test_subprocess_path_swallows_oserror(self, monkeypatch):
+    def test_subprocess_path_swallows_oserror(self, monkeypatch, tmp_path):
         def raise_oserror(*a, **k):
             raise OSError("no such interpreter")
 
         monkeypatch.setattr(bdd_runner.subprocess, "run", raise_oserror)
-        assert bdd_runner.has_pytest_bdd(python_executable="/no/such/python") is False
+        assert bdd_runner.has_pytest_bdd(
+            python_executable="/no/such/python", work_folder=tmp_path
+        ) is False
 
 
 # ---------------------------------------------------------------------------
