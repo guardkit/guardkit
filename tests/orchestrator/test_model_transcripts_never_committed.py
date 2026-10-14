@@ -6,8 +6,11 @@ tool output too large to keep inline (``large_tool_results/``). A transcript
 quotes every path the model saw. On 14 October 2026 a build's first
 checkpoint committed one into a public project's branch. The factory now
 keeps these files outside the worktree; these tests prove the guard behind
-that: none of GuardKit's three commit sites commits them, at any depth,
-whether they were staged beforehand or not, while real changes still go in.
+that: none of GuardKit's three commit sites commits them, whether they were
+staged beforehand or not, while real changes still go in. Transcripts are
+caught at the worktree root, where the model's libraries write them, so a
+product's own ``src/conversation_history/`` is still committed; oversized
+tool output is caught at any depth, as before.
 
 The three sites, run through the same public entry points the build uses,
 are shared with ``test_private_records_never_committed.py``.
@@ -31,7 +34,8 @@ from tests.orchestrator.test_private_records_never_committed import (  # noqa: F
 
 TRANSCRIPT = "conversation_history/x.md"
 LARGE_RESULT = "large_tool_results/y"
-NESTED = "packages/app/conversation_history/session_1.md"
+NESTED_RESULT = "packages/app/large_tool_results/z"
+PRODUCT_FOLDER = "src/conversation_history/store.py"
 ORDINARY = "src/feature.txt"
 
 
@@ -53,7 +57,7 @@ def test_stray_model_files_are_not_committed_but_real_changes_are(
     repo = _init_repo(tmp_path / "repo")
     _write(repo, TRANSCRIPT, "## Summarized\n/placeholder/home/user/project\n")
     _write(repo, LARGE_RESULT, "a very large tool result\n")
-    _write(repo, NESTED, "a nested transcript\n")
+    _write(repo, NESTED_RESULT, "a nested tool result\n")
     _write(repo, ORDINARY, "the Player's work\n")
 
     caplog.set_level(logging.WARNING)
@@ -62,7 +66,7 @@ def test_stray_model_files_are_not_committed_but_real_changes_are(
     committed = _committed_names(repo)
     assert ORDINARY in committed, committed
     tree = _tree(repo)
-    for path in (TRANSCRIPT, LARGE_RESULT, NESTED):
+    for path in (TRANSCRIPT, LARGE_RESULT, NESTED_RESULT):
         assert path not in tree, tree
         assert (repo / path).is_file(), "the file stays on disk"
     warnings = _model_warnings(caplog)
@@ -96,12 +100,27 @@ def test_no_warning_when_there_are_no_model_files(
 ) -> None:
     repo = _init_repo(tmp_path / "repo")
     _write(repo, ORDINARY, "the Player's work\n")
-    # A file whose name only resembles the folders is ordinary work.
+    # A file whose name only resembles the folders is ordinary work, and so
+    # is a product folder of the same name below the root.
     _write(repo, "docs/conversation_history.md", "a design note\n")
+    _write(repo, PRODUCT_FOLDER, "class Store: ...\n")
 
     caplog.set_level(logging.WARNING)
     site(repo, tmp_path, 1)
 
     committed = _committed_names(repo)
     assert ORDINARY in committed and "docs/conversation_history.md" in committed
+    assert PRODUCT_FOLDER in committed, committed
     assert not _model_warnings(caplog)
+
+
+def test_a_staged_product_conversation_history_folder_is_committed(
+    site, tmp_path: Path
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, PRODUCT_FOLDER, "class Store: ...\n")
+    _git(repo, "add", "--", PRODUCT_FOLDER)
+
+    site(repo, tmp_path, 1)
+
+    assert PRODUCT_FOLDER in _committed_names(repo)

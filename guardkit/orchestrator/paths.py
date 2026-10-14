@@ -900,7 +900,12 @@ def prepare_builder_scratch_dir(worktree: Path) -> Optional[Path]:
         return None
     try:
         if not os.path.lexists(scratch):
-            scratch.mkdir(mode=0o700)
+            try:
+                scratch.mkdir(mode=0o700)
+            except FileExistsError:
+                # Another build for this worktree made it first (14 October
+                # 2026); the checks below still apply to what is there.
+                pass
         if scratch.is_symlink() or not scratch.is_dir():
             logger.warning(f"Builder scratch folder is not a real folder: {scratch}")
             return None

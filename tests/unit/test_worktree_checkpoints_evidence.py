@@ -518,8 +518,8 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/.flutter",
             ":(exclude,glob)**/.flutter/**",
             ":(exclude,glob)**/large_tool_results/**",
-            # The coding model's transcripts (14 October 2026).
-            ":(exclude,glob)**/conversation_history/**",
+            # The coding model's transcripts, root only (14 October 2026).
+            ":(exclude,glob)conversation_history/**",
             ":(exclude,glob)**/node_modules/**",
             ":(exclude,glob)**/.next/**",
             ":(exclude,glob)**/.turbo/**",

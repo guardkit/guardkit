@@ -157,9 +157,12 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # factory now keeps these files outside the worktree; this is the guard
     # if one appears anyway. :func:`unstage_private_records` also takes out
     # any already staged, here and under ``large_tool_results/``, and warns.
-    # The same trade as the rest of this list: a project folder with this
-    # exact name, at any depth, is not checkpointed.
-    ":(exclude,glob)**/conversation_history/**",
+    # Anchored at the ROOT on purpose, unlike the rest of this list: the
+    # model's libraries only ever write it at the top of the worktree (the
+    # commands run from there), while a product may well have a folder of
+    # this name of its own, such as ``src/conversation_history/``, which must
+    # still be checkpointed.
+    ":(exclude,glob)conversation_history/**",
     # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
     ":(exclude,glob)**/node_modules/**",
     ":(exclude,glob)**/.next/**",
@@ -246,10 +249,12 @@ PRIVATE_RECORDS_PATHSPEC: str = pattern_pathspec(":(glob)**/.guardkit/autobuild-
 _warned_tracked_private_records: Set[Tuple[str, str]] = set()
 _warned_tracked_private_records_lock = threading.Lock()
 
-#: The coding model's own working files, at any depth (14 October 2026):
-#: summarised conversation transcripts and oversized tool output.
+#: The coding model's own working files (14 October 2026): summarised
+#: conversation transcripts at the worktree root (where the model's libraries
+#: write them; a product's own ``src/conversation_history/`` is left alone),
+#: and oversized tool output at any depth, as the add already excludes it.
 MODEL_ARTIFACT_PATHSPECS: Tuple[str, ...] = (
-    pattern_pathspec(":(glob)**/conversation_history/**"),
+    pattern_pathspec(":(glob)conversation_history/**"),
     pattern_pathspec(":(glob)**/large_tool_results/**"),
 )
 
@@ -347,8 +352,8 @@ def unstage_private_records(
     rewrite history.
 
     The same step keeps the coding model's own working files
-    (``conversation_history/`` and ``large_tool_results/`` at any depth) out
-    of the commit, and warns when any are present
+    (``conversation_history/`` at the root, ``large_tool_results/`` at any
+    depth) out of the commit, and warns when any are present
     (:func:`_leave_out_model_artifacts`, 14 October 2026).
 
     Returns the paths it unstaged.
