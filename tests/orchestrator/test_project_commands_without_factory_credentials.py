@@ -1488,21 +1488,40 @@ _FINISH = "guardkit.orchestrator.project_command_env.finish_project_environment"
 #: The factory's own programs, recognised from a literal first argument.
 FACTORY_PROGRAMS = {"git", "docker", "pgrep", "ps"}
 
-_LAUNCHES = {
-    "subprocess": {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"},
-    "asyncio": {"create_subprocess_exec", "create_subprocess_shell"},
-    "os": {
-        "system", "popen", "execl", "execle", "execlp", "execlpe", "execv", "execve",
-        "execvp", "execvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv",
-        "spawnve", "spawnvp", "spawnvpe", "posix_spawn", "posix_spawnp", "fork", "forkpty",
-    },
-    "pty": {"spawn", "fork"},
+#: Every name a process launch goes by, in any launch module.
+LAUNCH_NAMES = {
+    "run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput",
+    "create_subprocess_exec", "create_subprocess_shell", "subprocess_exec", "subprocess_shell",
+    "system", "popen", "startfile",
+    "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp", "execvpe",
+    "spawn", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp", "spawnvpe",
+    "posix_spawn", "posix_spawnp", "fork", "forkpty",
 }
-#: Launch methods recognised on any object: ``asyncio.subprocess.create_*``
-#: and an event loop's ``subprocess_exec`` / ``subprocess_shell``.
+#: Launch-shaped names that run no process: asyncio's event-loop runner.
+NOT_LAUNCHES = {"asyncio.run", "asyncio.runners.run"}
+#: The modules launches live in; their submodules count too (asyncio.subprocess).
+LAUNCH_MODULES = {"subprocess", "os", "asyncio", "pty", "multiprocessing", "posix", "nt"}
+#: Launch methods recognised on any object: an event loop's
+#: ``subprocess_exec`` / ``subprocess_shell`` and ``create_subprocess_*``.
 _ANY_RECEIVER_LAUNCHES = {
     "create_subprocess_exec", "create_subprocess_shell", "subprocess_exec", "subprocess_shell",
 }
+
+
+def _is_launch_module(dotted: str) -> bool:
+    """A launch module, or one of its submodules."""
+    return any(dotted == m or dotted.startswith(m + ".") for m in LAUNCH_MODULES)
+
+
+def _is_launch_target(dotted: str) -> bool:
+    """THE ONE PREDICATE for a launch function: its resolved name ends in a
+    launch name and its module is a launch module or a submodule of one. Used
+    for direct, attribute and bare imported calls, guarded names and the
+    alias rule alike, so no form can fall through a table gap."""
+    module, _, last = dotted.rpartition(".")
+    if dotted in NOT_LAUNCHES:
+        return False
+    return bool(module) and last in LAUNCH_NAMES and _is_launch_module(module)
 class _Module(SimpleNamespace):
     rel: str
     dotted: str
@@ -1977,20 +1996,23 @@ def _wrappers(modules: List[_Module]) -> set:
     return found
 
 
+def _possible_targets(mod: _Module, node: ast.AST) -> set:
+    """Every dotted name a plain or dotted name can stand for, through every
+    import of its root anywhere in the module."""
+    if isinstance(node, ast.Name):
+        return set(mod.imports.get(node.id, ()))
+    if isinstance(node, ast.Attribute):
+        return {f"{base}.{node.attr}" for base in _possible_targets(mod, node.value)}
+    return set()
+
+
 def _launch_kind(mod: _Module, node: ast.AST) -> Optional[str]:
     """What launch ``node`` (a call target or a value) names, if any."""
-    if isinstance(node, ast.Attribute):
-        if node.attr in _ANY_RECEIVER_LAUNCHES:
-            return _dotted(node)
-        if isinstance(node.value, ast.Name):
-            for module in sorted(mod.imports.get(node.value.id, ())):
-                if module in _LAUNCHES and node.attr in _LAUNCHES[module]:
-                    return f"{module}.{node.attr}"
-    if isinstance(node, ast.Name):
-        for target in sorted(mod.imports.get(node.id, ())):
-            module, _, name = target.rpartition(".")
-            if module in _LAUNCHES and name in _LAUNCHES[module]:
-                return target
+    if isinstance(node, ast.Attribute) and node.attr in _ANY_RECEIVER_LAUNCHES:
+        return _dotted(node)
+    for target in sorted(_possible_targets(mod, node)):
+        if _is_launch_target(target):
+            return target
     return None
 
 
@@ -2124,7 +2146,7 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
         for alias, targets in mod.imports.items():
             for target in targets:
                 module, _, last = target.rpartition(".")
-                if last in base or target in HELPERS or (module in _LAUNCHES and last in _LAUNCHES[module]):
+                if last in base or target in HELPERS or _is_launch_target(target):
                     reserved.add(alias)
 
         def flag(node: ast.AST, name: str, how: str) -> None:
@@ -2171,14 +2193,15 @@ def _guarded_names(mod: _Module, runner_ids: set) -> Dict[str, str]:
             module, _, last = target.rpartition(".")
             # Only the guarded name's own spelling: any other spelling is an
             # alias, which is a violation in itself (_aliased_guarded_imports).
-            if (target in _LAUNCHES or target == "asyncio.subprocess") and name == target.split(".")[0]:
-                guarded[name] = "module"
-            elif name == last and (
-                (module in _LAUNCHES and last in _LAUNCHES[module])
-                or target in runner_ids
-                or target in HELPERS
+            if name == last and (
+                _is_launch_target(target) or target in runner_ids or target in HELPERS
             ):
-                guarded.setdefault(name, "function")
+                guarded[name] = "function"
+            elif _is_launch_module(target) and (
+                name == target.split(".")[0]  # import subprocess / os / asyncio ...
+                or name == last  # a launch submodule: from asyncio import subprocess
+            ):
+                guarded.setdefault(name, "module")
     for node in mod.tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and f"{mod.dotted}.{node.name}" in runner_ids:
             guarded.setdefault(node.name, "function")
@@ -2186,10 +2209,7 @@ def _guarded_names(mod: _Module, runner_ids: set) -> Dict[str, str]:
 
 
 def _launch_attribute_names() -> set:
-    names = set(_ANY_RECEIVER_LAUNCHES)
-    for launches in _LAUNCHES.values():
-        names.update(launches)
-    return names
+    return set(LAUNCH_NAMES)
 
 
 def _indirect_use(mod: _Module, node: ast.Name, kind: str) -> Optional[str]:
@@ -2214,12 +2234,14 @@ def _indirect_use(mod: _Module, node: ast.Name, kind: str) -> Optional[str]:
             f"cannot be checked"
         )
     chain = parent
-    launch_attr = chain.attr in _launch_attribute_names()
+    launch_attr = any(_is_launch_target(t) for t in _possible_targets(mod, chain))
     while True:
         above = mod.parents.get(id(chain))
         if isinstance(above, ast.Attribute) and above.value is chain:
             chain = above
-            launch_attr = launch_attr or chain.attr in _launch_attribute_names()
+            launch_attr = launch_attr or any(
+                _is_launch_target(t) for t in _possible_targets(mod, chain)
+            )
             continue
         break
     if launch_attr and not (isinstance(above, ast.Call) and above.func is chain):
@@ -2269,7 +2291,7 @@ def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[st
                 aliased = [
                     f"{a.name} as {a.asname}" for a in node.names
                     if a.asname and a.asname != a.name
-                    and (a.name in _LAUNCHES or a.name == "asyncio.subprocess")
+                    and _is_launch_module(a.name)
                 ]
             elif isinstance(node, ast.ImportFrom):
                 # One resolver for every identity: relative levels included.
@@ -2279,9 +2301,8 @@ def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[st
                         continue
                     module, _, last = target.rpartition(".")
                     if (
-                        (module in _LAUNCHES and last in _LAUNCHES[module])
-                        or (module.split(".")[0] == "asyncio" and last in _ANY_RECEIVER_LAUNCHES)
-                        or (module == "asyncio" and last == "subprocess")
+                        _is_launch_target(target)
+                        or _is_launch_module(target)  # from asyncio import subprocess as x
                         or target in runner_ids
                         or target in HELPERS
                         # Belt and braces: a distinctive guarded name is never
@@ -2367,7 +2388,7 @@ def unaccounted_launches(package: Path) -> List[str]:
                     _dotted(node.func) in ("__import__", "importlib.import_module", "import_module")
                     and node.args
                     and isinstance(node.args[0], ast.Constant)
-                    and str(node.args[0].value).split(".")[0] in _LAUNCHES
+                    and _is_launch_module(str(node.args[0].value))
                 ):
                     _, fname = place(mod, node)
                     if (mod.rel, fname) not in ALLOWED:
@@ -3062,6 +3083,41 @@ GUARD_PROBES = textwrap.dedent(
                 return dict(os.environ)
 
 
+    async def v92_bare_create_subprocess_shell(cmd):
+        from asyncio.subprocess import create_subprocess_shell
+        await create_subprocess_shell(cmd)
+
+
+    async def v93_bare_create_subprocess_exec(cmd):
+        from asyncio.subprocess import create_subprocess_exec
+        await create_subprocess_exec(cmd)
+
+
+    def v94_bare_os_system(cmd):
+        from os import system
+        system(cmd)
+
+
+    def v95_bare_pty_spawn(cmd):
+        from pty import spawn
+        spawn(cmd)
+
+
+    async def v96_bare_asyncio_create_subprocess_exec(cmd):
+        from asyncio import create_subprocess_exec
+        await create_subprocess_exec(cmd)
+
+
+    async def ok_bare_create_subprocess_shell_with_helper_env(cmd, wf):
+        from asyncio.subprocess import create_subprocess_shell
+        await create_subprocess_shell(cmd, env=project_command_environment(wf, None))
+
+
+    async def ok_bare_create_subprocess_exec_with_helper_env(cmd, wf):
+        from asyncio import create_subprocess_exec
+        await create_subprocess_exec(cmd, env=project_command_environment(wf, None))
+
+
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
         subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
 
@@ -3210,6 +3266,8 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
         "ok_direct_subprocess_run_with_helper_env", "ok_direct_runner_with_helper_env",
         "ok_os_path_and_environ", "ok_unaliased_relative_import_with_helper_env",
+        "ok_bare_create_subprocess_shell_with_helper_env",
+        "ok_bare_create_subprocess_exec_with_helper_env",
     } & named, problems
 
 
