@@ -1117,17 +1117,26 @@ def _nothing_under_qa_holds(project: Project, mark: str) -> None:
             assert mark not in path.read_text(encoding="utf-8", errors="replace"), path
 
 
-@pytest.mark.parametrize("handed_in", [False, True])
+_LOGIN_ADDRESSES = {
+    "well-formed": f"http://user:{MARK}@127.0.0.1:9/",
+    "missing scheme": f"user:{MARK}@127.0.0.1:9/",
+    "malformed scheme": f"http:/user:{MARK}@127.0.0.1:9/",
+}
+
+
+@pytest.mark.parametrize("handed_in", [False, True], ids=["inherited", "supplied"])
+@pytest.mark.parametrize("form", sorted(_LOGIN_ADDRESSES))
 def test_a_gate_address_with_a_login_is_refused_before_preflight(
-    project: Project, monkeypatch: pytest.MonkeyPatch, handed_in: bool
+    project: Project, monkeypatch: pytest.MonkeyPatch, handed_in: bool, form: str
 ) -> None:
     """The address is unreachable too, so pre-flight would fail and record it;
-    the refusal comes first, by name, and nothing is written with the value."""
+    the refusal comes first, by name, and nothing is written with the value,
+    however the address parses (13 October 2026, review R20)."""
     from guardkit.orchestrator.live_gate.errors import LiveGateError
     from guardkit.orchestrator.live_gate.runner import LiveGateRunner
 
     _live_gate_repo(project)
-    address = f"http://user:{MARK}@127.0.0.1:9/"
+    address = _LOGIN_ADDRESSES[form]
     if handed_in:
         runner = LiveGateRunner(project.repo, gate_env={"STANDIN_BASE_URL": address})
     else:
@@ -1139,6 +1148,52 @@ def test_a_gate_address_with_a_login_is_refused_before_preflight(
     assert MARK not in str(caught.value)
     assert not (project.out / "live-gate.env").exists()
     _nothing_under_qa_holds(project, MARK)
+
+
+@pytest.mark.parametrize("handed_in", [False, True], ids=["inherited", "supplied"])
+@pytest.mark.parametrize("address", ["ftp://127.0.0.1:9/", "127.0.0.1:9", "http:///no-host"])
+def test_a_gate_address_that_is_not_http_is_refused_by_name(
+    project: Project, monkeypatch: pytest.MonkeyPatch, handed_in: bool, address: str
+) -> None:
+    from guardkit.orchestrator.live_gate.errors import LiveGateError
+    from guardkit.orchestrator.live_gate.runner import LiveGateRunner
+
+    _live_gate_repo(project)
+    if handed_in:
+        runner = LiveGateRunner(project.repo, gate_env={"STANDIN_BASE_URL": address})
+    else:
+        monkeypatch.setenv("STANDIN_BASE_URL", address)
+        runner = LiveGateRunner(project.repo)
+    with pytest.raises(LiveGateError) as caught:
+        runner.run("PILOT", "local")
+    assert "the gate address in STANDIN_BASE_URL is not an http(s) address" in str(caught.value)
+    assert address not in str(caught.value)
+    assert not (project.out / "live-gate.env").exists()
+
+
+def test_the_reachability_check_never_echoes_a_refused_address() -> None:
+    """The pre-flight provider applies the same rule on its own."""
+    from guardkit.orchestrator.live_gate.preflight import DefaultF16ChecklistProvider
+    from guardkit.qa.formats.gate_registry import GateEntry, GateTarget
+
+    gate = GateEntry(
+        id="g1", path="qa/gates/g1.py",
+        target=GateTarget(base_url_env="STANDIN_BASE_URL", environment_id="local"),
+        pass_bar_ref="qa/pass-bar-T-1.yaml",
+        evidence_dir_pattern="qa/gates/evidence-{date}/shots",
+    )
+    for address in _LOGIN_ADDRESSES.values():
+        result = DefaultF16ChecklistProvider([gate], env={"STANDIN_BASE_URL": address}).checklist()[0]
+        assert result.ok is False and "STANDIN_BASE_URL" in result.detail
+        assert MARK not in result.detail
+
+
+def test_the_shadow_probe_note_never_records_a_login() -> None:
+    from guardkit.qa.qav_shadow import _probe_unreachable_note
+
+    for url in (f"http://user:{MARK}@probe:9/running", f"user:{MARK}@probe:9"):
+        assert MARK not in _probe_unreachable_note(url)
+    assert "http://probe:9/running" in _probe_unreachable_note("http://probe:9/running")
 
 
 def test_a_gate_address_read_from_a_reserved_setting_is_refused_before_preflight(

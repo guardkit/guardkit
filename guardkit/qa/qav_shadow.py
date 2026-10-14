@@ -519,9 +519,24 @@ def _probe_url(cfg: dict, endpoint: str) -> str:
     )
 
 
+def _without_login(url: str) -> str:
+    """``url`` with any user name and password taken out, for a record."""
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return "<address not shown>" if "@" in url else url
+    host, slash, path = rest.partition("/")
+    if "@" in host:
+        host = "<login removed>@" + host.rsplit("@", 1)[1]
+    return f"{scheme}://{host}{slash}{path}"
+
+
 def _probe_unreachable_note(probe_url: str) -> str:
-    """The receipt note for a probe that could not be reached or could not be read."""
-    return f"probe unreachable at {probe_url}; judged without the eligibility check"
+    """The receipt note for a probe that could not be reached or could not be
+    read. A login in the address is never written into the receipt."""
+    return (
+        f"probe unreachable at {_without_login(probe_url)}; judged without the "
+        f"eligibility check"
+    )
 
 
 def _default_running_probe(probe_url: str) -> RunningProbe:

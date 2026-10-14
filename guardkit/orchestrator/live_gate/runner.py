@@ -162,16 +162,16 @@ class LiveGateRunner:
         address is read from (``base_url_env``). That name must be one a
         project may declare (not one of the factory's own, not
         credential-shaped), and its value, read from ``gate_env`` when a
-        caller handed one in or else this process, must not carry a user
-        name or password. Either refusal names the setting and never shows
-        a value, and happens before the pre-flight reachability check, which
+        caller handed one in or else this process, must be an absolute http
+        or https URL with a host and contain no ``@`` anywhere (no user name
+        or password, however it parses). Any refusal names the setting and
+        never shows a value, and happens before the pre-flight reachability check, which
         records the address in the run's history. Only these checked values
         reach the reachability check and the gate scripts. An address that
         is not set is left out (the reachability check says so).
         """
-        from urllib.parse import urlsplit
-
         from guardkit.orchestrator.launch_declaration import declared_setting_refusal
+        from guardkit.orchestrator.live_gate.preflight import gate_address_refusal
 
         source = self.gate_env if self.gate_env is not None else os.environ
         addresses: Dict[str, str] = {}
@@ -187,23 +187,11 @@ class LiveGateRunner:
             value = source.get(name)
             if value is None:
                 continue
-            try:
-                parts = urlsplit(value)
-                carries_login = (
-                    parts.username is not None
-                    or parts.password is not None
-                    or "@" in parts.netloc
-                )
-            except ValueError:
-                carries_login = "@" in value
-            if carries_login:
-                # The same rule as a proxy setting: a login is never passed
-                # to a project's program, and the value is never printed.
-                raise LiveGateError(
-                    f"could not run: the gate address setting {name} carries a "
-                    f"user name and password, and the factory does not pass "
-                    f"credentials to project commands"
-                )
+            # Any "@" anywhere, or anything but an absolute http(s) URL with a
+            # host, is refused by the setting's name; the value is never shown.
+            refusal = gate_address_refusal(name, value)
+            if refusal is not None:
+                raise LiveGateError(refusal)
             addresses[name] = value
         return addresses
 
