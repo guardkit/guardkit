@@ -30,6 +30,7 @@ from guardkit.orchestrator.evidence_repos import (
     resolve_qualified_path,
     split_qualified,
 )
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -1564,12 +1565,20 @@ class CoachVerifier:
 
         # Detect test framework and run appropriate command
         try:
-            result = subprocess.run(
+            # Built from nothing (13 October 2026): the project's tests never
+            # see the factory's credentials.
+            from guardkit.orchestrator.project_command_env import (
+                main_checkout_environment,
+            )
+
+            env = main_checkout_environment(Path(self.worktree_path))
+            result = process_group.run_project_command(
                 cmd,
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=env,
             )
             test_result = TestResult(
                 passed=result.returncode == 0,
@@ -1591,12 +1600,13 @@ class CoachVerifier:
                     fallback_cmd = [python_cmd, "-m", "pytest", "--tb=no", "-q"]
                     if test_paths:
                         fallback_cmd.extend(test_paths)
-                    result = subprocess.run(
+                    result = process_group.run_project_command(
                         fallback_cmd,
                         cwd=self.worktree_path,
                         capture_output=True,
                         text=True,
                         timeout=timeout,
+                        env=env,
                     )
                     test_result = TestResult(
                         passed=result.returncode == 0,

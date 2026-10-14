@@ -38,6 +38,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -501,12 +502,20 @@ def _run_coverage(
     )
 
     try:
-        result = subprocess.run(
+        # Built from nothing (13 October 2026): the project's tests never
+        # see the factory's credentials.
+        from guardkit.orchestrator.project_command_env import (
+            main_checkout_environment,
+        )
+
+        env = main_checkout_environment(Path(worktree_path))
+        result = process_group.run_project_command(
             cmd,
             cwd=str(worktree_path),
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         logger.warning(

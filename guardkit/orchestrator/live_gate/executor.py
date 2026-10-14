@@ -36,6 +36,7 @@ from typing import List, Mapping, Optional, Sequence
 from guardkit.qa.formats.gate_registry import AssertionResult, GateEntry, GateResult
 
 from guardkit.orchestrator.live_gate.errors import LiveGateError
+from guardkit.orchestrator import process_group
 
 #: Default per-gate wall-clock cap. A gate that STARTS and then hangs past this
 #: is a genuine failure (the deployed app hung) — exit code 124, gate fails.
@@ -101,7 +102,7 @@ class SubprocessGateScriptRunner(GateScriptRunner):
         timeout_s: float,
     ) -> GateRun:
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 self._argv(script_path),
                 cwd=str(cwd),
                 env=dict(env),

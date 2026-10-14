@@ -476,8 +476,9 @@ class TestCoachCommands:
         for env in (validator._declared_command_env(), validator._pytest_env()):
             assert env["TOOL_CACHE"] == expected
             assert env["BROWSERS_AT"] == "/opt/browsers"
-            # The Coach's commands keep inheriting this process's HOME.
-            assert env["HOME"] == os.environ["HOME"]
+            # Since 13 October 2026 the Coach's commands get a private HOME
+            # beside the scratch folders, never this process's own.
+            assert env["HOME"] == str(Path(expected).parent / "HOME")
 
     def test_real_go_sees_the_scratch_folders_through_the_coach_env(
         self, repo, monkeypatch
@@ -513,14 +514,21 @@ class TestCoachCommands:
         assert proc.stdout.split() == [str(base / "GOCACHE"), str(base / "GOPATH")]
         assert _files(worktree) == []
 
-    def test_without_a_block_the_env_is_this_process_environment(self, repo):
+    def test_without_a_block_the_env_is_built_from_nothing(self, repo):
+        """Since 13 October 2026 no block no longer means this process's
+        environment: the Coach's command gets one built from nothing."""
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
         from guardkit.orchestrator.quality_gates.coach_validator import (
             CoachValidator,
         )
 
         _, worktree = repo
         validator = CoachValidator(str(worktree), task_id=_TASK_ID)
-        assert validator._declared_command_env() == dict(os.environ)
+        assert validator._declared_command_env() == project_command_environment(
+            worktree, None
+        )
 
 
 class TestFeatureCheck:
@@ -629,18 +637,23 @@ class TestInstallBootstrap:
         assert "OTHER" not in seen["env"]
 
     def test_without_a_block_install_envs_are_unchanged(self, repo, monkeypatch):
-        """Reliability (1): no block means the very env the install had."""
+        """Reliability (1): no block means the helper's environment with no
+        declared names (13 October 2026: built from nothing, never None)."""
         from guardkit.orchestrator import environment_bootstrap as eb
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
 
         root, worktree = repo
         _write_config(root, None)
         seen = self._record(monkeypatch, eb)
         bootstrapper = eb.EnvironmentBootstrapper(worktree)
+        plain = project_command_environment(worktree, None)
 
         assert bootstrapper._run_single_command(["tool", "add"], worktree) is True
-        assert seen["env"] is None
+        assert seen["env"] == plain
         assert bootstrapper._run_install(_declared_manifest(eb, worktree)) is True
-        assert seen["env"] is None
+        assert seen["env"] == plain
         # A Python install keeps its isolated env, byte for byte.
         venv = worktree / ".venv"
         bootstrapper._venv_python = venv / "bin" / "python"
@@ -800,9 +813,18 @@ class TestReliabilityRequirements:
         validator = CoachValidator(str(worktree), task_id=_TASK_ID)
         validator._fixture_env = {"DATABASE_URL": "postgresql://fixture.invalid/db"}
 
-        declared_today = os.environ.copy()
-        declared_today.update(validator._fixture_env)
-        pytest_today = build_venv_env(worktree) or dict(os.environ)
+        # 13 October 2026: built from nothing, with only the fixture URLs
+        # added, never a copy of this process's environment.
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
+        declared_today = project_command_environment(
+            worktree, None, additions=validator._fixture_env
+        )
+        pytest_today = build_venv_env(worktree) or project_command_environment(
+            worktree, None
+        )
         pytest_today.update(validator._fixture_env)
         assert validator._declared_command_env() == declared_today
         assert validator._pytest_env() == pytest_today

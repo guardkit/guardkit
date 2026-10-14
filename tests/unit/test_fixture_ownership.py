@@ -469,19 +469,29 @@ def test_rendered_player_recipe_runs_and_exports_a_working_url(run_owner: str) -
 
 
 class TestServeProbeOwnerMarker:
+    """13 October 2026: the marker comes from this process alone, and a
+    project overlay that names it is refused (the command does not run)."""
+
     def test_owner_marker_copied_from_parent(self, tmp_path, monkeypatch) -> None:
         from guardkit.orchestrator.boot_smoke import _hermetic_env
 
         monkeypatch.setenv(RUN_OWNER_ENV, "build-probe")
-        env = _hermetic_env(tmp_path, {RUN_OWNER_ENV: "project-chosen"})
+        env = _hermetic_env(tmp_path, {"FOO": "1"})
         assert env[RUN_OWNER_ENV] == "build-probe"
+        assert env["FOO"] == "1"
 
     def test_project_cannot_invent_an_owner(self, tmp_path, monkeypatch) -> None:
         from guardkit.orchestrator.boot_smoke import _hermetic_env
+        from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
 
         monkeypatch.delenv(RUN_OWNER_ENV, raising=False)
-        env = _hermetic_env(tmp_path, {RUN_OWNER_ENV: "project-chosen"})
-        assert RUN_OWNER_ENV not in env
+        assert RUN_OWNER_ENV not in _hermetic_env(tmp_path, {"FOO": "1"})
+        for parent in (None, "build-probe"):
+            if parent is not None:
+                monkeypatch.setenv(RUN_OWNER_ENV, parent)
+            with pytest.raises(LaunchEnvironmentError) as caught:
+                _hermetic_env(tmp_path, {RUN_OWNER_ENV: "project-chosen"})
+            assert RUN_OWNER_ENV in str(caught.value)
 
 
 # ============================================================================

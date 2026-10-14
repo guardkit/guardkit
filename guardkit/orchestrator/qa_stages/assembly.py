@@ -125,7 +125,7 @@ def assemble_mutation_campaign(
 
     mutants = build_mutants(repo_root, source_files, operators, base=base)
     sandbox = MutationSandbox(repo_root)
-    runner = make_pytest_runner(test_command, timeout=timeout)
+    runner = make_pytest_runner(test_command, timeout=timeout, work_folder=repo_root)
     result = run_mutation_campaign(sandbox, mutants, runner)
 
     findings: List[Finding] = []

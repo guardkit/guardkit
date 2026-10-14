@@ -54,6 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # (TASK-FIX-SIBTESTENV01 reuses the single source of truth for on-disk
 # venv layouts rather than re-inventing the probe).
 from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -637,13 +638,21 @@ def run_repo_tests(
     interpreter = _resolve_repo_interpreter(repo)
     argv, shell = _build_repo_test_argv(repo.test_command, interpreter)
     try:
-        proc = subprocess.run(
+        # Built from nothing (13 October 2026), with the sibling repo's own
+        # ``launch:`` block: its tests never see the factory's credentials.
+        from guardkit.orchestrator.project_command_env import (
+            main_checkout_environment,
+        )
+
+        env = main_checkout_environment(Path(repo.root))
+        proc = process_group.run_project_command(
             argv,
             cwd=str(repo.root),
             capture_output=True,
             text=True,
             timeout=timeout,
             shell=shell,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return EvidenceTestResult(

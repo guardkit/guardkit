@@ -46,7 +46,7 @@ from contextlib import aclosing, contextmanager
 from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from guardkit.orchestrator.authored_files import (
     NOT_CHECKED_REASON,
@@ -81,7 +81,16 @@ from guardkit.orchestrator.quality_gates.stack_test_execution import (
     detect_stack_profile,
     overlay_declared_profile,
 )
-from guardkit.orchestrator.launch_declaration import apply_task_launch_environment
+from guardkit.orchestrator.launch_declaration import (
+    LaunchEnvironmentError,
+    load_launch_declaration,
+    load_launch_snapshot,
+    main_checkout_root,
+)
+from guardkit.orchestrator.project_command_env import (
+    minimal_environment_note,
+    project_command_environment,
+)
 from guardkit.orchestrator.toolchain_declaration import (
     ComponentToolchain,
     ToolchainDeclaration,
@@ -144,12 +153,24 @@ from guardkit.orchestrator.harness import (
 )
 from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
 from guardkit.orchestrator.sdk_utils import check_assistant_message_error
+from guardkit.orchestrator import process_group
 
 # Coach architecture-context integration (TASK-SC-009) was retired in the
 # fleet-memory cutover (FEAT-MEM-09): build_coach_context was never invoked and
 # was built on the now-removed graphiti planning stack.
 
 logger = logging.getLogger(__name__)
+
+# Optional open() flags, read directly from os (not through getattr) so the
+# launch guard sees os used only through its attributes; 0 where absent.
+try:
+    _O_NOFOLLOW = os.O_NOFOLLOW
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NOFOLLOW = 0
+try:
+    _O_NONBLOCK = os.O_NONBLOCK
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NONBLOCK = 0
 
 # TASK-ABFIX-011: default per-test pytest-timeout (seconds) the Coach injects
 # into its isolated pytest run so a single hanging test is marked FAILED while
@@ -305,6 +326,68 @@ except ImportError:
     analyze_stub_scan = None  # type: ignore[misc,assignment]
     analyze_wiring = None  # type: ignore[misc,assignment]
     _WIRING_FACTORY_AVAILABLE = False
+except Exception as _wiring_import_error:  # noqa: BLE001
+    # 13 October 2026: guardkitfactory failing while it imports (for
+    # example a plugin's checks failing at registration) must not take down
+    # the Coach. The analyzer is then unavailable, exactly as when the
+    # package is not installed, and the reason is logged.
+    logging.getLogger(__name__).warning(
+        "guardkitfactory could not be imported, so the wiring analyzer is "
+        "unavailable: %s: %s",
+        type(_wiring_import_error).__name__,
+        _wiring_import_error,
+    )
+    analyze_stub_scan = None  # type: ignore[misc,assignment]
+    analyze_wiring = None  # type: ignore[misc,assignment]
+    _WIRING_FACTORY_AVAILABLE = False
+
+def _worktree_venv_bin(worktree_path: Path) -> Tuple[str, ...]:
+    """The worktree venv's ``bin`` to put first on PATH, or nothing."""
+    from guardkit.orchestrator.quality_gates.command_models import venv_path_first
+
+    return venv_path_first(worktree_path)
+
+
+def _checker_env(
+    validator: "CoachValidator",
+    *,
+    additions: Optional[Dict[str, str]] = None,
+    path_first: Sequence[str] = (),
+    fixtures: bool = False,
+    git_ceiling: Optional[Path] = None,
+    main_checkout: bool = False,
+) -> Dict[str, str]:
+    """The environment one of the checker's project commands runs with,
+    built from nothing (see ``CoachValidator._project_env`` for what each
+    argument adds). A module-level function, so the process-launch guard can
+    rely on it (a method could be overridden); the methods delegate here."""
+    return project_command_environment(
+        validator.worktree_path,
+        validator._launch_declaration(main_checkout),
+        additions=validator._command_additions(additions, fixtures, git_ceiling),
+        path_first=path_first,
+    )
+
+
+def _checker_pytest_env(
+    validator: "CoachValidator", git_ceiling: Optional[Path] = None
+) -> Dict[str, str]:
+    """The checker's pytest-run environment: the worktree venv's ``bin``
+    first on PATH and this task's test-service URLs."""
+    return _checker_env(
+        validator,
+        path_first=_worktree_venv_bin(validator.worktree_path),
+        fixtures=True,
+        git_ceiling=git_ceiling,
+    )
+
+
+def _checker_declared_env(
+    validator: "CoachValidator", git_ceiling: Optional[Path] = None
+) -> Dict[str, str]:
+    """The checker's declared-command environment, with the test-service URLs."""
+    return _checker_env(validator, fixtures=True, git_ceiling=git_ceiling)
+
 
 def _is_wiring_factory_available() -> bool:
     """Return True when the guardkitfactory wiring analyzer is importable.
@@ -4007,20 +4090,16 @@ class CoachValidator:
                 skipped_reason="parallel_wave",
             )
 
-        # PATH-prepend the bootstrap venv so a bare ``python`` / ``pytest`` in
-        # the smoke command resolves to the right interpreter (mirrors
-        # smoke_gates.run_smoke_gate's venv handling).
-        env: Optional[dict] = None
-        if self._venv_python is not None:
-            env = os.environ.copy()
-            env["PATH"] = (
-                str(Path(self._venv_python).parent)
-                + os.pathsep
-                + env.get("PATH", "")
-            )
-
         try:
-            proc = subprocess.run(
+            # Built from nothing (13 October 2026), with the main checkout's
+            # ``launch:`` block as the smoke gate reads it, and the bootstrap
+            # venv first on PATH so a bare ``python`` / ``pytest`` in the smoke
+            # command resolves to the right interpreter (mirrors
+            # smoke_gates.run_smoke_gate's venv handling).
+            env = _checker_env(self,
+                path_first=self._venv_bin_first(), main_checkout=True
+            )
+            proc = process_group.run_project_command(
                 command,
                 shell=True,
                 cwd=str(self.worktree_path),
@@ -4302,17 +4381,9 @@ class CoachValidator:
 
         interpreter = self._pytest_interpreter()
         cmd = [interpreter, "-m", "pytest", str(oracle_path)]
-        env: Optional[dict] = None
-        if self._venv_python is not None:
-            env = os.environ.copy()
-            env["PATH"] = (
-                str(Path(self._venv_python).parent)
-                + os.pathsep
-                + env.get("PATH", "")
-            )
 
         return self._execute_oracle(
-            cmd, oracle_rel, timeout_seconds, env, "python",
+            cmd, oracle_rel, timeout_seconds, self._venv_bin_first(), "python",
         )
 
     @staticmethod
@@ -4490,14 +4561,19 @@ class CoachValidator:
             return fail("receipt_unsafe")
 
         result["receipt_validation"]["path"] = str(receipt_path)
-        env = os.environ.copy()
-        env["GUARDKIT_CANDIDATE_ROOT"] = str(worktree_resolved)
-        env["GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT"] = str(receipt_path)
         start_time = time.time()
         proc: Optional[subprocess.CompletedProcess[str]] = None
         # Repair 7: what the oracle command ran against, on its own receipt.
         result["run_evidence"] = oracle_evidence = {}
         try:
+            # Built from nothing; the two paths the oracle is promised are the
+            # factory's own additions for this one command.
+            env = _checker_env(self,
+                additions={
+                    "GUARDKIT_CANDIDATE_ROOT": str(worktree_resolved),
+                    "GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT": str(receipt_path),
+                }
+            )
             proc = self._run_recorded(
                 command,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
@@ -4560,9 +4636,7 @@ class CoachValidator:
             receipt_metadata = os.lstat(receipt_path)
             if not stat.S_ISREG(receipt_metadata.st_mode):
                 return fail("receipt_unsafe")
-            flags = os.O_RDONLY | os.O_NONBLOCK
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
+            flags = os.O_RDONLY | os.O_NONBLOCK | _O_NOFOLLOW
             fd = os.open(receipt_path, flags)
             try:
                 receipt_stat = os.fstat(fd)
@@ -4617,7 +4691,8 @@ class CoachValidator:
         """Execute a shell command as the behavioural oracle.
 
         Runs via ``subprocess.run(shell=True)`` with ``cwd`` set to the
-        worktree root. Environment inherits the process's ``os.environ``.
+        worktree root, in the project-command environment built from nothing
+        (``project_command_env``), never the factory's own.
 
         Args:
             command: The shell command string to execute.
@@ -4648,6 +4723,7 @@ class CoachValidator:
         start_time = time.time()
         oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
+            env = _checker_env(self)
             proc = self._run_recorded(
                 command,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
@@ -4657,7 +4733,7 @@ class CoachValidator:
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
-                env=os.environ.copy(),
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             duration = time.time() - start_time
@@ -4731,7 +4807,7 @@ class CoachValidator:
         cmd: list,
         oracle_rel: str,
         timeout_seconds: float,
-        env: Optional[dict],
+        path_first: Sequence[str],
         oracle_type: str,
     ) -> Optional[Dict[str, Any]]:
         """Execute an oracle subprocess and return its result.
@@ -4743,7 +4819,8 @@ class CoachValidator:
             cmd: The command to execute.
             oracle_rel: Relative path of the oracle (for logging/provenance).
             timeout_seconds: Maximum execution time.
-            env: Environment dict or None.
+            path_first: Folders put in front of PATH (the bootstrap venv's
+                ``bin``); the environment itself is built from nothing.
             oracle_type: Human-readable type label ("python" or "command").
 
         Returns:
@@ -4752,6 +4829,7 @@ class CoachValidator:
         start_time = time.time()
         oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
+            env = _checker_env(self, path_first=path_first)
             proc = self._run_recorded(
                 cmd,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
@@ -6508,23 +6586,6 @@ class CoachValidator:
                 "Could not remove the isolated copy's holder %s: %s", holder, exc
             )
 
-    @staticmethod
-    def _with_git_ceiling(env: Dict[str, str], holder: Path) -> Dict[str, str]:
-        """Stop git, run inside the copy, from finding a repository above it.
-
-        The copy deliberately has no ``.git``. Beside the worktree, the folder
-        above it can belong to a git checkout (the build's own clone), and a
-        ``git`` command in the test suite would otherwise act on that
-        checkout. ``GIT_CEILING_DIRECTORIES`` set to the holder makes git
-        behave as it did in the system temp folder: no repository here.
-        """
-        env = dict(env)
-        existing = env.get("GIT_CEILING_DIRECTORIES")
-        env["GIT_CEILING_DIRECTORIES"] = (
-            f"{holder}{os.pathsep}{existing}" if existing else str(holder)
-        )
-        return env
-
     def _pytest_interpreter(self) -> str:
         """Return the interpreter Coach should run pytest under.
 
@@ -6578,24 +6639,95 @@ class CoachValidator:
             return f"{self._pytest_interpreter()} -m pytest{timeout_suffix}"
         return test_cmd
 
-    def _pytest_env(self) -> Dict[str, str]:
+    def _pytest_env(self, git_ceiling: Optional[Path] = None) -> Dict[str, str]:
         """Environment for subprocess pytest runs, with venv bin on PATH.
 
         TASK-FIX-COACHPYENV: pinning ``argv[0]`` to the venv interpreter is the
         load-bearing fix; prepending the venv ``bin`` to PATH is defence-in-depth
         so any nested ``python``/console-script the tests shell out to also
-        resolves inside the bootstrap environment. Falls back to the parent
-        environment when no venv exists.
+        resolves inside the bootstrap environment. Built from nothing
+        (:meth:`_project_env`), with this task's test-service URLs.
         """
-        from guardkit.orchestrator.quality_gates.command_models import (
-            build_venv_env,
+        return _checker_pytest_env(self, git_ceiling)
+
+    def _held_back_note(self) -> str:
+        """Which settings a project command's environment held back, by name
+        only (``project_command_env.minimal_environment_note``); empty when
+        the environment cannot be built, which the failure already says."""
+        try:
+            return minimal_environment_note(_checker_declared_env(self))
+        except OSError:
+            return ""
+
+    def _venv_bin_first(self) -> Tuple[str, ...]:
+        """The bootstrap venv's ``bin`` to put first on PATH, when known."""
+        if self._venv_python is None:
+            return ()
+        return (str(Path(self._venv_python).parent),)
+
+    def _project_env(
+        self,
+        *,
+        additions: Optional[Dict[str, str]] = None,
+        path_first: Sequence[str] = (),
+        fixtures: bool = False,
+        git_ceiling: Optional[Path] = None,
+        main_checkout: bool = False,
+    ) -> Dict[str, str]:
+        """The environment one of the checker's project commands runs with.
+
+        Built from nothing by ``project_command_env.project_command_environment``
+        (design ``factory-project-commands-without-factory-credentials``,
+        13 October 2026): the factory's credentials never reach the project's
+        tests, oracle, smoke or criteria commands. The declaration is the
+        task's pinned ``launch:`` block (or, with ``main_checkout``, the main
+        checkout's block, for the commands the smoke gate also runs).
+
+        The factory's own additions for one command:
+
+        * ``fixtures`` — the URLs of the test services this validator started
+          (:meth:`_start_infrastructure_containers`), for the test commands;
+        * ``git_ceiling`` — ``GIT_CEILING_DIRECTORIES`` for a run inside the
+          isolated copy. The copy deliberately has no ``.git``; beside the
+          worktree, the folder above it can belong to a git checkout (the
+          build's own clone), and a ``git`` command in the test suite would
+          otherwise act on that checkout. Set to the holder, git behaves as
+          it did in the system temp folder: no repository here;
+        * ``additions`` — anything else the caller is promised.
+
+        Raises ``LaunchEnvironmentError`` (an ``OSError``) when the command
+        cannot be given its environment; every caller treats that as "the
+        command could not start".
+        """
+        return _checker_env(
+            self,
+            additions=additions,
+            path_first=path_first,
+            fixtures=fixtures,
+            git_ceiling=git_ceiling,
+            main_checkout=main_checkout,
         )
 
-        env = build_venv_env(self.worktree_path) or dict(os.environ)
-        env.update(getattr(self, "_fixture_env", {}))
-        return apply_task_launch_environment(
-            env, getattr(self, "task_id", None), self.worktree_path
-        )
+    def _launch_declaration(self, main_checkout: bool) -> Any:
+        """The task's pinned ``launch:`` block, or the main checkout's."""
+        if main_checkout:
+            return load_launch_declaration(main_checkout_root(self.worktree_path))
+        return load_launch_snapshot(getattr(self, "task_id", None), self.worktree_path)
+
+    def _command_additions(
+        self,
+        additions: Optional[Dict[str, str]],
+        fixtures: bool,
+        git_ceiling: Optional[Path],
+    ) -> Dict[str, str]:
+        """The factory's own additions for one of the checker's commands."""
+        adds: Dict[str, str] = {}
+        if fixtures:
+            adds.update(getattr(self, "_fixture_env", {}) or {})
+        if git_ceiling is not None:
+            adds["GIT_CEILING_DIRECTORIES"] = str(git_ceiling)
+        adds.update(additions or {})
+        return adds
 
     # ------------------------------------------------------------------
     # TASK-ABFIX-011: gated per-test pytest-timeout injection
@@ -6672,7 +6804,7 @@ class CoachValidator:
         if interpreter == sys.executable:
             return importlib.util.find_spec("pytest_timeout") is not None
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 [
                     interpreter,
                     "-c",
@@ -6683,6 +6815,7 @@ class CoachValidator:
                 capture_output=True,
                 text=True,
                 timeout=15,
+                env=_checker_env(self),
             )
             return proc.returncode == 0
         except Exception as exc:  # subprocess error / timeout / OSError
@@ -7296,9 +7429,7 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=self._with_git_ceiling(
-                                self._pytest_env(), holder
-                            ),
+                            env=_checker_pytest_env(self, git_ceiling=holder),
                         )
                 else:
                     # Per-component seam: the isolated copy is a copy of the
@@ -7315,9 +7446,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=self._with_git_ceiling(
-                            self._declared_command_env(), holder
-                        ),
+                        env=_checker_declared_env(self, git_ceiling=holder),
                     )
 
                 duration = time.time() - start_time
@@ -7475,6 +7604,13 @@ class CoachValidator:
             request = self._evidence_request(kind)
         except Exception:  # noqa: BLE001
             request = None
+        try:
+            pinned = load_launch_snapshot(
+                getattr(self, "task_id", None), self.worktree_path
+            )
+            declared = pinned.settings if pinned is not None else ()
+        except Exception:  # noqa: BLE001 — evidence never fails a check
+            declared = ()
         return start_command_evidence(
             request,
             command=command,
@@ -7483,6 +7619,7 @@ class CoachValidator:
             env=env,
             execution_root_is=EVIDENCE_ROOT_DESCRIPTIONS.get(kind, kind),
             origin=origin,
+            declared_settings=declared,
         )
 
     def _keep_run_evidence(self, evidence: "CommandEvidence") -> None:
@@ -7503,20 +7640,22 @@ class CoachValidator:
         record_into: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ):
-        """``subprocess.run(args, **kwargs)``, with the command recorded.
+        """Run one project command, with the command recorded.
 
-        The command is run by the same ``subprocess.run`` call, with the same
-        arguments, as before; the record is made around it and kept whether
-        the command returns, times out or fails to start. With
-        ``record_into`` the record is written into that dict (the caller's
-        own receipt) instead of this check's list of runs.
+        The command is run with ``process_group.run_project_command``: the
+        same arguments, results and exceptions as ``subprocess.run``, but in
+        a process group of its own, so a timeout ends everything the command
+        started, not only the shell (13 October 2026). The record is made
+        around it and kept whether the command returns, times out or fails to
+        start. With ``record_into`` the record is written into that dict (the
+        caller's own receipt) instead of this check's list of runs.
         """
         kind, execution_root, origin = evidence
         record = self._begin_run_evidence(
-            kind, args, Path(execution_root), origin, kwargs.get("cwd"), kwargs.get("env")
+            kind, args, Path(execution_root), origin, kwargs.get("cwd"), env=kwargs.get("env")
         )
         try:
-            return subprocess.run(args, **kwargs)
+            return process_group.run_project_command(args, **kwargs)
         finally:
             if record_into is None:
                 self._keep_run_evidence(record)
@@ -7699,7 +7838,7 @@ class CoachValidator:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                     sdk_evidence = self._begin_run_evidence(
-                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, None
+                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, env=None
                     )
                     try:
                         result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
@@ -7809,7 +7948,7 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=self._pytest_env(),
+                            env=_checker_pytest_env(self),
                         )
                 else:
                     # TS-lane D.1b (design §B.5): the declared / non-pytest
@@ -7831,7 +7970,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=self._declared_command_env(),
+                        env=_checker_declared_env(self),
                     )
 
                 duration = time.time() - start_time
@@ -7840,6 +7979,10 @@ class CoachValidator:
                 # Summarize output (truncate if too long)
                 output = result.stdout or result.stderr or "No output"
                 summary = self._summarize_test_output(output)
+                if not tests_passed:
+                    # Names only, never values: which settings the factory
+                    # held back from this command (13 October 2026).
+                    summary = f"{summary}\n{self._held_back_note()}"
 
                 # TASK-FIX-BSEXTRAS01 (absence-of-failure-is-not-success):
                 # distinguish "the oracle ran and the Player's tests failed"
@@ -8413,7 +8556,7 @@ class CoachValidator:
             CommandVerificationResult,
             _assert_worktree_path,
             normalise_pip_command,
-            build_venv_env,
+            venv_path_first,
         )
         from guardkit.orchestrator.quality_gates.criteria_classifier import (
             classify_acceptance_criteria as _classify,
@@ -8438,14 +8581,13 @@ class CoachValidator:
 
         _assert_worktree_path(self.worktree_path)
 
-        env = build_venv_env(self.worktree_path)
-        if env is not None:
-            # The first PATH entry is what build_venv_env prepended —
-            # either ``.guardkit/venv/bin`` (bootstrap) or ``.venv/bin``
-            # (legacy). Log the actual value so post-mortems can tell
-            # which interpreter Coach verified against.
-            prepended = env["PATH"].split(os.pathsep, 1)[0]
-            logger.info("Prepended virtualenv PATH: %s", prepended)
+        path_first = venv_path_first(self.worktree_path)
+        if path_first:
+            # The venv ``bin`` put first on PATH — either
+            # ``.guardkit/venv/bin`` (bootstrap) or ``.venv/bin`` (legacy).
+            # Log the actual value so post-mortems can tell which
+            # interpreter Coach verified against.
+            logger.info("Prepended virtualenv PATH: %s", path_first[0])
 
         elapsed_total = 0.0
         for criterion in command_criteria:
@@ -8470,7 +8612,11 @@ class CoachValidator:
                     )
 
                 start = time.monotonic()
-                proc = subprocess.run(
+                # Built from nothing (13 October 2026): an acceptance
+                # criterion's command is the project's, never handed the
+                # factory's credentials.
+                env = _checker_env(self, path_first=path_first)
+                proc = process_group.run_project_command(
                     cmd,
                     shell=True,
                     cwd=str(self.worktree_path),
@@ -8530,6 +8676,34 @@ class CoachValidator:
                         criterion.text[:80],
                     )
 
+            except LaunchEnvironmentError as exc:
+                # The command could not be given its environment (no scratch
+                # folder, a malformed ``launch:`` block, a proxy carrying
+                # credentials): it did not run, and that is a failure with
+                # the plain reason, never a silent skip.
+                reason = f"the command could not start: {exc}"
+                verification.results.append(
+                    CommandExecutionResult(
+                        criterion_text=criterion.text,
+                        extracted_command=criterion.extracted_command or "",
+                        passed=False,
+                        exit_code=None,
+                        stdout="",
+                        stderr=reason[:500],
+                        elapsed_seconds=0.0,
+                        timed_out=False,
+                    )
+                )
+                verification.failures.append(
+                    CommandFailureRecord(
+                        command=criterion.extracted_command or "",
+                        criterion_text=criterion.text,
+                        returncode=None,
+                        stderr=reason[:500],
+                        stdout="",
+                        classification="environment",
+                    )
+                )
             except subprocess.TimeoutExpired:
                 elapsed_total += per_command_timeout
                 verification.results.append(
@@ -10295,14 +10469,14 @@ class CoachValidator:
         timeout = self._declared_coverage_timeout()
         started = time.time()
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 command,
                 shell=True,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=self._declared_command_env(),
+                env=_checker_declared_env(self),
             )
         except subprocess.TimeoutExpired:
             return {
@@ -10482,13 +10656,16 @@ class CoachValidator:
             requires_ran_marker=source.requires_ran_marker,
         )
 
-    def _declared_command_env(self) -> Dict[str, str]:
+    def _declared_command_env(
+        self, git_ceiling: Optional[Path] = None
+    ) -> Dict[str, str]:
         """Environment for a declared / non-pytest test command (design §B.5).
 
-        A verbatim copy of the daemon's own environment — which is what the
-        implicit inherit already produced, so this is byte-equivalent for every
-        existing caller. It is made EXPLICIT because the resolution rule is a
-        real design decision that was previously invisible:
+        Built from nothing (13 October 2026, :meth:`_project_env`): ``PATH``
+        from this process, a private ``HOME`` and ``TMPDIR``, the locale and
+        proxy settings, the project's declared ``launch:`` settings and
+        scratch folders, and the test-service URLs. Never the factory's
+        credentials. The resolution rule stays explicit:
 
         * commands run with the worktree as ``cwd``;
         * they inherit the daemon's ``PATH``, and nothing else resolves them.
@@ -10504,11 +10681,7 @@ class CoachValidator:
         The URLs of the test services this validator started are added on top
         (see :meth:`_start_infrastructure_containers`).
         """
-        env = os.environ.copy()
-        env.update(getattr(self, "_fixture_env", {}))
-        return apply_task_launch_environment(
-            env, getattr(self, "task_id", None), self.worktree_path
-        )
+        return _checker_declared_env(self, git_ceiling)
 
     def _describe_detection_absence(self) -> str:
         """Build the actionable message for the deleted pytest default.

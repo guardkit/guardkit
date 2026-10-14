@@ -1767,6 +1767,7 @@ class TestEnsureVenv:
         mock_run.assert_called_once_with(
             [sys.executable, "-m", "venv", str(expected_venv_dir)],
             check=True,
+            env=bootstrapper._project_env(),
         )
         assert result == expected_venv_dir / "bin" / "python"
         assert bootstrapper._venv_python == result

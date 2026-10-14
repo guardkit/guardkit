@@ -48,6 +48,17 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Optional open() flags, read directly from os (not through getattr) so the
+# launch guard sees os used only through its attributes; 0 where absent.
+try:
+    _O_NOFOLLOW = os.O_NOFOLLOW
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NOFOLLOW = 0
+try:
+    _O_NONBLOCK = os.O_NONBLOCK
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NONBLOCK = 0
+
 # The record, relative to the worktree.
 RECORD_RELATIVE_PATH = Path(".guardkit") / "autobuild" / "head-identity.jsonl"
 
@@ -198,7 +209,7 @@ def _open_record(path: Path, flags: int) -> int:
     opened file must itself be a regular file. Raises ``OSError``."""
     fd = os.open(
         path,
-        flags | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+        flags | _O_NOFOLLOW | _O_NONBLOCK,
         0o644,
     )
     try:

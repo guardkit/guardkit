@@ -230,12 +230,12 @@ class WorktreeManager:
         Raises:
             WorktreeError: If git command fails
         """
-        full_args = ["git"] + args
         working_dir = cwd if cwd is not None else self.repo_root
 
         try:
             return self.executor.run(
-                full_args,
+                # The executable is written here literally (the launch guard).
+                ["git", *args],
                 cwd=working_dir,
                 check=True,
                 capture_output=True,
@@ -243,7 +243,7 @@ class WorktreeManager:
             )
         except subprocess.CalledProcessError as e:
             raise WorktreeError(
-                f"Git command failed: {' '.join(full_args)}\n"
+                f"Git command failed: {' '.join(['git', *args])}\n"
                 f"Exit code: {e.returncode}\n"
                 f"Stderr: {e.stderr if e.stderr else '(none)'}"
             )

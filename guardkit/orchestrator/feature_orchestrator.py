@@ -3271,6 +3271,8 @@ The detailed specifications are in the task markdown file.
             outcome = FEATURE_CHECK_FAILED
             failure_reason = f"exit={exit_code}, expected=0"
             failure_kind = FAILURE_KIND_EXIT_NONZERO
+            if run.get("environment_note"):
+                failure_reason = f"{failure_reason}. {run['environment_note']}"
         passed = outcome == FEATURE_CHECK_PASSED
         # Sizes only: the per-attempt warning and event publish no output.
         stdout_bytes, stdout_lines = feature_check_output_size(run["stdout"])
@@ -5584,6 +5586,13 @@ The detailed specifications are in the task markdown file.
                     "Baseline probe could not run '%s' in %s: %s "
                     "(continuing; probe is report-only).",
                     config.command, worktree.path, exc,
+                )
+                return None
+            if getattr(run, "could_not_start", False):
+                logger.warning(
+                    "Baseline probe could not run '%s' in %s: %s "
+                    "(continuing; probe is report-only).",
+                    config.command, worktree.path, run.stderr,
                 )
                 return None
             output = f"{run.stdout or ''}\n{run.stderr or ''}"

@@ -135,6 +135,34 @@ class UnconfiguredF16ChecklistProvider(F16ChecklistProvider):
         )
 
 
+def gate_address_refusal(name: str, value: str) -> Optional[str]:
+    """Why the gate address ``value`` (read from setting ``name``) may not be
+    used, or ``None`` (13 October 2026). The sentence names the setting and
+    never shows the value.
+
+    Any ``@`` anywhere is refused, however the value parses: it is how a user
+    name and password ride in an address (``user:secret@host`` even parses
+    with ``user`` as the scheme and nothing as the host). Otherwise the value
+    must be an absolute http or https URL with a host.
+    """
+    if "@" in value:
+        return (
+            f"could not run: the gate address setting {name} carries a user name "
+            f"and password, and the factory does not pass credentials to project "
+            f"commands"
+        )
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+    except ValueError:
+        parts, host = None, None
+    if parts is None or parts.scheme not in ("http", "https") or not host:
+        return f"could not run: the gate address in {name} is not an http(s) address"
+    return None
+
+
 #: Default wall-clock cap for one reachability GET.
 DEFAULT_REACHABILITY_TIMEOUT_S: float = 5.0
 
@@ -191,6 +219,12 @@ class DefaultF16ChecklistProvider(F16ChecklistProvider):
                         ),
                     )
                 )
+                continue
+            refusal = gate_address_refusal(var, base_url)
+            if refusal is not None:
+                # Never reached and never echoed: the sentence names the
+                # setting only (the runner refuses these before pre-flight).
+                results.append(SeamResult(ok=False, detail=refusal))
                 continue
             results.append(self._reachability(var, base_url))
         results.append(

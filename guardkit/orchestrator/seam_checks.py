@@ -140,6 +140,11 @@ class BootSmokeEntry:
     env_required: List[Any] = field(default_factory=list)
     expected_exit: int = 0
     worktree_env: Dict[str, str] = field(default_factory=dict)  # hermetic serve overlay
+    #: Set when the file loaded: why ``worktree_env`` cannot be used (it names
+    #: a setting a project may not set, such as ``GUARDKIT_RUN_OWNER`` or a
+    #: credential-shaped name). The entry is then reported as "could not run"
+    #: with this reason, and nothing is started (13 October 2026).
+    env_refusal: Optional[str] = None
 
     @property
     def is_hermetic(self) -> bool:
@@ -187,6 +192,9 @@ def _parse_config(text: str) -> SeamChecksConfig:
     for e in data.get("boot_smoke") or []:
         if not isinstance(e, dict) or not e.get("kind"):
             continue
+        worktree_env = {
+            str(k): str(v) for k, v in (e.get("worktree_env") or {}).items()
+        }
         entries.append(BootSmokeEntry(
             id=str(e.get("id", e.get("target", e.get("kind")))),
             kind=str(e["kind"]),
@@ -196,7 +204,8 @@ def _parse_config(text: str) -> SeamChecksConfig:
             readiness=dict(e.get("readiness") or {}),
             env_required=list(e.get("env_required") or []),
             expected_exit=int(e.get("expected_exit", 0)),
-            worktree_env={str(k): str(v) for k, v in (e.get("worktree_env") or {}).items()},
+            worktree_env=worktree_env,
+            env_refusal=_worktree_env_refusal(worktree_env),
         ))
     return SeamChecksConfig(
         version=int(data.get("version", 1)),
@@ -206,6 +215,25 @@ def _parse_config(text: str) -> SeamChecksConfig:
         present=True,
         raw_text=text,
     )
+
+
+def _worktree_env_refusal(worktree_env: Dict[str, str]) -> Optional[str]:
+    """Why a ``worktree_env`` overlay cannot be used, or ``None``.
+
+    The same check the project-command environment applies to an overlay
+    (``project_command_env.finish_project_environment``): a name a project
+    could not declare in ``launch.settings`` is refused. Names only.
+    """
+    from guardkit.orchestrator.launch_declaration import declared_setting_refusal
+
+    for name in worktree_env:
+        refusal = declared_setting_refusal(name)
+        if refusal is not None:
+            return (
+                f"`worktree_env` names a setting the project may not set, so "
+                f"this entry was not run: {refusal}"
+            )
+    return None
 
 
 def load_working_tree_config(worktree_path: Path) -> SeamChecksConfig:

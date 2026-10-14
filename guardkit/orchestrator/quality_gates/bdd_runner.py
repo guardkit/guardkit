@@ -39,6 +39,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from guardkit.lib.pytest_argv import isolated_basetemp
+from guardkit.orchestrator.launch_declaration import load_launch_snapshot
+from guardkit.orchestrator.project_command_env import project_command_environment
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -258,11 +261,42 @@ def find_feature_files_with_tag(features_dir: Path, tag: str) -> List[Path]:
     return matches
 
 
-def has_pytest_bdd(python_executable: Optional[str] = None) -> bool:
+def _bdd_env(
+    worktree: Path,
+    task_id: Optional[str],
+    additions: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """The environment a BDD command runs with, built from nothing.
+
+    13 October 2026 (design ``factory-project-commands-without-factory-
+    credentials``): ``project_command_env.project_command_environment`` with
+    the task's pinned ``launch:`` block, as the checker's own test commands
+    use. Never a copy of this process's environment, which holds the
+    factory's credentials. Raises ``LaunchEnvironmentError`` (an ``OSError``)
+    when it cannot be built.
+    """
+    return project_command_environment(
+        Path(worktree),
+        load_launch_snapshot(task_id, Path(worktree)),
+        additions=additions or {},
+    )
+
+
+def has_pytest_bdd(
+    python_executable: Optional[str] = None,
+    *,
+    work_folder: Optional[Path] = None,
+    task_id: Optional[str] = None,
+) -> bool:
     """Return True when ``pytest_bdd`` is importable.
 
     By default checks the current interpreter; pass an explicit
-    ``python_executable`` to probe a different worktree environment.
+    ``python_executable`` to probe a different worktree environment. That
+    probe runs the project's interpreter in ``work_folder`` (``python -c``
+    puts that folder first on the import path, so a project file can stand
+    in for the module and run), so it gets the project-command environment
+    built from nothing, never the factory's. Without a ``work_folder`` there
+    is no environment to give it, and the answer is False.
     """
     if python_executable is None:
         try:
@@ -271,11 +305,19 @@ def has_pytest_bdd(python_executable: Optional[str] = None) -> bool:
             return True
         except ImportError:
             return False
+    if work_folder is None:
+        logger.warning(
+            "BDD runner: no work folder to probe pytest-bdd in, so it is "
+            "treated as not importable"
+        )
+        return False
     try:
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             [python_executable, "-c", "import pytest_bdd"],
+            cwd=str(work_folder),
             capture_output=True,
             timeout=10,
+            env=_bdd_env(Path(work_folder), task_id),
         )
         return proc.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
@@ -608,10 +650,21 @@ def _invoke_pytest_bdd(
     argv = _build_pytest_argv(feature_files, tag, junit_xml_path)
     if python_executable:
         argv = [python_executable, "-m", *argv]
-    env: Optional[Dict[str, str]] = None
-    if task_id is not None:
-        env = os.environ.copy()
-        env[_BDD_TASK_ID_ENV] = task_id
+    try:
+        # Built from nothing (13 October 2026); the task id is the factory's
+        # one addition for this command.
+        env = _bdd_env(
+            Path(cwd),
+            task_id,
+            {_BDD_TASK_ID_ENV: task_id} if task_id is not None else None,
+        )
+    except OSError as exc:
+        return _PytestInvocation(
+            returncode=_PYTEST_EXIT_INTERNAL_ERROR,
+            stdout="",
+            stderr=f"pytest-bdd could not start: {exc}",
+            junit_xml="",
+        )
     try:
         # TASK-AB-BASETEMP01: unique --basetemp under the system temp dir so
         # concurrent orchestrator-run pytest invocations on one host cannot
@@ -621,7 +674,7 @@ def _invoke_pytest_bdd(
         with isolated_basetemp(
             f"{task_id}-bdd" if task_id else "bdd", argv
         ) as basetemp_argv:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 argv + basetemp_argv,
                 cwd=str(cwd),
                 capture_output=True,
@@ -699,7 +752,11 @@ def run_bdd_for_task(
         )
         return None
 
-    if not has_pytest_bdd(python_executable=python_executable):
+    if not has_pytest_bdd(
+        python_executable=python_executable,
+        work_folder=worktree_path,
+        task_id=task_id,
+    ):
         # TASK-FIX-BDDM-1: Surface as synthetic blocker rather than silently
         # skipping. Returning None here was approved by Coach's
         # ``scenarios_failed == 0`` rule — vacuously true when no result
@@ -1028,7 +1085,11 @@ def run_bdd_authoring_sweep(
         except ValueError:
             rel_files.append(str(p))
 
-    if not has_pytest_bdd(python_executable=python_executable):
+    if not has_pytest_bdd(
+        python_executable=python_executable,
+        work_folder=worktree_path,
+        task_id=task_id,
+    ):
         reason = (
             "pytest_bdd_not_importable: authored pytest-bdd glue exists for "
             f"{task_id} but pytest-bdd is not installed in the worktree "
@@ -1178,15 +1239,25 @@ def _invoke_pytest_sweep(
     if python_executable:
         argv = [python_executable, "-m", *argv]
     try:
+        env = _bdd_env(Path(cwd), task_id)
+    except OSError as exc:
+        return _PytestInvocation(
+            returncode=_PYTEST_EXIT_INTERNAL_ERROR,
+            stdout="",
+            stderr=f"the authoring sweep could not start: {exc}",
+            junit_xml="",
+        )
+    try:
         with isolated_basetemp(
             f"{task_id}-bdd-sweep" if task_id else "bdd-sweep", argv
         ) as basetemp_argv:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 argv + basetemp_argv,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=env,
             )
     except subprocess.TimeoutExpired as exc:
         logger.warning("Authoring sweep timed out after %ss: %s", timeout, exc)

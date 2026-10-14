@@ -147,8 +147,10 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 try:  # pragma: no cover - exercised implicitly on POSIX, absent on Windows
     import fcntl
+
+    _HAVE_FCNTL = True
 except ImportError:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
+    _HAVE_FCNTL = False
 
 logger = logging.getLogger(__name__)
 
@@ -854,14 +856,14 @@ def _append_line_atomically(path: Path, line: str) -> None:
     payload = line.encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     try:
-        if fcntl is not None:
+        if _HAVE_FCNTL:
             fcntl.flock(fd, fcntl.LOCK_EX)
         try:
             written = 0
             while written < len(payload):
                 written += os.write(fd, payload[written:])
         finally:
-            if fcntl is not None:
+            if _HAVE_FCNTL:
                 fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)

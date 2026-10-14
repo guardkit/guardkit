@@ -21,10 +21,20 @@ from pathlib import Path
 from typing import Optional
 
 from guardkit.orchestrator.feature_loader import SmokeGates
+from guardkit.orchestrator.launch_declaration import (
+    load_launch_declaration,
+    main_checkout_root,
+)
+from guardkit.orchestrator.project_command_env import (
+    minimal_environment_note,
+    project_command_environment,
+)
 from guardkit.orchestrator.run_evidence import (
     EvidenceRequest,
     start_command_evidence,
 )
+
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +102,21 @@ class SmokeGateResult:
     #: container events of the interval. Evidence only — never read by the
     #: pass/fail logic above.
     run_evidence: Optional[dict] = None
+    #: True when the command was never started because its environment could
+    #: not be built (no scratch folder, a malformed ``launch:`` block, a proxy
+    #: carrying credentials). ``passed`` is False and ``stderr`` says why.
+    could_not_start: bool = False
+
+
+def _held_back_note(cwd: Path, declaration: object, path_first: tuple) -> str:
+    """Which settings the smoke command's environment held back, by name
+    only; empty when it cannot be built, which the failure already says."""
+    try:
+        return minimal_environment_note(
+            project_command_environment(cwd, declaration, path_first=path_first)
+        )
+    except OSError:
+        return ""
 
 
 def should_fire_for_wave(config: SmokeGates, wave_number: int) -> bool:
@@ -158,12 +183,16 @@ def run_smoke_gate(
         for the final summary.
     venv_python : Optional[str]
         Path to the bootstrap venv interpreter (e.g.
-        ``<worktree>/.guardkit/venv/bin/python``). When provided, the
-        subprocess inherits an environment with that directory prepended
-        to PATH so a bare ``python`` in the smoke command resolves to the
-        venv interpreter rather than failing on Ubuntu 24+ where only
-        ``python3`` exists in system PATH (TASK-FIX-A7B1). Falls back to
-        the parent environment when None.
+        ``<worktree>/.guardkit/venv/bin/python``). When provided, that
+        directory is put in front of PATH so a bare ``python`` in the smoke
+        command resolves to the venv interpreter rather than failing on
+        Ubuntu 24+ where only ``python3`` exists in system PATH
+        (TASK-FIX-A7B1).
+
+    The environment is built from nothing (``project_command_env``,
+    13 October 2026), with the main checkout's ``launch:`` block, never this
+    process's own with the factory's credentials. When it cannot be built
+    the gate fails with the plain reason and the command does not run.
     evidence : Optional[EvidenceRequest]
         What the caller knows for the run record (repair 7): the kind of
         command, who is observing, and the project's declared environment
@@ -185,13 +214,29 @@ def run_smoke_gate(
         config.expected_exit,
     )
 
-    env: Optional[dict] = None
-    if venv_python:
-        venv_bin = str(Path(venv_python).parent)
-        env = os.environ.copy()
-        env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+    path_first = (str(Path(venv_python).parent),) if venv_python else ()
+    if path_first:
         logger.debug(
-            "Smoke gate PATH-prepended with bootstrap venv: %s", venv_bin
+            "Smoke gate PATH-prepended with bootstrap venv: %s", path_first[0]
+        )
+    try:
+        declaration = load_launch_declaration(main_checkout_root(Path(cwd)))
+        env = project_command_environment(
+            Path(cwd), declaration, path_first=path_first
+        )
+    except OSError as exc:
+        reason = f"the smoke command could not start: {exc}"
+        logger.warning("Smoke gate after wave %d: %s", wave_number, reason)
+        return SmokeGateResult(
+            passed=False,
+            exit_code=-1,
+            stdout="",
+            stderr=reason,
+            timed_out=False,
+            command=config.command,
+            timeout=config.timeout,
+            after_wave=wave_number,
+            could_not_start=True,
         )
 
     # Repair 7: record what the command ran against. Never changes the run.
@@ -201,9 +246,10 @@ def run_smoke_gate(
         execution_root=cwd,
         cwd=cwd,
         env=env,
+        declared_settings=declaration.settings if declaration is not None else (),
     )
     try:
-        proc = subprocess.run(
+        proc = process_group.run_project_command(
             config.command,
             shell=True,
             cwd=str(cwd),
@@ -285,12 +331,13 @@ def run_smoke_gate(
         logger.warning(
             "Smoke gate failed after wave %d (exit=%d, expected=%d)\n"
             "stderr:\n%s\n"
-            "stdout:\n%s",
+            "stdout:\n%s\n%s",
             wave_number,
             proc.returncode,
             config.expected_exit,
             (proc.stderr or "(empty)").rstrip(),
             (proc.stdout or "(empty)").rstrip(),
+            _held_back_note(Path(cwd), declaration, path_first),
         )
 
     return SmokeGateResult(

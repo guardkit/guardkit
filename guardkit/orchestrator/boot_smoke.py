@@ -46,7 +46,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from guardkit.orchestrator.launch_declaration import (
+    LaunchEnvironmentError,
+    load_launch_declaration,
+    main_checkout_root,
+)
+from guardkit.orchestrator.project_command_env import project_command_environment
 from guardkit.orchestrator.seam_checks import BootSmokeEntry, SeamChecksConfig
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -116,30 +123,61 @@ def _worst(verdicts: List[str]) -> str:
     return max(verdicts, key=lambda v: _SEVERITY.get(v, 0))
 
 
-_RUN_OWNER_ENV = "GUARDKIT_RUN_OWNER"
+def _command_env(
+    worktree: Path,
+    *,
+    additions: Optional[Dict[str, str]] = None,
+    overlay: Optional[Dict[str, str]] = None,
+) -> dict:
+    """The environment one boot-smoke command runs with, built from nothing.
+
+    13 October 2026 (design ``factory-project-commands-without-factory-
+    credentials``): ``project_command_env.project_command_environment`` with
+    the main checkout's ``launch:`` block, never a copy of this process's
+    environment, which holds the factory's credentials. The build's owner
+    marker (``GUARDKIT_RUN_OWNER``, set by Forge per build) is applied last
+    by the helper from this process alone: the serve probe starts its own
+    session, and Forge finds it by that marker when it stops a cancelled
+    build. A project's overlay that names it is refused (the command does not
+    run), and it is absent when this process has none.
+    """
+    return project_command_environment(
+        worktree,
+        load_launch_declaration(main_checkout_root(worktree)),
+        additions=additions or {},
+        overlay=overlay or {},
+    )
 
 
-def _hermetic_env(worktree: Path, overlay: Optional[Dict[str, str]] = None) -> dict:
+def _hermetic_env(
+    worktree: Path,
+    overlay: Optional[Dict[str, str]] = None,
+    additions: Optional[Dict[str, str]] = None,
+) -> dict:
     """Clean worktree-only PYTHONPATH env (namespace-hygiene remediation 4).
 
-    The build's owner marker (``GUARDKIT_RUN_OWNER``, set by Forge per build)
-    always comes from this process, never from the project's overlay: the
-    serve probe starts its own session, and Forge finds it by that marker
-    when it stops a cancelled build. A project cannot set or remove it.
+    :func:`_command_env` with ``PYTHONPATH`` set to the worktree alone (the
+    factory's addition), and ``overlay`` the project's ``worktree_env``.
     """
-    env = {
-        k: v for k, v in os.environ.items()
-        if k not in ("PYTHONPATH",)
-    }
-    env["PYTHONPATH"] = str(worktree)
-    if overlay:
-        env.update(overlay)
-    run_owner = os.environ.get(_RUN_OWNER_ENV)
-    if run_owner:
-        env[_RUN_OWNER_ENV] = run_owner
-    else:
-        env.pop(_RUN_OWNER_ENV, None)
-    return env
+    return _command_env(
+        worktree,
+        additions={"PYTHONPATH": str(worktree), **(additions or {})},
+        overlay=overlay,
+    )
+
+
+def _could_not_run(entry: BootSmokeEntry, reason: str) -> BootSmokeEntryResult:
+    """An entry that was never started, with the plain reason (names only)."""
+    prefix = "could not run: "
+    if reason.startswith(prefix):
+        reason = reason[len(prefix):]
+    return BootSmokeEntryResult(
+        entry.id,
+        entry.kind,
+        _ABSENT,
+        detail=f"{prefix}{reason}",
+        finding_kind="BOOT_SMOKE_COULD_NOT_RUN",
+    )
 
 
 def _alloc_port() -> int:
@@ -167,7 +205,7 @@ def _resolve_target_module(target: str) -> tuple[str, str]:
 
 def _run_import(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSmokeEntryResult:
     module, _sym = _resolve_target_module(entry.target)
-    proc = subprocess.run(
+    proc = process_group.run_project_command(
         [python, "-c", f"import {module}"],
         cwd=str(worktree), env=_hermetic_env(worktree),
         capture_output=True, text=True, timeout=60,
@@ -204,7 +242,7 @@ def _run_construct(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSm
     else:
         checks.append("assert obj is not None, 'factory returned None'")
     script = "\n".join(checks)
-    proc = subprocess.run(
+    proc = process_group.run_project_command(
         [python, "-c", script],
         cwd=str(worktree), env=_hermetic_env(worktree),
         capture_output=True, text=True, timeout=60,
@@ -241,8 +279,7 @@ def _run_serve(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSmokeE
     rkind = readiness.get("kind", "exit_zero")
     timeout_s = int(readiness.get("timeout_s", 60))
     port = _alloc_port()
-    env = _hermetic_env(worktree, entry.worktree_env)
-    env["PORT"] = str(port)
+    env = _hermetic_env(worktree, entry.worktree_env, additions={"PORT": str(port)})
     url = str(readiness.get("url", "")).replace("${PORT}", str(port))
     # console-script or python -m <module> (NOT python -c; §4.2.1 signal posture).
     proc = subprocess.Popen(
@@ -310,8 +347,13 @@ def _run_command(entry: BootSmokeEntry, worktree: Path) -> BootSmokeEntryResult:
     if not argv:
         return BootSmokeEntryResult(entry.id, "command", _ABSENT, detail="empty command")
     try:
-        proc = subprocess.run(
-            argv, cwd=str(worktree), capture_output=True, text=True, timeout=300
+        proc = process_group.run_project_command(
+            argv,
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=_command_env(worktree),
         )
     except subprocess.TimeoutExpired:
         return BootSmokeEntryResult(
@@ -328,22 +370,18 @@ def _run_command(entry: BootSmokeEntry, worktree: Path) -> BootSmokeEntryResult:
 
 
 def _terminate(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.terminate()
-        except OSError:
-            return
+    """End the serve probe's whole process group (13 October 2026).
+
+    The probe was started in a session of its own, so its group id is its
+    pid. The group is signalled and watched as a group, even when the leader
+    has already exited: a worker that ignores SIGTERM is sent SIGKILL after
+    the grace period (``process_group.end_process_group``).
+    """
+    process_group.end_process_group(proc, grace=5.0)
     try:
         proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            proc.kill()
+    except subprocess.TimeoutExpired:  # pragma: no cover - SIGKILL was sent
+        proc.kill()
 
 
 # ---------------------------------------------------------------------------
@@ -365,8 +403,14 @@ def _env_prereqs_met(entry: BootSmokeEntry, worktree: Path) -> tuple[bool, List[
         elif isinstance(req, dict) and "reachable" in req:
             cmd = str(req["reachable"])
             try:
-                rc = subprocess.run(cmd, shell=True, cwd=str(worktree),
-                                    capture_output=True, timeout=15).returncode
+                rc = process_group.run_project_command(cmd, shell=True, cwd=str(worktree),
+                                    capture_output=True, timeout=15,
+                                    env=_command_env(worktree)).returncode
+            except LaunchEnvironmentError:
+                # The probe could not be given its environment: that is not
+                # an unmet prerequisite, it is "could not run" (the caller
+                # says so, naming the setting).
+                raise
             except (OSError, subprocess.SubprocessError):
                 rc = 1
             if rc != 0:
@@ -429,6 +473,15 @@ def run_boot_smoke(
         if hermetic_only and not entry.is_hermetic:
             continue
 
+        # The project's ``worktree_env`` was refused when the file loaded:
+        # nothing is started, and the reason is said plainly.
+        if entry.env_refusal:
+            results.append(_could_not_run(entry, entry.env_refusal))
+            followups.append(
+                f"boot smoke '{entry.id}' could not run: {entry.env_refusal}"
+            )
+            continue
+
         # Stale/renamed target (§4.2.1): resolvable at baseline but not working
         # tree is handled by the caller (needs the baseline ref); here we only
         # detect a fully-unresolvable target → ABSENT + CONFIG_STALE advisory.
@@ -442,7 +495,12 @@ def run_boot_smoke(
 
         # Full-env arm: env prereqs unmet → honest ABSENT (never silent).
         if entry.env_required:
-            met, unmet = _env_prereqs_met(entry, worktree)
+            try:
+                met, unmet = _env_prereqs_met(entry, worktree)
+            except LaunchEnvironmentError as exc:
+                results.append(_could_not_run(entry, str(exc)))
+                followups.append(f"boot smoke '{entry.id}' could not run: {exc}")
+                continue
             if not met:
                 # ENV_PREREQ_TAMPER: satisfied at bootstrap-end but unmet now →
                 # positive evidence of mid-run removal → ran-and-failed.
@@ -484,6 +542,12 @@ def run_boot_smoke(
             results.append(BootSmokeEntryResult(
                 entry.id, entry.kind, _RAN_FAILED, detail="boot smoke timed out",
                 finding_kind="BOOT_SMOKE_FAIL"))
+        except LaunchEnvironmentError as exc:
+            # The command could not be given its environment (an overlay
+            # naming a reserved setting, a proxy carrying credentials, no
+            # scratch folder): nothing was started.
+            results.append(_could_not_run(entry, str(exc)))
+            followups.append(f"boot smoke '{entry.id}' could not run: {exc}")
         except Exception as exc:  # noqa: BLE001 — fail-open to absent
             logger.warning("boot smoke '%s' errored: %s", entry.id, exc)
             results.append(BootSmokeEntryResult(

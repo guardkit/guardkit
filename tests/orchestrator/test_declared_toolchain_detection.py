@@ -315,9 +315,11 @@ class TestDeclaredExecution:
         assert CoachValidator(str(tmp_path)).test_timeout == 300
 
     def test_declared_command_runs_with_worktree_cwd_and_explicit_env(self, repo):
-        """§B.5: the command runs with the worktree cwd and INHERITS the
-        daemon environment (PATH included) — made explicit so the resolution
-        rule is visible where the command runs. No nvm source, ever."""
+        """§B.5: the command runs with the worktree cwd and the daemon's PATH
+        — made explicit so the resolution rule is visible where the command
+        runs. No nvm source, ever. Since 13 October 2026 the rest of the
+        daemon's environment is NOT inherited: it is built from nothing, so an
+        undeclared setting stays out."""
         root, worktree = repo
         (worktree / "package.json").touch()
         v = _validator_with_declaration(root, worktree, {"test": "npm test"})
@@ -330,8 +332,8 @@ class TestDeclaredExecution:
         assert kwargs["shell"] is True
         assert kwargs["cwd"] == str(worktree)
         assert kwargs["timeout"] == v.test_timeout
-        assert kwargs["env"]["GK_TS_LANE_PROBE"] == "1"
-        assert "PATH" in kwargs["env"]
+        assert "GK_TS_LANE_PROBE" not in kwargs["env"]
+        assert kwargs["env"]["PATH"] == os.environ["PATH"]
 
     def test_explicit_declaration_argument_bypasses_the_snapshot(self, tmp_path):
         """Callers that already hold a declaration may pass it directly."""

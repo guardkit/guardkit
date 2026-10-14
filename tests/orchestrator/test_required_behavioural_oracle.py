@@ -618,8 +618,10 @@ class TestRequiredFrozenDesignControls:
         self, tmp_path: Path
     ) -> None:
         _, _, task, validator = _fixture(tmp_path)
+        # 13 October 2026: the oracle command runs in a process group of its
+        # own (process_group.run_project_command), so that is where it starts.
         with patch(
-            "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run",
+            "guardkit.orchestrator.process_group.run_project_command",
             side_effect=OSError("cannot start"),
         ):
             result = validator._produce_behavioural_oracle(
@@ -636,10 +638,8 @@ class TestRequiredFrozenDesignControls:
 
         _, _, task, validator = _fixture(tmp_path)
         with patch(
-            "guardkit.orchestrator.quality_gates.coach_validator.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(
-                "checker", 1, output="partial"
-            ),
+            "guardkit.orchestrator.process_group.run_project_command",
+            side_effect=subprocess.TimeoutExpired("checker", 1, output="partial"),
         ):
             result = validator._produce_behavioural_oracle(
                 authored_files=[], task=task, task_id="TASK-REQ", turn=1

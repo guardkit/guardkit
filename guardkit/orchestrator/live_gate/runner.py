@@ -26,7 +26,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List, Literal, Optional, Sequence
+from typing import Callable, Dict, List, Literal, Mapping, Optional, Sequence
 
 from guardkit.qa.formats import QAFormatError, validate_instance
 from guardkit.qa.formats.gate_registry import (
@@ -36,7 +36,8 @@ from guardkit.qa.formats.gate_registry import (
 )
 from guardkit.qa.formats.leak_sweep import LeakSweepManifest
 
-from guardkit.orchestrator.live_gate.errors import LiveGateStubError
+from guardkit.orchestrator.live_gate.errors import LiveGateError, LiveGateStubError
+from guardkit.orchestrator.project_command_env import main_checkout_environment
 from guardkit.orchestrator.live_gate.evidence import (
     EvidenceCollector,
     ensure_evidence_dir,
@@ -106,6 +107,13 @@ def derive_verdict(
     return "pass"
 
 
+def _gate_scripts_env(repo_root: Path, addresses: Mapping[str, str]) -> dict:
+    """The gate scripts' environment, built from nothing, plus the gates'
+    checked addresses. A module-level function, so the process-launch guard
+    can rely on it (a method could be overridden)."""
+    return main_checkout_environment(repo_root, additions=dict(addresses))
+
+
 class LiveGateRunner:
     """Deterministic live-gate runner. Seams are injected; the defaults are
     the loud ``Unconfigured*`` stubs / real subprocess runner — except F16,
@@ -138,9 +146,63 @@ class LiveGateRunner:
         self.instrument_check = instrument_check
         self.reservation_resource = reservation_resource
         self.broker_contract_ref = broker_contract_ref
-        self.gate_env = gate_env if gate_env is not None else dict(os.environ)
+        # The gate scripts' environment is always built from nothing
+        # (:meth:`_gate_script_env`), never a copy of this process's, which
+        # holds the factory's credentials. ``gate_env``, when a caller hands
+        # one in, is where the reachability check and the gates' declared
+        # base URLs are read from instead of this process's environment.
+        self.gate_env = gate_env
         self.gate_timeout_s = gate_timeout_s
         self.now_fn = now_fn
+
+    def _gate_addresses(self, gates: Sequence[GateEntry]) -> Dict[str, str]:
+        """Each selected gate's address, checked BEFORE anything reads it.
+
+        13 October 2026. The registry names, per gate, the setting its
+        address is read from (``base_url_env``). That name must be one a
+        project may declare (not one of the factory's own, not
+        credential-shaped), and its value, read from ``gate_env`` when a
+        caller handed one in or else this process, must be an absolute http
+        or https URL with a host and contain no ``@`` anywhere (no user name
+        or password, however it parses). Any refusal names the setting and
+        never shows a value, and happens before the pre-flight reachability check, which
+        records the address in the run's history. Only these checked values
+        reach the reachability check and the gate scripts. An address that
+        is not set is left out (the reachability check says so).
+        """
+        from guardkit.orchestrator.launch_declaration import declared_setting_refusal
+        from guardkit.orchestrator.live_gate.preflight import gate_address_refusal
+
+        source = self.gate_env if self.gate_env is not None else os.environ
+        addresses: Dict[str, str] = {}
+        for gate in gates:
+            name = gate.target.base_url_env
+            refusal = declared_setting_refusal(name)
+            if refusal is not None:
+                raise LiveGateError(
+                    f"could not run: gate {gate.id!r} reads its address from a "
+                    f"setting the factory does not pass to project commands: "
+                    f"{refusal}"
+                )
+            value = source.get(name)
+            if value is None:
+                continue
+            # Any "@" anywhere, or anything but an absolute http(s) URL with a
+            # host, is refused by the setting's name; the value is never shown.
+            refusal = gate_address_refusal(name, value)
+            if refusal is not None:
+                raise LiveGateError(refusal)
+            addresses[name] = value
+        return addresses
+
+    def _gate_script_env(self, addresses: Mapping[str, str]) -> dict:
+        """The gate scripts' environment, built from nothing (13 October 2026).
+
+        ``project_command_env`` with the repository's ``launch:`` block, plus
+        the gates' checked addresses (:meth:`_gate_addresses`): the registry
+        is the project's own statement that its gates read them.
+        """
+        return _gate_scripts_env(self.repo_root, addresses)
 
     def _history_dir(self) -> Path:
         return self.repo_root.joinpath(*HISTORY_DIRNAME)
@@ -173,6 +235,8 @@ class LiveGateRunner:
         reg_path = registry_path or registry_path_for(self.repo_root)
         registry = load_registry(reg_path)  # raises QAFormatError loudly
         gates = select_gates(registry, requested_gate_ids)
+        # Checked before anything reads or records them (raises by name).
+        addresses = self._gate_addresses(gates)
 
         # Evidence dir is created up front — "evidence dirs produced
         # automatically" (may stay empty on a short-circuit; that is honest).
@@ -187,8 +251,10 @@ class LiveGateRunner:
         # to environment_fail on the Unconfigured stub (proven run
         # PILOT-HURL-local-20260814T205745Z) and the verdict could never
         # follow the gates.
+        # It reads only the checked addresses, never this process's own
+        # environment (13 October 2026).
         f16 = self.f16_provider or DefaultF16ChecklistProvider(
-            gates, env=self.gate_env
+            gates, env=addresses
         )
 
         preflight = run_preflight(
@@ -209,11 +275,17 @@ class LiveGateRunner:
 
         if classification is None:
             # Pre-flight green: exercise the deployed app.
+            try:
+                env = _gate_scripts_env(self.repo_root, addresses)
+            except OSError as exc:
+                raise LiveGateError(
+                    f"the gate scripts could not be given their environment: {exc}"
+                ) from exc
             gate_results = execute_gates(
                 gates,
                 repo_root=self.repo_root,
                 runner=self.gate_runner,
-                env=self.gate_env,
+                env=env,
                 timeout_s=self.gate_timeout_s,
             )
             collector.add_from_gate_results(gate_results)

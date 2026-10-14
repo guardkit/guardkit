@@ -62,6 +62,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import yaml
 
 # Import worktree components from guardkit package
+from guardkit.orchestrator import process_group
 from guardkit.worktrees import (
     WorktreeManager,
     Worktree,
@@ -2003,7 +2004,33 @@ def _check_direct_mode_bin_entries(
     # let guardkit's own installed ``src`` satisfy an import the producer is
     # actually missing, masking the failure (the false-green this gate closes).
     # cwd is the worktree, not the host (TASK-FIX-COACHCWD01 cwd-leak lesson).
-    probe_env = {**os.environ, "PYTHONPATH": str(worktree)}
+    # Built from nothing (13 October 2026): the producer is the build's code
+    # and never sees the factory's credentials.
+    from guardkit.orchestrator.launch_declaration import (
+        load_launch_declaration,
+        main_checkout_root,
+    )
+    from guardkit.orchestrator.project_command_env import (
+        project_command_environment,
+    )
+
+    try:
+        probe_env = project_command_environment(
+            worktree,
+            load_launch_declaration(main_checkout_root(worktree)),
+            additions={"PYTHONPATH": str(worktree)},
+        )
+    except OSError as exc:
+        return [
+            {
+                "severity": "should_fix",
+                "category": "direct_mode_bin_entry_unverifiable",
+                "description": (
+                    f"Registered bin-entries could not be probed: {exc} "
+                    f"(absent signal)."
+                ),
+            }
+        ]
 
     issues: List[Dict[str, Any]] = []
     for rel_path in targets:
@@ -2022,7 +2049,7 @@ def _check_direct_mode_bin_entries(
 
         target_path = worktree / rel_path
         try:
-            proc = subprocess.run(
+            proc = process_group.run_project_command(
                 [python_exe, str(target_path)],
                 cwd=str(worktree),
                 env=probe_env,
@@ -5558,16 +5585,20 @@ class AutoBuildOrchestrator:
             # AC#8 defensive: import inside the block so a missing module
             # in some hypothetical future packaging error skips Phase 4/5
             # rather than breaking the turn.
+            # A plain flag, not a None stand-in: the module is only ever used
+            # through its attributes.
             try:
                 from guardkit.orchestrator import specialist_invocations as _si
+
+                specialist_invocations_loaded = True
             except ImportError:
-                _si = None
+                specialist_invocations_loaded = False
                 logger.warning(
                     f"[{task_id}] specialist_invocations import failed; "
                     "skipping orchestrator-side Phase 4/5"
                 )
 
-            if _si is not None:
+            if specialist_invocations_loaded:
                 impl_mode = self._agent_invoker._get_implementation_mode(task_id)
 
                 # TASK-ABSR-CEIL: when Player hit the SDK turn ceiling the
@@ -6317,14 +6348,29 @@ class AutoBuildOrchestrator:
         if not command:
             logger.debug("machine-verify: no recorded suite command; reds unavailable")
             return None
+        from guardkit.orchestrator.launch_declaration import (
+            load_launch_declaration,
+            main_checkout_root,
+        )
+        from guardkit.orchestrator.project_command_env import (
+            project_command_environment,
+        )
+
         try:
-            proc = subprocess.run(
+            # Built from nothing (13 October 2026): the recorded suite is the
+            # project's command and never sees the factory's credentials.
+            env = project_command_environment(
+                Path(worktree.path),
+                load_launch_declaration(main_checkout_root(Path(worktree.path))),
+            )
+            proc = process_group.run_project_command(
                 command,
                 cwd=str(worktree.path),
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=1800,
+                env=env,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             logger.warning(

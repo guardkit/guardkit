@@ -36,15 +36,22 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
+
+from guardkit.orchestrator.launch_declaration import load_launch_declaration
+from guardkit.orchestrator.project_command_env import (
+    minimal_environment_note,
+    project_command_environment,
+)
 
 from guardkit.orchestrator.quality_gates.stack_test_execution import (
     StackTestProfile,
     classify_absent_for_stack,
     detect_stack_profile,
 )
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
@@ -285,9 +292,11 @@ def run_completion_verification(
     ever be rendered as success.
 
     ``env`` is the command's whole environment. ``None`` (every caller but
-    the merge) keeps a copy of this process's own. The merge passes the
-    minimal environment it builds from nothing, so the project's command
-    never sees the factory's credentials (13 October 2026, item 2a).
+    the merge) builds it here from nothing, with ``repo_root``'s own
+    ``launch:`` block (``project_command_env``): never a copy of this
+    process's environment, which holds the factory's credentials. The merge
+    passes the minimal environment it builds the same way (13 October 2026,
+    item 2a).
 
     ``ran_marker_regex`` is a repository-root marker the project declared to
     show that tests really ran. When given, a run that would pass but whose
@@ -317,6 +326,26 @@ def run_completion_verification(
         cwd,
         timeout,
     )
+    built_here = env is None
+    try:
+        # Built from nothing (13 October 2026) unless the caller (the merge)
+        # hands in the environment it built the same way.
+        run_env: Dict[str, str] = (
+            project_command_environment(
+                repo_root, load_launch_declaration(repo_root)
+            )
+            if env is None
+            else dict(env)
+        )
+    except OSError as exc:
+        return VerificationResult(
+            status="unverified",
+            command=command,
+            cwd=cwd,
+            returncode=None,
+            detail=f"verification command could not start: {exc}",
+            source=source,
+        )
     if own_process_group:
         from guardkit.orchestrator.process_group import run_in_own_group
 
@@ -325,7 +354,7 @@ def run_completion_verification(
                 command,
                 shell=True,
                 cwd=cwd,
-                env=os.environ.copy() if env is None else dict(env),
+                env=run_env,
                 timeout=timeout,
             )
         except OSError as exc:
@@ -351,26 +380,26 @@ def run_completion_verification(
         proc = subprocess.CompletedProcess(
             command, run.returncode, run.stdout, run.stderr
         )
-        return _verification_from_run(
-            proc, command, cwd, source, stack_profile, ran_marker_regex
+        return _noted(
+            _verification_from_run(
+                proc, command, cwd, source, stack_profile, ran_marker_regex
+            ),
+            run_env if built_here else None,
         )
 
     try:
         # TS-lane D.1b (design §B.5): the second declared-command shell site.
-        # ``env=`` is now EXPLICIT (a verbatim copy of the daemon's own
-        # environment — byte-equivalent to the previous implicit inherit) so
-        # the resolution rule is visible where the command runs: worktree/repo
-        # cwd + the daemon PATH, on which node resolves ONLY via the D.0
-        # symlink fence. Never source nvm here. A caller that hands in ``env``
-        # (the merge, 13 October 2026) chooses the whole environment instead.
-        proc = subprocess.run(
+        # ``env=`` is EXPLICIT so the resolution rule is visible where the
+        # command runs: worktree/repo cwd + the daemon PATH, on which node
+        # resolves ONLY via the D.0 symlink fence. Never source nvm here.
+        proc = process_group.run_project_command(
             command,
             shell=True,
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
-            env=os.environ.copy() if env is None else dict(env),
+            env=run_env,
         )
     except subprocess.TimeoutExpired as exc:
         # Ran-and-hung is a genuine defect (runtime-parity L3 precedent):
@@ -397,9 +426,25 @@ def run_completion_verification(
             source=source,
         )
 
-    return _verification_from_run(
-        proc, command, cwd, source, stack_profile, ran_marker_regex
+    return _noted(
+        _verification_from_run(
+            proc, command, cwd, source, stack_profile, ran_marker_regex
+        ),
+        run_env if built_here else None,
     )
+
+
+def _noted(
+    result: VerificationResult, env: Optional[Dict[str, str]]
+) -> VerificationResult:
+    """A failed result's detail, with the settings the factory held back.
+
+    Names only, never values (13 October 2026). ``env`` is ``None`` when the
+    caller chose the environment, and the result is then unchanged.
+    """
+    if env is None or result.status != "failed":
+        return result
+    return replace(result, detail=f"{result.detail}. {minimal_environment_note(env)}")
 
 
 def _verification_from_run(

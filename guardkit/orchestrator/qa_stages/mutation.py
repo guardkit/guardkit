@@ -28,6 +28,7 @@ from typing import Callable, List, Optional, Sequence
 
 from guardkit.orchestrator.qa_stages.errors import MutationError
 from guardkit.orchestrator.qa_stages.sandbox import MutationSandbox
+from guardkit.orchestrator import process_group
 
 
 # --------------------------------------------------------------------------- #
@@ -54,8 +55,15 @@ def make_pytest_runner(
     command: Sequence[str],
     *,
     timeout: int = 600,
+    work_folder: Optional[Path] = None,
 ) -> TestRunner:
     """Build a :data:`TestRunner` that shells ``command`` with ``cwd=sandbox``.
+
+    The suite is the project's code, so it runs in the project-command
+    environment built from nothing (13 October 2026), with ``work_folder``'s
+    ``launch:`` block and scratch folder (the source repository the sandbox
+    was copied from; the sandbox itself when not given). When that
+    environment cannot be built the run is red with the reason, never green.
 
     ``command`` is the task's own test command (e.g.
     ``[sys.executable, "-m", "pytest", "-q", "tests/unit"]``). A non-zero exit —
@@ -66,14 +74,22 @@ def make_pytest_runner(
     argv = list(command)
 
     def _run(sandbox_root: Path) -> TestOutcome:
+        from guardkit.orchestrator.project_command_env import (
+            main_checkout_environment,
+        )
+
         try:
-            proc = subprocess.run(
+            env = main_checkout_environment(
+                Path(work_folder) if work_folder is not None else Path(sandbox_root)
+            )
+            proc = process_group.run_project_command(
                 argv,
                 cwd=str(sandbox_root),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
                 check=False,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             tail = (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else ""

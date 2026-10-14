@@ -655,13 +655,13 @@ def task(
 
     finally:
         # Emitter lifecycle: flush and close (TASK-OBS-4899)
-        import asyncio as _asyncio
+        import asyncio
         try:
-            _asyncio.run(emitter.flush())
+            asyncio.run(emitter.flush())
         except Exception as exc:
             logger.warning("Failed to flush emitter: %s", exc)
         try:
-            _asyncio.run(emitter.close())
+            asyncio.run(emitter.close())
         except Exception as exc:
             logger.warning("Failed to close emitter: %s", exc)
 
@@ -1182,13 +1182,13 @@ def feature(
 
     finally:
         # Emitter lifecycle: flush and close (TASK-INST-013)
-        import asyncio as _asyncio
+        import asyncio
         try:
-            _asyncio.run(emitter.flush())
+            asyncio.run(emitter.flush())
         except Exception as exc:
             logger.warning("Failed to flush emitter: %s", exc)
         try:
-            _asyncio.run(emitter.close())
+            asyncio.run(emitter.close())
         except Exception as exc:
             logger.warning("Failed to close emitter: %s", exc)
 

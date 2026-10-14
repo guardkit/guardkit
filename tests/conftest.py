@@ -82,6 +82,12 @@ def pytest_configure(config):
         "allow_memory_capture: this test drives the build-outcome capture seam "
         "itself and opts out of the autouse guard. It MUST fake the writer.",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_project_scratch: this test checks what happens to a project "
+        "command whose work folder is not a git checkout, so it opts out of "
+        "the scratch folder the suite gives plain temporary folders.",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -337,3 +343,75 @@ def paths_equal(path1, path2):
         bool: True if paths are equal after normalization
     """
     return normalize_path(path1) == normalize_path(path2)
+
+
+# ---------------------------------------------------------------------------
+# A scratch folder for project commands run in plain temporary folders
+# ---------------------------------------------------------------------------
+# Since 13 October 2026 every project command GuardKit runs gets an
+# environment built from nothing (``project_command_env``), with a private
+# HOME and TMPDIR in the work folder's scratch folder, which lives in the
+# work folder's own git directory. In a build the work folder is always a git
+# worktree. Many tests here run a project command in a plain ``tmp_path`` that
+# is not a git checkout; without help the command would not run at all. This
+# fixture gives such a folder a scratch folder of its own OUTSIDE it (in the
+# test's own temporary area), and only when the real lookup finds none, so a
+# test in a real git checkout gets exactly the production behaviour. A test
+# that checks the refusal itself is marked ``real_project_scratch``.
+
+
+@pytest.fixture(autouse=True)
+def project_scratch_for_plain_folders(monkeypatch, request, tmp_path_factory):
+    if request.node.get_closest_marker("real_project_scratch"):
+        return
+    from guardkit.orchestrator import project_command_env
+
+    real = project_command_env._scratch_folder
+    holder = {}
+
+    def _scratch(work_folder):
+        found = real(work_folder)
+        if found is not None:
+            return found
+        key = os.path.realpath(str(work_folder))
+        if key not in holder:
+            folder = tmp_path_factory.mktemp("project-scratch")
+            os.chmod(folder, 0o700)
+            holder[key] = folder
+        return holder[key]
+
+    monkeypatch.setattr(project_command_env, "_scratch_folder", _scratch)
+
+
+# ---------------------------------------------------------------------------
+# Tests that stand in for subprocess.run still see project commands
+# ---------------------------------------------------------------------------
+# Since 13 October 2026 GuardKit runs a project's commands with
+# ``process_group.run_project_command``: ``subprocess.run``'s arguments,
+# results and exceptions, but in a process group of its own so a timeout ends
+# everything the command started. Many tests here replace ``subprocess.run``
+# with a fake to script a command's result; they test what GuardKit does with
+# that result (its argv, env, classification), not how the process is
+# started. While a test has replaced ``subprocess.run``, this fixture sends
+# project commands to that replacement with exactly the arguments they had
+# before. With ``subprocess.run`` untouched, the real group runner runs; the
+# tests that check timeouts end every child use it.
+
+_ORIGINAL_SUBPROCESS_RUN = __import__("subprocess").run
+
+
+@pytest.fixture(autouse=True)
+def project_commands_follow_a_replaced_subprocess_run(monkeypatch):
+    import subprocess as _subprocess
+
+    from guardkit.orchestrator import process_group
+
+    real_runner = process_group.run_project_command
+
+    def _runner(args, **kwargs):
+        if _subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
+            kwargs.pop("grace", None)
+            return _subprocess.run(args, **kwargs)
+        return real_runner(args, **kwargs)
+
+    monkeypatch.setattr(process_group, "run_project_command", _runner)

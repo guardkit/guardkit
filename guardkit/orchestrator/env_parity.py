@@ -33,11 +33,12 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
 # Common import-name ≠ dist-name cases where PEP-503 normalization fails.
-_STDLIB_HINT = frozenset(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else frozenset()
+_STDLIB_HINT = frozenset(sys.stdlib_module_names)  # Python 3.10 and later; GuardKit needs 3.12
 
 
 @dataclass
@@ -132,10 +133,24 @@ def _run_resolution_probe(
         "    out[name] = e\n"
         "print(json.dumps(out))\n"
     )
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env["PYTHONPATH"] = str(worktree)
+    from guardkit.orchestrator.launch_declaration import (
+        load_launch_declaration,
+        main_checkout_root,
+    )
+    from guardkit.orchestrator.project_command_env import (
+        project_command_environment,
+    )
+
     try:
-        proc = subprocess.run(
+        # Built from nothing (13 October 2026): a clean worktree-only
+        # PYTHONPATH as the factory's one addition, never this process's
+        # environment with the factory's credentials.
+        env = project_command_environment(
+            Path(worktree),
+            load_launch_declaration(main_checkout_root(Path(worktree))),
+            additions={"PYTHONPATH": str(worktree)},
+        )
+        proc = process_group.run_project_command(
             [venv_python, "-c", script],
             cwd=str(worktree), env=env, capture_output=True, text=True, timeout=120,
         )
