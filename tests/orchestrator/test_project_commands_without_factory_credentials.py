@@ -1555,17 +1555,17 @@ def _import_bindings(node: ast.AST, dotted: str, is_package: bool) -> List[Tuple
     return out
 
 
-def _imports(tree: ast.Module, dotted: str, is_package: bool) -> Dict[str, str]:
-    """Every name an import binds anywhere in the module -> what it names.
+def _imports(tree: ast.Module, dotted: str, is_package: bool) -> Dict[str, set]:
+    """Every name an import binds anywhere in the module, in any scope, ->
+    the SET of everything it is imported as (never overwritten).
 
-    Used only to RECOGNISE launches (strict side: a launch module imported
-    inside a function still counts). Resolving a helper or runner, which can
-    make a launch acceptable, goes through :func:`_resolve`, which honours
-    scope and shadowing."""
-    out: Dict[str, str] = {}
+    A call through a name is a launch if ANY of its targets is a launch
+    module or function (strict side); a helper or runner qualifies only when
+    ALL of them are it (see :func:`_resolve`)."""
+    out: Dict[str, set] = {}
     for node in ast.walk(tree):
         for name, target in _import_bindings(node, dotted, is_package):
-            out[name] = target
+            out.setdefault(name, set()).add(target)
     return out
 
 
@@ -1748,14 +1748,20 @@ def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
             if other or defined or len(imports) > 1:
                 return None
             if imports:
-                return next(iter(imports))
+                target = next(iter(imports))
+                # Imported as anything else anywhere in the module: unknown.
+                return target if mod.imports.get(name, set()) == {target} else None
             scope = _defining_scope(mod, scope)
         imports, defined, other = _module_bindings(mod, name)
         if other or (imports and defined) or len(imports) > 1:
             return None
         if defined:
-            return f"{mod.dotted}.{name}"
-        return next(iter(imports)) if imports else None
+            return None if name in mod.imports else f"{mod.dotted}.{name}"
+        if not imports:
+            return None
+        target = next(iter(imports))
+        # Imported as anything else anywhere in the module: unknown.
+        return target if mod.imports.get(name, set()) == {target} else None
     if isinstance(func_node, ast.Attribute):
         value = func_node.value
         if isinstance(value, ast.Name) and value.id in ("self", "cls"):
@@ -1905,14 +1911,14 @@ def _launch_kind(mod: _Module, node: ast.AST) -> Optional[str]:
         if node.attr in _ANY_RECEIVER_LAUNCHES:
             return _dotted(node)
         if isinstance(node.value, ast.Name):
-            module = mod.imports.get(node.value.id)
-            if module in _LAUNCHES and node.attr in _LAUNCHES[module]:
-                return f"{module}.{node.attr}"
+            for module in sorted(mod.imports.get(node.value.id, ())):
+                if module in _LAUNCHES and node.attr in _LAUNCHES[module]:
+                    return f"{module}.{node.attr}"
     if isinstance(node, ast.Name):
-        target = mod.imports.get(node.id, "")
-        module, _, name = target.rpartition(".")
-        if module in _LAUNCHES and name in _LAUNCHES[module]:
-            return target
+        for target in sorted(mod.imports.get(node.id, ())):
+            module, _, name = target.rpartition(".")
+            if module in _LAUNCHES and name in _LAUNCHES[module]:
+                return target
     return None
 
 
@@ -2043,10 +2049,11 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
     problems: List[str] = []
     for mod in modules:
         reserved = set(base)
-        for alias, target in mod.imports.items():
-            module, _, last = target.rpartition(".")
-            if last in base or target in HELPERS or (module in _LAUNCHES and last in _LAUNCHES[module]):
-                reserved.add(alias)
+        for alias, targets in mod.imports.items():
+            for target in targets:
+                module, _, last = target.rpartition(".")
+                if last in base or target in HELPERS or (module in _LAUNCHES and last in _LAUNCHES[module]):
+                    reserved.add(alias)
 
         def flag(node: ast.AST, name: str, how: str) -> None:
             holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
@@ -2078,6 +2085,39 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
                     flag(node, name, "by an assignment or target" if in_function else "at module level")
                 else:
                     flag(node, name, how_by_kind[kind])
+    return problems
+
+
+def _aliased_launch_imports(modules: List[_Module]) -> List[str]:
+    """A launch module or launch function imported under another local name
+    (``import subprocess as sp``, ``from subprocess import run as go``) is a
+    violation in itself: under its own name it is always recognised."""
+    problems: List[str] = []
+    for mod in modules:
+        for node in ast.walk(mod.tree):
+            aliased: List[str] = []
+            if isinstance(node, ast.Import):
+                aliased = [
+                    f"{a.name} as {a.asname}" for a in node.names
+                    if a.asname and a.asname != a.name
+                    and (a.name in _LAUNCHES or a.name == "asyncio.subprocess")
+                ]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                aliased = [
+                    f"{node.module}.{a.name} as {a.asname}" for a in node.names
+                    if a.asname and a.asname != a.name and (
+                        (node.module in _LAUNCHES and a.name in _LAUNCHES[node.module])
+                        or (node.module.split(".")[0] == "asyncio" and a.name in _ANY_RECEIVER_LAUNCHES)
+                        or (node.module == "asyncio" and a.name == "subprocess")
+                    )
+                ]
+            for what in aliased:
+                holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                problems.append(
+                    f"{mod.rel}:{node.lineno} in {getattr(holder, 'name', '<module>')}: "
+                    f"the launch module or function is imported under another name "
+                    f"({what}); import it under its own name"
+                )
     return problems
 
 
@@ -2204,6 +2244,7 @@ def unaccounted_launches(package: Path) -> List[str]:
                             f"on or wrapped), so its env= cannot be checked"
                         )
     problems.extend(_reserved_name_rebindings(modules))
+    problems.extend(_aliased_launch_imports(modules))
     for (rel, fname), spec in GENERIC_RUNNERS.items():
         identity = _runner_identity(package.name, rel, fname)
         for mod in modules:
@@ -2619,6 +2660,31 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(cmd, env=env)
 
 
+    def v64_module_alias_reused_elsewhere(cmd):
+        import subprocess as tool
+        tool.run(cmd, shell=True)
+
+
+    def _other_tool_user(text):
+        import json as tool
+        return tool.loads(text)
+
+
+    def v65_function_alias_reused_elsewhere(cmd):
+        from subprocess import run as go
+        go(cmd, shell=True)
+
+
+    def _other_go_user(text):
+        from json import loads as go
+        return go(text)
+
+
+    def ok_helper_env_beside_reused_names(cmd, wf):
+        import json as tool
+        subprocess.run(tool.loads(cmd), env=project_command_environment(wf, None))
+
+
     def ok_unshadowed_alias(cmd, wf):
         subprocess.run(cmd, shell=True, env=pce_alias(wf, None))
 
@@ -2682,7 +2748,18 @@ GUARD_PROBES_REBOUND = textwrap.dedent(
     import subprocess
     from guardkit.orchestrator.project_command_env import project_command_environment
 
+    import subprocess as launcher
+
     project_command_environment = lambda *a: dict(os.environ)  # noqa: E731
+
+
+    def _reuses_the_alias(text):
+        import json as launcher
+        return launcher.loads(text)
+
+
+    def v66_module_alias_reused_in_a_function(cmd):
+        launcher.run(cmd, shell=True)
 
 
     def v53_module_level_rebinding(cmd, wf):
@@ -2727,7 +2804,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
         "ok_single_use_named_env", "ok_inline_env", "ok_single_return_wrapper",
-        "ok_unshadowed_alias",
+        "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
     } & named, problems
 
 

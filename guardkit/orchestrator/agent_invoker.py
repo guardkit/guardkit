@@ -2662,12 +2662,12 @@ class AgentInvoker:
         Uses ``pgrep -P <pid>`` to find children and grandchildren,
         then ``ps -p <pid> -o comm=`` to check process names.
         """
-        import subprocess as sp
+        import subprocess
 
         killed: list = []
         try:
             # Find direct children
-            result = sp.run(
+            result = subprocess.run(
                 ["pgrep", "-P", str(my_pid)],
                 capture_output=True, text=True, timeout=5,
             )
@@ -2684,7 +2684,7 @@ class AgentInvoker:
             # Also collect grandchildren (SDK -> node -> claude)
             all_pids: set = set(child_pids)
             for cpid in child_pids:
-                gc_result = sp.run(
+                gc_result = subprocess.run(
                     ["pgrep", "-P", str(cpid)],
                     capture_output=True, text=True, timeout=5,
                 )
@@ -2696,7 +2696,7 @@ class AgentInvoker:
             # Check each process name and kill claude/node matches
             for pid in all_pids:
                 try:
-                    ps_result = sp.run(
+                    ps_result = subprocess.run(
                         ["ps", "-p", str(pid), "-o", "comm="],
                         capture_output=True, text=True, timeout=5,
                     )
@@ -2725,7 +2725,7 @@ class AgentInvoker:
                 "TASK-FIX-DFCB: pgrep not found on this platform, "
                 "cannot kill child claude processes"
             )
-        except sp.TimeoutExpired:
+        except subprocess.TimeoutExpired:
             logger.warning("TASK-FIX-DFCB: pgrep timed out")
         except OSError as exc:
             logger.warning(f"TASK-FIX-DFCB: Error running pgrep: {exc}")
