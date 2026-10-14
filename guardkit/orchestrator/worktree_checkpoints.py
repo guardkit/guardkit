@@ -343,6 +343,12 @@ def is_factory_record(path: str) -> bool:
 _warned_tracked_private_records: Set[Tuple[str, str]] = set()
 _warned_tracked_private_records_lock = threading.Lock()
 
+#: The id of the empty blob, for SHA-1 and SHA-256 repositories.
+_EMPTY_BLOB_IDS = frozenset({
+    "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813",
+})
+
 #: How many file names one ``git reset`` is given at a time.
 _RESET_BATCH = 200
 
@@ -419,21 +425,29 @@ def _leave_out_record_moves(
     copied from an unchanged one. ``--find-copies-harder`` is what sees a
     plain move on disk (the add never stages the source's deletion, so git
     sees a copy), and ``-l0`` stops git skipping the comparison quietly on a
-    large change. Files on disk are kept. Returns the paths it unstaged.
+    large change. ``--raw`` gives the same pairs with their blob ids: git
+    pairs empty files with each other, so a destination that is the empty
+    blob (a new ``__init__.py`` beside an empty tracked record) is never
+    taken for a copy. Files on disk are kept. Returns the paths it unstaged.
     """
     fields = _git_fields(
         git_executor,
-        ["git", "diff", "--cached", "--name-status", "-z", "-M", "-C",
+        ["git", "diff", "--cached", "--raw", "-z", "--no-abbrev", "-M", "-C",
          "--find-copies-harder", "-l0"],
         cwd, timeout,
     )
     destinations: List[str] = []
     index = 0
     while index < len(fields):
-        status = fields[index]
+        meta = fields[index].split()
+        status = meta[-1] if meta else ""
         if status[:1] in ("R", "C") and index + 2 < len(fields):
             source, destination = fields[index + 1], fields[index + 2]
-            if is_factory_record(source) and not is_factory_record(destination):
+            if (
+                is_factory_record(source)
+                and not is_factory_record(destination)
+                and meta[3] not in _EMPTY_BLOB_IDS
+            ):
                 destinations.append(destination)
             index += 3
         else:

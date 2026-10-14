@@ -752,3 +752,37 @@ def test_a_pre_staged_link_named_like_a_record_folder_is_taken_out(
     assert ORDINARY in tree
     for name in LINK_NAMES:
         assert name not in tree, (name, tree)
+
+
+# --- Empty files are never taken for copies of an empty record --------------
+#
+# git pairs empty files with each other as copies. An empty record that HEAD
+# tracks, or one already staged, must not make a new empty product file (an
+# ``__init__.py``, a ``.gitkeep``) look like a copy of it.
+
+EMPTY_RECORD = ".guardkit/autobuild/TASK-1/empty.json"
+
+
+@pytest.mark.parametrize("record_state", ["tracked", "staged"])
+def test_a_new_empty_product_file_is_not_taken_for_a_record_copy(
+    site, record_state: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, EMPTY_RECORD, "")
+    _git(repo, "add", "-f", "--", EMPTY_RECORD)
+    if record_state == "tracked":
+        _git(repo, "commit", "-m", "an older build committed an empty record")
+    _write(repo, "src/__init__.py", "")
+    _write(repo, "src/pkg/.gitkeep", "")
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert "src/__init__.py" in tree, tree
+    assert "src/pkg/.gitkeep" in tree, tree
+    assert ORDINARY in tree
+    assert not _warnings(caplog, "moves or copies"), [
+        r.getMessage() for r in caplog.records
+    ]
