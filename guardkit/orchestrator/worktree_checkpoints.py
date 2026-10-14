@@ -150,6 +150,19 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     ":(exclude,glob)**/.flutter",
     ":(exclude,glob)**/.flutter/**",
     ":(exclude,glob)**/large_tool_results/**",
+    # The coding model's summarised conversation transcripts (14 October
+    # 2026). deepagents writes one per conversation; it quotes every path
+    # the model saw, the owner's home folder included, and FEAT-7F1D's first
+    # checkpoint committed a 216 KB one into a public fixture's branch. The
+    # factory now keeps these files outside the worktree; this is the guard
+    # if one appears anyway. :func:`unstage_private_records` also takes out
+    # any already staged, here and under ``large_tool_results/``, and warns.
+    # Anchored at the ROOT on purpose, unlike the rest of this list: the
+    # model's libraries only ever write it at the top of the worktree (the
+    # commands run from there), while a product may well have a folder of
+    # this name of its own, such as ``src/conversation_history/``, which must
+    # still be checkpointed.
+    ":(exclude,glob)conversation_history/**",
     # --- TS-lane D.1c: the JS/TS build-junk classes (design §B.6) ---
     ":(exclude,glob)**/node_modules/**",
     ":(exclude,glob)**/.next/**",
@@ -236,6 +249,83 @@ PRIVATE_RECORDS_PATHSPEC: str = pattern_pathspec(":(glob)**/.guardkit/autobuild-
 _warned_tracked_private_records: Set[Tuple[str, str]] = set()
 _warned_tracked_private_records_lock = threading.Lock()
 
+#: The coding model's own working files (14 October 2026): summarised
+#: conversation transcripts at the worktree root (where the model's libraries
+#: write them; a product's own ``src/conversation_history/`` is left alone),
+#: and oversized tool output at any depth, as the add already excludes it.
+MODEL_ARTIFACT_PATHSPECS: Tuple[str, ...] = (
+    pattern_pathspec(":(glob)conversation_history/**"),
+    pattern_pathspec(":(glob)**/large_tool_results/**"),
+)
+
+
+def _git_listing(
+    git_executor: "GitCommandExecutor",
+    argv: List[str],
+    cwd: Path,
+    timeout: Optional[int],
+) -> List[str]:
+    """Run a ``-z`` listing; raise ``CalledProcessError`` when git fails."""
+    done = git_executor.execute(
+        # The executable is written here literally (the launch guard).
+        ["git", *argv[1:]], cwd=cwd, check=False, timeout=timeout
+    )
+    if done.returncode != 0:
+        raise subprocess.CalledProcessError(
+            done.returncode, argv, done.stdout, done.stderr
+        )
+    return [p for p in (done.stdout or "").split("\0") if p.strip()]
+
+
+def _leave_out_model_artifacts(
+    git_executor: "GitCommandExecutor",
+    cwd: Path,
+    *,
+    timeout: Optional[int] = None,
+) -> List[str]:
+    """Keep the coding model's working files out of the next commit.
+
+    ``git add`` already excludes both folders; this unstages anything that
+    was staged before it, and warns when any such file is in the working
+    tree at all, staged or not (unless the repository ignores it). Files on
+    disk are kept. Returns the paths it unstaged.
+    """
+    staged = _git_listing(
+        git_executor,
+        ["git", "diff", "--cached", "--name-only", "-z", "--",
+         *MODEL_ARTIFACT_PATHSPECS],
+        cwd, timeout,
+    )
+    if staged:
+        reset_argv = ["git", "reset", "-q", "--", *MODEL_ARTIFACT_PATHSPECS]
+        reset = git_executor.execute(
+            # The executable is written here literally (the launch guard).
+            ["git", *reset_argv[1:]], cwd=cwd, check=False, timeout=timeout
+        )
+        if reset.returncode != 0:
+            raise subprocess.CalledProcessError(
+                reset.returncode, reset_argv, reset.stdout, reset.stderr
+            )
+    present = sorted(set(staged) | set(_git_listing(
+        git_executor,
+        ["git", "ls-files", "-z", "--others", "--modified", "--exclude-standard",
+         "--", *MODEL_ARTIFACT_PATHSPECS],
+        cwd, timeout,
+    )))
+    if present:
+        shown = ", ".join(present[:5])
+        if len(present) > 5:
+            shown += f" and {len(present) - 5} more"
+        logger.warning(
+            "Left %d file(s) out of the commit in %s: the coding model's own "
+            "conversation transcripts or large tool output, which can quote "
+            "private paths. They stay on disk and are never committed: %s",
+            len(present),
+            Path(cwd).resolve(),
+            shown,
+        )
+    return staged
+
 
 def unstage_private_records(
     git_executor: "GitCommandExecutor",
@@ -259,27 +349,28 @@ def unstage_private_records(
        is left as it is, and that new content is not committed.
 
     It does not remove records a repository already tracks, and it does not
-    rewrite history. Returns the paths it unstaged.
+    rewrite history.
+
+    The same step keeps the coding model's own working files
+    (``conversation_history/`` at the root, ``large_tool_results/`` at any
+    depth) out of the commit, and warns when any are present
+    (:func:`_leave_out_model_artifacts`, 14 October 2026).
+
+    Returns the paths it unstaged.
 
     Raises ``subprocess.CalledProcessError`` when the listing or the unstaging
     fails, so the caller's commit does not go ahead with a record still
     staged: each caller already treats a failed git step as a failed commit.
     """
-    list_argv = [
-        "git", "diff", "--cached", "--name-only", "-z", "--",
-        PRIVATE_RECORDS_PATHSPEC,
-    ]
-    listed = git_executor.execute(
-        # The executable is written here literally (the launch guard).
-        ["git", *list_argv[1:]], cwd=cwd, check=False, timeout=timeout
+    model_artifacts = _leave_out_model_artifacts(git_executor, cwd, timeout=timeout)
+    paths = _git_listing(
+        git_executor,
+        ["git", "diff", "--cached", "--name-only", "-z", "--",
+         PRIVATE_RECORDS_PATHSPEC],
+        cwd, timeout,
     )
-    if listed.returncode != 0:
-        raise subprocess.CalledProcessError(
-            listed.returncode, list_argv, listed.stdout, listed.stderr
-        )
-    paths = [p for p in (listed.stdout or "").split("\0") if p.strip()]
     if not paths:
-        return []
+        return model_artifacts
 
     reset_argv = ["git", "reset", "-q", "--", PRIVATE_RECORDS_PATHSPEC]
     reset = git_executor.execute(
@@ -314,7 +405,7 @@ def unstage_private_records(
             path,
             repository,
         )
-    return paths
+    return model_artifacts + paths
 
 
 # ============================================================================

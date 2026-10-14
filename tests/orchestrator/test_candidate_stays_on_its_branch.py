@@ -207,14 +207,16 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
     """On the branch: one symbolic-ref read, then add, commit, rev-parse.
 
     Since 13 October 2026 one read sits between add and commit: the list of
-    staged private records, empty here, so nothing is unstaged.
+    staged private records, empty here, so nothing is unstaged. Since 14
+    October 2026 two more precede it: the coding model's staged working
+    files and those left in the working tree, both empty here.
     """
     executor = Mock(spec=GitCommandExecutor)
 
     def _execute(command: List[str], cwd: Path, check: bool = True, timeout=None):
         if command[:2] == ["git", "symbolic-ref"]:
             return Mock(returncode=0, stdout=f"refs/heads/{BRANCH}\n", stderr="")
-        if command[:3] == ["git", "diff", "--cached"]:
+        if command[:3] == ["git", "diff", "--cached"] or command[:2] == ["git", "ls-files"]:
             return Mock(returncode=0, stdout="", stderr="")
         return Mock(returncode=0, stdout="abc123def456\n", stderr="")
 
@@ -232,6 +234,7 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
     commands = [c.args[0][:2] for c in executor.execute.call_args_list]
     assert commands == [
         ["git", "symbolic-ref"], ["git", "add"], ["git", "diff"],
+        ["git", "ls-files"], ["git", "diff"],
         ["git", "commit"], ["git", "rev-parse"],
     ] * 2
     assert [cp.turn for cp in manager.checkpoints] == [1, 2]
