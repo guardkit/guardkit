@@ -132,8 +132,6 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/.flutter",
         ":(exclude,glob)**/.flutter/**",
         ":(exclude,glob)**/large_tool_results/**",
-        # The coding model's transcripts, root only (14 October 2026).
-        ":(exclude,glob)conversation_history/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -143,8 +141,13 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/.npm/**",
         ":(exclude,glob)**/.claude/task-plans/**",
         ":(exclude,glob)**/.guardkit-git.lock",
-        # The HEAD record (head_identity, 12 October 2026).
-        ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+        # GuardKit's own build records (14 October 2026), the HEAD record
+        # (head-identity.jsonl) included; the top-level transcript folder
+        # is taken out after the add instead, never named here.
+        ":(exclude,glob)**/.guardkit/autobuild/**",
+        ":(exclude,glob)**/.guardkit/qav-shadow/**",
+        ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
+        ":(exclude,glob)**/.guardkit/worktrees/**",
         ":(exclude,glob)**/.guardkit/autobuild-private/**",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
@@ -1035,8 +1038,6 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/.flutter",
         ":(exclude,glob)**/.flutter/**",
         ":(exclude,glob)**/large_tool_results/**",
-        # The coding model's transcripts, root only (14 October 2026).
-        ":(exclude,glob)conversation_history/**",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -1046,8 +1047,13 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/.npm/**",
         ":(exclude,glob)**/.claude/task-plans/**",
         ":(exclude,glob)**/.guardkit-git.lock",
-        # The HEAD record (head_identity, 12 October 2026).
-        ":(exclude,glob)**/.guardkit/autobuild/head-identity.jsonl",
+        # GuardKit's own build records (14 October 2026), the HEAD record
+        # (head-identity.jsonl) included; the top-level transcript folder
+        # is taken out after the add instead, never named here.
+        ":(exclude,glob)**/.guardkit/autobuild/**",
+        ":(exclude,glob)**/.guardkit/qav-shadow/**",
+        ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
+        ":(exclude,glob)**/.guardkit/worktrees/**",
         ":(exclude,glob)**/.guardkit/autobuild-private/**",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are

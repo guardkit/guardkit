@@ -209,7 +209,9 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
     Since 13 October 2026 one read sits between add and commit: the list of
     staged private records, empty here, so nothing is unstaged. Since 14
     October 2026 two more precede it: the coding model's staged working
-    files and those left in the working tree, both empty here.
+    files and those left in the working tree, both empty here. Also since 14
+    October 2026: a first read for records moved or copied out of their
+    folders, and a last one for tracked records changed on disk, both empty.
     """
     executor = Mock(spec=GitCommandExecutor)
 
@@ -234,7 +236,7 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
     commands = [c.args[0][:2] for c in executor.execute.call_args_list]
     assert commands == [
         ["git", "symbolic-ref"], ["git", "add"], ["git", "diff"],
-        ["git", "ls-files"], ["git", "diff"],
+        ["git", "diff"], ["git", "ls-files"], ["git", "diff"], ["git", "ls-files"],
         ["git", "commit"], ["git", "rev-parse"],
     ] * 2
     assert [cp.turn for cp in manager.checkpoints] == [1, 2]
