@@ -9,6 +9,9 @@ key. These tests pin what GuardKit does in that setting:
 2. With a door and no database address, reads go through the door's
    ``memory_search_items`` tool and give the same hits as the store route.
 3. With no bus password, writes go straight to the door, and say so once.
+   Prose records (turn states and the other document groups) go as the
+   envelope the bus would carry, and are stored exactly as the bus route
+   stores them.
 4. A door that answers 500 is a failed read, and the error names the door.
 5. The autobuild's real per-thread loader lifecycle works through the door.
 6. A door that is down skips the loader with "connection failed", and the
@@ -710,3 +713,226 @@ def test_the_stamp_check_goes_through_the_door_with_the_placeholder(monkeypatch)
     assert request["method"] == "POST"
     assert request["path"].endswith("/chat/completions")
     assert request["authorization"] == f"Bearer {PLACEHOLDER_MODEL_KEY}"
+
+
+# ---------------------------------------------------------------------------
+# 3b. Prose records reach the store through the door as the bus stores them
+# ---------------------------------------------------------------------------
+#
+# Turn states, feature specs and the other document groups are prose: they are
+# published as a MemoryEpisodeV1 envelope that the relay chunks into the store.
+# The door's ``memory_publish_envelope`` hands the same envelope to the relay's
+# own ingestion. Here each prose group is written twice: once over a stand-in
+# bus whose consumer is fleet-memory's real relay service, and once with no bus
+# account through the REAL fleet-memory MCP server on loopback. Each route has
+# its own in-memory store; the two must end up identical.
+
+
+def _prose_groups() -> list[str]:
+    if importlib.util.find_spec("nats_core") is None:
+        return []
+    from guardkit.knowledge.fleet_memory_mapping import GROUP_ID_MAP
+    from guardkit.knowledge.fleet_memory_payloads import build_memory_episode
+
+    groups = []
+    for group_id, mapping in GROUP_ID_MAP.items():
+        if mapping.disposition != "migrate":
+            continue
+        episode = build_memory_episode(
+            mapping, name="probe", episode_body=json.dumps({"content": "x"}), project=PROJECT
+        )
+        if episode is not None and not episode.payload_type:
+            groups.append(group_id)
+    return groups
+
+
+def _fleet_memory_has_the_envelope_tool() -> bool:
+    try:
+        from fleet_memory.mcp.tools import write
+    except Exception:
+        return False
+    return hasattr(write, "memory_publish_envelope")
+
+
+def _in_memory_store():
+    from fleet_memory.embed import make_fake_embed
+    from langgraph.store.memory import InMemoryStore
+
+    return InMemoryStore(
+        index={"dims": 768, "embed": make_fake_embed(dims=768), "fields": ["content"]}
+    )
+
+
+def _relay_settings():
+    from fleet_memory.settings import Settings
+
+    # Small chunks, so each record becomes several chunks with overlap.
+    return Settings.model_construct(chunk_target_tokens=40, chunk_overlap_ratio=0.15)
+
+
+class RealFleetMemoryDoor(StandInDoor):
+    """fleet-memory's own MCP server, on loopback, over an in-memory store."""
+
+    def __init__(self, store) -> None:  # noqa: D107 — replaces the stand-in's tools
+        import uvicorn
+        from fleet_memory.mcp.server import ServerContext, create_mcp_server, register_all
+        from fleet_memory.writer.core import DeterministicWriter
+
+        settings = _relay_settings()
+        context = ServerContext(
+            store=store, writer=DeterministicWriter(store=store, settings=settings), settings=settings
+        )
+        door = create_mcp_server(context)
+        register_all(door, context)
+        self.port = _free_port()
+        self.url = f"http://127.0.0.1:{self.port}/mcp"
+        self._server = uvicorn.Server(
+            uvicorn.Config(
+                door.http_app(path="/mcp"),
+                host="127.0.0.1",
+                port=self.port,
+                log_level="warning",
+                lifespan="on",
+            )
+        )
+        self._thread = threading.Thread(target=self._server.run, daemon=True)
+
+
+async def _store_rows(store) -> list:
+    items = await store.asearch(("fleet_memory",), limit=10_000)
+    return sorted(
+        ((tuple(item.namespace), item.key, item.value) for item in items),
+        key=lambda row: (row[0], row[1]),
+    )
+
+
+def _prose_body(group_id: str) -> str:
+    sections = "\n\n".join(
+        f"## Part {n} of {group_id}\n\n"
+        + " ".join(f"Step {n}.{w}: the builder changed one file and the reviewer read it." for w in range(5))
+        for n in range(1, 4)
+    )
+    return json.dumps({"content": f"# {group_id}\n\n{sections}"})
+
+
+PROSE_GROUPS = _prose_groups()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nats_core") is None,
+    reason="the episode builder needs the nats_core memory extra",
+)
+@pytest.mark.skipif(
+    not _fleet_memory_has_the_envelope_tool(),
+    reason="the installed fleet-memory has no memory_publish_envelope tool",
+)
+def test_prose_records_reach_the_store_through_the_door_as_the_bus_stores_them(
+    memory_env, monkeypatch, refused_connections, store_never_opened, caplog
+):
+    import guardkit.memory.harvest_publisher as harvest_publisher
+    from fleet_memory.relay.chunk_writer import ChunkWriter
+    from fleet_memory.relay.schema import MemoryEpisodeV1 as RelayEnvelope
+    from fleet_memory.relay.service import RelayService
+    from fleet_memory.writer.core import DeterministicWriter
+
+    assert len(PROSE_GROUPS) >= 7, PROSE_GROUPS
+    assert "turn_states" in PROSE_GROUPS
+
+    def write_each(client) -> list:
+        return [
+            asyncio.run(
+                client.add_episode(
+                    name=f"{group_id} record",
+                    episode_body=_prose_body(group_id),
+                    group_id=group_id,
+                )
+            )
+            for group_id in PROSE_GROUPS
+        ]
+
+    # The bus route: a stand-in bus whose consumer is the relay's own service,
+    # fed the bytes the publisher puts on the wire.
+    bus_store = _in_memory_store()
+    settings = _relay_settings()
+    relay = RelayService(
+        writer=DeterministicWriter(store=bus_store, settings=settings),
+        chunk_writer=ChunkWriter(store=bus_store),
+        settings=settings,
+    )
+
+    async def stand_in_bus(episodes, client=None):
+        for episode in episodes:
+            await relay.ingest(RelayEnvelope.model_validate_json(episode.model_dump_json()))
+        return harvest_publisher.PublishSummary(
+            published=len(episodes), skipped_oversized=0, counts_per_type={}
+        )
+
+    with monkeypatch.context() as bus_only:
+        bus_only.setattr(harvest_publisher, "publish_episodes", stand_in_bus)
+        bus_only.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
+        bus_keys = write_each(FleetMemoryClient(fmc._load_fleet_config_from_env()))
+
+    # The door route: no bus account, the real fleet-memory MCP server.
+    door_store = _in_memory_store()
+    bus_calls: list = []
+
+    async def no_bus(*args, **kwargs):
+        bus_calls.append(args)
+        raise AssertionError("the bus must not be used without a bus account")
+
+    monkeypatch.setattr(harvest_publisher, "publish_episodes", no_bus)
+    with RealFleetMemoryDoor(door_store) as door:
+        memory_env.setenv("FLEET_MEMORY_MCP_URL", door.url)
+        with caplog.at_level(logging.INFO, logger=CLIENT_LOGGER):
+            door_keys = write_each(FleetMemoryClient(fmc._load_fleet_config_from_env()))
+
+    bus_rows = asyncio.run(_store_rows(bus_store))
+    door_rows = asyncio.run(_store_rows(door_store))
+
+    assert bus_keys == door_keys
+    assert all(key for key in door_keys), door_keys
+    assert bus_rows, "the bus route should have stored chunks"
+    assert {row[0] for row in bus_rows} == {("fleet_memory", PROJECT, "chunk")}
+    episodes = {row[2]["episode_id"] for row in bus_rows}
+    assert len(episodes) == len(PROSE_GROUPS)
+    assert door_rows == bus_rows
+    assert bus_calls == []
+    messages = [r.getMessage() for r in caplog.records]
+    assert not any("is prose, which only the bus" in m for m in messages), messages
+    assert refused_connections == []
+    assert store_never_opened == []
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nats_core") is None,
+    reason="the episode builder needs the nats_core memory extra",
+)
+def test_a_prose_record_with_the_door_down_says_it_was_not_written(
+    memory_env, monkeypatch, refused_connections, store_never_opened, caplog
+):
+    import guardkit.memory.harvest_publisher as harvest_publisher
+
+    async def no_bus(*args, **kwargs):
+        raise AssertionError("the bus must not be used without a bus account")
+
+    monkeypatch.setattr(harvest_publisher, "publish_episodes", no_bus)
+    memory_env.setenv("FLEET_MEMORY_MCP_URL", f"http://127.0.0.1:{_free_port()}/mcp")
+    client = FleetMemoryClient(fmc._load_fleet_config_from_env())
+
+    with caplog.at_level(logging.INFO, logger=CLIENT_LOGGER):
+        key = asyncio.run(
+            client.add_episode(
+                name="turn_state TASK-1 turn 1",
+                episode_body=_prose_body("turn_states"),
+                group_id="turn_states",
+            )
+        )
+
+    assert key is None
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "could not write through the door" in m and "teaches future builds nothing" in m
+        for m in messages
+    ), messages
+    assert refused_connections == []
+    assert store_never_opened == []

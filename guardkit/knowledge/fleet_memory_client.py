@@ -352,6 +352,31 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
 
     Never raises: a memory write must not be able to fail a build.
     """
+    # The tool's argument is ``payload``. Sending ``payload_dict`` (the
+    # underlying function's parameter name) returns a pydantic validation
+    # error as PLAIN TEXT with isError unset — which the first cut of this read
+    # as a successful write. Proven against the live door.
+    return await _write_to_the_door("memory_write_payload", {"payload": payload}, url)
+
+
+async def publish_envelope_through_the_door(envelope: dict, *, url: str | None = None) -> bool:
+    """Hand one published envelope to the relay's ingestion at the door. True when it landed.
+
+    WHY THIS EXISTS (14 October 2026). Prose records (turn states, specs and
+    the other document groups) have no typed form: they are published as a
+    ``MemoryEpisodeV1`` envelope and the relay chunks them into the store. With
+    no bus account (a build sandbox holds none) the door's
+    ``memory_publish_envelope`` tool takes the SAME envelope, as the bus would
+    carry it, and runs the relay's own ingestion on it, so the store ends up
+    exactly as the bus would have left it.
+
+    Never raises: a memory write must not be able to fail a build.
+    """
+    return await _write_to_the_door("memory_publish_envelope", {"envelope": envelope}, url)
+
+
+async def _write_to_the_door(tool: str, arguments: dict, url: str | None) -> bool:
+    """Call one write tool at the door; True only on positive evidence it landed."""
     where = url or (os.getenv(DOOR_URL_ENV, "").strip() or DEFAULT_DOOR_URL)
     try:
         # Imported lazily, exactly as the seats do it, so this module still
@@ -364,14 +389,7 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
                 read, write = streams[0], streams[1]
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    # The tool's argument is ``payload``. Sending
-                    # ``payload_dict`` (the underlying function's parameter
-                    # name) returns a pydantic validation error as PLAIN TEXT
-                    # with isError unset — which the first cut of this read as
-                    # a successful write. Proven against the live door.
-                    result = await session.call_tool(
-                        "memory_write_payload", {"payload": payload}
-                    )
+                    result = await session.call_tool(tool, arguments)
             # POSITIVE EVIDENCE ONLY. A write is claimed when the door says
             # so, never when it says nothing or says something this cannot
             # read: the door reports an argument mismatch as plain text with
@@ -442,6 +460,36 @@ def _what_actually_failed(exc: BaseException) -> str:
 
     walk(exc)
     return "; ".join(leaves) if leaves else f"{type(exc).__name__}: {str(exc)[:160]}"
+
+
+async def _write_episode_through_the_door(
+    episode: Any, published_episode: Any, door_kwargs: dict
+) -> bool:
+    """Write one built episode through the door, by the route its kind takes.
+
+    A typed record goes as its typed payload (``memory_write_payload``). A
+    prose record, which has no typed form, goes as the envelope the bus would
+    have carried (``memory_publish_envelope``), so the relay's own ingestion
+    stores it exactly as it would have from the bus. The bus's size limit is
+    kept: an envelope the bus would refuse is not sent either.
+    """
+    if getattr(episode, "payload_type", None):
+        return await write_through_the_door(_typed_door_payload(episode), **door_kwargs)
+    wire = published_episode.model_dump_json()
+    try:
+        from nats_core.client import MAX_EPISODE_BODY_BYTES as limit
+    except Exception:  # pragma: no cover - nats_core built the episode
+        limit = 900 * 1024
+    if len(wire.encode("utf-8")) > limit:
+        logger.warning(
+            "memory: episode %s is %d bytes, over the %d byte limit the bus "
+            "also keeps; not written. Chunk the content upstream.",
+            published_episode.episode_id,
+            len(wire.encode("utf-8")),
+            limit,
+        )
+        return False
+    return await publish_envelope_through_the_door(json.loads(wire), **door_kwargs)
 
 
 #: How long one read through the door may take, connection included. A read
@@ -1407,22 +1455,8 @@ class FleetMemoryClient:
                     logger.info(
                         "memory: no bus account here; writing through the memory door"
                     )
-                if not getattr(episode, "payload_type", None):
-                    # A prose record (turn states and the other document
-                    # groups) travels on the bus's chunk path and has no
-                    # typed form. The door takes typed records only, so
-                    # without a bus account it cannot be written. Said
-                    # plainly, not as a failed write with a traceback.
-                    logger.warning(
-                        "memory: %s record %s is prose, which only the bus "
-                        "carries, and there is no bus account here; it is "
-                        "not written",
-                        group_id,
-                        natural_key,
-                    )
-                    return None
-                if await write_through_the_door(
-                    _typed_door_payload(episode), **door_kwargs
+                if await _write_episode_through_the_door(
+                    episode, published_episode, door_kwargs
                 ):
                     logger.info(
                         "[Memory] Wrote %s episode %s through the door",
@@ -1445,8 +1479,8 @@ class FleetMemoryClient:
                     natural_key,
                     type(bus_refused).__name__,
                 )
-                if await write_through_the_door(
-                    _typed_door_payload(episode), **door_kwargs
+                if await _write_episode_through_the_door(
+                    episode, published_episode, door_kwargs
                 ):
                     logger.info(
                         "[Memory] Wrote %s episode %s through the door",
@@ -1471,8 +1505,8 @@ class FleetMemoryClient:
                 summary.published,
                 summary.skipped_oversized,
             )
-            if await write_through_the_door(
-                _typed_door_payload(episode), **door_kwargs
+            if await _write_episode_through_the_door(
+                episode, published_episode, door_kwargs
             ):
                 logger.info(
                     "[Memory] Wrote %s episode %s through the door",
