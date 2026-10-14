@@ -5585,16 +5585,20 @@ class AutoBuildOrchestrator:
             # AC#8 defensive: import inside the block so a missing module
             # in some hypothetical future packaging error skips Phase 4/5
             # rather than breaking the turn.
+            # A plain flag, not a None stand-in: the module is only ever used
+            # through its attributes.
             try:
                 from guardkit.orchestrator import specialist_invocations as _si
+
+                specialist_invocations_loaded = True
             except ImportError:
-                _si = None
+                specialist_invocations_loaded = False
                 logger.warning(
                     f"[{task_id}] specialist_invocations import failed; "
                     "skipping orchestrator-side Phase 4/5"
                 )
 
-            if _si is not None:
+            if specialist_invocations_loaded:
                 impl_mode = self._agent_invoker._get_implementation_mode(task_id)
 
                 # TASK-ABSR-CEIL: when Player hit the SDK turn ceiling the
