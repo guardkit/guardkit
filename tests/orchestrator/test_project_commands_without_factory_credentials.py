@@ -1910,10 +1910,70 @@ def _helper_shaped(
     return False
 
 
+def _definition_counts(mod: _Module) -> Dict[str, int]:
+    """How many definitions (def or class) each full qualified identity has
+    across the whole module, nested paths included. Cached."""
+    cached = getattr(mod, "_definition_counts", None)
+    if cached is None:
+        cached = {}
+        for node in ast.walk(mod.tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                qual = _qualname(mod, node)
+                cached[qual] = cached.get(qual, 0) + 1
+        mod._definition_counts = cached
+    return cached
+
+
+def _overridden_methods(modules: List[_Module]) -> set:
+    """(class name, method name) pairs some subclass in the package
+    overrides, transitively, matching bases by their simple name: ``self.m``
+    in such a class can run the subclass's ``m``."""
+    classes: List[Tuple[str, List[str], set]] = []
+    for mod in modules:
+        for node in ast.walk(mod.tree):
+            if isinstance(node, ast.ClassDef):
+                bases = [_last_name(b) for b in node.bases]
+                methods = {
+                    n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                }
+                classes.append((node.name, bases, methods))
+    out: set = set()
+    for name, _bases, _methods in classes:
+        seen = {name}
+        frontier = [name]
+        while frontier:
+            parent = frontier.pop()
+            for child, bases, methods in classes:
+                if parent in bases and child not in seen:
+                    seen.add(child)
+                    frontier.append(child)
+                    out.update((name, m) for m in methods)
+    return out
+
+
+def _trusted_definition(mod: _Module, node: ast.AST, overridden: set) -> bool:
+    """A def the guard may rely on: its full qualified identity has exactly
+    one definition in the module, it and every enclosing class or function
+    on its path are each the only binding of their name in their own scope,
+    and, for a method, no subclass in the package overrides it."""
+    if _definition_counts(mod).get(_qualname(mod, node), 0) != 1:
+        return False
+    current: Optional[ast.AST] = node
+    while current is not None:
+        if not _bound_once_as(mod, current):
+            return False
+        current = _enclosing(mod, current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    owner = mod.parents.get(id(node))
+    if isinstance(owner, ast.ClassDef) and (owner.name, node.name) in overridden:
+        return False
+    return True
+
+
 def _wrappers(modules: List[_Module]) -> set:
     """Functions whose whole body (after a docstring) is one ``return`` of an
     inline helper call, by dotted name."""
     found: set = set()
+    overridden = _overridden_methods(modules)
     changed = True
     while changed:
         changed = False
@@ -1936,7 +1996,7 @@ def _wrappers(modules: List[_Module]) -> set:
                 # fall through to an implicit None (which would inherit).
                 if (
                     not node.decorator_list  # a decorator could turn a refusal into None
-                    and _bound_once_as(mod, node)  # one definition, nothing else
+                    and _trusted_definition(mod, node, overridden)  # defined once, path too
                     and len(body) == 1
                     and isinstance(body[0], ast.Return)
                     and isinstance(body[0].value, ast.Call)
@@ -2926,6 +2986,90 @@ GUARD_PROBES = textwrap.dedent(
             subprocess.run(cmd, shell=True, env=self._env(wf))
 
 
+    if os.environ.get("PROBE_CLASS"):
+        class _Commands:
+            def command_env(self, wf):
+                return project_command_environment(wf, None)
+
+            def v82_conditional_duplicate_classes(self, cmd, wf):
+                subprocess.run(cmd, shell=True, env=self.command_env(wf))
+    else:
+        class _Commands:
+            def command_env(self, wf):
+                return dict(os.environ)
+
+            def v82_conditional_duplicate_classes(self, cmd, wf):
+                subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _PlainTwice:
+        def command_env(self, wf):
+            return project_command_environment(wf, None)
+
+        def v83_duplicate_plain_classes(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _PlainTwice:  # noqa: F811
+        def command_env(self, wf):
+            return dict(os.environ)
+
+        def v83_duplicate_plain_classes(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _ReboundClass:
+        def command_env(self, wf):
+            return project_command_environment(wf, None)
+
+        def v84_class_rebound_by_assignment(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    _ReboundClass = dict  # noqa: F811
+
+
+    def _outer_twice():
+        def _inner_env(wf):
+            return project_command_environment(wf, None)
+
+        def v85_nested_under_a_duplicated_outer(cmd, wf):
+            subprocess.run(cmd, shell=True, env=_inner_env(wf))
+
+        return v85_nested_under_a_duplicated_outer
+
+
+    def _outer_twice():  # noqa: F811
+        def _inner_env(wf):
+            return dict(os.environ)
+
+        def v85_nested_under_a_duplicated_outer(cmd, wf):
+            subprocess.run(cmd, shell=True, env=_inner_env(wf))
+
+        return v85_nested_under_a_duplicated_outer
+
+
+    class _BaseCommands:
+        def command_env(self, wf):
+            return project_command_environment(wf, None)
+
+        def v86_subclass_overrides_the_wrapper(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _UnsafeCommands(_BaseCommands):
+        def command_env(self, wf):
+            return dict(os.environ)
+
+
+    class _SingleCommands:
+        def command_env(self, wf):
+            return project_command_environment(wf, None)
+
+        def ok_single_class_method_wrapper(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
         subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
 
@@ -3060,6 +3204,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
         "ok_direct_subprocess_run_with_helper_env", "ok_direct_runner_with_helper_env",
         "ok_os_path_and_environ", "ok_unaliased_relative_import_with_helper_env",
+        "ok_single_class_method_wrapper",
     } & named, problems
 
 
