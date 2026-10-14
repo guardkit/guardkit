@@ -2052,6 +2052,15 @@ def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str
     both imports it and binds it otherwise, or imports it twice."""
     if isinstance(func_node, ast.Name):
         name = func_node.id
+        # Directly in a class body, the class's own bindings come first.
+        klass = _evaluating_class(mod, at)
+        if klass is not None:
+            imports, defined, other = _class_bindings(mod, klass, name)
+            if other or defined or len(imports) > 1:
+                return None
+            if imports:
+                target = next(iter(imports))
+                return target if mod.imports.get(name, set()) == {target} else None
         scope = _defining_scope(mod, at)
         while scope is not None:
             imports, defined, other = _scope_bindings(mod, scope, name)
@@ -2084,9 +2093,49 @@ def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str
     return None
 
 
+def _evaluating_class(mod: _Module, node: ast.AST) -> Optional[ast.ClassDef]:
+    """The class whose body evaluates ``node`` directly (at class definition
+    time), or ``None``: walking up, a function's body or a lambda ends the
+    search, while a function's defaults, annotations and decorators, and a
+    class's bases and decorators, are evaluated in the scope around them."""
+    child, current = node, mod.parents.get(id(node))
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not (
+                child is current.args or child is current.returns
+                or any(child is d for d in current.decorator_list)
+            ):
+                return None
+        elif isinstance(current, ast.Lambda):
+            if child is not current.args:
+                return None
+        elif isinstance(current, ast.ClassDef):
+            if not (
+                any(child is b for b in current.bases)
+                or any(child is k for k in current.keywords)
+                or any(child is d for d in current.decorator_list)
+            ):
+                return current
+        child, current = current, mod.parents.get(id(current))
+    return None
+
+
+def _class_bindings(mod: _Module, klass: ast.ClassDef, name: str) -> Tuple[set, bool, bool]:
+    """:func:`_bindings` of ``name`` in ``klass``'s own body."""
+    return _bindings(
+        _own_scope_nodes(mod, klass), name, mod.dotted, mod.rel.endswith("__init__.py")
+    )
+
+
 def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
-    """True when a plain ``name`` is bound, other than by an import, in a
-    function enclosing ``at`` or at module scope."""
+    """True when a plain ``name`` is bound, other than by an import, in the
+    class body evaluating ``at``, in a function enclosing it or at module
+    scope."""
+    klass = _evaluating_class(mod, at)
+    if klass is not None:
+        _, defined, other = _class_bindings(mod, klass, name)
+        if other or defined:
+            return True
     scope = _defining_scope(mod, at)
     while scope is not None:
         _, defined, other = _scope_bindings(mod, scope, name)
@@ -2221,9 +2270,21 @@ def _trusted_definition(mod: _Module, node: ast.AST) -> bool:
     return _bound_once_as(mod, node)
 
 
-def _wrappers(modules: List[_Module]) -> set:
+def _wrapper_name_rebound(mod: _Module, node: ast.AST) -> List[ast.AST]:
+    """Every other binding of a wrapper's name anywhere in its module (in any
+    function or class body too): a wrapper's name is reserved like the
+    helper's."""
+    is_package = mod.rel.endswith("__init__.py")
+    return [
+        site for _kind, site, _target in _binding_sites(ast.walk(mod.tree), node.name, mod.dotted, is_package)
+        if site is not node
+    ]
+
+
+def _wrappers(modules: List[_Module], reserve_names: bool = True) -> set:
     """Functions whose whole body (after a docstring) is one ``return`` of an
-    inline helper call, by dotted name."""
+    inline helper call, by dotted name; with ``reserve_names``, only those
+    whose name is bound nowhere else in their module."""
     found: set = set()
     changed = True
     while changed:
@@ -2248,6 +2309,7 @@ def _wrappers(modules: List[_Module]) -> set:
                 if (
                     not node.decorator_list  # a decorator could turn a refusal into None
                     and _trusted_definition(mod, node)  # module level, defined once
+                    and not (reserve_names and _wrapper_name_rebound(mod, node))
                     and len(body) == 1
                     and isinstance(body[0], ast.Return)
                     and isinstance(body[0].value, ast.Call)
@@ -3026,6 +3088,25 @@ def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
     wrappers = _wrappers(modules)
     problems: List[str] = []
+    # A wrapper whose name is bound again anywhere in its module is not one;
+    # each such binding is reported.
+    for full in sorted(_wrappers(modules, reserve_names=False) - wrappers):
+        for mod in modules:
+            for node in mod.tree.body:
+                if (
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and f"{mod.dotted}.{node.name}" == full
+                ):
+                    for site in _wrapper_name_rebound(mod, node):
+                        holder = _enclosing(
+                            mod, site, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                        )
+                        problems.append(
+                            f"{mod.rel}:{getattr(site, 'lineno', node.lineno)} in "
+                            f"{getattr(holder, 'name', '<module>')}: the environment wrapper "
+                            f"{node.name} is bound again here, so it is not trusted as the "
+                            f"helper's"
+                        )
     runner_ids = {
         _runner_identity(package.name, rel, fname) for rel, fname in GENERIC_RUNNERS
     }
@@ -3150,6 +3231,18 @@ def unaccounted_launches(package: Path) -> List[str]:
                 kind = _launch_kind(mod, node.func)
                 if kind:
                     judge(mod, node, f"process launch {kind}", runner_env=_launch_env(kind))
+                klass = _evaluating_class(mod, node)
+                if klass is not None and (
+                    kind
+                    or launch_checker(mod)(node) is not None
+                    or _resolve(mod, node.func, node) in (HELPERS | wrappers | {_FINISH})
+                    or _last_name(node.func) in {h.rsplit(".", 1)[1] for h in HELPERS}
+                ):
+                    problems.append(
+                        f"{mod.rel}:{node.lineno} in {klass.name}: a launch, runner or "
+                        f"helper call written directly in a class body runs when the class "
+                        f"is defined; move it into a method or function"
+                    )
                 problem = _dynamic_import_problem(mod, node)
                 if problem:
                     _, fname = place(mod, node)
@@ -4447,6 +4540,55 @@ GUARD_PROBES_REEXPORT = {
             )
         '''
     ),
+    # Class bodies run nothing; a wrapper's name is reserved (15 October 2026).
+    "zz_classbody.py": textwrap.dedent(
+        '''\
+        import os
+        import subprocess
+
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
+
+        def command_env(wf):
+            return project_command_environment(wf, None)
+
+
+        def other_env(wf):
+            return project_command_environment(wf, None)
+
+
+        def unshadowed_env(wf):
+            return project_command_environment(wf, None)
+
+
+        class v151_class_body_launch_beside_a_class_local_wrapper:
+            def command_env(wf):
+                return dict(os.environ)
+
+            result = subprocess.run(["true", "x"], env=command_env("."))
+
+
+        class v152_class_body_launch_with_an_inline_helper:
+            result = subprocess.run(["true", "x"], env=project_command_environment(".", None))
+
+
+        def v153_function_rebinding_a_wrappers_name(cmd):
+            other_env = None
+            return other_env
+
+
+        def uses_other_env(cmd, wf):
+            return subprocess.run(cmd, env=other_env(wf))
+
+
+        class Commands:
+            def ok_unshadowed_module_wrapper_in_a_method(self, cmd, wf):
+                return subprocess.run(cmd, env=unshadowed_env(wf))
+
+            def ok_inline_helper_in_a_method(self, cmd, wf):
+                return subprocess.run(cmd, env=project_command_environment(wf, None))
+        '''
+    ),
     "zz_reexport_consumer.py": textwrap.dedent(
         '''\
         import __PKG__.orchestrator.zz_reexport_api
@@ -4596,6 +4738,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_name_imported_from_the_same_named_submodule",
         "ok_direct_reexport_call_with_helper_env", "ok_module_attribute_use",
         "ok_static_import_as_an_attribute_base",
+        "ok_unshadowed_module_wrapper_in_a_method", "ok_inline_helper_in_a_method",
         "ok_env_omitted_on_a_default_safe_runner", "ok_helper_env_by_keyword",
         "ok_helper_env_positionally", "ok_runner_helper_name_positionally",
         "ok_runner_helper_name_by_keyword", "ok_popen_helper_name_positionally",
