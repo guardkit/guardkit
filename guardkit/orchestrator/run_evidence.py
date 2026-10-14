@@ -370,8 +370,11 @@ def _git_runner(
         return HelperRun(
             project_git.REFUSED_EXIT_CODE, b"", (prepared.refusal or "").encode()
         )
+    # An inline literal ``["git", ...]``: git is found through the helper's
+    # fixed PATH, whose first folder is the one git was found in.
     run = _default_runner(
-        prepared.argv, cwd=cwd, env=prepared.env, timeout=timeout, keep_bytes=keep_bytes
+        ["git", *prepared.argv[1:]], cwd=cwd, env=prepared.env, timeout=timeout,
+        keep_bytes=keep_bytes,
     )
     if run.timed_out:
         run.stderr = project_git.timeout_sentence(prepared.label, timeout).encode()

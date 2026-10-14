@@ -1387,18 +1387,6 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/review_runner.py", "attempt_fleet_memory_cli"): "guardkit memory search, the factory's own program",
     ("orchestrator/quality_gates/task_work_interface.py", "_execute_via_subprocess"): "guardkit task-work, the factory's own program",
     ("orchestrator/merge_executor.py", "run_feature_validate"): "guardkit feature validate, the factory's own program",
-    ("lib/project_git.py", "_spawn"): (
-        "git, the factory's own program, run by its full path from the git helper "
-        "with the helper's fixed environment (no factory secret); the helper's own reads"
-    ),
-    ("lib/project_git.py", "_launch"): (
-        "git, the factory's own program, run by its full path from the git helper "
-        "with the helper's fixed environment (no factory secret)"
-    ),
-    ("orchestrator/run_evidence.py", "_git_runner"): (
-        "git through the git helper: the argv and environment come from prepare_git, "
-        "never the factory's environment"
-    ),
     ("orchestrator/quality_gates/coach_validator.py", "_start_infrastructure_containers"): "the container engine through a variable (the fixture recipes)",
     ("orchestrator/run_evidence.py", "docker_events_between"): "the container engine through a variable (docker events)",
     # Generic runners: each call to them is checked below.

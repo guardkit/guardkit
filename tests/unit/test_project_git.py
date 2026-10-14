@@ -1055,3 +1055,22 @@ def test_run_git_refuses_rebase_options_the_factory_does_not_use(lab: Lab, optio
     done = pg.run_git(["rebase", option, "main"], cwd=repo)
     assert done.returncode != 0
     assert done.stderr == pg.REBASE_REFUSAL
+
+
+def test_run_git_runs_the_git_program_found_at_start_up(
+    lab: Lab, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The commands are written ``["git", ...]`` (the launch guard's literal
+    form); the fixed PATH puts the found program's folder first, so that is
+    the program that runs, for the command and for the helper's own reads."""
+    pg = _pg()
+    repo = lab.base_repo("repo")
+    found = lab.root / "found-git"
+    found.mkdir()
+    calls = lab.root / "found-git-calls.txt"
+    (found / "git").write_text(f'#!/bin/sh\necho "$1" >> "{calls}"\nexec "{GIT}" "$@"\n')
+    (found / "git").chmod(0o755)
+    monkeypatch.setattr(pg, "_git_program_cache", [str(found / "git")])
+    done = pg.run_git(["status", "--porcelain"], cwd=repo)
+    assert done.returncode == 0
+    assert len(calls.read_text().splitlines()) >= 2  # the name read and the command

@@ -281,7 +281,10 @@ _git_program_cache: List[str] = []
 
 
 def git_program() -> str:
-    """The full path of the git program, found once from GuardKit's own PATH."""
+    """The full path of the git program, found once from GuardKit's own PATH.
+
+    Its folder is the first folder on the PATH every git command gets, so the
+    commands below, written as ``["git", ...]``, run exactly this program."""
     if not _git_program_cache:
         found = shutil.which("git")
         if not found:
@@ -399,8 +402,10 @@ def _spawn(
     scripted ``subprocess.run``.
     """
     try:
+        # An inline literal ``["git", ...]``: git is found through the fixed
+        # environment's PATH (git's own folder first), as in :func:`_launch`.
         process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
-            list(argv),
+            ["git", *list(argv)[1:]],
             cwd=cwd,
             env=dict(env),
             stdin=subprocess.DEVNULL,
@@ -714,25 +719,25 @@ def _launch(
     prepared: PreparedGit, shown: List[str], *, cwd, check, timeout, input,
     text_mode, encoding, errors,
 ) -> subprocess.CompletedProcess:
-    kwargs: Dict[str, Any] = {
-        "cwd": os.fspath(cwd) if cwd is not None else None,
-        "env": prepared.env,
-        "capture_output": True,
-        "timeout": timeout,
-    }
-    if text_mode:
-        kwargs["text"] = True
-        if encoding:
-            kwargs["encoding"] = encoding
-        if errors:
-            kwargs["errors"] = errors
-    if input is not None:
-        kwargs["input"] = input
-    else:
-        kwargs["stdin"] = subprocess.DEVNULL
     label = prepared.label
+    # The command is an inline literal ``["git", ...]`` (the factory's own
+    # program, recognised as such by the launch guard). ``git`` is found
+    # through the fixed environment's PATH, whose first folder is the one git
+    # was found in at start-up, so this is the same program as
+    # :func:`git_program` names.
     try:
-        done = subprocess.run(prepared.argv, **kwargs)  # noqa: S603 - fixed argv
+        done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", *prepared.argv[1:]],
+            cwd=os.fspath(cwd) if cwd is not None else None,
+            env=prepared.env,
+            input=input,
+            stdin=subprocess.DEVNULL if input is None else None,
+            capture_output=True,
+            timeout=timeout,
+            text=text_mode,
+            encoding=encoding if text_mode else None,
+            errors=errors if text_mode else None,
+        )
     except subprocess.TimeoutExpired:
         sentence = timeout_sentence(label, timeout)
         raise subprocess.TimeoutExpired(
