@@ -301,11 +301,12 @@ MODEL_ARTIFACT_PATHSPECS: Tuple[str, ...] = tuple(
 )
 
 #: Where record CONTENT is looked for, to catch an exact copy of a record
-#: that was never committed: every record path except the inner build
-#: folders, which hold copies of the product itself.
+#: that was never committed: every record path and record folder name except
+#: what lies inside the inner build folders, which hold copies of the product
+#: itself (their own records are found by :func:`_inner_build_record_files`).
 _RECORD_CONTENT_PATHSPECS: Tuple[str, ...] = tuple(
     pattern_pathspec(f":(glob){path}")
-    for path in FACTORY_RECORD_PATHS
+    for path in _with_folder_names(FACTORY_RECORD_PATHS)
     if path != "**/.guardkit/worktrees/**"
 )
 
@@ -491,17 +492,6 @@ def _staged_outside_records(
     return staged
 
 
-#: An inner build folder's own record folders, relative to that folder. Only
-#: these are read inside it: its product files are never compared.
-_INNER_RECORD_FOLDERS: Tuple[str, ...] = (
-    ".guardkit/autobuild",
-    ".guardkit/autobuild-private",
-    ".guardkit/qav-shadow",
-    "conversation_history",
-    "large_tool_results",
-)
-
-
 def git_blob_id(data: bytes, object_format: str) -> str:
     """The id git gives a file holding exactly ``data``: the ``sha1`` or
     ``sha256`` digest of ``b"blob <length>\\0"`` followed by the bytes, as
@@ -555,38 +545,46 @@ def _read_regular_file(path: Path) -> Optional[bytes]:
     return b"".join(chunks) or None
 
 
+def _is_inside_inner_builds(relative: str) -> bool:
+    """Whether a path lies inside a ``.guardkit/worktrees/`` folder."""
+    parts = relative.split("/")
+    return any(
+        parts[i] == ".guardkit" and parts[i + 1] == "worktrees"
+        for i in range(len(parts) - 2)
+    )
+
+
 def _inner_build_record_files(root: Path) -> List[Path]:
-    """The record files of each inner build folder under
-    ``.guardkit/worktrees/``, found by walking the record folders only and
-    never following a link. git's own listing stops at an inner build
-    folder, because each is a repository of its own."""
+    """The record files inside each inner build folder under
+    ``.guardkit/worktrees/``, at any depth. git's own listing stops at an
+    inner build folder, because each is a repository of its own.
+
+    Each inner folder is walked whole, never following a link and skipping
+    ``.git`` and its own inner build folders; only files whose path relative
+    to the inner folder is a record (:func:`is_factory_record`) are returned.
+    No other file is ever read, so the inner build's product files never are.
+    """
     worktrees = root / ".guardkit" / "worktrees"
     if any(p.is_symlink() for p in (root / ".guardkit", worktrees)):
         return []
     try:
-        inner_folders = [e for e in os.scandir(worktrees) if e.is_dir(follow_symlinks=False)]
+        inner_folders = [e.path for e in os.scandir(worktrees) if e.is_dir(follow_symlinks=False)]
     except OSError:
         return []
     found: List[Path] = []
-    for entry in inner_folders:
-        inner = Path(entry.path)
-        guardkit = inner / ".guardkit"
-        if guardkit.is_symlink():
-            continue
-        for relative in _INNER_RECORD_FOLDERS:
-            top = inner / relative
-            if top.is_symlink() or not top.is_dir():
-                continue
-            for folder, _subfolders, names in os.walk(top):
-                found.extend(Path(folder) / name for name in names)
-        try:
-            names = [e.name for e in os.scandir(guardkit) if e.is_file(follow_symlinks=False)]
-        except OSError:
-            continue
-        found.extend(
-            guardkit / name for name in names
-            if name == "bootstrap_state.json" or name.startswith("memory-query-log.jsonl")
-        )
+    for inner in inner_folders:
+        for folder, subfolders, names in os.walk(inner):
+            relative_folder = os.path.relpath(folder, inner).replace(os.sep, "/")
+            prefix = "" if relative_folder == "." else relative_folder + "/"
+            subfolders[:] = [
+                name for name in subfolders
+                if name != ".git"
+                and not _is_inside_inner_builds(f"{prefix}{name}/x")
+            ]
+            for name in names:
+                relative = prefix + name
+                if is_factory_record(relative) and not _is_inside_inner_builds(relative):
+                    found.append(Path(folder) / name)
     return found
 
 
