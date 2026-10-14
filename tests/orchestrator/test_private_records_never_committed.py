@@ -573,6 +573,9 @@ MATCHER_PATHS = (
     "large_tool_results/y",
     "p/q/large_tool_results/z",
     "t5/large_tool_results",
+    "t6/large_tool_results.py",
+    "t7/.guardkit/worktrees.md",
+    "t8/.guardkit/autobuild.yaml",
     "x.guardkit/autobuild/z",
     "guardkit/autobuild/x",
     ".guardkit/AUTOBUILD/x",
@@ -591,11 +594,144 @@ def test_is_factory_record_agrees_with_git(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path / "repo")
     for path in MATCHER_PATHS:
         _write(repo, path, "x\n")
+    globs = list(wc.FACTORY_RECORD_PATHS) + [
+        p[:-3] for p in wc.FACTORY_RECORD_PATHS if p.endswith("/**")
+    ]
     listed = run_git(
         ["ls-files", "--others", "-z", "--",
-         *[pattern_pathspec(f":(glob){p}") for p in wc.FACTORY_RECORD_PATHS]],
+         *[pattern_pathspec(f":(glob){p}") for p in globs]],
         cwd=repo, check=True,
     ).stdout
     by_git = {p for p in listed.split("\0") if p}
     assert by_git, "git matched something"
     assert {p for p in MATCHER_PATHS if wc.is_factory_record(p)} == by_git
+
+
+# --- Fix pass 1: exact copies of records that were never committed ---------
+#
+# Records are no longer committed, so git's own copy detection (which only
+# looks at files HEAD or the index holds) cannot see a copy of one. The
+# unstaging step compares what is staged with every record file on disk.
+
+UNTRACKED_TURN = ".guardkit/autobuild/TASK-1/player_turn_1.json"
+SHORT_RECORD = ".guardkit/autobuild-private/feature_check.json"
+
+
+@pytest.mark.parametrize(
+    "record, copy, text",
+    [
+        (UNTRACKED_TURN, "notes/turn.json", _record_json()),
+        (SHORT_RECORD, "docs/check.json", "{}"),
+    ],
+    ids=["turn-record", "short-record"],
+)
+def test_an_exact_copy_of_an_untracked_record_is_not_committed(
+    site, record: str, copy: str, text: str, tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, record, text)
+    _write(repo, copy, text)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    assert ORDINARY in committed, committed
+    assert copy not in _tree(repo), committed
+    assert (repo / copy).is_file(), "the copy stays on disk"
+    assert _warnings(caplog, copy, "moves or copies"), [
+        r.getMessage() for r in caplog.records
+    ]
+
+
+def test_a_copy_of_an_ignored_record_is_not_committed(
+    site, tmp_path: Path
+) -> None:
+    """A project that ignores the record folder (a factory test project's
+    shape): the record is ignored, the copy is not."""
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, ".gitignore", ".guardkit/autobuild/\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "commit", "-m", "the project ignores records")
+    _write(repo, UNTRACKED_TURN, _record_json())
+    _write(repo, "notes/turn.json", _record_json())
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+    assert "notes/turn.json" not in _tree(repo)
+
+
+def test_a_file_one_byte_away_from_a_record_and_empty_files_are_committed(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    text = _record_json()
+    _write(repo, UNTRACKED_TURN, text)
+    _write(repo, "notes/near.json", text.replace("value", "valuE", 1))
+    _write(repo, ".guardkit/autobuild/TASK-1/empty.json", "")
+    _write(repo, "src/empty.txt", "")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    assert "notes/near.json" in committed, committed
+    assert "src/empty.txt" in committed, committed
+    assert not _warnings(caplog, "moves or copies")
+
+
+# --- Fix pass 1: a symbolic link named exactly like a record folder ---------
+
+LINK_NAMES = (
+    ".guardkit/autobuild",
+    ".guardkit/autobuild-private",
+    ".guardkit/qav-shadow",
+    ".guardkit/worktrees",
+    "conversation_history",
+    "large_tool_results",
+    "packages/app/large_tool_results",
+)
+
+
+@pytest.mark.parametrize("name", LINK_NAMES)
+def test_a_link_named_like_a_record_folder_is_not_committed(
+    site, name: str, tmp_path: Path
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    link = repo / name
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(elsewhere, target_is_directory=True)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+    assert name not in _tree(repo)
+    assert link.is_symlink(), "the link stays on disk"
+
+
+def test_a_pre_staged_link_named_like_a_record_folder_is_taken_out(
+    site, tmp_path: Path
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    for name in LINK_NAMES:
+        link = repo / name
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(elsewhere, target_is_directory=True)
+    _write(repo, ORDINARY, "the Player's work\n")
+    _git(repo, "add", "--", *LINK_NAMES, ORDINARY)
+
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert ORDINARY in tree
+    for name in LINK_NAMES:
+        assert name not in tree, (name, tree)
