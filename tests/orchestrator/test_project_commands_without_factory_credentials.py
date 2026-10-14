@@ -4686,9 +4686,40 @@ GUARD_PROBES_METHOD_RUNNER: Dict[str, str] = {
 }
 
 
-def test_a_method_runner_takes_its_env_only_by_keyword(tmp_path: Path) -> None:
+#: The same method runner defined inside a class-level conditional and
+#: under try/except: still a method (the nearest enclosing scope is the
+#: class), so its env is still taken only by keyword.
+_METHOD_RUNNER_SHAPES = {
+    "plain": None,
+    "conditional": (
+        "class Unrelated:\n"
+        "    def _run_recorded(self, args, *, env=None):\n"
+        "        return None\n\n\n"
+        "class CoachValidator:\n"
+        "    if True:\n"
+        "        def _run_recorded(self, args, kind, env=None, **kwargs):\n"
+        "            return None\n"
+    ),
+    "try": (
+        "class Unrelated:\n"
+        "    def _run_recorded(self, args, *, env=None):\n"
+        "        return None\n\n\n"
+        "class CoachValidator:\n"
+        "    try:\n"
+        "        def _run_recorded(self, args, kind, env=None, **kwargs):\n"
+        "            return None\n"
+        "    except Exception:  # pragma: no cover\n"
+        "        pass\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_METHOD_RUNNER_SHAPES))
+def test_a_method_runner_takes_its_env_only_by_keyword(tmp_path: Path, shape: str) -> None:
     pkg = tmp_path / "guardkit"
     for name, text in GUARD_PROBES_METHOD_RUNNER.items():
+        if name.endswith("coach_validator.py") and _METHOD_RUNNER_SHAPES[shape]:
+            text = _METHOD_RUNNER_SHAPES[shape]
         (pkg / name).parent.mkdir(parents=True, exist_ok=True)
         (pkg / name).write_text(text, encoding="utf-8")
     problems = unaccounted_launches(pkg)
