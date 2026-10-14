@@ -507,6 +507,14 @@ class TestFleetMemoryClientAddEpisode:
     ``build_memory_episode`` runs so the published episode shape is exercised end-to-end.
     """
 
+    @pytest.fixture(autouse=True)
+    def _bus_account(self, monkeypatch):
+        """These tests are about the bus, which is used only with a bus account.
+
+        Every test here replaces the publisher, so nothing reaches a real bus.
+        """
+        monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
+
     @staticmethod
     def _summary(published: int = 1, skipped: int = 0):
         from guardkit.memory.harvest_publisher import PublishSummary
@@ -660,6 +668,14 @@ class TestTheReturnedKeyIsNotAStoreReceipt:
 
     No broker, no store, no network — the publish boundary is a fake.
     """
+
+    @pytest.fixture(autouse=True)
+    def _bus_account(self, monkeypatch):
+        """These tests are about the bus, which is used only with a bus account.
+
+        Every test here replaces the publisher, so nothing reaches a real bus.
+        """
+        monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
 
     @staticmethod
     def _summary(published: int = 1, skipped: int = 0):

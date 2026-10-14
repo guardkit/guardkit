@@ -8554,8 +8554,9 @@ class AutoBuildOrchestrator:
                 logger.warning(
                     "memory: build outcome NOT published for %s (ended '%s') — "
                     "memory is OFF or the client is unavailable, so this build "
-                    "teaches future builds nothing. Set FLEET_MEMORY_ENABLED=true "
-                    "and FLEET_MEMORY_PG_DSN to enable.",
+                    "teaches future builds nothing. Set FLEET_MEMORY_ENABLED=true, "
+                    "with FLEET_MEMORY_MCP_URL (the memory door) or "
+                    "FLEET_MEMORY_PG_DSN, to enable.",
                     task_id,
                     final_decision,
                 )

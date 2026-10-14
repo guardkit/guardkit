@@ -235,7 +235,16 @@ class FleetMemoryConfig:
 
     Attributes:
         enabled: Whether fleet-memory backend is enabled
-        postgres_dsn: PostgreSQL connection string for memory storage
+        postgres_dsn: PostgreSQL connection string for memory storage, or
+            ``None`` when this process holds no database address. **There is
+            no code default** (14 October 2026): the old one named
+            ``localhost:5433``, which inside a sandbox on the host network
+            could reach a project's own test database.
+        door_url: The memory door (the memory service's MCP endpoint) to read
+            through when there is no database address. With memory on, no
+            database address and a door, the client is in "door mode": reads
+            go through the door's ``memory_search_items`` tool and no store
+            is ever opened. With neither, reads are off.
         embed_url: Embedding service URL
         embed_model: Embedding model identifier
         embed_dims: Embedding vector dimensions
@@ -251,7 +260,7 @@ class FleetMemoryConfig:
     """
 
     enabled: bool = False
-    postgres_dsn: str = "postgresql://postgres:test@localhost:5433/memory"
+    postgres_dsn: Optional[str] = None
     # No machine's name in a default (2026-09-24): this used to name one box on
     # one network, which resolves nowhere else — inside a container least of
     # all. The address of the embedding service is a deployment fact and comes
@@ -264,6 +273,7 @@ class FleetMemoryConfig:
     # New retrieval arm configuration (FEAT-ABL-001)
     retrieval_arm: Optional[str] = None
     fixture_id: Optional[str] = None
+    door_url: Optional[str] = None
 
 
 def _running_loop() -> "asyncio.AbstractEventLoop | None":
@@ -288,6 +298,12 @@ DEFAULT_DOOR_URL = "http://host.docker.internal:8005/mcp"
 #: How long the door may take before the write is given up on. Well inside the
 #: caller's own ceiling: a build's last line must not be held open.
 DOOR_WRITE_TIMEOUT_SECONDS = 10.0
+
+#: How long a prose record (an envelope the relay's ingestion chunks and embeds)
+#: may take at the door. A spec of a few dozen chunks takes well over ten seconds
+#: to embed and write; over the bus the relay allowed minutes. Prose writes are
+#: not on a build's last line (the outcome is typed), so this does not hold one open.
+DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS = 120.0
 
 
 def _typed_door_payload(episode: Any) -> dict[str, Any]:
@@ -342,7 +358,48 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
 
     Never raises: a memory write must not be able to fail a build.
     """
+    # The tool's argument is ``payload``. Sending ``payload_dict`` (the
+    # underlying function's parameter name) returns a pydantic validation
+    # error as PLAIN TEXT with isError unset — which the first cut of this read
+    # as a successful write. Proven against the live door.
+    return await _write_to_the_door(
+        "memory_write_payload", {"payload": payload}, url, DOOR_WRITE_TIMEOUT_SECONDS
+    )
+
+
+async def publish_envelope_through_the_door(envelope: dict, *, url: str | None = None) -> bool:
+    """Hand one published envelope to the relay's ingestion at the door. True when it landed.
+
+    WHY THIS EXISTS (14 October 2026). Prose records (turn states, specs and
+    the other document groups) have no typed form: they are published as a
+    ``MemoryEpisodeV1`` envelope and the relay chunks them into the store. With
+    no bus account (a build sandbox holds none) the door's
+    ``memory_publish_envelope`` tool takes the SAME envelope, as the bus would
+    carry it, and runs the relay's own ingestion on it, so the store ends up
+    exactly as the bus would have left it.
+
+    Never raises: a memory write must not be able to fail a build.
+    """
+    return await _write_to_the_door(
+        "memory_publish_envelope",
+        {"envelope": envelope},
+        url,
+        DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS,
+    )
+
+
+async def _write_to_the_door(
+    tool: str, arguments: dict, url: str | None, timeout: float
+) -> bool:
+    """Call one write tool at the door; True only on positive evidence it landed.
+
+    Three outcomes are told apart in the log. A refusal, or a door that could
+    not be reached, means the record was not written. Running out of time
+    AFTER the record was handed over means the door may still store it, so
+    that is said instead of "not written".
+    """
     where = url or (os.getenv(DOOR_URL_ENV, "").strip() or DEFAULT_DOOR_URL)
+    handed_over = False
     try:
         # Imported lazily, exactly as the seats do it, so this module still
         # loads where `mcp` is absent.
@@ -354,14 +411,9 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
                 read, write = streams[0], streams[1]
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    # The tool's argument is ``payload``. Sending
-                    # ``payload_dict`` (the underlying function's parameter
-                    # name) returns a pydantic validation error as PLAIN TEXT
-                    # with isError unset — which the first cut of this read as
-                    # a successful write. Proven against the live door.
-                    result = await session.call_tool(
-                        "memory_write_payload", {"payload": payload}
-                    )
+                    nonlocal handed_over
+                    handed_over = True
+                    result = await session.call_tool(tool, arguments)
             # POSITIVE EVIDENCE ONLY. A write is claimed when the door says
             # so, never when it says nothing or says something this cannot
             # read: the door reports an argument mismatch as plain text with
@@ -394,7 +446,24 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
                 return False
             return True
 
-        return await asyncio.wait_for(_send(), timeout=DOOR_WRITE_TIMEOUT_SECONDS)
+        return await asyncio.wait_for(_send(), timeout=timeout)
+    except asyncio.TimeoutError:
+        if handed_over:
+            logger.warning(
+                "memory: sent to the memory service; it had not confirmed within "
+                "%g s, so it may or may not be stored (the door at %s)",
+                timeout,
+                where,
+            )
+        else:
+            logger.warning(
+                "memory: could not write through the door at %s (no answer within "
+                "%g s, before the record was sent); this build teaches future "
+                "builds nothing",
+                where,
+                timeout,
+            )
+        return False
     except Exception as exc:  # noqa: BLE001 — a write never costs a build
         logger.warning(
             "memory: could not write through the door at %s (%s); this "
@@ -432,6 +501,178 @@ def _what_actually_failed(exc: BaseException) -> str:
 
     walk(exc)
     return "; ".join(leaves) if leaves else f"{type(exc).__name__}: {str(exc)[:160]}"
+
+
+async def _write_episode_through_the_door(
+    episode: Any, published_episode: Any, door_kwargs: dict
+) -> bool:
+    """Write one built episode through the door, by the route its kind takes.
+
+    A typed record goes as its typed payload (``memory_write_payload``). A
+    prose record, which has no typed form, goes as the envelope the bus would
+    have carried (``memory_publish_envelope``), so the relay's own ingestion
+    stores it exactly as it would have from the bus. The bus's size limit is
+    kept: an envelope the bus would refuse is not sent either.
+    """
+    if getattr(episode, "payload_type", None):
+        return await write_through_the_door(_typed_door_payload(episode), **door_kwargs)
+    wire = published_episode.model_dump_json()
+    try:
+        from nats_core.client import MAX_EPISODE_BODY_BYTES as limit
+    except Exception:  # pragma: no cover - nats_core built the episode
+        limit = 900 * 1024
+    if len(wire.encode("utf-8")) > limit:
+        logger.warning(
+            "memory: episode %s is %d bytes, over the %d byte limit the bus "
+            "also keeps; not written. Chunk the content upstream.",
+            published_episode.episode_id,
+            len(wire.encode("utf-8")),
+            limit,
+        )
+        return False
+    return await publish_envelope_through_the_door(json.loads(wire), **door_kwargs)
+
+
+#: How long one read through the door may take, connection included. A read
+#: that runs out of time counts as a failed read, never as an empty memory.
+DOOR_READ_TIMEOUT_SECONDS = 30.0
+
+#: The door's tool that returns the ranked results one by one (the shared
+#: ``memory_search`` returns one assembled block, which cannot be scored per
+#: result).
+DOOR_SEARCH_TOOL = "memory_search_items"
+
+
+class MemoryDoorError(RuntimeError):
+    """A read through the memory door failed; the message names the door."""
+
+
+@dataclass(frozen=True)
+class _DoorItem:
+    """One ranked result from the door, shaped like the store's own results.
+
+    The store route's results carry ``.value`` (with ``natural_key`` and
+    ``content``) and ``.score``; everything after the search reads only
+    those two, so the door's results are wrapped to match.
+    """
+
+    value: dict
+    score: Any
+
+
+def _door_label(url: str) -> str:
+    """The door's address for a message: scheme, host, port and path only.
+
+    Anything before an ``@`` is dropped, so a message can never carry a
+    user name or password even if one was written into the address.
+    """
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        return "the configured memory door"
+    if not host:
+        return "the configured memory door"
+    return f"{parts.scheme}://{host}{port}{parts.path}"
+
+
+async def _with_door_session(url: str, action: Any, *, doing: str) -> Any:
+    """Open one MCP session to the door, run ``action(session)``, close it.
+
+    Each call opens and closes its own session, so a session belongs to no
+    event loop and nothing has to be reopened when the loop changes. Every
+    failure, a timeout included, comes back as :class:`MemoryDoorError`
+    naming the door and the innermost reason.
+    """
+    where = _door_label(url)
+    try:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        async def _run() -> Any:
+            async with streamable_http_client(url) as streams:
+                read, write = streams[0], streams[1]
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    return await action(session)
+
+        return await asyncio.wait_for(_run(), timeout=DOOR_READ_TIMEOUT_SECONDS)
+    except MemoryDoorError:
+        raise
+    except asyncio.TimeoutError as exc:
+        raise MemoryDoorError(
+            f"the memory door at {where} did not answer {doing} within "
+            f"{DOOR_READ_TIMEOUT_SECONDS:g} s"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 — named and re-raised as one kind
+        raise MemoryDoorError(
+            f"the memory door at {where} could not be reached for {doing} "
+            f"({_what_actually_failed(exc)})"
+        ) from exc
+
+
+async def door_offers_search(url: str) -> None:
+    """Check that the door answers and offers ``memory_search_items``.
+
+    Raises :class:`MemoryDoorError` when it does not.
+    """
+
+    async def _list(session: Any) -> list[str]:
+        listed = await session.list_tools()
+        return [tool.name for tool in getattr(listed, "tools", None) or []]
+
+    names = await _with_door_session(url, _list, doing="its list of tools")
+    if DOOR_SEARCH_TOOL not in names:
+        raise MemoryDoorError(
+            f"the memory door at {_door_label(url)} answers but does not offer "
+            f"{DOOR_SEARCH_TOOL}; the memory service there predates it"
+        )
+
+
+async def search_through_the_door(url: str, arguments: dict[str, Any]) -> list[_DoorItem]:
+    """Run ``memory_search_items`` at the door; return its ranked results.
+
+    Raises :class:`MemoryDoorError` for a door that cannot be reached, a
+    refusal, or an answer that is not the tool's shape. Never returns an
+    empty list for a failure: an empty list means the door searched and
+    found nothing.
+    """
+    where = _door_label(url)
+
+    async def _search(session: Any) -> Any:
+        return await session.call_tool(DOOR_SEARCH_TOOL, arguments)
+
+    result = await _with_door_session(url, _search, doing="a search")
+    text = "".join(getattr(part, "text", "") for part in (result.content or []))
+    if getattr(result, "isError", False):
+        raise MemoryDoorError(f"the memory door at {where} refused the search: {text[:200]}")
+    try:
+        envelope = json.loads(text)
+    except ValueError as exc:
+        raise MemoryDoorError(
+            f"the memory door at {where} answered the search with something "
+            f"that is not JSON: {text[:200]}"
+        ) from exc
+    if not isinstance(envelope, dict):
+        raise MemoryDoorError(f"the memory door at {where} answered the search in an unknown shape")
+    if envelope.get("is_error") or envelope.get("error"):
+        raise MemoryDoorError(
+            f"the memory door at {where} could not search: "
+            f"{str(envelope.get('message') or envelope.get('error'))[:200]}"
+        )
+    value = envelope.get("value")
+    items = value.get("items") if isinstance(value, dict) else None
+    if not isinstance(items, list):
+        raise MemoryDoorError(f"the memory door at {where} answered the search with no list of items")
+    wrapped: list[_DoorItem] = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("value"), dict):
+            raise MemoryDoorError(f"the memory door at {where} answered with an item in an unknown shape")
+        wrapped.append(_DoorItem(value=dict(item["value"]), score=item.get("score")))
+    return wrapped
 
 
 class MemoryReadUnavailable(RuntimeError):
@@ -482,6 +723,11 @@ class FleetMemoryClient:
         self._initialized = False
         # Said once per client when something asks for memory without a name.
         self._said_no_memory_name: bool = False
+        # Said once per client when there is no database address and no door.
+        self._said_reads_off: bool = False
+        # Said once per client when writes take the door because there is no
+        # bus account here.
+        self._said_door_writes: bool = False
         # TASK-FIX-GTP2/GLF-003 parity: the per-thread FleetMemoryClientFactory sets
         # this True when it creates a client inside a running loop, deferring the
         # asyncpg store connection to the consumer's event loop (loop-affinity). The
@@ -525,6 +771,30 @@ class FleetMemoryClient:
         return False
 
     @property
+    def _door_mode(self) -> bool:
+        """Memory on, no database address, and a door address: read through the door."""
+        return bool(
+            self.config.enabled and not self.config.postgres_dsn and self.config.door_url
+        )
+
+    def _no_read_route(self) -> bool:
+        """Memory on with neither a database address nor a door: reads are off."""
+        return bool(
+            self.config.enabled
+            and not self.config.postgres_dsn
+            and not self.config.door_url
+        )
+
+    def _say_reads_off(self) -> None:
+        if not self._said_reads_off:
+            self._said_reads_off = True
+            logger.warning(
+                "memory: no database address and no memory door are set here, "
+                "so reads are off. There is no built-in database address; set "
+                "FLEET_MEMORY_MCP_URL (the memory door) or FLEET_MEMORY_PG_DSN."
+            )
+
+    @property
     def is_initialized(self) -> bool:
         """Whether the store connection is open (graphiti-client parity).
 
@@ -553,9 +823,21 @@ class FleetMemoryClient:
         installed via the guardkit `memory` extra (editable ../fleet-memory
         sibling) — NOT nats_core, which is the write path. TASK-MEM08-011 / AC-3.
 
+        In door mode (no database address, a door address set) reads go
+        through the memory door instead, so the dependency is the ``mcp``
+        client, not fleet-memory's library.
+
         Returns:
-            True if fleet_memory.retrieval is importable, False otherwise.
+            True if the read route's dependency is importable, False otherwise.
         """
+        if self._door_mode:
+            try:
+                from mcp import ClientSession  # noqa: F401
+                from mcp.client.streamable_http import streamable_http_client  # noqa: F401
+
+                return True
+            except Exception:
+                return False
         try:
             import fleet_memory.retrieval  # noqa: F401
 
@@ -577,6 +859,22 @@ class FleetMemoryClient:
         if not self.config.enabled:
             return False
         if not self._memory_named("open the store"):
+            return False
+        if self._door_mode:
+            # DOOR MODE (14 October 2026): no database address here, so no
+            # store and no database settings. One MCP session to the door
+            # proves it answers and offers the search tool. A door session
+            # belongs to no event loop, so nothing is reopened per loop.
+            if not await self._door_handshake():
+                return False
+            self._store = None
+            self._store_cm = None
+            self._store_loop = None
+            self._initialized = True
+            self._pending_init = False
+            return True
+        if self._no_read_route():
+            self._say_reads_off()
             return False
         if self._store is not None:
             # THE STORE IS AFFINE TO THE LOOP IT WAS OPENED ON (2026-09-13).
@@ -630,12 +928,32 @@ class FleetMemoryClient:
             self._store_loop = None
             return False
 
+    async def _door_handshake(self) -> bool:
+        """Open one session to the door and check it offers the search tool."""
+        if not self._read_available:
+            logger.warning(
+                "memory: the mcp client is not installed here, so reads through "
+                "the memory door are off"
+            )
+            return False
+        try:
+            await door_offers_search(self.config.door_url)
+            return True
+        except MemoryDoorError as exc:
+            logger.warning("memory: %s; reads are off for this client", exc)
+            return False
+
     async def health_check(self) -> bool:
         """Confirm the live store is reachable via a trivial real read.
+
+        In door mode it repeats the set-up handshake with the door instead:
+        the door answers and offers the search tool.
 
         Returns:
             True if a store read completes (connection healthy), False otherwise.
         """
+        if self._door_mode:
+            return await self._door_handshake()
         # Not just "is there a store" but "is it THIS loop's store" — a
         # stale one from another loop never reaches initialize() otherwise,
         # and every read through it comes back empty (2026-09-13).
@@ -665,7 +983,11 @@ class FleetMemoryClient:
             return False
 
     async def close(self) -> None:
-        """Close the fleet-memory store connection (idempotent)."""
+        """Close the fleet-memory store connection (idempotent).
+
+        In door mode there is nothing to close: each door call opens and
+        closes its own session. The client is marked closed all the same.
+        """
         if self._store_cm is not None:
             try:
                 await self._store_cm.__aexit__(None, None, None)
@@ -732,8 +1054,13 @@ class FleetMemoryClient:
             # and template-pattern paths run byte-identical code on every arm.
             logger.debug("Fleet-memory retrieval arm 'off': returning empty")
             return []
+        if self._no_read_route():
+            # Reads are off, said once: there is no database address and no
+            # door, and no address is ever taken from the code.
+            self._say_reads_off()
+            return []
         if not self._read_available:
-            logger.debug("fleet_memory.retrieval unavailable, returning empty")
+            logger.debug("memory read route unavailable, returning empty")
             self.reads["failed"] += 1
             return []
 
@@ -789,7 +1116,8 @@ class FleetMemoryClient:
         # Not just "is there a store" but "is it THIS loop's store" — a
         # stale one from another loop never reaches initialize() otherwise,
         # and every read through it comes back empty (2026-09-13).
-        if (
+        # In door mode there is no store to open: the door branch below runs.
+        if not self._door_mode and (
             self._store is None
             # A store whose loop was never recorded is one we cannot JUDGE,
             # and re-opening on that would churn the connection on every
@@ -808,8 +1136,6 @@ class FleetMemoryClient:
             return []
 
         try:
-            from fleet_memory.retrieval import SearchRequest, search as fm_search
-
             # Resolve group_ids -> payload_types / domain_tags (migrate only).
             # Explicit retired/unknown-only scopes returned above. Mixed scopes use
             # only their migrated mappings; only None/[] remains an unscoped search.
@@ -831,18 +1157,39 @@ class FleetMemoryClient:
 
             token_budget = max(2000, num_results * 200)
 
-            # Reuse fleet-memory's REAL retrieval surface — the exact functions the
-            # memory_search MCP tool wraps (single source of truth, no drift).
-            request = SearchRequest(
-                project=self.config.project,
-                query=query,
-                payload_types=sorted(payload_types),
-                domain_tags=sorted(domain_tags),
-                token_budget=token_budget,
-                include_superseded=False,
-                require_substantive=require_substantive,
-            )
-            results = await fm_search(request, self._store)
+            if self._door_mode:
+                # Through the memory door: the same search, run by the memory
+                # service, returning the same ranked results one by one. Each
+                # comes back wrapped with ``.value`` and ``.score``, so
+                # everything below is the same for both routes.
+                results = await search_through_the_door(
+                    self.config.door_url,
+                    {
+                        "project": self.config.project,
+                        "query": query,
+                        "payload_types": sorted(payload_types),
+                        "domain_tags": sorted(domain_tags),
+                        "token_budget": token_budget,
+                        "include_superseded": False,
+                        "require_substantive": require_substantive,
+                    },
+                )
+            else:
+                # Reuse fleet-memory's REAL retrieval surface — the exact
+                # functions the memory_search MCP tool wraps (single source of
+                # truth, no drift).
+                from fleet_memory.retrieval import SearchRequest, search as fm_search
+
+                request = SearchRequest(
+                    project=self.config.project,
+                    query=query,
+                    payload_types=sorted(payload_types),
+                    domain_tags=sorted(domain_tags),
+                    token_budget=token_budget,
+                    include_superseded=False,
+                    require_substantive=require_substantive,
+                )
+                results = await fm_search(request, self._store)
 
             # Per-item retrieval log (FEAT-ABL-001 / TASK-ABL1-003). Emitted HERE
             # where the source natural_key and semantic relevance score are intact.
@@ -964,6 +1311,16 @@ class FleetMemoryClient:
             raise MemoryReadUnavailable(
                 "reading from memory is switched off here (FLEET_MEMORY_ENABLED is "
                 "not true), so the record cannot be read back"
+            )
+        if self._door_mode:
+            raise MemoryReadUnavailable(
+                "reads here go through the memory door, which has no read-back, "
+                "so the record cannot be read back"
+            )
+        if self._no_read_route():
+            raise MemoryReadUnavailable(
+                "no database address and no memory door are set here, so the "
+                "record cannot be read back"
             )
         if not self._read_available:
             raise MemoryReadUnavailable(
@@ -1126,6 +1483,29 @@ class FleetMemoryClient:
             # the two ids are deliberately different things.
             natural_key = episode.episode_id
             published_episode = with_broker_dedup_scope(episode, dedup_token or "")
+            door_kwargs = {"url": self.config.door_url} if self.config.door_url else {}
+
+            if not os.environ.get("GUARDKIT_NATS_PASSWORD", "").strip():
+                # NO BUS ACCOUNT HERE (14 October 2026). A build sandbox holds
+                # no bus password, so the bus cannot be used. That is a
+                # decision, not a failure: write straight through the door
+                # and say so once, rather than trying the bus and reporting
+                # that it "did not carry" the episode.
+                if not self._said_door_writes:
+                    self._said_door_writes = True
+                    logger.info(
+                        "memory: no bus account here; writing through the memory door"
+                    )
+                if await _write_episode_through_the_door(
+                    episode, published_episode, door_kwargs
+                ):
+                    logger.info(
+                        "[Memory] Wrote %s episode %s through the door",
+                        mapping.payload_type,
+                        natural_key,
+                    )
+                    return natural_key
+                return None
 
             try:
                 summary = await publish_episodes([published_episode])
@@ -1140,7 +1520,9 @@ class FleetMemoryClient:
                     natural_key,
                     type(bus_refused).__name__,
                 )
-                if await write_through_the_door(_typed_door_payload(episode)):
+                if await _write_episode_through_the_door(
+                    episode, published_episode, door_kwargs
+                ):
                     logger.info(
                         "[Memory] Wrote %s episode %s through the door",
                         mapping.payload_type,
@@ -1164,7 +1546,9 @@ class FleetMemoryClient:
                 summary.published,
                 summary.skipped_oversized,
             )
-            if await write_through_the_door(_typed_door_payload(episode)):
+            if await _write_episode_through_the_door(
+                episode, published_episode, door_kwargs
+            ):
                 logger.info(
                     "[Memory] Wrote %s episode %s through the door",
                     mapping.payload_type,
@@ -1241,7 +1625,8 @@ class FleetMemoryClientFactory:
             logger.warning(
                 "memory: OFF — FLEET_MEMORY_ENABLED is unset/false; this run "
                 "reads no prior decisions and writes no outcomes. Set "
-                "FLEET_MEMORY_ENABLED=true and FLEET_MEMORY_PG_DSN to enable."
+                "FLEET_MEMORY_ENABLED=true, with FLEET_MEMORY_MCP_URL (the memory "
+                "door) or FLEET_MEMORY_PG_DSN, to enable."
             )
             return None
 
@@ -1490,22 +1875,28 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
     Returns:
         FleetMemoryConfig loaded from environment
     """
-    # Default postgres DSN (live)
     enabled = os.getenv("FLEET_MEMORY_ENABLED", "false").lower() == "true"
-    if enabled and not os.getenv("FLEET_MEMORY_PG_DSN"):
-        # The code default below is a trap on this estate: localhost:5433 is a
-        # TEST Postgres with no "memory" database, so an enabled-but-DSN-less
-        # run times out and degrades to empty context looking exactly like
-        # memory working with nothing to say (2026-08-03 audit, live-fired).
-        logger.warning(
-            "memory: FLEET_MEMORY_ENABLED is true but FLEET_MEMORY_PG_DSN is "
-            "unset — falling back to the localhost:5433 code default, which is "
-            "almost certainly NOT the fleet store. Set FLEET_MEMORY_PG_DSN."
-        )
-    default_postgres_dsn = os.getenv(
-        "FLEET_MEMORY_PG_DSN",
-        "postgresql://postgres:test@localhost:5433/memory",
-    )
+    # NO DATABASE ADDRESS FROM THE CODE (14 October 2026). There used to be a
+    # code default, localhost:5433. On this estate that was a TEST Postgres
+    # (2026-08-03 audit), and inside a sandbox on the host network it could be
+    # a project's own test database. Now an unset address is simply unset:
+    # with the memory door set, reads go through the door; without it, reads
+    # are off, said once here.
+    default_postgres_dsn = (os.getenv("FLEET_MEMORY_PG_DSN") or "").strip() or None
+    door_url = (os.getenv(DOOR_URL_ENV) or "").strip() or None
+    if enabled and not default_postgres_dsn:
+        if door_url:
+            logger.info(
+                "memory: no database address here; reads go through the memory "
+                "door at %s",
+                _door_label(door_url),
+            )
+        else:
+            logger.warning(
+                "memory: FLEET_MEMORY_ENABLED is true but neither "
+                "FLEET_MEMORY_PG_DSN nor FLEET_MEMORY_MCP_URL (the memory door) "
+                "is set, so reads are off. There is no built-in database address."
+            )
     # Parse retrieval arm
     raw_retrieval = os.getenv("FLEET_MEMORY_RETRIEVAL")
     retrieval_arm: Optional[str] = None
@@ -1567,4 +1958,5 @@ def _load_fleet_config_from_env() -> FleetMemoryConfig:
         project=memory_project_resolution().project,
         retrieval_arm=retrieval_arm,
         fixture_id=fixture_id,
+        door_url=door_url,
     )

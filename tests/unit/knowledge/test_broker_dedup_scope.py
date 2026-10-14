@@ -238,6 +238,14 @@ class _RecordingPublisher:
 class TestCaptureHandsTheBrokerOneIdPerWrite:
     """Driven through the real ``capture_task_outcome_verified``."""
 
+    @pytest.fixture(autouse=True)
+    def _bus_account(self, monkeypatch):
+        """These tests are about the bus, which is used only with a bus account.
+
+        Every test here replaces the publisher, so nothing reaches a real bus.
+        """
+        monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
+
     def _capture(self, monkeypatch, publisher, task_id="TASK-DEDUP-010"):
         from guardkit.knowledge import outcome_manager
         from guardkit.knowledge.entities.outcome import OutcomeType

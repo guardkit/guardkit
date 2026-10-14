@@ -114,7 +114,15 @@ class Memory:
         return PublishSummary(published=len(episodes), skipped_oversized=0, counts_per_type={})
 
     def client(self, project: str, *, enabled: bool = True) -> FleetMemoryClient:
-        client = FleetMemoryClient(FleetMemoryConfig(enabled=enabled, project=project))
+        # A stand-in database address: the store route needs one (there is no
+        # code default any more), and the store itself is the in-memory one.
+        client = FleetMemoryClient(
+            FleetMemoryConfig(
+                enabled=enabled,
+                project=project,
+                postgres_dsn="postgresql://stand-in@invalid/none",
+            )
+        )
         client._store = self.store
         client._nats_available = True
         return client
@@ -134,6 +142,9 @@ def memory(monkeypatch: pytest.MonkeyPatch) -> Memory:
     monkeypatch.setattr(
         "guardkit.memory.harvest_publisher.publish_episodes", fake.publish_episodes
     )
+    # The seed publishes over the bus, which is used only with a bus account.
+    # The broker above is the fake; nothing reaches a real bus.
+    monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
     return fake
 
 

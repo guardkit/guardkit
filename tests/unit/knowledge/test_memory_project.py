@@ -398,6 +398,9 @@ async def test_the_declared_name_is_what_the_read_asks_for(memory_module, monkey
         return []
 
     monkeypatch.setattr("fleet_memory.retrieval.search", stand_in_search, raising=False)
+    # The store route needs a database address; there is no code default any
+    # more. The store itself is a stand-in, set below, so nothing connects.
+    monkeypatch.setenv("FLEET_MEMORY_PG_DSN", "postgresql://stand-in@invalid/none")
 
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
     memory_module.configure_memory_project(tmp_path)
@@ -427,6 +430,8 @@ async def test_the_declared_name_is_what_the_write_carries(memory_module, monkey
     monkeypatch.setattr(
         "guardkit.memory.harvest_publisher.publish_episodes", stand_in_publish
     )
+    # The bus is used only with a bus account; the publisher above is a fake.
+    monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
 
     _declare(tmp_path, "memory:\n  project: widget_shop\n")
     memory_module.configure_memory_project(tmp_path)

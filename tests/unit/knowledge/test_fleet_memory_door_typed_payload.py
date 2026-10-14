@@ -40,7 +40,10 @@ def _deny_network(monkeypatch):
 
 
 @pytest.fixture
-def client() -> FleetMemoryClient:
+def client(monkeypatch) -> FleetMemoryClient:
+    # These tests are about the bus falling back to the door, so there is a
+    # bus account; the publisher is replaced in every test that uses it.
+    monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
     value = FleetMemoryClient(
         FleetMemoryConfig(
             enabled=True,
