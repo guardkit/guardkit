@@ -1464,6 +1464,10 @@ ALLOWED: Dict[Tuple[str, str], str] = {
 #: ``default_is_safe`` says a call with no ``env=`` gets the helper's
 #: environment (or an empty one); ``none_is_safe`` says ``env=None`` runs
 #: nothing that inherits.
+#: Each entry may name the exact definitions that implement it by qualified
+#: name (``defs``, e.g. ``CoachValidator._begin_run_evidence``; all of a
+#: protocol's implementations); without it, the module-level function of
+#: that name. Its environment parameter is read from those only.
 GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     ("orchestrator/run_evidence.py", "_default_runner"): {
         "names": {"_default_runner", "runner"},
@@ -1475,9 +1479,11 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("orchestrator/quality_gates/coach_validator.py", "_run_recorded"): {
         "names": {"_run_recorded"},
+        "defs": ["CoachValidator._run_recorded"],
     },
     ("orchestrator/quality_gates/coach_validator.py", "_begin_run_evidence"): {
         "names": {"_begin_run_evidence"},
+        "defs": ["CoachValidator._begin_run_evidence"],
         "none_is_safe": True,
     },
     ("orchestrator/run_evidence.py", "start_command_evidence"): {
@@ -1486,12 +1492,15 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("orchestrator/worktree_checkpoints.py", "execute"): {
         "suffixes": {"executor.execute"},
+        "defs": ["GitCommandExecutor.execute", "SubprocessGitExecutor.execute"],
     },
     ("worktrees/manager.py", "run"): {
         "suffixes": {"executor.run"},
+        "defs": ["CommandExecutor.run", "SubprocessExecutor.run"],
     },
     ("orchestrator/work_runner.py", "_run"): {
         "names": {"_run"},
+        "defs": ["commit_outer_tree.<locals>._run"],
         "scope": {"orchestrator/work_runner.py"},
     },
     ("orchestrator/completion_verification.py", "run_completion_verification"): {
@@ -1514,6 +1523,7 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("orchestrator/live_gate/executor.py", "run"): {
         "suffixes": {"runner.run"},
+        "defs": ["GateScriptRunner.run", "SubprocessGateScriptRunner.run"],
         "scope": {"orchestrator/live_gate/executor.py"},
     },
     ("orchestrator/live_gate/executor.py", "execute_gate"): {
@@ -2108,13 +2118,16 @@ def _inline_helper(node: Optional[ast.AST], mod: _Module, wrappers: set, none_is
 
 
 def _single_use_helper_name(
-    name: str, mod: _Module, func: ast.AST, wrappers: set, is_launch: Callable[[ast.Call], bool]
+    name: str, mod: _Module, func: ast.AST, wrappers: set,
+    env_slot: Callable[[ast.Call], Optional[Tuple[str, Optional[int], int]]],
 ) -> bool:
     """``name`` is bound exactly once in ``func`` (by any binding form, see
     :func:`_names_bound_by`), by a single-target assignment of an inline helper
     call, is not declared global or nonlocal in an enclosing function, and
-    every other use of it is as the ``env=`` keyword of a launch or
-    generic-runner call in ``func`` itself."""
+    every other use of it is in the environment slot of a launch or
+    generic-runner call in ``func`` itself: its ``env=`` keyword, or the
+    position its own signature gives the environment (``env_slot``); an
+    ``env=`` aimed at a positional-only environment never reaches it."""
     sites = _binding_sites(ast.walk(func), name, mod.dotted, mod.rel.endswith("__init__.py"), own=func)
     if len(sites) != 1 or sites[0][0] != "name":
         return False
@@ -2144,11 +2157,19 @@ def _single_use_helper_name(
         if not (isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load)):
             continue
         parent = mod.parents.get(id(node))
-        if not (isinstance(parent, ast.keyword) and parent.arg == "env"):
-            return False  # attribute, subscript, argument, return, alias ...
-        call = mod.parents.get(id(parent))
-        if not isinstance(call, ast.Call) or not is_launch(call):
-            return False
+        if isinstance(parent, ast.keyword) and parent.arg == "env":
+            call = mod.parents.get(id(parent))
+            slot = env_slot(call) if isinstance(call, ast.Call) else None
+            if slot is None or slot[0] in ("positional-only", "unknown"):
+                return False
+        elif isinstance(parent, ast.Call) and any(a is node for a in parent.args):
+            call = parent
+            slot = env_slot(call)
+            index = next(i for i, a in enumerate(call.args) if a is node)
+            if slot is None or slot[0] not in ("positional", "positional-only") or index != slot[1]:
+                return False  # an argument, but not the environment's
+        else:
+            return False  # attribute, subscript, return, alias ...
         scope = mod.parents.get(id(call))
         while scope is not None and scope is not func:
             if isinstance(scope, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -2159,7 +2180,8 @@ def _single_use_helper_name(
 
 def _helper_shaped(
     node: Optional[ast.AST], mod: _Module, func: Optional[ast.AST], wrappers: set,
-    none_is_safe: bool = False, is_launch: Optional[Callable[[ast.Call], bool]] = None,
+    none_is_safe: bool = False,
+    env_slot: Optional[Callable[[ast.Call], Optional[Tuple[str, Optional[int], int]]]] = None,
 ) -> bool:
     """True when ``node`` (an ``env=`` value) is, provably, the helper's
     result: the helper called inline, or a name that holds nothing else and
@@ -2168,8 +2190,8 @@ def _helper_shaped(
         return False
     if _inline_helper(node, mod, wrappers, none_is_safe):
         return True
-    if isinstance(node, ast.Name) and func is not None and is_launch is not None:
-        return _single_use_helper_name(node.id, mod, func, wrappers, is_launch)
+    if isinstance(node, ast.Name) and func is not None and env_slot is not None:
+        return _single_use_helper_name(node.id, mod, func, wrappers, env_slot)
     return False
 
 
@@ -2473,6 +2495,58 @@ def _first_argument(call: ast.Call) -> Optional[ast.AST]:
     return None
 
 
+#: Launch functions that pass their positional arguments on to another
+#: (subprocess's convenience functions all hand them to Popen).
+_POSITIONAL_FORWARDS = {
+    "subprocess.run": "subprocess.Popen",
+    "subprocess.call": "subprocess.Popen",
+    "subprocess.check_call": "subprocess.Popen",
+    "subprocess.check_output": "subprocess.Popen",
+}
+_LAUNCH_ENV: Dict[str, Tuple[str, Optional[int], int]] = {}
+
+
+def _launch_env(target: str) -> Tuple[str, Optional[int], int]:
+    """How the launch function ``target`` takes an environment, read from
+    its signature (``inspect.signature``; Popen's for subprocess's
+    convenience functions), as for :func:`_runner_env`. When it cannot be
+    read, only ``env=`` counts (a positional environment is then judged
+    missing, which refuses rather than accepts)."""
+    if target not in _LAUNCH_ENV:
+        import importlib
+        import inspect
+
+        slot: Tuple[str, Optional[int], int] = ("keyword", None, 0)
+        if _is_launch_target(target):
+            source = _POSITIONAL_FORWARDS.get(target, target)
+            module, _, name = source.rpartition(".")
+            try:
+                signature = inspect.signature(getattr(importlib.import_module(module), name))
+            except (ImportError, AttributeError, TypeError, ValueError):
+                signature = None
+            if signature is not None:
+                kinds = inspect.Parameter
+                named = [
+                    p for p in signature.parameters.values()
+                    if p.kind in (kinds.POSITIONAL_ONLY, kinds.POSITIONAL_OR_KEYWORD)
+                ]
+                env = signature.parameters.get("env")
+                if env is not None and env.kind is kinds.POSITIONAL_ONLY:
+                    slot = ("positional-only", named.index(env), len(named))
+                elif env is not None and env.kind is kinds.POSITIONAL_OR_KEYWORD:
+                    slot = ("positional", named.index(env), len(named))
+                elif env is not None or any(
+                    p.kind is kinds.VAR_KEYWORD for p in signature.parameters.values()
+                ):
+                    slot = ("keyword", None, len(named))
+                elif any(p.kind is kinds.VAR_POSITIONAL for p in signature.parameters.values()):
+                    slot = ("varargs", None, len(named))
+                else:
+                    slot = ("none", None, len(named))
+        _LAUNCH_ENV[target] = slot
+    return _LAUNCH_ENV[target]
+
+
 #: How each generic runner takes an environment, derived from its own def
 #: (14 October 2026), never written by hand: (kind, position, named), where
 #: kind is "positional" (``env`` at ``position`` among the arguments a caller
@@ -2483,40 +2557,80 @@ def _first_argument(call: ast.Call) -> Optional[ast.AST]:
 _RUNNER_ENV: Dict[Tuple[str, str], Tuple[str, Optional[int], int]] = {}
 
 
-def _runner_source(rel: str) -> Path:
-    """The source file a GENERIC_RUNNERS entry names: in this repository's
-    package, or in GuardKit's for a ``guardkit:`` entry."""
+def _runner_source(rel: str, package: Optional[Path] = None) -> Path:
+    """The source file a GENERIC_RUNNERS entry names: in the scanned
+    ``package`` when it has that file, else in this repository's package, or
+    in GuardKit's for a ``guardkit:`` entry."""
     if rel.startswith("guardkit:"):
+        inner = rel[len("guardkit:"):]
+        if package is not None and package.name == "guardkit" and (package / inner).is_file():
+            return package / inner
         import importlib.util
 
         spec = importlib.util.find_spec("guardkit")
         assert spec is not None and spec.submodule_search_locations, "GuardKit is not importable"
-        return Path(next(iter(spec.submodule_search_locations))) / rel[len("guardkit:"):]
+        return Path(next(iter(spec.submodule_search_locations))) / inner
+    if package is not None and (package / rel).is_file():
+        return package / rel
     return PACKAGE / rel
 
 
-def _runner_env(rel: str, fname: str) -> Tuple[str, Optional[int], int]:
+def _qualified_defs(tree: ast.Module) -> Dict[str, Tuple[ast.AST, bool]]:
+    """Every function in ``tree`` by qualified name (``Class.method``,
+    ``outer.<locals>.inner``) -> (its def, whether it is a method)."""
+    found: Dict[str, Tuple[ast.AST, bool]] = {}
+
+    def visit(node: ast.AST, prefix: List[str], in_class: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                visit(child, [*prefix, child.name], True)
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                found[".".join([*prefix, child.name])] = (child, in_class)
+                visit(child, [*prefix, child.name, "<locals>"], False)
+            else:
+                visit(child, prefix, in_class)
+
+    visit(tree, [], False)
+    return found
+
+
+def _runner_env(
+    rel: str, fname: str, package: Optional[Path] = None, defs: Optional[List[str]] = None,
+) -> Tuple[str, Optional[int], int]:
     """How the runner ``fname`` in ``rel`` takes an environment, read from
-    its own def (every def of that name in the file must agree)."""
-    key = (rel, fname)
+    exactly the definitions that implement it (``defs``, qualified names; by
+    default the module-level function ``fname``), never from another def that
+    happens to share the name. Each parameter keeps its kind: a
+    positional-only ``env`` is "positional-only" (reached only by position);
+    a method's positional ``env`` is "method" (it may be given only by
+    keyword: called through its class, every argument shifts by one). When
+    a named definition is missing or they disagree, the place is "unknown",
+    and nothing is accepted as its environment."""
+    source = _runner_source(rel, package)
+    wanted = tuple(defs or [fname])
+    key = (str(source), wanted)
     if key not in _RUNNER_ENV:
-        tree = ast.parse(_runner_source(rel).read_text(encoding="utf-8"))
-        methods = {
-            id(item)
-            for klass in ast.walk(tree) if isinstance(klass, ast.ClassDef)
-            for item in klass.body
-        }
+        table = _qualified_defs(ast.parse(source.read_text(encoding="utf-8")))
         found = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != fname:
+        for qualname in wanted:
+            if qualname not in table:
+                found.add(("unknown", None, 0))
                 continue
+            node, is_method = table[qualname]
             args = node.args
             positional = [a.arg for a in args.posonlyargs + args.args]
+            positional_only = {a.arg for a in args.posonlyargs}
             is_static = any(_last_name(d) == "staticmethod" for d in node.decorator_list)
-            if id(node) in methods and not is_static:
-                positional = positional[1:]  # self or cls: not passed by the caller
+            method = is_method and not is_static
+            if method:
+                positional = positional[1:]  # self or cls: not passed by a bound call
             if "env" in positional:
-                found.add(("positional", positional.index("env"), len(positional)))
+                kind = (
+                    "positional-only" if "env" in positional_only
+                    else "method" if method
+                    else "positional"
+                )
+                found.add((kind, positional.index("env"), len(positional)))
             elif any(a.arg == "env" for a in args.kwonlyargs):
                 found.add(("keyword", None, len(positional)))
             elif args.kwarg is not None:
@@ -2525,8 +2639,7 @@ def _runner_env(rel: str, fname: str) -> Tuple[str, Optional[int], int]:
                 found.add(("varargs", None, len(positional)))
             else:
                 found.add(("none", None, len(positional)))
-        assert len(found) == 1, f"{rel}:{fname}: no single signature: {sorted(found, key=str)}"
-        _RUNNER_ENV[key] = found.pop()
+        _RUNNER_ENV[key] = found.pop() if len(found) == 1 else ("unknown", None, 0)
     return _RUNNER_ENV[key]
 
 
@@ -2926,21 +3039,31 @@ def unaccounted_launches(package: Path) -> List[str]:
     }
 
     runner_specs = [
-        (spec, _runner_identity(package.name, rel, fname))
+        (spec, _runner_identity(package.name, rel, fname), rel, fname)
         for (rel, fname), spec in GENERIC_RUNNERS.items()
     ]
 
-    def launch_checker(mod: _Module) -> Callable[[ast.Call], bool]:
-        def is_launch(call: ast.Call) -> bool:
-            if _launch_kind(mod, call.func):
-                return True
-            return any(
-                (not spec.get("scope") or mod.rel in spec["scope"])
-                and _runner_call_matches(call, spec, mod, identity)
-                for spec, identity in runner_specs
-            )
+    def launch_checker(
+        mod: _Module,
+    ) -> Callable[[ast.Call], Optional[Tuple[str, Optional[int], int]]]:
+        """Where a call's environment goes when it is a launch or a generic
+        runner call (``None`` for any other call)."""
 
-        return is_launch
+        def env_slot(call: ast.Call) -> Optional[Tuple[str, Optional[int], int]]:
+            kind = _launch_kind(mod, call.func)
+            if kind:
+                return _launch_env(kind)
+            resolved = _resolve(mod, call.func, call)
+            for spec, identity, rel, fname in runner_specs:
+                if resolved in runner_ids and resolved != identity:
+                    continue  # another runner of the same name: it is that one
+                if (not spec.get("scope") or mod.rel in spec["scope"]) and _runner_call_matches(
+                    call, spec, mod, identity
+                ):
+                    return _runner_env(rel, fname, package, spec.get("defs"))
+            return None
+
+        return env_slot
 
     def place(mod: _Module, node: ast.AST) -> Tuple[Optional[ast.AST], str]:
         func = _enclosing_function(mod, node)
@@ -2962,7 +3085,22 @@ def unaccounted_launches(package: Path) -> List[str]:
             return
         if _factory_literal(call):
             return
-        kind, position, named = runner_env or ("launch", None, 0)
+        kind, position, named = runner_env or ("keyword", None, 0)
+        if kind == "unknown":
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: the runner's own "
+                f"definition could not be read, so its environment cannot be checked"
+            )
+            return
+        if kind == "method" and len(call.args) > position:
+            # Bound, env is argument ``position``; called through the class,
+            # ``position + 1``. Either way a positional argument may reach it.
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: a method runner's env "
+                f"may be given only by keyword (a positional argument may reach it, "
+                f"and called through its class every argument shifts by one)"
+            )
+            return
         unpacked = any(isinstance(a, ast.Starred) for a in call.args) or any(
             kw.arg is None for kw in call.keywords
         )
@@ -2978,7 +3116,25 @@ def unaccounted_launches(package: Path) -> List[str]:
                 f"arguments reach *args, which could carry an environment"
             )
             return
-        env = _env_keyword(call, position if kind == "positional" else None)
+        keyword = _env_keyword(call)
+        positional = (
+            call.args[position]
+            if kind in ("positional", "positional-only") and len(call.args) > position
+            else None
+        )
+        if kind == "positional-only" and keyword is not None:
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: env= is passed to a "
+                f"positional-only env, so it never reaches env and cannot be checked"
+            )
+            return
+        if keyword is not None and positional is not None:
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: env is given both by "
+                f"position and by keyword"
+            )
+            return
+        env = keyword if keyword is not None else positional
         if env is None and default_is_safe:
             return  # provably omitted: no env=, no argument at its place, no unpacking
         if _helper_shaped(env, mod, func, wrappers, none_is_safe, launch_checker(mod)):
@@ -2993,7 +3149,7 @@ def unaccounted_launches(package: Path) -> List[str]:
             if isinstance(node, ast.Call):
                 kind = _launch_kind(mod, node.func)
                 if kind:
-                    judge(mod, node, f"process launch {kind}")
+                    judge(mod, node, f"process launch {kind}", runner_env=_launch_env(kind))
                 problem = _dynamic_import_problem(mod, node)
                 if problem:
                     _, fname = place(mod, node)
@@ -3070,6 +3226,9 @@ def unaccounted_launches(package: Path) -> List[str]:
                     node, spec, mod, identity
                 ):
                     continue
+                resolved = _resolve(mod, node.func, node)
+                if resolved in runner_ids and resolved != identity:
+                    continue  # another runner of the same name, judged as itself
                 func = _enclosing_function(mod, node)
                 if mod.rel == rel and getattr(func, "name", None) == fname:
                     continue  # the runner's own body
@@ -3077,7 +3236,7 @@ def unaccounted_launches(package: Path) -> List[str]:
                     mod, node, f"call to the generic runner {fname}",
                     default_is_safe=spec.get("default_is_safe", False),
                     none_is_safe=spec.get("none_is_safe", False),
-                    runner_env=_runner_env(rel, fname),
+                    runner_env=_runner_env(rel, fname, package, spec.get("defs")),
                 )
     return sorted(set(problems))
 
@@ -4226,6 +4385,52 @@ GUARD_PROBES_REEXPORT = {
             return subprocess.run(cmd, **options)
 
 
+        def v148_helper_name_in_a_non_env_position(root, cmd, wf):
+            env = project_command_environment(wf, None)
+            return run_completion_verification(root, cmd, "declared", None, env, env)
+
+
+        def ok_runner_helper_name_positionally(root, cmd, wf):
+            env = project_command_environment(wf, None)
+            return run_completion_verification(root, cmd, "declared", None, 5, env)
+
+
+        def ok_runner_helper_name_by_keyword(root, cmd, wf):
+            env = project_command_environment(wf, None)
+            return run_completion_verification(root, cmd, "declared", None, 5, env=env)
+
+
+        def ok_popen_helper_name_positionally(cmd, wf):
+            env = project_command_environment(wf, None)
+            return subprocess.Popen(cmd, -1, None, None, None, None, None, True, False, None, env)
+
+
+        def ok_popen_helper_name_by_keyword(cmd, wf):
+            env = project_command_environment(wf, None)
+            return subprocess.Popen(cmd, env=env)
+
+
+        def v149_explicit_class_call_to_a_method_runner(validator, root):
+            from guardkit.orchestrator.quality_gates.coach_validator import CoachValidator
+
+            return CoachValidator._begin_run_evidence(
+                validator, "declared command", "true", root, None, None, dict(os.environ)
+            )
+
+
+        def v150_bound_call_with_env_positional_to_a_method_runner(validator, root, wf):
+            return validator._begin_run_evidence(
+                "declared command", "true", root, None, None, project_command_environment(wf, None)
+            )
+
+
+        def ok_bound_method_runner_with_helper_env_by_keyword(validator, root, wf):
+            return validator._begin_run_evidence(
+                "declared command", "true", root, None, None,
+                env=project_command_environment(wf, None),
+            )
+
+
         def ok_env_omitted_on_a_default_safe_runner(root, cmd):
             return run_completion_verification(root, cmd, "declared", None, 5)
 
@@ -4392,7 +4597,9 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_direct_reexport_call_with_helper_env", "ok_module_attribute_use",
         "ok_static_import_as_an_attribute_base",
         "ok_env_omitted_on_a_default_safe_runner", "ok_helper_env_by_keyword",
-        "ok_helper_env_positionally",
+        "ok_helper_env_positionally", "ok_runner_helper_name_positionally",
+        "ok_runner_helper_name_by_keyword", "ok_popen_helper_name_positionally",
+        "ok_popen_helper_name_by_keyword", "ok_bound_method_runner_with_helper_env_by_keyword",
         "ok_name_bound_only_to_values_used_as_a_value",
     } & named, problems
     # The collision rules: each package that binds its own submodule's name,
@@ -4440,12 +4647,69 @@ def test_the_allowed_list_names_only_real_places() -> None:
     assert not missing, f"allowed-list entries that name nothing: {missing}"
 
 
+#: A runner whose env is positional-only (14 October 2026): an env= keyword
+#: never reaches it, so it is refused whether env is then left out or given
+#: something unsafe by position; the helper's by position is accepted.
+GUARD_PROBES_POSITIONAL_ONLY: Dict[str, str] = {
+    '__init__.py': '',
+    'orchestrator/__init__.py': '',
+    'orchestrator/completion_verification.py': 'def run_completion_verification(repo_root, command, env=None, /, **options):\n    return None\n',
+    'zz_main.py': 'import os\n\nfrom guardkit.orchestrator.completion_verification import run_completion_verification\nfrom guardkit.orchestrator.project_command_env import project_command_environment\n\n\ndef v_omitted_with_a_helper_keyword(root, cmd, wf):\n    return run_completion_verification(root, cmd, env=project_command_environment(wf, None))\n\n\ndef v_unsafe_with_a_helper_keyword(root, cmd, wf):\n    return run_completion_verification(root, cmd, dict(os.environ), env=project_command_environment(wf, None))\n\n\ndef v_local_helper_name_by_keyword(root, cmd, wf):\n    env = project_command_environment(wf, None)\n    return run_completion_verification(root, cmd, env=env)\n\n\ndef ok_helper_by_position(root, cmd, wf):\n    return run_completion_verification(root, cmd, project_command_environment(wf, None))\n\n\ndef ok_local_helper_name_by_position(root, cmd, wf):\n    env = project_command_environment(wf, None)\n    return run_completion_verification(root, cmd, env)\n',
+}
+
+
+def test_a_positional_only_env_is_reached_only_by_position(tmp_path: Path) -> None:
+    pkg = tmp_path / PACKAGE.name
+    for name, text in GUARD_PROBES_POSITIONAL_ONLY.items():
+        (pkg / name).parent.mkdir(parents=True, exist_ok=True)
+        (pkg / name).write_text(text, encoding="utf-8")
+    problems = unaccounted_launches(pkg)
+    named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems}
+    expected = {
+        n.name for n in ast.parse(GUARD_PROBES_POSITIONAL_ONLY["zz_main.py"]).body
+        if isinstance(n, ast.FunctionDef) and n.name.startswith("v_")
+    }
+    assert len(expected) == 3
+    assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
+    assert not {n for n in named if n.startswith("ok_")}, problems
+
+
+#: Method runners (14 October 2026): a method's env only by keyword (called
+#: through its class every argument shifts by one), and the runner read
+#: from its own qualified definition, not a same-named method elsewhere.
+GUARD_PROBES_METHOD_RUNNER: Dict[str, str] = {
+    '__init__.py': '',
+    'orchestrator/__init__.py': '',
+    'orchestrator/quality_gates/__init__.py': '',
+    'orchestrator/quality_gates/coach_validator.py': 'class Unrelated:\n    def _run_recorded(self, args, *, env=None):\n        return None\n\n\nclass CoachValidator:\n    def _run_recorded(self, args, kind, env=None, **kwargs):\n        return None\n',
+    'orchestrator/zz_main.py': "import os\n\nfrom guardkit.orchestrator.completion_verification import run_completion_verification\nfrom guardkit.orchestrator.project_command_env import project_command_environment\nfrom guardkit.orchestrator.quality_gates.coach_validator import CoachValidator\n\n\ndef v_explicit_class_call_reaching_the_env(validator, cmd):\n    return CoachValidator._run_recorded(validator, cmd, 'k', dict(os.environ))\n\n\ndef v_explicit_class_call_with_the_helper_by_position(validator, cmd, wf):\n    return CoachValidator._run_recorded(validator, cmd, 'k', project_command_environment(wf, None))\n\n\ndef v_explicit_class_call_env_omitted_only_if_unbound(validator, cmd):\n    return CoachValidator._run_recorded(validator, cmd, 'k')\n\n\ndef v_bound_call_with_the_helper_by_position(validator, cmd, wf):\n    return validator._run_recorded(cmd, 'k', project_command_environment(wf, None))\n\n\ndef v_bound_call_unsafe_by_position_beside_an_unrelated_same_named_method(validator, cmd):\n    return validator._run_recorded(cmd, 'k', dict(os.environ))\n\n\ndef ok_bound_method_with_the_helper_by_keyword(validator, cmd, wf):\n    return validator._run_recorded(cmd, 'k', env=project_command_environment(wf, None))\n\n\ndef ok_function_runner_with_the_helper_by_position(root, cmd, wf):\n    return run_completion_verification(root, cmd, 'declared', None, 5, project_command_environment(wf, None))\n\n\ndef ok_inline_helper_by_keyword(validator, cmd, wf):\n    return validator._run_recorded(cmd, 'k', env=project_command_environment(wf, None), cwd=None)\n",
+}
+
+
+def test_a_method_runner_takes_its_env_only_by_keyword(tmp_path: Path) -> None:
+    pkg = tmp_path / "guardkit"
+    for name, text in GUARD_PROBES_METHOD_RUNNER.items():
+        (pkg / name).parent.mkdir(parents=True, exist_ok=True)
+        (pkg / name).write_text(text, encoding="utf-8")
+    problems = unaccounted_launches(pkg)
+    named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems}
+    main = GUARD_PROBES_METHOD_RUNNER["orchestrator/zz_main.py"]
+    expected = {
+        n.name for n in ast.parse(main).body
+        if isinstance(n, ast.FunctionDef) and n.name.startswith("v_")
+    }
+    assert len(expected) == 5
+    assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
+    assert not {n for n in named if n.startswith("ok_")}, problems
+
+
 def test_every_runner_environment_place_is_read_from_its_def() -> None:
     """Each generic runner's environment parameter is derived from its own
     signature; one that skips the environment when it is left out must
     actually take one."""
     for (rel, fname), spec in GENERIC_RUNNERS.items():
-        kind, _position, _named = _runner_env(rel, fname)
+        kind, _position, _named = _runner_env(rel, fname, None, spec.get("defs"))
+        assert kind != "unknown", f"{rel}:{fname}: its definitions are missing or disagree"
         if spec.get("default_is_safe") or spec.get("none_is_safe"):
             assert kind != "none", f"{rel}:{fname} takes no environment"
 
