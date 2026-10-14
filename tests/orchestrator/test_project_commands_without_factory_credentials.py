@@ -2225,6 +2225,34 @@ def _guarded_names(mod: _Module, runner_ids: set) -> Dict[str, str]:
     return guarded
 
 
+_LAUNCH_BEARING: Dict[str, bool] = {}
+
+
+def _is_launch_bearing_module(dotted: str) -> bool:
+    """A launch module, or a real submodule of one, that itself defines at
+    least one launch name (found by importing it and looking; cached):
+    subprocess, os, asyncio, asyncio.subprocess, multiprocessing.popen_fork;
+    never os.path."""
+    if not _is_launch_module(dotted):
+        return False
+    if dotted not in _LAUNCH_BEARING:
+        import importlib
+
+        try:
+            module = importlib.import_module(dotted)
+            _LAUNCH_BEARING[dotted] = any(
+                hasattr(module, name) and not _is_not_launch(f"{dotted}.{name}")
+                for name in LAUNCH_NAMES
+            )
+        except Exception:  # noqa: BLE001 - unknown means "treat as launch-bearing"
+            _LAUNCH_BEARING[dotted] = True
+    return _LAUNCH_BEARING[dotted]
+
+
+def _is_not_launch(dotted: str) -> bool:
+    return dotted in NOT_LAUNCHES
+
+
 def _launch_attribute_names() -> set:
     return set(LAUNCH_NAMES)
 
@@ -2267,6 +2295,16 @@ def _indirect_use(mod: _Module, node: ast.Name, kind: str) -> Optional[str]:
         return (
             f"the launch function {_dotted(chain)} is used other than by calling it, "
             f"so its env= cannot be checked"
+        )
+    # The whole chain names a launch-bearing submodule (it was not the base of
+    # a further attribute): held, passed or stored, it could be called
+    # through later (backend = multiprocessing.popen_fork; backend.Popen(...)).
+    if any(_is_launch_bearing_module(t) for t in _possible_targets(mod, chain)):
+        if id(chain) in _annotation_nodes_cache(mod):
+            return None
+        return (
+            f"the launch-bearing module {_dotted(chain)} is used other than as the "
+            f"base of an attribute, so what is launched through it cannot be checked"
         )
     return None
 
@@ -3157,6 +3195,28 @@ GUARD_PROBES = textwrap.dedent(
         )
 
 
+    def v99_launch_bearing_submodule_stored(process_object):
+        import multiprocessing.popen_fork
+        backend = multiprocessing.popen_fork
+        backend.Popen(process_object)
+
+
+    async def v100_asyncio_subprocess_stored(cmd):
+        m = asyncio.subprocess
+        await m.create_subprocess_exec(cmd)
+
+
+    def v101_subprocess_module_stored(cmd):
+        s = subprocess
+        s.run(cmd, shell=True)
+
+
+    async def ok_direct_dotted_call_through_a_submodule(cmd, wf):
+        await asyncio.subprocess.create_subprocess_shell(
+            cmd, env=project_command_environment(wf, None)
+        )
+
+
     def ok_asyncio_run_is_not_a_launch(coroutine):
         return asyncio.run(coroutine)
 
@@ -3319,6 +3379,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_bare_create_subprocess_exec_with_helper_env",
         "ok_asyncio_run_is_not_a_launch", "ok_bare_os_getenv_is_not_a_module",
         "ok_module_attribute_that_is_not_a_launch", "ok_direct_deep_call_with_helper_env",
+        "ok_direct_dotted_call_through_a_submodule",
     } & named, problems
 
 
