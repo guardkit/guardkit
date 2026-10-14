@@ -1530,12 +1530,20 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
 
 #: Places that use a module object other than as an attribute base, or
 #: import code dynamically, and why each is safe (14 October 2026). Only
-#: those two rules are waived there; every launch rule still applies.
+#: those rules are waived there (and only here: an ALLOWED entry does not
+#: waive them); every launch rule still applies. Each entry must still be
+#: needed (test_every_module_use_allowance_is_still_needed).
 MODULE_USE_ALLOWED: Dict[Tuple[str, str], str] = {
     ("__init__.py", "_bootstrap_installer_core"): (
         "loads GuardKit's own packaged installer.core copy (scanned here as part "
         "of this package) under its import name, and reuses an installed "
         "'installer' parent package"
+    ),
+    ("cli/doctor.py", "run"): (
+        "PackageCheck imports each package in guardkit doctor's fixed list "
+        "(guardkit, click, rich, yaml, frontmatter, the agent SDK, "
+        "guardkitfactory) by name to report whether it is installed and its "
+        "version; the name differs per check, so it cannot be a static import"
     ),
     ("orchestrator/qa_stages/assembly.py", "resolve_probe_target"): (
         "imports the boundary-probe target the operator names with --target "
@@ -2239,10 +2247,6 @@ def _possible_targets(mod: _Module, node: ast.AST) -> set:
         return _final_targets(
             mod, {f"{base}.{node.attr}" for base in _possible_targets(mod, node.value)}
         )
-    literal = _literal_dynamic_import(mod, node)
-    if literal is not None:
-        # importlib.import_module("name") stands for the module it names.
-        return _final_identities(mod, literal)
     return set()
 
 
@@ -2251,10 +2255,8 @@ _DYNAMIC_IMPORTS = {
     "importlib.import_module", "importlib.__import__", "builtins.__import__",
     "importlib.util.module_from_spec", "importlib.util.spec_from_file_location",
 }
-#: Of those, the ones whose first argument names the module to import.
-_DYNAMIC_IMPORTS_BY_NAME = {
-    "importlib.import_module", "importlib.__import__", "builtins.__import__",
-}
+#: Names that reach the import machinery without being imported.
+_DYNAMIC_IMPORT_NAMES = {"__import__": "builtins.__import__", "__builtins__": "__builtins__"}
 
 
 def _dynamic_import(mod: _Module, call: ast.AST) -> Optional[str]:
@@ -2270,39 +2272,39 @@ def _dynamic_import(mod: _Module, call: ast.AST) -> Optional[str]:
     return None
 
 
-def _literal_dynamic_import(mod: _Module, call: ast.AST) -> Optional[str]:
-    """The module name a by-name dynamic import gives as a string literal."""
-    kind = _dynamic_import(mod, call)
-    if kind not in _DYNAMIC_IMPORTS_BY_NAME or not call.args:
-        return None
-    first = call.args[0]
-    if isinstance(first, ast.Constant) and isinstance(first.value, str):
-        return first.value
-    return None
-
-
 def _dynamic_import_problem(mod: _Module, call: ast.Call) -> Optional[str]:
-    """Why a dynamic import is not allowed, or ``None``: only a by-name
-    import of a string literal that is not a launch module (nor a submodule
-    of one), whose result is only the base of an attribute, is; loading from
-    a spec or a file never is."""
+    """Every dynamic import is a violation outside :data:`MODULE_USE_ALLOWED`
+    (14 October 2026), whatever its argument: what it loads, and so what it
+    launches, is not in the source this guard reads."""
     kind = _dynamic_import(mod, call)
     if kind is None:
         return None
-    literal = _literal_dynamic_import(mod, call)
-    parent = mod.parents.get(id(call))
-    used_as_base = isinstance(parent, ast.Attribute) and parent.value is call
-    if literal is not None and not _is_launch_module(literal) and used_as_base:
-        return None
-    if literal is not None and _is_launch_module(literal):
-        why = f"the launch module {literal} is imported by name"
-    elif kind not in _DYNAMIC_IMPORTS_BY_NAME:
-        why = f"{kind} loads code from a spec or a file"
-    elif literal is None:
-        why = f"{kind} imports a module whose name is not written in the source"
+    return (
+        f"a dynamic import ({kind}) loads code this guard cannot read, so what it "
+        f"launches cannot be checked; import it statically"
+    )
+
+
+def _dynamic_import_held(mod: _Module, node: ast.AST) -> Optional[str]:
+    """Why ``node`` reaches the import machinery other than by a call to a
+    dynamic import (a dynamic import function held, passed or stored, or
+    ``__builtins__`` used at all), or ``None``."""
+    if isinstance(node, ast.Name) and node.id == "__builtins__":
+        return "__builtins__ is used, which reaches the import machinery this guard cannot read"
+    parent = mod.parents.get(id(node))
+    if isinstance(parent, ast.Call) and parent.func is node:
+        return None  # a call: judged as a dynamic import itself
+    if isinstance(node, ast.Name) and node.id in _DYNAMIC_IMPORT_NAMES:
+        found = _DYNAMIC_IMPORT_NAMES[node.id]
     else:
-        why = f"the module {literal} imported by {kind} is used other than as an attribute base"
-    return f"a dynamic import: {why}, so what it launches cannot be checked"
+        hits = sorted(t for t in _possible_targets(mod, node) if t in _DYNAMIC_IMPORTS)
+        found = hits[0] if hits else None
+    if found is None:
+        return None
+    return (
+        f"the dynamic import {found} is used other than by calling it (held, passed "
+        f"or stored), so what it loads cannot be checked"
+    )
 
 
 _MODULE_SPECS: Dict[str, bool] = {}
@@ -2327,6 +2329,43 @@ def _is_module_identity(mod: _Module, dotted: str) -> bool:
     return _MODULE_SPECS[dotted]
 
 
+def _visible_import_targets(mod: _Module, node: ast.Name) -> set:
+    """Everything the plain name ``node`` could hold through an import:
+    every import binding of it (from the single binding enumerator) in each
+    function enclosing ``node``, in each class enclosing it, at module scope,
+    and anywhere a ``global`` declaration makes a function's import a module
+    binding, each followed to its final identity. Another binding of the same
+    name (a later ``name = None``, a parameter, a conditional rebinding) never
+    removes these: the name may still hold the import when it is used."""
+    name = node.id
+    targets: set = set()
+    scope = _defining_scope(mod, node)
+    while scope is not None:
+        targets |= _scope_bindings(mod, scope, name)[0]
+        scope = _defining_scope(mod, scope)
+    klass = _enclosing(mod, node, ast.ClassDef)
+    is_package = mod.rel.endswith("__init__.py")
+    while klass is not None:
+        targets |= {
+            target
+            for kind, _site, target in _binding_sites(
+                _own_scope_nodes(mod, klass), name, mod.dotted, is_package
+            )
+            if kind == "import"
+        }
+        klass = _enclosing(mod, klass, ast.ClassDef)
+    targets |= _module_bindings(mod, name)[0]
+    declared = mod.__dict__.get("_global_names")
+    if declared is None:
+        declared = {
+            g for n in ast.walk(mod.tree) if isinstance(n, ast.Global) for g in n.names
+        }
+        mod._global_names = declared
+    if name in declared:
+        targets |= set(mod.imports.get(name, ()))
+    return _final_targets(mod, targets)
+
+
 def _module_used_as_value(mod: _Module, node: ast.AST) -> Optional[str]:
     """Why a loaded name or attribute chain that names a module (any module:
     the package's own, the standard library's or another) is used other
@@ -2338,9 +2377,13 @@ def _module_used_as_value(mod: _Module, node: ast.AST) -> Optional[str]:
         return None
     if isinstance(parent, ast.Call) and parent.func is node:
         return None  # calling a module fails by itself
-    if isinstance(node, ast.Name) and _name_is_shadowed(mod, node, node.id):
-        return None  # a local of the same name, not the module
-    for target in sorted(_possible_targets(mod, node)):
+    # A name counts when ANY import binding it can see is a module, whatever
+    # else also binds it: shadowing never exempts a value use.
+    targets = (
+        _visible_import_targets(mod, node) if isinstance(node, ast.Name)
+        else _possible_targets(mod, node)
+    )
+    for target in sorted(targets):
         if _is_module_identity(mod, target):
             return (
                 f"the module {_dotted(node)} ({target}) is used other than as the base "
@@ -2876,7 +2919,9 @@ def unaccounted_launches(package: Path) -> List[str]:
                 problem = _dynamic_import_problem(mod, node)
                 if problem:
                     _, fname = place(mod, node)
-                    if (mod.rel, fname) not in ALLOWED and (mod.rel, fname) not in MODULE_USE_ALLOWED:
+                    # Only MODULE_USE_ALLOWED waives it: an entry in ALLOWED
+                    # (for a launch) says nothing about loading code.
+                    if (mod.rel, fname) not in MODULE_USE_ALLOWED:
                         problems.append(f"{mod.rel}:{node.lineno} in {fname}: {problem}")
             elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in guarded:
                 if id(node) in annotations:
@@ -2924,11 +2969,11 @@ def unaccounted_launches(package: Path) -> List[str]:
                 and isinstance(node.ctx, ast.Load)
                 and id(node) not in annotations
             ):
-                problem = _module_used_as_value(mod, node)
-                if problem:
-                    _, fname = place(mod, node)
-                    if (mod.rel, fname) not in ALLOWED and (mod.rel, fname) not in MODULE_USE_ALLOWED:
-                        problems.append(f"{mod.rel}:{node.lineno} in {fname}: {problem}")
+                for problem in (_module_used_as_value(mod, node), _dynamic_import_held(mod, node)):
+                    if problem:
+                        _, fname = place(mod, node)
+                        if (mod.rel, fname) not in MODULE_USE_ALLOWED:
+                            problems.append(f"{mod.rel}:{node.lineno} in {fname}: {problem}")
     for mod in modules:
         for node in ast.walk(mod.tree):
             if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
@@ -3940,6 +3985,7 @@ GUARD_PROBES_REEXPORT = {
         from guardkit.orchestrator.project_command_env import project_command_environment
 
         from . import zz_reexport_api
+        from . import zz_reexport_util
 
 
         def _takes(module):
@@ -3999,8 +4045,72 @@ GUARD_PROBES_REEXPORT = {
             return json.dumps({"a": 1})
 
 
-        def ok_literal_dynamic_import_as_an_attribute_base():
+        def v138_literal_dynamic_import_outside_the_list():
             return importlib.import_module("json").dumps({"a": 1})
+
+
+        def v139_literal_dynamic_import_reaching_a_re_export_through_a_longer_chain(cmd):
+            return importlib.import_module("__PKG__.orchestrator").zz_reexport_api.run(
+                cmd, shell=True
+            )
+
+
+        def v140_dynamic_import_function_held():
+            loader = importlib.import_module
+            return loader("json")
+
+
+        def v141_builtin_import_held():
+            loader = __import__
+            return loader("json")
+
+
+        def v142_builtins_reached_directly():
+            return __builtins__
+
+
+        def ok_static_import_as_an_attribute_base():
+            return zz_reexport_util.describe(zz_reexport_util.LIMIT)
+        '''
+    ),
+    # A held module whose name is then rebound: any import binding counts.
+    "zz_rebind_consumer.py": textwrap.dedent(
+        '''\
+        def v134_module_held_then_its_name_rebound(cmd):
+            from . import zz_reexport_api
+            api = zz_reexport_api
+            zz_reexport_api = None
+            return api.run(cmd, shell=True)
+
+
+        def v135_name_rebound_before_the_module_is_held(cmd):
+            zz_reexport_api = None
+            from . import zz_reexport_api
+            api = zz_reexport_api
+            return api.run(cmd, shell=True)
+
+
+        def v136_name_rebound_conditionally(cmd, flag):
+            from . import zz_reexport_api
+            if flag:
+                zz_reexport_api = None
+            api = zz_reexport_api
+            return api.run(cmd, shell=True)
+
+
+        def v137_launch_held_then_its_name_rebound(cmd):
+            from subprocess import check_call
+            held = check_call
+            check_call = None
+            return held(cmd, shell=True)
+
+
+        def ok_name_bound_only_to_values_used_as_a_value(flag, zz_reexport_util=None):
+            # Same spelling as a package module, but never imported here.
+            settings = {"a": 1}
+            if flag:
+                settings = None
+            return settings, zz_reexport_util
         '''
     ),
     "zz_reexport_consumer.py": textwrap.dedent(
@@ -4151,7 +4261,8 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_same_named_submodule_launch_with_helper_env",
         "ok_name_imported_from_the_same_named_submodule",
         "ok_direct_reexport_call_with_helper_env", "ok_module_attribute_use",
-        "ok_literal_dynamic_import_as_an_attribute_base",
+        "ok_static_import_as_an_attribute_base",
+        "ok_name_bound_only_to_values_used_as_a_value",
     } & named, problems
     # The collision rules: each package that binds its own submodule's name,
     # and the module named like a launch module; never the self-imports.
@@ -4196,6 +4307,20 @@ def test_the_allowed_list_names_only_real_places() -> None:
         if fname not in names:
             missing.append(f"{rel}:{fname}")
     assert not missing, f"allowed-list entries that name nothing: {missing}"
+
+
+def test_every_module_use_allowance_is_still_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each MODULE_USE_ALLOWED entry still waives something: without the
+    list, the guard reports that place."""
+    listed = dict(MODULE_USE_ALLOWED)
+    monkeypatch.setitem(globals(), "MODULE_USE_ALLOWED", {})
+    problems = unaccounted_launches(PACKAGE)
+    unneeded = [
+        f"{rel}:{fname}"
+        for rel, fname in listed
+        if not any(p.startswith(f"{rel}:") and f" in {fname}: " in p for p in problems)
+    ]
+    assert not unneeded, f"allowances that waive nothing any more: {unneeded}"
 
 
 def test_the_guard_catches_a_new_launch(tmp_path: Path) -> None:
