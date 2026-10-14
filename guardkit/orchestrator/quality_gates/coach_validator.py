@@ -161,6 +161,17 @@ from guardkit.orchestrator import process_group
 
 logger = logging.getLogger(__name__)
 
+# Optional open() flags, read directly from os (not through getattr) so the
+# launch guard sees os used only through its attributes; 0 where absent.
+try:
+    _O_NOFOLLOW = os.O_NOFOLLOW
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NOFOLLOW = 0
+try:
+    _O_NONBLOCK = os.O_NONBLOCK
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NONBLOCK = 0
+
 # TASK-ABFIX-011: default per-test pytest-timeout (seconds) the Coach injects
 # into its isolated pytest run so a single hanging test is marked FAILED while
 # the others still run, instead of consuming the whole subprocess budget and
@@ -4584,9 +4595,7 @@ class CoachValidator:
             receipt_metadata = os.lstat(receipt_path)
             if not stat.S_ISREG(receipt_metadata.st_mode):
                 return fail("receipt_unsafe")
-            flags = os.O_RDONLY | os.O_NONBLOCK
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
+            flags = os.O_RDONLY | os.O_NONBLOCK | _O_NOFOLLOW
             fd = os.open(receipt_path, flags)
             try:
                 receipt_stat = os.fstat(fd)

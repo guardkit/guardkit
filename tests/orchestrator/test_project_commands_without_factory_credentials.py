@@ -2088,10 +2088,90 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
     return problems
 
 
-def _aliased_launch_imports(modules: List[_Module]) -> List[str]:
-    """A launch module or launch function imported under another local name
-    (``import subprocess as sp``, ``from subprocess import run as go``) is a
-    violation in itself: under its own name it is always recognised."""
+def _guarded_names(mod: _Module, runner_ids: set) -> Dict[str, str]:
+    """The names in ``mod`` that are guarded, by their own spelling: a launch
+    module (kind ``module``), and a launch function, a generic runner or the
+    helper (kind ``function``), whether imported (in any scope) or, for a
+    runner, defined at module level here."""
+    guarded: Dict[str, str] = {}
+    for name, targets in mod.imports.items():
+        for target in targets:
+            module, _, last = target.rpartition(".")
+            # Only the guarded name's own spelling: any other spelling is an
+            # alias, which is a violation in itself (_aliased_guarded_imports).
+            if (target in _LAUNCHES or target == "asyncio.subprocess") and name == target.split(".")[0]:
+                guarded[name] = "module"
+            elif name == last and (
+                (module in _LAUNCHES and last in _LAUNCHES[module])
+                or target in runner_ids
+                or target in HELPERS
+            ):
+                guarded.setdefault(name, "function")
+    for node in mod.tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and f"{mod.dotted}.{node.name}" in runner_ids:
+            guarded.setdefault(node.name, "function")
+    return guarded
+
+
+def _launch_attribute_names() -> set:
+    names = set(_ANY_RECEIVER_LAUNCHES)
+    for launches in _LAUNCHES.values():
+        names.update(launches)
+    return names
+
+
+def _indirect_use(mod: _Module, node: ast.Name, kind: str) -> Optional[str]:
+    """Why a load of a guarded name is not a direct use, or ``None``.
+
+    A function, runner or helper may only be called: the name is the
+    ``func`` of a call. A module may only be the base of an attribute
+    (``subprocess.run``, ``os.environ``); when that attribute chain names a
+    launch function, the chain itself must be the ``func`` of a call."""
+    parent = mod.parents.get(id(node))
+    if kind == "function":
+        if isinstance(parent, ast.Call) and parent.func is node:
+            return None
+        return (
+            f"{node.id} is used other than by calling it (held, passed, returned, "
+            f"stored or wrapped), so what it launches cannot be checked"
+        )
+    if not (isinstance(parent, ast.Attribute) and parent.value is node):
+        return (
+            f"the launch module {node.id} is used other than through its "
+            f"attributes (held, passed, returned or stored), so what it launches "
+            f"cannot be checked"
+        )
+    chain = parent
+    launch_attr = chain.attr in _launch_attribute_names()
+    while True:
+        above = mod.parents.get(id(chain))
+        if isinstance(above, ast.Attribute) and above.value is chain:
+            chain = above
+            launch_attr = launch_attr or chain.attr in _launch_attribute_names()
+            continue
+        break
+    if launch_attr and not (isinstance(above, ast.Call) and above.func is chain):
+        if id(chain) in _annotation_nodes_cache(mod):
+            return None
+        return (
+            f"the launch function {_dotted(chain)} is used other than by calling it, "
+            f"so its env= cannot be checked"
+        )
+    return None
+
+
+def _annotation_nodes_cache(mod: _Module) -> set:
+    cached = getattr(mod, "_annotation_ids", None)
+    if cached is None:
+        cached = _annotation_nodes(mod.tree)
+        mod._annotation_ids = cached
+    return cached
+
+
+def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[str]:
+    """A guarded name (a launch module or function, a generic runner, the
+    helper) imported under another local name is a violation in itself:
+    every guarded name is only ever used under its own spelling."""
     problems: List[str] = []
     for mod in modules:
         for node in ast.walk(mod.tree):
@@ -2109,14 +2189,17 @@ def _aliased_launch_imports(modules: List[_Module]) -> List[str]:
                         (node.module in _LAUNCHES and a.name in _LAUNCHES[node.module])
                         or (node.module.split(".")[0] == "asyncio" and a.name in _ANY_RECEIVER_LAUNCHES)
                         or (node.module == "asyncio" and a.name == "subprocess")
+                        or f"{node.module}.{a.name}" in runner_ids
+                        or f"{node.module}.{a.name}" in HELPERS
                     )
                 ]
             for what in aliased:
                 holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
                 problems.append(
                     f"{mod.rel}:{node.lineno} in {getattr(holder, 'name', '<module>')}: "
-                    f"the launch module or function is imported under another name "
-                    f"({what}); import it under its own name"
+                    f"a guarded name (a launch module or function, a generic runner or "
+                    f"the helper) is imported under another name ({what}); import it "
+                    f"under its own name"
                 )
     return problems
 
@@ -2177,8 +2260,8 @@ def unaccounted_launches(package: Path) -> List[str]:
         problems.append(f"{mod.rel}:{call.lineno} in {fname}: {what}: {reason}")
 
     for mod in modules:
-        called = {id(n.func) for n in ast.walk(mod.tree) if isinstance(n, ast.Call)}
-        called |= _annotation_nodes(mod.tree)
+        annotations = _annotation_nodes(mod.tree)
+        guarded = _guarded_names(mod, runner_ids)
         for node in ast.walk(mod.tree):
             if isinstance(node, ast.Call):
                 kind = _launch_kind(mod, node.func)
@@ -2197,54 +2280,31 @@ def unaccounted_launches(package: Path) -> List[str]:
                             f"{node.args[0].value} is imported by name, so its "
                             f"launches cannot be checked"
                         )
-                elif (
-                    _dotted(node.func) == "getattr"
-                    and len(node.args) >= 2
-                    and _launch_kind(
-                        mod,
-                        ast.Attribute(value=node.args[0], attr=node.args[1].value, ctx=ast.Load())
-                        if isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)
-                        else ast.Constant(value=None),
-                    )
-                ):
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in guarded:
+                if id(node) in annotations:
+                    continue  # a type annotation launches nothing
+                problem = _indirect_use(mod, node, guarded[node.id])
+                if problem:
+                    _, fname = place(mod, node)
+                    if (mod.rel, fname) not in ALLOWED:
+                        problems.append(f"{mod.rel}:{node.lineno} in {fname}: {problem}")
+            elif (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, ast.Load)
+                and node.attr in runner_attrs
+                and id(node) not in annotations
+            ):
+                parent = mod.parents.get(id(node))
+                if not (isinstance(parent, ast.Call) and parent.func is node):
                     _, fname = place(mod, node)
                     if (mod.rel, fname) not in ALLOWED:
                         problems.append(
-                            f"{mod.rel}:{node.lineno} in {fname}: a launch function "
-                            f"looked up with getattr, so its env= cannot be checked"
-                        )
-            elif isinstance(node, (ast.Attribute, ast.Name)) and id(node) not in called:
-                if isinstance(getattr(node, "ctx", None), ast.Load) and not isinstance(
-                    mod.parents.get(id(node)), ast.Attribute
-                ):
-                    target = _resolve(mod, node, node)
-                    as_runner = target in runner_ids or (
-                        isinstance(node, ast.Attribute) and node.attr in runner_attrs
-                    )
-                    if as_runner:
-                        _, fname = place(mod, node)
-                        if (mod.rel, fname) not in ALLOWED:
-                            problems.append(
-                                f"{mod.rel}:{node.lineno} in {fname}: the generic "
-                                f"runner {_dotted(node)} is used as a value (held in "
-                                f"a variable, passed on or wrapped), so its env= "
-                                f"cannot be checked"
-                            )
-                        continue
-                kind = _launch_kind(mod, node)
-                if kind and isinstance(getattr(node, "ctx", None), ast.Load):
-                    parent = mod.parents.get(id(node))
-                    if isinstance(parent, (ast.Attribute,)):
-                        continue  # part of a longer dotted name, judged there
-                    _, fname = place(mod, node)
-                    if (mod.rel, fname) not in ALLOWED:
-                        problems.append(
-                            f"{mod.rel}:{node.lineno} in {fname}: the launch function "
-                            f"{kind} is used as a value (held in a variable, passed "
-                            f"on or wrapped), so its env= cannot be checked"
+                            f"{mod.rel}:{node.lineno} in {fname}: the generic runner "
+                            f"{_dotted(node)} is used other than by calling it, so its "
+                            f"env= cannot be checked"
                         )
     problems.extend(_reserved_name_rebindings(modules))
-    problems.extend(_aliased_launch_imports(modules))
+    problems.extend(_aliased_guarded_imports(modules, runner_ids))
     for (rel, fname), spec in GENERIC_RUNNERS.items():
         identity = _runner_identity(package.name, rel, fname)
         for mod in modules:
@@ -2685,6 +2745,55 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(tool.loads(cmd), env=project_command_environment(wf, None))
 
 
+    def v67_runner_alias_in_one_scope(cmd):
+        from guardkit.orchestrator.process_group import run_project_command as invoke
+        invoke(cmd, shell=True, env=None)
+
+
+    def _other_invoke(text):
+        from json import loads as invoke
+        return invoke(text)
+
+
+    def v68_module_assigned_to_a_variable(cmd):
+        process_tool = subprocess
+        process_tool.run(cmd, shell=True)
+
+
+    def v69_module_passed_as_an_argument(cmd, use):
+        use(subprocess, cmd)
+
+
+    def v70_module_as_a_default(cmd, sp_module=subprocess):
+        sp_module.run(cmd, shell=True)
+
+
+    def v71_launch_function_stored_in_a_dict(cmd):
+        table = {"go": subprocess.run}
+        table["go"](cmd, shell=True)
+
+
+    def v72_launch_function_stored_in_a_list(cmd):
+        table = [subprocess.Popen]
+        table[0](cmd, shell=True)
+
+
+    def v73_runner_returned_from_a_function():
+        return run_project_command
+
+
+    def ok_direct_subprocess_run_with_helper_env(cmd, wf):
+        subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    def ok_direct_runner_with_helper_env(cmd, wf):
+        run_project_command(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    def ok_os_path_and_environ(cmd):
+        return os.path.join(cmd, os.environ.get("HOME", ""))
+
+
     def ok_unshadowed_alias(cmd, wf):
         subprocess.run(cmd, shell=True, env=pce_alias(wf, None))
 
@@ -2805,6 +2914,8 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
         "ok_single_use_named_env", "ok_inline_env", "ok_single_return_wrapper",
         "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
+        "ok_direct_subprocess_run_with_helper_env", "ok_direct_runner_with_helper_env",
+        "ok_os_path_and_environ",
     } & named, problems
 
 

@@ -90,6 +90,17 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Optional open() flags, read directly from os (not through getattr) so the
+# launch guard sees os used only through its attributes; 0 where absent.
+try:
+    _O_NOFOLLOW = os.O_NOFOLLOW
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NOFOLLOW = 0
+try:
+    _O_NONBLOCK = os.O_NONBLOCK
+except AttributeError:  # pragma: no cover - not on every platform
+    _O_NONBLOCK = 0
+
 
 # =========================================================================
 # The words a record uses
@@ -525,7 +536,7 @@ def _hash_regular_file(
     capture past either bound. Returns ``(mode, sha256, bytes read)`` or
     ``(None, reason, bytes read)``.
     """
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK
     try:
         fd = os.open(full, flags)
     except OSError as exc:
