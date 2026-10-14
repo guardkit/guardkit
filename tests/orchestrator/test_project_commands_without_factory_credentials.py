@@ -1478,7 +1478,6 @@ GENERIC_RUNNERS: Dict[Tuple[str, str], Dict[str, Any]] = {
     },
     ("orchestrator/quality_gates/coach_validator.py", "_begin_run_evidence"): {
         "names": {"_begin_run_evidence"},
-        "env_position": 5,
         "none_is_safe": True,
     },
     ("orchestrator/run_evidence.py", "start_command_evidence"): {
@@ -2474,6 +2473,63 @@ def _first_argument(call: ast.Call) -> Optional[ast.AST]:
     return None
 
 
+#: How each generic runner takes an environment, derived from its own def
+#: (14 October 2026), never written by hand: (kind, position, named), where
+#: kind is "positional" (``env`` at ``position`` among the arguments a caller
+#: passes, after ``self``/``cls`` for a method), "keyword" (keyword-only
+#: ``env``), "kwargs" (no ``env`` parameter, but ``**kwargs`` may carry one),
+#: "varargs" (no ``env`` parameter, but ``*args`` past the ``named``
+#: positional parameters may) or "none" (it cannot be given one at all).
+_RUNNER_ENV: Dict[Tuple[str, str], Tuple[str, Optional[int], int]] = {}
+
+
+def _runner_source(rel: str) -> Path:
+    """The source file a GENERIC_RUNNERS entry names: in this repository's
+    package, or in GuardKit's for a ``guardkit:`` entry."""
+    if rel.startswith("guardkit:"):
+        import importlib.util
+
+        spec = importlib.util.find_spec("guardkit")
+        assert spec is not None and spec.submodule_search_locations, "GuardKit is not importable"
+        return Path(next(iter(spec.submodule_search_locations))) / rel[len("guardkit:"):]
+    return PACKAGE / rel
+
+
+def _runner_env(rel: str, fname: str) -> Tuple[str, Optional[int], int]:
+    """How the runner ``fname`` in ``rel`` takes an environment, read from
+    its own def (every def of that name in the file must agree)."""
+    key = (rel, fname)
+    if key not in _RUNNER_ENV:
+        tree = ast.parse(_runner_source(rel).read_text(encoding="utf-8"))
+        methods = {
+            id(item)
+            for klass in ast.walk(tree) if isinstance(klass, ast.ClassDef)
+            for item in klass.body
+        }
+        found = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != fname:
+                continue
+            args = node.args
+            positional = [a.arg for a in args.posonlyargs + args.args]
+            is_static = any(_last_name(d) == "staticmethod" for d in node.decorator_list)
+            if id(node) in methods and not is_static:
+                positional = positional[1:]  # self or cls: not passed by the caller
+            if "env" in positional:
+                found.add(("positional", positional.index("env"), len(positional)))
+            elif any(a.arg == "env" for a in args.kwonlyargs):
+                found.add(("keyword", None, len(positional)))
+            elif args.kwarg is not None:
+                found.add(("kwargs", None, len(positional)))
+            elif args.vararg is not None:
+                found.add(("varargs", None, len(positional)))
+            else:
+                found.add(("none", None, len(positional)))
+        assert len(found) == 1, f"{rel}:{fname}: no single signature: {sorted(found, key=str)}"
+        _RUNNER_ENV[key] = found.pop()
+    return _RUNNER_ENV[key]
+
+
 def _runner_identity(package_name: str, rel: str, fname: str) -> str:
     """The dotted name a generic runner is imported by."""
     if rel.startswith("guardkit:"):
@@ -2893,16 +2949,38 @@ def unaccounted_launches(package: Path) -> List[str]:
 
     def judge(
         mod: _Module, call: ast.Call, what: str, *, default_is_safe=False,
-        none_is_safe=False, env_position: Optional[int] = None,
+        none_is_safe=False, runner_env: Optional[Tuple[str, Optional[int], int]] = None,
     ) -> None:
+        """Judge a launch (``runner_env`` None) or a generic runner call.
+
+        Unpacking (``*args`` or ``**kwargs``) is refused unless the runner
+        cannot take an environment at all; an environment passed
+        positionally is judged exactly like ``env=``; and "env omitted is
+        safe" holds only when it is provably omitted."""
         func, fname = place(mod, call)
         if (mod.rel, fname) in ALLOWED:
             return
         if _factory_literal(call):
             return
-        env = _env_keyword(call, env_position)
-        if env is None and default_is_safe:
+        kind, position, named = runner_env or ("launch", None, 0)
+        unpacked = any(isinstance(a, ast.Starred) for a in call.args) or any(
+            kw.arg is None for kw in call.keywords
+        )
+        if unpacked and kind != "none":
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: *args or **kwargs "
+                f"unpacking could carry an environment the guard cannot see"
+            )
             return
+        if kind == "varargs" and len(call.args) > named:
+            problems.append(
+                f"{mod.rel}:{call.lineno} in {fname}: {what}: extra positional "
+                f"arguments reach *args, which could carry an environment"
+            )
+            return
+        env = _env_keyword(call, position if kind == "positional" else None)
+        if env is None and default_is_safe:
+            return  # provably omitted: no env=, no argument at its place, no unpacking
         if _helper_shaped(env, mod, func, wrappers, none_is_safe, launch_checker(mod)):
             return
         reason = "no env= (it inherits everything)" if env is None else "env= is not the helper's"
@@ -2999,7 +3077,7 @@ def unaccounted_launches(package: Path) -> List[str]:
                     mod, node, f"call to the generic runner {fname}",
                     default_is_safe=spec.get("default_is_safe", False),
                     none_is_safe=spec.get("none_is_safe", False),
-                    env_position=spec.get("env_position"),
+                    runner_env=_runner_env(rel, fname),
                 )
     return sorted(set(problems))
 
@@ -4113,6 +4191,57 @@ GUARD_PROBES_REEXPORT = {
             return settings, zz_reexport_util
         '''
     ),
+    # Where a runner's environment really goes: positional, unpacked.
+    "zz_runner_args_consumer.py": textwrap.dedent(
+        '''\
+        import os
+        import subprocess
+
+        from guardkit.orchestrator.completion_verification import run_completion_verification
+        from guardkit.orchestrator.process_group import run_project_command
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
+
+        def v143_env_passed_positionally_to_a_default_safe_runner(root, cmd):
+            return run_completion_verification(root, cmd, "declared", None, 5, dict(os.environ))
+
+
+        def v144_env_in_unpacked_keywords_to_a_default_safe_runner(root, cmd):
+            options = {"env": dict(os.environ)}
+            return run_completion_verification(root, cmd, "declared", None, 5, **options)
+
+
+        def v145_unpacked_args_reaching_the_env_position(root, cmd):
+            rest = ("declared", None, 5, dict(os.environ))
+            return run_completion_verification(root, cmd, *rest)
+
+
+        def v146_unpacked_keywords_to_a_keyword_only_runner(cmd, wf):
+            options = {"env": dict(os.environ)}
+            return run_project_command(cmd, **options)
+
+
+        def v147_unpacked_keywords_to_a_launch(cmd, wf):
+            options = {"env": project_command_environment(wf, None)}
+            return subprocess.run(cmd, **options)
+
+
+        def ok_env_omitted_on_a_default_safe_runner(root, cmd):
+            return run_completion_verification(root, cmd, "declared", None, 5)
+
+
+        def ok_helper_env_by_keyword(root, cmd, wf):
+            return run_completion_verification(
+                root, cmd, "declared", None, 5, env=project_command_environment(wf, None)
+            )
+
+
+        def ok_helper_env_positionally(root, cmd, wf):
+            return run_completion_verification(
+                root, cmd, "declared", None, 5, project_command_environment(wf, None)
+            )
+        '''
+    ),
     "zz_reexport_consumer.py": textwrap.dedent(
         '''\
         import __PKG__.orchestrator.zz_reexport_api
@@ -4262,6 +4391,8 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_name_imported_from_the_same_named_submodule",
         "ok_direct_reexport_call_with_helper_env", "ok_module_attribute_use",
         "ok_static_import_as_an_attribute_base",
+        "ok_env_omitted_on_a_default_safe_runner", "ok_helper_env_by_keyword",
+        "ok_helper_env_positionally",
         "ok_name_bound_only_to_values_used_as_a_value",
     } & named, problems
     # The collision rules: each package that binds its own submodule's name,
@@ -4307,6 +4438,16 @@ def test_the_allowed_list_names_only_real_places() -> None:
         if fname not in names:
             missing.append(f"{rel}:{fname}")
     assert not missing, f"allowed-list entries that name nothing: {missing}"
+
+
+def test_every_runner_environment_place_is_read_from_its_def() -> None:
+    """Each generic runner's environment parameter is derived from its own
+    signature; one that skips the environment when it is left out must
+    actually take one."""
+    for (rel, fname), spec in GENERIC_RUNNERS.items():
+        kind, _position, _named = _runner_env(rel, fname)
+        if spec.get("default_is_safe") or spec.get("none_is_safe"):
+            assert kind != "none", f"{rel}:{fname} takes no environment"
 
 
 def test_every_module_use_allowance_is_still_needed(monkeypatch: pytest.MonkeyPatch) -> None:
