@@ -124,3 +124,55 @@ def test_a_staged_product_conversation_history_folder_is_committed(
     site(repo, tmp_path, 1)
 
     assert PRODUCT_FOLDER in _committed_names(repo)
+
+
+# --- The web lane's three cases (14 October 2026) ---------------------------
+
+
+def test_a_project_that_ignores_conversation_history_still_checkpoints(
+    site, tmp_path: Path
+) -> None:
+    """Case 1 (a factory test project's shape): the ignore file covers the
+    folder and the folder is present at the top. Naming the folder in the
+    add made git refuse the whole add, so the checkpoint failed."""
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, ".gitignore", "conversation_history/\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "commit", "-m", "the project ignores transcripts")
+    _write(repo, TRANSCRIPT, "## Summarized\n")
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+    assert TRANSCRIPT not in _tree(repo)
+    assert (repo / TRANSCRIPT).is_file()
+
+
+def test_a_stray_root_transcript_is_not_committed_and_is_warned_about(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Case 2: a project that does not ignore the folder."""
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, TRANSCRIPT, "## Summarized\n")
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+    assert TRANSCRIPT not in _tree(repo)
+    assert any(TRANSCRIPT in w for w in _model_warnings(caplog))
+
+
+def test_a_products_own_conversation_history_folder_is_committed(
+    site, tmp_path: Path
+) -> None:
+    """Case 3: ``src/conversation_history/`` is the product's own code."""
+    repo = _init_repo(tmp_path / "repo")
+    product = "src/conversation_history/k.go"
+    _write(repo, product, "package conversation_history\n")
+
+    site(repo, tmp_path, 1)
+
+    assert product in _committed_names(repo)

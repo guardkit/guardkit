@@ -746,10 +746,10 @@ def commit_outer_tree(
 
         # The executable is written here literally (the launch guard).
         _run(["git", *_CHECKPOINT_ADD_ARGV[1:]])
-        # GuardKit's private records never enter this commit, even when they
-        # were staged before the add (13 October 2026). Done before the
-        # emptiness test, so a tree whose only staged change was a private
-        # record is "nothing to commit", not a failed empty commit.
+        # None of GuardKit's records enters this commit, even when they were
+        # staged before the add (13 and 14 October 2026). Done before the
+        # emptiness test, so a tree whose only staged change was a record is
+        # "nothing to commit", not a failed empty commit.
         unstage_private_records(executor, repo_root)
 
         staged = _run(["git", "diff", "--cached", "--quiet"], check=False)
