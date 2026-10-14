@@ -1622,7 +1622,108 @@ def _load_modules(package: Path) -> List[_Module]:
                 imports=_imports(tree, dotted, is_package),
             )
         )
+    # Shared by every module: the package's modules by dotted name, the
+    # identities that end a chain whatever the scanned tree holds (the
+    # helper and every generic runner), and the followed-name cache.
+    index = {m.dotted: m for m in modules}
+    known = set(HELPERS) | {
+        _runner_identity(package.name, rel, fname) for rel, fname in GENERIC_RUNNERS
+    }
+    finals: Dict[str, frozenset] = {}
+    for m in modules:
+        m.index, m.known, m.finals = index, known, finals
     return modules
+
+
+#: Marks the point in a dotted name past which a re-export could not be
+#: followed (``pkg.api.name<unfollowed>`` or ``pkg.api.name<unfollowed>.attr``).
+_UNFOLLOWED = "<unfollowed>"
+
+
+def _final_identities(mod: "_Module", dotted: str) -> set:
+    """What ``dotted`` finally names, following re-exports inside the
+    scanned package (14 October 2026).
+
+    A name taken from a module of the package is looked up in that module:
+    one plain import is followed (cycle-safe, any number of hops, the rest
+    of an attribute chain carried along); one def or class, or one plain
+    assignment, ends the chain there (storing a launch, runner or launch
+    module in a name is itself a violation where it is stored); anything
+    else (no binding in an existing module or no such module at all, a
+    cycle, several bindings, a ``global``) cannot be followed and is marked
+    :data:`_UNFOLLOWED`, after following whatever imports it does have.
+    Names outside the package, the package's own modules and the known
+    identities (the helper, the generic runners, and modules that hold them)
+    are final as they are."""
+    if dotted not in mod.finals:
+        out: set = set()
+        _follow(mod, dotted, frozenset(), out)
+        mod.finals[dotted] = frozenset(out)
+    return set(mod.finals[dotted])
+
+
+def _follow(mod: "_Module", dotted: str, seen: frozenset, out: set) -> None:
+    index, known = mod.index, mod.known
+    if (
+        _UNFOLLOWED in dotted
+        or dotted in known
+        or any(k.startswith(dotted + ".") for k in known)
+    ):
+        out.add(dotted)
+        return
+    parts = dotted.split(".")
+    for i in range(len(parts), 0, -1):
+        if ".".join(parts[:i]) in index:
+            break
+    else:
+        out.add(dotted)  # outside the scanned package
+        return
+    if i == len(parts):
+        out.add(dotted)  # a module of the package
+        return
+    name, rest = parts[i], parts[i + 1:]
+    unfollowed = ".".join([*parts[: i + 1]]) + _UNFOLLOWED + "".join(f".{r}" for r in rest)
+    if dotted in seen:
+        out.add(unfollowed)  # a cycle
+        return
+    exporter = index[".".join(parts[:i])]
+    is_package = exporter.rel.endswith("__init__.py")
+    sites = _binding_sites(_module_scope_nodes(exporter), name, exporter.dotted, is_package)
+    declared = any(
+        isinstance(n, (ast.Global, ast.Nonlocal)) and name in n.names
+        for n in ast.walk(exporter.tree)
+    )
+    imports = [target for kind, _node, target in sites if kind == "import"]
+    if len(sites) == 1 and not declared:
+        kind, node, target = sites[0]
+        if kind == "def":
+            out.add(dotted)  # its own definition
+            return
+        if kind == "import":
+            _follow(mod, ".".join([target, *rest]), seen | {dotted}, out)
+            return
+        parent = exporter.parents.get(id(node))
+        if kind == "name" and (
+            (isinstance(parent, ast.Assign) and len(parent.targets) == 1 and parent.targets[0] is node)
+            or (isinstance(parent, ast.AnnAssign) and parent.target is node and parent.value is not None)
+        ):
+            out.add(dotted)  # one plain assignment: the chain ends here
+            return
+    for target in sorted(set(imports)):
+        _follow(mod, ".".join([target, *rest]), seen | {dotted}, out)
+    if not sites:
+        # No such module or no such name: whatever is reached through it,
+        # attributes included, is unknown, so the whole name is.
+        unfollowed = dotted + _UNFOLLOWED
+    out.add(unfollowed)
+
+
+def _final_targets(mod: "_Module", targets: Iterable[str]) -> set:
+    """:func:`_final_identities` of every target in ``targets``."""
+    out: set = set()
+    for target in targets:
+        out |= _final_identities(mod, target)
+    return out
 
 
 def _import_bindings(node: ast.AST, dotted: str, is_package: bool) -> List[Tuple[str, str]]:
@@ -1865,6 +1966,17 @@ def _qualname(mod: _Module, func: ast.AST) -> str:
 
 
 def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
+    """The FINAL dotted name a call target refers to (re-exports inside the
+    package followed, :func:`_final_identities`), or ``None`` when unknown
+    or when it could stand for more than one thing."""
+    found = _resolve_name(mod, func_node, at)
+    if found is None:
+        return None
+    finals = _final_identities(mod, found)
+    return next(iter(finals)) if len(finals) == 1 else None
+
+
+def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
     """The dotted name a call target refers to, or ``None`` when unknown.
 
     A plain name resolves through the scopes that enclose ``at``: a function
@@ -2070,11 +2182,14 @@ def _wrappers(modules: List[_Module]) -> set:
 
 def _possible_targets(mod: _Module, node: ast.AST) -> set:
     """Every dotted name a plain or dotted name can stand for, through every
-    import of its root anywhere in the module."""
+    import of its root anywhere in the module, each followed to its final
+    identity through re-exports inside the package."""
     if isinstance(node, ast.Name):
-        return set(mod.imports.get(node.id, ()))
+        return _final_targets(mod, mod.imports.get(node.id, ()))
     if isinstance(node, ast.Attribute):
-        return {f"{base}.{node.attr}" for base in _possible_targets(mod, node.value)}
+        return _final_targets(
+            mod, {f"{base}.{node.attr}" for base in _possible_targets(mod, node.value)}
+        )
     return set()
 
 
@@ -2085,6 +2200,12 @@ def _launch_kind(mod: _Module, node: ast.AST) -> Optional[str]:
     for target in sorted(_possible_targets(mod, node)):
         if _is_launch_target(target):
             return target
+        if _UNFOLLOWED in target:
+            # Called itself, or a launch name called on it: it could be a
+            # launch, so its env= must be the helper's.
+            head, _, tail = target.partition(_UNFOLLOWED)
+            if not tail or tail.rsplit(".", 1)[-1] in LAUNCH_NAMES:
+                return f"{head}{tail} (a re-export the guard cannot follow)"
     return None
 
 
@@ -2216,7 +2337,7 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
     for mod in modules:
         reserved = set(base)
         for alias, targets in mod.imports.items():
-            for target in targets:
+            for target in _final_targets(mod, targets):
                 module, _, last = target.rpartition(".")
                 if last in base or target in HELPERS or _is_launch_target(target):
                     reserved.add(alias)
@@ -2261,7 +2382,7 @@ def _guarded_names(mod: _Module, runner_ids: set) -> Dict[str, str]:
     runner, defined at module level here."""
     guarded: Dict[str, str] = {}
     for name, targets in mod.imports.items():
-        for target in targets:
+        for target in _final_targets(mod, targets):
             module, _, last = target.rpartition(".")
             # Only the guarded name's own spelling: any other spelling is an
             # alias, which is a violation in itself (_aliased_guarded_imports).
@@ -2409,15 +2530,18 @@ def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[st
                 for alias, (_bound, target) in zip(node.names, bindings):
                     if not alias.asname or alias.asname == alias.name:
                         continue
-                    module, _, last = target.rpartition(".")
-                    if (
-                        _is_launch_target(target)
-                        or _is_launch_module(target)  # from asyncio import subprocess as x
-                        or target in runner_ids
-                        or target in HELPERS
+                    # What the import finally names, through re-exports.
+                    finals = _final_identities(mod, target) | {target}
+                    if any(
+                        _is_launch_target(final)
+                        or _is_launch_module(final)  # from asyncio import subprocess as x
+                        or final in runner_ids
+                        or final in HELPERS
+                        for final in finals
+                    ) or (
                         # Belt and braces: a distinctive guarded name is never
                         # aliased, whatever module text it comes from.
-                        or alias.name in distinctive
+                        alias.name in distinctive
                     ):
                         aliased.append(f"{target} as {alias.asname}")
             for what in aliased:
@@ -3385,6 +3509,114 @@ GUARD_PROBES_REBOUND = textwrap.dedent(
 )
 
 
+#: Launches re-exported through other modules of the package (14 October
+#: 2026): each module's file name -> its text; ``__PKG__`` becomes the probe
+#: package's name. ``zz_reexport_missing`` is deliberately absent.
+GUARD_PROBES_REEXPORT = {
+    "zz_reexport_api.py": "from subprocess import run\n",
+    "zz_reexport_alias_api.py": "from subprocess import Popen as P\n",
+    "zz_reexport_runner_api.py": (
+        "from guardkit.orchestrator.process_group import run_in_own_group\n"
+    ),
+    "zz_reexport_hop1.py": "from subprocess import check_output\n",
+    "zz_reexport_hop2.py": "from .zz_reexport_hop1 import check_output\n",
+    "zz_reexport_cycle_a.py": "from .zz_reexport_cycle_b import spawn_it\n",
+    "zz_reexport_cycle_b.py": "from .zz_reexport_cycle_a import spawn_it\n",
+    "zz_reexport_fallback.py": (
+        "try:\n"
+        "    from subprocess import check_call\n"
+        "except ImportError:  # pragma: no cover\n"
+        "    check_call = None\n"
+    ),
+    "zz_reexport_util.py": (
+        "LIMIT = 5\n\n\n"
+        "def describe(value):\n    return str(value)\n\n\n"
+        "def _make():\n    return print\n\n\n"
+        "made_runner = _make()\n"
+    ),
+    "zz_reexport_consumer.py": textwrap.dedent(
+        '''\
+        import __PKG__.orchestrator.zz_reexport_api
+        import __PKG__.orchestrator.zz_reexport_api as api_module
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
+        from . import zz_reexport_hop2
+        from .zz_reexport_alias_api import P
+        from .zz_reexport_api import run
+        from .zz_reexport_cycle_a import spawn_it
+        from .zz_reexport_fallback import check_call
+        from .zz_reexport_hop2 import check_output
+        from .zz_reexport_missing import start_it
+        from .zz_reexport_runner_api import run_in_own_group
+        from .zz_reexport_util import LIMIT, describe, made_runner
+
+
+        def v102_reexported_subprocess_run(cmd):
+            return run(cmd, shell=True)
+
+
+        def v103_reexported_aliased_popen(cmd):
+            return P(cmd)
+
+
+        def v104_reexported_generic_runner(cmd):
+            return run_in_own_group(cmd, shell=True)
+
+
+        def v105_two_hop_reexport(cmd):
+            return check_output(cmd, shell=True)
+
+
+        def v106_two_hop_reexport_through_the_module(cmd):
+            return zz_reexport_hop2.check_output(cmd, shell=True)
+
+
+        def v107_reexport_through_an_aliased_package_import(cmd):
+            return api_module.run(cmd, shell=True)
+
+
+        def v108_reexport_through_the_full_dotted_name(cmd):
+            return __PKG__.orchestrator.zz_reexport_api.run(cmd, shell=True)
+
+
+        def v109_cyclic_reexport(cmd):
+            return spawn_it(cmd)
+
+
+        def v110_reexport_with_a_fallback_binding(cmd):
+            return check_call(cmd, shell=True)
+
+
+        def v111_reexport_with_a_fallback_binding_held(cmd):
+            held = check_call
+            return held(cmd, shell=True)
+
+
+        def v112_reexport_from_a_missing_module(cmd):
+            return start_it(cmd)
+
+
+        def ok_reexported_run_with_helper_env(cmd, wf):
+            return run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+        def ok_reexported_package_function(value):
+            return describe(value)
+
+
+        def ok_reexported_constant_read():
+            return LIMIT + 1
+
+
+        def ok_reexported_assigned_name(value):
+            # One plain assignment ends the chain: storing a launch in a name
+            # is already flagged where it is stored.
+            return made_runner(value)
+        '''
+    ),
+}
+
+
 def _probe_package(tmp_path: Path, name: str) -> Path:
     pkg = tmp_path / name
     (pkg / "orchestrator").mkdir(parents=True)
@@ -3394,6 +3626,10 @@ def _probe_package(tmp_path: Path, name: str) -> Path:
     (pkg / "orchestrator" / "zz_rebound.py").write_text(GUARD_PROBES_REBOUND, encoding="utf-8")
     for filename, text in GUARD_PROBES_WILDCARD.items():
         (pkg / "orchestrator" / filename).write_text(text, encoding="utf-8")
+    for filename, text in GUARD_PROBES_REEXPORT.items():
+        (pkg / "orchestrator" / filename).write_text(
+            text.replace("__PKG__", name), encoding="utf-8"
+        )
     return pkg
 
 
@@ -3402,7 +3638,9 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
     problems = unaccounted_launches(_probe_package(tmp_path, PACKAGE.name))
     named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems}
     expected = {
-        n.name for n in ast.walk(ast.parse(GUARD_PROBES + "\n" + GUARD_PROBES_REBOUND))
+        n.name
+        for text in [GUARD_PROBES, GUARD_PROBES_REBOUND, *GUARD_PROBES_REEXPORT.values()]
+        for n in ast.walk(ast.parse(text))
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
@@ -3435,7 +3673,13 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_asyncio_run_is_not_a_launch", "ok_bare_os_getenv_is_not_a_module",
         "ok_module_attribute_that_is_not_a_launch", "ok_direct_deep_call_with_helper_env",
         "ok_direct_dotted_call_through_a_submodule",
+        "ok_reexported_run_with_helper_env", "ok_reexported_package_function",
+        "ok_reexported_constant_read", "ok_reexported_assigned_name",
     } & named, problems
+    # The exporter that renames a launch is itself an alias violation.
+    assert any(
+        "zz_reexport_alias_api.py:1 in <module>: a guarded name" in p for p in problems
+    ), problems
 
 
 def test_every_process_launch_is_accounted_for() -> None:
