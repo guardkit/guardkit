@@ -786,3 +786,80 @@ def test_a_new_empty_product_file_is_not_taken_for_a_record_copy(
     assert not _warnings(caplog, "moves or copies"), [
         r.getMessage() for r in caplog.records
     ]
+
+
+# --- Fix pass 3: records written while the checkpoint runs ------------------
+#
+# GuardKit writes a record to a temporary file and renames it over the
+# record. Tasks in a parallel wave share one worktree, so a record can vanish
+# between being listed and being read. That must never fail a checkpoint.
+
+
+def test_records_renamed_during_the_checkpoint_never_fail_it(tmp_path: Path) -> None:
+    import os
+    import threading
+
+    repo = _init_repo(tmp_path / "repo")
+    folder = repo / ".guardkit" / "autobuild" / "TASK-2"
+    folder.mkdir(parents=True)
+    for index in range(50):
+        (folder / f"old_{index}.json").write_text(
+            f'{{"i": {index}}}\n' * 50, encoding="utf-8"
+        )
+    stop = threading.Event()
+
+    def writer() -> None:
+        count = 0
+        record = folder / "coach_turn_1.json"
+        temporary = folder / "coach_turn_1.json.tmp"
+        while not stop.is_set():
+            count += 1
+            temporary.write_text(f'{{"n": {count}}}\n' * 200, encoding="utf-8")
+            os.replace(temporary, record)
+
+    thread = threading.Thread(target=writer, daemon=True)
+    thread.start()
+    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-001")
+    failures = []
+    try:
+        for turn in range(1, 151):
+            _write(repo, f"src/f{turn}.txt", f"{turn}\n")
+            try:
+                manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
+            except Exception as exc:  # noqa: BLE001 - counted, then asserted
+                failures.append(f"turn {turn}: {type(exc).__name__}")
+    finally:
+        stop.set()
+        thread.join(timeout=10)
+    assert failures == [], failures
+    assert not [p for p in _tree(repo) if p.startswith(".guardkit/autobuild/")]
+
+
+# --- Fix pass 3: a copy of a record inside an inner build repository --------
+
+
+def test_a_copy_of_an_inner_build_repositorys_record_is_not_committed(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    inner = repo / ".guardkit" / "worktrees" / "FEAT-1"
+    _init_repo(inner)
+    product_text = "package main\n\nfunc main() {}\n"
+    _write(inner, "src/main.go", product_text)
+    _git(inner, "add", "--", "src/main.go")
+    _git(inner, "commit", "-m", "the inner build's product")
+    record_text = _record_json()
+    _write(inner, ".guardkit/autobuild/TASK-1/player_turn_1.json", record_text)
+    _write(repo, "notes/turn.json", record_text)
+    # A product file identical to one of the inner build's product files is
+    # ordinary work: the inner build's product files are never compared.
+    _write(repo, "src/main.go", product_text)
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert "notes/turn.json" not in tree, tree
+    assert (repo / "notes/turn.json").is_file()
+    assert "src/main.go" in tree, tree
+    assert _warnings(caplog, "notes/turn.json", "moves or copies")
