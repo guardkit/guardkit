@@ -1680,15 +1680,42 @@ def _follow(mod: "_Module", dotted: str, seen: frozenset, out: set) -> None:
         return
     if i == len(parts):
         out.add(dotted)  # a module of the package
+        # Only the WHOLE name, never a shorter prefix: when the package's
+        # __init__ also binds this name (``from subprocess import run`` beside
+        # a run.py), ``from package import run`` may give that binding
+        # instead, so it is a second possible identity. A package importing
+        # its own submodule under the same name adds nothing.
+        package = index.get(".".join(parts[:-1])) if len(parts) > 1 else None
+        if package is not None and package.rel.endswith("__init__.py") and dotted not in seen:
+            sites = [
+                site
+                for site in _binding_sites(
+                    _module_scope_nodes(package), parts[-1], package.dotted, True
+                )
+                if not (site[0] == "import" and site[2] == dotted)
+            ]
+            if sites:
+                _follow_binding(mod, package, parts[-1], [], sites, seen | {dotted}, out)
         return
-    name, rest = parts[i], parts[i + 1:]
-    unfollowed = ".".join([*parts[: i + 1]]) + _UNFOLLOWED + "".join(f".{r}" for r in rest)
     if dotted in seen:
-        out.add(unfollowed)  # a cycle
-        return
+        out.add(".".join(parts[: i + 1]) + _UNFOLLOWED + "".join(f".{r}" for r in parts[i + 1:]))
+        return  # a cycle
     exporter = index[".".join(parts[:i])]
-    is_package = exporter.rel.endswith("__init__.py")
-    sites = _binding_sites(_module_scope_nodes(exporter), name, exporter.dotted, is_package)
+    sites = _binding_sites(
+        _module_scope_nodes(exporter), parts[i], exporter.dotted,
+        exporter.rel.endswith("__init__.py"),
+    )
+    _follow_binding(mod, exporter, parts[i], parts[i + 1:], sites, seen | {dotted}, out)
+
+
+def _follow_binding(
+    mod: "_Module", exporter: "_Module", name: str, rest: List[str],
+    sites: List[Tuple[str, ast.AST, Optional[str]]], seen: frozenset, out: set,
+) -> None:
+    """Follow how ``exporter`` binds ``name`` at module scope (``sites``),
+    carrying the ``rest`` of an attribute chain (see :func:`_final_identities`)."""
+    dotted = ".".join([exporter.dotted, name, *rest])
+    unfollowed = f"{exporter.dotted}.{name}{_UNFOLLOWED}" + "".join(f".{r}" for r in rest)
     declared = any(
         isinstance(n, (ast.Global, ast.Nonlocal)) and name in n.names
         for n in ast.walk(exporter.tree)
@@ -1700,7 +1727,7 @@ def _follow(mod: "_Module", dotted: str, seen: frozenset, out: set) -> None:
             out.add(dotted)  # its own definition
             return
         if kind == "import":
-            _follow(mod, ".".join([target, *rest]), seen | {dotted}, out)
+            _follow(mod, ".".join([target, *rest]), seen, out)
             return
         parent = exporter.parents.get(id(node))
         if kind == "name" and (
@@ -1710,7 +1737,7 @@ def _follow(mod: "_Module", dotted: str, seen: frozenset, out: set) -> None:
             out.add(dotted)  # one plain assignment: the chain ends here
             return
     for target in sorted(set(imports)):
-        _follow(mod, ".".join([target, *rest]), seen | {dotted}, out)
+        _follow(mod, ".".join([target, *rest]), seen, out)
     if not sites:
         # No such module or no such name: whatever is reached through it,
         # attributes included, is unknown, so the whole name is.
@@ -2555,6 +2582,104 @@ def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[st
     return problems
 
 
+def _attribute_used_as_value(mod: _Module, node: ast.Attribute, runner_ids: set) -> Optional[str]:
+    """Why a loaded attribute chain is used as a value, or ``None``.
+
+    Judged on EVERY attribute, whatever its root, by what it finally names
+    (component by component, re-exports inside the package followed, see
+    :func:`_possible_targets`): a launch function, a generic runner or the
+    helper may only be the ``func`` of a call; a launch-bearing module may
+    only be called through or be the base of a further attribute; a chain
+    that could not be followed and ends in a launch name may only be called.
+    Held, stored, passed or returned, what it launches could not be checked."""
+    parent = mod.parents.get(id(node))
+    if isinstance(parent, ast.Call) and parent.func is node:
+        return None
+    is_base = isinstance(parent, ast.Attribute) and parent.value is node
+    for target in sorted(_possible_targets(mod, node)):
+        if _UNFOLLOWED in target:
+            if target.replace(_UNFOLLOWED, "").rsplit(".", 1)[-1] in LAUNCH_NAMES:
+                return (
+                    f"{_dotted(node)} could be the launch "
+                    f"{target.replace(_UNFOLLOWED, '')} (a re-export the guard cannot "
+                    f"follow) and is used other than by calling it, so its env= cannot "
+                    f"be checked"
+                )
+            continue
+        if _is_launch_target(target) or target in runner_ids or target in HELPERS:
+            return (
+                f"{_dotted(node)} is {target}, used other than by calling it (held, "
+                f"passed, returned, stored or wrapped), so what it launches cannot be "
+                f"checked"
+            )
+        if _is_launch_bearing_module(target) and not is_base:
+            return (
+                f"{_dotted(node)} is the launch-bearing module {target}, used other "
+                f"than as the base of an attribute, so what is launched through it "
+                f"cannot be checked"
+            )
+    return None
+
+
+def _launch_named_modules(modules: List[_Module]) -> List[str]:
+    """No module or package inside the scanned package may be named like a
+    launch module (``subprocess``, ``os``, ``asyncio``, ``pty``,
+    ``multiprocessing``, ``posix``, ``nt``): the guard reads those names as
+    the standard library's."""
+    problems: List[str] = []
+    for mod in modules:
+        named = [part for part in Path(mod.rel).with_suffix("").parts if part in LAUNCH_MODULES]
+        if named:
+            problems.append(
+                f"{mod.rel}:1 in <module>: a module or package of this package is named "
+                f"{named[0]}, like the launch module; rename it"
+            )
+    return problems
+
+
+def _init_submodule_collisions(modules: List[_Module]) -> List[str]:
+    """A package's ``__init__`` may not bind a name that is also one of its
+    own submodules or subpackages, except by importing that submodule itself
+    (``from . import sub``, ``from package import sub``, ``import
+    package.sub``) or a name from that same submodule (``from .sub import
+    sub``, which the guard follows through the submodule as a second
+    possible identity, see :func:`_follow`). Anything else (an import from
+    elsewhere, a def, a class, an assignment) makes what the name gives
+    depend on import order, so the guard could judge the wrong one."""
+    problems: List[str] = []
+    for mod in modules:
+        if not mod.rel.endswith("__init__.py"):
+            continue
+        depth = mod.dotted.count(".") + 1
+        subs = {
+            dotted.rsplit(".", 1)[1]
+            for dotted in mod.index
+            if dotted.startswith(mod.dotted + ".") and dotted.count(".") == depth
+        }
+        for sub in sorted(subs):
+            own = f"{mod.dotted}.{sub}"
+            lines = [
+                getattr(node, "lineno", 1)
+                for kind, node, target in _binding_sites(
+                    _module_scope_nodes(mod), sub, mod.dotted, True
+                )
+                if not (kind == "import" and (target == own or target.startswith(own + ".")))
+            ]
+            lines += [
+                node.lineno
+                for node in ast.walk(mod.tree)
+                if isinstance(node, (ast.Global, ast.Nonlocal)) and sub in node.names
+            ]
+            for line in sorted(set(lines)):
+                problems.append(
+                    f"{mod.rel}:{line} in <module>: the package binds {sub}, which is "
+                    f"also its own submodule, other than by importing that submodule or a "
+                    f"name from it; "
+                    f"use another name"
+                )
+    return problems
+
+
 def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
     wrappers = _wrappers(modules)
@@ -2656,6 +2781,21 @@ def unaccounted_launches(package: Path) -> List[str]:
                         )
     problems.extend(_reserved_name_rebindings(modules))
     problems.extend(_aliased_guarded_imports(modules, runner_ids))
+    problems.extend(_launch_named_modules(modules))
+    problems.extend(_init_submodule_collisions(modules))
+    for mod in modules:
+        annotations = _annotation_nodes_cache(mod)
+        for node in ast.walk(mod.tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, ast.Load)
+                and id(node) not in annotations
+            ):
+                problem = _attribute_used_as_value(mod, node, runner_ids)
+                if problem:
+                    _, fname = place(mod, node)
+                    if (mod.rel, fname) not in ALLOWED:
+                        problems.append(f"{mod.rel}:{node.lineno} in {fname}: {problem}")
     for mod in modules:
         for node in ast.walk(mod.tree):
             if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
@@ -3534,6 +3674,125 @@ GUARD_PROBES_REEXPORT = {
         "def _make():\n    return print\n\n\n"
         "made_runner = _make()\n"
     ),
+    "zz_reexport_modapi.py": "import subprocess\n",
+    # A launch reached through a package module's attribute and used as a
+    # value (14 October 2026).
+    "zz_attr_consumer.py": textwrap.dedent(
+        '''\
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
+        from . import zz_plain
+        from . import zz_reexport_api
+        from . import zz_reexport_fallback
+        from . import zz_reexport_modapi
+        from . import zz_reexport_util
+        from .zz_plain import run as plain_run
+
+
+        def v117_reexported_launch_stored_through_a_module_attribute(cmd):
+            invoke = zz_reexport_api.run
+            return invoke(cmd, shell=True)
+
+
+        def v118_unfollowed_launch_name_stored_through_a_module_attribute(cmd):
+            held = zz_reexport_fallback.check_call
+            return held(cmd, shell=True)
+
+
+        def v119_reexported_launch_passed_through_a_module_attribute(cmd):
+            return [zz_reexport_api.run]
+
+
+        def v120_reexported_launch_module_stored_through_a_module_attribute(cmd):
+            launcher = zz_reexport_modapi.subprocess
+            return launcher.run(cmd, shell=True)
+
+
+        def ok_direct_reexport_attribute_call_with_helper_env(cmd, wf):
+            return zz_reexport_api.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+        def ok_harmless_package_attributes_as_values():
+            limit = zz_reexport_util.LIMIT
+            describe = zz_reexport_util.describe
+            return describe(limit)
+
+
+        def ok_genuine_submodule_and_self_import_as_values():
+            modules = [zz_plain.run, zz_plain.other, zz_plain.third]
+            go = zz_plain.run.go
+            return modules, go(), plain_run.go()
+        '''
+    ),
+    # The two blunt collision rules: a package binding a name that is also
+    # its submodule (a launch, a launch module, an ordinary function), and a
+    # module named like a launch module. zz_plain only imports its own
+    # submodules: allowed.
+    "zz_collide/__init__.py": "from subprocess import run\n",
+    "zz_collide/run.py": "",
+    "zz_shadow/__init__.py": "import subprocess\n",
+    "zz_shadow/subprocess.py": "",
+    "zz_noncollide/__init__.py": "from json import loads\n",
+    "zz_noncollide/loads.py": "",
+    "zz_plain/__init__.py": (
+        "from . import run\n"
+        "from __PKG__.orchestrator.zz_plain import other\n"
+        "import __PKG__.orchestrator.zz_plain.third\n"
+    ),
+    "zz_plain/run.py": "def go():\n    return 1\n",
+    "zz_plain/other.py": "def go():\n    return 2\n",
+    "zz_plain/third.py": "def go():\n    return 3\n",
+    # The allowed idiom: a package importing a name from its same-named
+    # submodule; followed, so a launch re-exported this way is still seen.
+    "zz_fromsub/__init__.py": "from .run import run\n",
+    "zz_fromsub/run.py": "from subprocess import run\n",
+    "zz_fromsub_ok/__init__.py": "from .resolve import resolve\n",
+    "zz_fromsub_ok/resolve.py": "def resolve(value):\n    return value\n",
+    "zz_fromsub_consumer.py": textwrap.dedent(
+        '''\
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
+        from .zz_fromsub import run
+        from .zz_fromsub_ok import resolve
+
+
+        def v121_launch_imported_from_the_same_named_submodule(cmd):
+            return run(cmd, shell=True)
+
+
+        def v122_launch_imported_from_the_same_named_submodule_stored(cmd):
+            held = run
+            return held(cmd, shell=True)
+
+
+        def ok_same_named_submodule_launch_with_helper_env(cmd, wf):
+            return run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+        def ok_name_imported_from_the_same_named_submodule(value):
+            held = resolve
+            return held(value)
+        '''
+    ),
+    "zz_collide_consumer.py": textwrap.dedent(
+        '''\
+        from . import zz_collide
+        from .zz_collide import run
+
+
+        def collide_called(cmd):
+            return run(cmd, shell=True)
+
+
+        def collide_stored(cmd):
+            held = run
+            return held(cmd, shell=True)
+
+
+        def collide_by_attribute(cmd):
+            return zz_collide.run(cmd, shell=True)
+        '''
+    ),
     "zz_reexport_consumer.py": textwrap.dedent(
         '''\
         import __PKG__.orchestrator.zz_reexport_api
@@ -3627,6 +3886,7 @@ def _probe_package(tmp_path: Path, name: str) -> Path:
     for filename, text in GUARD_PROBES_WILDCARD.items():
         (pkg / "orchestrator" / filename).write_text(text, encoding="utf-8")
     for filename, text in GUARD_PROBES_REEXPORT.items():
+        (pkg / "orchestrator" / filename).parent.mkdir(parents=True, exist_ok=True)
         (pkg / "orchestrator" / filename).write_text(
             text.replace("__PKG__", name), encoding="utf-8"
         )
@@ -3675,7 +3935,27 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_direct_dotted_call_through_a_submodule",
         "ok_reexported_run_with_helper_env", "ok_reexported_package_function",
         "ok_reexported_constant_read", "ok_reexported_assigned_name",
+        "ok_direct_reexport_attribute_call_with_helper_env",
+        "ok_harmless_package_attributes_as_values",
+        "ok_genuine_submodule_and_self_import_as_values",
+        "ok_same_named_submodule_launch_with_helper_env",
+        "ok_name_imported_from_the_same_named_submodule",
     } & named, problems
+    # The collision rules: each package that binds its own submodule's name,
+    # and the module named like a launch module; never the self-imports.
+    for where, what in [
+        ("zz_collide/__init__.py:1", "the package binds run"),
+        ("zz_shadow/__init__.py:1", "the package binds subprocess"),
+        ("zz_noncollide/__init__.py:1", "the package binds loads"),
+        ("zz_shadow/subprocess.py:1", "named subprocess, like the launch module"),
+    ]:
+        assert any(f"orchestrator/{where} in <module>: " in p and what in p for p in problems), (
+            where, problems,
+        )
+    assert not [
+        p for p in problems
+        if "zz_plain" in p or "zz_fromsub_ok" in p or "zz_fromsub/__init__.py" in p
+    ], problems
     # The exporter that renames a launch is itself an alias violation.
     assert any(
         "zz_reexport_alias_api.py:1 in <module>: a guarded name" in p for p in problems
