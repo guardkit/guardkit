@@ -281,15 +281,19 @@ _git_program_cache: List[str] = []
 
 
 def git_program() -> str:
-    """The full path of the git program, found once from GuardKit's own PATH.
+    """The full path of the ``git`` entry found once on GuardKit's own PATH.
 
     Its folder is the first folder on the PATH every git command gets, so the
-    commands below, written as ``["git", ...]``, run exactly this program."""
+    commands below, written as ``["git", ...]``, run exactly this entry. The
+    entry is kept as found, never resolved: when it is a symbolic link to a
+    program with another name in another folder (``/usr/local/bin/git`` to
+    ``/opt/git/bin/git-2.43``), the target's folder holds no file named
+    ``git``, and the name would then find some other git."""
     if not _git_program_cache:
         found = shutil.which("git")
         if not found:
             raise FileNotFoundError(2, "git is not installed on this machine", "git")
-        _git_program_cache.append(os.path.realpath(found) if os.path.islink(found) else found)
+        _git_program_cache.append(os.path.abspath(found))
     return _git_program_cache[0]
 
 

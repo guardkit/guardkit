@@ -1074,3 +1074,46 @@ def test_run_git_runs_the_git_program_found_at_start_up(
     done = pg.run_git(["status", "--porcelain"], cwd=repo)
     assert done.returncode == 0
     assert len(calls.read_text().splitlines()) >= 2  # the name read and the command
+
+
+def test_run_git_finds_a_discovered_git_that_is_a_symlink(
+    lab: Lab, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real discovery: the ``git`` on PATH is a symlink to a differently named
+    program in another folder (as with ``/usr/local/bin/git`` pointing at
+    ``/opt/git/bin/git-2.43``). Every launch must run that discovered entry:
+    the helper's own reads (``_spawn``), the command (``run_git``) and the
+    evidence capture's bounded git runner. Before the fix, the helper put the
+    target's folder first on git's PATH; it holds no file named ``git``, so
+    the launches silently ran another git."""
+    from guardkit.orchestrator import run_evidence
+
+    pg = _pg()
+    repo = lab.base_repo("repo")
+    target_folder = lab.root / "opt-git-bin"
+    target_folder.mkdir()
+    calls = lab.root / "wrapper-calls.txt"
+    wrapper = target_folder / "git-wrapper-2.43"
+    wrapper.write_text(
+        f'#!/bin/sh\nfor a in "$@"; do case "$a" in -*) ;; *=*) ;; /*) ;; *) '
+        f'echo "$a" >> "{calls}"; break;; esac; done\nexec "{GIT}" "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    entry_folder = lab.root / "usr-local-bin"
+    entry_folder.mkdir()
+    (entry_folder / "git").symlink_to(wrapper)
+    monkeypatch.setenv("PATH", f"{entry_folder}:{os.environ['PATH']}")
+    monkeypatch.setattr(pg, "_git_program_cache", [])  # discover afresh
+
+    done = pg.run_git(["status", "--porcelain"], cwd=repo)
+    assert done.returncode == 0, done.stderr
+    seen = calls.read_text().split() if calls.exists() else []
+    assert "config" in seen  # the helper's own name read, through _spawn
+    assert "status" in seen  # the command, through run_git
+    calls.unlink()
+    run = run_evidence._git_runner(
+        ["git", "-C", str(repo), "rev-parse", "--verify", "-q", "HEAD"], timeout=30
+    )
+    assert run.returncode == 0
+    assert "rev-parse" in calls.read_text().split()  # the evidence runner
+    assert pg.git_program() == str(entry_folder / "git")  # the entry, not its target
