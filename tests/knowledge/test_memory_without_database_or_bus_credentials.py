@@ -1040,3 +1040,72 @@ def test_a_refused_prose_write_is_said_to_be_refused(
     assert refused_connections == []
     assert store_never_opened == []
 
+
+# ---------------------------------------------------------------------------
+# A prose record falls back to the door when the bus fails
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nats_core") is None,
+    reason="the episode builder needs the nats_core memory extra",
+)
+@pytest.mark.skipif(
+    not _fleet_memory_has_the_envelope_tool(),
+    reason="the installed fleet-memory has no memory_publish_envelope tool",
+)
+@pytest.mark.parametrize("bus_failure", ["the bus refuses", "the bus publishes nothing"])
+def test_a_prose_record_falls_back_to_the_door_when_the_bus_fails(
+    bus_failure, memory_env, monkeypatch, refused_connections, store_never_opened, caplog
+):
+    import guardkit.memory.harvest_publisher as harvest_publisher
+    from fleet_memory.relay.chunk_writer import ChunkWriter
+    from fleet_memory.relay.schema import MemoryEpisodeV1 as RelayEnvelope
+    from fleet_memory.relay.service import RelayService
+    from fleet_memory.writer.core import DeterministicWriter
+
+    # What the relay would have stored from the bus, for comparison.
+    expected_store = _in_memory_store()
+    settings = _relay_settings()
+    relay = RelayService(
+        writer=DeterministicWriter(store=expected_store, settings=settings),
+        chunk_writer=ChunkWriter(store=expected_store),
+        settings=settings,
+    )
+    attempts: list = []
+
+    async def failing_bus(episodes, client=None):
+        attempts.append(len(episodes))
+        for episode in episodes:  # only to build the expected store
+            await relay.ingest(RelayEnvelope.model_validate_json(episode.model_dump_json()))
+        if bus_failure == "the bus refuses":
+            raise RuntimeError("empty response when expecting INFO")
+        return harvest_publisher.PublishSummary(
+            published=0, skipped_oversized=0, counts_per_type={}
+        )
+
+    monkeypatch.setattr(harvest_publisher, "publish_episodes", failing_bus)
+    monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
+
+    door_store = _in_memory_store()
+    with RealFleetMemoryDoor(door_store) as door:
+        memory_env.setenv("FLEET_MEMORY_MCP_URL", door.url)
+        client = FleetMemoryClient(fmc._load_fleet_config_from_env())
+        with caplog.at_level(logging.INFO, logger=CLIENT_LOGGER):
+            key = asyncio.run(
+                client.add_episode(
+                    name="turn_state TASK-1 turn 1",
+                    episode_body=_prose_body("turn_states"),
+                    group_id="turn_states",
+                )
+            )
+
+    assert attempts == [1], "the bus was tried first"
+    assert key and key.startswith("document:demo:"), key
+    expected_rows = asyncio.run(_store_rows(expected_store))
+    assert expected_rows
+    assert asyncio.run(_store_rows(door_store)) == expected_rows
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("[Memory] Wrote document episode") for m in messages), messages
+    assert refused_connections == []
+    assert store_never_opened == []
