@@ -1508,9 +1508,26 @@ _ANY_RECEIVER_LAUNCHES = {
 }
 
 
+_REAL_SUBMODULES: Dict[str, bool] = {}
+
+
 def _is_launch_module(dotted: str) -> bool:
-    """A launch module, or one of its submodules."""
-    return any(dotted == m or dotted.startswith(m + ".") for m in LAUNCH_MODULES)
+    """A launch module, or a REAL submodule of one (asyncio.subprocess,
+    os.path), never an attribute that only looks like one (os.getenv,
+    asyncio.subprocess.create_subprocess_shell): below the top level the name
+    must be importable as a module (``importlib.util.find_spec``)."""
+    if dotted in LAUNCH_MODULES:
+        return True
+    if not any(dotted.startswith(m + ".") for m in LAUNCH_MODULES):
+        return False
+    if dotted not in _REAL_SUBMODULES:
+        import importlib.util
+
+        try:
+            _REAL_SUBMODULES[dotted] = importlib.util.find_spec(dotted) is not None
+        except (ImportError, AttributeError, ValueError):
+            _REAL_SUBMODULES[dotted] = False
+    return _REAL_SUBMODULES[dotted]
 
 
 def _is_launch_target(dotted: str) -> bool:
@@ -3118,6 +3135,38 @@ GUARD_PROBES = textwrap.dedent(
         await create_subprocess_exec(cmd, env=project_command_environment(wf, None))
 
 
+    def v97_deep_launch_held_in_a_variable(process_object):
+        import multiprocessing.popen_fork
+        launch = multiprocessing.popen_fork.Popen
+        launch(process_object)
+
+
+    def v98_deep_asyncio_launch_held_in_a_variable(cmd):
+        f = asyncio.subprocess.create_subprocess_exec
+        return f(cmd)
+
+
+    def ok_module_attribute_that_is_not_a_launch(cmd):
+        x = os.path
+        return x.join(cmd, "a")
+
+
+    async def ok_direct_deep_call_with_helper_env(cmd, wf):
+        await asyncio.subprocess.create_subprocess_exec(
+            cmd, env=project_command_environment(wf, None)
+        )
+
+
+    def ok_asyncio_run_is_not_a_launch(coroutine):
+        return asyncio.run(coroutine)
+
+
+    def ok_bare_os_getenv_is_not_a_module(cmd, wf):
+        from os import getenv
+        if getenv("PROBE_FLAG"):
+            subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
         subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
 
@@ -3268,6 +3317,8 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_os_path_and_environ", "ok_unaliased_relative_import_with_helper_env",
         "ok_bare_create_subprocess_shell_with_helper_env",
         "ok_bare_create_subprocess_exec_with_helper_env",
+        "ok_asyncio_run_is_not_a_launch", "ok_bare_os_getenv_is_not_a_module",
+        "ok_module_attribute_that_is_not_a_launch", "ok_direct_deep_call_with_helper_env",
     } & named, problems
 
 
