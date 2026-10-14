@@ -151,14 +151,39 @@ def _free_port() -> int:
 class StandInDoor:
     """A real FastMCP server on loopback offering the memory door's two tools."""
 
-    def __init__(self, items: list[dict]) -> None:
+    def __init__(
+        self,
+        items: list[dict],
+        *,
+        envelope_delay: float = 0.0,
+        envelope_refuses: bool = False,
+    ) -> None:
         import uvicorn
         from fastmcp import FastMCP
 
         self.items = items
         self.searches: list[dict] = []
         self.writes: list[dict] = []
+        self.envelopes: list[dict] = []
         door = FastMCP("memory-door-stand-in")
+
+        @door.tool(name="memory_publish_envelope")
+        async def memory_publish_envelope(envelope: dict) -> dict:
+            await asyncio.sleep(envelope_delay)
+            if envelope_refuses:
+                return {
+                    "is_error": True,
+                    "error_type": "client",
+                    "message": "unrecognized content_format",
+                    "value": None,
+                }
+            self.envelopes.append(envelope)
+            return {
+                "is_error": False,
+                "error_type": None,
+                "message": "",
+                "value": {"episode_id": envelope["episode_id"]},
+            }
 
         @door.tool(name="memory_search_items")
         async def memory_search_items(
@@ -936,3 +961,82 @@ def test_a_prose_record_with_the_door_down_says_it_was_not_written(
     ), messages
     assert refused_connections == []
     assert store_never_opened == []
+
+
+
+# ---------------------------------------------------------------------------
+# A slow prose write is "sent, not confirmed", not "not written"
+# ---------------------------------------------------------------------------
+
+
+def test_prose_writes_get_a_longer_budget_than_typed_writes():
+    assert fmc.DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS == 120.0
+    assert fmc.DOOR_WRITE_TIMEOUT_SECONDS == 10.0
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nats_core") is None,
+    reason="the episode builder needs the nats_core memory extra",
+)
+def test_a_slow_prose_write_is_said_to_be_sent_but_not_confirmed(
+    memory_env, monkeypatch, refused_connections, store_never_opened, caplog
+):
+    # Both budgets are shortened for the test, and the door takes longer than
+    # either: whichever one applies to prose, the write runs out of time.
+    monkeypatch.setattr(fmc, "DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS", 1.0, raising=False)
+    monkeypatch.setattr(fmc, "DOOR_WRITE_TIMEOUT_SECONDS", 1.0)
+    with StandInDoor([], envelope_delay=3.0) as door:
+        memory_env.setenv("FLEET_MEMORY_MCP_URL", door.url)
+        client = FleetMemoryClient(fmc._load_fleet_config_from_env())
+        with caplog.at_level(logging.INFO, logger=CLIENT_LOGGER):
+            key = asyncio.run(
+                client.add_episode(
+                    name="feature spec FEAT-1",
+                    episode_body=_prose_body("feature_specs"),
+                    group_id="feature_specs",
+                )
+            )
+        deadline = time.monotonic() + 10
+        while not door.envelopes and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+    assert key is None  # not confirmed, so no key is claimed
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "sent to the memory service; it had not confirmed within 1 s, so it may or "
+        "may not be stored" in m
+        for m in messages
+    ), messages
+    assert not any("teaches future builds nothing" in m for m in messages), messages
+    # And the door did go on to take it.
+    assert len(door.envelopes) == 1
+    assert refused_connections == []
+    assert store_never_opened == []
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nats_core") is None,
+    reason="the episode builder needs the nats_core memory extra",
+)
+def test_a_refused_prose_write_is_said_to_be_refused(
+    memory_env, refused_connections, store_never_opened, caplog
+):
+    with StandInDoor([], envelope_refuses=True) as door:
+        memory_env.setenv("FLEET_MEMORY_MCP_URL", door.url)
+        client = FleetMemoryClient(fmc._load_fleet_config_from_env())
+        with caplog.at_level(logging.INFO, logger=CLIENT_LOGGER):
+            key = asyncio.run(
+                client.add_episode(
+                    name="feature spec FEAT-1",
+                    episode_body=_prose_body("feature_specs"),
+                    group_id="feature_specs",
+                )
+            )
+
+    assert key is None
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("the door refused the write" in m for m in messages), messages
+    assert not any("may or may not be stored" in m for m in messages), messages
+    assert refused_connections == []
+    assert store_never_opened == []
+

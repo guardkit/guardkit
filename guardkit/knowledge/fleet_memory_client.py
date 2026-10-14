@@ -299,6 +299,12 @@ DEFAULT_DOOR_URL = "http://host.docker.internal:8005/mcp"
 #: caller's own ceiling: a build's last line must not be held open.
 DOOR_WRITE_TIMEOUT_SECONDS = 10.0
 
+#: How long a prose record (an envelope the relay's ingestion chunks and embeds)
+#: may take at the door. A spec of a few dozen chunks takes well over ten seconds
+#: to embed and write; over the bus the relay allowed minutes. Prose writes are
+#: not on a build's last line (the outcome is typed), so this does not hold one open.
+DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS = 120.0
+
 
 def _typed_door_payload(episode: Any) -> dict[str, Any]:
     """Return a fresh MCP payload carrying the episode's outer type identity.
@@ -356,7 +362,9 @@ async def write_through_the_door(payload: dict, *, url: str | None = None) -> bo
     # underlying function's parameter name) returns a pydantic validation
     # error as PLAIN TEXT with isError unset — which the first cut of this read
     # as a successful write. Proven against the live door.
-    return await _write_to_the_door("memory_write_payload", {"payload": payload}, url)
+    return await _write_to_the_door(
+        "memory_write_payload", {"payload": payload}, url, DOOR_WRITE_TIMEOUT_SECONDS
+    )
 
 
 async def publish_envelope_through_the_door(envelope: dict, *, url: str | None = None) -> bool:
@@ -372,12 +380,26 @@ async def publish_envelope_through_the_door(envelope: dict, *, url: str | None =
 
     Never raises: a memory write must not be able to fail a build.
     """
-    return await _write_to_the_door("memory_publish_envelope", {"envelope": envelope}, url)
+    return await _write_to_the_door(
+        "memory_publish_envelope",
+        {"envelope": envelope},
+        url,
+        DOOR_ENVELOPE_WRITE_TIMEOUT_SECONDS,
+    )
 
 
-async def _write_to_the_door(tool: str, arguments: dict, url: str | None) -> bool:
-    """Call one write tool at the door; True only on positive evidence it landed."""
+async def _write_to_the_door(
+    tool: str, arguments: dict, url: str | None, timeout: float
+) -> bool:
+    """Call one write tool at the door; True only on positive evidence it landed.
+
+    Three outcomes are told apart in the log. A refusal, or a door that could
+    not be reached, means the record was not written. Running out of time
+    AFTER the record was handed over means the door may still store it, so
+    that is said instead of "not written".
+    """
     where = url or (os.getenv(DOOR_URL_ENV, "").strip() or DEFAULT_DOOR_URL)
+    handed_over = False
     try:
         # Imported lazily, exactly as the seats do it, so this module still
         # loads where `mcp` is absent.
@@ -389,6 +411,8 @@ async def _write_to_the_door(tool: str, arguments: dict, url: str | None) -> boo
                 read, write = streams[0], streams[1]
                 async with ClientSession(read, write) as session:
                     await session.initialize()
+                    nonlocal handed_over
+                    handed_over = True
                     result = await session.call_tool(tool, arguments)
             # POSITIVE EVIDENCE ONLY. A write is claimed when the door says
             # so, never when it says nothing or says something this cannot
@@ -422,7 +446,24 @@ async def _write_to_the_door(tool: str, arguments: dict, url: str | None) -> boo
                 return False
             return True
 
-        return await asyncio.wait_for(_send(), timeout=DOOR_WRITE_TIMEOUT_SECONDS)
+        return await asyncio.wait_for(_send(), timeout=timeout)
+    except asyncio.TimeoutError:
+        if handed_over:
+            logger.warning(
+                "memory: sent to the memory service; it had not confirmed within "
+                "%g s, so it may or may not be stored (the door at %s)",
+                timeout,
+                where,
+            )
+        else:
+            logger.warning(
+                "memory: could not write through the door at %s (no answer within "
+                "%g s, before the record was sent); this build teaches future "
+                "builds nothing",
+                where,
+                timeout,
+            )
+        return False
     except Exception as exc:  # noqa: BLE001 — a write never costs a build
         logger.warning(
             "memory: could not write through the door at %s (%s); this "
