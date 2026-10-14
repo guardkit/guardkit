@@ -44,8 +44,10 @@ Example:
 """
 
 import fcntl
+import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import stat
@@ -489,45 +491,170 @@ def _staged_outside_records(
     return staged
 
 
+#: An inner build folder's own record folders, relative to that folder. Only
+#: these are read inside it: its product files are never compared.
+_INNER_RECORD_FOLDERS: Tuple[str, ...] = (
+    ".guardkit/autobuild",
+    ".guardkit/autobuild-private",
+    ".guardkit/qav-shadow",
+    "conversation_history",
+    "large_tool_results",
+)
+
+
+def git_blob_id(data: bytes, object_format: str) -> str:
+    """The id git gives a file holding exactly ``data``: the ``sha1`` or
+    ``sha256`` digest of ``b"blob <length>\\0"`` followed by the bytes, as
+    lower-case hex. No line-ending or filter conversion is applied."""
+    digest = hashlib.new(object_format)
+    digest.update(b"blob %d\0" % len(data))
+    digest.update(data)
+    return digest.hexdigest()
+
+
+def _object_format(
+    git_executor: "GitCommandExecutor", cwd: Path, timeout: Optional[int]
+) -> str:
+    """``sha1`` or ``sha256``, as the repository says."""
+    argv = ["git", "rev-parse", "--show-object-format"]
+    done = git_executor.execute(
+        # The executable is written here literally (the launch guard).
+        ["git", *argv[1:]], cwd=cwd, check=False, timeout=timeout
+    )
+    found = (done.stdout or "").strip()
+    if done.returncode != 0 or found not in ("sha1", "sha256"):
+        raise subprocess.CalledProcessError(
+            done.returncode or 1, argv, done.stdout, done.stderr
+        )
+    return found
+
+
+def _read_regular_file(path: Path) -> Optional[bytes]:
+    """A regular file's bytes, or ``None`` when it is gone, unreadable, empty
+    or not a regular file (a link is never followed). GuardKit replaces
+    records by renaming a temporary file over them while other tasks run, so
+    a file listed a moment ago may be gone: that is never an error."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        handle = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(handle).st_mode):
+            return None
+        chunks: List[bytes] = []
+        while True:
+            chunk = os.read(handle, 1 << 20)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
+    return b"".join(chunks) or None
+
+
+def _inner_build_record_files(root: Path) -> List[Path]:
+    """The record files of each inner build folder under
+    ``.guardkit/worktrees/``, found by walking the record folders only and
+    never following a link. git's own listing stops at an inner build
+    folder, because each is a repository of its own."""
+    worktrees = root / ".guardkit" / "worktrees"
+    if any(p.is_symlink() for p in (root / ".guardkit", worktrees)):
+        return []
+    try:
+        inner_folders = [e for e in os.scandir(worktrees) if e.is_dir(follow_symlinks=False)]
+    except OSError:
+        return []
+    found: List[Path] = []
+    for entry in inner_folders:
+        inner = Path(entry.path)
+        guardkit = inner / ".guardkit"
+        if guardkit.is_symlink():
+            continue
+        for relative in _INNER_RECORD_FOLDERS:
+            top = inner / relative
+            if top.is_symlink() or not top.is_dir():
+                continue
+            for folder, _subfolders, names in os.walk(top):
+                found.extend(Path(folder) / name for name in names)
+        try:
+            names = [e.name for e in os.scandir(guardkit) if e.is_file(follow_symlinks=False)]
+        except OSError:
+            continue
+        found.extend(
+            guardkit / name for name in names
+            if name == "bootstrap_state.json" or name.startswith("memory-query-log.jsonl")
+        )
+    return found
+
+
+#: How long the checkpoint waits for record files to be read. A read on a
+#: stalled filesystem (a hung network mount, a FIFO with no peer) cannot be
+#: interrupted, and a turn must never block on evidence I/O.
+_RECORD_READ_BOUND_S = 5.0
+
+
 def _record_blob_ids(
     git_executor: "GitCommandExecutor",
     cwd: Path,
     timeout: Optional[int],
 ) -> Set[str]:
     """The blob id of every non-empty regular file on disk at a record path,
-    tracked, untracked or ignored alike (``git hash-object``, nothing
-    written)."""
+    tracked, untracked or ignored alike, and of each inner build folder's own
+    records. Ids are computed here from the bytes (:func:`git_blob_id`), so a
+    record replaced while this runs is skipped, never an error.
+
+    The files are read in a worker thread that the checkpoint waits for at
+    most :data:`_RECORD_READ_BOUND_S`. Files not read by then are left out of
+    the comparison, with one warning; the thread is left behind.
+    """
     listed = _git_listing(
         git_executor,
         ["git", "ls-files", "-z", "--cached", "--others", "--",
          *_RECORD_CONTENT_PATHSPECS],
         cwd, timeout,
     )
+    object_format = _object_format(git_executor, cwd, timeout)
     root = Path(cwd)
-    files: List[str] = []
-    for path in sorted(set(listed)):
-        if path.endswith("/"):
-            continue  # a nested repository, never read
-        try:
-            info = (root / path).lstat()
-        except OSError:
-            continue
-        if stat.S_ISREG(info.st_mode) and info.st_size > 0:
-            files.append(path)
     ids: Set[str] = set()
-    for start in range(0, len(files), _RESET_BATCH):
-        batch = files[start:start + _RESET_BATCH]
-        hashed_argv = ["git", "hash-object", "--", *batch]
-        done = git_executor.execute(
-            # The executable is written here literally (the launch guard).
-            ["git", *hashed_argv[1:]], cwd=cwd, check=False, timeout=timeout
+    progress = {"listed": 0, "read": 0, "finished": False}
+    lock = threading.Lock()
+
+    def _read_all() -> None:
+        paths = {root / p for p in listed if not p.endswith("/")}
+        paths.update(_inner_build_record_files(root))
+        with lock:
+            progress["listed"] = len(paths)
+        for path in sorted(paths):
+            data = _read_regular_file(path)
+            with lock:
+                if data is not None:
+                    ids.add(git_blob_id(data, object_format))
+                progress["read"] += 1
+        with lock:
+            progress["finished"] = True
+
+    worker = threading.Thread(
+        target=_read_all, name="guardkit-checkpoint: reading records", daemon=True
+    )
+    worker.start()
+    worker.join(timeout=_RECORD_READ_BOUND_S)
+    with lock:
+        found = set(ids)
+        finished = progress["finished"]
+        unread = progress["listed"] - progress["read"]
+    if not finished:
+        logger.warning(
+            "Reading GuardKit's record files in %s did not finish within %.0fs "
+            "(%s not read); exact copies of those were not looked for in this "
+            "commit.",
+            root.resolve(),
+            _RECORD_READ_BOUND_S,
+            f"{unread} file(s)" if unread > 0 else "the folders could not be listed",
         )
-        if done.returncode != 0:
-            raise subprocess.CalledProcessError(
-                done.returncode, hashed_argv, done.stdout, done.stderr
-            )
-        ids.update(line.strip() for line in (done.stdout or "").splitlines() if line.strip())
-    return ids
+    return found
 
 
 def _leave_out_record_copies(

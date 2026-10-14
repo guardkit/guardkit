@@ -863,3 +863,18 @@ def test_a_copy_of_an_inner_build_repositorys_record_is_not_committed(
     assert (repo / "notes/turn.json").is_file()
     assert "src/main.go" in tree, tree
     assert _warnings(caplog, "notes/turn.json", "moves or copies")
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_the_blob_id_computed_here_is_gits_own(object_format: str, tmp_path: Path) -> None:
+    from guardkit.orchestrator.worktree_checkpoints import git_blob_id
+
+    repo = tmp_path / "repo"
+    subprocess.run(
+        ["git", "init", "-q", f"--object-format={object_format}", str(repo)],
+        check=True, capture_output=True,
+    )
+    for data in (b"x", b"{}", b"a\r\nb\n", bytes(range(256)) * 10):
+        (repo / "f").write_bytes(data)
+        theirs = _git(repo, "hash-object", "f").stdout.strip()
+        assert git_blob_id(data, object_format) == theirs
