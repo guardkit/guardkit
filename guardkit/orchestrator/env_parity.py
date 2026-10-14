@@ -38,7 +38,7 @@ from guardkit.orchestrator import process_group
 logger = logging.getLogger(__name__)
 
 # Common import-name ≠ dist-name cases where PEP-503 normalization fails.
-_STDLIB_HINT = frozenset(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else frozenset()
+_STDLIB_HINT = frozenset(sys.stdlib_module_names)  # Python 3.10 and later; GuardKit needs 3.12
 
 
 @dataclass
