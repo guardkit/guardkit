@@ -1569,29 +1569,63 @@ def _imports(tree: ast.Module, dotted: str, is_package: bool) -> Dict[str, str]:
     return out
 
 
+def _names_bound_by(node: ast.AST, dotted: str, is_package: bool) -> List[Tuple[str, str, Optional[str]]]:
+    """Every name ``node`` binds, as (name, kind, import target).
+
+    THE ONE ENUMERATION of Python's binding forms, used by every "bound
+    exactly once" and "not shadowed" decision in this guard: a name stored or
+    deleted (plain, chained, unpacking, augmented, annotated and walrus
+    assignment; for, with and comprehension targets; ``del``), a parameter
+    (a lambda's included), an import or import-from alias, a def or class, an
+    except target, a global or nonlocal declaration, and a match-case capture
+    (``case x``, ``*rest``, ``**rest``). Kinds: name, param, import, def,
+    except, declare, match."""
+    if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        return [(node.id, "name", None)]
+    if isinstance(node, ast.arg):
+        return [(node.arg, "param", None)]
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [(bound, "import", target) for bound, target in _import_bindings(node, dotted, is_package)]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [(node.name, "def", None)]
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        return [(node.name, "except", None)]
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return [(name, "declare", None) for name in node.names]
+    if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+        return [(node.name, "match", None)]
+    if isinstance(node, ast.MatchMapping) and node.rest:
+        return [(node.rest, "match", None)]
+    return []
+
+
+def _binding_sites(
+    nodes: Iterable[ast.AST], name: str, dotted: str, is_package: bool, own: Optional[ast.AST] = None
+) -> List[Tuple[str, ast.AST, Optional[str]]]:
+    """Where ``name`` is bound among ``nodes`` (``own``, the function being
+    looked into, does not bind its own name inside itself)."""
+    sites: List[Tuple[str, ast.AST, Optional[str]]] = []
+    for node in nodes:
+        if node is own:
+            continue
+        for bound, kind, target in _names_bound_by(node, dotted, is_package):
+            if bound == name:
+                sites.append((kind, node, target))
+    return sites
+
+
 def _bindings(nodes: Iterable[ast.AST], name: str, dotted: str, is_package: bool, own: Optional[ast.AST] = None) -> Tuple[set, bool, bool]:
     """How ``name`` is bound among ``nodes``: (import targets, defined by a
-    def or class, bound any other way)."""
+    def or class, bound any other way), from :func:`_binding_sites`."""
     imports: set = set()
     defined = False
     other = False
-    for node in nodes:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            for bound, target in _import_bindings(node, dotted, is_package):
-                if bound == name:
-                    imports.add(target)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if node.name == name and node is not own:
-                defined = True
-        elif isinstance(node, ast.arg) and node.arg == name:
-            other = True
-        elif isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
-            other = True
-        elif isinstance(node, ast.ExceptHandler) and node.name == name:
-            other = True
-        elif isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
-            other = True
-        elif isinstance(node, ast.MatchAs) and node.name == name:
+    for kind, _node, target in _binding_sites(nodes, name, dotted, is_package, own):
+        if kind == "import":
+            imports.add(target)
+        elif kind == "def":
+            defined = True
+        else:
             other = True
     return imports, defined, other
 
@@ -1746,13 +1780,6 @@ def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
     return _module_bindings(mod, name)[2]
 
 
-def _is_parameter(func: ast.AST, name: str) -> bool:
-    args = func.args
-    every = [*args.posonlyargs, *args.args, *args.kwonlyargs]
-    every += [a for a in (args.vararg, args.kwarg) if a is not None]
-    return any(a.arg == name for a in every)
-
-
 def _inline_helper(node: Optional[ast.AST], mod: _Module, wrappers: set, none_is_safe: bool = False) -> bool:
     """``node`` is a call to the helper (or to a function that only ever
     returns one) written right there, or ``None`` where that runs nothing."""
@@ -1773,41 +1800,36 @@ def _inline_helper(node: Optional[ast.AST], mod: _Module, wrappers: set, none_is
 def _single_use_helper_name(
     name: str, mod: _Module, func: ast.AST, wrappers: set, is_launch: Callable[[ast.Call], bool]
 ) -> bool:
-    """``name`` is assigned exactly once in ``func``, by a single-target
-    assignment of an inline helper call, and every other use of it is as the
-    ``env=`` keyword of a launch or generic-runner call in ``func`` itself."""
-    if _is_parameter(func, name):
+    """``name`` is bound exactly once in ``func`` (by any binding form, see
+    :func:`_names_bound_by`), by a single-target assignment of an inline helper
+    call, is not declared global or nonlocal in an enclosing function, and
+    every other use of it is as the ``env=`` keyword of a launch or
+    generic-runner call in ``func`` itself."""
+    sites = _binding_sites(ast.walk(func), name, mod.dotted, mod.rel.endswith("__init__.py"), own=func)
+    if len(sites) != 1 or sites[0][0] != "name":
         return False
-    values: List[ast.AST] = []
-    for node in ast.walk(func):
-        if isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+    stored = sites[0][1]
+    statement = mod.parents.get(id(stored))
+    if isinstance(statement, ast.Assign):
+        if len(statement.targets) != 1 or statement.targets[0] is not stored:
+            return False  # chained or unpacking assignment
+    elif isinstance(statement, ast.AnnAssign):
+        if statement.target is not stored or statement.value is None:
             return False
-        if isinstance(node, ast.Assign):
-            bound = [n for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name) and n.id == name]
-            if bound:
-                if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-                    return False  # chained or unpacking assignment
-                values.append(node.value)
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == name:
-                if node.value is None:
-                    return False
-                values.append(node.value)
-        elif isinstance(node, (ast.AugAssign, ast.NamedExpr, ast.Delete, ast.For, ast.AsyncFor,
-                               ast.With, ast.AsyncWith, ast.comprehension, ast.ExceptHandler)):
-            targets = []
-            if isinstance(node, (ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.comprehension)):
-                targets = [node.target]
-            elif isinstance(node, ast.Delete):
-                targets = list(node.targets)
-            elif isinstance(node, (ast.With, ast.AsyncWith)):
-                targets = [i.optional_vars for i in node.items if i.optional_vars is not None]
-            elif isinstance(node, ast.ExceptHandler) and node.name == name:
-                return False
-            if any(isinstance(n, ast.Name) and n.id == name for t in targets for n in ast.walk(t)):
-                return False
-    if len(values) != 1 or not _inline_helper(values[0], mod, wrappers):
+    else:
+        return False  # augmented, walrus, loop, with, comprehension, del ...
+    if not _inline_helper(statement.value, mod, wrappers):
         return False
+    outer = _defining_scope(mod, func)
+    while outer is not None:
+        if any(
+            kind == "declare"
+            for kind, _n, _t in _binding_sites(
+                ast.walk(outer), name, mod.dotted, mod.rel.endswith("__init__.py"), own=outer
+            )
+        ):
+            return False
+        outer = _defining_scope(mod, outer)
     for node in ast.walk(func):
         if not (isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load)):
             continue
@@ -2035,23 +2057,27 @@ def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
                 f"rebound {how}"
             )
 
+        is_package = mod.rel.endswith("__init__.py")
+        how_by_kind = {
+            "param": "as a parameter",
+            "except": "by an except target",
+            "declare": "by a global or nonlocal declaration",
+            "match": "by a match-case capture",
+        }
         for node in ast.walk(mod.tree):
             in_function = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) is not None
-            if isinstance(node, ast.arg) and node.arg in reserved:
-                flag(node, node.arg, "as a parameter")
-            elif isinstance(node, ast.Name) and node.id in reserved and isinstance(node.ctx, (ast.Store, ast.Del)):
-                flag(node, node.id, "by an assignment or target" if in_function else "at module level")
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in reserved:
-                if in_function:
-                    flag(node, node.name, "by a nested definition")
-                elif node.name in mod.imports and _enclosing(mod, node, ast.ClassDef) is None:
-                    flag(node, node.name, "by a definition of an imported name")
-            elif isinstance(node, ast.ExceptHandler) and node.name in reserved:
-                flag(node, node.name, "by an except target")
-            elif isinstance(node, (ast.Global, ast.Nonlocal)):
-                for name in node.names:
-                    if name in reserved:
-                        flag(node, name, "by a global or nonlocal declaration")
+            for name, kind, _target in _names_bound_by(node, mod.dotted, is_package):
+                if name not in reserved or kind == "import":
+                    continue
+                if kind == "def":
+                    if in_function:
+                        flag(node, name, "by a nested definition")
+                    elif name in mod.imports and _enclosing(mod, node, ast.ClassDef) is None:
+                        flag(node, name, "by a definition of an imported name")
+                elif kind == "name":
+                    flag(node, name, "by an assignment or target" if in_function else "at module level")
+                else:
+                    flag(node, name, how_by_kind[kind])
     return problems
 
 
@@ -2546,6 +2572,51 @@ GUARD_PROBES = textwrap.dedent(
     def v57_local_named_like_the_helper(cmd, wf):
         finish_project_environment = lambda e: dict(os.environ)  # noqa: E731
         subprocess.run(cmd, shell=True, env=finish_project_environment(None))
+
+
+    def v58_from_import_rebinds_env(cmd, wf):
+        env = project_command_environment(wf, None)
+        from os import environ as env
+        subprocess.run(cmd, env=env)
+
+
+    def v59_import_rebinds_env(cmd, wf):
+        env = project_command_environment(wf, None)
+        import os as env
+        subprocess.run(cmd, env=env)
+
+
+    def v60_class_rebinds_env(cmd, wf):
+        env = project_command_environment(wf, None)
+
+        class env(dict):
+            pass
+
+        subprocess.run(cmd, env=env)
+
+
+    def v61_def_rebinds_env(cmd, wf):
+        env = project_command_environment(wf, None)
+
+        def env():
+            return dict(os.environ)
+
+        subprocess.run(cmd, env=env)
+
+
+    def v62_match_capture_rebinds_env(cmd, wf):
+        env = project_command_environment(wf, None)
+        match dict(os.environ):
+            case env:
+                pass
+        subprocess.run(cmd, env=env)
+
+
+    def v63_del_then_reassign_env(cmd, wf):
+        env = project_command_environment(wf, None)
+        del env
+        env = dict(os.environ)
+        subprocess.run(cmd, env=env)
 
 
     def ok_unshadowed_alias(cmd, wf):
