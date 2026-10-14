@@ -7652,7 +7652,7 @@ class CoachValidator:
         """
         kind, execution_root, origin = evidence
         record = self._begin_run_evidence(
-            kind, args, Path(execution_root), origin, kwargs.get("cwd"), kwargs.get("env")
+            kind, args, Path(execution_root), origin, kwargs.get("cwd"), env=kwargs.get("env")
         )
         try:
             return process_group.run_project_command(args, **kwargs)
@@ -7838,7 +7838,7 @@ class CoachValidator:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                     sdk_evidence = self._begin_run_evidence(
-                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, None
+                        EVIDENCE_SDK, test_cmd, self.worktree_path, None, None, env=None
                     )
                     try:
                         result = loop.run_until_complete(self._run_tests_via_sdk(test_cmd))
