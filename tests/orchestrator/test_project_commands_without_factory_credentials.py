@@ -1534,26 +1534,111 @@ def _load_modules(package: Path) -> List[_Module]:
     return modules
 
 
-def _imports(tree: ast.Module, dotted: str, is_package: bool) -> Dict[str, str]:
-    """Every name an import binds anywhere in the module -> what it names."""
-    out: Dict[str, str] = {}
+def _import_bindings(node: ast.AST, dotted: str, is_package: bool) -> List[Tuple[str, str]]:
+    """The (bound name, what it names) pairs one import statement makes."""
     package = dotted if is_package else dotted.rsplit(".", 1)[0]
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname:
-                    out[alias.asname] = alias.name
-                else:
-                    out[alias.name.split(".")[0]] = alias.name.split(".")[0]
-        elif isinstance(node, ast.ImportFrom):
-            base = node.module or ""
-            if node.level:
-                anchor = package.split(".")
-                anchor = anchor[: len(anchor) - (node.level - 1)]
-                base = ".".join([*anchor, base] if base else anchor)
-            for alias in node.names:
-                out[alias.asname or alias.name] = f"{base}.{alias.name}"
+    out: List[Tuple[str, str]] = []
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.asname:
+                out.append((alias.asname, alias.name))
+            else:
+                out.append((alias.name.split(".")[0], alias.name.split(".")[0]))
+    elif isinstance(node, ast.ImportFrom):
+        base = node.module or ""
+        if node.level:
+            anchor = package.split(".")
+            anchor = anchor[: len(anchor) - (node.level - 1)]
+            base = ".".join([*anchor, base] if base else anchor)
+        for alias in node.names:
+            out.append((alias.asname or alias.name, f"{base}.{alias.name}"))
     return out
+
+
+def _imports(tree: ast.Module, dotted: str, is_package: bool) -> Dict[str, str]:
+    """Every name an import binds anywhere in the module -> what it names.
+
+    Used only to RECOGNISE launches (strict side: a launch module imported
+    inside a function still counts). Resolving a helper or runner, which can
+    make a launch acceptable, goes through :func:`_resolve`, which honours
+    scope and shadowing."""
+    out: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        for name, target in _import_bindings(node, dotted, is_package):
+            out[name] = target
+    return out
+
+
+def _bindings(nodes: Iterable[ast.AST], name: str, dotted: str, is_package: bool, own: Optional[ast.AST] = None) -> Tuple[set, bool, bool]:
+    """How ``name`` is bound among ``nodes``: (import targets, defined by a
+    def or class, bound any other way)."""
+    imports: set = set()
+    defined = False
+    other = False
+    for node in nodes:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for bound, target in _import_bindings(node, dotted, is_package):
+                if bound == name:
+                    imports.add(target)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == name and node is not own:
+                defined = True
+        elif isinstance(node, ast.arg) and node.arg == name:
+            other = True
+        elif isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+            other = True
+        elif isinstance(node, ast.ExceptHandler) and node.name == name:
+            other = True
+        elif isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            other = True
+        elif isinstance(node, ast.MatchAs) and node.name == name:
+            other = True
+    return imports, defined, other
+
+
+def _module_scope_nodes(mod: "_Module") -> List[ast.AST]:
+    """Nodes at module scope: not inside any function, lambda or class
+    (the bodies are not entered; computed once per module)."""
+    cached = getattr(mod, "_scope_nodes", None)
+    if cached is not None:
+        return cached
+    out: List[ast.AST] = []
+    pending = list(ast.iter_child_nodes(mod.tree))
+    while pending:
+        node = pending.pop()
+        out.append(node)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            # The def or class itself binds its name here; its decorators,
+            # defaults and bases are evaluated here too, its body is not.
+            pending.extend(node.decorator_list)
+            if not isinstance(node, ast.ClassDef):
+                pending.extend(d for d in node.args.defaults + node.args.kw_defaults if d)
+            continue
+        if isinstance(node, ast.Lambda):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    mod._scope_nodes = out
+    return out
+
+
+def _scope_bindings(mod: "_Module", scope: ast.AST, name: str) -> Tuple[set, bool, bool]:
+    """:func:`_bindings` for a function's whole subtree, cached."""
+    cache = mod.__dict__.setdefault("_binding_cache", {})
+    key = (id(scope), name)
+    if key not in cache:
+        cache[key] = _bindings(
+            ast.walk(scope), name, mod.dotted, mod.rel.endswith("__init__.py"), own=scope
+        )
+    return cache[key]
+
+
+def _module_bindings(mod: "_Module", name: str) -> Tuple[set, bool, bool]:
+    cache = mod.__dict__.setdefault("_module_binding_cache", {})
+    if name not in cache:
+        cache[name] = _bindings(
+            _module_scope_nodes(mod), name, mod.dotted, mod.rel.endswith("__init__.py")
+        )
+    return cache[name]
 
 
 def _dotted(node: ast.AST) -> str:
@@ -1596,19 +1681,29 @@ def _qualname(mod: _Module, func: ast.AST) -> str:
 
 
 def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
-    """The dotted name a call target refers to, or ``None`` when unknown."""
+    """The dotted name a call target refers to, or ``None`` when unknown.
+
+    A plain name resolves through the scopes that enclose ``at``: a function
+    that binds it any way other than an import (a parameter, a default, an
+    assignment, a loop, ``with`` or ``except`` target, a nested def, a
+    ``global`` or ``nonlocal``) makes it unknown, and so does a module that
+    both imports it and binds it otherwise, or imports it twice."""
     if isinstance(func_node, ast.Name):
         name = func_node.id
         scope = _enclosing_function(mod, at)
-        while scope is not None:  # a function defined in an enclosing function
-            for child in ast.iter_child_nodes(scope):
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == name:
-                    return f"{mod.dotted}.{_qualname(mod, child)}"
+        while scope is not None:
+            imports, defined, other = _scope_bindings(mod, scope, name)
+            if other or defined or len(imports) > 1:
+                return None
+            if imports:
+                return next(iter(imports))
             scope = _enclosing_function(mod, scope)
-        for child in mod.tree.body:
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and child.name == name:
-                return f"{mod.dotted}.{name}"
-        return mod.imports.get(name)
+        imports, defined, other = _module_bindings(mod, name)
+        if other or (imports and defined) or len(imports) > 1:
+            return None
+        if defined:
+            return f"{mod.dotted}.{name}"
+        return next(iter(imports)) if imports else None
     if isinstance(func_node, ast.Attribute):
         value = func_node.value
         if isinstance(value, ast.Name) and value.id in ("self", "cls"):
@@ -1619,6 +1714,18 @@ def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
         base = _resolve(mod, value, at)
         return f"{base}.{func_node.attr}" if base else None
     return None
+
+
+def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
+    """True when a plain ``name`` is bound, other than by an import, in a
+    function enclosing ``at`` or at module scope."""
+    scope = _enclosing_function(mod, at)
+    while scope is not None:
+        _, defined, other = _scope_bindings(mod, scope, name)
+        if other or defined:
+            return True
+        scope = _enclosing_function(mod, scope)
+    return _module_bindings(mod, name)[2]
 
 
 def _is_parameter(func: ast.AST, name: str) -> bool:
@@ -1741,7 +1848,8 @@ def _wrappers(modules: List[_Module]) -> set:
                 # Exactly one statement, ``return <helper call>``: nothing can
                 # fall through to an implicit None (which would inherit).
                 if (
-                    len(body) == 1
+                    not node.decorator_list  # a decorator could turn a refusal into None
+                    and len(body) == 1
                     and isinstance(body[0], ast.Return)
                     and isinstance(body[0].value, ast.Call)
                     and _inline_helper(body[0].value, mod, found)
@@ -1853,6 +1961,12 @@ def _runner_call_matches(
     if mod is not None and identity is not None and _resolve(mod, call.func, call) == identity:
         return True
     if _last_name(call.func) in spec.get("names", ()):
+        # A plain name bound locally (a parameter, an assignment ...) is not
+        # the runner, whatever it is called.
+        if mod is not None and isinstance(call.func, ast.Name) and _name_is_shadowed(
+            mod, call, call.func.id
+        ):
+            return False
         return True
     dotted = _callee_name(call)
     return any(dotted.endswith(suffix) for suffix in spec.get("suffixes", ()))
@@ -2016,6 +2130,7 @@ GUARD_PROBES = textwrap.dedent(
     from guardkit.orchestrator import process_group
     from guardkit.orchestrator.process_group import run_in_own_group
     from guardkit.orchestrator.project_command_env import project_command_environment
+    from guardkit.orchestrator.project_command_env import project_command_environment as pce_alias
 
 
     def _project_env():  # the same name as a real wrapper elsewhere
@@ -2300,6 +2415,44 @@ GUARD_PROBES = textwrap.dedent(
         subprocess.run(cmd, shell=True, env=_does_something_first(wf))
 
 
+    def _swallow(fn):
+        def inner(*a, **k):
+            try:
+                return fn(*a, **k)
+            except OSError:
+                return None
+        return inner
+
+
+    @_swallow
+    def _decorated_wrapper(wf):
+        return project_command_environment(wf, None)
+
+
+    def v49_decorated_wrapper(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_decorated_wrapper(wf))
+
+
+    def v50_parameter_default_shadows_the_helper(
+        cmd, wf, project_command_environment=lambda *a: dict(os.environ)
+    ):
+        subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    def v51_local_reassignment_shadows_the_helper(cmd, wf):
+        project_command_environment = lambda *a: dict(os.environ)  # noqa: E731
+        subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    def v52_for_target_shadows_the_helper(cmd, wf, makers):
+        for project_command_environment in makers:
+            subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    def ok_unshadowed_alias(cmd, wf):
+        subprocess.run(cmd, shell=True, env=pce_alias(wf, None))
+
+
     def ok_single_return_wrapper(cmd, wf):
         subprocess.run(cmd, shell=True, env=_single_return_wrapper(wf))
 
@@ -2352,12 +2505,29 @@ GUARD_PROBES = textwrap.dedent(
 )
 
 
+#: A module that imports the helper and then rebinds its name.
+GUARD_PROBES_REBOUND = textwrap.dedent(
+    '''\
+    import os
+    import subprocess
+    from guardkit.orchestrator.project_command_env import project_command_environment
+
+    project_command_environment = lambda *a: dict(os.environ)  # noqa: E731
+
+
+    def v53_module_level_rebinding(cmd, wf):
+        subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
+    '''
+)
+
+
 def _probe_package(tmp_path: Path, name: str) -> Path:
     pkg = tmp_path / name
     (pkg / "orchestrator").mkdir(parents=True)
     (pkg / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "orchestrator" / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "orchestrator" / "zz_probe.py").write_text(GUARD_PROBES, encoding="utf-8")
+    (pkg / "orchestrator" / "zz_rebound.py").write_text(GUARD_PROBES_REBOUND, encoding="utf-8")
     return pkg
 
 
@@ -2366,7 +2536,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
     problems = unaccounted_launches(_probe_package(tmp_path, PACKAGE.name))
     named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems}
     expected = {
-        n.name for n in ast.walk(ast.parse(GUARD_PROBES))
+        n.name for n in ast.walk(ast.parse(GUARD_PROBES + "\n" + GUARD_PROBES_REBOUND))
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
@@ -2374,6 +2544,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
         "ok_single_use_named_env", "ok_inline_env", "ok_single_return_wrapper",
+        "ok_unshadowed_alias",
     } & named, problems
 
 
