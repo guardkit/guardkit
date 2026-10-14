@@ -1668,6 +1668,24 @@ def _enclosing_function(mod: _Module, node: ast.AST) -> Optional[ast.AST]:
     return _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef))
 
 
+def _defining_scope(mod: _Module, node: ast.AST) -> Optional[ast.AST]:
+    """The function whose BODY ``node`` is in, for name resolution.
+
+    A parameter's default, an annotation and a decorator are evaluated where
+    the function is defined, not inside it, so a function reached through its
+    ``args``, ``decorator_list`` or ``returns`` is skipped."""
+    child = node
+    current = mod.parents.get(id(node))
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if child is current.args or child is current.returns or child in current.decorator_list:
+                child, current = current, mod.parents.get(id(current))
+                continue
+            return current
+        child, current = current, mod.parents.get(id(current))
+    return None
+
+
 def _qualname(mod: _Module, func: ast.AST) -> str:
     names = [func.name]
     current = mod.parents.get(id(func))
@@ -1690,14 +1708,14 @@ def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
     both imports it and binds it otherwise, or imports it twice."""
     if isinstance(func_node, ast.Name):
         name = func_node.id
-        scope = _enclosing_function(mod, at)
+        scope = _defining_scope(mod, at)
         while scope is not None:
             imports, defined, other = _scope_bindings(mod, scope, name)
             if other or defined or len(imports) > 1:
                 return None
             if imports:
                 return next(iter(imports))
-            scope = _enclosing_function(mod, scope)
+            scope = _defining_scope(mod, scope)
         imports, defined, other = _module_bindings(mod, name)
         if other or (imports and defined) or len(imports) > 1:
             return None
@@ -1719,12 +1737,12 @@ def _resolve(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str]:
 def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
     """True when a plain ``name`` is bound, other than by an import, in a
     function enclosing ``at`` or at module scope."""
-    scope = _enclosing_function(mod, at)
+    scope = _defining_scope(mod, at)
     while scope is not None:
         _, defined, other = _scope_bindings(mod, scope, name)
         if other or defined:
             return True
-        scope = _enclosing_function(mod, scope)
+        scope = _defining_scope(mod, scope)
     return _module_bindings(mod, name)[2]
 
 
@@ -1976,6 +1994,67 @@ def _callee_name(call: ast.Call) -> str:
     return _dotted(call.func)
 
 
+#: Generic method names a runner may have that are ordinary words elsewhere;
+#: those runners are found by a dotted suffix, so the bare word is not reserved.
+_ORDINARY_RUNNER_WORDS = {"run", "execute", "_run", "runner"}
+
+
+def _reserved_names() -> set:
+    """Names that may never be rebound: the helper's, and every generic
+    runner's (outside the ordinary words above)."""
+    reserved = {target.rsplit(".", 1)[1] for target in HELPERS}
+    for (rel, fname), spec in GENERIC_RUNNERS.items():
+        if fname not in _ORDINARY_RUNNER_WORDS:
+            reserved.add(fname)
+        if not spec.get("scope"):
+            reserved.update(n for n in spec.get("names", ()) if n not in _ORDINARY_RUNNER_WORDS)
+    return reserved
+
+
+def _reserved_name_rebindings(modules: List[_Module]) -> List[str]:
+    """Every rebinding of a reserved name: a parameter, a local binding, a
+    nested def, a ``global``/``nonlocal``, or a module-level rebinding of the
+    helper's, a generic runner's or a launch function's name (an imported
+    alias of one included). Imports, and a module-level def or class that is
+    not also imported, are not rebindings."""
+    base = _reserved_names()
+    problems: List[str] = []
+    for mod in modules:
+        reserved = set(base)
+        for alias, target in mod.imports.items():
+            module, _, last = target.rpartition(".")
+            if last in base or target in HELPERS or (module in _LAUNCHES and last in _LAUNCHES[module]):
+                reserved.add(alias)
+
+        def flag(node: ast.AST, name: str, how: str) -> None:
+            holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            where = getattr(holder, "name", "<module>")
+            problems.append(
+                f"{mod.rel}:{getattr(node, 'lineno', 0)} in {where}: the reserved name "
+                f"{name!r} (the helper's, a generic runner's or a launch function's) is "
+                f"rebound {how}"
+            )
+
+        for node in ast.walk(mod.tree):
+            in_function = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) is not None
+            if isinstance(node, ast.arg) and node.arg in reserved:
+                flag(node, node.arg, "as a parameter")
+            elif isinstance(node, ast.Name) and node.id in reserved and isinstance(node.ctx, (ast.Store, ast.Del)):
+                flag(node, node.id, "by an assignment or target" if in_function else "at module level")
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in reserved:
+                if in_function:
+                    flag(node, node.name, "by a nested definition")
+                elif node.name in mod.imports and _enclosing(mod, node, ast.ClassDef) is None:
+                    flag(node, node.name, "by a definition of an imported name")
+            elif isinstance(node, ast.ExceptHandler) and node.name in reserved:
+                flag(node, node.name, "by an except target")
+            elif isinstance(node, (ast.Global, ast.Nonlocal)):
+                for name in node.names:
+                    if name in reserved:
+                        flag(node, name, "by a global or nonlocal declaration")
+    return problems
+
+
 def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
     wrappers = _wrappers(modules)
@@ -2098,6 +2177,7 @@ def unaccounted_launches(package: Path) -> List[str]:
                             f"{kind} is used as a value (held in a variable, passed "
                             f"on or wrapped), so its env= cannot be checked"
                         )
+    problems.extend(_reserved_name_rebindings(modules))
     for (rel, fname), spec in GENERIC_RUNNERS.items():
         identity = _runner_identity(package.name, rel, fname)
         for mod in modules:
@@ -2449,6 +2529,25 @@ GUARD_PROBES = textwrap.dedent(
             subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
 
 
+    def v54_same_named_default_capture(cmd, run_project_command=run_project_command):
+        return run_project_command(cmd, shell=True, env=None, timeout=5)
+
+
+    def v55_differently_named_default_capture(cmd, go=run_project_command):
+        return go(cmd, shell=True, env=None, timeout=5)
+
+
+    def v56_lambda_default_calling_a_runner(
+        cmd, go=lambda c: run_project_command(c, shell=True, env=None, timeout=5)
+    ):
+        return go(cmd)
+
+
+    def v57_local_named_like_the_helper(cmd, wf):
+        finish_project_environment = lambda e: dict(os.environ)  # noqa: E731
+        subprocess.run(cmd, shell=True, env=finish_project_environment(None))
+
+
     def ok_unshadowed_alias(cmd, wf):
         subprocess.run(cmd, shell=True, env=pce_alias(wf, None))
 
@@ -2540,6 +2639,19 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
+    # The reserved-name rule itself, not only the checks it backs up.
+    reserved_hits = {
+        p.split(" in ", 1)[1].split(":", 1)[0] for p in problems if "the reserved name" in p
+    }
+    assert {
+        "v51_local_reassignment_shadows_the_helper",
+        "v54_same_named_default_capture",
+        "v57_local_named_like_the_helper",
+    } <= reserved_hits, reserved_hits
+    assert any(
+        "zz_rebound.py" in p and "the reserved name" in p and "at module level" in p
+        for p in problems
+    ), problems
     assert not {
         "ok_helper", "ok_git", "ok_wrapper", "ok_finish", "ok_runner",
         "ok_git_inline_no_env", "ok_git_inline_with_helper",
