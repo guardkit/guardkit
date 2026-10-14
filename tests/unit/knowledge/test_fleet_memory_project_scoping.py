@@ -205,6 +205,8 @@ async def test_client_threads_config_project_into_write(monkeypatch):
     monkeypatch.setattr(
         "guardkit.memory.harvest_publisher.publish_episodes", fake_publish
     )
+    # The bus is used only with a bus account; the publisher above is a fake.
+    monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
 
     client = fmc.FleetMemoryClient(FleetMemoryConfig(enabled=True, project="jarvis"))
     client._nats_available = True

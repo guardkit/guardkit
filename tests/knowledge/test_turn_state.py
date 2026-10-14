@@ -1881,6 +1881,9 @@ class TestTurnStateRealSeam:
         monkeypatch.setattr(
             "guardkit.memory.harvest_publisher.publish_episodes", _fake_publish
         )
+        # Turn states are prose, which only the bus carries, and the bus is
+        # used only with a bus account. The publisher above is a fake.
+        monkeypatch.setenv("GUARDKIT_NATS_PASSWORD", "stand-in-bus-password")
         client = _enabled_fleet_client()
 
         await capture_turn_state(client, _turn_entity())
