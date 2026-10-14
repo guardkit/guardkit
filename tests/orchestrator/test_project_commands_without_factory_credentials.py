@@ -2055,7 +2055,7 @@ def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str
         # Directly in a class body, a class-local binding of the name makes
         # it either the class's own or (when that binding has not certainly
         # run first) the outer one: never one known identity.
-        klass = _evaluating_class(mod, at)
+        klass = _name_scope_class(mod, at)
         if klass is not None and _class_binding_sites(mod, klass, name):
             return None
         scope = _defining_scope(mod, at)
@@ -2090,11 +2090,42 @@ def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str
     return None
 
 
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
 def _evaluating_class(mod: _Module, node: ast.AST) -> Optional[ast.ClassDef]:
-    """The class whose body evaluates ``node`` directly (at class definition
-    time), or ``None``: walking up, a function's body or a lambda ends the
-    search, while a function's defaults, annotations and decorators, and a
-    class's bases and decorators, are evaluated in the scope around them."""
+    """The class whose body may run ``node`` while the class is being
+    defined, or ``None``: walking up, a function's body ends the search,
+    while a function's defaults, annotations and decorators, and a class's
+    bases and decorators, are evaluated in the scope around them. A
+    comprehension or generator expression and a lambda written in the class
+    body do not end it: they can run during the definition (a comprehension
+    at once, a lambda when it is called there)."""
+    child, current = node, mod.parents.get(id(node))
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not (
+                child is current.args or child is current.returns
+                or any(child is d for d in current.decorator_list)
+            ):
+                return None
+        elif isinstance(current, ast.ClassDef):
+            if not (
+                any(child is b for b in current.bases)
+                or any(child is k for k in current.keywords)
+                or any(child is d for d in current.decorator_list)
+            ):
+                return current
+        child, current = current, mod.parents.get(id(current))
+    return None
+
+
+def _name_scope_class(mod: _Module, node: ast.AST) -> Optional[ast.ClassDef]:
+    """The class whose own bindings a plain name at ``node`` can see, or
+    ``None``. Like a function, a lambda, a comprehension and a generator
+    expression are scopes of their own that skip the enclosing class's
+    bindings; only a comprehension's outermost iterable is evaluated in the
+    scope around it."""
     child, current = node, mod.parents.get(id(node))
     while current is not None:
         if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -2105,6 +2136,17 @@ def _evaluating_class(mod: _Module, node: ast.AST) -> Optional[ast.ClassDef]:
                 return None
         elif isinstance(current, ast.Lambda):
             if child is not current.args:
+                return None
+        elif isinstance(current, _COMPREHENSIONS):
+            if not (current.generators and child is current.generators[0]):
+                return None
+        elif isinstance(current, ast.comprehension):
+            outer = mod.parents.get(id(current))
+            if not (
+                isinstance(outer, _COMPREHENSIONS)
+                and outer.generators and current is outer.generators[0]
+                and child is current.iter
+            ):
                 return None
         elif isinstance(current, ast.ClassDef):
             if not (
@@ -2171,7 +2213,7 @@ def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
     import, where ``at`` reads it: in the class body evaluating it (only as
     :func:`_class_binding_decides` allows), in a function enclosing it or at
     module scope."""
-    klass = _evaluating_class(mod, at)
+    klass = _name_scope_class(mod, at)
     if klass is not None and _class_binding_decides(mod, klass, name, at):
         return True
     scope = _defining_scope(mod, at)
@@ -2356,6 +2398,32 @@ def _reserved_environment_names(modules: List[_Module], wrappers: set) -> List[s
                     f"helper or an environment wrapper, and may be bound only by that "
                     f"definition or by importing it; it is bound here"
                 )
+        for node in ast.walk(mod.tree):
+            # X.name = / += / : T = / del X.name, and every for, with and
+            # unpacking target spelled that way, whatever X is.
+            stored = (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                and node.attr in names
+            )
+            # setattr(X, "name", ...) / delattr(X, "name") and the dunder forms.
+            by_name = (
+                isinstance(node, ast.Call)
+                and _last_name(node.func) in ("setattr", "delattr", "__setattr__", "__delattr__")
+                and any(
+                    isinstance(a, ast.Constant) and a.value in names for a in node.args[:2]
+                )
+            )
+            if stored or by_name:
+                holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                what = node.attr if stored else next(
+                    a.value for a in node.args[:2] if isinstance(a, ast.Constant) and a.value in names
+                )
+                problems.append(
+                    f"{mod.rel}:{node.lineno} in {getattr(holder, 'name', '<module>')}: "
+                    f"the attribute {what} is set or deleted here, but the name belongs to "
+                    f"the helper or an environment wrapper"
+                )
     return problems
 
 
@@ -2403,7 +2471,7 @@ def _possible_targets(mod: _Module, node: ast.AST) -> set:
     import of its root anywhere in the module, each followed to its final
     identity through re-exports inside the package."""
     if isinstance(node, ast.Name):
-        klass = _evaluating_class(mod, node)
+        klass = _name_scope_class(mod, node)
         if klass is not None and _class_binding_decides(mod, klass, node.id, node):
             return set()  # certainly the class's own plain value here
         return _final_targets(mod, mod.imports.get(node.id, ()))
@@ -4677,6 +4745,8 @@ GUARD_PROBES_REEXPORT = {
         '''\
         import subprocess
 
+        from guardkit.orchestrator.project_command_env import project_command_environment
+
 
         class v154_class_launch_before_a_class_local_rebinding:
             subprocess.run(["make"])
@@ -4692,6 +4762,39 @@ GUARD_PROBES_REEXPORT = {
             subprocess = "y"
             del subprocess
             subprocess.run(["make"])
+
+
+        class v157_list_comprehension_after_a_class_local_string:
+            subprocess = "label"
+            results = [subprocess.run(["make"]) for _ in range(1)]
+
+
+        class v158_set_comprehension_after_a_class_local_string:
+            subprocess = "label"
+            results = {subprocess.run(["make"]) for _ in range(1)}
+
+
+        class v159_dict_comprehension_after_a_class_local_string:
+            subprocess = "label"
+            results = {key: subprocess.run(["make"]) for key in range(1)}
+
+
+        class v160_generator_after_a_class_local_string:
+            subprocess = "label"
+            results = list(subprocess.run(["make"]) for _ in range(1))
+
+
+        class v161_lambda_called_right_away_in_a_class_body:
+            result = (lambda: subprocess.run(["make"], env=project_command_environment(".", None)))()
+
+
+        class v162_outermost_iterable_is_a_launch:
+            results = [
+                line
+                for line in subprocess.run(
+                    ["make"], env=project_command_environment(".", None)
+                ).args
+            ]
 
 
         class ok_class_local_string_shadowing_a_module:
@@ -4995,6 +5098,7 @@ GUARD_PROBES_RESERVED_WRAPPER: Dict[str, str] = {
     'envs.py': 'from guardkit.orchestrator.project_command_env import project_command_environment\n\n\ndef command_env(wf):\n    return project_command_environment(wf, None)\n',
     'consumer.py': "import os\nimport subprocess\n\nfrom .envs import command_env\n\nlaunch = lambda cmd, command_env=(lambda wf: dict(os.environ)): subprocess.run(cmd, env=command_env('.'))\n",
     'params.py': "import subprocess\n\nfrom .envs import command_env\n\n\ndef v_wrapper_name_as_a_parameter_elsewhere(cmd, command_env=None):\n    return subprocess.run(cmd, env=command_env('.'))\n",
+    'attrs.py': "class Holder:\n    pass\n\n\ndef v_attribute_assignment():\n    Holder.command_env = None\n\n\ndef v_attribute_augmented():\n    Holder.command_env += 1\n\n\ndef v_attribute_annotated():\n    Holder.command_env: object = None\n\n\ndef v_attribute_deleted():\n    del Holder.command_env\n\n\ndef v_attribute_for_target():\n    for Holder.command_env in range(1):\n        pass\n\n\ndef v_attribute_with_target(manager):\n    with manager as Holder.command_env:\n        pass\n\n\ndef v_attribute_unpacking_target():\n    Holder.other, Holder.command_env = 1, 2\n\n\ndef v_setattr_by_name():\n    setattr(Holder, 'command_env', None)\n\n\ndef v_delattr_by_name():\n    delattr(Holder, 'command_env')\n\n\ndef ok_attribute_read():\n    return getattr(Holder, 'command_env', None), Holder.other\n",
     'users.py': "import subprocess\n\nfrom guardkit.orchestrator.project_command_env import project_command_environment\n\nfrom .envs import command_env\n\n\ndef ok_unshadowed_imported_wrapper(cmd):\n    return subprocess.run(cmd, env=command_env('.'))\n\n\ndef ok_inline_helper(cmd, wf):\n    return subprocess.run(cmd, env=project_command_environment(wf, None))\n",
 }
 
@@ -5010,6 +5114,13 @@ def test_a_wrapper_name_is_reserved_across_the_package(tmp_path: Path) -> None:
         p.startswith("params.py:6 in v_wrapper_name_as_a_parameter_elsewhere: ") for p in problems
     ), problems
     assert not [p for p in problems if " in ok_" in p or p.startswith("envs.py")], problems
+    named = {p.split(" in ", 1)[1].split(":", 1)[0] for p in problems if p.startswith("attrs.py")}
+    expected = {
+        n.name for n in ast.parse(GUARD_PROBES_RESERVED_WRAPPER["attrs.py"]).body
+        if isinstance(n, ast.FunctionDef) and n.name.startswith("v_")
+    }
+    assert len(expected) == 9
+    assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
 
 
 def test_every_runner_environment_place_is_read_from_its_def() -> None:
