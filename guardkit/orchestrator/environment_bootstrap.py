@@ -533,6 +533,45 @@ def _venv_path_first(worktree_venv: Optional[Path]) -> Tuple[str, ...]:
     return () if worktree_venv is None else (str(Path(worktree_venv) / "bin"),)
 
 
+def _bootstrap_env(
+    bootstrapper: "EnvironmentBootstrapper", worktree_venv: Optional[Path] = None
+) -> Dict[str, str]:
+    """The environment every command the bootstrapper runs gets (13 October
+    2026): built from nothing by ``project_command_environment``, with the
+    ``launch:`` block of the main checkout the worktree was cut from, and
+    ``VIRTUAL_ENV`` plus the venv's ``bin`` first on PATH when a venv is
+    named. A module-level function, so the process-launch guard can rely on
+    it (a method could be overridden); the methods delegate here."""
+    return project_command_environment(
+        bootstrapper._root,
+        load_launch_declaration(main_checkout_root(bootstrapper._root)),
+        additions=_venv_additions(worktree_venv),
+        path_first=_venv_path_first(worktree_venv),
+    )
+
+
+def _venv_dir_for(bootstrapper: "EnvironmentBootstrapper", python: bool) -> Optional[Path]:
+    """The worktree venv to name, for a Python command once one exists."""
+    if python and bootstrapper._venv_python is not None:
+        # _venv_python is <venv_dir>/bin/python; venv_dir is .parent.parent.
+        return bootstrapper._venv_python.parent.parent
+    return None
+
+
+def _bootstrap_install_env(
+    bootstrapper: "EnvironmentBootstrapper", manifest: "DetectedManifest"
+) -> Dict[str, str]:
+    """One install's environment: the venv is named for a Python manifest."""
+    return _bootstrap_env(bootstrapper, _venv_dir_for(bootstrapper, manifest.stack == "python"))
+
+
+def _bootstrap_single_command_env(
+    bootstrapper: "EnvironmentBootstrapper", is_python_cmd: bool
+) -> Dict[str, str]:
+    """One dependency install's environment: the venv is named for pip."""
+    return _bootstrap_env(bootstrapper, _venv_dir_for(bootstrapper, is_python_cmd))
+
+
 def _with_note(excerpt: str, note: str) -> str:
     """``excerpt`` with the minimal-environment ``note`` after it, if any."""
     if not note:
@@ -2595,7 +2634,7 @@ class EnvironmentBootstrapper:
             process_group.run_project_command(
                 [sys.executable, "-m", "venv", str(venv_dir)],
                 check=True,
-                env=self._project_env(),
+                env=_bootstrap_env(self),
             )
         else:
             logger.info(
@@ -2682,7 +2721,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=300,
-                env=self._project_env(),
+                env=_bootstrap_env(self),
             )
         else:
             logger.info(
@@ -2790,7 +2829,7 @@ class EnvironmentBootstrapper:
             capture_output=True,
             text=True,
             timeout=300,
-            env=self._project_env(),
+            env=_bootstrap_env(self),
         )
         return venv_python
 
@@ -2805,12 +2844,7 @@ class EnvironmentBootstrapper:
         the install. Every other command gets the same environment without
         those two.
         """
-        # _venv_python is <venv_dir>/bin/python; venv_dir is .parent.parent.
-        return self._project_env(
-            self._venv_python.parent.parent
-            if manifest.stack == "python" and self._venv_python is not None
-            else None
-        )
+        return _bootstrap_install_env(self, manifest)
 
     def _isolated_env(self, worktree_venv: Path) -> Dict[str, str]:
         """
@@ -2825,17 +2859,13 @@ class EnvironmentBootstrapper:
             ``<worktree>/.venv``; for PEP 668 fallback it is
             ``<worktree>/.guardkit/venv``.
         """
-        return self._project_env(worktree_venv)
+        return _bootstrap_env(self, worktree_venv)
 
     def _single_command_env(self, is_python_cmd: bool) -> Dict[str, str]:
         """The environment for one dependency install: VIRTUAL_ENV pointing
         at the worktree venv for a Python pip command, so an inherited parent
         venv cannot receive the install; built from nothing either way."""
-        return self._project_env(
-            self._venv_python.parent.parent
-            if is_python_cmd and self._venv_python is not None
-            else None
-        )
+        return _bootstrap_single_command_env(self, is_python_cmd)
 
     def _held_back_note(self) -> str:
         """Which settings the install's environment held back, by name only
@@ -2868,12 +2898,7 @@ class EnvironmentBootstrapper:
             a proxy setting carrying credentials. Every caller already treats
             "the command could not start" as the install's failure.
         """
-        return project_command_environment(
-            self._root,
-            load_launch_declaration(main_checkout_root(self._root)),
-            additions=_venv_additions(worktree_venv),
-            path_first=_venv_path_first(worktree_venv),
-        )
+        return _bootstrap_env(self, worktree_venv)
 
     def _run_install(self, manifest: DetectedManifest) -> bool:
         """
@@ -2953,7 +2978,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=self._python_install_env(manifest),
+                env=_bootstrap_install_env(self, manifest),
             )
             if proc.returncode == 0:
                 logger.info(
@@ -2990,7 +3015,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    env=self._isolated_env(venv_python.parent.parent),
+                    env=_bootstrap_env(self, venv_python.parent.parent),
                 )
                 if retry_proc.returncode == 0:
                     logger.info(
@@ -3062,7 +3087,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    env=self._isolated_env(venv_dir),
+                    env=_bootstrap_env(self, venv_dir),
                 )
                 if retry_proc.returncode == 0:
                     logger.info(
@@ -3174,7 +3199,7 @@ class EnvironmentBootstrapper:
                 capture_output=True,
                 text=True,
                 timeout=300,
-                env=self._single_command_env(bool(is_python_cmd)),
+                env=_bootstrap_single_command_env(self, bool(is_python_cmd)),
             )
             if proc.returncode == 0:
                 logger.debug("Command succeeded: %s", " ".join(run_cmd))
@@ -3200,7 +3225,7 @@ class EnvironmentBootstrapper:
                     capture_output=True,
                     text=True,
                     timeout=300,
-                    env=self._isolated_env(venv_python.parent.parent),
+                    env=_bootstrap_env(self, venv_python.parent.parent),
                 )
                 if retry_proc.returncode == 0:
                     logger.debug(

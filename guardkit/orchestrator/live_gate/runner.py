@@ -107,6 +107,13 @@ def derive_verdict(
     return "pass"
 
 
+def _gate_scripts_env(repo_root: Path, addresses: Mapping[str, str]) -> dict:
+    """The gate scripts' environment, built from nothing, plus the gates'
+    checked addresses. A module-level function, so the process-launch guard
+    can rely on it (a method could be overridden)."""
+    return main_checkout_environment(repo_root, additions=dict(addresses))
+
+
 class LiveGateRunner:
     """Deterministic live-gate runner. Seams are injected; the defaults are
     the loud ``Unconfigured*`` stubs / real subprocess runner — except F16,
@@ -207,7 +214,7 @@ class LiveGateRunner:
         the gates' checked addresses (:meth:`_gate_addresses`): the registry
         is the project's own statement that its gates read them.
         """
-        return main_checkout_environment(self.repo_root, additions=dict(addresses))
+        return _gate_scripts_env(self.repo_root, addresses)
 
     def _history_dir(self) -> Path:
         return self.repo_root.joinpath(*HISTORY_DIRNAME)
@@ -281,7 +288,7 @@ class LiveGateRunner:
         if classification is None:
             # Pre-flight green: exercise the deployed app.
             try:
-                env = self._gate_script_env(addresses)
+                env = _gate_scripts_env(self.repo_root, addresses)
             except OSError as exc:
                 raise LiveGateError(
                     f"the gate scripts could not be given their environment: {exc}"

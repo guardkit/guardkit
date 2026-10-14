@@ -348,6 +348,47 @@ def _worktree_venv_bin(worktree_path: Path) -> Tuple[str, ...]:
     return venv_path_first(worktree_path)
 
 
+def _checker_env(
+    validator: "CoachValidator",
+    *,
+    additions: Optional[Dict[str, str]] = None,
+    path_first: Sequence[str] = (),
+    fixtures: bool = False,
+    git_ceiling: Optional[Path] = None,
+    main_checkout: bool = False,
+) -> Dict[str, str]:
+    """The environment one of the checker's project commands runs with,
+    built from nothing (see ``CoachValidator._project_env`` for what each
+    argument adds). A module-level function, so the process-launch guard can
+    rely on it (a method could be overridden); the methods delegate here."""
+    return project_command_environment(
+        validator.worktree_path,
+        validator._launch_declaration(main_checkout),
+        additions=validator._command_additions(additions, fixtures, git_ceiling),
+        path_first=path_first,
+    )
+
+
+def _checker_pytest_env(
+    validator: "CoachValidator", git_ceiling: Optional[Path] = None
+) -> Dict[str, str]:
+    """The checker's pytest-run environment: the worktree venv's ``bin``
+    first on PATH and this task's test-service URLs."""
+    return _checker_env(
+        validator,
+        path_first=_worktree_venv_bin(validator.worktree_path),
+        fixtures=True,
+        git_ceiling=git_ceiling,
+    )
+
+
+def _checker_declared_env(
+    validator: "CoachValidator", git_ceiling: Optional[Path] = None
+) -> Dict[str, str]:
+    """The checker's declared-command environment, with the test-service URLs."""
+    return _checker_env(validator, fixtures=True, git_ceiling=git_ceiling)
+
+
 def _is_wiring_factory_available() -> bool:
     """Return True when the guardkitfactory wiring analyzer is importable.
 
@@ -4055,7 +4096,7 @@ class CoachValidator:
             # venv first on PATH so a bare ``python`` / ``pytest`` in the smoke
             # command resolves to the right interpreter (mirrors
             # smoke_gates.run_smoke_gate's venv handling).
-            env = self._project_env(
+            env = _checker_env(self, 
                 path_first=self._venv_bin_first(), main_checkout=True
             )
             proc = process_group.run_project_command(
@@ -4527,7 +4568,7 @@ class CoachValidator:
         try:
             # Built from nothing; the two paths the oracle is promised are the
             # factory's own additions for this one command.
-            env = self._project_env(
+            env = _checker_env(self, 
                 additions={
                     "GUARDKIT_CANDIDATE_ROOT": str(worktree_resolved),
                     "GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT": str(receipt_path),
@@ -4682,7 +4723,7 @@ class CoachValidator:
         start_time = time.time()
         oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            env = self._project_env()
+            env = _checker_env(self)
             proc = self._run_recorded(
                 command,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
@@ -4788,7 +4829,7 @@ class CoachValidator:
         start_time = time.time()
         oracle_evidence: Dict[str, Any] = {}  # repair 7
         try:
-            env = self._project_env(path_first=path_first)
+            env = _checker_env(self, path_first=path_first)
             proc = self._run_recorded(
                 cmd,
                 evidence=(EVIDENCE_ORACLE, self.worktree_path, None),
@@ -6607,18 +6648,14 @@ class CoachValidator:
         resolves inside the bootstrap environment. Built from nothing
         (:meth:`_project_env`), with this task's test-service URLs.
         """
-        return self._project_env(
-            path_first=_worktree_venv_bin(self.worktree_path),
-            fixtures=True,
-            git_ceiling=git_ceiling,
-        )
+        return _checker_pytest_env(self, git_ceiling)
 
     def _held_back_note(self) -> str:
         """Which settings a project command's environment held back, by name
         only (``project_command_env.minimal_environment_note``); empty when
         the environment cannot be built, which the failure already says."""
         try:
-            return minimal_environment_note(self._declared_command_env())
+            return minimal_environment_note(_checker_declared_env(self))
         except OSError:
             return ""
 
@@ -6662,11 +6699,13 @@ class CoachValidator:
         cannot be given its environment; every caller treats that as "the
         command could not start".
         """
-        return project_command_environment(
-            self.worktree_path,
-            self._launch_declaration(main_checkout),
-            additions=self._command_additions(additions, fixtures, git_ceiling),
+        return _checker_env(
+            self,
+            additions=additions,
             path_first=path_first,
+            fixtures=fixtures,
+            git_ceiling=git_ceiling,
+            main_checkout=main_checkout,
         )
 
     def _launch_declaration(self, main_checkout: bool) -> Any:
@@ -6776,7 +6815,7 @@ class CoachValidator:
                 capture_output=True,
                 text=True,
                 timeout=15,
-                env=self._project_env(),
+                env=_checker_env(self),
             )
             return proc.returncode == 0
         except Exception as exc:  # subprocess error / timeout / OSError
@@ -7390,7 +7429,7 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=self._pytest_env(git_ceiling=holder),
+                            env=_checker_pytest_env(self, git_ceiling=holder),
                         )
                 else:
                     # Per-component seam: the isolated copy is a copy of the
@@ -7407,7 +7446,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=self._declared_command_env(git_ceiling=holder),
+                        env=_checker_declared_env(self, git_ceiling=holder),
                     )
 
                 duration = time.time() - start_time
@@ -7909,7 +7948,7 @@ class CoachValidator:
                             capture_output=True,
                             text=True,
                             timeout=self.test_timeout,
-                            env=self._pytest_env(),
+                            env=_checker_pytest_env(self),
                         )
                 else:
                     # TS-lane D.1b (design §B.5): the declared / non-pytest
@@ -7931,7 +7970,7 @@ class CoachValidator:
                         capture_output=True,
                         text=True,
                         timeout=self.test_timeout,
-                        env=self._declared_command_env(),
+                        env=_checker_declared_env(self),
                     )
 
                 duration = time.time() - start_time
@@ -8576,7 +8615,7 @@ class CoachValidator:
                 # Built from nothing (13 October 2026): an acceptance
                 # criterion's command is the project's, never handed the
                 # factory's credentials.
-                env = self._project_env(path_first=path_first)
+                env = _checker_env(self, path_first=path_first)
                 proc = process_group.run_project_command(
                     cmd,
                     shell=True,
@@ -10437,7 +10476,7 @@ class CoachValidator:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=self._declared_command_env(),
+                env=_checker_declared_env(self),
             )
         except subprocess.TimeoutExpired:
             return {
@@ -10642,7 +10681,7 @@ class CoachValidator:
         The URLs of the test services this validator started are added on top
         (see :meth:`_start_infrastructure_containers`).
         """
-        return self._project_env(fixtures=True, git_ceiling=git_ceiling)
+        return _checker_declared_env(self, git_ceiling)
 
     def _describe_detection_absence(self) -> str:
         """Build the actionable message for the deleted pytest default.

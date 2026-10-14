@@ -1837,6 +1837,10 @@ def _inline_helper(node: Optional[ast.AST], mod: _Module, wrappers: set, none_is
     if not isinstance(node, ast.Call):
         return False
     target = _resolve(mod, node.func, node)
+    if isinstance(node.func, ast.Attribute) and target not in HELPERS and target != _FINISH:
+        # Method dispatch (self.x(), obj.env()) is never trusted: only the
+        # helper itself, or a module-level wrapper called by its plain name.
+        return False
     if target == _FINISH:
         # It copies its input and adds to it: its input must be the helper's.
         given = node.args[0] if node.args else _env_keyword(node)
@@ -1924,56 +1928,22 @@ def _definition_counts(mod: _Module) -> Dict[str, int]:
     return cached
 
 
-def _overridden_methods(modules: List[_Module]) -> set:
-    """(class name, method name) pairs some subclass in the package
-    overrides, transitively, matching bases by their simple name: ``self.m``
-    in such a class can run the subclass's ``m``."""
-    classes: List[Tuple[str, List[str], set]] = []
-    for mod in modules:
-        for node in ast.walk(mod.tree):
-            if isinstance(node, ast.ClassDef):
-                bases = [_last_name(b) for b in node.bases]
-                methods = {
-                    n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-                }
-                classes.append((node.name, bases, methods))
-    out: set = set()
-    for name, _bases, _methods in classes:
-        seen = {name}
-        frontier = [name]
-        while frontier:
-            parent = frontier.pop()
-            for child, bases, methods in classes:
-                if parent in bases and child not in seen:
-                    seen.add(child)
-                    frontier.append(child)
-                    out.update((name, m) for m in methods)
-    return out
-
-
-def _trusted_definition(mod: _Module, node: ast.AST, overridden: set) -> bool:
-    """A def the guard may rely on: its full qualified identity has exactly
-    one definition in the module, it and every enclosing class or function
-    on its path are each the only binding of their name in their own scope,
-    and, for a method, no subclass in the package overrides it."""
+def _trusted_definition(mod: _Module, node: ast.AST) -> bool:
+    """A def the guard may rely on as a wrapper: a MODULE-LEVEL function
+    (never a method, never nested), whose full qualified identity has exactly
+    one definition in the module and which is the only binding of its name
+    in the module's scope."""
+    if not isinstance(mod.parents.get(id(node)), ast.Module):
+        return False
     if _definition_counts(mod).get(_qualname(mod, node), 0) != 1:
         return False
-    current: Optional[ast.AST] = node
-    while current is not None:
-        if not _bound_once_as(mod, current):
-            return False
-        current = _enclosing(mod, current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    owner = mod.parents.get(id(node))
-    if isinstance(owner, ast.ClassDef) and (owner.name, node.name) in overridden:
-        return False
-    return True
+    return _bound_once_as(mod, node)
 
 
 def _wrappers(modules: List[_Module]) -> set:
     """Functions whose whole body (after a docstring) is one ``return`` of an
     inline helper call, by dotted name."""
     found: set = set()
-    overridden = _overridden_methods(modules)
     changed = True
     while changed:
         changed = False
@@ -1996,7 +1966,7 @@ def _wrappers(modules: List[_Module]) -> set:
                 # fall through to an implicit None (which would inherit).
                 if (
                     not node.decorator_list  # a decorator could turn a refusal into None
-                    and _trusted_definition(mod, node, overridden)  # defined once, path too
+                    and _trusted_definition(mod, node)  # module level, defined once
                     and len(body) == 1
                     and isinstance(body[0], ast.Return)
                     and isinstance(body[0].value, ast.Call)
@@ -2431,6 +2401,14 @@ def unaccounted_launches(package: Path) -> List[str]:
                         )
     problems.extend(_reserved_name_rebindings(modules))
     problems.extend(_aliased_guarded_imports(modules, runner_ids))
+    for mod in modules:
+        for node in ast.walk(mod.tree):
+            if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
+                problems.append(
+                    f"{mod.rel}:{node.lineno} in <module>: a wildcard import "
+                    f"(from {'.' * node.level}{node.module or ''} import *) binds names "
+                    f"the guard cannot see; import names explicitly"
+                )
     for (rel, fname), spec in GENERIC_RUNNERS.items():
         identity = _runner_identity(package.name, rel, fname)
         for mod in modules:
@@ -3066,8 +3044,22 @@ GUARD_PROBES = textwrap.dedent(
         def command_env(self, wf):
             return project_command_environment(wf, None)
 
-        def ok_single_class_method_wrapper(self, cmd, wf):
+        def v91_plain_method_wrapper_via_self(self, cmd, wf):
             subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _CondBase:
+        def command_env(self, wf):
+            return project_command_environment(wf, None)
+
+        def v90_conditional_subclass_override(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self.command_env(wf))
+
+
+    class _CondChild(_CondBase):
+        if os.environ.get("PROBE_OVERRIDE"):
+            def command_env(self, wf):
+                return dict(os.environ)
 
 
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
@@ -3138,6 +3130,14 @@ GUARD_PROBES = textwrap.dedent(
 )
 
 
+#: Wildcard imports, one module each: the import itself is the violation.
+GUARD_PROBES_WILDCARD = {
+    "zz_wild_subprocess.py": "from subprocess import *  # noqa: F403\n\n\ndef w_run(cmd):\n    run(cmd, shell=True)  # noqa: F405\n",
+    "zz_wild_os.py": "from os import *  # noqa: F403\n\n\ndef w_system(cmd):\n    system(cmd)  # noqa: F405\n",
+    "zz_wild_json.py": "from json import *  # noqa: F403\n\n\ndef w_loads(text):\n    return loads(text)  # noqa: F405\n",
+}
+
+
 #: A module that imports the helper and then rebinds its name.
 GUARD_PROBES_REBOUND = textwrap.dedent(
     '''\
@@ -3172,6 +3172,8 @@ def _probe_package(tmp_path: Path, name: str) -> Path:
     (pkg / "orchestrator" / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "orchestrator" / "zz_probe.py").write_text(GUARD_PROBES, encoding="utf-8")
     (pkg / "orchestrator" / "zz_rebound.py").write_text(GUARD_PROBES_REBOUND, encoding="utf-8")
+    for filename, text in GUARD_PROBES_WILDCARD.items():
+        (pkg / "orchestrator" / filename).write_text(text, encoding="utf-8")
     return pkg
 
 
@@ -3184,6 +3186,10 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("v")
     }
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
+    for filename in GUARD_PROBES_WILDCARD:
+        assert any(
+            f"orchestrator/{filename}:1 in <module>: a wildcard import" in p for p in problems
+        ), filename
     # The reserved-name rule itself, not only the checks it backs up.
     reserved_hits = {
         p.split(" in ", 1)[1].split(":", 1)[0] for p in problems if "the reserved name" in p
@@ -3204,7 +3210,6 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
         "ok_direct_subprocess_run_with_helper_env", "ok_direct_runner_with_helper_env",
         "ok_os_path_and_environ", "ok_unaliased_relative_import_with_helper_env",
-        "ok_single_class_method_wrapper",
     } & named, problems
 
 
