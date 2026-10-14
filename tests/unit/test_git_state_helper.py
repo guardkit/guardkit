@@ -121,22 +121,20 @@ class TestGetGitRoot:
             finally:
                 os.chdir(original_cwd)
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_get_git_root_command_execution(self, mock_run):
-        """Test that get_git_root() executes correct git command."""
+        """Test that get_git_root() asks the factory's git helper the right question."""
         mock_run.return_value = MagicMock(stdout="/path/to/repo\n")
 
         result = get_git_root()
 
-        # Verify correct command was called
+        # Verify correct command was called (through the git helper)
         mock_run.assert_called_once()
         call_args = mock_run.call_args
-        assert call_args[0][0] == ["git", "rev-parse", "--show-toplevel"]
-        assert call_args[1]["capture_output"] is True
-        assert call_args[1]["text"] is True
+        assert call_args[0][0] == ["rev-parse", "--show-toplevel"]
         assert call_args[1]["check"] is True
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_get_git_root_strips_whitespace(self, mock_run):
         """Test that get_git_root() strips whitespace from git output."""
         mock_run.return_value = MagicMock(stdout="  /path/to/repo  \n  ")
@@ -251,7 +249,7 @@ class TestCommitStateFiles:
         except Exception:
             pytest.skip("Not in a git repository")
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_commit_state_files_git_add_command(self, mock_run):
         """Test that commit_state_files() executes git add correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -268,17 +266,16 @@ class TestCommitStateFiles:
                 # Find the git add call
                 add_call = None
                 for call in mock_run.call_args_list:
-                    if "git" in call[0][0] and "add" in call[0][0]:
+                    if call[0][0][0] == "add":
                         add_call = call
                         break
 
                 assert add_call is not None, "Should call git add"
-                assert add_call[0][0][0] == "git"
-                assert add_call[0][0][1] == "add"
-                assert str(state_dir) in add_call[0][0][2]
+                assert add_call[0][0][0] == "add"
+                assert str(state_dir) in add_call[0][0][1]
                 assert add_call[1]["check"] is True
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_commit_state_files_git_commit_command(self, mock_run):
         """Test that commit_state_files() executes git commit correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -295,18 +292,17 @@ class TestCommitStateFiles:
                 # Find the git commit call
                 commit_call = None
                 for call in mock_run.call_args_list:
-                    if "git" in call[0][0] and "commit" in call[0][0]:
+                    if call[0][0][0] == "commit":
                         commit_call = call
                         break
 
                 assert commit_call is not None, "Should call git commit"
-                assert commit_call[0][0][0] == "git"
-                assert commit_call[0][0][1] == "commit"
-                assert commit_call[0][0][2] == "-m"
-                assert commit_call[0][0][3] == "Test message"
+                assert commit_call[0][0][0] == "commit"
+                assert commit_call[0][0][1] == "-m"
+                assert commit_call[0][0][2] == "Test message"
                 assert commit_call[1]["check"] is False  # Should not fail on no changes
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_commit_state_files_default_message(self, mock_run):
         """Test that commit_state_files() uses default message when none provided."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -322,13 +318,13 @@ class TestCommitStateFiles:
                 # Find the git commit call
                 commit_call = None
                 for call in mock_run.call_args_list:
-                    if "git" in call[0][0] and "commit" in call[0][0]:
+                    if call[0][0][0] == "commit":
                         commit_call = call
                         break
 
                 assert commit_call is not None
                 expected_message = "Save state for TASK-031"
-                assert commit_call[0][0][3] == expected_message
+                assert commit_call[0][0][2] == expected_message
 
 
 class TestIntegrationScenarios:
@@ -505,7 +501,7 @@ class TestErrorHandling:
                 with pytest.raises(subprocess.CalledProcessError):
                     commit_state_files("TASK-031")
 
-    @patch('subprocess.run')
+    @patch('git_state_helper.run_git')
     def test_commit_state_files_git_commit_failure_silent(self, mock_run):
         """Test that git commit failures are silent (nothing to commit is OK)."""
         with tempfile.TemporaryDirectory() as tmpdir:

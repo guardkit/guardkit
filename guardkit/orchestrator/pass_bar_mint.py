@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -522,10 +523,8 @@ def head_sha(repo_root: Path) -> Optional[str]:
     ``check_pass_bar_precondition``'s ``merge-base --is-ancestor`` proves.
     """
     try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
+        proc = run_git(
+            ["-C", str(repo_root), "rev-parse", "HEAD"],
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:

@@ -31,6 +31,7 @@ from guardkit.orchestrator.evidence_repos import (
     split_qualified,
 )
 from guardkit.orchestrator import process_group
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -774,11 +775,9 @@ class CoachVerifier:
             # into their individual files. Without it, git collapses
             # ``src/new_module/`` to a single ``?? src/new_module/`` line
             # and we'd false-fail every claimed file under it.
-            result = subprocess.run(
-                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            result = run_git(
+                ["status", "--porcelain=v1", "--untracked-files=all"],
                 cwd=self.worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )
@@ -1095,11 +1094,9 @@ class CoachVerifier:
         # (``git add -A`` would silently skip it — a real honesty signal)
         # from an unaccounted / fabricated one.
         try:
-            result = subprocess.run(
-                ["git", "check-ignore", "-v", "--no-index", "--", path],
+            result = run_git(
+                ["check-ignore", "-v", "--no-index", "--", path],
                 cwd=self.worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )
@@ -1145,11 +1142,9 @@ class CoachVerifier:
         ``!``-negation false-positive (red-baseline retro, L12 item 6).
         """
         try:
-            ls_result = subprocess.run(
-                ["git", "ls-files", "--error-unmatch", "--", path],
+            ls_result = run_git(
+                ["ls-files", "--error-unmatch", "--", path],
                 cwd=self.worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )
@@ -1173,11 +1168,9 @@ class CoachVerifier:
         """
         probe_dir = start if start.is_dir() else start.parent
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
+            result = run_git(
+                ["rev-parse", "--show-toplevel"],
                 cwd=probe_dir,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )
@@ -1274,11 +1267,9 @@ class CoachVerifier:
         if base is None:
             return False
         try:
-            result = subprocess.run(
-                ["git", "diff", "--quiet", base, "--", path],
+            result = run_git(
+                ["diff", "--quiet", base, "--", path],
                 cwd=self.worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )
@@ -1297,11 +1288,9 @@ class CoachVerifier:
         surfaces with a usable (if degraded) message.
         """
         try:
-            result = subprocess.run(
-                ["git", "check-ignore", "-v", "--no-index", "--", path],
+            result = run_git(
+                ["check-ignore", "-v", "--no-index", "--", path],
                 cwd=self.worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
                 timeout=30,
             )

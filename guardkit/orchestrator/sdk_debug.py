@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from guardkit.orchestrator.instrumentation.redaction import SecretRedactor
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +127,9 @@ def _resolve_repo_root(path: Path) -> Path:
     like a real ``.git`` directory on disk.
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        result = run_git(
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=path,
-            capture_output=True,
-            text=True,
             timeout=5,
             check=False,
         )
@@ -170,11 +169,9 @@ def _get_repo_name(repo_root: Union[str, Path]) -> Optional[str]:
             return None
 
         # Try git remote to confirm repo identity
-        result = subprocess.run(
-            ["git", "remote", "-v"],
+        result = run_git(
+            ["remote", "-v"],
             cwd=repo_path,
-            capture_output=True,
-            text=True,
             timeout=5,
             check=False,
         )
@@ -204,12 +201,11 @@ def _check_gitignore_coverage(repo_root: Union[str, Path], sdk_debug_path: Path)
     Defensive: swallows subprocess failures and returns False.
     """
     try:
-        result = subprocess.run(
-            ["git", "check-ignore", str(sdk_debug_path)],
+        result = run_git(
+            ["check-ignore", str(sdk_debug_path)],
             cwd=repo_root,
-            capture_output=True,
             timeout=5,
-            check=False,
+            check=False, text=False,
         )
         # git check-ignore returns 0 if path is ignored, 1 if not
         return result.returncode == 0

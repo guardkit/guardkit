@@ -49,6 +49,7 @@ from guardkit.orchestrator.instrumentation.emitter import (
 )
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree
+from guardkit.lib.project_git import run_git
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -205,11 +206,9 @@ def _detect_base_branch(
         or reports a detached HEAD (``"HEAD"``).
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        result = run_git(
+            ["rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
-            capture_output=True,
-            text=True,
             check=True,
         )
         branch = result.stdout.strip()
@@ -780,10 +779,13 @@ def status(ctx, task_id: str, verbose: bool):
     "--refresh",
     is_flag=True,
     help=(
-        "Rebase worktree onto the latest base before resuming (implies "
-        "--resume). Target resolution: local <base> when it is ahead of "
-        "origin/<base> (unpushed operator fixes), else origin/<base>. Runs "
-        "with --autostash so autobuild artifacts don't abort the rebase."
+        "Rebase worktree onto the base branch before resuming (implies "
+        "--resume). Refresh uses the base branch already on this machine: "
+        "fetch it yourself first if you need the remote's latest. Target "
+        "resolution: local <base> when it is ahead of origin/<base> "
+        "(unpushed operator fixes) or no origin/<base> is here, else "
+        "origin/<base>. Runs with --autostash so autobuild artifacts don't "
+        "abort the rebase."
     ),
 )
 @click.option(
@@ -982,7 +984,8 @@ def feature(
     Resume Behavior:
         - If incomplete state detected and no flags: prompts user to resume, update, or start fresh
         - --resume: skip prompt, resume from last saved state
-        - --refresh: rebase worktree onto latest main, then resume (implies --resume)
+        - --refresh: rebase worktree onto the base branch already on this
+          machine (fetch it yourself first), then resume (implies --resume)
         - --fresh: skip prompt, start from scratch (clears previous state)
         - Cannot use both --resume/--refresh and --fresh together
 

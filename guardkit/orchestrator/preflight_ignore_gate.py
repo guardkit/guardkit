@@ -38,6 +38,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -334,11 +335,9 @@ def check_ignore_one(worktree_path: Path, path: str) -> Optional[str]:
     but is intentionally duplicated to keep the gate self-contained.
     """
     try:
-        result = subprocess.run(
-            ["git", "check-ignore", "-v", "--no-index", "--", path],
+        result = run_git(
+            ["check-ignore", "-v", "--no-index", "--", path],
             cwd=str(worktree_path),
-            capture_output=True,
-            text=True,
             check=False,
             timeout=_CHECK_IGNORE_TIMEOUT_SECONDS,
         )
@@ -414,11 +413,9 @@ def _path_is_tracked(worktree_path: Path, path: str) -> bool:
     end). Red-baseline retro, L12 item 6.
     """
     try:
-        result = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", "--", path],
+        result = run_git(
+            ["ls-files", "--error-unmatch", "--", path],
             cwd=str(worktree_path),
-            capture_output=True,
-            text=True,
             check=False,
             timeout=_CHECK_IGNORE_TIMEOUT_SECONDS,
         )

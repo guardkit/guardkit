@@ -24,6 +24,7 @@ from guardkit.tasks.task_loader import TaskNotFoundError, TaskParseError
 from guardkit.orchestrator.exceptions import AgentInvocationError, SDKTimeoutError
 
 from guardkit.worktrees.manager import (
+    NotAGitRepositoryError,
     WorktreeCreationError,
     WorktreeError,
     WorktreeMergeError,
@@ -216,10 +217,12 @@ def test_not_a_git_repo_error_includes_cd_suggestion():
     with patch("guardkit.cli.decorators.console", console_capture):
         @handle_cli_errors
         def command():
-            raise WorktreeError(
+            # What WorktreeManager raises when the folder is not a git
+            # repository (git's own text never reaches this message).
+            raise NotAGitRepositoryError(
+                "Not a git repository: /somewhere\n"
                 "Git command failed: git rev-parse --git-dir\n"
-                "Stderr: fatal: not a git repository (or any of the parent "
-                "directories): .git"
+                "Stderr: git rev-parse stopped with exit code 128."
             )
 
         with pytest.raises(SystemExit) as exc_info:

@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Optional
 
+from guardkit.lib.project_git import run_git
 from guardkit.templates.conftest_bridge import install_features_conftest_bridge
 from guardkit.worktrees.archive import RunArtifactArchiver, get_archive_root_from_env
 
@@ -46,6 +47,11 @@ class WorktreeCreationError(WorktreeError):
 
 class WorktreeMergeError(WorktreeError):
     """Raised when worktree merge fails."""
+    pass
+
+
+class NotAGitRepositoryError(WorktreeError):
+    """Raised when the repository root is not a git repository."""
     pass
 
 
@@ -104,14 +110,16 @@ class SubprocessExecutor:
         capture_output: bool = True,
         text: bool = True,
     ) -> subprocess.CompletedProcess:
-        """Execute command using subprocess.run()."""
-        return subprocess.run(
-            args,
-            cwd=cwd,
-            check=check,
-            capture_output=capture_output,
-            text=text,
-        )
+        """Run a git command through the factory's git helper.
+
+        Every command this manager runs is git (``["git", ...]``). The helper
+        gives git a fixed environment and settings so no project program
+        runs, adds a new worktree in two steps, and replaces git's own error
+        text with a fixed sentence. Output is always captured.
+        """
+        if not args or args[0] != "git":
+            raise ValueError("SubprocessExecutor runs git commands only")
+        return run_git(list(args[1:]), cwd=cwd, check=check, text=text)
 
 
 # ============================================================================
@@ -207,10 +215,14 @@ class WorktreeManager:
         try:
             self._run_git(["rev-parse", "--git-dir"])
         except subprocess.CalledProcessError as e:
-            raise WorktreeError(
+            raise NotAGitRepositoryError(
                 f"Not a git repository: {self.repo_root}\n"
                 f"Git error: {e.stderr if e.stderr else str(e)}"
             )
+        except WorktreeError as e:
+            raise NotAGitRepositoryError(
+                f"Not a git repository: {self.repo_root}\n{e}"
+            ) from e
 
     def _run_git(
         self,
@@ -406,8 +418,10 @@ class WorktreeManager:
         try:
             self._run_git(worktree_add_cmd)
         except WorktreeError as e:
-            # Check if error is due to branch already existing
-            if self._is_branch_exists_error(e):
+            # Check if the add failed because the branch already exists. Git's
+            # own text is no longer read (the helper replaces it with a fixed
+            # sentence), so git is asked whether the branch is there.
+            if self._is_branch_exists_error(e) or self._branch_exists(branch_name):
                 # Attempt automatic cleanup: delete the existing branch
                 try:
                     self._run_git(["branch", "-D", branch_name])

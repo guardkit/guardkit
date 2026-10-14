@@ -154,6 +154,7 @@ from guardkit.orchestrator.harness import (
 from guardkit.orchestrator.harness.selector import DEFAULT_HARNESS
 from guardkit.orchestrator.sdk_utils import check_assistant_message_error
 from guardkit.orchestrator import process_group
+from guardkit.lib.project_git import run_git
 
 # Coach architecture-context integration (TASK-SC-009) was retired in the
 # fleet-memory cutover (FEAT-MEM-09): build_coach_context was never invoked and
@@ -9796,11 +9797,9 @@ class CoachValidator:
                 return None
 
             # Get parent commit (commit~1)
-            result = subprocess.run(
-                ["git", "rev-parse", f"{first_commit}~1"],
+            result = run_git(
+                ["rev-parse", f"{first_commit}~1"],
                 cwd=str(self.worktree_path),
-                capture_output=True,
-                text=True,
                 timeout=10,
             )
 
@@ -10046,10 +10045,10 @@ class CoachValidator:
             try:
                 first_parent = self._find_first_checkpoint_parent()
                 if first_parent:
-                    diff_result = subprocess.run(
-                        ["git", "diff", "--name-only", first_parent, "HEAD"],
+                    diff_result = run_git(
+                        ["diff", "--name-only", first_parent, "HEAD"],
                         cwd=str(self.worktree_path),
-                        capture_output=True, text=True, timeout=10,
+                        timeout=10,
                     )
                     if diff_result.returncode == 0:
                         changed_files = diff_result.stdout.strip().split("\n")

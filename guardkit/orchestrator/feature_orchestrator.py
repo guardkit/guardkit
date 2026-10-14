@@ -214,9 +214,16 @@ from guardkit.orchestrator.instrumentation.schemas import (
     FeatureCheckAttemptEvent,
     WaveCompletedEvent,
 )
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+#: What ``--refresh`` says, here and in its help text (13 October 2026).
+REFRESH_USES_LOCAL_BASE = (
+    "Refresh uses the base branch already on this machine: fetch it yourself "
+    "first if you need the remote's latest."
+)
 
 
 # How long the wave-0 baseline probe gives a repository's whole declared test
@@ -1606,23 +1613,31 @@ class FeatureOrchestrator:
           2. **``origin/<base_branch>``** otherwise (the pushed baseline, the
              historical default).
 
-        Returns ``(target_ref, human_description)``. Any git probe failure
-        falls back to ``origin/<base_branch>`` — the historical behaviour.
+        Returns ``(target_ref, human_description)``. With no
+        ``origin/<base_branch>`` on this machine, the local branch is used
+        (the refresh fetches nothing). Any other git probe failure falls back
+        to ``origin/<base_branch>`` — the historical behaviour.
         """
         import subprocess
 
         def _run(args: List[str]) -> subprocess.CompletedProcess:
-            return subprocess.run(
-                ["git", *args],
+            return run_git(
+                [*args],
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
             )
 
         local_exists = (
             _run(["rev-parse", "--verify", "--quiet", base_branch]).returncode == 0
         )
+        remote_exists = (
+            _run(["rev-parse", "--verify", "--quiet", f"origin/{base_branch}"]).returncode
+            == 0
+        )
+        if local_exists and not remote_exists:
+            # Nothing has been fetched for the base branch on this machine,
+            # and the refresh no longer fetches: the local branch is the base.
+            return base_branch, f"local {base_branch} (no origin/{base_branch} here)"
         if local_exists:
             ahead = _run(
                 ["rev-list", "--count", f"origin/{base_branch}..{base_branch}"]
@@ -1655,11 +1670,9 @@ class FeatureOrchestrator:
         import subprocess
 
         def _run(args: List[str]) -> subprocess.CompletedProcess:
-            return subprocess.run(
-                ["git", *args],
+            return run_git(
+                [*args],
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
             )
 
@@ -1693,8 +1706,11 @@ class FeatureOrchestrator:
         """
         Refresh worktree by rebasing onto the latest base branch.
 
-        Fetches origin, then rebases the worktree's branch onto the ref the
-        operator most likely fixed (see :meth:`_resolve_refresh_target`):
+        Fetches nothing: it rebases the worktree's branch onto the base branch
+        as it already is on this machine (13 October 2026: the factory runs no
+        git command that reaches another repository; fetch it yourself first
+        if you need the remote's latest). The target is the ref the operator
+        most likely fixed (see :meth:`_resolve_refresh_target`):
         **local ``<base_branch>`` when it is ahead of ``origin/<base_branch>``**,
         otherwise ``origin/<base_branch>``. The rebase runs with
         ``--autostash`` so an unstaged autobuild-managed artifact (e.g.
@@ -1714,28 +1730,16 @@ class FeatureOrchestrator:
         Raises
         ------
         FeatureOrchestrationError
-            If fetch fails or rebase has conflicts
+            If the rebase has conflicts
         """
         import subprocess
 
         worktree_path = worktree.path
 
-        # Step 1: Fetch latest from origin
-        console.print(f"[cyan]↓[/cyan] Fetching latest {base_branch} from origin...")
-        try:
-            subprocess.run(
-                ["git", "fetch", "origin", base_branch],
-                cwd=worktree_path,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            console.print(f"[green]✓[/green] Fetched origin/{base_branch}")
-        except subprocess.CalledProcessError as e:
-            raise FeatureOrchestrationError(
-                f"Failed to fetch origin/{base_branch}: "
-                f"{e.stderr.strip() if e.stderr else str(e)}"
-            )
+        # Step 1: no fetch (13 October 2026). The factory runs no git command
+        # that reaches another repository, so the refresh rebases onto the
+        # base branch as it already is on this machine.
+        console.print(f"[cyan]↻[/cyan] {REFRESH_USES_LOCAL_BASE}")
 
         # Step 2: Resolve the rebase target (item 4 — prefer local base when
         # it holds the operator's unpushed fix).
@@ -1749,12 +1753,10 @@ class FeatureOrchestrator:
         # abort — so a dirty worktree no longer blows the rebase up.
         console.print(f"[cyan]↻[/cyan] Rebasing onto {target_desc}...")
         try:
-            subprocess.run(
-                ["git", "rebase", "--autostash", target_ref],
+            run_git(
+                ["rebase", "--autostash", target_ref],
                 cwd=worktree_path,
                 check=True,
-                capture_output=True,
-                text=True,
             )
             console.print(
                 f"[green]✓[/green] Successfully rebased onto {target_desc}"
@@ -1764,11 +1766,9 @@ class FeatureOrchestrator:
             console.print(
                 "[red]✗[/red] Rebase conflicts detected, aborting rebase..."
             )
-            subprocess.run(
-                ["git", "rebase", "--abort"],
+            run_git(
+                ["rebase", "--abort"],
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
                 check=False,
             )
             # Item 5b: verify the ACTUAL state rather than asserting it.
@@ -2451,22 +2451,18 @@ The detailed specifications are in the task markdown file.
         branch_name = f"autobuild/{feature_id}"
         try:
             # Only warn if the branch actually exists.
-            verify = subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet",
+            verify = run_git(
+                ["rev-parse", "--verify", "--quiet",
                  f"refs/heads/{branch_name}"],
                 cwd=self.repo_root,
-                capture_output=True,
-                text=True,
             )
             if verify.returncode != 0:
                 return
 
             # Count commits on the branch not reachable from base_branch.
-            result = subprocess.run(
-                ["git", "rev-list", "--count", f"{base_branch}..{branch_name}"],
+            result = run_git(
+                ["rev-list", "--count", f"{base_branch}..{branch_name}"],
                 cwd=self.repo_root,
-                capture_output=True,
-                text=True,
             )
             if result.returncode != 0:
                 return
@@ -4098,9 +4094,9 @@ The detailed specifications are in the task markdown file.
             for rel in authored:
                 if not rel.endswith(".py"):
                     continue
-                proc = subprocess.run(
-                    ["git", "show", f"{ref}:{rel}"],
-                    cwd=str(wt), capture_output=True, timeout=15,
+                proc = run_git(
+                    ["show", f"{ref}:{rel}"],
+                    cwd=str(wt), timeout=15, text=False,
                 )
                 if proc.returncode == 0 and proc.stdout:
                     sources[rel] = proc.stdout

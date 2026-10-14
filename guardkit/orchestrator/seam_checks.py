@@ -33,6 +33,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,8 @@ def feature_base_path(state_root: Path, feature_id: str) -> Path:
 def _git(args: List[str], cwd: Path) -> Optional[str]:
     """Run a git command, returning stripped stdout or ``None`` on failure."""
     try:
-        proc = subprocess.run(
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=30
+        proc = run_git(
+            [*args], cwd=str(cwd), timeout=30
         )
     except (OSError, subprocess.SubprocessError):
         return None

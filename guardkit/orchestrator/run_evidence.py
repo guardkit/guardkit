@@ -76,7 +76,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 import shutil
 import signal
 import stat
@@ -87,6 +86,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+
+from guardkit.lib.project_git import unreadable_folders
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +338,56 @@ def _default_runner(
     )
 
 
+def _git_runner(
+    args: Union[str, Sequence[str]],
+    *,
+    cwd: Optional[Union[str, Path]] = None,
+    env: Optional[Mapping[str, str]] = None,
+    timeout: float,
+    shell: bool = False,
+    keep_bytes: int = _DEFAULT_KEEP_BYTES,
+) -> HelperRun:
+    """The bounded runner, for git: the command goes through the factory's git
+    helper first (fixed environment and settings, no project program).
+
+    Of ``env`` only the names the helper takes from a caller are passed on
+    (the temporary index, and no optional locks). Git's own error text is
+    replaced: ``stderr`` holds the helper's sentence on failure, and on
+    success only the names of folders git could not open, which is what makes
+    a listing incomplete.
+    """
+    from guardkit.lib import project_git
+
+    if shell or isinstance(args, str):
+        raise ValueError("git commands are given as a list")
+    extra = {
+        name: value
+        for name, value in (env or {}).items()
+        if name in ("GIT_INDEX_FILE", "GIT_OPTIONAL_LOCKS")
+    }
+    prepared = project_git.prepare_git(list(args), cwd=cwd, env=extra, timeout=timeout)
+    if prepared.refusal or prepared.argv is None:
+        return HelperRun(
+            project_git.REFUSED_EXIT_CODE, b"", (prepared.refusal or "").encode()
+        )
+    # An inline literal ``["git", ...]``: git is found through the helper's
+    # fixed PATH, whose first folder is the one git was found in.
+    run = _default_runner(
+        ["git", *prepared.argv[1:]], cwd=cwd, env=prepared.env, timeout=timeout,
+        keep_bytes=keep_bytes,
+    )
+    if run.timed_out:
+        run.stderr = project_git.timeout_sentence(prepared.label, timeout).encode()
+    elif run.returncode != 0:
+        run.stderr = project_git.failure_sentence(prepared.label, run.returncode).encode()
+    else:
+        run.stderr = "".join(
+            f"could not open directory '{folder}'\n"
+            for folder in project_git.unreadable_folders(run.stderr)
+        ).encode()
+    return run
+
+
 def _git_env(extra: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k not in _GIT_REDIRECT_VARS}
     # Never take an optional lock on the real repository while observing it.
@@ -379,7 +430,6 @@ def is_git_worktree(root: Path) -> bool:
     return os.path.exists(os.path.join(str(root), ".git"))
 
 
-_GIT_UNREADABLE_DIR = re.compile(r"could not open directory '([^']*)'")
 
 
 def _git_file_set(
@@ -403,12 +453,7 @@ def _git_file_set(
         raise _TooLarge(f"the file list is over {limits.git_output_bytes} bytes")
     # Git lists what it can and only WARNS about a directory it could not
     # open (exit 0), so that warning is what makes the listing incomplete.
-    unreadable = [
-        m.group(1).rstrip("/") or "."
-        for m in _GIT_UNREADABLE_DIR.finditer(
-            run.stderr.decode("utf-8", errors="replace")
-        )
-    ]
+    unreadable = unreadable_folders(run.stderr)
     seen = set()
     paths: List[str] = []
     for raw in run.stdout.split(b"\0"):
@@ -686,7 +731,7 @@ def _source_manifest(
     for comparison; :class:`CommandEvidence` strips it before anything is
     written.
     """
-    runner = runner or _default_runner
+    runner = runner or _git_runner
     root = Path(root)
     record: Dict[str, Any] = {"taken_at": _utc(clock())}
     deadline = time.monotonic() + limits.max_seconds
@@ -837,7 +882,7 @@ def _originating_worktree_identity(
     re-hashing files whose stat data has not changed; the copy is read, never
     the original written.
     """
-    runner = runner or _default_runner
+    runner = runner or _git_runner
     worktree = Path(worktree)
     record: Dict[str, Any] = {"worktree": str(worktree), "taken_at": _utc(clock())}
     if not is_git_worktree(worktree):

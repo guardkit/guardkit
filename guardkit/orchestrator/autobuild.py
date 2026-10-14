@@ -491,21 +491,15 @@ def _worktree_change_snapshot(
     if not worktree_path.exists():
         return None
 
+    from guardkit.lib.project_git import run_git
+
     git_env: Optional[Dict[str, str]] = None
     if no_optional_locks:
-        git_env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+        git_env = {"GIT_OPTIONAL_LOCKS": "0"}
 
     def _git(args: List[str]) -> Optional[str]:
         try:
-            proc = subprocess.run(
-                ["git", *args],
-                cwd=str(worktree_path),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_s,
-                env=git_env,
-            )
+            proc = run_git(args, cwd=worktree_path, timeout=timeout_s, env=git_env)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             logger.warning(
                 "worktree change probe: 'git %s' failed in %s (%s); "
@@ -8008,18 +8002,12 @@ class AutoBuildOrchestrator:
         TASK-FIX-IGNR's ``--no-index`` invocation so untracked paths the
         Player keeps re-claiming surface their gitignore origin.
         """
+        from guardkit.lib.project_git import run_git
+
         try:
-            proc = subprocess.run(
-                [
-                    "git",
-                    "check-ignore",
-                    "-v",
-                    "--no-index",
-                    candidate_path,
-                ],
-                cwd=str(worktree_path),
-                capture_output=True,
-                text=True,
+            proc = run_git(
+                ["check-ignore", "-v", "--no-index", candidate_path],
+                cwd=worktree_path,
                 timeout=5,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

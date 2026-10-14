@@ -21,6 +21,7 @@ from guardkit.orchestrator.permissive_double_advisory import (
     split_findings as split_permissive_double_findings,
 )
 from guardkit.orchestrator import zero_test_gate
+from guardkit.lib.project_git import run_git
 
 if TYPE_CHECKING:
     from guardkit.orchestrator.autobuild import DesignContext
@@ -7101,13 +7102,7 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
 
         with self._git_lock:
             try:
-                proc = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd=str(self.worktree_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+                proc = run_git(["rev-parse", "HEAD"], cwd=self.worktree_path, timeout=30)
                 if proc.returncode == 0:
                     self._baseline_commit = proc.stdout.strip()
                     logger.info(f"Recorded baseline commit: {self._baseline_commit[:8]}")
@@ -7211,15 +7206,12 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 return []
 
             with self._git_lock:
-                status = subprocess.run(
+                status = run_git(
                     [
-                        "git", "--literal-pathspecs", "status",
-                        "--porcelain=v1", "--untracked-files=all", "-z",
+                        "status", "--porcelain=v1", "--untracked-files=all", "-z",
                         "--", *candidates,
                     ],
-                    cwd=str(root),
-                    capture_output=True,
-                    text=True,
+                    cwd=root,
                     timeout=30,
                 )
                 if status.returncode != 0:
@@ -7235,14 +7227,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                 for n in candidates:
                     if n in listed:
                         continue
-                    tracked = subprocess.run(
-                        [
-                            "git", "--literal-pathspecs", "ls-files",
-                            "--error-unmatch", "--", n,
-                        ],
-                        cwd=str(root),
-                        capture_output=True,
-                        text=True,
+                    tracked = run_git(
+                        ["ls-files", "--error-unmatch", "--", n],
+                        cwd=root,
                         timeout=30,
                     )
                     # 0 = tracked, 1 = git does not know it, anything else is
@@ -7282,11 +7269,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
             try:
                 # Get modified files (tracked) - use baseline commit if available (TASK-FIX-VL06)
                 diff_ref = self._baseline_commit or "HEAD"
-                proc = subprocess.run(
-                    ["git", "diff", "--name-only", diff_ref],
-                    cwd=str(self.worktree_path),
-                    capture_output=True,
-                    text=True,
+                proc = run_git(
+                    ["diff", "--name-only", diff_ref],
+                    cwd=self.worktree_path,
                     timeout=30,
                 )
                 if proc.returncode == 0:
@@ -7295,11 +7280,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
                     ]
 
                 # Get untracked files (new)
-                proc = subprocess.run(
-                    ["git", "ls-files", "--others", "--exclude-standard"],
-                    cwd=str(self.worktree_path),
-                    capture_output=True,
-                    text=True,
+                proc = run_git(
+                    ["ls-files", "--others", "--exclude-standard"],
+                    cwd=self.worktree_path,
                     timeout=30,
                 )
                 if proc.returncode == 0:
@@ -9348,10 +9331,9 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
         import subprocess
 
         def run(args: List[str]) -> "subprocess.CompletedProcess[str]":
-            return subprocess.run(
-                ["git", "-c", "core.quotePath=false", *args],
-                cwd=str(worktree),
-                capture_output=True,
+            return run_git(
+                ["-c", "core.quotePath=false", *args],
+                cwd=worktree,
                 encoding="utf-8",
                 errors="replace",
                 timeout=30,

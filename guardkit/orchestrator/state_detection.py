@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +128,9 @@ def detect_git_changes(worktree_path: Path) -> Optional[GitChangesSummary]:
 
     try:
         # Get git status in porcelain format (machine-readable)
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain"],
+        status_result = run_git(
+            ["status", "--porcelain"],
             cwd=worktree_path,
-            capture_output=True,
-            text=True,
             timeout=GIT_COMMAND_TIMEOUT_SECONDS,
         )
 
@@ -244,21 +243,17 @@ def _get_diff_stats(worktree_path: Path) -> tuple[str, int, int]:
     """
     try:
         # Get diff stats against HEAD (or initial if no HEAD)
-        result = subprocess.run(
-            ["git", "diff", "--stat", "HEAD"],
+        result = run_git(
+            ["diff", "--stat", "HEAD"],
             cwd=worktree_path,
-            capture_output=True,
-            text=True,
             timeout=DIFF_COMMAND_TIMEOUT_SECONDS,
         )
 
         if result.returncode != 0:
             # Try diffing against initial commit if HEAD doesn't exist
-            result = subprocess.run(
-                ["git", "diff", "--stat"],
+            result = run_git(
+                ["diff", "--stat"],
                 cwd=worktree_path,
-                capture_output=True,
-                text=True,
                 timeout=DIFF_COMMAND_TIMEOUT_SECONDS,
             )
 

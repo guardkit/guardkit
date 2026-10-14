@@ -56,6 +56,7 @@ from guardkit.orchestrator.baseline import (
     compute_charged_failures,
 )
 from guardkit.orchestrator.preflight_ignore_gate import check_ignore_one
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -260,11 +261,9 @@ def committed_diff_paths(
     if not feature_base:
         return []
     try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", "--no-renames", f"{feature_base}..HEAD"],
+        proc = run_git(
+            ["diff", "--name-only", "--no-renames", f"{feature_base}..HEAD"],
             cwd=str(worktree_path),
-            capture_output=True,
-            text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError) as exc:

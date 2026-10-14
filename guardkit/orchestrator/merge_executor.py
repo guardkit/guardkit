@@ -93,6 +93,7 @@ from guardkit.worktrees.manager import (
     WorktreeManager,
     WorktreeMergeError,
 )
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -391,11 +392,9 @@ def _run_git(
     repo_root: Path, *args: str
 ) -> subprocess.CompletedProcess:
     """Run one git command in ``repo_root``; never raises on non-zero exit."""
-    return subprocess.run(
-        ["git", *args],
+    return run_git(
+        [*args],
         cwd=str(repo_root),
-        capture_output=True,
-        text=True,
         timeout=_GIT_TIMEOUT_SECONDS,
     )
 
@@ -454,7 +453,8 @@ def checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
     )
     proc = _run_git(repo_root, "checkout", branch)
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip() or "(no output)"
+        # The helper's fixed sentence; git's own output is never repeated.
+        detail = (proc.stderr or "").strip() or f"git checkout exited {proc.returncode}"
         return f"could not switch to branch {branch}: {detail}"
     return None
 

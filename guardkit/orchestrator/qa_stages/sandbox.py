@@ -16,6 +16,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
+from guardkit.lib.project_git import run_git
 
 # Never copied into a sandbox — heavy, regenerable, or the VCS metadata itself.
 _COPY_EXCLUDES = (
@@ -54,11 +55,10 @@ class MaterializedSandbox:
         self._cleaned = True
         if self._worktree_of is not None:
             # Detach the git worktree cleanly, then remove the dir.
-            subprocess.run(
-                ["git", "-C", str(self._worktree_of), "worktree", "remove",
+            run_git(
+                ["-C", str(self._worktree_of), "worktree", "remove",
                  "--force", str(self.path)],
-                capture_output=True,
-                check=False,
+                check=False, text=False,
             )
         shutil.rmtree(self.path, ignore_errors=True)
 
@@ -84,10 +84,8 @@ class MutationSandbox:
 
     @staticmethod
     def _detect_git(root: Path) -> bool:
-        result = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
+        result = run_git(
+            ["-C", str(root), "rev-parse", "--is-inside-work-tree"],
             check=False,
         )
         return result.returncode == 0 and result.stdout.strip() == "true"
@@ -97,11 +95,9 @@ class MutationSandbox:
         tmp = Path(tempfile.mkdtemp(prefix="guardkit-qa-mutate-"))
         if self._is_git_repo:
             dest = tmp / "wt"
-            result = subprocess.run(
-                ["git", "-C", str(self.source_root), "worktree", "add",
+            result = run_git(
+                ["-C", str(self.source_root), "worktree", "add",
                  "--detach", str(dest)],
-                capture_output=True,
-                text=True,
                 check=False,
             )
             if result.returncode == 0:

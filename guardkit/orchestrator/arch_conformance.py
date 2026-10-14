@@ -78,6 +78,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -254,9 +255,9 @@ def _git(repo: Path, *args: str) -> str:
     if shutil.which("git") is None:
         raise ValueError("git is not on this machine.")
     try:
-        done = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, check=True,
+        done = run_git(
+            ["-C", str(repo), *args],
+            check=True,
             timeout=_GIT_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as exc:
         raise ValueError(

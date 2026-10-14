@@ -114,6 +114,7 @@ class TestSafetyChecks:
         orchestrator.worktree_path.mkdir(parents=True, exist_ok=True)
         mock_result = Mock()
         mock_result.stdout = "M  file.py\n"
+        mock_result.returncode = 0
         mock_run.return_value = mock_result
 
         assert orchestrator._get_worktree_uncommitted_changes() is True
@@ -125,6 +126,7 @@ class TestSafetyChecks:
         orchestrator.worktree_path.mkdir(parents=True, exist_ok=True)
         mock_result = Mock()
         mock_result.stdout = ""
+        mock_result.returncode = 0
         mock_run.return_value = mock_result
 
         assert orchestrator._get_worktree_uncommitted_changes() is False
@@ -136,6 +138,7 @@ class TestSafetyChecks:
         # Second call: merge-base succeeds (branch is ancestor of main)
         mock_result1 = Mock()
         mock_result1.stdout = "autobuild/TASK-AB-001\n"
+        mock_result1.returncode = 0
 
         mock_result2 = Mock()
         mock_result2.returncode = 0
@@ -153,6 +156,7 @@ class TestSafetyChecks:
         # Second call: merge-base fails (branch is not ancestor of main)
         mock_result1 = Mock()
         mock_result1.stdout = "autobuild/TASK-AB-001\n"
+        mock_result1.returncode = 0
 
         mock_run.side_effect = [
             mock_result1,  # branch list
@@ -168,6 +172,7 @@ class TestSafetyChecks:
         """Test handling of non-existent branch."""
         mock_result = Mock()
         mock_result.stdout = ""  # Empty result = branch doesn't exist
+        mock_result.returncode = 0
         mock_run.return_value = mock_result
 
         is_merged, status = orchestrator._check_branch_merged()

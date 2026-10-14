@@ -56,6 +56,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Protocol, Set, Tuple
 
+from guardkit.lib.project_git import pattern_pathspec, run_git
 from guardkit.orchestrator.evidence_repos import EvidenceRepo
 from guardkit.orchestrator.head_identity import record_git_operation
 
@@ -207,6 +208,11 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # excluding ``git add``.
     ":(exclude,glob)**/.guardkit/autobuild-private/**",
 )
+# Marked as patterns on purpose, so the factory's git helper runs the add
+# without ``--literal-pathspecs`` (every other file name it treats literally).
+CHECKPOINT_EXCLUDE_PATHSPECS = tuple(
+    pattern_pathspec(spec) for spec in CHECKPOINT_EXCLUDE_PATHSPECS
+)
 
 # The full ``git add`` argv prefix shared by both add sites.
 _CHECKPOINT_ADD_ARGV: Tuple[str, ...] = (
@@ -223,7 +229,7 @@ _CHECKPOINT_ADD_ARGV: Tuple[str, ...] = (
 # ============================================================================
 
 #: Everything under any ``.guardkit/autobuild-private/`` folder, at any depth.
-PRIVATE_RECORDS_PATHSPEC: str = ":(glob)**/.guardkit/autobuild-private/**"
+PRIVATE_RECORDS_PATHSPEC: str = pattern_pathspec(":(glob)**/.guardkit/autobuild-private/**")
 
 #: ``(repository, path)`` pairs already warned about in this process, so an
 #: older tracked copy is reported once rather than at every checkpoint.
@@ -504,20 +510,12 @@ class SubprocessGitExecutor:
             subprocess.TimeoutExpired: If timeout is set and exceeded
         """
         try:
-            result = subprocess.run(
-                command,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                check=check,
-                timeout=timeout,
-            )
-            return result
+            return run_git(command, cwd=cwd, check=check, timeout=timeout)
         except subprocess.CalledProcessError as e:
+            # The helper's own sentence; git's text and output are not logged.
             logger.error(
-                f"Git command failed: {' '.join(command)}\n"
+                f"Git command failed: {' '.join(str(c) for c in command)}\n"
                 f"Exit code: {e.returncode}\n"
-                f"Stdout: {e.stdout}\n"
                 f"Stderr: {e.stderr}"
             )
             raise

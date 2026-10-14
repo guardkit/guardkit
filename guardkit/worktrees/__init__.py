@@ -6,6 +6,7 @@ from .manager import (
     WorktreeError,
     WorktreeCreationError,
     WorktreeMergeError,
+    NotAGitRepositoryError,
     CommandExecutor,
     SubprocessExecutor,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "WorktreeError",
     "WorktreeCreationError",
     "WorktreeMergeError",
+    "NotAGitRepositoryError",
     "CommandExecutor",
     "SubprocessExecutor",
     "find_pth_leaks",

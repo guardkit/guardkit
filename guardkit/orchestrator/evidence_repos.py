@@ -55,6 +55,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # venv layouts rather than re-inventing the probe).
 from guardkit.orchestrator.environment_bootstrap import probe_worktree_venv
 from guardkit.orchestrator import process_group
+from guardkit.lib.project_git import run_git
 
 logger = logging.getLogger(__name__)
 
@@ -389,11 +390,9 @@ def record_repo_baseline(repo: EvidenceRepo) -> Optional[str]:
         repository (fail-safe -- the diff then falls back to ``HEAD``).
     """
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+        proc = run_git(
+            ["rev-parse", "HEAD"],
             cwd=str(repo.root),
-            capture_output=True,
-            text=True,
             timeout=_GIT_TIMEOUT_S,
         )
         if proc.returncode == 0:
@@ -437,11 +436,9 @@ def detect_repo_changes(
     diff_ref = baseline or "HEAD"
 
     try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", diff_ref],
+        proc = run_git(
+            ["diff", "--name-only", diff_ref],
             cwd=str(repo.root),
-            capture_output=True,
-            text=True,
             timeout=_GIT_TIMEOUT_S,
         )
         if proc.returncode == 0:
@@ -451,11 +448,9 @@ def detect_repo_changes(
                 if f.strip()
             ]
 
-        proc = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
+        proc = run_git(
+            ["ls-files", "--others", "--exclude-standard"],
             cwd=str(repo.root),
-            capture_output=True,
-            text=True,
             timeout=_GIT_TIMEOUT_S,
         )
         if proc.returncode == 0:

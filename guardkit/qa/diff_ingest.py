@@ -31,6 +31,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Literal, Optional, Sequence, Tuple
+from guardkit.lib.project_git import run_git
 
 __all__ = [
     "DiffIngestError",
@@ -486,10 +487,8 @@ def _default_git(
     repo_root: Path,
 ) -> Callable[[Sequence[str]], subprocess.CompletedProcess]:
     def _run(args: Sequence[str]) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["git", "-C", str(repo_root), *args],
-            capture_output=True,
-            text=True,
+        return run_git(
+            ["-C", str(repo_root), *args],
             timeout=60,
         )
 

@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Tuple
+from guardkit.lib.project_git import run_git
 
 from guardkit.orchestrator import process_group
 
@@ -542,10 +543,8 @@ def _git_head_sha(repo: Path) -> str:
     or the repo is not a checkout — the ledger entry still validates.
     """
     try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--short=8", "HEAD"],
-            capture_output=True,
-            text=True,
+        proc = run_git(
+            ["-C", str(repo), "rev-parse", "--short=8", "HEAD"],
             timeout=10,
         )
         sha = (proc.stdout or "").strip()
