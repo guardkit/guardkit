@@ -518,6 +518,7 @@ class TestCheckpointExcludesTypeScriptJunk:
             ":(exclude,glob)**/.flutter",
             ":(exclude,glob)**/.flutter/**",
             ":(exclude,glob)**/large_tool_results/**",
+            ":(exclude,glob)**/large_tool_results",
             ":(exclude,glob)**/node_modules/**",
             ":(exclude,glob)**/.next/**",
             ":(exclude,glob)**/.turbo/**",
@@ -531,12 +532,16 @@ class TestCheckpointExcludesTypeScriptJunk:
             # (head-identity.jsonl) included; the top-level transcript folder
             # is taken out after the add instead, never named here.
             ":(exclude,glob)**/.guardkit/autobuild/**",
+            ":(exclude,glob)**/.guardkit/autobuild",
             ":(exclude,glob)**/.guardkit/qav-shadow/**",
+            ":(exclude,glob)**/.guardkit/qav-shadow",
             ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
             ":(exclude,glob)**/.guardkit/worktrees/**",
+            ":(exclude,glob)**/.guardkit/worktrees",
             # GuardKit's private records (13 October 2026): the final
             # feature-check record can carry a credential in its output tails.
             ":(exclude,glob)**/.guardkit/autobuild-private/**",
+            ":(exclude,glob)**/.guardkit/autobuild-private",
         )
         for spec in wc.CHECKPOINT_EXCLUDE_PATHSPECS:
             assert spec.startswith(":(exclude,glob)"), (

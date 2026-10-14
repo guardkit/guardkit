@@ -211,7 +211,9 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
     October 2026 two more precede it: the coding model's staged working
     files and those left in the working tree, both empty here. Also since 14
     October 2026: a first read for records moved or copied out of their
-    folders, and a last one for tracked records changed on disk, both empty.
+    folders, one for staged files whose content is a record's (with nothing
+    staged, no record file is read), and a last one for tracked records
+    changed on disk, all empty.
     """
     executor = Mock(spec=GitCommandExecutor)
 
@@ -235,7 +237,7 @@ def test_normal_serial_turns_are_unchanged_but_for_one_read(
 
     commands = [c.args[0][:2] for c in executor.execute.call_args_list]
     assert commands == [
-        ["git", "symbolic-ref"], ["git", "add"], ["git", "diff"],
+        ["git", "symbolic-ref"], ["git", "add"], ["git", "diff"], ["git", "diff"],
         ["git", "diff"], ["git", "ls-files"], ["git", "diff"], ["git", "ls-files"],
         ["git", "commit"], ["git", "rev-parse"],
     ] * 2

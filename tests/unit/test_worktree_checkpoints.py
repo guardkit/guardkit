@@ -132,6 +132,7 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         ":(exclude,glob)**/.flutter",
         ":(exclude,glob)**/.flutter/**",
         ":(exclude,glob)**/large_tool_results/**",
+        ":(exclude,glob)**/large_tool_results",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -145,10 +146,14 @@ def test_create_checkpoint_success(checkpoint_manager, mock_git_executor):
         # (head-identity.jsonl) included; the top-level transcript folder
         # is taken out after the add instead, never named here.
         ":(exclude,glob)**/.guardkit/autobuild/**",
+        ":(exclude,glob)**/.guardkit/autobuild",
         ":(exclude,glob)**/.guardkit/qav-shadow/**",
+        ":(exclude,glob)**/.guardkit/qav-shadow",
         ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
         ":(exclude,glob)**/.guardkit/worktrees/**",
+        ":(exclude,glob)**/.guardkit/worktrees",
         ":(exclude,glob)**/.guardkit/autobuild-private/**",
+        ":(exclude,glob)**/.guardkit/autobuild-private",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the
@@ -1038,6 +1043,7 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         ":(exclude,glob)**/.flutter",
         ":(exclude,glob)**/.flutter/**",
         ":(exclude,glob)**/large_tool_results/**",
+        ":(exclude,glob)**/large_tool_results",
         ":(exclude,glob)**/node_modules/**",
         ":(exclude,glob)**/.next/**",
         ":(exclude,glob)**/.turbo/**",
@@ -1051,10 +1057,14 @@ def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executo
         # (head-identity.jsonl) included; the top-level transcript folder
         # is taken out after the add instead, never named here.
         ":(exclude,glob)**/.guardkit/autobuild/**",
+        ":(exclude,glob)**/.guardkit/autobuild",
         ":(exclude,glob)**/.guardkit/qav-shadow/**",
+        ":(exclude,glob)**/.guardkit/qav-shadow",
         ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
         ":(exclude,glob)**/.guardkit/worktrees/**",
+        ":(exclude,glob)**/.guardkit/worktrees",
         ":(exclude,glob)**/.guardkit/autobuild-private/**",
+        ":(exclude,glob)**/.guardkit/autobuild-private",
     ]  # register 2a5 + TS-lane D.1c: junk excluded via glob magic — the bare
     # `.cache` pathspec form makes git 2.43 REFUSE the add (exit 1, "paths are
     # ignored") in any repo whose own .gitignore also lists the junk (the

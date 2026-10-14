@@ -537,16 +537,33 @@ def test_the_eight_record_paths_are_pinned() -> None:
         "conversation_history/**",
         "**/large_tool_results/**",
     )
-    staged_set = tuple(wc.FACTORY_RECORD_PATHSPECS) + tuple(wc.MODEL_ARTIFACT_PATHSPECS)
-    assert staged_set == tuple(f":(glob){p}" for p in wc.FACTORY_RECORD_PATHS)
+    # Each folder path is also matched by its bare name, so a symbolic link
+    # of that name is a record too (fix pass 1).
+    assert wc.FACTORY_RECORD_PATHSPECS == tuple(
+        f":(glob){p}" for p in (
+            *wc.FACTORY_RECORD_PATHS[:6],
+            "**/.guardkit/autobuild",
+            "**/.guardkit/autobuild-private",
+            "**/.guardkit/qav-shadow",
+            "**/.guardkit/worktrees",
+        )
+    )
+    assert wc.MODEL_ARTIFACT_PATHSPECS == (
+        ":(glob)conversation_history/**",
+        ":(glob)**/large_tool_results/**",
+        ":(glob)conversation_history",
+        ":(glob)**/large_tool_results",
+    )
     excluded = {str(s) for s in wc.CHECKPOINT_EXCLUDE_PATHSPECS}
     for path in wc.FACTORY_RECORD_PATHS:
-        if path == "conversation_history/**":
-            # Never named in the add: git refuses the add in a project that
-            # ignores the folder. The unstaging step keeps it out instead.
-            assert f":(exclude,glob){path}" not in excluded
-        else:
-            assert f":(exclude,glob){path}" in excluded, path
+        forms = [path] + ([path[:-3]] if path.endswith("/**") else [])
+        for form in forms:
+            if path == "conversation_history/**":
+                # Never named in the add: git refuses the add in a project
+                # that ignores the folder. The unstaging step keeps it out.
+                assert f":(exclude,glob){form}" not in excluded
+            else:
+                assert f":(exclude,glob){form}" in excluded, form
 
 
 MATCHER_PATHS = (

@@ -48,6 +48,7 @@ import json
 import logging
 import re
 import shutil
+import stat
 import subprocess
 import threading
 from abc import ABC, abstractmethod
@@ -150,6 +151,9 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     ":(exclude,glob)**/.flutter",
     ":(exclude,glob)**/.flutter/**",
     ":(exclude,glob)**/large_tool_results/**",
+    # The folder's own name too, so a symbolic link of that name (which the
+    # ``/**`` form does not match) is not committed with its link text.
+    ":(exclude,glob)**/large_tool_results",
     # The coding model's top-level transcript folder, ``conversation_history/``,
     # is deliberately NOT named here: naming it makes git refuse the whole add
     # in a project that ignores the folder while it exists. The unstaging step
@@ -207,8 +211,13 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # the checkpoint list, the baseline, events, and the HEAD record
     # (``head-identity.jsonl``), which a rollback's reset must not rewind.
     ":(exclude,glob)**/.guardkit/autobuild/**",
+    # Each record folder's own name as well, here and below: a symbolic link
+    # of that name is not matched by the ``/**`` form, and its link text can
+    # be a private path.
+    ":(exclude,glob)**/.guardkit/autobuild",
     # The shadow judge's queue.
     ":(exclude,glob)**/.guardkit/qav-shadow/**",
+    ":(exclude,glob)**/.guardkit/qav-shadow",
     # GuardKit's memory query log and its rotated copy, written relative to
     # the folder a command runs in.
     ":(exclude,glob)**/.guardkit/memory-query-log.jsonl*",
@@ -216,6 +225,7 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # would commit as an embedded-repository link (and the git helper refuses
     # an add that would take one in).
     ":(exclude,glob)**/.guardkit/worktrees/**",
+    ":(exclude,glob)**/.guardkit/worktrees",
     # GuardKit's private records (13 October 2026). The final whole-feature
     # check record keeps the last 40 lines of the project's check output,
     # which can carry a credential; a project whose ignore file does not
@@ -225,6 +235,7 @@ CHECKPOINT_EXCLUDE_PATHSPECS: Tuple[str, ...] = (
     # guarantees the commit, because anything ALREADY staged survives an
     # excluding ``git add``.
     ":(exclude,glob)**/.guardkit/autobuild-private/**",
+    ":(exclude,glob)**/.guardkit/autobuild-private",
 )
 # Marked as patterns on purpose, so the factory's git helper runs the add
 # without ``--literal-pathspecs`` (every other file name it treats literally).
@@ -265,9 +276,17 @@ FACTORY_RECORD_PATHS: Tuple[str, ...] = (
     "**/large_tool_results/**",
 )
 
-#: GuardKit's own records (paths 1 to 6), as pathspecs for the git helper.
+def _with_folder_names(paths: Tuple[str, ...]) -> Tuple[str, ...]:
+    """Each path, then the bare name of each folder path (``x/**`` gives
+    ``x``), which is what matches a symbolic link of that name."""
+    return tuple(paths) + tuple(p[:-3] for p in paths if p.endswith("/**"))
+
+
+#: GuardKit's own records (paths 1 to 6, and the record folders' own names),
+#: as pathspecs for the git helper.
 FACTORY_RECORD_PATHSPECS: Tuple[str, ...] = tuple(
-    pattern_pathspec(f":(glob){path}") for path in FACTORY_RECORD_PATHS[:6]
+    pattern_pathspec(f":(glob){path}")
+    for path in _with_folder_names(FACTORY_RECORD_PATHS[:6])
 )
 
 #: The coding model's own working files (paths 7 and 8, 14 October 2026):
@@ -275,7 +294,17 @@ FACTORY_RECORD_PATHSPECS: Tuple[str, ...] = tuple(
 #: model's libraries write them; a product's own ``src/conversation_history/``
 #: is left alone), and oversized tool output at any depth.
 MODEL_ARTIFACT_PATHSPECS: Tuple[str, ...] = tuple(
-    pattern_pathspec(f":(glob){path}") for path in FACTORY_RECORD_PATHS[6:]
+    pattern_pathspec(f":(glob){path}")
+    for path in _with_folder_names(FACTORY_RECORD_PATHS[6:])
+)
+
+#: Where record CONTENT is looked for, to catch an exact copy of a record
+#: that was never committed: every record path except the inner build
+#: folders, which hold copies of the product itself.
+_RECORD_CONTENT_PATHSPECS: Tuple[str, ...] = tuple(
+    pattern_pathspec(f":(glob){path}")
+    for path in FACTORY_RECORD_PATHS
+    if path != "**/.guardkit/worktrees/**"
 )
 
 _RECORD_FOLDERS = frozenset({"autobuild", "autobuild-private", "qav-shadow", "worktrees"})
@@ -284,20 +313,22 @@ _RECORD_FOLDERS = frozenset({"autobuild", "autobuild-private", "qav-shadow", "wo
 def is_factory_record(path: str) -> bool:
     """Whether a path git printed is one of :data:`FACTORY_RECORD_PATHS`.
 
-    The same answer as git's own glob matching of those paths (a test pins
-    the two together), for paths git has already printed, relative to the
-    repository's top, separated by ``/``.
+    The same answer as git's own glob matching of those paths and of the
+    record folders' own names (a test pins the two together), for paths git
+    has already printed, relative to the repository's top, separated by
+    ``/``. A folder's own name counts, so a symbolic link of that name is a
+    record too.
     """
     parts = path.split("/")
-    if len(parts) > 1 and parts[0] == "conversation_history":
+    if parts[0] == "conversation_history":
         return True
-    for index, part in enumerate(parts[:-1]):
+    for index, part in enumerate(parts):
         if part == "large_tool_results":
             return True
-        if part != ".guardkit":
+        if part != ".guardkit" or index + 1 >= len(parts):
             continue
         name, below = parts[index + 1], len(parts) - index - 2
-        if name in _RECORD_FOLDERS and below >= 1:
+        if name in _RECORD_FOLDERS:
             return True
         if below == 0 and (
             name == "bootstrap_state.json"
@@ -422,6 +453,103 @@ def _leave_out_record_moves(
     return destinations
 
 
+def _staged_outside_records(
+    git_executor: "GitCommandExecutor",
+    cwd: Path,
+    timeout: Optional[int],
+) -> List[Tuple[str, str]]:
+    """``(blob id, path)`` for every file content staged as added, changed or
+    retyped outside the record paths (embedded-repository links left out)."""
+    fields = _git_fields(
+        git_executor,
+        ["git", "diff", "--cached", "--raw", "-z", "--no-abbrev", "--no-renames",
+         "--diff-filter=AMT"],
+        cwd, timeout,
+    )
+    staged: List[Tuple[str, str]] = []
+    for index in range(0, len(fields) - 1, 2):
+        meta, path = fields[index].split(), fields[index + 1]
+        if len(meta) < 4 or meta[1] == "160000" or is_factory_record(path):
+            continue
+        staged.append((meta[3], path))
+    return staged
+
+
+def _record_blob_ids(
+    git_executor: "GitCommandExecutor",
+    cwd: Path,
+    timeout: Optional[int],
+) -> Set[str]:
+    """The blob id of every non-empty regular file on disk at a record path,
+    tracked, untracked or ignored alike (``git hash-object``, nothing
+    written)."""
+    listed = _git_listing(
+        git_executor,
+        ["git", "ls-files", "-z", "--cached", "--others", "--",
+         *_RECORD_CONTENT_PATHSPECS],
+        cwd, timeout,
+    )
+    root = Path(cwd)
+    files: List[str] = []
+    for path in sorted(set(listed)):
+        if path.endswith("/"):
+            continue  # a nested repository, never read
+        try:
+            info = (root / path).lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode) and info.st_size > 0:
+            files.append(path)
+    ids: Set[str] = set()
+    for start in range(0, len(files), _RESET_BATCH):
+        batch = files[start:start + _RESET_BATCH]
+        hashed_argv = ["git", "hash-object", "--", *batch]
+        done = git_executor.execute(
+            # The executable is written here literally (the launch guard).
+            ["git", *hashed_argv[1:]], cwd=cwd, check=False, timeout=timeout
+        )
+        if done.returncode != 0:
+            raise subprocess.CalledProcessError(
+                done.returncode, hashed_argv, done.stdout, done.stderr
+            )
+        ids.update(line.strip() for line in (done.stdout or "").splitlines() if line.strip())
+    return ids
+
+
+def _leave_out_record_copies(
+    git_executor: "GitCommandExecutor",
+    cwd: Path,
+    *,
+    timeout: Optional[int] = None,
+) -> List[str]:
+    """Unstage every staged file outside the record paths whose content is
+    byte for byte that of a record file on disk.
+
+    Records are never committed, so git's copy detection, which only looks at
+    files ``HEAD`` or the index holds, cannot see an exact copy of one. Empty
+    files are never compared. Files on disk are kept. Returns the paths it
+    unstaged.
+    """
+    staged = _staged_outside_records(git_executor, cwd, timeout)
+    if not staged:
+        return []
+    record_ids = _record_blob_ids(git_executor, cwd, timeout)
+    copies = [path for blob, path in staged if blob in record_ids]
+    if not copies:
+        return []
+    # Literal names: the git helper treats names literally unless marked.
+    _unstage(git_executor, cwd, copies, timeout)
+    logger.warning(
+        "Left %d file(s) out of the commit in %s: they are moves or copies of "
+        "GuardKit's own records (first: %s), which can hold private paths. They "
+        "stay on disk and are never committed.",
+        len(copies),
+        Path(cwd).resolve(),
+        copies[0],
+    )
+    return copies
+
+
 def _leave_out_model_artifacts(
     git_executor: "GitCommandExecutor",
     cwd: Path,
@@ -478,7 +606,10 @@ def unstage_private_records(
     1. finds every staged move or copy whose source is a record path and whose
        destination is not, and unstages the destination
        (:func:`_leave_out_record_moves`). It runs first, before any step
-       below puts a record's index entry back to ``HEAD``;
+       below puts a record's index entry back to ``HEAD``. Then any staged
+       file outside the record paths whose content is exactly that of a
+       record file on disk, committed or not, is unstaged too
+       (:func:`_leave_out_record_copies`);
     2. keeps the coding model's own working files (``conversation_history/``
        at the root, ``large_tool_results/`` at any depth) out of the commit,
        and warns when any are present (:func:`_leave_out_model_artifacts`);
@@ -502,6 +633,7 @@ def unstage_private_records(
     staged: each caller already treats a failed git step as a failed commit.
     """
     moved = _leave_out_record_moves(git_executor, cwd, timeout=timeout)
+    moved += _leave_out_record_copies(git_executor, cwd, timeout=timeout)
     model_artifacts = _leave_out_model_artifacts(git_executor, cwd, timeout=timeout)
     fields = _git_fields(
         git_executor,
