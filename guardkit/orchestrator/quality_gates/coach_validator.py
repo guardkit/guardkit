@@ -4096,7 +4096,7 @@ class CoachValidator:
             # venv first on PATH so a bare ``python`` / ``pytest`` in the smoke
             # command resolves to the right interpreter (mirrors
             # smoke_gates.run_smoke_gate's venv handling).
-            env = _checker_env(self, 
+            env = _checker_env(self,
                 path_first=self._venv_bin_first(), main_checkout=True
             )
             proc = process_group.run_project_command(
@@ -4568,7 +4568,7 @@ class CoachValidator:
         try:
             # Built from nothing; the two paths the oracle is promised are the
             # factory's own additions for this one command.
-            env = _checker_env(self, 
+            env = _checker_env(self,
                 additions={
                     "GUARDKIT_CANDIDATE_ROOT": str(worktree_resolved),
                     "GUARDKIT_BEHAVIOURAL_ORACLE_RECEIPT": str(receipt_path),
