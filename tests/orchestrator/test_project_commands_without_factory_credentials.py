@@ -1618,16 +1618,20 @@ def _bindings(nodes: Iterable[ast.AST], name: str, dotted: str, is_package: bool
     """How ``name`` is bound among ``nodes``: (import targets, defined by a
     def or class, bound any other way), from :func:`_binding_sites`."""
     imports: set = set()
-    defined = False
+    definitions = 0
     other = False
     for kind, _node, target in _binding_sites(nodes, name, dotted, is_package, own):
         if kind == "import":
             imports.add(target)
         elif kind == "def":
-            defined = True
+            definitions += 1
         else:
             other = True
-    return imports, defined, other
+    # Defined more than once (under if/else, or twice): which one runs is
+    # not known, so it is not a definition the guard can rely on.
+    if definitions > 1:
+        other = True
+    return imports, definitions == 1, other
 
 
 def _module_scope_nodes(mod: "_Module") -> List[ast.AST]:
@@ -1653,6 +1657,43 @@ def _module_scope_nodes(mod: "_Module") -> List[ast.AST]:
         pending.extend(ast.iter_child_nodes(node))
     mod._scope_nodes = out
     return out
+
+
+def _own_scope_nodes(mod: "_Module", holder: ast.AST) -> List[ast.AST]:
+    """Nodes in ``holder``'s own scope (a module, class or function): its
+    statements, not entering nested functions, lambdas or classes (whose
+    def/class node, decorators and defaults are included), plus a function's
+    own parameters. Cached per holder."""
+    cache = mod.__dict__.setdefault("_own_scope_cache", {})
+    if id(holder) in cache:
+        return cache[id(holder)]
+    out: List[ast.AST] = []
+    pending: List[ast.AST] = list(getattr(holder, "body", []))
+    if isinstance(holder, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        pending.extend(ast.walk(holder.args))
+    while pending:
+        node = pending.pop()
+        out.append(node)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            pending.extend(node.decorator_list)
+            if not isinstance(node, ast.ClassDef):
+                pending.extend(d for d in node.args.defaults + node.args.kw_defaults if d)
+            continue
+        if isinstance(node, ast.Lambda):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    cache[id(holder)] = out
+    return out
+
+
+def _bound_once_as(mod: "_Module", node: ast.AST) -> bool:
+    """True when the def ``node`` is the ONLY binding of its name in its own
+    scope (no second def under if/else, no later assignment, no import...)."""
+    holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) or mod.tree
+    sites = _binding_sites(
+        _own_scope_nodes(mod, holder), node.name, mod.dotted, mod.rel.endswith("__init__.py")
+    )
+    return len(sites) == 1 and sites[0][1] is node
 
 
 def _scope_bindings(mod: "_Module", scope: ast.AST, name: str) -> Tuple[set, bool, bool]:
@@ -1895,6 +1936,7 @@ def _wrappers(modules: List[_Module]) -> set:
                 # fall through to an implicit None (which would inherit).
                 if (
                     not node.decorator_list  # a decorator could turn a refusal into None
+                    and _bound_once_as(mod, node)  # one definition, nothing else
                     and len(body) == 1
                     and isinstance(body[0], ast.Return)
                     and isinstance(body[0].value, ast.Call)
@@ -2836,6 +2878,52 @@ GUARD_PROBES = textwrap.dedent(
     def ok_unaliased_relative_import_with_helper_env(cmd, wf):
         from .process_group import run_project_command
         run_project_command(cmd, shell=True, env=project_command_environment(wf, None))
+
+
+    if os.environ.get("PROBE_CHOICE"):
+        def _maybe_wrapper(wf):
+            return project_command_environment(wf, None)
+    else:
+        def _maybe_wrapper(wf):
+            return dict(os.environ)
+
+
+    def v78_conditional_safe_and_unsafe_definitions(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_maybe_wrapper(wf))
+
+
+    def _twice_wrapper(wf):
+        return project_command_environment(wf, None)
+
+
+    def _twice_wrapper(wf):  # noqa: F811
+        return dict(os.environ)
+
+
+    def v79_duplicate_plain_definitions(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_twice_wrapper(wf))
+
+
+    def _rebound_wrapper(wf):
+        return project_command_environment(wf, None)
+
+
+    _rebound_wrapper = lambda wf: dict(os.environ)  # noqa: E731
+
+
+    def v80_definition_rebound_by_assignment(cmd, wf):
+        subprocess.run(cmd, shell=True, env=_rebound_wrapper(wf))
+
+
+    class _TwiceMethods:
+        def _env(self, wf):
+            return project_command_environment(wf, None)
+
+        def _env(self, wf):  # noqa: F811
+            return dict(os.environ)
+
+        def v81_duplicate_method_definitions(self, cmd, wf):
+            subprocess.run(cmd, shell=True, env=self._env(wf))
 
 
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
