@@ -965,3 +965,34 @@ def test_a_copy_of_a_record_at_a_bare_folder_name_is_not_committed(
     assert ".guardkit/qav-shadow" not in tree
     assert "notes/shadow.json" not in tree, tree
     assert _warnings(caplog, "notes/shadow.json", "moves or copies")
+
+
+@pytest.mark.parametrize(
+    "inner_record, copy",
+    [
+        ("node_modules/a/b/c/.guardkit/autobuild/x.json", "notes/x.json"),
+        ("node_modules/a/large_tool_results/y.txt", "notes/y.txt"),
+    ],
+    ids=["deep-in-node-modules", "tool-output-in-node-modules"],
+)
+def test_a_copy_of_a_record_deep_in_an_inner_builds_node_modules_is_not_committed(
+    site, inner_record: str, copy: str, tmp_path: Path,
+) -> None:
+    """The inner-build walk reaches every folder, dependency folders too."""
+    repo = _init_repo(tmp_path / "repo")
+    inner = repo / ".guardkit" / "worktrees" / "FEAT-1"
+    _init_repo(inner)
+    _write(inner, ".gitignore", "node_modules/\n")
+    for index in range(30):
+        _write(inner, f"node_modules/pkg{index}/index.js", f"module.exports = {index};\n")
+    text = _LONG_RECORD.replace("3}", f'3, "where": "{inner_record}"}}')
+    assert len(text) >= 64
+    _write(inner, inner_record, text)
+    _write(repo, copy, text)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert ORDINARY in tree
+    assert copy not in tree, tree
