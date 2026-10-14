@@ -590,6 +590,12 @@ def _inner_build_record_files(root: Path) -> List[Path]:
     return found
 
 
+#: Record files smaller than this are not compared with staged files. A tiny
+#: record (``[]``, ``{}``) carries nothing worth protecting, and a product
+#: file holding the same few bytes must never be dropped silently; the
+#: publisher's private-text check still reads every added file.
+_MIN_COMPARED_RECORD_BYTES = 64
+
 #: How long the checkpoint waits for record files to be read. A read on a
 #: stalled filesystem (a hung network mount, a FIFO with no peer) cannot be
 #: interrupted, and a turn must never block on evidence I/O.
@@ -601,9 +607,9 @@ def _record_blob_ids(
     cwd: Path,
     timeout: Optional[int],
 ) -> Set[str]:
-    """The blob id of every non-empty regular file on disk at a record path,
-    tracked, untracked or ignored alike, and of each inner build folder's own
-    records. Ids are computed here from the bytes (:func:`git_blob_id`), so a
+    """The blob id of every regular file on disk at a record path of at least
+    :data:`_MIN_COMPARED_RECORD_BYTES`, tracked, untracked or ignored alike,
+    and of each inner build folder's own records. Ids are computed here from the bytes (:func:`git_blob_id`), so a
     record replaced while this runs is skipped, never an error.
 
     The files are read in a worker thread that the checkpoint waits for at
@@ -630,7 +636,7 @@ def _record_blob_ids(
         for path in sorted(paths):
             data = _read_regular_file(path)
             with lock:
-                if data is not None:
+                if data is not None and len(data) >= _MIN_COMPARED_RECORD_BYTES:
                     ids.add(git_blob_id(data, object_format))
                 progress["read"] += 1
         with lock:
@@ -667,8 +673,8 @@ def _leave_out_record_copies(
     byte for byte that of a record file on disk.
 
     Records are never committed, so git's copy detection, which only looks at
-    files ``HEAD`` or the index holds, cannot see an exact copy of one. Empty
-    files are never compared. Files on disk are kept. Returns the paths it
+    files ``HEAD`` or the index holds, cannot see an exact copy of one. Records
+    under :data:`_MIN_COMPARED_RECORD_BYTES` are never compared. Files on disk are kept. Returns the paths it
     unstaged.
     """
     staged = _staged_outside_records(git_executor, cwd, timeout)

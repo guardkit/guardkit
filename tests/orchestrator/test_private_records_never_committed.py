@@ -638,9 +638,10 @@ SHORT_RECORD = ".guardkit/autobuild-private/feature_check.json"
     "record, copy, text",
     [
         (UNTRACKED_TURN, "notes/turn.json", _record_json()),
-        (SHORT_RECORD, "docs/check.json", "{}"),
+        # Exactly 64 bytes: the smallest record that is still compared.
+        (SHORT_RECORD, "docs/check.json", '{"status": "passed", "tail": "' + "x" * 32 + '"}'),
     ],
-    ids=["turn-record", "short-record"],
+    ids=["turn-record", "64-byte-record"],
 )
 def test_an_exact_copy_of_an_untracked_record_is_not_committed(
     site, record: str, copy: str, text: str, tmp_path: Path,
@@ -878,3 +879,33 @@ def test_the_blob_id_computed_here_is_gits_own(object_format: str, tmp_path: Pat
         (repo / "f").write_bytes(data)
         theirs = _git(repo, "hash-object", "f").stdout.strip()
         assert git_blob_id(data, object_format) == theirs
+
+
+# --- Fix pass 4: records under 64 bytes are not compared --------------------
+#
+# A tiny record carries nothing worth protecting, and a product file holding
+# the same few bytes (``[]``, ``{}``) must never be dropped silently. The
+# publisher's private-text check still reads every added file.
+
+
+def test_a_product_file_matching_a_tiny_record_is_committed(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, ".guardkit/autobuild/TASK-1/findings.json", "[]")
+    _write(repo, SHORT_RECORD, "{}")
+    _write(repo, "data/seed.json", "[]")
+    _write(repo, "data/empty_object.json", "{}")
+    # 63 bytes: one under the limit.
+    near = '{"status": "passed", "tail": "' + "x" * 31 + '"}'
+    assert len(near) == 63
+    _write(repo, ".guardkit/autobuild/TASK-1/near.json", near)
+    _write(repo, "docs/near.json", near)
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    for path in ("data/seed.json", "data/empty_object.json", "docs/near.json"):
+        assert path in tree, (path, tree)
+    assert not _warnings(caplog, "moves or copies")
