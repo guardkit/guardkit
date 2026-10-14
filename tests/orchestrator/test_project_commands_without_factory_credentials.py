@@ -2052,15 +2052,12 @@ def _resolve_name(mod: _Module, func_node: ast.AST, at: ast.AST) -> Optional[str
     both imports it and binds it otherwise, or imports it twice."""
     if isinstance(func_node, ast.Name):
         name = func_node.id
-        # Directly in a class body, the class's own bindings come first.
+        # Directly in a class body, a class-local binding of the name makes
+        # it either the class's own or (when that binding has not certainly
+        # run first) the outer one: never one known identity.
         klass = _evaluating_class(mod, at)
-        if klass is not None:
-            imports, defined, other = _class_bindings(mod, klass, name)
-            if other or defined or len(imports) > 1:
-                return None
-            if imports:
-                target = next(iter(imports))
-                return target if mod.imports.get(name, set()) == {target} else None
+        if klass is not None and _class_binding_sites(mod, klass, name):
+            return None
         scope = _defining_scope(mod, at)
         while scope is not None:
             imports, defined, other = _scope_bindings(mod, scope, name)
@@ -2120,6 +2117,13 @@ def _evaluating_class(mod: _Module, node: ast.AST) -> Optional[ast.ClassDef]:
     return None
 
 
+def _class_binding_sites(mod: _Module, klass: ast.ClassDef, name: str) -> list:
+    """Every binding of ``name`` in ``klass``'s own body."""
+    return _binding_sites(
+        _own_scope_nodes(mod, klass), name, mod.dotted, mod.rel.endswith("__init__.py")
+    )
+
+
 def _class_bindings(mod: _Module, klass: ast.ClassDef, name: str) -> Tuple[set, bool, bool]:
     """:func:`_bindings` of ``name`` in ``klass``'s own body."""
     return _bindings(
@@ -2127,15 +2131,49 @@ def _class_bindings(mod: _Module, klass: ast.ClassDef, name: str) -> Tuple[set, 
     )
 
 
+def _class_binding_decides(mod: _Module, klass: ast.ClassDef, name: str, at: ast.AST) -> bool:
+    """True only when, at ``at`` in ``klass``'s body, ``name`` is certainly
+    the class's own: its one binding anywhere in the class body is a plain,
+    unconditional ``name = <expr>`` directly at the class body's top level,
+    on an earlier statement than ``at``. Otherwise (a later binding, an
+    annotation, ``del``, a binding under if/try/for/while/with/match, an
+    augmented assignment, walrus, import, def, class or unpacking target)
+    the outer possibilities remain."""
+    sites = _binding_sites(
+        _own_scope_nodes(mod, klass), name, mod.dotted, mod.rel.endswith("__init__.py")
+    )
+    if len(sites) != 1 or sites[0][0] != "name":
+        return False
+    stored = sites[0][1]
+    statement = mod.parents.get(id(stored))
+    if not (
+        isinstance(stored, ast.Name)
+        and isinstance(stored.ctx, ast.Store)
+        and isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and statement.targets[0] is stored
+    ):
+        return False
+    body = list(klass.body)
+    if not any(statement is item for item in body):
+        return False
+    top = at
+    while top is not None and mod.parents.get(id(top)) is not klass:
+        top = mod.parents.get(id(top))
+    if top is None or not any(top is item for item in body):
+        return False
+    index = next(i for i, item in enumerate(body) if item is top)
+    return next(i for i, item in enumerate(body) if item is statement) < index
+
+
 def _name_is_shadowed(mod: _Module, at: ast.AST, name: str) -> bool:
-    """True when a plain ``name`` is bound, other than by an import, in the
-    class body evaluating ``at``, in a function enclosing it or at module
-    scope."""
+    """True when a plain ``name`` is certainly bound, other than by an
+    import, where ``at`` reads it: in the class body evaluating it (only as
+    :func:`_class_binding_decides` allows), in a function enclosing it or at
+    module scope."""
     klass = _evaluating_class(mod, at)
-    if klass is not None:
-        _, defined, other = _class_bindings(mod, klass, name)
-        if other or defined:
-            return True
+    if klass is not None and _class_binding_decides(mod, klass, name, at):
+        return True
     scope = _defining_scope(mod, at)
     while scope is not None:
         _, defined, other = _scope_bindings(mod, scope, name)
@@ -2281,6 +2319,46 @@ def _wrapper_name_rebound(mod: _Module, node: ast.AST) -> List[ast.AST]:
     ]
 
 
+def _reserved_environment_names(modules: List[_Module], wrappers: set) -> List[str]:
+    """The helper's name and every discovered environment wrapper's name are
+    reserved across the whole scanned package (15 October 2026). In any
+    module such a name may be bound only by that wrapper's own definition or
+    by an import of that same wrapper or helper under its own name; every
+    other binding (any parameter, lambda ones included, a for, comprehension,
+    with, except or match target, walrus, nested def or class, class
+    attribute, assignment, annotation, del, global or nonlocal) is reported
+    with its place."""
+    owners = set(wrappers) | set(HELPERS)
+    names = {identity.rsplit(".", 1)[1] for identity in owners}
+    problems: List[str] = []
+    for mod in modules:
+        is_package = mod.rel.endswith("__init__.py")
+        for node in ast.walk(mod.tree):
+            for name, kind, target in _names_bound_by(node, mod.dotted, is_package):
+                if name not in names:
+                    continue
+                if (
+                    kind == "def"
+                    and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and f"{mod.dotted}.{_qualname(mod, node)}" in owners
+                ):
+                    continue  # the wrapper's (or helper's) own definition
+                if kind == "import" and target is not None:
+                    finals = _final_identities(mod, target)
+                    if len(finals) == 1 and next(iter(finals)) in owners and next(
+                        iter(finals)
+                    ).rsplit(".", 1)[1] == name:
+                        continue  # that same wrapper or helper, imported
+                holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                problems.append(
+                    f"{mod.rel}:{getattr(node, 'lineno', 0)} in "
+                    f"{getattr(holder, 'name', '<module>')}: the name {name} belongs to the "
+                    f"helper or an environment wrapper, and may be bound only by that "
+                    f"definition or by importing it; it is bound here"
+                )
+    return problems
+
+
 def _wrappers(modules: List[_Module], reserve_names: bool = True) -> set:
     """Functions whose whole body (after a docstring) is one ``return`` of an
     inline helper call, by dotted name; with ``reserve_names``, only those
@@ -2325,6 +2403,9 @@ def _possible_targets(mod: _Module, node: ast.AST) -> set:
     import of its root anywhere in the module, each followed to its final
     identity through re-exports inside the package."""
     if isinstance(node, ast.Name):
+        klass = _evaluating_class(mod, node)
+        if klass is not None and _class_binding_decides(mod, klass, node.id, node):
+            return set()  # certainly the class's own plain value here
         return _final_targets(mod, mod.imports.get(node.id, ()))
     if isinstance(node, ast.Attribute):
         return _final_targets(
@@ -3088,6 +3169,7 @@ def unaccounted_launches(package: Path) -> List[str]:
     modules = _load_modules(package)
     wrappers = _wrappers(modules)
     problems: List[str] = []
+    problems.extend(_reserved_environment_names(modules, wrappers))
     # A wrapper whose name is bound again anywhere in its module is not one;
     # each such binding is reported.
     for full in sorted(_wrappers(modules, reserve_names=False) - wrappers):
@@ -4589,6 +4671,34 @@ GUARD_PROBES_REEXPORT = {
                 return subprocess.run(cmd, env=project_command_environment(wf, None))
         '''
     ),
+    # Class-body order (15 October 2026): a class-local binding hides the
+    # outer name only once an earlier, unconditional plain assignment ran.
+    "zz_classorder.py": textwrap.dedent(
+        '''\
+        import subprocess
+
+
+        class v154_class_launch_before_a_class_local_rebinding:
+            subprocess.run(["make"])
+            subprocess = "label"
+
+
+        class v155_class_launch_beside_an_annotation_only:
+            subprocess.run(["make"])
+            subprocess: object
+
+
+        class v156_class_launch_after_a_deleted_local:
+            subprocess = "y"
+            del subprocess
+            subprocess.run(["make"])
+
+
+        class ok_class_local_string_shadowing_a_module:
+            subprocess = "label"
+            shouted = subprocess.upper()
+        '''
+    ),
     "zz_reexport_consumer.py": textwrap.dedent(
         '''\
         import __PKG__.orchestrator.zz_reexport_api
@@ -4739,6 +4849,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_direct_reexport_call_with_helper_env", "ok_module_attribute_use",
         "ok_static_import_as_an_attribute_base",
         "ok_unshadowed_module_wrapper_in_a_method", "ok_inline_helper_in_a_method",
+        "ok_class_local_string_shadowing_a_module",
         "ok_env_omitted_on_a_default_safe_runner", "ok_helper_env_by_keyword",
         "ok_helper_env_positionally", "ok_runner_helper_name_positionally",
         "ok_runner_helper_name_by_keyword", "ok_popen_helper_name_positionally",
@@ -4875,6 +4986,30 @@ def test_a_method_runner_takes_its_env_only_by_keyword(tmp_path: Path, shape: st
     assert len(expected) == 5
     assert expected - named == set(), f"slipped past the guard: {sorted(expected - named)}"
     assert not {n for n in named if n.startswith("ok_")}, problems
+
+
+#: A wrapper's name is reserved across the whole package (15 October 2026):
+#: a lambda parameter in another module may not shadow an imported wrapper.
+GUARD_PROBES_RESERVED_WRAPPER: Dict[str, str] = {
+    '__init__.py': '',
+    'envs.py': 'from guardkit.orchestrator.project_command_env import project_command_environment\n\n\ndef command_env(wf):\n    return project_command_environment(wf, None)\n',
+    'consumer.py': "import os\nimport subprocess\n\nfrom .envs import command_env\n\nlaunch = lambda cmd, command_env=(lambda wf: dict(os.environ)): subprocess.run(cmd, env=command_env('.'))\n",
+    'params.py': "import subprocess\n\nfrom .envs import command_env\n\n\ndef v_wrapper_name_as_a_parameter_elsewhere(cmd, command_env=None):\n    return subprocess.run(cmd, env=command_env('.'))\n",
+    'users.py': "import subprocess\n\nfrom guardkit.orchestrator.project_command_env import project_command_environment\n\nfrom .envs import command_env\n\n\ndef ok_unshadowed_imported_wrapper(cmd):\n    return subprocess.run(cmd, env=command_env('.'))\n\n\ndef ok_inline_helper(cmd, wf):\n    return subprocess.run(cmd, env=project_command_environment(wf, None))\n",
+}
+
+
+def test_a_wrapper_name_is_reserved_across_the_package(tmp_path: Path) -> None:
+    pkg = tmp_path / PACKAGE.name
+    for name, text in GUARD_PROBES_RESERVED_WRAPPER.items():
+        (pkg / name).parent.mkdir(parents=True, exist_ok=True)
+        (pkg / name).write_text(text, encoding="utf-8")
+    problems = unaccounted_launches(pkg)
+    assert any(p.startswith("consumer.py:6 in <module>: ") for p in problems), problems
+    assert any(
+        p.startswith("params.py:6 in v_wrapper_name_as_a_parameter_elsewhere: ") for p in problems
+    ), problems
+    assert not [p for p in problems if " in ok_" in p or p.startswith("envs.py")], problems
 
 
 def test_every_runner_environment_place_is_read_from_its_def() -> None:
