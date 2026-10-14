@@ -909,3 +909,59 @@ def test_a_product_file_matching_a_tiny_record_is_committed(
     for path in ("data/seed.json", "data/empty_object.json", "docs/near.json"):
         assert path in tree, (path, tree)
     assert not _warnings(caplog, "moves or copies")
+
+
+# --- Fix pass 5: records anywhere inside an inner build repository, and ----
+# --- regular files at a record folder's bare name ---------------------------
+
+_LONG_RECORD = '{"query": "how is the build doing", "cwd": "/home/example/build", "hits": 3}\n'
+
+
+@pytest.mark.parametrize(
+    "inner_record, copy",
+    [
+        ("packages/api/.guardkit/memory-query-log.jsonl", "notes/query.jsonl"),
+        ("packages/api/large_tool_results/output.txt", "notes/output.txt"),
+    ],
+    ids=["nested-query-log", "nested-large-tool-result"],
+)
+def test_a_copy_of_a_nested_inner_build_record_is_not_committed(
+    site, inner_record: str, copy: str, tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    inner = repo / ".guardkit" / "worktrees" / "FEAT-1"
+    _init_repo(inner)
+    _write(inner, "packages/api/main.go", "package main\n")
+    assert len(_LONG_RECORD) >= 64
+    _write(inner, inner_record, _LONG_RECORD)
+    _write(repo, copy, _LONG_RECORD)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert ORDINARY in tree
+    assert copy not in tree, tree
+    assert (repo / copy).is_file()
+    assert _warnings(caplog, copy, "moves or copies")
+
+
+def test_a_copy_of_a_record_at_a_bare_folder_name_is_not_committed(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``.guardkit/qav-shadow`` written as a regular file, not a folder."""
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, ".guardkit/qav-shadow", _LONG_RECORD)
+    _write(repo, "notes/shadow.json", _LONG_RECORD)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    tree = _tree(repo)
+    assert ORDINARY in tree
+    assert ".guardkit/qav-shadow" not in tree
+    assert "notes/shadow.json" not in tree, tree
+    assert _warnings(caplog, "notes/shadow.json", "moves or copies")
