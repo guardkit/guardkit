@@ -2168,11 +2168,28 @@ def _annotation_nodes_cache(mod: _Module) -> set:
     return cached
 
 
+#: Launch and runner names that are ordinary words elsewhere (``from x
+#: import run as y`` is common and unrelated): the module-blind alias check
+#: leaves them to the resolved-identity check.
+_GENERIC_GUARDED_WORDS = {
+    "run", "call", "system", "popen", "fork", "spawn", "execute", "_run", "runner",
+}
+
+
+def _distinctive_guarded_names(runner_ids: set) -> set:
+    """The last components of guarded names that are not ordinary words."""
+    names = {target.rsplit(".", 1)[1] for target in HELPERS}
+    names.update(identity.rsplit(".", 1)[1] for identity in runner_ids)
+    names.update(_launch_attribute_names())
+    return names - _GENERIC_GUARDED_WORDS
+
+
 def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[str]:
     """A guarded name (a launch module or function, a generic runner, the
     helper) imported under another local name is a violation in itself:
     every guarded name is only ever used under its own spelling."""
     problems: List[str] = []
+    distinctive = _distinctive_guarded_names(runner_ids)
     for mod in modules:
         for node in ast.walk(mod.tree):
             aliased: List[str] = []
@@ -2182,17 +2199,24 @@ def _aliased_guarded_imports(modules: List[_Module], runner_ids: set) -> List[st
                     if a.asname and a.asname != a.name
                     and (a.name in _LAUNCHES or a.name == "asyncio.subprocess")
                 ]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                aliased = [
-                    f"{node.module}.{a.name} as {a.asname}" for a in node.names
-                    if a.asname and a.asname != a.name and (
-                        (node.module in _LAUNCHES and a.name in _LAUNCHES[node.module])
-                        or (node.module.split(".")[0] == "asyncio" and a.name in _ANY_RECEIVER_LAUNCHES)
-                        or (node.module == "asyncio" and a.name == "subprocess")
-                        or f"{node.module}.{a.name}" in runner_ids
-                        or f"{node.module}.{a.name}" in HELPERS
-                    )
-                ]
+            elif isinstance(node, ast.ImportFrom):
+                # One resolver for every identity: relative levels included.
+                bindings = _import_bindings(node, mod.dotted, mod.rel.endswith("__init__.py"))
+                for alias, (_bound, target) in zip(node.names, bindings):
+                    if not alias.asname or alias.asname == alias.name:
+                        continue
+                    module, _, last = target.rpartition(".")
+                    if (
+                        (module in _LAUNCHES and last in _LAUNCHES[module])
+                        or (module.split(".")[0] == "asyncio" and last in _ANY_RECEIVER_LAUNCHES)
+                        or (module == "asyncio" and last == "subprocess")
+                        or target in runner_ids
+                        or target in HELPERS
+                        # Belt and braces: a distinctive guarded name is never
+                        # aliased, whatever module text it comes from.
+                        or alias.name in distinctive
+                    ):
+                        aliased.append(f"{target} as {alias.asname}")
             for what in aliased:
                 holder = _enclosing(mod, node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
                 problems.append(
@@ -2782,6 +2806,38 @@ GUARD_PROBES = textwrap.dedent(
         return run_project_command
 
 
+    def v74_relative_runner_alias_assigned(cmd):
+        from .process_group import run_project_command as invoke
+        dispatch = invoke
+        dispatch(cmd, shell=True, env=None)
+
+
+    def v75_relative_plugin_runner_alias_assigned(cmd):
+        from ..bdd.plugin import run_project_command as invoke_plugin
+        dispatch = invoke_plugin
+        dispatch(cmd, shell=True, env=None)
+
+
+    def v76_relative_alias_reused_in_unrelated_scopes(cmd):
+        from .process_group import run_in_own_group as starter
+        starter(cmd, cwd=".", env=dict(os.environ), timeout=5)
+
+
+    def _unrelated_starter(text):
+        from json import loads as starter
+        return starter(text)
+
+
+    def v77_parent_relative_alias(cmd):
+        from ..orchestrator.process_group import run_project_command as go_relative
+        go_relative(cmd, shell=True, env=None)
+
+
+    def ok_unaliased_relative_import_with_helper_env(cmd, wf):
+        from .process_group import run_project_command
+        run_project_command(cmd, shell=True, env=project_command_environment(wf, None))
+
+
     def ok_direct_subprocess_run_with_helper_env(cmd, wf):
         subprocess.run(cmd, shell=True, env=project_command_environment(wf, None))
 
@@ -2915,7 +2971,7 @@ def test_the_guard_catches_every_probe(tmp_path: Path) -> None:
         "ok_single_use_named_env", "ok_inline_env", "ok_single_return_wrapper",
         "ok_unshadowed_alias", "ok_helper_env_beside_reused_names",
         "ok_direct_subprocess_run_with_helper_env", "ok_direct_runner_with_helper_env",
-        "ok_os_path_and_environ",
+        "ok_os_path_and_environ", "ok_unaliased_relative_import_with_helper_env",
     } & named, problems
 
 
