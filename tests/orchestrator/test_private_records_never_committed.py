@@ -178,3 +178,424 @@ def test_a_new_private_record_left_unstaged_is_not_picked_up(
     tree = _git(repo, "ls-tree", "-r", "--name-only", "HEAD").stdout.splitlines()
     assert RECORD not in tree
     assert (repo / RECORD).is_file()
+
+
+# ===========================================================================
+# Every one of GuardKit's records stays out of factory commits (14 October 2026)
+# ===========================================================================
+#
+# Plain words: GuardKit writes many records about a build inside the build's
+# folder (each turn, the judge's decisions, the test baseline, the shadow
+# judge's queue, the memory query log, its inner build folders). Before this
+# change only the private folder above was kept out of commits, so a project
+# that does not ignore ``.guardkit/autobuild/`` had every record committed,
+# and a merge then published them. These tests run the same three commit
+# sites on real git, through GuardKit's own git helper.
+
+NEW_RECORDS = (
+    ".guardkit/autobuild/x.json",
+    ".guardkit/autobuild/TASK-1/player_turn_1.json",
+    ".guardkit/qav-shadow/queue.jsonl",
+    ".guardkit/memory-query-log.jsonl",
+    ".guardkit/memory-query-log.jsonl.1",
+    "packages/app/.guardkit/autobuild/baseline.json",
+)
+TRACKED_RECORD = ".guardkit/autobuild/old.json"
+MOVED_TO = "notes/old.json"
+PRODUCT = "src/app.txt"
+#: A made-up private folder, standing in for an owner's home folder.
+MADE_UP_HOME = "/home/example/project"
+
+
+def _tree(repo: Path) -> list[str]:
+    return _git(repo, "ls-tree", "-r", "--name-only", "HEAD").stdout.splitlines()
+
+
+def _warnings(caplog: pytest.LogCaptureFixture, *needles: str) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING
+        and all(n in r.getMessage() for n in needles)
+    ]
+
+
+def _record_json(lines: int = 20) -> str:
+    body = ",\n".join(f'  "field_{i}": "ordinary value number {i}"' for i in range(lines - 2))
+    return "{\n" + body + "\n}\n"
+
+
+def test_new_records_are_not_checkpointed(site, tmp_path: Path) -> None:
+    """Design tests 1, 2 and 11: a project that ignores nothing."""
+    repo = _init_repo(tmp_path / "repo")
+    for path in NEW_RECORDS:
+        _write(repo, path, f'{{"cwd": "{MADE_UP_HOME}"}}\n')
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+    tree = _tree(repo)
+    for path in NEW_RECORDS:
+        assert path not in tree, (path, tree)
+        assert (repo / path).is_file(), "the record stays on disk"
+    assert not [p for p in tree if "/.guardkit/autobuild/" in f"/{p}"], tree
+
+
+def test_a_force_added_record_is_taken_out_with_a_warning(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Design test 3."""
+    repo = _init_repo(tmp_path / "repo")
+    record = ".guardkit/autobuild/x.json"
+    _write(repo, record, '{"turn": 1}\n')
+    _write(repo, ORDINARY, "the Player's work\n")
+    _git(repo, "add", "-f", "--", record, ORDINARY)
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    assert ORDINARY in committed and record not in committed, committed
+    assert (repo / record).is_file()
+    status = _git(repo, "status", "--porcelain", "--untracked-files=all").stdout
+    assert f"?? {record}" in status.splitlines(), status
+    assert _warnings(caplog, record), [r.getMessage() for r in caplog.records]
+
+
+def test_an_edited_tracked_record_is_left_at_heads_copy(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Design test 4: the edit is not staged beforehand."""
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, TRACKED_RECORD, "content A\n")
+    _git(repo, "add", "--", TRACKED_RECORD)
+    _git(repo, "commit", "-m", "an older build committed the record")
+
+    caplog.set_level(logging.WARNING)
+    _write(repo, TRACKED_RECORD, "content B\n")
+    for turn in (1, 2):
+        _write(repo, ORDINARY, f"the Player's work, turn {turn}\n")
+        site(repo, tmp_path, turn)
+
+    assert _git(repo, "show", f"HEAD:{TRACKED_RECORD}").stdout == "content A\n"
+    assert (repo / TRACKED_RECORD).read_text(encoding="utf-8") == "content B\n"
+    assert ORDINARY in _committed_names(repo)
+    warnings = _warnings(caplog, TRACKED_RECORD, "tracked")
+    assert len(warnings) == 1, warnings
+
+
+def test_what_the_next_stage_reads_is_still_committed(site, tmp_path: Path) -> None:
+    """Design test 9."""
+    repo = _init_repo(tmp_path / "repo")
+    needed = (
+        ".guardkit/features/F.yaml",
+        "tasks/backlog/TASK-1.md",
+        ".guardkit/config.yaml",
+        ".guardkit/seam-checks.yaml",
+        "docs/state/notes.md",
+        "src/main.go",
+    )
+    for path in needed:
+        _write(repo, path, f"{path}\n")
+
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    for path in needed:
+        assert path in committed, (path, committed)
+
+
+# --- Design test 20: a record moved out of its folder, at checkpoint -------
+
+
+def _base_with_tracked_record(repo: Path) -> None:
+    _write(repo, TRACKED_RECORD, _record_json())
+    _write(repo, PRODUCT, "".join(f"product line {i}\n" for i in range(20)))
+    _git(repo, "add", "--", TRACKED_RECORD, PRODUCT)
+    _git(repo, "commit", "-m", "an older build committed a record")
+
+
+def _move_record(repo: Path, how: str) -> None:
+    if how == "git-mv":
+        (repo / MOVED_TO).parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, "mv", TRACKED_RECORD, MOVED_TO)
+    else:
+        (repo / MOVED_TO).parent.mkdir(parents=True, exist_ok=True)
+        (repo / TRACKED_RECORD).rename(repo / MOVED_TO)
+    with open(repo / MOVED_TO, "a", encoding="utf-8") as handle:
+        handle.write('{"added": "one more line"}\n')
+
+
+@pytest.mark.parametrize("how", ["git-mv", "plain-move"])
+def test_a_record_moved_out_and_lightly_edited_is_not_committed(
+    site, how: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _base_with_tracked_record(repo)
+    _move_record(repo, how)
+    _write(repo, PRODUCT, "the Player changed the product\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    assert PRODUCT in committed, committed
+    assert MOVED_TO not in committed, committed
+    assert MOVED_TO not in _tree(repo)
+    assert TRACKED_RECORD in _tree(repo), "the committed record is left as it was"
+    assert (repo / MOVED_TO).is_file(), "the moved file stays on disk"
+    warnings = _warnings(caplog, MOVED_TO, "moves or copies")
+    assert len(warnings) == 1, [r.getMessage() for r in caplog.records]
+
+
+def test_deleting_a_record_is_not_taken_for_a_move(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Control: a deletion and a product change, nothing moved."""
+    repo = _init_repo(tmp_path / "repo")
+    _base_with_tracked_record(repo)
+    _git(repo, "rm", "-q", "--", TRACKED_RECORD)
+    _write(repo, PRODUCT, "the Player changed the product\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    assert PRODUCT in _committed_names(repo)
+    assert not _warnings(caplog, "moves or copies")
+
+
+def test_a_product_file_copied_from_another_is_committed(
+    site, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Control: a copy whose source is a product file is ordinary work."""
+    repo = _init_repo(tmp_path / "repo")
+    _base_with_tracked_record(repo)
+    copy = "src/app_copy.txt"
+    _write(repo, copy, (repo / PRODUCT).read_text(encoding="utf-8") + "one more\n")
+
+    caplog.set_level(logging.WARNING)
+    site(repo, tmp_path, 1)
+
+    assert copy in _committed_names(repo)
+    assert not _warnings(caplog, "moves or copies")
+
+
+# --- Design test 10: embedded repositories, through the production helper --
+
+
+def _nested_repository(repo: Path) -> str:
+    nested = repo / ".guardkit" / "worktrees" / "FEAT-1"
+    _init_repo(nested)
+    return ".guardkit/worktrees/FEAT-1"
+
+
+def _checkpoint(repo: Path, turn: int = 1):
+    manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-001")
+    return manager.create_checkpoint(turn=turn, tests_passed=True, test_count=1)
+
+
+def test_an_untracked_inner_build_folder_does_not_stop_the_checkpoint(
+    tmp_path: Path,
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    nested = _nested_repository(repo)
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    _checkpoint(repo)
+
+    assert ORDINARY in _committed_names(repo)
+    listing = _git(repo, "ls-files", "-s").stdout
+    assert "160000" not in listing and nested not in listing, listing
+
+
+@pytest.mark.parametrize("state", ["staged", "tracked"])
+def test_a_staged_or_tracked_inner_build_folder_is_refused(
+    state: str, tmp_path: Path
+) -> None:
+    from guardkit.lib.project_git import SUBMODULE_REFUSAL
+
+    repo = _init_repo(tmp_path / "repo")
+    nested = _nested_repository(repo)
+    _git(repo, "add", "--", nested)
+    if state == "tracked":
+        _git(repo, "commit", "-m", "an older build committed the inner folder")
+    head_before = _git(repo, "rev-parse", "HEAD").stdout
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _checkpoint(repo)
+
+    sentence = SUBMODULE_REFUSAL.format(command="add")
+    assert refused.value.stderr == sentence
+    assert _git(repo, "rev-parse", "HEAD").stdout == head_before, "nothing committed"
+
+
+# --- Design test 8: no exclusion is ever refused by git ---------------------
+
+
+def _sample_for(spec: str) -> tuple[str, str]:
+    """A file the exclusion covers, and an ignore line covering it."""
+    from guardkit.orchestrator.worktree_checkpoints import CHECKPOINT_EXCLUDE_PATHSPECS
+
+    assert spec in CHECKPOINT_EXCLUDE_PATHSPECS
+    body = spec[len(":(exclude,glob)"):]
+    if body.startswith("**/"):
+        body = body[3:]
+    if body.endswith("/**"):
+        folder = body[:-3]
+        return f"{folder}/x.txt", f"{folder}/"
+    if body.startswith("*"):
+        return "a" + body[1:], body
+    if body.endswith("*"):
+        return body[:-1], body
+    return body, body
+
+
+def _exclusion_specs() -> list[str]:
+    from guardkit.orchestrator.worktree_checkpoints import CHECKPOINT_EXCLUDE_PATHSPECS
+
+    return [str(s) for s in CHECKPOINT_EXCLUDE_PATHSPECS]
+
+
+@pytest.mark.parametrize("spec", _exclusion_specs())
+def test_no_exclusion_is_refused_where_the_project_ignores_it(
+    site, spec: str, tmp_path: Path
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    sample, ignore_line = _sample_for(spec)
+    _write(repo, ".gitignore", ignore_line + "\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "commit", "-m", "the project ignores the folder")
+    _write(repo, sample, "present on disk\n")
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    committed = _committed_names(repo)
+    assert ORDINARY in committed, committed
+    assert sample not in _tree(repo)
+
+
+#: The ignore rules the web lane asked to be checked, each with every record
+#: and model folder present on disk.
+IGNORE_RULES = (
+    "large_tool_results/",
+    "/large_tool_results",
+    ".guardkit/",
+    ".guardkit/autobuild/",
+    "/.guardkit/autobuild",
+    ".guardkit/autobuild-private/",
+    ".guardkit/qav-shadow/",
+    "*.jsonl",
+    ".guardkit/memory-query-log.jsonl",
+    ".guardkit/bootstrap_state.json",
+    "node_modules/",
+    ".claude/task-plans/",
+    "conversation_history/",
+)
+
+
+@pytest.mark.parametrize("rule", IGNORE_RULES)
+def test_no_ignore_rule_makes_the_checkpoint_fail(
+    site, rule: str, tmp_path: Path
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, ".gitignore", rule + "\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "commit", "-m", "the project ignores a factory folder")
+    for path in (
+        *NEW_RECORDS,
+        ".guardkit/autobuild-private/feature_check.json",
+        ".guardkit/bootstrap_state.json",
+        "large_tool_results/y",
+        "conversation_history/x.md",
+        "node_modules/a/index.js",
+        ".claude/task-plans/TASK-1-implementation-plan.md",
+    ):
+        _write(repo, path, "present on disk\n")
+    _write(repo, ORDINARY, "the Player's work\n")
+
+    site(repo, tmp_path, 1)
+
+    assert ORDINARY in _committed_names(repo)
+
+
+# --- Design test 27 (GuardKit's half): the list is pinned ------------------
+
+
+def test_the_eight_record_paths_are_pinned() -> None:
+    from guardkit.orchestrator import worktree_checkpoints as wc
+
+    assert wc.FACTORY_RECORD_PATHS == (
+        "**/.guardkit/autobuild/**",
+        "**/.guardkit/autobuild-private/**",
+        "**/.guardkit/qav-shadow/**",
+        "**/.guardkit/memory-query-log.jsonl*",
+        "**/.guardkit/worktrees/**",
+        "**/.guardkit/bootstrap_state.json",
+        "conversation_history/**",
+        "**/large_tool_results/**",
+    )
+    staged_set = tuple(wc.FACTORY_RECORD_PATHSPECS) + tuple(wc.MODEL_ARTIFACT_PATHSPECS)
+    assert staged_set == tuple(f":(glob){p}" for p in wc.FACTORY_RECORD_PATHS)
+    excluded = {str(s) for s in wc.CHECKPOINT_EXCLUDE_PATHSPECS}
+    for path in wc.FACTORY_RECORD_PATHS:
+        if path == "conversation_history/**":
+            # Never named in the add: git refuses the add in a project that
+            # ignores the folder. The unstaging step keeps it out instead.
+            assert f":(exclude,glob){path}" not in excluded
+        else:
+            assert f":(exclude,glob){path}" in excluded, path
+
+
+MATCHER_PATHS = (
+    ".guardkit/autobuild/x.json",
+    "a/b/.guardkit/autobuild/T/p.json",
+    "t1/.guardkit/autobuild",
+    ".guardkit/autobuildx/y",
+    ".guardkit/autobuild-private/f.json",
+    ".guardkit/qav-shadow/queue.jsonl",
+    "t2/.guardkit/qav-shadow",
+    ".guardkit/memory-query-log.jsonl",
+    ".guardkit/memory-query-log.jsonl.1",
+    "p/.guardkit/memory-query-log.jsonl.2",
+    ".guardkit/memory-query-log.json",
+    "t3/.guardkit/memory-query-log.jsonl.d/x",
+    ".guardkit/worktrees/FEAT-1/a",
+    ".guardkit/bootstrap_state.json",
+    "p/.guardkit/bootstrap_state.json",
+    ".guardkit/bootstrap_state.json.bak",
+    "conversation_history/x.md",
+    "conversation_history/d/y.md",
+    "src/conversation_history/k.go",
+    "t4/conversation_history",
+    "large_tool_results/y",
+    "p/q/large_tool_results/z",
+    "t5/large_tool_results",
+    "x.guardkit/autobuild/z",
+    "guardkit/autobuild/x",
+    ".guardkit/AUTOBUILD/x",
+    ".guardkit/features/F.yaml",
+    ".guardkit/config.yaml",
+    "docs/state/notes.md",
+    "tasks/backlog/TASK-1.md",
+    "notes/old.json",
+)
+
+
+def test_is_factory_record_agrees_with_git(tmp_path: Path) -> None:
+    from guardkit.lib.project_git import pattern_pathspec, run_git
+    from guardkit.orchestrator import worktree_checkpoints as wc
+
+    repo = _init_repo(tmp_path / "repo")
+    for path in MATCHER_PATHS:
+        _write(repo, path, "x\n")
+    listed = run_git(
+        ["ls-files", "--others", "-z", "--",
+         *[pattern_pathspec(f":(glob){p}") for p in wc.FACTORY_RECORD_PATHS]],
+        cwd=repo, check=True,
+    ).stdout
+    by_git = {p for p in listed.split("\0") if p}
+    assert by_git, "git matched something"
+    assert {p for p in MATCHER_PATHS if wc.is_factory_record(p)} == by_git
