@@ -228,8 +228,10 @@ def shown_path(path: str) -> str:
     A byte that is not UTF-8 (held by ``os.fsdecode`` as a lone surrogate) is
     shown as ``\\xNN``; a newline, carriage return or tab as ``\\n``,
     ``\\r`` or ``\\t``; any other control character as ``\\xNN``; a line or
-    paragraph separator, or any other lone surrogate, as ``\\uNNNN``. Every
-    other character, ordinary non-ASCII letters included, is unchanged.
+    paragraph separator, an invisible format character (a right-to-left
+    override, a zero-width space, a byte-order mark: Unicode category Cf),
+    or any other lone surrogate, as ``\\uNNNN``. Every other character,
+    ordinary non-ASCII letters included, is unchanged.
     Structured fields keep the name exactly as git gave it.
     """
     out: List[str] = []
@@ -241,7 +243,7 @@ def shown_path(path: str) -> str:
             out.append(_NAMED_ESCAPES[ch])
         elif unicodedata.category(ch) == "Cc":
             out.append(f"\\x{code:02x}")
-        elif unicodedata.category(ch) in ("Zl", "Zp", "Cs"):
+        elif unicodedata.category(ch) in ("Zl", "Zp", "Cs", "Cf"):
             out.append(f"\\u{code:04x}")
         else:
             out.append(ch)

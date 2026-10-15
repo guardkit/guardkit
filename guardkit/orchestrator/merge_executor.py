@@ -437,11 +437,17 @@ class MergeReport:
 def _run_git(
     repo_root: Path, *args: str
 ) -> subprocess.CompletedProcess:
-    """Run one git command in ``repo_root``; never raises on non-zero exit."""
+    """Run one git command in ``repo_root``; never raises on non-zero exit.
+
+    Output naming a file in bytes that are not UTF-8 (``git status`` under
+    ``core.quotePath=false``, for one) is kept as ``os.fsdecode`` keeps it,
+    so reading it never fails; any such name shown in a sentence goes
+    through :func:`shown_path`."""
     return run_git(
         [*args],
         cwd=str(repo_root),
         timeout=_GIT_TIMEOUT_SECONDS,
+        errors="surrogateescape",
     )
 
 

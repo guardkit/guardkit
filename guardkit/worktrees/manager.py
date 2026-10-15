@@ -119,7 +119,17 @@ class SubprocessExecutor:
         """
         if not args or args[0] != "git":
             raise ValueError("SubprocessExecutor runs git commands only")
-        return run_git(list(args[1:]), cwd=cwd, check=check, text=text)
+        # Git's output can name a file in bytes that are not UTF-8 (``git
+        # merge`` does, for a conflict). They are kept as ``os.fsdecode``
+        # keeps them, so reading the output never fails and a name read here
+        # passes back to git unchanged.
+        return run_git(
+            list(args[1:]),
+            cwd=cwd,
+            check=check,
+            text=text,
+            errors="surrogateescape" if text else None,
+        )
 
 
 # ============================================================================

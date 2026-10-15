@@ -2441,11 +2441,15 @@ class TestAConflictOnAnOddName:
     ordinary conflict, never an unexpected error (git's own words about the
     merge name the file in its raw bytes)."""
 
+    @pytest.mark.parametrize("quote_path", [True, False])
     def test_a_conflict_on_a_name_that_is_not_utf8_is_reported(
-        self, standin: Standin
+        self, standin: Standin, quote_path: bool
     ):
         name = os.fsdecode(b"odd\xff.txt")
         standin.init(files={name: "base\n"})
+        if not quote_path:
+            # git status then prints the name's raw bytes too.
+            _git(standin.repo, "config", "core.quotePath", "false")
         standin.branch({name: "build\n"})
         standin.write(name, "main\n")
         _git(standin.repo, "commit", "-q", "-am", "main moves on")
