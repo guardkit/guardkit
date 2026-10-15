@@ -47,7 +47,7 @@ from guardkit.orchestrator.merge_executor import (
 FEATURE = "FEAT-I"
 TARGET = "factory-integration/FEAT-I"
 CANNOT_FOLLOW = "uses shell syntax the factory cannot follow"
-JUDGE_CHANGED = "the build changed the commands that judge it"
+IS_A_LINK = "is a symbolic link, so the factory cannot tell which program it would run"
 
 VALIDATE_OK = [
     sys.executable,
@@ -159,11 +159,29 @@ class Standin:
         if rel.endswith(".sh"):
             path.chmod(0o755)
 
+    def link(self, rel: str, target: str, root: Optional[Path] = None) -> None:
+        """Make ``rel`` a symbolic link to ``target`` (replacing what is there)."""
+        path = (root or self.repo) / rel
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, path)
+
+    def build_copy_never_ran(self) -> bool:
+        """The build's edited judge scripts write ``edited``; it never shows."""
+        return all(
+            "edited" not in self.lines(name)
+            for name in ("install-ran", "check-ran")
+        )
+
     def init(
         self,
         config: Optional[str] = None,
         files: Optional[Dict[str, Optional[str]]] = None,
         with_config: bool = True,
+        links: Optional[Dict[str, str]] = None,
     ) -> "Standin":
         self.repo.mkdir()
         _git(self.repo, "init", "-q", "-b", "main")
@@ -181,14 +199,22 @@ class Standin:
             )
         for rel, content in (files or {}).items():
             self.write(rel, content)
+        for rel, target in (links or {}).items():
+            self.link(rel, target)
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-q", "-m", "the target as it stands")
         return self
 
-    def branch(self, changes: Dict[str, Optional[str]]) -> "Standin":
+    def branch(
+        self,
+        changes: Dict[str, Optional[str]],
+        links: Optional[Dict[str, str]] = None,
+    ) -> "Standin":
         _git(self.repo, "checkout", "-q", "-b", f"autobuild/{FEATURE}")
         for rel, content in changes.items():
             self.write(rel, content)
+        for rel, target in (links or {}).items():
+            self.link(rel, target)
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-q", "-m", "the build's work")
         _git(self.repo, "checkout", "-q", "main")
@@ -578,7 +604,7 @@ class TestAnHonestBaseline:
 
 
 class TestTheJudgeFiles:
-    def test_a_branch_that_edits_the_check_script_gets_no_automatic_verdict(
+    def test_a_branch_that_edits_the_check_script_is_judged_by_mains_copy(
         self, standin: Standin
     ):
         standin.init()
@@ -587,13 +613,13 @@ class TestTheJudgeFiles:
         report = standin.merge()
 
         assert report.outcome == OUTCOME_MERGED
-        assert report.verify_status == "unverified"
-        assert report.verify_ran is False
-        assert JUDGE_CHANGED in report.verify_detail
-        assert "scripts/check.sh" in report.verify_detail
-        assert standin.ran() == set()
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.verify_ok is True
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.build_copy_never_ran()
 
-    def test_a_branch_that_edits_the_install_script_gets_no_automatic_verdict(
+    def test_a_branch_that_edits_the_install_script_is_installed_with_mains_copy(
         self, standin: Standin
     ):
         standin.init()
@@ -601,10 +627,10 @@ class TestTheJudgeFiles:
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified"
-        assert JUDGE_CHANGED in report.verify_detail
-        assert "scripts/install.sh" in report.verify_detail
-        assert standin.ran() == set()
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/install.sh",)
+        assert standin.lines("install-ran") == ["install", "install"]
+        assert standin.build_copy_never_ran()
 
     def test_a_branch_that_adds_a_new_judge_script_counts(self, standin: Standin):
         standin.init(files={"scripts/check.sh": None})
@@ -612,15 +638,16 @@ class TestTheJudgeFiles:
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified"
-        assert JUDGE_CHANGED in report.verify_detail
-        assert "scripts/check.sh" in report.verify_detail
-        assert standin.ran() == set()
+        # Main names a file it does not have: the baseline on main measured
+        # nothing useful, and the build's script is never run.
+        assert report.verify_ok is False
+        assert report.verify_status == "unverified", report.verify_detail
+        assert standin.build_copy_never_ran()
 
     @pytest.mark.parametrize(
         "check", ["bash scripts/check.sh&&echo DONE", "cd scripts && ./check.sh"]
     )
-    def test_a_compound_command_still_finds_the_changed_script(
+    def test_a_compound_command_runs_mains_copy_of_the_changed_script(
         self, standin: Standin, check: str
     ):
         standin.init(config=config_text(test=check))
@@ -628,9 +655,10 @@ class TestTheJudgeFiles:
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified"
-        assert "scripts/check.sh" in report.verify_detail
-        assert standin.ran() == set()
+        assert report.verify_status == "passed", report.verify_detail
+        assert "scripts/check.sh" in report.judged_with_main_copies
+        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.build_copy_never_ran()
 
     def test_a_named_test_folder_does_not_stop_the_verdict(self, standin: Standin):
         run_tests = (
@@ -659,9 +687,10 @@ class TestTheJudgeFiles:
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified"
-        assert "scripts/check.sh" in report.verify_detail
-        assert standin.ran() == set()
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert standin.lines("check-ran") == ["check", "check"]
+        assert standin.build_copy_never_ran()
 
     CANNOT_FOLLOW_CASES = [
         ("bash $CHECK_SCRIPT", ("check", "install")),
@@ -710,17 +739,20 @@ class TestTheJudgeFiles:
             config = config_text(test="bash check=suite.sh")
         else:
             config = config_text(install="bash check=suite.sh")
+        # Main's script: as the install it must really install.
+        body = INSTALL_SH if role == "install" else "#!/bin/sh\n"
+        mains = body + 'echo main >> "@MARKERS@/suite-ran"\nexit 0\n'
         standin.init(
-            config=config, files={"check=suite.sh": "#!/bin/sh\nexit 0\n"}
+            config=config, files={"check=suite.sh": standin.script(mains)}
         )
         standin.branch({"check=suite.sh": standin.script(ALWAYS_GREEN_SH)})
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified"
-        assert JUDGE_CHANGED in report.verify_detail
-        assert "check=suite.sh" in report.verify_detail
-        assert standin.ran() == set()
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("check=suite.sh",)
+        assert "main" in standin.lines("suite-ran")
+        assert standin.build_copy_never_ran()
 
     def test_the_commands_in_use_today_are_accepted(self):
         from guardkit.orchestrator.merge_environment import judge_words
@@ -1334,9 +1366,11 @@ class TestJudgeFilesInsideOptionLists:
 
         report = standin.merge()
 
-        assert report.verify_status == "unverified", report.verify_detail
-        assert JUDGE_CHANGED in report.verify_detail
-        assert "scripts/check.sh" in report.verify_detail
+        # Named by file name inside the option list: main's copy is put in
+        # place for the check, and the build's copy never runs.
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert standin.build_copy_never_ran()
 
     def test_the_rule_matches_the_pieces_of_a_word(self):
         from guardkit.orchestrator.merge_environment import judge_files
@@ -1467,3 +1501,1123 @@ class TestAnUnverifiedRunChargesNothing:
         assert report.baseline_measured is None
         assert report.charged_failures == ()
         assert "tests/test_new.py::test_new" not in _report_text(report)
+
+
+# ---------------------------------------------------------------------------
+# The merge check uses the target's copies of the judge files (15 October 2026)
+# ---------------------------------------------------------------------------
+#
+# A build that changes a file the declared commands name is no longer refused:
+# its join is installed and checked with the TARGET's copy of every such file,
+# put back byte for byte before the post-join install, and the joined files
+# are put back afterwards. The build's copy is never run.
+
+# Main's check also fails when ``broken.txt`` exists.
+CHECK_REFUSES_BROKEN_SH = CHECK_SH.replace(
+    'echo "STANDIN-PASS',
+    'if [ -f broken.txt ]; then echo "broken.txt is there" >&2; exit 1; fi\n'
+    'echo "STANDIN-PASS',
+)
+
+# Main's check also records whether ``tools/check.sh`` is in the folder.
+CHECK_RECORDS_TOOLS_SH = CHECK_SH.replace(
+    'echo "STANDIN-PASS',
+    'if [ -e tools/check.sh ]; then echo present >> "@MARKERS@/tools"; '
+    'else echo absent >> "@MARKERS@/tools"; fi\n'
+    'echo "STANDIN-PASS',
+)
+
+
+def _clean(folder: Path) -> bool:
+    return _git(folder, "status", "--porcelain") == ""
+
+
+class TestTheMergeCheckUsesTheTargetsJudges:
+    def test_a_build_that_weakens_the_check_still_fails_mains_check(
+        self, standin: Standin
+    ):
+        standin.init(files={"scripts/check.sh": standin.script(CHECK_REFUSES_BROKEN_SH)})
+        standin.branch(
+            {
+                "broken.txt": "the build broke something\n",
+                "scripts/check.sh": standin.script(ALWAYS_GREEN_SH),
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
+        assert report.verify_ran is True
+        assert standin.build_copy_never_ran()
+
+    def test_a_build_that_adds_its_tests_to_the_check_gets_a_normal_verdict(
+        self, standin: Standin
+    ):
+        standin.init()
+        appended = standin.script(CHECK_SH) + 'echo appended >> "@MARKERS@/check-ran"\n'
+        standin.branch(
+            {"scripts/check.sh": appended, "tests/new_test.sh": "#!/bin/sh\nexit 0\n"}
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert "appended" not in standin.lines("check-ran")
+        assert standin.lines("check-ran") == ["check", "check"]
+        folder = standin.folder
+        assert _clean(folder)
+        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == appended
+        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
+
+    def test_a_judge_file_new_in_the_build_is_absent_for_the_check_and_back_afterwards(
+        self, standin: Standin
+    ):
+        standin.init(files={"scripts/check.sh": standin.script(CHECK_RECORDS_TOOLS_SH)})
+        standin.branch({"tools/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert standin.lines("tools") == ["absent", "absent"]
+        assert "tools/check.sh" in report.judged_with_main_copies
+        assert (standin.folder / "tools/check.sh").is_file()
+        assert _clean(standin.folder)
+        assert standin.build_copy_never_ran()
+
+    def test_a_judge_file_the_build_deleted_is_restored_for_the_check(
+        self, standin: Standin
+    ):
+        standin.init()
+        standin.branch({"scripts/install.sh": None})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert standin.lines("install-ran") == ["install", "install"]
+        assert report.judged_with_main_copies == ("scripts/install.sh",)
+        assert not (standin.folder / "scripts/install.sh").exists()
+        assert _clean(standin.folder)
+
+    @pytest.mark.parametrize("touched", ["notes.txt", "scripts/check.sh"])
+    def test_an_install_that_changes_a_restored_file_or_another_file_is_could_not_run(
+        self, standin: Standin, touched: str
+    ):
+        install = standin.script(INSTALL_SH) + (
+            f'if [ -f trigger.txt ]; then echo touched >> "{touched}"; fi\n'
+        )
+        standin.init(files={"scripts/install.sh": install})
+        standin.branch(
+            {
+                "trigger.txt": "only on the build\n",
+                "scripts/check.sh": standin.script(ALWAYS_GREEN_SH),
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified", report.verify_detail
+        assert report.verify_ran is False
+        assert "changed files" in report.verify_detail
+        assert touched in report.verify_detail
+        # The baseline check ran on main; nothing ran after the join.
+        assert standin.lines("check-ran") == ["check"]
+        assert standin.build_copy_never_ran()
+
+    def test_the_report_names_the_files_checked_with_mains_copies(
+        self, standin: Standin
+    ):
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        data = report.to_dict()
+        assert data["judged_with_main_copies"] == ["scripts/check.sh"]
+        receipt = "\n".join(report.receipt_lines())
+        sentence = [ln for ln in report.receipt_lines() if "scripts/check.sh" in ln
+                    and "this build's changes to it were not used" in ln]
+        assert len(sentence) == 1, receipt
+        assert (report.pre_sha or "")[:10] in sentence[0]
+        for claim in ("during the build", "in the build", "in the preview", "were run"):
+            assert claim not in sentence[0]
+
+    def test_nothing_named_means_no_sentence(self, standin: Standin):
+        standin.init().branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == ()
+        assert not any("were not used" in ln for ln in report.receipt_lines())
+
+    def test_the_joined_commit_is_unchanged(self, standin: Standin):
+        standin.init()
+        tip_check = standin.script(ALWAYS_GREEN_SH)
+        standin.branch({"scripts/check.sh": tip_check, "feature.txt": "built\n"})
+        main_before = _git(standin.repo, "rev-parse", "main")
+        tip = _git(standin.repo, "rev-parse", f"autobuild/{FEATURE}")
+
+        report = standin.merge()
+
+        post = report.post_sha
+        assert post is not None
+        parents = _git(standin.repo, "rev-list", "--parents", "-n", "1", post).split()
+        assert parents[1:] == [main_before, tip]
+        assert _git(standin.repo, "show", f"{post}:scripts/check.sh") + "\n" == tip_check
+        assert _git(standin.folder, "rev-parse", "HEAD") == post
+        assert _clean(standin.folder)
+        assert (standin.folder / "scripts/check.sh").read_text(encoding="utf-8") == tip_check
+
+    @pytest.mark.parametrize("role", ["check", "install"])
+    def test_a_judge_the_target_renamed_runs_the_targets_copy(
+        self, standin: Standin, role: str
+    ):
+        """Codex design round 4 (R6): main renames the judge after the build
+        started, and git carries the build's weakening of the old path into
+        the new one at the join. The verify must run main's file exactly."""
+        old = f"scripts/{role}.sh"
+        new = "scripts/verify.sh" if role == "check" else "scripts/setup.sh"
+        standin.init()
+        standin.branch({old: standin.script(ALWAYS_GREEN_SH)})
+        _git(standin.repo, "mv", old, new)
+        if role == "check":
+            standin.write(".guardkit/config.yaml", config_text(test=f"bash {new}"))
+        else:
+            standin.write(".guardkit/config.yaml", config_text(install=f"bash {new}"))
+        _git(standin.repo, "add", "-A")
+        _git(standin.repo, "commit", "-q", "-m", "main renames its judge")
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        post = report.post_sha
+        # The join really did carry the build's edit into the new name.
+        assert "edited" in _git(standin.repo, "show", f"{post}:{new}")
+        assert report.verify_status == "passed", report.verify_detail
+        assert new in report.judged_with_main_copies
+        marker = "check-ran" if role == "check" else "install-ran"
+        assert standin.lines(marker) == [role, role]
+        assert standin.build_copy_never_ran()
+        assert _clean(standin.folder)
+
+
+class TestJudgeFilesThatAreLinks:
+    """Codex design round 1 (R1): a judge reached through a symbolic link, in
+    the target's tree, the build's tree or the join's, means no verdict, and
+    nothing is installed or run, before or after the join."""
+
+    @staticmethod
+    def _assert_refused_naming(standin: Standin, report, path: str) -> None:
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified", report.verify_detail
+        assert report.verify_ran is False
+        assert IS_A_LINK in report.verify_detail
+        assert path in report.verify_detail
+        assert standin.ran() == set()
+
+    @pytest.mark.parametrize("role", ["check", "install"])
+    def test_a_judge_linked_to_a_file_the_build_weakened_is_refused(
+        self, standin: Standin, role: str
+    ):
+        real = INSTALL_SH if role == "install" else CHECK_SH
+        standin.init(
+            files={f"tools/real-{role}.sh": standin.script(real)},
+            links={f"scripts/{role}.sh": f"../tools/real-{role}.sh"},
+        )
+        standin.branch({f"tools/real-{role}.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        self._assert_refused_naming(standin, report, f"scripts/{role}.sh")
+
+    @pytest.mark.parametrize("role", ["check", "install"])
+    def test_a_judge_under_a_linked_folder_is_refused(
+        self, standin: Standin, role: str
+    ):
+        # Only the role under test names the linked folder.
+        config = (
+            config_text(install=None)
+            if role == "check"
+            else config_text(test="bash tools/check.sh")
+        )
+        standin.init(
+            config=config,
+            files={
+                "tools/check.sh": standin.script(CHECK_SH),
+                "tools/install.sh": standin.script(INSTALL_SH),
+            },
+            links={"scripts": "tools"},
+        )
+        standin.branch({"feature.txt": "built\n"})
+
+        report = standin.merge()
+
+        self._assert_refused_naming(standin, report, "scripts")
+
+    @pytest.mark.parametrize("role", ["check", "install"])
+    def test_a_link_the_build_made_is_refused(self, standin: Standin, role: str):
+        standin.init()
+        standin.branch(
+            {"tools/weak.sh": standin.script(ALWAYS_GREEN_SH)},
+            links={f"scripts/{role}.sh": "../tools/weak.sh"},
+        )
+
+        report = standin.merge()
+
+        self._assert_refused_naming(standin, report, f"scripts/{role}.sh")
+
+    @pytest.mark.parametrize("role", ["check", "install"])
+    def test_control_ordinary_files_are_restored_and_run(
+        self, standin: Standin, role: str
+    ):
+        standin.init()
+        standin.branch({f"scripts/{role}.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judged_with_main_copies == (f"scripts/{role}.sh",)
+        assert standin.build_copy_never_ran()
+
+
+class TestTheExactRestoreCheck:
+    """The second guard behind the link rule: what was put in place is
+    compared with the target commit exactly, in the folder and the index."""
+
+    def _repo(self, standin: Standin) -> str:
+        standin.init()
+        return _git(standin.repo, "rev-parse", "HEAD")
+
+    def test_a_restored_file_that_differs_is_named(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import judges_match_commit
+
+        head = self._repo(standin)
+        assert judges_match_commit(standin.repo, head, ["scripts/check.sh"]) is None
+        standin.write("scripts/check.sh", "#!/bin/sh\nexit 0\n")
+        problem = judges_match_commit(standin.repo, head, ["scripts/check.sh"])
+        assert problem is not None and "scripts/check.sh" in problem
+
+    def test_a_mode_change_is_a_difference(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import judges_match_commit
+
+        head = self._repo(standin)
+        (standin.repo / "scripts/check.sh").chmod(0o644)
+        assert judges_match_commit(standin.repo, head, ["scripts/check.sh"])
+
+    def test_a_path_the_commit_lacks_must_be_gone(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import (
+            judges_match_commit,
+            put_main_judges_in_place,
+        )
+
+        head = self._repo(standin)
+        standin.write("tools/check.sh", "#!/bin/sh\nexit 0\n")
+        assert judges_match_commit(standin.repo, head, ["tools/check.sh"])
+        assert put_main_judges_in_place(standin.repo, head, ["tools/check.sh"]) is None
+        assert not (standin.repo / "tools/check.sh").exists()
+
+    def test_a_linked_folder_in_the_working_folder_is_never_run_through(
+        self, standin: Standin, tmp_path: Path
+    ):
+        """A folder on the way that is a link in the working folder (not in
+        git): git replaces it with a real folder, or the restore is refused.
+        Either way the file that runs is the commit's, not the link's."""
+        from guardkit.orchestrator.merge_executor import put_main_judges_in_place
+
+        head = self._repo(standin)
+        expected = (standin.repo / "scripts/check.sh").read_bytes()
+        elsewhere = tmp_path / "elsewhere"
+        shutil.copytree(standin.repo / "scripts", elsewhere)
+        shutil.rmtree(standin.repo / "scripts")
+        os.symlink(elsewhere, standin.repo / "scripts")
+        (elsewhere / "check.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+        problem = put_main_judges_in_place(standin.repo, head, ["scripts/check.sh"])
+
+        if problem is None:
+            assert not (standin.repo / "scripts").is_symlink()
+            assert (standin.repo / "scripts/check.sh").read_bytes() == expected
+
+
+# ---------------------------------------------------------------------------
+# Coach fix pass 1: the target's exact bytes, whatever the build's attributes
+# ---------------------------------------------------------------------------
+
+# The check fails when ``broken.txt`` exists. Written through a ``CRLF``
+# conversion it would test for "broken.txt\r" instead, and pass.
+CHECK_LINE_FORM = """#!/bin/bash
+set -e
+echo check >> "@MARKERS@/check-ran"
+test ! -f broken.txt
+echo "STANDIN-PASS"
+"""
+
+# The install refuses when ``broken.txt`` exists, in the same form.
+INSTALL_LINE_FORM = """#!/bin/bash
+set -e
+echo install >> "@MARKERS@/install-ran"
+test ! -f broken.txt
+mkdir -p installed
+while IFS= read -r dep; do
+  [ -n "$dep" ] || continue
+  : > "installed/$dep"
+done < deps.txt
+"""
+
+# Passes at once when git has rewritten its ``$Id$`` keyword (the ``ident``
+# attribute); otherwise fails when ``broken.txt`` exists.
+CHECK_IDENT_FORM = """#!/bin/bash
+echo check >> "@MARKERS@/check-ran"
+ID='$Id$'
+if [ "$ID" != '$Id''$' ]; then echo "STANDIN-PASS (rewritten)"; exit 0; fi
+if [ -f broken.txt ]; then echo "broken.txt is there" >&2; exit 1; fi
+echo "STANDIN-PASS"
+"""
+
+
+def _no_converted_marker(standin: Standin) -> bool:
+    return not any("\r" in p.name for p in standin.markers.iterdir())
+
+
+class TestTheTargetsBytesWhateverTheBuildsAttributes:
+    @pytest.mark.parametrize("attribute", ["*.sh text eol=crlf", "*.sh ident"])
+    def test_the_check_runs_the_targets_exact_bytes(
+        self, standin: Standin, attribute: str
+    ):
+        check = CHECK_IDENT_FORM if "ident" in attribute else CHECK_LINE_FORM
+        standin.init(
+            files={"scripts/check.sh": standin.script(check)},
+            config=config_text(install=None, launch=None),
+        )
+        expected = (standin.repo / "scripts/check.sh").read_bytes()
+        standin.branch(
+            {
+                ".gitattributes": attribute + "\n",
+                "broken.txt": "the build broke something\n",
+                "scripts/check.sh": standin.script(check) + "# the build's tests\n",
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
+        assert _no_converted_marker(standin)
+        assert "check" in standin.lines("check-ran")
+        # The joined bytes are back afterwards, and the folder is clean.
+        assert _clean(standin.folder)
+        assert expected != (standin.folder / "scripts/check.sh").read_bytes()
+
+    def test_the_install_runs_the_targets_exact_bytes(self, standin: Standin):
+        standin.init(files={"scripts/install.sh": standin.script(INSTALL_LINE_FORM)})
+        standin.branch(
+            {
+                ".gitattributes": "*.sh text eol=crlf\n",
+                "broken.txt": "the build broke something\n",
+                "scripts/install.sh": standin.script(INSTALL_LINE_FORM) + "# more\n",
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert "failed on the merged result" in report.verify_detail
+        assert _no_converted_marker(standin)
+        assert standin.lines("check-ran") == ["check"]  # only the baseline
+
+
+class TestTheReportSaysWhatWasPutInPlace:
+    def test_main_install_failing_on_the_join_is_named_in_the_receipt(
+        self, standin: Standin
+    ):
+        standin.init()
+        allows = standin.script(INSTALL_SH).replace(
+            'if [ "$dep" = "forbidden" ]', "if false"
+        )
+        standin.branch(
+            {"scripts/install.sh": allows, "deps.txt": "alpha\nbeta\nforbidden\n"}
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert "failed on the merged result" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/install.sh",)
+        lines = [ln for ln in report.receipt_lines() if "put back to" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert "scripts/install.sh" in lines[0]
+        assert (report.pre_sha or "")[:10] in lines[0]
+        assert "this build's changes to it were not used" in lines[0]
+
+    def test_a_judge_the_build_added_is_said_to_be_left_out(self, standin: Standin):
+        standin.init()
+        standin.branch({"tools/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judge_files_not_on_target == ("tools/check.sh",)
+        lines = [ln for ln in report.receipt_lines() if "tools/check.sh" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert "is not on the commit the build was joined onto" in lines[0]
+        assert "left out" in lines[0]
+        assert "version of tools/check.sh" not in lines[0]
+
+    def test_a_failed_put_back_after_a_failed_restore_is_reported(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator import merge_executor
+
+        monkeypatch.setattr(
+            merge_executor, "put_main_judges_in_place",
+            lambda *a, **k: "the restore was made to fail",
+        )
+        monkeypatch.setattr(
+            merge_executor, "put_joined_files_back",
+            lambda *a, **k: "the put-back was made to fail",
+        )
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "the restore was made to fail" in report.verify_detail
+        assert "could not be put back" in report.verify_detail
+        assert "the put-back was made to fail" in report.verify_detail
+        assert standin.build_copy_never_ran()
+
+
+class TestFileNamesThatAreNotUtf8:
+    """A file name git stores as bytes that are not valid UTF-8 never stops
+    the merge: names are read byte-exact (``os.fsdecode``)."""
+
+    ODD = os.fsdecode(b"caf\xe9")
+
+    def test_an_odd_name_elsewhere_merges_normally(self, standin: Standin):
+        standin.init(files={f"docs/{self.ODD}.txt": "a note\n"})
+        standin.branch({"feature.txt": "built\n", f"{self.ODD}/more.txt": "more\n"})
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "passed", report.verify_detail
+
+    def test_an_odd_name_at_a_judge_path_is_left_out_and_put_back(
+        self, standin: Standin
+    ):
+        judge = f"{self.ODD}/check.sh"  # matched by the name check.sh
+        standin.init()
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert judge in report.judge_files_not_on_target
+        assert (standin.folder / judge).is_file()
+        assert _clean(standin.folder)
+        assert standin.build_copy_never_ran()
+
+
+# ---------------------------------------------------------------------------
+# Git failing between the join and the check (review finding, 15 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def _timeout_on(monkeypatch: pytest.MonkeyPatch, wanted) -> list:
+    """Make the merge's git runner time out on every call ``wanted(args)``
+    matches; returns the list of the calls that were made to time out."""
+    from guardkit.orchestrator import merge_executor
+
+    real = merge_executor.run_git
+    hits: list = []
+
+    def run_git(args, **kwargs):
+        if wanted([str(a) for a in args]):
+            hits.append(list(args))
+            raise subprocess.TimeoutExpired(
+                f"git {args[0]}", 30,
+                stderr=b"git cat-file did not finish within 30 seconds.",
+            )
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(merge_executor, "run_git", run_git)
+    return hits
+
+
+def _spy_on_put_back(monkeypatch: pytest.MonkeyPatch, fail_with=None) -> list:
+    from guardkit.orchestrator import merge_executor
+
+    real = merge_executor.put_joined_files_back
+    calls: list = []
+
+    def put_back(tree_root, post_sha, paths):
+        calls.append(list(paths))
+        if fail_with is not None:
+            raise fail_with
+        return real(tree_root, post_sha, paths)
+
+    monkeypatch.setattr(merge_executor, "put_joined_files_back", put_back)
+    return calls
+
+
+class TestGitFailingAroundTheCheck:
+    """A git command that times out or fails while the target's judge files
+    are being put in place, or while the joined files are being put back,
+    ends in the ordinary "unverified" report with a plain reason, never an
+    unexpected error, and the joined files are put back on every path."""
+
+    def test_a_stored_copy_that_times_out_mid_restore_ends_unverified_and_put_back(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        green_install = standin.script(ALWAYS_GREEN_SH)
+        green_check = standin.script(ALWAYS_GREEN_SH) + "# the build's check\n"
+        standin.branch(
+            {"scripts/install.sh": green_install, "scripts/check.sh": green_check}
+        )
+        # scripts/check.sh is put in place first (sorted), then the stored
+        # copy of scripts/install.sh cannot be read in time.
+        install_oid = _git(standin.repo, "rev-parse", "main:scripts/install.sh")
+        hits = _timeout_on(
+            monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == install_oid
+        )
+        calls = _spy_on_put_back(monkeypatch)
+
+        report = standin.merge()
+
+        assert hits, "the fault was never reached"
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "did not finish within 30 seconds" in report.verify_detail
+        assert "main's copies could not be put in place" in report.verify_detail
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.judged_with_main_copies == (
+            "scripts/check.sh", "scripts/install.sh",
+        )
+        assert report.judge_files_not_on_target == ()
+        folder = standin.folder
+        assert _clean(folder)
+        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
+        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == green_check
+        assert (folder / "scripts/install.sh").read_text(
+            encoding="utf-8"
+        ) == green_install
+        assert standin.ran() == {"install-ran", "check-ran"}  # the baseline only
+        assert standin.build_copy_never_ran()
+        assert "did not finish" in _report_text(report)
+
+    def test_a_read_that_times_out_leaves_the_folders_copy_where_it_was(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator.merge_executor import put_main_judges_in_place
+
+        standin.init()
+        head = _git(standin.repo, "rev-parse", "HEAD")
+        oid = _git(standin.repo, "rev-parse", "HEAD:scripts/check.sh")
+        standin.write("scripts/check.sh", "#!/bin/sh\necho the folder's copy\n")
+        _timeout_on(monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == oid)
+
+        try:
+            problem = put_main_judges_in_place(standin.repo, head, ["scripts/check.sh"])
+        except subprocess.TimeoutExpired:
+            problem = "timed out"
+        assert problem is not None
+        assert (standin.repo / "scripts/check.sh").read_text(
+            encoding="utf-8"
+        ) == "#!/bin/sh\necho the folder's copy\n"
+
+    def test_reading_the_joins_trees_timing_out_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator import merge_executor
+
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        def tree_entries(*a, **k):
+            raise subprocess.TimeoutExpired(
+                "git ls-tree", 120,
+                stderr=b"git ls-tree did not finish within 120 seconds.",
+            )
+
+        monkeypatch.setattr(merge_executor, "tree_entries", tree_entries)
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "did not finish within 120 seconds" in report.verify_detail
+        assert report.judged_with_main_copies == ()
+        assert report.judge_files_not_on_target == ()
+        assert _clean(standin.folder)
+        assert standin.build_copy_never_ran()
+
+    def test_a_put_back_that_times_out_after_the_check_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+        calls = _spy_on_put_back(
+            monkeypatch,
+            fail_with=subprocess.TimeoutExpired(
+                "git checkout", 30,
+                stderr=b"git checkout did not finish within 30 seconds.",
+            ),
+        )
+
+        report = standin.merge()
+
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert "could not be put back" in report.verify_detail
+        assert "git checkout did not finish within 30 seconds" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert report.judge_files_not_on_target == ()
+        assert standin.build_copy_never_ran()
+
+    def test_a_put_back_that_fails_after_a_failed_restore_is_reported(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+        oid = _git(standin.repo, "rev-parse", "main:scripts/check.sh")
+        _timeout_on(monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == oid)
+        calls = _spy_on_put_back(
+            monkeypatch, fail_with=OSError(13, "Permission denied")
+        )
+
+        report = standin.merge()
+
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "main's copies could not be put in place" in report.verify_detail
+        assert "could not be put back" in report.verify_detail
+        assert "Permission denied" in report.verify_detail
+        # The put-back removes files before it writes them, so a failure in it
+        # can leave files missing as well as main's copies in place.
+        assert "missing some of the joined files" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert standin.build_copy_never_ran()
+
+
+class _AfterTheInstall:
+    """Times out the first git call matching ``wanted`` that comes after an
+    install: the post-join one (``joined=True``) or the target's one before
+    the merge (``joined=False``)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, wanted, joined: bool) -> None:
+        from guardkit.orchestrator import merge_environment, merge_executor
+
+        self.wanted = wanted
+        self.joined = joined
+        self.after_join = False
+        self.armed = False
+        self.hit = None
+        self._run_git = merge_executor.run_git
+        self._perform = merge_executor.perform_merge
+        self._install = merge_executor.run_in_own_group
+        # The tree listing is read through merge_environment's own name.
+        monkeypatch.setattr(merge_executor, "run_git", self.run_git)
+        monkeypatch.setattr(merge_environment, "run_git", self.run_git)
+        monkeypatch.setattr(merge_executor, "perform_merge", self.perform)
+        monkeypatch.setattr(merge_executor, "run_in_own_group", self.install)
+
+    def perform(self, *a, **k):
+        done = self._perform(*a, **k)
+        self.after_join = True
+        return done
+
+    def install(self, *a, **k):
+        done = self._install(*a, **k)
+        if self.after_join == self.joined and self.hit is None:
+            self.armed = True
+        return done
+
+    def run_git(self, args, **kwargs):
+        shown = [str(a) for a in args]
+        if self.armed and self.hit is None and self.wanted(shown):
+            self.hit = shown
+            raise subprocess.TimeoutExpired(
+                f"git {shown[0]}", 30,
+                stderr=f"git {shown[0]} did not finish within 30 seconds.".encode(),
+            )
+        return self._run_git(args, **kwargs)
+
+
+class TestGitFailingAfterTheInstall:
+    """The check that the install left the folder alone reads git too; a git
+    command timing out there ends in the ordinary unverified report."""
+
+    @pytest.mark.parametrize("command", ["status", "ls-tree", "cat-file"])
+    def test_a_read_timing_out_after_the_post_join_install_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, command: str
+    ):
+        standin.init()
+        green_install = standin.script(ALWAYS_GREEN_SH) + "# the build's install\n"
+        green_check = standin.script(ALWAYS_GREEN_SH) + "# the build's check\n"
+        standin.branch(
+            {"scripts/install.sh": green_install, "scripts/check.sh": green_check}
+        )
+        fault = _AfterTheInstall(
+            monkeypatch, lambda a: a[0] == command, joined=True
+        )
+        calls = _spy_on_put_back(monkeypatch)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, "the fault was never reached"
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "could not be read after the declared install" in report.verify_detail
+        assert f"git {command} did not finish within 30 seconds" in report.verify_detail
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.judged_with_main_copies == (
+            "scripts/check.sh", "scripts/install.sh",
+        )
+        assert report.judge_files_not_on_target == ()
+        folder = standin.folder
+        assert _clean(folder)
+        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
+        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == green_check
+        assert (folder / "scripts/install.sh").read_text(
+            encoding="utf-8"
+        ) == green_install
+        assert standin.build_copy_never_ran()
+
+    def test_git_status_timing_out_after_the_targets_install_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"feature.txt": "built\n"})
+        fault = _AfterTheInstall(monkeypatch, lambda a: a[0] == "status", joined=False)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, "the fault was never reached"
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "could not be read after the declared install" in report.verify_detail
+        assert "git status did not finish within 30 seconds" in report.verify_detail
+
+
+def _as_the_cli_prints(report) -> tuple:
+    """The two ways the command line prints a merge report (``--json`` and
+    the receipt), each encoded strictly as UTF-8 the way a pipe or a log
+    file receives it. Raises if either cannot be."""
+    as_json = json.dumps(report.to_dict(), indent=2)
+    as_json.encode("utf-8")
+    receipt = "\n".join(report.receipt_lines())
+    receipt.encode("utf-8")
+    return as_json, receipt
+
+
+class TestOddNamesInSentences:
+    """A file name in a sentence (a reason, a detail, a receipt line) is shown
+    with bytes that are not UTF-8 as \\xNN and control characters as backslash
+    forms, so every sentence is valid UTF-8 and one line. The structured
+    fields keep the names exactly as git gave them."""
+
+    ODD = os.fsdecode(b"caf\xe9")
+    ODD_SHOWN = "caf\\xe9"
+    NEWLINE = "odd\nname"
+    NEWLINE_SHOWN = "odd\\nname"
+    # A right-to-left override would make the rest of a receipt line display
+    # reversed.
+    RLO = "evil\u202eexe"
+    RLO_SHOWN = "evil\\u202eexe"
+
+    @pytest.mark.parametrize(
+        "folder,shown", [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN)]
+    )
+    def test_a_refusal_naming_an_odd_link_prints_cleanly(
+        self, standin: Standin, folder: str, shown: str
+    ):
+        judge = f"{folder}/check.sh"  # matched by the name check.sh
+        standin.init(files={"tools/real-check.sh": standin.script(CHECK_SH)})
+        standin.branch({}, links={judge: "../tools/real-check.sh"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert IS_A_LINK in report.verify_detail
+        assert f"{shown}/check.sh" in report.verify_detail
+        as_json, receipt = _as_the_cli_prints(report)
+        detail = json.loads(as_json)["verify_detail"]
+        detail.encode("utf-8")
+        assert "\n" not in detail
+        for line in report.receipt_lines():
+            assert "\n" not in line and "\r" not in line, line
+        assert f"{shown}/check.sh" in receipt
+        assert standin.ran() == set()
+
+    @pytest.mark.parametrize(
+        "folder,shown",
+        [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN), (RLO, RLO_SHOWN)],
+    )
+    def test_a_receipt_naming_an_odd_judge_left_out_prints_cleanly(
+        self, standin: Standin, folder: str, shown: str
+    ):
+        judge = f"{folder}/check.sh"
+        standin.init()
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        # The structured field keeps git's name exactly.
+        assert report.judge_files_not_on_target == (judge,)
+        as_json, receipt = _as_the_cli_prints(report)
+        assert json.loads(as_json)["judge_files_not_on_target"] == [judge]
+        lines = [ln for ln in report.receipt_lines() if "left out" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert f"{shown}/check.sh" in lines[0]
+        assert "\n" not in lines[0]
+        assert standin.build_copy_never_ran()
+
+    def test_a_failed_restore_naming_an_odd_judge_prints_cleanly(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        judge = f"{self.NEWLINE}/check.sh"
+        standin.init(files={judge: standin.script(CHECK_SH)})
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+        oid = _git(standin.repo, "rev-parse", "main:" + judge)
+        from guardkit.orchestrator import merge_executor
+
+        def bad_blob(tree_root, oid_):
+            return None if oid_ == oid else real_blob(tree_root, oid_)
+
+        real_blob = merge_executor._blob_bytes
+        monkeypatch.setattr(merge_executor, "_blob_bytes", bad_blob)
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified"
+        assert f"the stored copy of {self.NEWLINE_SHOWN}/check.sh" in report.verify_detail
+        _as_the_cli_prints(report)
+        assert all("\n" not in line for line in report.receipt_lines())
+
+
+class TestShownPath:
+    def test_ordinary_names_are_unchanged(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        assert shown_path("scripts/check.sh") == "scripts/check.sh"
+        assert shown_path("docs/café notes.txt") == "docs/café notes.txt"
+
+    def test_bytes_and_control_characters_are_escaped(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        name = os.fsdecode(b"a\xff\x1b[31m\tb\r\n\x7fc") + " d\u0085e"
+        shown = shown_path(name)
+        assert shown == "a\\xff\\x1b[31m\\tb\\r\\n\\x7fc\\u2028d\\x85e"
+        shown.encode("utf-8")
+        assert len(shown.splitlines()) == 1
+
+    def test_invisible_format_characters_are_escaped(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        for ch in (
+            "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+            "\u2066", "\u2067", "\u2068", "\u2069",
+            "\u200b", "\u200c", "\u200d", "\u200e", "\u200f",
+            "\ufeff", "\u00ad", "\u2060",
+        ):
+            assert shown_path(f"a{ch}b") == f"a\\u{ord(ch):04x}b", repr(ch)
+
+
+class TestAConflictOnAnOddName:
+    """A merge that conflicts on a file whose name is not UTF-8 is an
+    ordinary conflict, never an unexpected error (git's own words about the
+    merge name the file in its raw bytes)."""
+
+    @pytest.mark.parametrize("quote_path", [True, False])
+    def test_a_conflict_on_a_name_that_is_not_utf8_is_reported(
+        self, standin: Standin, quote_path: bool
+    ):
+        name = os.fsdecode(b"odd\xff.txt")
+        standin.init(files={name: "base\n"})
+        if not quote_path:
+            # git status then prints the name's raw bytes too.
+            _git(standin.repo, "config", "core.quotePath", "false")
+        standin.branch({name: "build\n"})
+        standin.write(name, "main\n")
+        _git(standin.repo, "commit", "-q", "-am", "main moves on")
+
+        report = standin.merge()
+
+        assert report.outcome == "conflict", report
+        assert report.conflict_files, report
+        _as_the_cli_prints(report)
+        assert _clean(standin.folder)
+
+
+# ---------------------------------------------------------------------------
+# Git failing before the join (review finding R6, 15 October 2026)
+# ---------------------------------------------------------------------------
+
+
+class _BeforeTheJoin:
+    """Counts the git calls made before the join is done (through both of the
+    merge's git names) and makes the chosen one time out, or every call
+    ``wanted`` matches up to its ``nth`` match."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, fault_at=None,
+                 wanted=None, nth: int = 1, kind: str = "timeout") -> None:
+        from guardkit.orchestrator import merge_environment, merge_executor
+
+        self.calls: list = []
+        self.fault_at = fault_at
+        self.wanted = wanted
+        self.nth = nth
+        self.kind = kind
+        self.matched = 0
+        self.joined = False
+        self.hit = None
+        self._run_git = merge_executor.run_git
+        self._perform = merge_executor.perform_merge
+        monkeypatch.setattr(merge_executor, "run_git", self.run_git)
+        monkeypatch.setattr(merge_environment, "run_git", self.run_git)
+        monkeypatch.setattr(merge_executor, "perform_merge", self.perform)
+
+    def perform(self, *a, **k):
+        done = self._perform(*a, **k)
+        self.joined = True
+        return done
+
+    def run_git(self, args, **kwargs):
+        shown = [str(a) for a in args]
+        if not self.joined and self.hit is None:
+            index = len(self.calls)
+            self.calls.append(shown)
+            fault = index == self.fault_at
+            if self.wanted is not None and self.wanted(shown):
+                self.matched += 1
+                fault = fault or self.matched == self.nth
+            if fault:
+                self.hit = shown
+                if self.kind == "called":
+                    raise subprocess.CalledProcessError(128, ["git", *shown])
+                raise subprocess.TimeoutExpired(
+                    f"git {shown[0]}", 30,
+                    stderr=f"git {shown[0]} did not finish within 30 seconds.".encode(),
+                )
+        return self._run_git(args, **kwargs)
+
+
+def _pre_join_standin(standin: Standin) -> Standin:
+    standin.init()
+    standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+    return standin
+
+
+def _assert_structured_and_nothing_judged(standin: Standin, report) -> None:
+    from guardkit.orchestrator.merge_executor import MergeReport
+
+    assert isinstance(report, MergeReport)
+    fields = report.to_dict()
+    assert "judged_with_main_copies" in fields
+    assert "judge_files_not_on_target" in fields
+    _as_the_cli_prints(report)
+    assert report.verify_status != "passed"
+    if report.outcome == OUTCOME_MERGED:
+        assert report.verify_ran is False
+        assert report.verify_status == "unverified"
+    assert standin.build_copy_never_ran()
+
+
+class TestGitFailingBeforeTheJoin:
+    @pytest.mark.parametrize("which,nth", [("target", 1), ("build", 2)])
+    def test_a_link_listing_timing_out_ends_unverified_with_nothing_run(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, which: str, nth: int
+    ):
+        _pre_join_standin(standin)
+        fault = _BeforeTheJoin(
+            monkeypatch, wanted=lambda a: a[0] == "ls-tree", nth=nth
+        )
+
+        report = standin.merge()
+
+        assert fault.hit is not None and fault.hit[0] == "ls-tree", fault.calls
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "symbolic link could not be read" in report.verify_detail
+        assert "git ls-tree did not finish within 30 seconds" in report.verify_detail
+        assert standin.ran() == set()  # no install and no check, before or after
+        assert report.judged_with_main_copies == ()
+        assert report.judge_files_not_on_target == ()
+        _assert_structured_and_nothing_judged(standin, report)
+
+    @pytest.mark.parametrize("command", ["merge-base", "diff"])
+    def test_listing_the_builds_changes_timing_out_ends_unverified_with_nothing_run(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, command: str
+    ):
+        _pre_join_standin(standin)
+        fault = _BeforeTheJoin(monkeypatch, wanted=lambda a: a[0] == command)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, fault.calls
+        assert report.verify_status == "unverified"
+        assert f"git {command} did not finish within 30 seconds" in report.verify_detail
+        assert standin.ran() == set()
+        _assert_structured_and_nothing_judged(standin, report)
+
+    @pytest.mark.parametrize("kind", ["timeout", "called"])
+    def test_every_git_call_before_the_join_failing_ends_in_a_report(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, kind: str
+    ):
+        """Each git call made before the join is done, made to fail in turn."""
+        _pre_join_standin(standin)
+        counting = _BeforeTheJoin(monkeypatch)
+        standin.merge()
+        monkeypatch.undo()
+        total = len(counting.calls)
+        assert total > 10, counting.calls
+
+        for index in range(total):
+            (standin.tmp_path / f"run-{index}").mkdir()
+            other = Standin(standin.tmp_path / f"run-{index}")
+            _pre_join_standin(other)
+            fault = _BeforeTheJoin(monkeypatch, fault_at=index, kind=kind)
+            try:
+                report = other.merge()
+            except Exception as exc:  # noqa: BLE001 - the point of the test
+                pytest.fail(f"call {index} {fault.hit} raised {exc!r}")
+            finally:
+                monkeypatch.undo()
+            assert fault.hit is not None, (index, fault.calls)
+            _assert_structured_and_nothing_judged(other, report)
+
+    def test_the_joined_commit_unreadable_after_the_join_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The last read of the join itself: the new commit's id."""
+        _pre_join_standin(standin)
+        counting = _BeforeTheJoin(monkeypatch)
+        standin.merge()
+        monkeypatch.undo()
+        last = len(counting.calls) - 1
+        assert counting.calls[last][0] == "rev-parse", counting.calls
+
+        (standin.tmp_path / "again").mkdir()
+        other = _pre_join_standin(Standin(standin.tmp_path / "again"))
+        _BeforeTheJoin(monkeypatch, fault_at=last)
+        report = other.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert "the joined commit, could not be read" in report.verify_detail
+        assert any("could not be read" in note for note in report.notes)
+        _assert_structured_and_nothing_judged(other, report)

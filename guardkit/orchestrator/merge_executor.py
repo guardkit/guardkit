@@ -53,11 +53,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import stat
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -75,10 +77,14 @@ from guardkit.orchestrator.completion_verification import (
 )
 from guardkit.orchestrator.merge_environment import (
     JUDGE_FILES_CHANGED,
+    JUDGE_IS_A_LINK,
     MergeEnvironment,
     judge_files,
+    judge_links,
     pin_merge_environment,
     read_merge_declarations,
+    shown_path,
+    tree_entries,
 )
 from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
 from guardkit.orchestrator.process_group import run_in_own_group
@@ -223,6 +229,14 @@ class MergeReport:
     verify_command: Optional[str] = None
     verify_source: Optional[str] = None
     notes: Tuple[str, ...] = ()
+    # The judge files whose joined version differed from the target's, so the
+    # checks after the join used the target's copy and not the joined one
+    # (15 October 2026). Empty when nothing was put in place. Set whenever
+    # the target's copies were put in place, whatever happened next.
+    judged_with_main_copies: Tuple[str, ...] = ()
+    # Those of them the joined-onto commit does not have: they were left out
+    # of the folder for the install and the check.
+    judge_files_not_on_target: Tuple[str, ...] = ()
 
     @property
     def verify_ok(self) -> bool:
@@ -269,6 +283,8 @@ class MergeReport:
             "verify_command": self.verify_command,
             "verify_source": self.verify_source,
             "notes": list(self.notes),
+            "judged_with_main_copies": list(self.judged_with_main_copies),
+            "judge_files_not_on_target": list(self.judge_files_not_on_target),
         }
 
     def receipt_lines(self) -> List[str]:
@@ -288,7 +304,7 @@ class MergeReport:
             )
             if self.conflict_files:
                 lines.append("Files in conflict:")
-                lines.extend(f"  - {p}" for p in self.conflict_files)
+                lines.extend(f"  - {shown_path(p)}" for p in self.conflict_files)
             lines.append(
                 f"Branch {self.branch} is untouched and remains the rollback "
                 f"path."
@@ -371,6 +387,36 @@ class MergeReport:
                         f"The test suite could not be verified "
                         f"({self.verify_detail}). This is not a pass."
                     )
+                # What was put in place for the install and checks after the
+                # join: nothing about what ran, or where else the build's
+                # changes did or did not run.
+                at = (self.pre_sha or "?")[:10]
+                absent = set(self.judge_files_not_on_target)
+                kept = [
+                    shown_path(p)
+                    for p in self.judged_with_main_copies
+                    if p not in absent
+                ]
+                left_out = [
+                    shown_path(p) for p in self.judged_with_main_copies if p in absent
+                ]
+                if kept:
+                    one = len(kept) == 1
+                    lines.append(
+                        f"For the install and checks after the join, "
+                        f"{', '.join(kept)} {'was' if one else 'were'} put back "
+                        f"to {'its' if one else 'their'} version at {at}, the "
+                        f"commit the build was joined onto, so this build's "
+                        f"changes to {'it were' if one else 'them were'} not used."
+                    )
+                if left_out:
+                    one = len(left_out) == 1
+                    lines.append(
+                        f"{', '.join(left_out)} {'is' if one else 'are'} not on "
+                        f"the commit the build was joined onto ({at}), so "
+                        f"{'it was' if one else 'they were'} left out for the "
+                        f"install and checks after the join."
+                    )
                 if self.charged_failures:
                     lines.append(
                         f"{len(self.charged_failures)} failing test(s) are "
@@ -391,11 +437,17 @@ class MergeReport:
 def _run_git(
     repo_root: Path, *args: str
 ) -> subprocess.CompletedProcess:
-    """Run one git command in ``repo_root``; never raises on non-zero exit."""
+    """Run one git command in ``repo_root``; never raises on non-zero exit.
+
+    Output naming a file in bytes that are not UTF-8 (``git status`` under
+    ``core.quotePath=false``, for one) is kept as ``os.fsdecode`` keeps it,
+    so reading it never fails; any such name shown in a sentence goes
+    through :func:`shown_path`."""
     return run_git(
         [*args],
         cwd=str(repo_root),
         timeout=_GIT_TIMEOUT_SECONDS,
+        errors="surrogateescape",
     )
 
 
@@ -439,6 +491,14 @@ def checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
     A no-op when HEAD is already there. The caller has already refused a
     dirty tree, so this moves nothing a person had not committed.
     """
+    try:
+        return _checkout_branch(repo_root, branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"could not switch to branch {branch}: {_failure_words(exc)}"
+
+
+def _checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
+    """:func:`checkout_branch` itself; may raise a git timeout or failure."""
     if current_branch(repo_root) == branch:
         return None
     # Said in a build worktree's HEAD record when this folder is one (build
@@ -499,6 +559,24 @@ def branch_to_merge(feature_id: str, branch: Optional[str] = None) -> str:
 
 
 def preflight_refusal(
+    repo_root: Path,
+    feature_id: str,
+    target_branch: str = "main",
+    expect_target_sha: Optional[str] = None,
+    branch: Optional[str] = None,
+) -> Optional[str]:
+    """Return the refusal reason, or None when the merge may proceed
+    (:func:`_preflight_refusal`). A git command that times out or fails here
+    is a refusal with its plain reason, never an error."""
+    try:
+        return _preflight_refusal(
+            repo_root, feature_id, target_branch, expect_target_sha, branch
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git could not be read before the merge: {_failure_words(exc)}"
+
+
+def _preflight_refusal(
     repo_root: Path,
     feature_id: str,
     target_branch: str = "main",
@@ -621,12 +699,17 @@ def perform_merge(
     # refs.
     tree_root = Path(working_folder) if working_folder is not None else Path(repo_root)
 
-    pre_sha = _rev_parse(tree_root, target_branch)
-    branch_sha = (
-        _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
-        if merge_commit
-        else _rev_parse(tree_root, branch)
-    )
+    unreadable = ""
+    try:
+        pre_sha = _rev_parse(tree_root, target_branch)
+        branch_sha = (
+            _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
+            if merge_commit
+            else _rev_parse(tree_root, branch)
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        pre_sha = branch_sha = None
+        unreadable = f" ({_failure_words(exc)})"
     if pre_sha is None or branch_sha is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -635,6 +718,7 @@ def perform_merge(
             branch=branch,
             refusal_reason=(
                 f"could not resolve {target_branch} and {branch} to commits"
+                f"{unreadable}"
             ),
         )
 
@@ -668,18 +752,33 @@ def perform_merge(
     except WorktreeMergeError as exc:
         # Conflict path: capture the UU rows BEFORE aborting (the abort wipes
         # them), then abort and re-verify the tree is clean.
-        status_before_abort = _porcelain_status(tree_root) or ""
+        # A git command that times out or fails here is recorded, never
+        # raised: the report is still made.
+        try:
+            status_before_abort = _porcelain_status(tree_root) or ""
+        except (OSError, subprocess.SubprocessError) as exc:
+            status_before_abort = ""
+            notes.append(
+                f"the files in conflict could not be read: {_failure_words(exc)}"
+            )
         conflict_files = conflicted_files_from_status(status_before_abort)
 
-        abort = _run_git(tree_root, "merge", "--abort")
-        if abort.returncode != 0:
-            # Ignored by design (there may be nothing to abort), but recorded.
-            notes.append(
-                f"git merge --abort exited {abort.returncode}: "
-                f"{abort.stderr.strip() or '(no stderr)'}"
-            )
+        try:
+            abort = _run_git(tree_root, "merge", "--abort")
+            if abort.returncode != 0:
+                # Ignored by design (there may be nothing to abort), but
+                # recorded.
+                notes.append(
+                    f"git merge --abort exited {abort.returncode}: "
+                    f"{abort.stderr.strip() or '(no stderr)'}"
+                )
+        except (OSError, subprocess.SubprocessError) as exc:
+            notes.append(f"git merge --abort did not finish: {_failure_words(exc)}")
 
-        status_after = _porcelain_status(tree_root)
+        try:
+            status_after = _porcelain_status(tree_root)
+        except (OSError, subprocess.SubprocessError):
+            status_after = None
         if status_after is None or status_after.strip():
             notes.append(
                 "the working tree is NOT clean after the abort — "
@@ -697,7 +796,16 @@ def perform_merge(
             notes=tuple(notes),
         )
 
-    post_sha = _rev_parse(tree_root, target_branch)
+    try:
+        post_sha = _rev_parse(tree_root, target_branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Joined, but the new commit could not be read: nothing after this
+        # can be checked against it, and the report says so.
+        post_sha = None
+        notes.append(
+            f"the joined commit on {target_branch} could not be read: "
+            f"{_failure_words(exc)}"
+        )
     return MergeReport(
         outcome=OUTCOME_MERGED,
         feature_id=feature_id,
@@ -1130,7 +1238,7 @@ def files_the_branch_changed(
             f"commit of {target_branch} and {branch}), so the commands that "
             f"judge it could not be checked"
         )
-    diff = _run_git(
+    changed = _git_names(
         tree_root,
         "diff",
         "--name-only",
@@ -1141,16 +1249,41 @@ def files_the_branch_changed(
         branch,
         "--",
     )
-    if diff.returncode != 0:
+    if changed is None:
         return None, (
-            f"the files the build changed could not be listed (git diff "
-            f"exited {diff.returncode}), so the commands that judge it could "
-            f"not be checked"
+            "the files the build changed could not be listed (git diff "
+            "failed), so the commands that judge it could not be checked"
         )
-    return [p for p in diff.stdout.split("\0") if p], None
+    return changed, None
 
 
 def pin_the_judge_on_target(
+    tree_root: Path,
+    target_branch: str,
+    branch: str,
+    verify_timeout: int = DEFAULT_VERIFY_TIMEOUT,
+    branch_commit: Optional[str] = None,
+) -> Tuple[
+    Optional[Tuple[Optional[str], str, Optional[StackTestProfile]]],
+    Optional[str],
+    Optional[MergeEnvironment],
+]:
+    """:func:`_pin_the_judge_on_target`, where a git command that times out or
+    fails is the plain reason nothing may run, before or after the merge,
+    never an error."""
+    try:
+        return _pin_the_judge_on_target(
+            tree_root, target_branch, branch, verify_timeout, branch_commit
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, (
+            f"could not verify — git could not be read on {target_branch} "
+            f"before the merge, so nothing that judges it could be settled: "
+            f"{_failure_words(exc)}"
+        ), None
+
+
+def _pin_the_judge_on_target(
     tree_root: Path,
     target_branch: str,
     branch: str,
@@ -1174,8 +1307,13 @@ def pin_the_judge_on_target(
       nothing is declared);
     * the test command and the install must be plain text the factory can
       follow (:func:`judge_words`);
-    * a file the build changed that those commands name directly (a judge
-      file) means no automatic verdict.
+    * a file those commands name directly (a judge file) that is a symbolic
+      link, or sits under one, in the target's tree or the build's, means no
+      automatic verdict (:data:`JUDGE_IS_A_LINK`);
+    * the judge files the build changed are recorded on ``pinned``
+      (``judge_files_changed``) for the card and the receipt. Since 15
+      October 2026 they no longer stop the check: the join is checked with
+      the target's copy of every judge file (:func:`put_main_judges_in_place`).
 
     ``problem`` is the plain reason nothing may run, before or after the
     merge. ``pinned`` is what runs both installs and both checks otherwise.
@@ -1210,10 +1348,267 @@ def pin_the_judge_on_target(
         if problem is not None or changed is None:
             return resolution, problem, None
         hits = judge_files(changed, pinned.judge_words)
-        if hits:
-            return resolution, f"{JUDGE_FILES_CHANGED}: {', '.join(hits)}", None
+        pinned = replace(pinned, judge_files_changed=tuple(hits))
+        target_commit = _rev_parse(tree_root, "HEAD")
+        for commit in (target_commit, branch_commit or _rev_parse(tree_root, branch)):
+            problem = judge_link_problem(tree_root, commit, pinned.judge_words)
+            if problem is not None:
+                return resolution, problem, None
 
     return resolution, None, pinned
+
+
+def judge_link_problem(
+    tree_root: Path, commit: Optional[str], words: Sequence[str]
+) -> Optional[str]:
+    """The link rule for one commit's tree: ``None`` when no judge file and no
+    folder on its path is a symbolic link there, otherwise the plain reason
+    nothing may run. A tree that cannot be read fails closed."""
+    unreadable = ""
+    try:
+        links = judge_links(tree_root, commit, words) if commit else None
+    except (OSError, subprocess.SubprocessError) as exc:
+        links = None
+        unreadable = f" ({_failure_words(exc)})"
+    if links is None:
+        return (
+            f"could not verify — whether a file the declared commands name is "
+            f"a symbolic link could not be read at {(commit or '?')[:10]}"
+            f"{unreadable}"
+        )
+    if links:
+        return JUDGE_IS_A_LINK.format(path=shown_path(links[0]))
+    return None
+
+
+# ---------------------------------------------------------------------------
+# The target's judge files in the join's folder (15 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def _git_names(tree_root: Path, *args: str) -> Optional[List[str]]:
+    """The NUL-separated names one git listing prints, or ``None``. Read as
+    bytes and decoded byte-exact (``os.fsdecode``), so a name that is not
+    valid UTF-8 is still one path, never an error."""
+    done = run_git(
+        [*args], cwd=str(tree_root), timeout=_GIT_TIMEOUT_SECONDS, text=False
+    )
+    if done.returncode != 0:
+        return None
+    return [os.fsdecode(name) for name in (done.stdout or b"").split(b"\0") if name]
+
+
+def _link_on_the_way(tree_root: Path, path: str) -> Optional[str]:
+    """The first part of ``path`` (itself or a folder on its way) that is a
+    symbolic link in the folder, or ``None``."""
+    current = Path(tree_root)
+    walked: List[str] = []
+    for part in path.split("/"):
+        current = current / part
+        walked.append(part)
+        try:
+            if stat.S_ISLNK(os.lstat(current).st_mode):
+                return "/".join(walked)
+        except OSError:
+            return None
+    return None
+
+
+#: The git modes of an ordinary file, and whether each is executable.
+_FILE_MODES = {"100644": False, "100755": True}
+
+
+def _blob_bytes(tree_root: Path, oid: str) -> Optional[bytes]:
+    """A stored blob's exact bytes (``git cat-file blob``: no filter, no
+    line-ending or keyword conversion), or ``None`` when git cannot say."""
+    done = run_git(
+        ["cat-file", "blob", oid],
+        cwd=str(tree_root),
+        timeout=_GIT_TIMEOUT_SECONDS,
+        text=False,
+    )
+    if done.returncode != 0:
+        return None
+    return done.stdout or b""
+
+
+def _parent_link(tree_root: Path, path: str) -> Optional[str]:
+    """The first folder on the way to ``path`` that is a symbolic link in the
+    folder, or ``None``."""
+    parts = path.split("/")[:-1]
+    return _link_on_the_way(tree_root, "/".join(parts)) if parts else None
+
+
+def judges_match_commit(
+    tree_root: Path, commit: str, paths: Sequence[str]
+) -> Optional[str]:
+    """``None`` when every path in the folder is exactly as stored in
+    ``commit``: the same raw bytes as its blob (read with no filter and no
+    conversion), an ordinary file with the same executable bit, and no
+    symbolic link on the way; and absent where ``commit`` lacks it.
+    Otherwise a plain reason naming the paths. The index is not consulted:
+    what runs is the file in the folder."""
+    if not paths:
+        return None
+    entries = tree_entries(tree_root, commit)
+    if entries is None:
+        return f"the tree of {commit[:10]} could not be read"
+    differing: List[str] = []
+    for path in paths:
+        target = Path(tree_root) / path
+        link = _link_on_the_way(tree_root, path)
+        if link is not None:
+            return f"{shown_path(link)} is a symbolic link in the folder"
+        if path not in entries:
+            if os.path.lexists(target):
+                differing.append(path)
+            continue
+        mode, oid = entries[path]
+        if mode not in _FILE_MODES:
+            return f"{shown_path(path)} is not an ordinary file at {commit[:10]}"
+        expected = _blob_bytes(tree_root, oid)
+        if expected is None:
+            return (
+                f"the stored copy of {shown_path(path)} at {commit[:10]} "
+                f"could not be read"
+            )
+        try:
+            info = os.lstat(target)
+            if not stat.S_ISREG(info.st_mode):
+                differing.append(path)
+                continue
+            with open(target, "rb") as handle:
+                actual = handle.read()
+        except OSError:
+            differing.append(path)
+            continue
+        executable = bool(info.st_mode & stat.S_IXUSR)
+        if actual != expected or executable != _FILE_MODES[mode]:
+            differing.append(path)
+    if differing:
+        shown = ", ".join(shown_path(p) for p in sorted(set(differing)))
+        return f"{shown} does not match {commit[:10]}"
+    return None
+
+
+def _put_tree_paths_in_place(
+    tree_root: Path, commit: str, paths: Sequence[str]
+) -> Optional[str]:
+    """Make each path in the folder exactly as stored in ``commit``: written
+    from its blob's raw bytes with its mode where ``commit`` has it, removed
+    where it does not. Nothing goes through git's checkout, so no attribute
+    in the folder (line endings, keywords, filters) can change a byte. The
+    index is left as it is. Then compared exactly
+    (:func:`judges_match_commit`)."""
+    entries = tree_entries(tree_root, commit)
+    if entries is None:
+        return f"the tree of {commit[:10]} could not be read"
+    root = Path(tree_root)
+    for path in paths:
+        link = _parent_link(root, path)
+        if link is not None:
+            return f"{shown_path(link)} is a symbolic link in the folder"
+        target = root / path
+        # The stored copy is read BEFORE anything in the folder is removed,
+        # so a read that fails (or times out) leaves the folder's copy where
+        # it was.
+        data: Optional[bytes] = None
+        permissions = 0o644
+        if path in entries:
+            mode, oid = entries[path]
+            if mode not in _FILE_MODES:
+                return f"{shown_path(path)} is not an ordinary file at {commit[:10]}"
+            data = _blob_bytes(root, oid)
+            if data is None:
+                return (
+                    f"the stored copy of {shown_path(path)} at {commit[:10]} "
+                    f"could not be read"
+                )
+            permissions = 0o755 if _FILE_MODES[mode] else 0o644
+        try:
+            if target.is_symlink() or (target.exists() and not target.is_dir()):
+                target.unlink()
+            elif target.is_dir():
+                return f"{shown_path(path)} is a folder in the working folder"
+            if data is None:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            handle = os.open(
+                target,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                permissions,
+            )
+            try:
+                os.write(handle, data)
+            finally:
+                os.close(handle)
+            os.chmod(target, permissions)
+        except OSError as exc:
+            return (
+                f"{shown_path(path)} could not be written "
+                f"({exc.strerror or type(exc).__name__})"
+            )
+    return judges_match_commit(tree_root, commit, paths)
+
+
+def put_main_judges_in_place(
+    tree_root: Path, main_sha: str, paths: Sequence[str]
+) -> Optional[str]:
+    """Put the target's copy of every judge file in place for the check.
+
+    A path the target commit has is written from its stored blob, byte for
+    byte with its mode, with no filter or conversion; a path it lacks is
+    removed from the folder. The result is then compared with ``main_sha``
+    exactly. Returns ``None`` or the plain reason it could not be done.
+    """
+    return _put_tree_paths_in_place(tree_root, main_sha, paths)
+
+
+def put_joined_files_back(
+    tree_root: Path, post_sha: str, paths: Sequence[str]
+) -> Optional[str]:
+    """Put the joined commit's version of every path back after the check,
+    and confirm those paths are clean. Returns ``None`` or the reason.
+
+    Nothing runs after this, so the files are put back the way git itself
+    checks them out (through the folder's attributes), which is what makes
+    ``git status`` agree that the folder is the joined commit: raw bytes
+    would read as changed under a line-ending attribute. The index was never
+    changed by :func:`put_main_judges_in_place`. A path the joined commit
+    lacks is removed.
+    """
+    entries = tree_entries(tree_root, post_sha)
+    if entries is None:
+        return f"the tree of {post_sha[:10]} could not be read"
+    root = Path(tree_root)
+    present = [p for p in paths if p in entries]
+    for path in paths:
+        link = _parent_link(root, path)
+        if link is not None:
+            return f"{shown_path(link)} is a symbolic link in the folder"
+        target = root / path
+        try:
+            if target.is_symlink() or (target.exists() and not target.is_dir()):
+                target.unlink()
+            elif target.is_dir():
+                return f"{shown_path(path)} is a folder in the working folder"
+        except OSError as exc:
+            return (
+                f"{shown_path(path)} could not be removed "
+                f"({exc.strerror or type(exc).__name__})"
+            )
+    if present:
+        done = _run_git(tree_root, "checkout", post_sha, "--", *present)
+        if done.returncode != 0:
+            return f"git checkout from {post_sha[:10]} failed ({done.stderr.strip()})"
+    rows = _git_names(
+        tree_root, "status", "--porcelain", "-z", "--untracked-files=all", "--", *paths
+    )
+    if rows is None:
+        return "git status could not be read"
+    if rows:
+        return "; ".join(shown_path(row) for row in rows[:5])
+    return None
 
 
 class TreePreparation(NamedTuple):
@@ -1238,8 +1633,32 @@ def _last_lines(text: str) -> str:
     return tail or "(no output)"
 
 
+def _changed_paths(tree_root: Path) -> Optional[List[str]]:
+    """Every path ``git status`` shows as changed or untracked (both names of
+    a rename or copy), or ``None`` when git failed."""
+    fields = _git_names(
+        tree_root, "status", "--porcelain", "-z", "--untracked-files=all"
+    )
+    if fields is None:
+        return None
+    paths: List[str] = []
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        paths.append(entry[3:])
+        if entry[:1] in ("R", "C") and index + 1 < len(fields):
+            paths.append(fields[index + 1])
+            index += 1
+        index += 1
+    return paths
+
+
 def prepare_tree(
-    tree_root: Path, pinned: MergeEnvironment, where: str
+    tree_root: Path,
+    pinned: MergeEnvironment,
+    where: str,
+    allowed_changes: Sequence[str] = (),
+    allowed_commit: Optional[str] = None,
 ) -> TreePreparation:
     """Build the check's environment for ``tree_root`` and run the install.
 
@@ -1249,6 +1668,12 @@ def prepare_tree(
     ``tree_root``, with that environment and the pinned time limit. A tree
     the install changed is a problem: the check would no longer be judging
     the commit. Never raises.
+
+    ``allowed_changes`` (15 October 2026) are the judge files put in place
+    from ``allowed_commit`` before this install: the folder may differ from
+    its commit only at those paths, and they must still match
+    ``allowed_commit`` exactly after the install. With none, the check is the
+    plain one it always was.
     """
     try:
         env = project_command_environment(Path(tree_root), pinned.launch)
@@ -1286,26 +1711,66 @@ def prepare_tree(
             f"{proc.returncode}): {_last_lines(proc.stderr or proc.stdout)}",
         )
 
-    porcelain = _porcelain_status(Path(tree_root))
-    if porcelain is None:
+    # What the install left in the folder is read from git. A git command
+    # that times out or fails here ends in a plain reason like any other
+    # problem here, so this function never raises.
+    try:
+        if allowed_changes:
+            changed = _changed_paths(Path(tree_root))
+            if changed is None:
+                return TreePreparation(
+                    None,
+                    f"git status could not be read after the declared install "
+                    f"(`{text}`) ran on {where}",
+                )
+            allowed = set(allowed_changes)
+            others = sorted({p for p in changed if p not in allowed})
+            mismatch = (
+                judges_match_commit(Path(tree_root), allowed_commit, allowed_changes)
+                if allowed_commit
+                else None
+            )
+            if others or mismatch:
+                shown = "; ".join(shown_path(p) for p in others[:5])
+                more = f" (and {len(others) - 5} more)" if len(others) > 5 else ""
+                detail = "; ".join(x for x in (shown + more, mismatch) if x)
+                return TreePreparation(
+                    None,
+                    f"the declared install (`{text}`) changed files in the working "
+                    f"folder on {where}: {detail}",
+                    tree_changed=True,
+                )
+            return TreePreparation(
+                env, None,
+                note=f"the declared install (`{text}`) ran on {where} before the check",
+            )
+
+        porcelain = _porcelain_status(Path(tree_root))
+        if porcelain is None:
+            return TreePreparation(
+                None,
+                f"git status could not be read after the declared install "
+                f"(`{text}`) ran on {where}",
+            )
+        if porcelain.strip():
+            rows = [ln for ln in porcelain.splitlines() if ln.strip()]
+            shown = "; ".join(shown_path(row) for row in rows[:5])
+            more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
+            return TreePreparation(
+                None,
+                f"the declared install (`{text}`) changed files in the working "
+                f"folder on {where}: {shown}{more}",
+                tree_changed=True,
+            )
+        return TreePreparation(
+            env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
         return TreePreparation(
             None,
-            f"git status could not be read after the declared install "
-            f"(`{text}`) ran on {where}",
+            f"the working folder could not be read after the declared install "
+            f"(`{text}`) ran on {where}: {_failure_words(exc)}",
         )
-    if porcelain.strip():
-        rows = [ln for ln in porcelain.splitlines() if ln.strip()]
-        shown = "; ".join(rows[:5])
-        more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
-        return TreePreparation(
-            None,
-            f"the declared install (`{text}`) changed files in the working "
-            f"folder on {where}: {shown}{more}",
-            tree_changed=True,
-        )
-    return TreePreparation(
-        env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1371,9 +1836,15 @@ def execute_merge(
     nothing, then the declared install. An install that fails, or settings
     that cannot be passed safely, make the check "could not run", never a
     test result; an install that dirties the tree before the merge refuses
-    the merge. A build that changed a file the pinned commands name, or
-    commands the factory cannot follow, gets no automatic verdict: the join
-    still happens and nothing is installed or run.
+    the merge. Commands the factory cannot follow, or a file they name that
+    is a symbolic link (or sits under one) in the target's, the build's or
+    the joined tree, get no automatic verdict: the join still happens and
+    nothing is installed or run. Since 15 October 2026 a build that changed
+    a file the pinned commands name is checked like any other: before the
+    post-join install, the target's copy of EVERY file those commands name is
+    put in place (one the target lacks is removed), checked to match exactly,
+    and the joined files are put back after the check. The build's copy of a
+    judge file is never run.
 
     ``working_folder`` (22 September 2026) is a working folder of this same
     repository, made at the commit being joined onto. Handed one, EVERYTHING
@@ -1413,8 +1884,14 @@ def execute_merge(
     # The branch is resolved to a commit ONCE, here. That commit is what the
     # changed files are read from and what the merge joins, so a branch that
     # moves while the checks run cannot slip anything past them.
-    branch_commit = _rev_parse(tree_root, branch)
-    if _rev_parse(tree_root, target_branch) is None or branch_commit is None:
+    unreadable = ""
+    try:
+        branch_commit = _rev_parse(tree_root, branch)
+        target_commit = _rev_parse(tree_root, target_branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        branch_commit = target_commit = None
+        unreadable = f" ({_failure_words(exc)})"
+    if target_commit is None or branch_commit is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
             feature_id=feature_id,
@@ -1422,6 +1899,7 @@ def execute_merge(
             branch=branch,
             refusal_reason=(
                 f"could not resolve {target_branch} and {branch} to commits"
+                f"{unreadable}"
             ),
         )
 
@@ -1429,9 +1907,9 @@ def execute_merge(
     # target branch, before anything lands, whether or not a baseline is
     # measured or handed in — the test command, and since 13 October 2026
     # the declared install and launch block as well, read once from the
-    # target's .guardkit/config.yaml by a reader that fails closed. A build
-    # that changed a file those commands name (a judge file), or commands the
-    # factory cannot follow, gets no automatic verdict.
+    # target's .guardkit/config.yaml by a reader that fails closed. Commands
+    # the factory cannot follow, or a judge file reached through a symbolic
+    # link, get no automatic verdict.
     resolution: Optional[
         Tuple[Optional[str], str, Optional[StackTestProfile]]
     ] = None
@@ -1579,37 +2057,235 @@ def execute_merge(
     if pre_merge_problem is not None:
         return could_not_run(pre_merge_problem)
 
-    # Install the merged tree again (a dependency the branch adds must be
-    # there) with the TARGET's pinned install and launch block.
+    # The target's judge files in the join's folder (15 October 2026). EVERY
+    # file the target's commands name is put back from the target commit,
+    # whether or not the build changed it, so the check never runs the
+    # build's copy of one (a rename on the target cannot carry the build's
+    # edits past this either). A link on a judge's path in the joined tree is
+    # refused first. Putting them in place, the install and the check all sit
+    # inside one cleanup: the joined files are put back afterwards on every
+    # path, and a git command that times out or fails on the way ends in the
+    # ordinary "could not verify" report, never an unexpected error.
     assert pinned is not None
-    env = None
-    post_merge_notes: List[str] = []
-    if verify_command:
-        prepared = prepare_tree(tree_root, pinned, "the merged result")
-        if prepared.problem is not None:
-            return could_not_run(
-                prepared.problem,
-                [
-                    f"the post-merge test run was not attempted: "
-                    f"{prepared.problem}"
-                ],
+    pre_sha, post_sha = report.pre_sha, report.post_sha
+    judges = _JudgeRestore()
+    restore_problem: Optional[str] = None
+    put_back_problem: Optional[str] = None
+    result: object = None
+    try:
+        if pinned.judge_words:
+            try:
+                restore_problem = _put_target_judges_in_place(
+                    tree_root, pinned, pre_sha, post_sha, judges
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                restore_problem = _restore_failed(pinned, _failure_words(exc))
+
+        # Install the merged tree again (a dependency the branch adds must be
+        # there) with the TARGET's pinned install and launch block, then
+        # check it.
+        if restore_problem is None:
+            env = None
+            post_merge_notes: List[str] = []
+            prepared_problem: Optional[str] = None
+            if verify_command:
+                prepared = prepare_tree(
+                    tree_root,
+                    pinned,
+                    "the merged result",
+                    allowed_changes=judges.restored,
+                    allowed_commit=pre_sha if judges.restored else None,
+                )
+                if prepared.problem is not None:
+                    prepared_problem = prepared.problem
+                else:
+                    env = prepared.env
+                    if prepared.note:
+                        post_merge_notes.append(prepared.note)
+            if prepared_problem is not None:
+                result = could_not_run(
+                    prepared_problem,
+                    [
+                        f"the post-merge test run was not attempted: "
+                        f"{prepared_problem}"
+                    ],
+                )
+            else:
+                validate_valid, verification, charged, notes = verify_merged(
+                    tree_root,
+                    feature_id,
+                    baseline_failing=baseline_failing,
+                    timeout=verify_timeout,
+                    validate_command=validate_command,
+                    resolved_command=resolved_command,
+                    env=env,
+                    ran_marker_regex=ran_marker_regex,
+                )
+                result = _CheckRun(
+                    validate_valid, verification, charged, post_merge_notes + notes
+                )
+    finally:
+        if judges.restored:
+            try:
+                put_back_problem = put_joined_files_back(
+                    tree_root, post_sha, judges.restored
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                put_back_problem = _failure_words(exc)
+
+    if restore_problem is not None:
+        detail = restore_problem
+        if put_back_problem is not None:
+            detail += (
+                f"; the join's folder could not be put back to the "
+                f"joined commit afterwards ({put_back_problem}), so it may "
+                f"still hold some of main's copies, or be missing some of the "
+                f"joined files"
             )
-        env = prepared.env
-        if prepared.note:
-            post_merge_notes.append(prepared.note)
-
-    validate_valid, verification, charged, notes = verify_merged(
-        tree_root,
-        feature_id,
-        baseline_failing=baseline_failing,
-        timeout=verify_timeout,
-        validate_command=validate_command,
-        resolved_command=resolved_command,
-        env=env,
-        ran_marker_regex=ran_marker_regex,
+        final = could_not_run(detail)
+    elif isinstance(result, MergeReport):
+        final = result
+    else:
+        assert isinstance(result, _CheckRun)
+        final = _report_from_the_check(
+            report, result, baseline, baseline_failing, pre_merge_notes,
+            target_branch, verify_command, verify_source,
+        )
+    # Said whenever the target's copies were in place, whatever happened
+    # next (an install that then failed, or a restore that stopped part way,
+    # included).
+    final = replace(
+        final,
+        judged_with_main_copies=judges.judged_with_main_copies,
+        judge_files_not_on_target=tuple(
+            p for p in judges.judged_with_main_copies
+            if p not in judges.target_paths
+        ),
     )
-    notes = post_merge_notes + notes
+    if put_back_problem is not None and restore_problem is None:
+        final = replace(
+            final,
+            verify_status="unverified",
+            verify_detail=(
+                f"the join's folder could not be put back to the joined commit "
+                f"after the check ({put_back_problem}); the check itself said: "
+                f"{final.verify_detail}"
+            ),
+        )
+    return final
 
+
+@dataclass
+class _JudgeRestore:
+    """What was, or was about to be, put in place from the target commit.
+
+    ``restored`` is filled BEFORE any file in the folder is touched, so the
+    cleanup puts back every path a restore that stopped part way may have
+    changed."""
+
+    restored: List[str] = field(default_factory=list)
+    judged_with_main_copies: Tuple[str, ...] = ()
+    target_paths: frozenset = frozenset()
+
+
+def _failure_words(exc: BaseException) -> str:
+    """Plain words for a git command or file step that raised."""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        said = exc.stderr
+        if isinstance(said, bytes):
+            said = said.decode("utf-8", "replace")
+        return (said or "").strip().rstrip(".") or (
+            f"{exc.cmd} did not finish within {exc.timeout} seconds"
+        )
+    if isinstance(exc, subprocess.CalledProcessError):
+        said = exc.stderr
+        if isinstance(said, bytes):
+            said = said.decode("utf-8", "replace")
+        shown = exc.cmd if isinstance(exc.cmd, str) else " ".join(map(str, exc.cmd))
+        return (said or "").strip().rstrip(".") or f"{shown} failed"
+    if isinstance(exc, OSError):
+        return exc.strerror or type(exc).__name__
+    return type(exc).__name__
+
+
+def _restore_failed(pinned: MergeEnvironment, problem: str) -> str:
+    lead = (
+        JUDGE_FILES_CHANGED
+        if pinned.judge_files_changed
+        else "could not verify — the commands that judge it"
+    )
+    return f"{lead}, and main's copies could not be put in place: {problem}"
+
+
+def _put_target_judges_in_place(
+    tree_root: Path,
+    pinned: MergeEnvironment,
+    pre_sha: Optional[str],
+    post_sha: Optional[str],
+    judges: _JudgeRestore,
+) -> Optional[str]:
+    """Put the target's copy of every judge file in the join's folder.
+
+    Returns ``None`` or the plain reason the check cannot run. May raise a
+    git timeout or failure; the caller turns that into a reason and puts
+    back every path recorded in ``judges.restored``."""
+    if not pre_sha or not post_sha:
+        return (
+            "could not verify — the commit joined onto, or the joined commit, "
+            "could not be read, so the target's copies of the files the "
+            "declared commands name could not be put in place"
+        )
+    link_problem = judge_link_problem(tree_root, post_sha, pinned.judge_words)
+    if link_problem is not None:
+        return link_problem
+    target_entries = tree_entries(tree_root, pre_sha) if pre_sha else None
+    joined_entries = tree_entries(tree_root, post_sha) if post_sha else None
+    if target_entries is None or joined_entries is None:
+        return (
+            "could not verify — the trees of the join could not be read, so "
+            "the target's copies of the files the declared commands name "
+            "could not be put in place"
+        )
+    restored = judge_files(
+        sorted(set(target_entries) | set(joined_entries)), pinned.judge_words
+    )
+    judges.judged_with_main_copies = tuple(
+        p for p in restored if target_entries.get(p) != joined_entries.get(p)
+    )
+    judges.target_paths = frozenset(target_entries)
+    judges.restored = restored
+    if not restored:
+        return None
+    problem = put_main_judges_in_place(tree_root, pre_sha, restored)
+    if problem is not None:
+        return _restore_failed(pinned, problem)
+    return None
+
+
+class _CheckRun(NamedTuple):
+    """What the post-join install and check produced."""
+
+    validate_valid: Optional[bool]
+    verification: VerificationResult
+    charged: List[str]
+    notes: List[str]
+
+
+def _report_from_the_check(
+    report: MergeReport,
+    run: _CheckRun,
+    baseline: Optional[MeasuredBaseline],
+    baseline_failing: Optional[Sequence[str]],
+    pre_merge_notes: Sequence[str],
+    target_branch: str,
+    verify_command: Optional[str],
+    verify_source: Optional[str],
+) -> MergeReport:
+    """The merged report from a post-join check that ran."""
+    validate_valid, verification, charged = (
+        run.validate_valid, run.verification, run.charged
+    )
+    notes = list(run.notes)
     # Nothing is read out of a run that measured nothing (see verify_merged).
     measured_run = verification.status != "unverified"
     merged_output = verification.output_for_parsing if measured_run else ""
@@ -1692,6 +2368,10 @@ __all__ = [
     "verify_merged",
     "files_the_branch_changed",
     "pin_the_judge_on_target",
+    "judge_link_problem",
+    "judges_match_commit",
+    "put_main_judges_in_place",
+    "put_joined_files_back",
     "prepare_tree",
     "TreePreparation",
     "execute_merge",

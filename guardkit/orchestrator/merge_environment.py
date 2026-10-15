@@ -17,8 +17,14 @@ three pieces the merge now pins on the TARGET branch, before anything lands
   merge accepts only plain command text it can follow completely: a short
   list of ordinary characters, split the way the shell (for the test command)
   or GuardKit (for the install) splits it, where every word is a plain word.
-  A file the build changed that one of those words names is a judge file, and
-  a build that changed a judge file gets no automatic verdict.
+  A file one of those words names is a judge file. Since 15 October 2026 the
+  merge checks the join with the TARGET's copy of every judge file (the
+  build's copy is never run), so a build that changed one still gets a
+  verdict; which ones it changed is kept for the card and the receipt.
+* :func:`judge_links` is the link rule: a judge file, or a folder on its
+  path, that is a symbolic link in a tree the merge reads means no verdict,
+  because putting the target's copy back would put back the link and not the
+  program it points to.
 
 The environment the install and the check run with is built from nothing by
 ``project_command_env.project_command_environment`` (design item 2a), the one
@@ -30,14 +36,18 @@ the scratch names are whatever the project declares, carried as plain text.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import string
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
+
+from guardkit.lib.project_git import run_git
 
 from guardkit.orchestrator.launch_declaration import (
     LAUNCH_KEY,
@@ -54,10 +64,15 @@ from guardkit.orchestrator.toolchain_declaration import (
 __all__ = [
     "CANNOT_FOLLOW",
     "JUDGE_FILES_CHANGED",
+    "JUDGE_IS_A_LINK",
     "MergeDeclarations",
     "MergeEnvironment",
     "judge_files",
+    "judge_links",
     "judge_words",
+    "links_on_judge_paths",
+    "shown_path",
+    "tree_entries",
     "pin_merge_environment",
     "read_merge_declarations",
 ]
@@ -198,6 +213,42 @@ CANNOT_FOLLOW = (
     "cannot follow; put it in a script and name the script"
 )
 JUDGE_FILES_CHANGED = "could not verify — the build changed the commands that judge it"
+JUDGE_IS_A_LINK = (
+    "could not verify — {path} is a symbolic link, so the factory cannot tell "
+    "which program it would run"
+)
+
+_NAMED_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def shown_path(path: str) -> str:
+    """A file name as it may appear in a sentence (a reason, a detail, a
+    receipt line), so the sentence stays valid UTF-8 and one line.
+
+    A byte that is not UTF-8 (held by ``os.fsdecode`` as a lone surrogate) is
+    shown as ``\\xNN``; a newline, carriage return or tab as ``\\n``,
+    ``\\r`` or ``\\t``; any other control character as ``\\xNN``; a line or
+    paragraph separator, an invisible format character (a right-to-left
+    override, a zero-width space, a byte-order mark: Unicode category Cf),
+    or any other lone surrogate, as ``\\uNNNN``. Every other character,
+    ordinary non-ASCII letters included, is unchanged.
+    Structured fields keep the name exactly as git gave it.
+    """
+    out: List[str] = []
+    for ch in path:
+        code = ord(ch)
+        if 0xDC80 <= code <= 0xDCFF:
+            out.append(f"\\x{code - 0xDC00:02x}")
+        elif ch in _NAMED_ESCAPES:
+            out.append(_NAMED_ESCAPES[ch])
+        elif unicodedata.category(ch) == "Cc":
+            out.append(f"\\x{code:02x}")
+        elif unicodedata.category(ch) in ("Zl", "Zp", "Cs", "Cf"):
+            out.append(f"\\u{code:04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 
 _ALLOWED_CHARACTERS = frozenset(
     string.ascii_letters + string.digits + " \t\n" + "_./=:@%+,-'\"\\&|;()<>"
@@ -294,6 +345,82 @@ def judge_files(changed: Sequence[str], words: Sequence[str]) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# The link rule (15 October 2026, item 1a)
+# ---------------------------------------------------------------------------
+
+#: git's mode for a symbolic link.
+LINK_MODE = "120000"
+
+
+def links_on_judge_paths(
+    entries: Mapping[str, str], words: Sequence[str]
+) -> List[str]:
+    """The entries of one tree that are symbolic links on a judge's path.
+
+    ``entries`` maps every path in the tree to its git mode. A link is named
+    when the judge-file rule (:func:`judge_files`) matches it, applied to every
+    path in the tree, or when it is a leading folder of a word that names a
+    path (``scripts`` for ``scripts/check.sh``).
+    """
+    keys = {key for word in words for key in _match_keys(word)}
+    links = sorted(path for path, mode in entries.items() if mode == LINK_MODE)
+    if not links:
+        return []
+    named = set(judge_files(links, words))
+    for path in links:
+        if path in named:
+            continue
+        if any(
+            key.startswith(path + "/") or ("/" + path + "/") in key
+            for key in keys
+        ):
+            named.add(path)
+    return sorted(named)
+
+
+def tree_entries(
+    tree_root: Path, commit: str
+) -> Optional[Dict[str, Tuple[str, str]]]:
+    """Every path in ``commit``'s tree with its git mode and object id, read
+    with ``git ls-tree -r -z --full-tree``; ``None`` when git cannot say."""
+    done = run_git(
+        ["ls-tree", "-r", "-z", "--full-tree", commit],
+        cwd=str(tree_root),
+        timeout=120,
+        text=False,
+    )
+    if done.returncode != 0:
+        return None
+    entries: Dict[str, Tuple[str, str]] = {}
+    # Names are read as bytes and decoded byte-exact (``os.fsdecode``), the
+    # way the git helper passes them back to git: a name that is not valid
+    # UTF-8 is still one path, never an error.
+    for record in (done.stdout or b"").split(b"\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition(b"\t")
+        parts = meta.split()
+        if len(parts) != 3 or not path:
+            return None
+        entries[os.fsdecode(path)] = (os.fsdecode(parts[0]), os.fsdecode(parts[2]))
+    return entries
+
+
+def judge_links(
+    tree_root: Path, commit: str, words: Sequence[str]
+) -> Optional[List[str]]:
+    """The symbolic links on a judge's path in ``commit``'s tree (see
+    :func:`links_on_judge_paths`), from git's own record of the tree, not
+    from the folder. ``None`` when the tree could not be read."""
+    entries = tree_entries(tree_root, commit)
+    if entries is None:
+        return None
+    return links_on_judge_paths(
+        {path: mode for path, (mode, _) in entries.items()}, words
+    )
+
+
+# ---------------------------------------------------------------------------
 # The pinned value (design item 1)
 # ---------------------------------------------------------------------------
 
@@ -316,6 +443,10 @@ class MergeEnvironment:
     # The plain words of the pinned test command and install, for the
     # judge-file comparison.
     judge_words: Tuple[str, ...] = ()
+    # The judge files this build changed (15 October 2026). Kept for the card
+    # and the receipt only: they no longer stop the check, and they do not
+    # decide what is put back, which is every judge file the target names.
+    judge_files_changed: Tuple[str, ...] = ()
 
 
 def pin_merge_environment(
@@ -326,7 +457,8 @@ def pin_merge_environment(
     """Pin what the merge will run, or say why nothing can run.
 
     Applies the judge-file text rule to the resolved test command and the
-    declared install before anything else.
+    declared install before anything else. ``judge_files_changed`` is filled
+    in later, by the merge, from the files the build changed.
     """
     words: List[str] = []
     if test_command:
