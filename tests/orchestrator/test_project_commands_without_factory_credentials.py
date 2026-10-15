@@ -1454,6 +1454,11 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/merge_executor.py", "execute_merge"): (
         "the merge's environment from prepare_tree (project_command_environment), merge design item 2a"
     ),
+    ("orchestrator/merge_executor.py", "_install_and_check_the_join"): (
+        "the merge's environment from prepare_tree (project_command_environment), "
+        "merge design item 2a; the post-join install and check, moved out of "
+        "execute_merge on 15 October 2026"
+    ),
 }
 
 #: Generic runners: (file, function) -> how calls to it are found.

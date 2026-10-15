@@ -59,7 +59,7 @@ import stat
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -1404,21 +1404,27 @@ def _put_tree_paths_in_place(
         if link is not None:
             return f"{link} is a symbolic link in the folder"
         target = root / path
-        try:
-            if target.is_symlink() or (target.exists() and not target.is_dir()):
-                target.unlink()
-            elif target.is_dir():
-                return f"{path} is a folder in the working folder"
-            if path not in entries:
-                continue
+        # The stored copy is read BEFORE anything in the folder is removed,
+        # so a read that fails (or times out) leaves the folder's copy where
+        # it was.
+        data: Optional[bytes] = None
+        permissions = 0o644
+        if path in entries:
             mode, oid = entries[path]
             if mode not in _FILE_MODES:
                 return f"{path} is not an ordinary file at {commit[:10]}"
             data = _blob_bytes(root, oid)
             if data is None:
                 return f"the stored copy of {path} at {commit[:10]} could not be read"
-            target.parent.mkdir(parents=True, exist_ok=True)
             permissions = 0o755 if _FILE_MODES[mode] else 0o644
+        try:
+            if target.is_symlink() or (target.exists() and not target.is_dir()):
+                target.unlink()
+            elif target.is_dir():
+                return f"{path} is a folder in the working folder"
+            if data is None:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
             handle = os.open(
                 target,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -1925,117 +1931,77 @@ def execute_merge(
     # whether or not the build changed it, so the check never runs the
     # build's copy of one (a rename on the target cannot carry the build's
     # edits past this either). A link on a judge's path in the joined tree is
-    # refused first. The joined files are put back after the check.
+    # refused first. Putting them in place, the install and the check all sit
+    # inside one cleanup: the joined files are put back afterwards on every
+    # path, and a git command that times out or fails on the way ends in the
+    # ordinary "could not verify" report, never an unexpected error.
     assert pinned is not None
     pre_sha, post_sha = report.pre_sha, report.post_sha
-    restored: List[str] = []
-    judged_with_main_copies: Tuple[str, ...] = ()
-    target_entries_seen: set = set()
-    if pinned.judge_words:
-        link_problem = judge_link_problem(tree_root, post_sha, pinned.judge_words)
-        if link_problem is not None:
-            return could_not_run(link_problem)
-        target_entries = tree_entries(tree_root, pre_sha) if pre_sha else None
-        joined_entries = tree_entries(tree_root, post_sha) if post_sha else None
-        if target_entries is None or joined_entries is None:
-            return could_not_run(
-                "could not verify — the trees of the join could not be read, so "
-                "the target's copies of the files the declared commands name "
-                "could not be put in place"
-            )
-        restored = judge_files(
-            sorted(set(target_entries) | set(joined_entries)), pinned.judge_words
-        )
-        judged_with_main_copies = tuple(
-            p for p in restored if target_entries.get(p) != joined_entries.get(p)
-        )
-        target_entries_seen = set(target_entries)
-        if restored:
-            problem = put_main_judges_in_place(tree_root, pre_sha, restored)
-            if problem is not None:
-                back = put_joined_files_back(tree_root, post_sha, restored)
-                lead = (
-                    JUDGE_FILES_CHANGED
-                    if pinned.judge_files_changed
-                    else "could not verify — the commands that judge it"
-                )
-                detail = (
-                    f"{lead}, and main's copies could not be put in place: "
-                    f"{problem}"
-                )
-                if back is not None:
-                    detail += (
-                        f"; the join's folder could not be put back to the "
-                        f"joined commit afterwards ({back}), so it may still "
-                        f"hold some of main's copies"
-                    )
-                return could_not_run(detail)
-
-    # Install the merged tree again (a dependency the branch adds must be
-    # there) with the TARGET's pinned install and launch block, then check
-    # it. The joined files are put back afterwards, on every path.
-    result: object
+    judges = _JudgeRestore()
+    restore_problem: Optional[str] = None
+    put_back_problem: Optional[str] = None
+    result: object = None
     try:
-        env = None
-        post_merge_notes: List[str] = []
-        prepared_problem: Optional[str] = None
-        if verify_command:
-            prepared = prepare_tree(
-                tree_root,
-                pinned,
-                "the merged result",
-                allowed_changes=restored,
-                allowed_commit=pre_sha if restored else None,
-            )
-            if prepared.problem is not None:
-                prepared_problem = prepared.problem
-            else:
-                env = prepared.env
-                if prepared.note:
-                    post_merge_notes.append(prepared.note)
-        if prepared_problem is not None:
-            result = could_not_run(
-                prepared_problem,
-                [
-                    f"the post-merge test run was not attempted: "
-                    f"{prepared_problem}"
-                ],
-            )
-        else:
-            validate_valid, verification, charged, notes = verify_merged(
-                tree_root,
-                feature_id,
+        if pinned.judge_words:
+            try:
+                restore_problem = _put_target_judges_in_place(
+                    tree_root, pinned, pre_sha, post_sha, judges
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                restore_problem = _restore_failed(pinned, _failure_words(exc))
+
+        # Install the merged tree again (a dependency the branch adds must be
+        # there) with the TARGET's pinned install and launch block, then
+        # check it.
+        if restore_problem is None:
+            result = _install_and_check_the_join(
+                tree_root, feature_id, pinned, pre_sha, judges.restored,
+                could_not_run,
+                verify_command=verify_command,
                 baseline_failing=baseline_failing,
-                timeout=verify_timeout,
+                verify_timeout=verify_timeout,
                 validate_command=validate_command,
                 resolved_command=resolved_command,
-                env=env,
                 ran_marker_regex=ran_marker_regex,
             )
-            result = _CheckRun(
-                validate_valid, verification, charged, post_merge_notes + notes
-            )
     finally:
-        put_back_problem = (
-            put_joined_files_back(tree_root, post_sha, restored) if restored else None
-        )
-    if isinstance(result, MergeReport):
+        if judges.restored:
+            try:
+                put_back_problem = put_joined_files_back(
+                    tree_root, post_sha, judges.restored
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                put_back_problem = _failure_words(exc)
+
+    if restore_problem is not None:
+        detail = restore_problem
+        if put_back_problem is not None:
+            detail += (
+                f"; the join's folder could not be put back to the "
+                f"joined commit afterwards ({put_back_problem}), so it may "
+                f"still hold some of main's copies"
+            )
+        final = could_not_run(detail)
+    elif isinstance(result, MergeReport):
         final = result
     else:
+        assert isinstance(result, _CheckRun)
         final = _report_from_the_check(
             report, result, baseline, baseline_failing, pre_merge_notes,
             target_branch, verify_command, verify_source,
         )
     # Said whenever the target's copies were in place, whatever happened
-    # next (an install that then failed included).
+    # next (an install that then failed, or a restore that stopped part way,
+    # included).
     final = replace(
         final,
-        judged_with_main_copies=judged_with_main_copies,
+        judged_with_main_copies=judges.judged_with_main_copies,
         judge_files_not_on_target=tuple(
-            p for p in judged_with_main_copies if p not in target_entries_seen
+            p for p in judges.judged_with_main_copies
+            if p not in judges.target_paths
         ),
     )
-    if put_back_problem is not None:
+    if put_back_problem is not None and restore_problem is None:
         final = replace(
             final,
             verify_status="unverified",
@@ -2046,6 +2012,137 @@ def execute_merge(
             ),
         )
     return final
+
+
+@dataclass
+class _JudgeRestore:
+    """What was, or was about to be, put in place from the target commit.
+
+    ``restored`` is filled BEFORE any file in the folder is touched, so the
+    cleanup puts back every path a restore that stopped part way may have
+    changed."""
+
+    restored: List[str] = field(default_factory=list)
+    judged_with_main_copies: Tuple[str, ...] = ()
+    target_paths: frozenset = frozenset()
+
+
+def _failure_words(exc: BaseException) -> str:
+    """Plain words for a git command or file step that raised."""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        said = exc.stderr
+        if isinstance(said, bytes):
+            said = said.decode("utf-8", "replace")
+        return (said or "").strip().rstrip(".") or (
+            f"{exc.cmd} did not finish within {exc.timeout} seconds"
+        )
+    if isinstance(exc, subprocess.CalledProcessError):
+        said = exc.stderr
+        if isinstance(said, bytes):
+            said = said.decode("utf-8", "replace")
+        return (said or "").strip().rstrip(".") or f"{exc.cmd} failed"
+    if isinstance(exc, OSError):
+        return exc.strerror or type(exc).__name__
+    return type(exc).__name__
+
+
+def _restore_failed(pinned: MergeEnvironment, problem: str) -> str:
+    lead = (
+        JUDGE_FILES_CHANGED
+        if pinned.judge_files_changed
+        else "could not verify — the commands that judge it"
+    )
+    return f"{lead}, and main's copies could not be put in place: {problem}"
+
+
+def _put_target_judges_in_place(
+    tree_root: Path,
+    pinned: MergeEnvironment,
+    pre_sha: Optional[str],
+    post_sha: Optional[str],
+    judges: _JudgeRestore,
+) -> Optional[str]:
+    """Put the target's copy of every judge file in the join's folder.
+
+    Returns ``None`` or the plain reason the check cannot run. May raise a
+    git timeout or failure; the caller turns that into a reason and puts
+    back every path recorded in ``judges.restored``."""
+    link_problem = judge_link_problem(tree_root, post_sha, pinned.judge_words)
+    if link_problem is not None:
+        return link_problem
+    target_entries = tree_entries(tree_root, pre_sha) if pre_sha else None
+    joined_entries = tree_entries(tree_root, post_sha) if post_sha else None
+    if target_entries is None or joined_entries is None:
+        return (
+            "could not verify — the trees of the join could not be read, so "
+            "the target's copies of the files the declared commands name "
+            "could not be put in place"
+        )
+    restored = judge_files(
+        sorted(set(target_entries) | set(joined_entries)), pinned.judge_words
+    )
+    judges.judged_with_main_copies = tuple(
+        p for p in restored if target_entries.get(p) != joined_entries.get(p)
+    )
+    judges.target_paths = frozenset(target_entries)
+    judges.restored = restored
+    if not restored:
+        return None
+    problem = put_main_judges_in_place(tree_root, pre_sha, restored)
+    if problem is not None:
+        return _restore_failed(pinned, problem)
+    return None
+
+
+def _install_and_check_the_join(
+    tree_root: Path,
+    feature_id: str,
+    pinned: MergeEnvironment,
+    pre_sha: Optional[str],
+    restored: Sequence[str],
+    could_not_run,
+    *,
+    verify_command: Optional[str],
+    baseline_failing: Optional[Sequence[str]],
+    verify_timeout: int,
+    validate_command: Optional[Sequence[str]],
+    resolved_command,
+    ran_marker_regex: Optional[str],
+) -> object:
+    """The post-join install and check: a :class:`_CheckRun`, or the
+    "could not run" report when the install could not be done."""
+    env = None
+    post_merge_notes: List[str] = []
+    if verify_command:
+        prepared = prepare_tree(
+            tree_root,
+            pinned,
+            "the merged result",
+            allowed_changes=restored,
+            allowed_commit=pre_sha if restored else None,
+        )
+        if prepared.problem is not None:
+            return could_not_run(
+                prepared.problem,
+                [
+                    f"the post-merge test run was not attempted: "
+                    f"{prepared.problem}"
+                ],
+            )
+        env = prepared.env
+        if prepared.note:
+            post_merge_notes.append(prepared.note)
+    validate_valid, verification, charged, notes = verify_merged(
+        tree_root,
+        feature_id,
+        baseline_failing=baseline_failing,
+        timeout=verify_timeout,
+        validate_command=validate_command,
+        resolved_command=resolved_command,
+        env=env,
+        ran_marker_regex=ran_marker_regex,
+    )
+    return _CheckRun(validate_valid, verification, charged, post_merge_notes + notes)
 
 
 class _CheckRun(NamedTuple):

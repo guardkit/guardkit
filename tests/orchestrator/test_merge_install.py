@@ -2175,7 +2175,7 @@ class TestGitFailingAroundTheCheck:
 
         report = standin.merge()
 
-        assert calls == [["scripts/check.sh"]]
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
         assert report.outcome == OUTCOME_MERGED
         assert report.verify_status == "unverified"
         assert "could not be put back" in report.verify_detail
@@ -2197,7 +2197,7 @@ class TestGitFailingAroundTheCheck:
 
         report = standin.merge()
 
-        assert calls == [["scripts/check.sh"]]
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
         assert report.verify_status == "unverified"
         assert report.verify_ran is False
         assert "main's copies could not be put in place" in report.verify_detail
