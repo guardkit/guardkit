@@ -641,7 +641,7 @@ class TestTheJudgeFiles:
         # Main names a file it does not have: the baseline on main measured
         # nothing useful, and the build's script is never run.
         assert report.verify_ok is False
-        assert report.verify_status in ("unverified", "failed"), report.verify_detail
+        assert report.verify_status == "unverified", report.verify_detail
         assert standin.build_copy_never_ran()
 
     @pytest.mark.parametrize(
@@ -739,7 +739,9 @@ class TestTheJudgeFiles:
             config = config_text(test="bash check=suite.sh")
         else:
             config = config_text(install="bash check=suite.sh")
-        mains = "#!/bin/sh\necho main >> \"@MARKERS@/suite-ran\"\nexit 0\n"
+        # Main's script: as the install it must really install.
+        body = INSTALL_SH if role == "install" else "#!/bin/sh\n"
+        mains = body + 'echo main >> "@MARKERS@/suite-ran"\nexit 0\n'
         standin.init(
             config=config, files={"check=suite.sh": standin.script(mains)}
         )
@@ -1780,3 +1782,62 @@ class TestJudgeFilesThatAreLinks:
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == (f"scripts/{role}.sh",)
         assert standin.build_copy_never_ran()
+
+
+class TestTheExactRestoreCheck:
+    """The second guard behind the link rule: what was put in place is
+    compared with the target commit exactly, in the folder and the index."""
+
+    def _repo(self, standin: Standin) -> str:
+        standin.init()
+        return _git(standin.repo, "rev-parse", "HEAD")
+
+    def test_a_restored_file_that_differs_is_named(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import judges_match_commit
+
+        head = self._repo(standin)
+        assert judges_match_commit(standin.repo, head, ["scripts/check.sh"]) is None
+        standin.write("scripts/check.sh", "#!/bin/sh\nexit 0\n")
+        problem = judges_match_commit(standin.repo, head, ["scripts/check.sh"])
+        assert problem is not None and "scripts/check.sh" in problem
+
+    def test_a_mode_change_is_a_difference(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import judges_match_commit
+
+        head = self._repo(standin)
+        (standin.repo / "scripts/check.sh").chmod(0o644)
+        assert judges_match_commit(standin.repo, head, ["scripts/check.sh"])
+
+    def test_a_path_the_commit_lacks_must_be_gone(self, standin: Standin):
+        from guardkit.orchestrator.merge_executor import (
+            judges_match_commit,
+            put_main_judges_in_place,
+        )
+
+        head = self._repo(standin)
+        standin.write("tools/check.sh", "#!/bin/sh\nexit 0\n")
+        assert judges_match_commit(standin.repo, head, ["tools/check.sh"])
+        assert put_main_judges_in_place(standin.repo, head, ["tools/check.sh"]) is None
+        assert not (standin.repo / "tools/check.sh").exists()
+
+    def test_a_linked_folder_in_the_working_folder_is_never_run_through(
+        self, standin: Standin, tmp_path: Path
+    ):
+        """A folder on the way that is a link in the working folder (not in
+        git): git replaces it with a real folder, or the restore is refused.
+        Either way the file that runs is the commit's, not the link's."""
+        from guardkit.orchestrator.merge_executor import put_main_judges_in_place
+
+        head = self._repo(standin)
+        expected = (standin.repo / "scripts/check.sh").read_bytes()
+        elsewhere = tmp_path / "elsewhere"
+        shutil.copytree(standin.repo / "scripts", elsewhere)
+        shutil.rmtree(standin.repo / "scripts")
+        os.symlink(elsewhere, standin.repo / "scripts")
+        (elsewhere / "check.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+        problem = put_main_judges_in_place(standin.repo, head, ["scripts/check.sh"])
+
+        if problem is None:
+            assert not (standin.repo / "scripts").is_symlink()
+            assert (standin.repo / "scripts/check.sh").read_bytes() == expected
