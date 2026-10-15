@@ -1169,7 +1169,7 @@ def files_the_branch_changed(
             f"commit of {target_branch} and {branch}), so the commands that "
             f"judge it could not be checked"
         )
-    diff = _run_git(
+    changed = _git_names(
         tree_root,
         "diff",
         "--name-only",
@@ -1180,13 +1180,12 @@ def files_the_branch_changed(
         branch,
         "--",
     )
-    if diff.returncode != 0:
+    if changed is None:
         return None, (
-            f"the files the build changed could not be listed (git diff "
-            f"exited {diff.returncode}), so the commands that judge it could "
-            f"not be checked"
+            "the files the build changed could not be listed (git diff "
+            "failed), so the commands that judge it could not be checked"
         )
-    return [p for p in diff.stdout.split("\0") if p], None
+    return changed, None
 
 
 def pin_the_judge_on_target(
@@ -1287,11 +1286,15 @@ def judge_link_problem(
 
 
 def _git_names(tree_root: Path, *args: str) -> Optional[List[str]]:
-    """The NUL-separated names one git listing prints, or ``None``."""
-    done = _run_git(tree_root, *args)
+    """The NUL-separated names one git listing prints, or ``None``. Read as
+    bytes and decoded byte-exact (``os.fsdecode``), so a name that is not
+    valid UTF-8 is still one path, never an error."""
+    done = run_git(
+        [*args], cwd=str(tree_root), timeout=_GIT_TIMEOUT_SECONDS, text=False
+    )
     if done.returncode != 0:
         return None
-    return [name for name in (done.stdout or "").split("\0") if name]
+    return [os.fsdecode(name) for name in (done.stdout or b"").split(b"\0") if name]
 
 
 def _link_on_the_way(tree_root: Path, path: str) -> Optional[str]:

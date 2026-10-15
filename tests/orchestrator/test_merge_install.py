@@ -1991,3 +1991,34 @@ class TestTheReportSaysWhatWasPutInPlace:
         assert "could not be put back" in report.verify_detail
         assert "the put-back was made to fail" in report.verify_detail
         assert standin.build_copy_never_ran()
+
+
+class TestFileNamesThatAreNotUtf8:
+    """A file name git stores as bytes that are not valid UTF-8 never stops
+    the merge: names are read byte-exact (``os.fsdecode``)."""
+
+    ODD = os.fsdecode(b"caf\xe9")
+
+    def test_an_odd_name_elsewhere_merges_normally(self, standin: Standin):
+        standin.init(files={f"docs/{self.ODD}.txt": "a note\n"})
+        standin.branch({"feature.txt": "built\n", f"{self.ODD}/more.txt": "more\n"})
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "passed", report.verify_detail
+
+    def test_an_odd_name_at_a_judge_path_is_left_out_and_put_back(
+        self, standin: Standin
+    ):
+        judge = f"{self.ODD}/check.sh"  # matched by the name check.sh
+        standin.init()
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert judge in report.judge_files_not_on_target
+        assert (standin.folder / judge).is_file()
+        assert _clean(standin.folder)
+        assert standin.build_copy_never_ran()

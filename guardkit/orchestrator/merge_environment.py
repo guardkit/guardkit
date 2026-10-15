@@ -36,6 +36,7 @@ the scratch names are whatever the project declares, carried as plain text.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import string
@@ -352,18 +353,22 @@ def tree_entries(
         ["ls-tree", "-r", "-z", "--full-tree", commit],
         cwd=str(tree_root),
         timeout=120,
+        text=False,
     )
     if done.returncode != 0:
         return None
     entries: Dict[str, Tuple[str, str]] = {}
-    for record in (done.stdout or "").split("\0"):
+    # Names are read as bytes and decoded byte-exact (``os.fsdecode``), the
+    # way the git helper passes them back to git: a name that is not valid
+    # UTF-8 is still one path, never an error.
+    for record in (done.stdout or b"").split(b"\0"):
         if not record:
             continue
-        meta, _, path = record.partition("\t")
+        meta, _, path = record.partition(b"\t")
         parts = meta.split()
         if len(parts) != 3 or not path:
             return None
-        entries[path] = (parts[0], parts[2])
+        entries[os.fsdecode(path)] = (os.fsdecode(parts[0]), os.fsdecode(parts[2]))
     return entries
 
 
