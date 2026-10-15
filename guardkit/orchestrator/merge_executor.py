@@ -83,6 +83,7 @@ from guardkit.orchestrator.merge_environment import (
     judge_links,
     pin_merge_environment,
     read_merge_declarations,
+    shown_path,
     tree_entries,
 )
 from guardkit.orchestrator.launch_declaration import LaunchEnvironmentError
@@ -303,7 +304,7 @@ class MergeReport:
             )
             if self.conflict_files:
                 lines.append("Files in conflict:")
-                lines.extend(f"  - {p}" for p in self.conflict_files)
+                lines.extend(f"  - {shown_path(p)}" for p in self.conflict_files)
             lines.append(
                 f"Branch {self.branch} is untouched and remains the rollback "
                 f"path."
@@ -391,8 +392,14 @@ class MergeReport:
                 # changes did or did not run.
                 at = (self.pre_sha or "?")[:10]
                 absent = set(self.judge_files_not_on_target)
-                kept = [p for p in self.judged_with_main_copies if p not in absent]
-                left_out = [p for p in self.judged_with_main_copies if p in absent]
+                kept = [
+                    shown_path(p)
+                    for p in self.judged_with_main_copies
+                    if p not in absent
+                ]
+                left_out = [
+                    shown_path(p) for p in self.judged_with_main_copies if p in absent
+                ]
                 if kept:
                     one = len(kept) == 1
                     lines.append(
@@ -1276,7 +1283,7 @@ def judge_link_problem(
             f"a symbolic link could not be read at {(commit or '?')[:10]}"
         )
     if links:
-        return JUDGE_IS_A_LINK.format(path=links[0])
+        return JUDGE_IS_A_LINK.format(path=shown_path(links[0]))
     return None
 
 
@@ -1357,17 +1364,20 @@ def judges_match_commit(
         target = Path(tree_root) / path
         link = _link_on_the_way(tree_root, path)
         if link is not None:
-            return f"{link} is a symbolic link in the folder"
+            return f"{shown_path(link)} is a symbolic link in the folder"
         if path not in entries:
             if os.path.lexists(target):
                 differing.append(path)
             continue
         mode, oid = entries[path]
         if mode not in _FILE_MODES:
-            return f"{path} is not an ordinary file at {commit[:10]}"
+            return f"{shown_path(path)} is not an ordinary file at {commit[:10]}"
         expected = _blob_bytes(tree_root, oid)
         if expected is None:
-            return f"the stored copy of {path} at {commit[:10]} could not be read"
+            return (
+                f"the stored copy of {shown_path(path)} at {commit[:10]} "
+                f"could not be read"
+            )
         try:
             info = os.lstat(target)
             if not stat.S_ISREG(info.st_mode):
@@ -1382,7 +1392,8 @@ def judges_match_commit(
         if actual != expected or executable != _FILE_MODES[mode]:
             differing.append(path)
     if differing:
-        return f"{', '.join(sorted(set(differing)))} does not match {commit[:10]}"
+        shown = ", ".join(shown_path(p) for p in sorted(set(differing)))
+        return f"{shown} does not match {commit[:10]}"
     return None
 
 
@@ -1402,7 +1413,7 @@ def _put_tree_paths_in_place(
     for path in paths:
         link = _parent_link(root, path)
         if link is not None:
-            return f"{link} is a symbolic link in the folder"
+            return f"{shown_path(link)} is a symbolic link in the folder"
         target = root / path
         # The stored copy is read BEFORE anything in the folder is removed,
         # so a read that fails (or times out) leaves the folder's copy where
@@ -1412,16 +1423,19 @@ def _put_tree_paths_in_place(
         if path in entries:
             mode, oid = entries[path]
             if mode not in _FILE_MODES:
-                return f"{path} is not an ordinary file at {commit[:10]}"
+                return f"{shown_path(path)} is not an ordinary file at {commit[:10]}"
             data = _blob_bytes(root, oid)
             if data is None:
-                return f"the stored copy of {path} at {commit[:10]} could not be read"
+                return (
+                    f"the stored copy of {shown_path(path)} at {commit[:10]} "
+                    f"could not be read"
+                )
             permissions = 0o755 if _FILE_MODES[mode] else 0o644
         try:
             if target.is_symlink() or (target.exists() and not target.is_dir()):
                 target.unlink()
             elif target.is_dir():
-                return f"{path} is a folder in the working folder"
+                return f"{shown_path(path)} is a folder in the working folder"
             if data is None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1436,7 +1450,10 @@ def _put_tree_paths_in_place(
                 os.close(handle)
             os.chmod(target, permissions)
         except OSError as exc:
-            return f"{path} could not be written ({exc.strerror or type(exc).__name__})"
+            return (
+                f"{shown_path(path)} could not be written "
+                f"({exc.strerror or type(exc).__name__})"
+            )
     return judges_match_commit(tree_root, commit, paths)
 
 
@@ -1474,15 +1491,18 @@ def put_joined_files_back(
     for path in paths:
         link = _parent_link(root, path)
         if link is not None:
-            return f"{link} is a symbolic link in the folder"
+            return f"{shown_path(link)} is a symbolic link in the folder"
         target = root / path
         try:
             if target.is_symlink() or (target.exists() and not target.is_dir()):
                 target.unlink()
             elif target.is_dir():
-                return f"{path} is a folder in the working folder"
+                return f"{shown_path(path)} is a folder in the working folder"
         except OSError as exc:
-            return f"{path} could not be removed ({exc.strerror or type(exc).__name__})"
+            return (
+                f"{shown_path(path)} could not be removed "
+                f"({exc.strerror or type(exc).__name__})"
+            )
     if present:
         done = _run_git(tree_root, "checkout", post_sha, "--", *present)
         if done.returncode != 0:
@@ -1493,7 +1513,7 @@ def put_joined_files_back(
     if rows is None:
         return "git status could not be read"
     if rows:
-        return "; ".join(rows[:5])
+        return "; ".join(shown_path(row) for row in rows[:5])
     return None
 
 
@@ -1617,7 +1637,7 @@ def prepare_tree(
                 else None
             )
             if others or mismatch:
-                shown = "; ".join(others[:5])
+                shown = "; ".join(shown_path(p) for p in others[:5])
                 more = f" (and {len(others) - 5} more)" if len(others) > 5 else ""
                 detail = "; ".join(x for x in (shown + more, mismatch) if x)
                 return TreePreparation(
@@ -1640,7 +1660,7 @@ def prepare_tree(
             )
         if porcelain.strip():
             rows = [ln for ln in porcelain.splitlines() if ln.strip()]
-            shown = "; ".join(rows[:5])
+            shown = "; ".join(shown_path(row) for row in rows[:5])
             more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
             return TreePreparation(
                 None,

@@ -40,6 +40,7 @@ import os
 import re
 import shlex
 import string
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -70,6 +71,7 @@ __all__ = [
     "judge_links",
     "judge_words",
     "links_on_judge_paths",
+    "shown_path",
     "tree_entries",
     "pin_merge_environment",
     "read_merge_declarations",
@@ -215,6 +217,36 @@ JUDGE_IS_A_LINK = (
     "could not verify — {path} is a symbolic link, so the factory cannot tell "
     "which program it would run"
 )
+
+_NAMED_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def shown_path(path: str) -> str:
+    """A file name as it may appear in a sentence (a reason, a detail, a
+    receipt line), so the sentence stays valid UTF-8 and one line.
+
+    A byte that is not UTF-8 (held by ``os.fsdecode`` as a lone surrogate) is
+    shown as ``\\xNN``; a newline, carriage return or tab as ``\\n``,
+    ``\\r`` or ``\\t``; any other control character as ``\\xNN``; a line or
+    paragraph separator, or any other lone surrogate, as ``\\uNNNN``. Every
+    other character, ordinary non-ASCII letters included, is unchanged.
+    Structured fields keep the name exactly as git gave it.
+    """
+    out: List[str] = []
+    for ch in path:
+        code = ord(ch)
+        if 0xDC80 <= code <= 0xDCFF:
+            out.append(f"\\x{code - 0xDC00:02x}")
+        elif ch in _NAMED_ESCAPES:
+            out.append(_NAMED_ESCAPES[ch])
+        elif unicodedata.category(ch) == "Cc":
+            out.append(f"\\x{code:02x}")
+        elif unicodedata.category(ch) in ("Zl", "Zp", "Cs"):
+            out.append(f"\\u{code:04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 
 _ALLOWED_CHARACTERS = frozenset(
     string.ascii_letters + string.digits + " \t\n" + "_./=:@%+,-'\"\\&|;()<>"
