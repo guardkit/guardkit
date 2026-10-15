@@ -2332,6 +2332,10 @@ class TestOddNamesInSentences:
     ODD_SHOWN = "caf\\xe9"
     NEWLINE = "odd\nname"
     NEWLINE_SHOWN = "odd\\nname"
+    # A right-to-left override would make the rest of a receipt line display
+    # reversed.
+    RLO = "evil\u202eexe"
+    RLO_SHOWN = "evil\\u202eexe"
 
     @pytest.mark.parametrize(
         "folder,shown", [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN)]
@@ -2358,7 +2362,8 @@ class TestOddNamesInSentences:
         assert standin.ran() == set()
 
     @pytest.mark.parametrize(
-        "folder,shown", [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN)]
+        "folder,shown",
+        [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN), (RLO, RLO_SHOWN)],
     )
     def test_a_receipt_naming_an_odd_judge_left_out_prints_cleanly(
         self, standin: Standin, folder: str, shown: str
@@ -2418,3 +2423,36 @@ class TestShownPath:
         assert shown == "a\\xff\\x1b[31m\\tb\\r\\n\\x7fc\\u2028d\\x85e"
         shown.encode("utf-8")
         assert len(shown.splitlines()) == 1
+
+    def test_invisible_format_characters_are_escaped(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        for ch in (
+            "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+            "\u2066", "\u2067", "\u2068", "\u2069",
+            "\u200b", "\u200c", "\u200d", "\u200e", "\u200f",
+            "\ufeff", "\u00ad", "\u2060",
+        ):
+            assert shown_path(f"a{ch}b") == f"a\\u{ord(ch):04x}b", repr(ch)
+
+
+class TestAConflictOnAnOddName:
+    """A merge that conflicts on a file whose name is not UTF-8 is an
+    ordinary conflict, never an unexpected error (git's own words about the
+    merge name the file in its raw bytes)."""
+
+    def test_a_conflict_on_a_name_that_is_not_utf8_is_reported(
+        self, standin: Standin
+    ):
+        name = os.fsdecode(b"odd\xff.txt")
+        standin.init(files={name: "base\n"})
+        standin.branch({name: "build\n"})
+        standin.write(name, "main\n")
+        _git(standin.repo, "commit", "-q", "-am", "main moves on")
+
+        report = standin.merge()
+
+        assert report.outcome == "conflict", report
+        assert report.conflict_files, report
+        _as_the_cli_prints(report)
+        assert _clean(standin.folder)
