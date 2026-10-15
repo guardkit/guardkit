@@ -150,9 +150,10 @@ def compose_outcome_lessons(
 ) -> str:
     """Write the outcome paragraph from the facts held when a build ends.
 
-    Example (TASK-E592-002 as it would be stored):
+    Example (a product's task as it would be stored; the IDs are
+    placeholders):
 
-        TASK-E592-002 "Implement analytics CRUD" (feature FEAT-E592): approved
+        TASK-XXX-002 "Implement analytics CRUD" (feature FEAT-XXX): approved
         by the reviewer on turn 2. The task asked: Implement the database
         query for user creation counts. Files changed: src/users/__init__.py,
         src/users/analytics_crud.py. Reviewer objections: turn 1:

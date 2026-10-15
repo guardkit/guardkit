@@ -1905,10 +1905,11 @@ class FeatureLoader:
         """Refuse a task file that names another task of the same feature when
         neither task depends on the other, directly or through other tasks.
 
-        Measured on FEAT-FFEC (3 October 2026): TASK-FFEC-002's acceptance
-        criteria said "Response shape matches the schema from TASK-FFEC-003",
-        but the plan declared both as depending only on TASK-FFEC-001, so they
-        were scheduled in the same wave. The need was written only in the
+        Measured on FEAT-FFEC (3 October 2026), a feature of the product being
+        built: the acceptance criteria of its task 002 said the response shape
+        must match the schema from its task 003, but the plan declared both as
+        depending only on its task 001, so they were scheduled in the same
+        wave. The need was written only in the
         task's own text, where the scheduler never looks.
 
         Only the feature's own task IDs are matched, so this works the same for
@@ -1952,10 +1953,10 @@ class FeatureLoader:
                 stack.extend(deps.get(current, []))
             upstream[task_id] = seen
 
-        # Longest IDs first so TASK-X-0010 is never read as TASK-X-001; an ID
-        # must not run on into more letters, digits or underscores. A trailing
-        # hyphen is allowed, so a file name such as TASK-X-003-schemas.md
-        # still counts as naming TASK-X-003.
+        # Longest IDs first so TASK-XXX-0010 is never read as TASK-XXX-001; an
+        # ID must not run on into more letters, digits or underscores. A
+        # trailing hyphen is allowed, so a file name such as
+        # TASK-XXX-003-schemas.md still counts as naming TASK-XXX-003.
         alternatives = "|".join(
             re.escape(i) for i in sorted(known, key=len, reverse=True)
         )

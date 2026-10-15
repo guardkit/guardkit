@@ -656,9 +656,9 @@ the worktree taken before and after the generator ran, never the generator's
 own account of itself — and the reviewer approved on none of them.
 
 Two real builds in the 2026-08-30 architecture exam ended this way and neither
-said so: FEAT-245E TASK-245E-002 (the record forbade the only route to the data
-the task needed, so no legal edit existed) and FEAT-B0EF TASK-B0EF-002 (the
-filtering the task asked for was already in the file). In both the generator
+said so: the second task of FEAT-245E (the record forbade the only route to the
+data the task needed, so no legal edit existed) and the second task of FEAT-B0EF
+(the filtering the task asked for was already in the file). In both the generator
 claimed edits git showed had not happened, the honesty check flagged the claim
 every turn, and the loop ran out of turns and reported ``max_turns_exceeded`` —
 the symptom, not the cause, at about 25 minutes of wall clock apiece.

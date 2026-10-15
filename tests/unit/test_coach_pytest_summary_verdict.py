@@ -16,16 +16,20 @@ no summary line is present.
 
 from __future__ import annotations
 
-import os
+import pytest
 
-# Harness-touching import — pin SDK so importing the validator does not resolve
-# the LangGraph substrate at import time (the pure classmethod under test is
-# substrate-independent).
-os.environ.setdefault("GUARDKIT_HARNESS", "sdk")
-
-from guardkit.orchestrator.quality_gates.coach_validator import (  # noqa: E402
+from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
 )
+
+
+@pytest.fixture(autouse=True)
+def _sdk_harness(monkeypatch):
+    """Pin the SDK harness for these tests only; the code under test does not
+    depend on the substrate. It used to be set with ``os.environ`` when this
+    module was imported, which changed the default harness for every test that
+    ran after it in the same session."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
 _verdict = CoachValidator._verdict_from_pytest_summary
 

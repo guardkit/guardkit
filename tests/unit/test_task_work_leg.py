@@ -667,15 +667,23 @@ class TestRequirementsThreading:
         assert provenance["acceptance_criteria"] == "fix-task ## Acceptance Criteria"
 
     def test_the_player_is_not_briefed_with_a_heading(self, repo):
-        """The bug this exists to stop: TaskLoader hands back the TITLE only."""
+        """The bug this exists to stop: a loader that hands back the TITLE only.
+
+        TaskLoader did exactly that for a task with no ``## Requirements``
+        section until 16 September 2026 (77dd1fc2), when its fallback began
+        returning the whole body. The leg must not depend on that, so the task
+        is given here in the old heading-only shape.
+        """
         from guardkit.tasks.task_loader import TaskLoader
 
-        task = TaskLoader.load_task(FIX_TASK_ID, repo_root=repo)
-        # TaskLoader's own fallback really does return the heading …
-        assert task["requirements"].strip() == "# Cure the silent swallow in the parser"
-        # … and the leg refuses to pass that on.
-        requirements, _, _ = work_runner.thread_requirements(task)
+        task = dict(TaskLoader.load_task(FIX_TASK_ID, repo_root=repo))
+        task["requirements"] = "# Cure the silent swallow in the parser"
+
+        requirements, _, provenance = work_runner.thread_requirements(task)
         assert requirements != task["requirements"]
+        assert not requirements.lstrip().startswith("#")
+        assert "swallows a malformed payload" in requirements
+        assert provenance["requirements"] == "fix-task ## Description"
 
     def test_threading_reaches_orchestrate(self, repo, fake_orchestrator):
         holder = fake_orchestrator(APPROVED)

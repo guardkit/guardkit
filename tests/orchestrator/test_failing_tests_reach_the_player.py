@@ -823,9 +823,14 @@ def test_a_run_of_the_tasks_own_tests_names_what_failed(tmp_path: Path) -> None:
         "def test_ok():\n    pass\n\n"
         "def test_breaks():\n    assert 'a' == 'b'\n"
     )
+    # The project's interpreter is this test's own Python. A wrapper, not a
+    # symbolic link: a link to a virtual environment's python starts the base
+    # interpreter without that environment's packages (no pytest), so the run
+    # would only work where pytest is installed system-wide.
     venv_python = worktree / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True)
-    venv_python.symlink_to(sys.executable)
+    venv_python.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    venv_python.chmod(venv_python.stat().st_mode | stat.S_IXUSR)
     results_path = _player_claimed_green(
         worktree, ["tests/test_leg_0002_thing.py"]
     )

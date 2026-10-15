@@ -8727,8 +8727,10 @@ CRITICAL READING RULES — apply these BEFORE any approval decision:
           ``kept`` is usually empty anyway. This clause is what makes the
           guard give the same answer whatever the order — and what makes a
           second call over an already-reconciled decision idempotent instead
-          of newly blocking. The receipt for build-FEAT-99E2 /
-          TASK-DEACT-005 turn 3 is that shape: one false objection plus six
+          of newly blocking. The turn-3 receipt from build-FEAT-99E2 (a
+          documentation task of the project that build was for; copied into
+          ``tests/fixtures/coach-misread-2026-09-04/deact-005-turn3/``) is
+          that shape: one false objection plus six
           ``claim_audit_unmodified`` records at ``should_fix``.
 
         On any change the decision dict gains machine-readable markers —
