@@ -2309,3 +2309,112 @@ class TestGitFailingAfterTheInstall:
         assert report.verify_ran is False
         assert "could not be read after the declared install" in report.verify_detail
         assert "git status did not finish within 30 seconds" in report.verify_detail
+
+
+def _as_the_cli_prints(report) -> tuple:
+    """The two ways the command line prints a merge report (``--json`` and
+    the receipt), each encoded strictly as UTF-8 the way a pipe or a log
+    file receives it. Raises if either cannot be."""
+    as_json = json.dumps(report.to_dict(), indent=2)
+    as_json.encode("utf-8")
+    receipt = "\n".join(report.receipt_lines())
+    receipt.encode("utf-8")
+    return as_json, receipt
+
+
+class TestOddNamesInSentences:
+    """A file name in a sentence (a reason, a detail, a receipt line) is shown
+    with bytes that are not UTF-8 as \\xNN and control characters as backslash
+    forms, so every sentence is valid UTF-8 and one line. The structured
+    fields keep the names exactly as git gave them."""
+
+    ODD = os.fsdecode(b"caf\xe9")
+    ODD_SHOWN = "caf\\xe9"
+    NEWLINE = "odd\nname"
+    NEWLINE_SHOWN = "odd\\nname"
+
+    @pytest.mark.parametrize(
+        "folder,shown", [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN)]
+    )
+    def test_a_refusal_naming_an_odd_link_prints_cleanly(
+        self, standin: Standin, folder: str, shown: str
+    ):
+        judge = f"{folder}/check.sh"  # matched by the name check.sh
+        standin.init(files={"tools/real-check.sh": standin.script(CHECK_SH)})
+        standin.branch({}, links={judge: "../tools/real-check.sh"})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert IS_A_LINK in report.verify_detail
+        assert f"{shown}/check.sh" in report.verify_detail
+        as_json, receipt = _as_the_cli_prints(report)
+        detail = json.loads(as_json)["verify_detail"]
+        detail.encode("utf-8")
+        assert "\n" not in detail
+        for line in report.receipt_lines():
+            assert "\n" not in line and "\r" not in line, line
+        assert f"{shown}/check.sh" in receipt
+        assert standin.ran() == set()
+
+    @pytest.mark.parametrize(
+        "folder,shown", [(ODD, ODD_SHOWN), (NEWLINE, NEWLINE_SHOWN)]
+    )
+    def test_a_receipt_naming_an_odd_judge_left_out_prints_cleanly(
+        self, standin: Standin, folder: str, shown: str
+    ):
+        judge = f"{folder}/check.sh"
+        standin.init()
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        # The structured field keeps git's name exactly.
+        assert report.judge_files_not_on_target == (judge,)
+        as_json, receipt = _as_the_cli_prints(report)
+        assert json.loads(as_json)["judge_files_not_on_target"] == [judge]
+        lines = [ln for ln in report.receipt_lines() if "left out" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert f"{shown}/check.sh" in lines[0]
+        assert "\n" not in lines[0]
+        assert standin.build_copy_never_ran()
+
+    def test_a_failed_restore_naming_an_odd_judge_prints_cleanly(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        judge = f"{self.NEWLINE}/check.sh"
+        standin.init(files={judge: standin.script(CHECK_SH)})
+        standin.branch({judge: standin.script(ALWAYS_GREEN_SH)})
+        oid = _git(standin.repo, "rev-parse", "main:" + judge)
+        from guardkit.orchestrator import merge_executor
+
+        def bad_blob(tree_root, oid_):
+            return None if oid_ == oid else real_blob(tree_root, oid_)
+
+        real_blob = merge_executor._blob_bytes
+        monkeypatch.setattr(merge_executor, "_blob_bytes", bad_blob)
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified"
+        assert f"the stored copy of {self.NEWLINE_SHOWN}/check.sh" in report.verify_detail
+        _as_the_cli_prints(report)
+        assert all("\n" not in line for line in report.receipt_lines())
+
+
+class TestShownPath:
+    def test_ordinary_names_are_unchanged(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        assert shown_path("scripts/check.sh") == "scripts/check.sh"
+        assert shown_path("docs/café notes.txt") == "docs/café notes.txt"
+
+    def test_bytes_and_control_characters_are_escaped(self):
+        from guardkit.orchestrator.merge_environment import shown_path
+
+        name = os.fsdecode(b"a\xff\x1b[31m\tb\r\n\x7fc") + " d\u0085e"
+        shown = shown_path(name)
+        assert shown == "a\\xff\\x1b[31m\\tb\\r\\n\\x7fc\\u2028d\\x85e"
+        shown.encode("utf-8")
+        assert len(shown.splitlines()) == 1
