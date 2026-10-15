@@ -2022,3 +2022,186 @@ class TestFileNamesThatAreNotUtf8:
         assert (standin.folder / judge).is_file()
         assert _clean(standin.folder)
         assert standin.build_copy_never_ran()
+
+
+# ---------------------------------------------------------------------------
+# Git failing between the join and the check (review finding, 15 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def _timeout_on(monkeypatch: pytest.MonkeyPatch, wanted) -> list:
+    """Make the merge's git runner time out on every call ``wanted(args)``
+    matches; returns the list of the calls that were made to time out."""
+    from guardkit.orchestrator import merge_executor
+
+    real = merge_executor.run_git
+    hits: list = []
+
+    def run_git(args, **kwargs):
+        if wanted([str(a) for a in args]):
+            hits.append(list(args))
+            raise subprocess.TimeoutExpired(
+                f"git {args[0]}", 30,
+                stderr=b"git cat-file did not finish within 30 seconds.",
+            )
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(merge_executor, "run_git", run_git)
+    return hits
+
+
+def _spy_on_put_back(monkeypatch: pytest.MonkeyPatch, fail_with=None) -> list:
+    from guardkit.orchestrator import merge_executor
+
+    real = merge_executor.put_joined_files_back
+    calls: list = []
+
+    def put_back(tree_root, post_sha, paths):
+        calls.append(list(paths))
+        if fail_with is not None:
+            raise fail_with
+        return real(tree_root, post_sha, paths)
+
+    monkeypatch.setattr(merge_executor, "put_joined_files_back", put_back)
+    return calls
+
+
+class TestGitFailingAroundTheCheck:
+    """A git command that times out or fails while the target's judge files
+    are being put in place, or while the joined files are being put back,
+    ends in the ordinary "unverified" report with a plain reason, never an
+    unexpected error, and the joined files are put back on every path."""
+
+    def test_a_stored_copy_that_times_out_mid_restore_ends_unverified_and_put_back(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        green_install = standin.script(ALWAYS_GREEN_SH)
+        green_check = standin.script(ALWAYS_GREEN_SH) + "# the build's check\n"
+        standin.branch(
+            {"scripts/install.sh": green_install, "scripts/check.sh": green_check}
+        )
+        # scripts/check.sh is put in place first (sorted), then the stored
+        # copy of scripts/install.sh cannot be read in time.
+        install_oid = _git(standin.repo, "rev-parse", "main:scripts/install.sh")
+        hits = _timeout_on(
+            monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == install_oid
+        )
+        calls = _spy_on_put_back(monkeypatch)
+
+        report = standin.merge()
+
+        assert hits, "the fault was never reached"
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "did not finish within 30 seconds" in report.verify_detail
+        assert "main's copies could not be put in place" in report.verify_detail
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.judged_with_main_copies == (
+            "scripts/check.sh", "scripts/install.sh",
+        )
+        assert report.judge_files_not_on_target == ()
+        folder = standin.folder
+        assert _clean(folder)
+        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
+        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == green_check
+        assert (folder / "scripts/install.sh").read_text(
+            encoding="utf-8"
+        ) == green_install
+        assert standin.ran() == {"install-ran", "check-ran"}  # the baseline only
+        assert standin.build_copy_never_ran()
+        assert "did not finish" in _report_text(report)
+
+    def test_a_read_that_times_out_leaves_the_folders_copy_where_it_was(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator.merge_executor import put_main_judges_in_place
+
+        standin.init()
+        head = _git(standin.repo, "rev-parse", "HEAD")
+        oid = _git(standin.repo, "rev-parse", "HEAD:scripts/check.sh")
+        standin.write("scripts/check.sh", "#!/bin/sh\necho the folder's copy\n")
+        _timeout_on(monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == oid)
+
+        try:
+            problem = put_main_judges_in_place(standin.repo, head, ["scripts/check.sh"])
+        except subprocess.TimeoutExpired:
+            problem = "timed out"
+        assert problem is not None
+        assert (standin.repo / "scripts/check.sh").read_text(
+            encoding="utf-8"
+        ) == "#!/bin/sh\necho the folder's copy\n"
+
+    def test_reading_the_joins_trees_timing_out_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator import merge_executor
+
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        def tree_entries(*a, **k):
+            raise subprocess.TimeoutExpired(
+                "git ls-tree", 120,
+                stderr=b"git ls-tree did not finish within 120 seconds.",
+            )
+
+        monkeypatch.setattr(merge_executor, "tree_entries", tree_entries)
+
+        report = standin.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "did not finish within 120 seconds" in report.verify_detail
+        assert report.judged_with_main_copies == ()
+        assert report.judge_files_not_on_target == ()
+        assert _clean(standin.folder)
+        assert standin.build_copy_never_ran()
+
+    def test_a_put_back_that_times_out_after_the_check_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+        calls = _spy_on_put_back(
+            monkeypatch,
+            fail_with=subprocess.TimeoutExpired(
+                "git checkout", 30,
+                stderr=b"git checkout did not finish within 30 seconds.",
+            ),
+        )
+
+        report = standin.merge()
+
+        assert calls == [["scripts/check.sh"]]
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert "could not be put back" in report.verify_detail
+        assert "git checkout did not finish within 30 seconds" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert report.judge_files_not_on_target == ()
+        assert standin.build_copy_never_ran()
+
+    def test_a_put_back_that_fails_after_a_failed_restore_is_reported(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+        oid = _git(standin.repo, "rev-parse", "main:scripts/check.sh")
+        _timeout_on(monkeypatch, lambda a: a[:2] == ["cat-file", "blob"] and a[2] == oid)
+        calls = _spy_on_put_back(
+            monkeypatch, fail_with=OSError(13, "Permission denied")
+        )
+
+        report = standin.merge()
+
+        assert calls == [["scripts/check.sh"]]
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "main's copies could not be put in place" in report.verify_detail
+        assert "could not be put back" in report.verify_detail
+        assert "Permission denied" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/check.sh",)
+        assert standin.build_copy_never_ran()
