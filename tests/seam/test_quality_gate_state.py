@@ -309,12 +309,16 @@ class TestQualityGateStateTransitions:
             title="Feature with Zero Tests",
         )
 
-        # Create task_work_results with zero tests (anomaly condition)
+        # Create task_work_results with zero tests (anomaly condition).
+        # Coverage is given as measured so the coverage gate passes and the
+        # zero-test check is the one that decides: since 19 September 2026
+        # (8d2ea169) unmeasured coverage is UNKNOWN and is refused first, as
+        # coverage_unknown, before the zero-test check is reached.
         results_path = task_work_results_factory(
             task_id=task_id,
             tests_passed=0,  # <-- Zero tests
             tests_failed=0,
-            coverage=None,  # <-- No coverage data
+            coverage=85.0,
             arch_score=70,
             all_passed=True,  # <-- Incorrectly marked as passed
         )

@@ -49,6 +49,7 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk._errors import MessageParseError
 
+from guardkit.orchestrator.exceptions import AgentInvocationError
 from guardkit.orchestrator.quality_gates.coach_validator import (
     CoachValidator,
     IndependentTestResult,
@@ -128,7 +129,7 @@ def _user_tool_result_msg(
 
 
 @pytest.fixture(autouse=True)
-def _routine_fleet_route(m0_routine_fleet_route):
+def _routine_fleet_route(m0_routine_fleet_route, monkeypatch):
     """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
 
     The M0 effective-seat fence at the top of ``select_harness`` refuses any
@@ -139,7 +140,13 @@ def _routine_fleet_route(m0_routine_fleet_route):
     they state the estate's routine condition — a named local seat behind a
     local endpoint, see ``tests/conftest.py`` — rather than switch the fence
     off with ``GUARDKIT_ALLOW_FRONTIER``, which would hide the next regression.
+
+    These tests drive the Claude Agent SDK stream (they patch
+    ``claude_agent_sdk.query``), so they select the SDK harness by name. The
+    default harness has been LangGraph since 16 June 2026 (TASK-HMIG-011),
+    which never calls ``claude_agent_sdk.query``.
     """
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
 
 class TestAC_B_MessageParseErrorNonTerminal:
@@ -236,7 +243,9 @@ class TestAC_C_ProcessErrorAfterValidMessage:
     narrow ``(MessageParseError, ValueError)`` catch does *not* swallow
     transport-level failures — ``ProcessError`` propagates out with its
     ``exit_code``/``stderr`` intact so the outer cascade can surface
-    them."""
+    them. Since TASK-HMIG-006.3 (D-4) the SDK harness hands it on as the
+    cause of one ``AgentInvocationError`` whose message carries the exit
+    code and stderr."""
 
     @pytest.mark.asyncio
     async def test_user_message_processed_then_process_error_propagates(
@@ -272,13 +281,17 @@ class TestAC_C_ProcessErrorAfterValidMessage:
                 "_extract_content_text",
                 staticmethod(spy_extract),
             ):
-                with pytest.raises(ProcessError) as ei:
+                with pytest.raises(AgentInvocationError) as ei:
                     await validator._run_tests_via_sdk("pytest tests/dummy.py")
 
-        # ProcessError propagated untouched — structured info intact.
-        err = ei.value
+        # ProcessError propagated untouched as the cause — structured info
+        # intact — and summarised in the harness's own error.
+        err = ei.value.__cause__
+        assert err is transport_err
         assert err.exit_code == 1
         assert err.stderr == "bundled CLI crashed: out of memory"
+        assert "exit 1" in str(ei.value)
+        assert "bundled CLI crashed: out of memory" in str(ei.value)
 
         # The valid UserMessage was processed before the ProcessError —
         # _extract_content_text was called with its ToolResultBlock
@@ -296,9 +309,12 @@ class TestAC_C_ProcessErrorAfterValidMessage:
 
 class TestInnerExceptionCascade:
     """Coverage for the split inner handlers inside
-    ``_run_tests_via_sdk``. Each typed handler emits a structured
-    ``error_class`` tag and re-raises the original exception untouched
-    so the caller can introspect type and attributes."""
+    ``_run_tests_via_sdk``. Since TASK-HMIG-006.3 (D-4) the SDK harness
+    turns every SDK failure into one ``AgentInvocationError`` raised from the
+    original exception: ``_run_tests_via_sdk`` logs one structured line
+    tagged ``error_class=AgentInvocationError`` with the harness's message
+    (which names the failure) and re-raises, and the original exception is
+    the ``__cause__``, untouched, for the caller to introspect."""
 
     @pytest.mark.asyncio
     async def test_cli_not_found_handler_logs_class_and_reraises(
@@ -314,15 +330,17 @@ class TestInnerExceptionCascade:
             logger="guardkit.orchestrator.quality_gates.coach_validator",
         ):
             with patch.object(claude_agent_sdk, "query", side_effect=boom):
-                with pytest.raises(CLINotFoundError):
+                with pytest.raises(AgentInvocationError) as ei:
                     await validator._run_tests_via_sdk("pytest tests/dummy.py")
 
+        assert isinstance(ei.value.__cause__, CLINotFoundError)
         tagged = [
             r for r in caplog.records
             if "SDK coach test execution failed" in r.getMessage()
-            and "error_class=CLINotFoundError" in r.getMessage()
+            and "error_class=AgentInvocationError" in r.getMessage()
         ]
         assert len(tagged) == 1
+        assert "Claude Code CLI not installed" in tagged[0].getMessage()
 
     @pytest.mark.asyncio
     async def test_cli_json_decode_handler_logs_class_and_reraises(
@@ -341,15 +359,18 @@ class TestInnerExceptionCascade:
             logger="guardkit.orchestrator.quality_gates.coach_validator",
         ):
             with patch.object(claude_agent_sdk, "query", side_effect=boom):
-                with pytest.raises(CLIJSONDecodeError):
+                with pytest.raises(AgentInvocationError) as ei:
                     await validator._run_tests_via_sdk("pytest tests/dummy.py")
 
+        assert isinstance(ei.value.__cause__, CLIJSONDecodeError)
         tagged = [
             r for r in caplog.records
             if "SDK coach test execution failed" in r.getMessage()
-            and "error_class=CLIJSONDecodeError" in r.getMessage()
+            and "error_class=AgentInvocationError" in r.getMessage()
         ]
         assert len(tagged) == 1
+        assert "Failed to parse SDK response" in tagged[0].getMessage()
+        assert "garbage line from CLI" in tagged[0].getMessage()
 
     @pytest.mark.asyncio
     async def test_process_error_inner_handler_captures_exit_code_and_stderr(
@@ -374,31 +395,33 @@ class TestInnerExceptionCascade:
             logger="guardkit.orchestrator.quality_gates.coach_validator",
         ):
             with patch.object(claude_agent_sdk, "query", side_effect=boom):
-                with pytest.raises(ProcessError) as ei:
+                with pytest.raises(AgentInvocationError) as ei:
                     await validator._run_tests_via_sdk("pytest tests/dummy.py")
 
         # Structured inner log emitted.
         tagged = [
             r for r in caplog.records
             if "SDK coach test execution failed" in r.getMessage()
-            and "error_class=ProcessError" in r.getMessage()
+            and "error_class=AgentInvocationError" in r.getMessage()
         ]
         assert len(tagged) == 1
         inner_msg = tagged[0].getMessage()
-        assert "exit_code=1" in inner_msg
+        assert "SDK process failed (exit 1)" in inner_msg
         assert "transport-layer failure" in inner_msg
 
         # Original exception passes through untouched for the caller.
-        assert ei.value.exit_code == 1
-        assert ei.value.stderr == stderr_text
+        original = ei.value.__cause__
+        assert isinstance(original, ProcessError)
+        assert original.exit_code == 1
+        assert original.stderr == stderr_text
 
     @pytest.mark.asyncio
     async def test_blanket_exception_handler_tags_concrete_class_name(
         self, tmp_path, caplog
     ):
-        """Unknown exception types (RuntimeError here) hit the bare
-        ``except Exception`` clause which tags ``type(e).__name__`` on
-        the log line."""
+        """Unknown exception types (RuntimeError here) hit the harness's
+        bare ``except Exception`` clause, which names ``type(e).__name__``
+        in the message and in ``error_class``."""
         validator = _make_validator(tmp_path)
 
         def boom(**kwargs):
@@ -409,15 +432,20 @@ class TestInnerExceptionCascade:
             logger="guardkit.orchestrator.quality_gates.coach_validator",
         ):
             with patch.object(claude_agent_sdk, "query", side_effect=boom):
-                with pytest.raises(RuntimeError):
+                with pytest.raises(AgentInvocationError) as ei:
                     await validator._run_tests_via_sdk("pytest tests/dummy.py")
 
+        assert isinstance(ei.value.__cause__, RuntimeError)
+        assert ei.value.error_class == "RuntimeError"
         tagged = [
             r for r in caplog.records
             if "SDK coach test execution failed" in r.getMessage()
-            and "error_class=RuntimeError" in r.getMessage()
+            and "error_class=AgentInvocationError" in r.getMessage()
         ]
         assert len(tagged) == 1
+        assert "(RuntimeError): some unexpected transport failure" in (
+            tagged[0].getMessage()
+        )
 
 
 # ----------------------------------------------------------------------

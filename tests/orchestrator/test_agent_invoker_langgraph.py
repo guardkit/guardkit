@@ -226,6 +226,13 @@ def _enable_dcode_player(
         encoding="utf-8",
     )
     monkeypatch.setenv("GUARDKIT_HARNESS", "langgraph")
+    # An empty home of its own: the dcode Player refuses any skill folder it
+    # was not given, and a developer's ~/.agents/skills is one of the places
+    # it looks. The factory's containers have none; the test must not depend
+    # on what the machine running it has installed.
+    home = worktree.parent / f"{worktree.name}-home"
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("DEEPAGENTS_HOME", raising=False)
     monkeypatch.delenv("DEEPAGENTS_CODE_OFFLINE", raising=False)
     monkeypatch.delenv("LANGCHAIN_TRACING", raising=False)

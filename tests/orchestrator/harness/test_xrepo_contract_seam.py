@@ -223,6 +223,16 @@ class TestRealConstructionThroughSelector:
     a fast CI check instead of a 25-second runtime failure.
     """
 
+    @pytest.fixture(autouse=True)
+    def _no_process_profile_yet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test-only isolation, for every test here: the selector pins one
+        dcode profile per process, so a whole-directory run in which an earlier
+        module ran a real dcode Player refuses each test's fresh profile.
+        monkeypatch restores the module global afterwards."""
+        from guardkit.orchestrator.harness import selector as _selector_module
+
+        monkeypatch.setattr(_selector_module, "_AUTO_DCODE_PROFILE", None)
+
     def test_langgraph_constructed_end_to_end_with_real_kwargs(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

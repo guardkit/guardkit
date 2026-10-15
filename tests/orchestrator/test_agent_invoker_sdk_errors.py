@@ -111,6 +111,16 @@ def _result_msg(session_id: str = "sess-1") -> ResultMessage:
 
 
 @pytest.fixture(autouse=True)
+def _sdk_harness(monkeypatch):
+    """These tests drive the Claude Agent SDK stream (they patch
+    ``claude_agent_sdk.query``), so they select the SDK harness by name. The
+    default has been LangGraph since 16 June 2026 (TASK-HMIG-011); they passed
+    in a full run only because two other modules set the SDK harness in
+    ``os.environ`` at import time and never put it back."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
+
+
+@pytest.fixture(autouse=True)
 def _routine_fleet_route(m0_routine_fleet_route):
     """Declare the routine local-fleet route (leg-invocation stage-2 design §3).
 

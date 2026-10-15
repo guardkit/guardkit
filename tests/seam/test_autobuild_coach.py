@@ -42,6 +42,28 @@ from guardkit.orchestrator.quality_gates import (
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.worktrees import Worktree
 
+import subprocess
+
+_REAL_SUBPROCESS_RUN = subprocess.run
+
+
+def _canned_except_git(canned: MagicMock):
+    """A ``subprocess.run`` stand-in that lets git run for real.
+
+    Since 4 October 2026 (73705b64) the orchestrator reads the Coach's
+    project documents from the build's source commit with git before it calls
+    the Coach. The worktree here is not a git checkout, so real git says so
+    and nothing is captured: the documented behaviour for a project that
+    declares no documents. Every other command still gets ``canned``.
+    """
+
+    def run(args, *a, **kw):
+        if args and os.path.basename(str(args[0])) == "git":
+            return _REAL_SUBPROCESS_RUN(args, *a, **kw)
+        return canned
+
+    return run
+
 pytestmark = pytest.mark.seam
 
 
@@ -743,7 +765,9 @@ class TestRealCoachValidatorIntegration:
 
         # Act: Call _invoke_coach_safely with mocked subprocess
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            mock_run.side_effect = _canned_except_git(
+                MagicMock(returncode=0, stdout="ok", stderr="")
+            )
 
             result = orchestrator._invoke_coach_safely(
                 task_id="TASK-S6-001",
@@ -824,7 +848,9 @@ class TestRealCoachValidatorIntegration:
         # (legacy) Coach path — see the docstring for why the env var is set.
         with patch.dict(os.environ, {"GUARDKIT_COACH_LEGACY": "1"}), \
                 patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            mock_run.side_effect = _canned_except_git(
+                MagicMock(returncode=0, stdout="ok", stderr="")
+            )
 
             result = orchestrator._invoke_coach_safely(
                 task_id="TASK-S6-001",
@@ -921,7 +947,9 @@ class TestRealCoachValidatorIntegration:
         }
         with patch.dict(os.environ, env_without_legacy, clear=True), \
                 patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            mock_run.side_effect = _canned_except_git(
+                MagicMock(returncode=0, stdout="ok", stderr="")
+            )
 
             orchestrator._invoke_coach_safely(
                 task_id="TASK-S6-001",

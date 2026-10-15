@@ -26,6 +26,15 @@ from tests.orchestrator.test_agent_invoker_langgraph import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _routine_fleet_route(m0_routine_fleet_route):
+    """Declare the routine local-fleet route, as the module these helpers come
+    from does for its own tests (an imported helper does not bring that
+    module's autouse fixtures with it). Without it the M0 seat fence refuses
+    the named local seat before the graph runs, so there is no failed graph to
+    inspect."""
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["role", "direct"])
 @pytest.mark.parametrize("text,reason", [("", "stop"), ("", "length"), ("partial", "length")])
@@ -82,8 +91,12 @@ async def test_failed_graph_retains_actual_skill_read(monkeypatch, tmp_path, tex
     paths = list(invoker.worktree_path.rglob("messages.jsonl"))
     assert len(paths) == 1
     records = [json.loads(line) for line in paths[0].read_text().splitlines()]
-    summary = records[0]
-    assert summary["type"] == "GraphFailure"
+    # The native tool events the graph streamed are recorded as they happen
+    # (guardkitfactory 9a4baad, 17 September 2026), so they can come before
+    # the failure summary; the summary is found by its type.
+    summaries = [record for record in records if record.get("type") == "GraphFailure"]
+    assert len(summaries) == 1
+    summary = summaries[0]
     assert summary["outcome"] == "failed"
     assert summary["graph_result_available"] is True
     assert summary["finish_reason"] == reason

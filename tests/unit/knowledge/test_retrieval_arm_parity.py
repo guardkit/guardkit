@@ -316,9 +316,15 @@ class TestArmParityThroughLoaderChain:
             assert result is not None
             chain.assert_full_loader_path(result)
 
-        # Same budget envelope from the same calculator path — the arms only
-        # diverge in what retrieval returned, never in how far the chain ran.
-        assert off_result.budget_total == fixture_result.budget_total
+        # Same budget calculator on both arms; its novelty step reads what
+        # retrieval returned. The off arm finds no history, so the task is
+        # first of its type (+30% on the 4000-token base). The fixture arm's
+        # two results score above the similarity threshold, so the task has
+        # fewer than three similar tasks (+15%). The two were equal only while
+        # the Fleet client dropped relevance scores (fixed 18 September 2026,
+        # a20e59e6), which made every retrieved task look dissimilar.
+        assert off_result.budget_total == 5200
+        assert fixture_result.budget_total == 4600
 
 
 class TestEnvDrivenArmContract:

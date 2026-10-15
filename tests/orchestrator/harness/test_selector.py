@@ -766,6 +766,17 @@ def _old_factory_no_cap(worktree: Any) -> Any:
 class TestRequiredPlayerSelection:
     """Project configuration reaches the sole normal dcode Player path."""
 
+    @pytest.fixture(autouse=True)
+    def _no_process_profile_yet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Start each test as a fresh process would: no dcode profile chosen.
+
+        The selector keeps the first profile it makes for the rest of the
+        process, and a test that names its own ``DEEPAGENTS_HOME`` is refused
+        if an earlier test in the same run (a real dcode Player run, such as
+        ``test_failed_graph_debug.py``) already made one.
+        """
+        monkeypatch.setattr(selector_module, "_AUTO_DCODE_PROFILE", None)
+
     def test_normal_launch_defaults_are_process_scoped_and_thread_safe(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

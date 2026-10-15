@@ -19,20 +19,23 @@ reproducer.
 
 from __future__ import annotations
 
-import os
 from types import SimpleNamespace
 
-# Harness-touching module: pin the SDK harness so importing the orchestrator on
-# a machine where guardkitfactory + langchain are installed does not try to
-# resolve the LangGraph substrate at import time (the
-# ci-tests-yml-no-guardkitfactory hazard). The helper under test is a pure
-# staticmethod, so the substrate choice is irrelevant to behaviour.
-os.environ.setdefault("GUARDKIT_HARNESS", "sdk")
+import pytest
 
-from guardkit.orchestrator.feature_loader import SmokeGates  # noqa: E402
-from guardkit.orchestrator.feature_orchestrator import (  # noqa: E402
+from guardkit.orchestrator.feature_loader import SmokeGates
+from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
 )
+
+
+@pytest.fixture(autouse=True)
+def _sdk_harness(monkeypatch):
+    """Pin the SDK harness for these tests only; the code under test does not
+    depend on the substrate. It used to be set with ``os.environ`` when this
+    module was imported, which changed the default harness for every test that
+    ran after it in the same session."""
+    monkeypatch.setenv("GUARDKIT_HARNESS", "sdk")
 
 
 def _feature(smoke_gates):
