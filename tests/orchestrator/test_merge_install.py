@@ -2203,5 +2203,109 @@ class TestGitFailingAroundTheCheck:
         assert "main's copies could not be put in place" in report.verify_detail
         assert "could not be put back" in report.verify_detail
         assert "Permission denied" in report.verify_detail
+        # The put-back removes files before it writes them, so a failure in it
+        # can leave files missing as well as main's copies in place.
+        assert "missing some of the joined files" in report.verify_detail
         assert report.judged_with_main_copies == ("scripts/check.sh",)
         assert standin.build_copy_never_ran()
+
+
+class _AfterTheInstall:
+    """Times out the first git call matching ``wanted`` that comes after an
+    install: the post-join one (``joined=True``) or the target's one before
+    the merge (``joined=False``)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, wanted, joined: bool) -> None:
+        from guardkit.orchestrator import merge_environment, merge_executor
+
+        self.wanted = wanted
+        self.joined = joined
+        self.after_join = False
+        self.armed = False
+        self.hit = None
+        self._run_git = merge_executor.run_git
+        self._perform = merge_executor.perform_merge
+        self._install = merge_executor.run_in_own_group
+        # The tree listing is read through merge_environment's own name.
+        monkeypatch.setattr(merge_executor, "run_git", self.run_git)
+        monkeypatch.setattr(merge_environment, "run_git", self.run_git)
+        monkeypatch.setattr(merge_executor, "perform_merge", self.perform)
+        monkeypatch.setattr(merge_executor, "run_in_own_group", self.install)
+
+    def perform(self, *a, **k):
+        done = self._perform(*a, **k)
+        self.after_join = True
+        return done
+
+    def install(self, *a, **k):
+        done = self._install(*a, **k)
+        if self.after_join == self.joined and self.hit is None:
+            self.armed = True
+        return done
+
+    def run_git(self, args, **kwargs):
+        shown = [str(a) for a in args]
+        if self.armed and self.hit is None and self.wanted(shown):
+            self.hit = shown
+            raise subprocess.TimeoutExpired(
+                f"git {shown[0]}", 30,
+                stderr=f"git {shown[0]} did not finish within 30 seconds.".encode(),
+            )
+        return self._run_git(args, **kwargs)
+
+
+class TestGitFailingAfterTheInstall:
+    """The check that the install left the folder alone reads git too; a git
+    command timing out there ends in the ordinary unverified report."""
+
+    @pytest.mark.parametrize("command", ["status", "ls-tree", "cat-file"])
+    def test_a_read_timing_out_after_the_post_join_install_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, command: str
+    ):
+        standin.init()
+        green_install = standin.script(ALWAYS_GREEN_SH) + "# the build's install\n"
+        green_check = standin.script(ALWAYS_GREEN_SH) + "# the build's check\n"
+        standin.branch(
+            {"scripts/install.sh": green_install, "scripts/check.sh": green_check}
+        )
+        fault = _AfterTheInstall(
+            monkeypatch, lambda a: a[0] == command, joined=True
+        )
+        calls = _spy_on_put_back(monkeypatch)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, "the fault was never reached"
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "could not be read after the declared install" in report.verify_detail
+        assert f"git {command} did not finish within 30 seconds" in report.verify_detail
+        assert calls == [["scripts/check.sh", "scripts/install.sh"]]
+        assert report.judged_with_main_copies == (
+            "scripts/check.sh", "scripts/install.sh",
+        )
+        assert report.judge_files_not_on_target == ()
+        folder = standin.folder
+        assert _clean(folder)
+        assert _git(folder, "rev-parse", "HEAD") == report.post_sha
+        assert (folder / "scripts/check.sh").read_text(encoding="utf-8") == green_check
+        assert (folder / "scripts/install.sh").read_text(
+            encoding="utf-8"
+        ) == green_install
+        assert standin.build_copy_never_ran()
+
+    def test_git_status_timing_out_after_the_targets_install_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        standin.init()
+        standin.branch({"feature.txt": "built\n"})
+        fault = _AfterTheInstall(monkeypatch, lambda a: a[0] == "status", joined=False)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, "the fault was never reached"
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "could not be read after the declared install" in report.verify_detail
+        assert "git status did not finish within 30 seconds" in report.verify_detail
