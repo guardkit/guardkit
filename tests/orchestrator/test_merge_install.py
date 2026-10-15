@@ -1841,3 +1841,152 @@ class TestTheExactRestoreCheck:
         if problem is None:
             assert not (standin.repo / "scripts").is_symlink()
             assert (standin.repo / "scripts/check.sh").read_bytes() == expected
+
+
+# ---------------------------------------------------------------------------
+# Coach fix pass 1: the target's exact bytes, whatever the build's attributes
+# ---------------------------------------------------------------------------
+
+# The check fails when ``broken.txt`` exists. Written through a ``CRLF``
+# conversion it would test for "broken.txt\r" instead, and pass.
+CHECK_LINE_FORM = """#!/bin/bash
+set -e
+echo check >> "@MARKERS@/check-ran"
+test ! -f broken.txt
+echo "STANDIN-PASS"
+"""
+
+# The install refuses when ``broken.txt`` exists, in the same form.
+INSTALL_LINE_FORM = """#!/bin/bash
+set -e
+echo install >> "@MARKERS@/install-ran"
+test ! -f broken.txt
+mkdir -p installed
+while IFS= read -r dep; do
+  [ -n "$dep" ] || continue
+  : > "installed/$dep"
+done < deps.txt
+"""
+
+# Passes at once when git has rewritten its ``$Id$`` keyword (the ``ident``
+# attribute); otherwise fails when ``broken.txt`` exists.
+CHECK_IDENT_FORM = """#!/bin/bash
+echo check >> "@MARKERS@/check-ran"
+ID='$Id$'
+if [ "$ID" != '$Id''$' ]; then echo "STANDIN-PASS (rewritten)"; exit 0; fi
+if [ -f broken.txt ]; then echo "broken.txt is there" >&2; exit 1; fi
+echo "STANDIN-PASS"
+"""
+
+
+def _no_converted_marker(standin: Standin) -> bool:
+    return not any("\r" in p.name for p in standin.markers.iterdir())
+
+
+class TestTheTargetsBytesWhateverTheBuildsAttributes:
+    @pytest.mark.parametrize("attribute", ["*.sh text eol=crlf", "*.sh ident"])
+    def test_the_check_runs_the_targets_exact_bytes(
+        self, standin: Standin, attribute: str
+    ):
+        check = CHECK_IDENT_FORM if "ident" in attribute else CHECK_LINE_FORM
+        standin.init(
+            files={"scripts/check.sh": standin.script(check)},
+            config=config_text(install=None, launch=None),
+        )
+        expected = (standin.repo / "scripts/check.sh").read_bytes()
+        standin.branch(
+            {
+                ".gitattributes": attribute + "\n",
+                "broken.txt": "the build broke something\n",
+                "scripts/check.sh": standin.script(check) + "# the build's tests\n",
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "failed", report.verify_detail
+        assert report.verify_ok is False
+        assert _no_converted_marker(standin)
+        assert "check" in standin.lines("check-ran")
+        # The joined bytes are back afterwards, and the folder is clean.
+        assert _clean(standin.folder)
+        assert expected != (standin.folder / "scripts/check.sh").read_bytes()
+
+    def test_the_install_runs_the_targets_exact_bytes(self, standin: Standin):
+        standin.init(files={"scripts/install.sh": standin.script(INSTALL_LINE_FORM)})
+        standin.branch(
+            {
+                ".gitattributes": "*.sh text eol=crlf\n",
+                "broken.txt": "the build broke something\n",
+                "scripts/install.sh": standin.script(INSTALL_LINE_FORM) + "# more\n",
+            }
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert "failed on the merged result" in report.verify_detail
+        assert _no_converted_marker(standin)
+        assert standin.lines("check-ran") == ["check"]  # only the baseline
+
+
+class TestTheReportSaysWhatWasPutInPlace:
+    def test_main_install_failing_on_the_join_is_named_in_the_receipt(
+        self, standin: Standin
+    ):
+        standin.init()
+        allows = standin.script(INSTALL_SH).replace(
+            'if [ "$dep" = "forbidden" ]', "if false"
+        )
+        standin.branch(
+            {"scripts/install.sh": allows, "deps.txt": "alpha\nbeta\nforbidden\n"}
+        )
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified", report.verify_detail
+        assert "failed on the merged result" in report.verify_detail
+        assert report.judged_with_main_copies == ("scripts/install.sh",)
+        lines = [ln for ln in report.receipt_lines() if "scripts/install.sh" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert (report.pre_sha or "")[:10] in lines[0]
+        assert "this build's changes to it were not used" in lines[0]
+
+    def test_a_judge_the_build_added_is_said_to_be_left_out(self, standin: Standin):
+        standin.init()
+        standin.branch({"tools/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "passed", report.verify_detail
+        assert report.judge_files_not_on_target == ("tools/check.sh",)
+        lines = [ln for ln in report.receipt_lines() if "tools/check.sh" in ln]
+        assert len(lines) == 1, report.receipt_lines()
+        assert "is not on the commit the build was joined onto" in lines[0]
+        assert "left out" in lines[0]
+        assert "version of tools/check.sh" not in lines[0]
+
+    def test_a_failed_put_back_after_a_failed_restore_is_reported(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        from guardkit.orchestrator import merge_executor
+
+        monkeypatch.setattr(
+            merge_executor, "put_main_judges_in_place",
+            lambda *a, **k: "the restore was made to fail",
+        )
+        monkeypatch.setattr(
+            merge_executor, "put_joined_files_back",
+            lambda *a, **k: "the put-back was made to fail",
+        )
+        standin.init()
+        standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+
+        report = standin.merge()
+
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "the restore was made to fail" in report.verify_detail
+        assert "could not be put back" in report.verify_detail
+        assert "the put-back was made to fail" in report.verify_detail
+        assert standin.build_copy_never_ran()
