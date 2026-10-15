@@ -1639,7 +1639,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
         assert data["judged_with_main_copies"] == ["scripts/check.sh"]
         receipt = "\n".join(report.receipt_lines())
         sentence = [ln for ln in report.receipt_lines() if "scripts/check.sh" in ln
-                    and "did not run this build's changes" in ln]
+                    and "this build's changes to it were not used" in ln]
         assert len(sentence) == 1, receipt
         assert (report.pre_sha or "")[:10] in sentence[0]
         for claim in ("during the build", "in the build", "in the preview", "were run"):
@@ -1652,7 +1652,7 @@ class TestTheMergeCheckUsesTheTargetsJudges:
 
         assert report.verify_status == "passed", report.verify_detail
         assert report.judged_with_main_copies == ()
-        assert not any("did not run this build" in ln for ln in report.receipt_lines())
+        assert not any("were not used" in ln for ln in report.receipt_lines())
 
     def test_the_joined_commit_is_unchanged(self, standin: Standin):
         standin.init()
@@ -1947,8 +1947,9 @@ class TestTheReportSaysWhatWasPutInPlace:
         assert report.verify_status == "unverified", report.verify_detail
         assert "failed on the merged result" in report.verify_detail
         assert report.judged_with_main_copies == ("scripts/install.sh",)
-        lines = [ln for ln in report.receipt_lines() if "scripts/install.sh" in ln]
+        lines = [ln for ln in report.receipt_lines() if "put back to" in ln]
         assert len(lines) == 1, report.receipt_lines()
+        assert "scripts/install.sh" in lines[0]
         assert (report.pre_sha or "")[:10] in lines[0]
         assert "this build's changes to it were not used" in lines[0]
 

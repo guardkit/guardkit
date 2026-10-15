@@ -230,8 +230,12 @@ class MergeReport:
     notes: Tuple[str, ...] = ()
     # The judge files whose joined version differed from the target's, so the
     # checks after the join used the target's copy and not the joined one
-    # (15 October 2026). Empty when nothing was put in place.
+    # (15 October 2026). Empty when nothing was put in place. Set whenever
+    # the target's copies were put in place, whatever happened next.
     judged_with_main_copies: Tuple[str, ...] = ()
+    # Those of them the joined-onto commit does not have: they were left out
+    # of the folder for the install and the check.
+    judge_files_not_on_target: Tuple[str, ...] = ()
 
     @property
     def verify_ok(self) -> bool:
@@ -279,6 +283,7 @@ class MergeReport:
             "verify_source": self.verify_source,
             "notes": list(self.notes),
             "judged_with_main_copies": list(self.judged_with_main_copies),
+            "judge_files_not_on_target": list(self.judge_files_not_on_target),
         }
 
     def receipt_lines(self) -> List[str]:
@@ -381,16 +386,29 @@ class MergeReport:
                         f"The test suite could not be verified "
                         f"({self.verify_detail}). This is not a pass."
                     )
-                if self.judged_with_main_copies:
-                    # Only what the merge's own checks used: nothing about
-                    # where else the build's changes did or did not run.
-                    names = ", ".join(self.judged_with_main_copies)
-                    one = len(self.judged_with_main_copies) == 1
+                # What was put in place for the install and checks after the
+                # join: nothing about what ran, or where else the build's
+                # changes did or did not run.
+                at = (self.pre_sha or "?")[:10]
+                absent = set(self.judge_files_not_on_target)
+                kept = [p for p in self.judged_with_main_copies if p not in absent]
+                left_out = [p for p in self.judged_with_main_copies if p in absent]
+                if kept:
+                    one = len(kept) == 1
                     lines.append(
-                        f"The checks after the join used the version of "
-                        f"{names} at {(self.pre_sha or '?')[:10]}, the commit "
-                        f"the build was joined onto, and did not run this "
-                        f"build's changes to {'it' if one else 'them'}."
+                        f"For the install and checks after the join, "
+                        f"{', '.join(kept)} {'was' if one else 'were'} put back "
+                        f"to {'its' if one else 'their'} version at {at}, the "
+                        f"commit the build was joined onto, so this build's "
+                        f"changes to {'it were' if one else 'them were'} not used."
+                    )
+                if left_out:
+                    one = len(left_out) == 1
+                    lines.append(
+                        f"{', '.join(left_out)} {'is' if one else 'are'} not on "
+                        f"the commit the build was joined onto ({at}), so "
+                        f"{'it was' if one else 'they were'} left out for the "
+                        f"install and checks after the join."
                     )
                 if self.charged_failures:
                     lines.append(
@@ -1292,65 +1310,124 @@ def _link_on_the_way(tree_root: Path, path: str) -> Optional[str]:
     return None
 
 
+#: The git modes of an ordinary file, and whether each is executable.
+_FILE_MODES = {"100644": False, "100755": True}
+
+
+def _blob_bytes(tree_root: Path, oid: str) -> Optional[bytes]:
+    """A stored blob's exact bytes (``git cat-file blob``: no filter, no
+    line-ending or keyword conversion), or ``None`` when git cannot say."""
+    done = run_git(
+        ["cat-file", "blob", oid],
+        cwd=str(tree_root),
+        timeout=_GIT_TIMEOUT_SECONDS,
+        text=False,
+    )
+    if done.returncode != 0:
+        return None
+    return done.stdout or b""
+
+
+def _parent_link(tree_root: Path, path: str) -> Optional[str]:
+    """The first folder on the way to ``path`` that is a symbolic link in the
+    folder, or ``None``."""
+    parts = path.split("/")[:-1]
+    return _link_on_the_way(tree_root, "/".join(parts)) if parts else None
+
+
 def judges_match_commit(
     tree_root: Path, commit: str, paths: Sequence[str]
 ) -> Optional[str]:
-    """``None`` when every path is in the folder and the index exactly as in
-    ``commit`` (content and mode, or absent where ``commit`` lacks it, and no
-    symbolic link on the way); otherwise a plain reason naming the paths."""
+    """``None`` when every path in the folder is exactly as stored in
+    ``commit``: the same raw bytes as its blob (read with no filter and no
+    conversion), an ordinary file with the same executable bit, and no
+    symbolic link on the way; and absent where ``commit`` lacks it.
+    Otherwise a plain reason naming the paths. The index is not consulted:
+    what runs is the file in the folder."""
     if not paths:
         return None
     entries = tree_entries(tree_root, commit)
     if entries is None:
         return f"the tree of {commit[:10]} could not be read"
     differing: List[str] = []
-    for args in (
-        ("-c", "core.fileMode=true", "diff", "--name-only", "-z", commit, "--"),
-        ("diff", "--cached", "--name-only", "-z", commit, "--"),
-    ):
-        names = _git_names(tree_root, *args, *paths)
-        if names is None:
-            return f"git could not compare the folder with {commit[:10]}"
-        differing.extend(names)
     for path in paths:
-        if path in entries:
-            link = _link_on_the_way(tree_root, path)
-            if link is not None:
-                return f"{link} is a symbolic link in the folder"
-        elif os.path.lexists(Path(tree_root) / path):
+        target = Path(tree_root) / path
+        link = _link_on_the_way(tree_root, path)
+        if link is not None:
+            return f"{link} is a symbolic link in the folder"
+        if path not in entries:
+            if os.path.lexists(target):
+                differing.append(path)
+            continue
+        mode, oid = entries[path]
+        if mode not in _FILE_MODES:
+            return f"{path} is not an ordinary file at {commit[:10]}"
+        expected = _blob_bytes(tree_root, oid)
+        if expected is None:
+            return f"the stored copy of {path} at {commit[:10]} could not be read"
+        try:
+            info = os.lstat(target)
+            if not stat.S_ISREG(info.st_mode):
+                differing.append(path)
+                continue
+            with open(target, "rb") as handle:
+                actual = handle.read()
+        except OSError:
+            differing.append(path)
+            continue
+        executable = bool(info.st_mode & stat.S_IXUSR)
+        if actual != expected or executable != _FILE_MODES[mode]:
             differing.append(path)
     if differing:
-        shown = ", ".join(sorted(set(differing)))
-        return f"{shown} does not match {commit[:10]}"
+        return f"{', '.join(sorted(set(differing)))} does not match {commit[:10]}"
     return None
 
 
 def _put_tree_paths_in_place(
     tree_root: Path, commit: str, paths: Sequence[str]
 ) -> Optional[str]:
-    """Make each path in the folder and the index exactly as in ``commit``:
-    checked out from it where it has the path, removed where it does not.
-    File names are literal (the git helper's ``--literal-pathspecs``)."""
+    """Make each path in the folder exactly as stored in ``commit``: written
+    from its blob's raw bytes with its mode where ``commit`` has it, removed
+    where it does not. Nothing goes through git's checkout, so no attribute
+    in the folder (line endings, keywords, filters) can change a byte. The
+    index is left as it is. Then compared exactly
+    (:func:`judges_match_commit`)."""
     entries = tree_entries(tree_root, commit)
     if entries is None:
         return f"the tree of {commit[:10]} could not be read"
-    present = [p for p in paths if p in entries]
-    absent = [p for p in paths if p not in entries]
-    if present:
-        done = _run_git(tree_root, "checkout", commit, "--", *present)
-        if done.returncode != 0:
-            return f"git checkout from {commit[:10]} failed ({done.stderr.strip()})"
-    if absent:
-        done = _run_git(tree_root, "rm", "-q", "-f", "--ignore-unmatch", "--", *absent)
-        if done.returncode != 0:
-            return f"git rm failed ({done.stderr.strip()})"
-        for path in absent:
-            target = Path(tree_root) / path
+    root = Path(tree_root)
+    for path in paths:
+        link = _parent_link(root, path)
+        if link is not None:
+            return f"{link} is a symbolic link in the folder"
+        target = root / path
+        try:
+            if target.is_symlink() or (target.exists() and not target.is_dir()):
+                target.unlink()
+            elif target.is_dir():
+                return f"{path} is a folder in the working folder"
+            if path not in entries:
+                continue
+            mode, oid = entries[path]
+            if mode not in _FILE_MODES:
+                return f"{path} is not an ordinary file at {commit[:10]}"
+            data = _blob_bytes(root, oid)
+            if data is None:
+                return f"the stored copy of {path} at {commit[:10]} could not be read"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            permissions = 0o755 if _FILE_MODES[mode] else 0o644
+            handle = os.open(
+                target,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                permissions,
+            )
             try:
-                if target.is_symlink() or (target.exists() and not target.is_dir()):
-                    target.unlink()
-            except OSError as exc:
-                return f"{path} could not be removed ({type(exc).__name__})"
+                os.write(handle, data)
+            finally:
+                os.close(handle)
+            os.chmod(target, permissions)
+        except OSError as exc:
+            return f"{path} could not be written ({exc.strerror or type(exc).__name__})"
     return judges_match_commit(tree_root, commit, paths)
 
 
@@ -1359,10 +1436,10 @@ def put_main_judges_in_place(
 ) -> Optional[str]:
     """Put the target's copy of every judge file in place for the check.
 
-    A path the target commit has is checked out from it, byte for byte with
-    its mode; a path it lacks is removed from the folder and the index. The
-    result is then compared with ``main_sha`` exactly. Returns ``None`` or
-    the plain reason it could not be done.
+    A path the target commit has is written from its stored blob, byte for
+    byte with its mode, with no filter or conversion; a path it lacks is
+    removed from the folder. The result is then compared with ``main_sha``
+    exactly. Returns ``None`` or the plain reason it could not be done.
     """
     return _put_tree_paths_in_place(tree_root, main_sha, paths)
 
@@ -1371,10 +1448,36 @@ def put_joined_files_back(
     tree_root: Path, post_sha: str, paths: Sequence[str]
 ) -> Optional[str]:
     """Put the joined commit's version of every path back after the check,
-    and confirm those paths are clean. Returns ``None`` or the reason."""
-    problem = _put_tree_paths_in_place(tree_root, post_sha, paths)
-    if problem is not None:
-        return problem
+    and confirm those paths are clean. Returns ``None`` or the reason.
+
+    Nothing runs after this, so the files are put back the way git itself
+    checks them out (through the folder's attributes), which is what makes
+    ``git status`` agree that the folder is the joined commit: raw bytes
+    would read as changed under a line-ending attribute. The index was never
+    changed by :func:`put_main_judges_in_place`. A path the joined commit
+    lacks is removed.
+    """
+    entries = tree_entries(tree_root, post_sha)
+    if entries is None:
+        return f"the tree of {post_sha[:10]} could not be read"
+    root = Path(tree_root)
+    present = [p for p in paths if p in entries]
+    for path in paths:
+        link = _parent_link(root, path)
+        if link is not None:
+            return f"{link} is a symbolic link in the folder"
+        target = root / path
+        try:
+            if target.is_symlink() or (target.exists() and not target.is_dir()):
+                target.unlink()
+            elif target.is_dir():
+                return f"{path} is a folder in the working folder"
+        except OSError as exc:
+            return f"{path} could not be removed ({exc.strerror or type(exc).__name__})"
+    if present:
+        done = _run_git(tree_root, "checkout", post_sha, "--", *present)
+        if done.returncode != 0:
+            return f"git checkout from {post_sha[:10]} failed ({done.stderr.strip()})"
     rows = _git_names(
         tree_root, "status", "--porcelain", "-z", "--untracked-files=all", "--", *paths
     )
@@ -1824,6 +1927,7 @@ def execute_merge(
     pre_sha, post_sha = report.pre_sha, report.post_sha
     restored: List[str] = []
     judged_with_main_copies: Tuple[str, ...] = ()
+    target_entries_seen: set = set()
     if pinned.judge_words:
         link_problem = judge_link_problem(tree_root, post_sha, pinned.judge_words)
         if link_problem is not None:
@@ -1842,19 +1946,27 @@ def execute_merge(
         judged_with_main_copies = tuple(
             p for p in restored if target_entries.get(p) != joined_entries.get(p)
         )
+        target_entries_seen = set(target_entries)
         if restored:
             problem = put_main_judges_in_place(tree_root, pre_sha, restored)
             if problem is not None:
-                put_joined_files_back(tree_root, post_sha, restored)
+                back = put_joined_files_back(tree_root, post_sha, restored)
                 lead = (
                     JUDGE_FILES_CHANGED
                     if pinned.judge_files_changed
                     else "could not verify — the commands that judge it"
                 )
-                return could_not_run(
+                detail = (
                     f"{lead}, and main's copies could not be put in place: "
                     f"{problem}"
                 )
+                if back is not None:
+                    detail += (
+                        f"; the join's folder could not be put back to the "
+                        f"joined commit afterwards ({back}), so it may still "
+                        f"hold some of main's copies"
+                    )
+                return could_not_run(detail)
 
     # Install the merged tree again (a dependency the branch adds must be
     # there) with the TARGET's pinned install and launch block, then check
@@ -1911,9 +2023,15 @@ def execute_merge(
             report, result, baseline, baseline_failing, pre_merge_notes,
             target_branch, verify_command, verify_source,
         )
-    if not isinstance(result, MergeReport):
-        # Said only when the check ran with them.
-        final = replace(final, judged_with_main_copies=judged_with_main_copies)
+    # Said whenever the target's copies were in place, whatever happened
+    # next (an install that then failed included).
+    final = replace(
+        final,
+        judged_with_main_copies=judged_with_main_copies,
+        judge_files_not_on_target=tuple(
+            p for p in judged_with_main_copies if p not in target_entries_seen
+        ),
+    )
     if put_back_problem is not None:
         final = replace(
             final,
