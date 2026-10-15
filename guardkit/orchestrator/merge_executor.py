@@ -491,6 +491,14 @@ def checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
     A no-op when HEAD is already there. The caller has already refused a
     dirty tree, so this moves nothing a person had not committed.
     """
+    try:
+        return _checkout_branch(repo_root, branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"could not switch to branch {branch}: {_failure_words(exc)}"
+
+
+def _checkout_branch(repo_root: Path, branch: str) -> Optional[str]:
+    """:func:`checkout_branch` itself; may raise a git timeout or failure."""
     if current_branch(repo_root) == branch:
         return None
     # Said in a build worktree's HEAD record when this folder is one (build
@@ -551,6 +559,24 @@ def branch_to_merge(feature_id: str, branch: Optional[str] = None) -> str:
 
 
 def preflight_refusal(
+    repo_root: Path,
+    feature_id: str,
+    target_branch: str = "main",
+    expect_target_sha: Optional[str] = None,
+    branch: Optional[str] = None,
+) -> Optional[str]:
+    """Return the refusal reason, or None when the merge may proceed
+    (:func:`_preflight_refusal`). A git command that times out or fails here
+    is a refusal with its plain reason, never an error."""
+    try:
+        return _preflight_refusal(
+            repo_root, feature_id, target_branch, expect_target_sha, branch
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git could not be read before the merge: {_failure_words(exc)}"
+
+
+def _preflight_refusal(
     repo_root: Path,
     feature_id: str,
     target_branch: str = "main",
@@ -673,12 +699,17 @@ def perform_merge(
     # refs.
     tree_root = Path(working_folder) if working_folder is not None else Path(repo_root)
 
-    pre_sha = _rev_parse(tree_root, target_branch)
-    branch_sha = (
-        _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
-        if merge_commit
-        else _rev_parse(tree_root, branch)
-    )
+    unreadable = ""
+    try:
+        pre_sha = _rev_parse(tree_root, target_branch)
+        branch_sha = (
+            _rev_parse(tree_root, f"{merge_commit}^{{commit}}")
+            if merge_commit
+            else _rev_parse(tree_root, branch)
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        pre_sha = branch_sha = None
+        unreadable = f" ({_failure_words(exc)})"
     if pre_sha is None or branch_sha is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
@@ -687,6 +718,7 @@ def perform_merge(
             branch=branch,
             refusal_reason=(
                 f"could not resolve {target_branch} and {branch} to commits"
+                f"{unreadable}"
             ),
         )
 
@@ -720,18 +752,33 @@ def perform_merge(
     except WorktreeMergeError as exc:
         # Conflict path: capture the UU rows BEFORE aborting (the abort wipes
         # them), then abort and re-verify the tree is clean.
-        status_before_abort = _porcelain_status(tree_root) or ""
+        # A git command that times out or fails here is recorded, never
+        # raised: the report is still made.
+        try:
+            status_before_abort = _porcelain_status(tree_root) or ""
+        except (OSError, subprocess.SubprocessError) as exc:
+            status_before_abort = ""
+            notes.append(
+                f"the files in conflict could not be read: {_failure_words(exc)}"
+            )
         conflict_files = conflicted_files_from_status(status_before_abort)
 
-        abort = _run_git(tree_root, "merge", "--abort")
-        if abort.returncode != 0:
-            # Ignored by design (there may be nothing to abort), but recorded.
-            notes.append(
-                f"git merge --abort exited {abort.returncode}: "
-                f"{abort.stderr.strip() or '(no stderr)'}"
-            )
+        try:
+            abort = _run_git(tree_root, "merge", "--abort")
+            if abort.returncode != 0:
+                # Ignored by design (there may be nothing to abort), but
+                # recorded.
+                notes.append(
+                    f"git merge --abort exited {abort.returncode}: "
+                    f"{abort.stderr.strip() or '(no stderr)'}"
+                )
+        except (OSError, subprocess.SubprocessError) as exc:
+            notes.append(f"git merge --abort did not finish: {_failure_words(exc)}")
 
-        status_after = _porcelain_status(tree_root)
+        try:
+            status_after = _porcelain_status(tree_root)
+        except (OSError, subprocess.SubprocessError):
+            status_after = None
         if status_after is None or status_after.strip():
             notes.append(
                 "the working tree is NOT clean after the abort — "
@@ -749,7 +796,16 @@ def perform_merge(
             notes=tuple(notes),
         )
 
-    post_sha = _rev_parse(tree_root, target_branch)
+    try:
+        post_sha = _rev_parse(tree_root, target_branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Joined, but the new commit could not be read: nothing after this
+        # can be checked against it, and the report says so.
+        post_sha = None
+        notes.append(
+            f"the joined commit on {target_branch} could not be read: "
+            f"{_failure_words(exc)}"
+        )
     return MergeReport(
         outcome=OUTCOME_MERGED,
         feature_id=feature_id,
@@ -1212,6 +1268,32 @@ def pin_the_judge_on_target(
     Optional[str],
     Optional[MergeEnvironment],
 ]:
+    """:func:`_pin_the_judge_on_target`, where a git command that times out or
+    fails is the plain reason nothing may run, before or after the merge,
+    never an error."""
+    try:
+        return _pin_the_judge_on_target(
+            tree_root, target_branch, branch, verify_timeout, branch_commit
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, (
+            f"could not verify — git could not be read on {target_branch} "
+            f"before the merge, so nothing that judges it could be settled: "
+            f"{_failure_words(exc)}"
+        ), None
+
+
+def _pin_the_judge_on_target(
+    tree_root: Path,
+    target_branch: str,
+    branch: str,
+    verify_timeout: int = DEFAULT_VERIFY_TIMEOUT,
+    branch_commit: Optional[str] = None,
+) -> Tuple[
+    Optional[Tuple[Optional[str], str, Optional[StackTestProfile]]],
+    Optional[str],
+    Optional[MergeEnvironment],
+]:
     """Choose everything that judges this merge, on the TARGET, before it.
 
     Returns ``(resolution, problem, pinned)``. Rule 11, extended on 13
@@ -1282,11 +1364,17 @@ def judge_link_problem(
     """The link rule for one commit's tree: ``None`` when no judge file and no
     folder on its path is a symbolic link there, otherwise the plain reason
     nothing may run. A tree that cannot be read fails closed."""
-    links = judge_links(tree_root, commit, words) if commit else None
+    unreadable = ""
+    try:
+        links = judge_links(tree_root, commit, words) if commit else None
+    except (OSError, subprocess.SubprocessError) as exc:
+        links = None
+        unreadable = f" ({_failure_words(exc)})"
     if links is None:
         return (
             f"could not verify — whether a file the declared commands name is "
             f"a symbolic link could not be read at {(commit or '?')[:10]}"
+            f"{unreadable}"
         )
     if links:
         return JUDGE_IS_A_LINK.format(path=shown_path(links[0]))
@@ -1796,8 +1884,14 @@ def execute_merge(
     # The branch is resolved to a commit ONCE, here. That commit is what the
     # changed files are read from and what the merge joins, so a branch that
     # moves while the checks run cannot slip anything past them.
-    branch_commit = _rev_parse(tree_root, branch)
-    if _rev_parse(tree_root, target_branch) is None or branch_commit is None:
+    unreadable = ""
+    try:
+        branch_commit = _rev_parse(tree_root, branch)
+        target_commit = _rev_parse(tree_root, target_branch)
+    except (OSError, subprocess.SubprocessError) as exc:
+        branch_commit = target_commit = None
+        unreadable = f" ({_failure_words(exc)})"
+    if target_commit is None or branch_commit is None:
         return MergeReport(
             outcome=OUTCOME_REFUSED,
             feature_id=feature_id,
@@ -1805,6 +1899,7 @@ def execute_merge(
             branch=branch,
             refusal_reason=(
                 f"could not resolve {target_branch} and {branch} to commits"
+                f"{unreadable}"
             ),
         )
 
@@ -2134,6 +2229,12 @@ def _put_target_judges_in_place(
     Returns ``None`` or the plain reason the check cannot run. May raise a
     git timeout or failure; the caller turns that into a reason and puts
     back every path recorded in ``judges.restored``."""
+    if not pre_sha or not post_sha:
+        return (
+            "could not verify — the commit joined onto, or the joined commit, "
+            "could not be read, so the target's copies of the files the "
+            "declared commands name could not be put in place"
+        )
     link_problem = judge_link_problem(tree_root, post_sha, pinned.judge_words)
     if link_problem is not None:
         return link_problem

@@ -2599,3 +2599,25 @@ class TestGitFailingBeforeTheJoin:
                 monkeypatch.undo()
             assert fault.hit is not None, (index, fault.calls)
             _assert_structured_and_nothing_judged(other, report)
+
+    def test_the_joined_commit_unreadable_after_the_join_ends_unverified(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The last read of the join itself: the new commit's id."""
+        _pre_join_standin(standin)
+        counting = _BeforeTheJoin(monkeypatch)
+        standin.merge()
+        monkeypatch.undo()
+        last = len(counting.calls) - 1
+        assert counting.calls[last][0] == "rev-parse", counting.calls
+
+        (standin.tmp_path / "again").mkdir()
+        other = _pre_join_standin(Standin(standin.tmp_path / "again"))
+        _BeforeTheJoin(monkeypatch, fault_at=last)
+        report = other.merge()
+
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert "the joined commit, could not be read" in report.verify_detail
+        assert any("could not be read" in note for note in report.notes)
+        _assert_structured_and_nothing_judged(other, report)
