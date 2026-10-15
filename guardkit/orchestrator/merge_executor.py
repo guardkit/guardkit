@@ -1597,56 +1597,66 @@ def prepare_tree(
             f"{proc.returncode}): {_last_lines(proc.stderr or proc.stdout)}",
         )
 
-    if allowed_changes:
-        changed = _changed_paths(Path(tree_root))
-        if changed is None:
+    # What the install left in the folder is read from git. A git command
+    # that times out or fails here ends in a plain reason like any other
+    # problem here, so this function never raises.
+    try:
+        if allowed_changes:
+            changed = _changed_paths(Path(tree_root))
+            if changed is None:
+                return TreePreparation(
+                    None,
+                    f"git status could not be read after the declared install "
+                    f"(`{text}`) ran on {where}",
+                )
+            allowed = set(allowed_changes)
+            others = sorted({p for p in changed if p not in allowed})
+            mismatch = (
+                judges_match_commit(Path(tree_root), allowed_commit, allowed_changes)
+                if allowed_commit
+                else None
+            )
+            if others or mismatch:
+                shown = "; ".join(others[:5])
+                more = f" (and {len(others) - 5} more)" if len(others) > 5 else ""
+                detail = "; ".join(x for x in (shown + more, mismatch) if x)
+                return TreePreparation(
+                    None,
+                    f"the declared install (`{text}`) changed files in the working "
+                    f"folder on {where}: {detail}",
+                    tree_changed=True,
+                )
+            return TreePreparation(
+                env, None,
+                note=f"the declared install (`{text}`) ran on {where} before the check",
+            )
+
+        porcelain = _porcelain_status(Path(tree_root))
+        if porcelain is None:
             return TreePreparation(
                 None,
                 f"git status could not be read after the declared install "
                 f"(`{text}`) ran on {where}",
             )
-        allowed = set(allowed_changes)
-        others = sorted({p for p in changed if p not in allowed})
-        mismatch = (
-            judges_match_commit(Path(tree_root), allowed_commit, allowed_changes)
-            if allowed_commit
-            else None
-        )
-        if others or mismatch:
-            shown = "; ".join(others[:5])
-            more = f" (and {len(others) - 5} more)" if len(others) > 5 else ""
-            detail = "; ".join(x for x in (shown + more, mismatch) if x)
+        if porcelain.strip():
+            rows = [ln for ln in porcelain.splitlines() if ln.strip()]
+            shown = "; ".join(rows[:5])
+            more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
             return TreePreparation(
                 None,
                 f"the declared install (`{text}`) changed files in the working "
-                f"folder on {where}: {detail}",
+                f"folder on {where}: {shown}{more}",
                 tree_changed=True,
             )
         return TreePreparation(
-            env, None,
-            note=f"the declared install (`{text}`) ran on {where} before the check",
+            env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
         )
-
-    porcelain = _porcelain_status(Path(tree_root))
-    if porcelain is None:
+    except (OSError, subprocess.SubprocessError) as exc:
         return TreePreparation(
             None,
-            f"git status could not be read after the declared install "
-            f"(`{text}`) ran on {where}",
+            f"the working folder could not be read after the declared install "
+            f"(`{text}`) ran on {where}: {_failure_words(exc)}",
         )
-    if porcelain.strip():
-        rows = [ln for ln in porcelain.splitlines() if ln.strip()]
-        shown = "; ".join(rows[:5])
-        more = f" (and {len(rows) - 5} more)" if len(rows) > 5 else ""
-        return TreePreparation(
-            None,
-            f"the declared install (`{text}`) changed files in the working "
-            f"folder on {where}: {shown}{more}",
-            tree_changed=True,
-        )
-    return TreePreparation(
-        env, None, note=f"the declared install (`{text}`) ran on {where} before the check"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1954,16 +1964,45 @@ def execute_merge(
         # there) with the TARGET's pinned install and launch block, then
         # check it.
         if restore_problem is None:
-            result = _install_and_check_the_join(
-                tree_root, feature_id, pinned, pre_sha, judges.restored,
-                could_not_run,
-                verify_command=verify_command,
-                baseline_failing=baseline_failing,
-                verify_timeout=verify_timeout,
-                validate_command=validate_command,
-                resolved_command=resolved_command,
-                ran_marker_regex=ran_marker_regex,
-            )
+            env = None
+            post_merge_notes: List[str] = []
+            prepared_problem: Optional[str] = None
+            if verify_command:
+                prepared = prepare_tree(
+                    tree_root,
+                    pinned,
+                    "the merged result",
+                    allowed_changes=judges.restored,
+                    allowed_commit=pre_sha if judges.restored else None,
+                )
+                if prepared.problem is not None:
+                    prepared_problem = prepared.problem
+                else:
+                    env = prepared.env
+                    if prepared.note:
+                        post_merge_notes.append(prepared.note)
+            if prepared_problem is not None:
+                result = could_not_run(
+                    prepared_problem,
+                    [
+                        f"the post-merge test run was not attempted: "
+                        f"{prepared_problem}"
+                    ],
+                )
+            else:
+                validate_valid, verification, charged, notes = verify_merged(
+                    tree_root,
+                    feature_id,
+                    baseline_failing=baseline_failing,
+                    timeout=verify_timeout,
+                    validate_command=validate_command,
+                    resolved_command=resolved_command,
+                    env=env,
+                    ran_marker_regex=ran_marker_regex,
+                )
+                result = _CheckRun(
+                    validate_valid, verification, charged, post_merge_notes + notes
+                )
     finally:
         if judges.restored:
             try:
@@ -1979,7 +2018,8 @@ def execute_merge(
             detail += (
                 f"; the join's folder could not be put back to the "
                 f"joined commit afterwards ({put_back_problem}), so it may "
-                f"still hold some of main's copies"
+                f"still hold some of main's copies, or be missing some of the "
+                f"joined files"
             )
         final = could_not_run(detail)
     elif isinstance(result, MergeReport):
@@ -2040,7 +2080,8 @@ def _failure_words(exc: BaseException) -> str:
         said = exc.stderr
         if isinstance(said, bytes):
             said = said.decode("utf-8", "replace")
-        return (said or "").strip().rstrip(".") or f"{exc.cmd} failed"
+        shown = exc.cmd if isinstance(exc.cmd, str) else " ".join(map(str, exc.cmd))
+        return (said or "").strip().rstrip(".") or f"{shown} failed"
     if isinstance(exc, OSError):
         return exc.strerror or type(exc).__name__
     return type(exc).__name__
@@ -2092,57 +2133,6 @@ def _put_target_judges_in_place(
     if problem is not None:
         return _restore_failed(pinned, problem)
     return None
-
-
-def _install_and_check_the_join(
-    tree_root: Path,
-    feature_id: str,
-    pinned: MergeEnvironment,
-    pre_sha: Optional[str],
-    restored: Sequence[str],
-    could_not_run,
-    *,
-    verify_command: Optional[str],
-    baseline_failing: Optional[Sequence[str]],
-    verify_timeout: int,
-    validate_command: Optional[Sequence[str]],
-    resolved_command,
-    ran_marker_regex: Optional[str],
-) -> object:
-    """The post-join install and check: a :class:`_CheckRun`, or the
-    "could not run" report when the install could not be done."""
-    env = None
-    post_merge_notes: List[str] = []
-    if verify_command:
-        prepared = prepare_tree(
-            tree_root,
-            pinned,
-            "the merged result",
-            allowed_changes=restored,
-            allowed_commit=pre_sha if restored else None,
-        )
-        if prepared.problem is not None:
-            return could_not_run(
-                prepared.problem,
-                [
-                    f"the post-merge test run was not attempted: "
-                    f"{prepared.problem}"
-                ],
-            )
-        env = prepared.env
-        if prepared.note:
-            post_merge_notes.append(prepared.note)
-    validate_valid, verification, charged, notes = verify_merged(
-        tree_root,
-        feature_id,
-        baseline_failing=baseline_failing,
-        timeout=verify_timeout,
-        validate_command=validate_command,
-        resolved_command=resolved_command,
-        env=env,
-        ran_marker_regex=ran_marker_regex,
-    )
-    return _CheckRun(validate_valid, verification, charged, post_merge_notes + notes)
 
 
 class _CheckRun(NamedTuple):
