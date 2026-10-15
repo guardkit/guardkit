@@ -2460,3 +2460,142 @@ class TestAConflictOnAnOddName:
         assert report.conflict_files, report
         _as_the_cli_prints(report)
         assert _clean(standin.folder)
+
+
+# ---------------------------------------------------------------------------
+# Git failing before the join (review finding R6, 15 October 2026)
+# ---------------------------------------------------------------------------
+
+
+class _BeforeTheJoin:
+    """Counts the git calls made before the join is done (through both of the
+    merge's git names) and makes the chosen one time out, or every call
+    ``wanted`` matches up to its ``nth`` match."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, fault_at=None,
+                 wanted=None, nth: int = 1, kind: str = "timeout") -> None:
+        from guardkit.orchestrator import merge_environment, merge_executor
+
+        self.calls: list = []
+        self.fault_at = fault_at
+        self.wanted = wanted
+        self.nth = nth
+        self.kind = kind
+        self.matched = 0
+        self.joined = False
+        self.hit = None
+        self._run_git = merge_executor.run_git
+        self._perform = merge_executor.perform_merge
+        monkeypatch.setattr(merge_executor, "run_git", self.run_git)
+        monkeypatch.setattr(merge_environment, "run_git", self.run_git)
+        monkeypatch.setattr(merge_executor, "perform_merge", self.perform)
+
+    def perform(self, *a, **k):
+        done = self._perform(*a, **k)
+        self.joined = True
+        return done
+
+    def run_git(self, args, **kwargs):
+        shown = [str(a) for a in args]
+        if not self.joined and self.hit is None:
+            index = len(self.calls)
+            self.calls.append(shown)
+            fault = index == self.fault_at
+            if self.wanted is not None and self.wanted(shown):
+                self.matched += 1
+                fault = fault or self.matched == self.nth
+            if fault:
+                self.hit = shown
+                if self.kind == "called":
+                    raise subprocess.CalledProcessError(128, ["git", *shown])
+                raise subprocess.TimeoutExpired(
+                    f"git {shown[0]}", 30,
+                    stderr=f"git {shown[0]} did not finish within 30 seconds.".encode(),
+                )
+        return self._run_git(args, **kwargs)
+
+
+def _pre_join_standin(standin: Standin) -> Standin:
+    standin.init()
+    standin.branch({"scripts/check.sh": standin.script(ALWAYS_GREEN_SH)})
+    return standin
+
+
+def _assert_structured_and_nothing_judged(standin: Standin, report) -> None:
+    from guardkit.orchestrator.merge_executor import MergeReport
+
+    assert isinstance(report, MergeReport)
+    fields = report.to_dict()
+    assert "judged_with_main_copies" in fields
+    assert "judge_files_not_on_target" in fields
+    _as_the_cli_prints(report)
+    assert report.verify_status != "passed"
+    if report.outcome == OUTCOME_MERGED:
+        assert report.verify_ran is False
+        assert report.verify_status == "unverified"
+    assert standin.build_copy_never_ran()
+
+
+class TestGitFailingBeforeTheJoin:
+    @pytest.mark.parametrize("which,nth", [("target", 1), ("build", 2)])
+    def test_a_link_listing_timing_out_ends_unverified_with_nothing_run(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, which: str, nth: int
+    ):
+        _pre_join_standin(standin)
+        fault = _BeforeTheJoin(
+            monkeypatch, wanted=lambda a: a[0] == "ls-tree", nth=nth
+        )
+
+        report = standin.merge()
+
+        assert fault.hit is not None and fault.hit[0] == "ls-tree", fault.calls
+        assert report.outcome == OUTCOME_MERGED
+        assert report.verify_status == "unverified"
+        assert report.verify_ran is False
+        assert "symbolic link could not be read" in report.verify_detail
+        assert "git ls-tree did not finish within 30 seconds" in report.verify_detail
+        assert standin.ran() == set()  # no install and no check, before or after
+        assert report.judged_with_main_copies == ()
+        assert report.judge_files_not_on_target == ()
+        _assert_structured_and_nothing_judged(standin, report)
+
+    @pytest.mark.parametrize("command", ["merge-base", "diff"])
+    def test_listing_the_builds_changes_timing_out_ends_unverified_with_nothing_run(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, command: str
+    ):
+        _pre_join_standin(standin)
+        fault = _BeforeTheJoin(monkeypatch, wanted=lambda a: a[0] == command)
+
+        report = standin.merge()
+
+        assert fault.hit is not None, fault.calls
+        assert report.verify_status == "unverified"
+        assert f"git {command} did not finish within 30 seconds" in report.verify_detail
+        assert standin.ran() == set()
+        _assert_structured_and_nothing_judged(standin, report)
+
+    @pytest.mark.parametrize("kind", ["timeout", "called"])
+    def test_every_git_call_before_the_join_failing_ends_in_a_report(
+        self, standin: Standin, monkeypatch: pytest.MonkeyPatch, kind: str
+    ):
+        """Each git call made before the join is done, made to fail in turn."""
+        _pre_join_standin(standin)
+        counting = _BeforeTheJoin(monkeypatch)
+        standin.merge()
+        monkeypatch.undo()
+        total = len(counting.calls)
+        assert total > 10, counting.calls
+
+        for index in range(total):
+            (standin.tmp_path / f"run-{index}").mkdir()
+            other = Standin(standin.tmp_path / f"run-{index}")
+            _pre_join_standin(other)
+            fault = _BeforeTheJoin(monkeypatch, fault_at=index, kind=kind)
+            try:
+                report = other.merge()
+            except Exception as exc:  # noqa: BLE001 - the point of the test
+                pytest.fail(f"call {index} {fault.hit} raised {exc!r}")
+            finally:
+                monkeypatch.undo()
+            assert fault.hit is not None, (index, fault.calls)
+            _assert_structured_and_nothing_judged(other, report)
