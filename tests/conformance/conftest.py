@@ -1,9 +1,9 @@
 """Building a small repository on disk, so every test states its own fixture.
 
 Each test here writes the source files it is about and the rules file it is about,
-then runs the checker over them. Nothing depends on another repository being present,
-apart from the one integration test, which says so in its own name and skips when
-api_test is not on this machine.
+then runs the checker over them. Nothing depends on another repository being present:
+the one integration test, test_api_test_repo.py, runs against a pinned copy of api_test
+kept in fixtures/api_test/ (see that module's docstring for where the copy came from).
 """
 
 from __future__ import annotations

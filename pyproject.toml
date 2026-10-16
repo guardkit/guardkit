@@ -111,6 +111,16 @@ memory = [
     "nats-core>=0.4,<1",
     "fleet-memory>=0.1,<1",
 ]
+# Visual comparison for design mode (guardkit/orchestrator/visual_comparator.py):
+# the SSIM score comes from scikit-image and the images are read with Pillow. It
+# is optional — nothing else in GuardKit imports the comparator, and without
+# these packages it refuses with an install hint rather than failing at import.
+# Lower bound 0.19 = first scikit-image with `channel_axis`, which the
+# comparator passes for colour images.
+visual = [
+    "scikit-image>=0.19,<1",
+    "pillow>=9",
+]
 all = [
     "claude-agent-sdk>=0.1.49,<0.2",
     "guardkitfactory>=0.2.0,<1",
@@ -127,6 +137,9 @@ all = [
     # Deterministic template gate (DIM1-F4 / PB-8) — see the dev group above.
     "tree-sitter>=0.23,<1",
     "tree-sitter-language-pack>=0.9",
+    # Visual comparison (design mode) — see the visual group above.
+    "scikit-image>=0.19,<1",
+    "pillow>=9",
 ]
 
 [tool.uv.sources]

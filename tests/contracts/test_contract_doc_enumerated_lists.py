@@ -18,7 +18,7 @@ this module checks exactly those four, at five places in the document:
      checked at BOTH places the document states them: the canonical bullet list
      in section B.4, and the fenced block in the same section that claims to
      reproduce the validator's error message word for word.
-  4. ``Feature.model_fields`` — the field names of the feature model (19 names)
+  4. ``Feature.model_fields`` — the field names of the feature model (20 names)
 
 The values are IMPORTED from guardkit at run time. This module deliberately
 contains no second copy of any of the four lists: a hardcoded copy here would be

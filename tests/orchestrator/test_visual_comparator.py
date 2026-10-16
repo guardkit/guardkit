@@ -34,6 +34,23 @@ from guardkit.orchestrator.visual_comparator import (
 # ============================================================================
 
 
+# Real SSIM needs scikit-image and Pillow, which GuardKit declares in its optional
+# ``visual`` extra (visual comparison is part of design mode, not of every
+# install). A test that computes a real score asks for them through
+# ``ssim_dependencies`` (directly, or through ``create_test_image``), so it runs
+# wherever the extra is installed and skips, naming the missing package, where it
+# is not. Tests that replace the SSIM engine with a stand-in run everywhere.
+
+
+@pytest.fixture
+def ssim_dependencies() -> None:
+    """Skip unless the ``visual`` extra (scikit-image + Pillow) is installed."""
+    pytest.importorskip("PIL", reason="Pillow is not installed (GuardKit's `visual` extra)")
+    pytest.importorskip(
+        "skimage", reason="scikit-image is not installed (GuardKit's `visual` extra)"
+    )
+
+
 @pytest.fixture
 def sample_png_bytes() -> bytes:
     """Create minimal valid PNG bytes for testing."""
@@ -55,8 +72,12 @@ def sample_png_bytes() -> bytes:
 
 
 @pytest.fixture
-def create_test_image():
-    """Factory fixture to create test images with specific characteristics."""
+def create_test_image(ssim_dependencies):
+    """Factory fixture to create test images with specific characteristics.
+
+    Every test that uses real images is a test of real SSIM, so this asks for the
+    ``visual`` extra rather than returning placeholder bytes without it.
+    """
     def _create(width: int = 100, height: int = 100, color: tuple = (255, 0, 0)) -> bytes:
         """Create a simple test image.
 
@@ -68,17 +89,13 @@ def create_test_image():
         Returns:
             PNG image as bytes
         """
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            img = Image.new("RGB", (width, height), color)
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            return buffer.getvalue()
-        except ImportError:
-            # Fallback if PIL not available - return placeholder
-            return b"\x89PNG\r\n\x1a\n" + bytes([0] * 100)
+        img = Image.new("RGB", (width, height), color)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        return buffer.getvalue()
 
     return _create
 
@@ -637,15 +654,11 @@ class TestSpatialMap:
         _, spatial_map = ssim_comparator.compute_ssim_with_map(img1, img2)
 
         # Parse spatial map to verify dimensions
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            spatial_img = Image.open(io.BytesIO(spatial_map))
-            assert spatial_img.size == (100, 100)
-        except ImportError:
-            # If PIL not available, just verify we got bytes
-            assert len(spatial_map) > 0
+        spatial_img = Image.open(io.BytesIO(spatial_map))
+        assert spatial_img.size == (100, 100)
 
 
 class TestZeroTokenCostTier1:
@@ -709,53 +722,47 @@ class TestEdgeCases:
             await visual_comparator.compare(img1, img2)
 
     @pytest.mark.asyncio
-    async def test_handles_grayscale_images(self, visual_comparator: VisualComparator):
+    async def test_handles_grayscale_images(self, visual_comparator: VisualComparator, ssim_dependencies):
         """Test handling of grayscale images."""
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            # Create grayscale images with some variation to avoid edge case
-            img1 = Image.new("L", (100, 100), 128)
-            img2 = Image.new("L", (100, 100), 128)
+        # Create grayscale images with some variation to avoid edge case
+        img1 = Image.new("L", (100, 100), 128)
+        img2 = Image.new("L", (100, 100), 128)
 
-            # Add a gradient to avoid solid-color edge case
-            for x in range(100):
-                for y in range(100):
-                    img1.putpixel((x, y), (x + y) % 256)
-                    img2.putpixel((x, y), (x + y) % 256)
+        # Add a gradient to avoid solid-color edge case
+        for x in range(100):
+            for y in range(100):
+                img1.putpixel((x, y), (x + y) % 256)
+                img2.putpixel((x, y), (x + y) % 256)
 
-            buf1, buf2 = io.BytesIO(), io.BytesIO()
-            img1.save(buf1, format="PNG")
-            img2.save(buf2, format="PNG")
+        buf1, buf2 = io.BytesIO(), io.BytesIO()
+        img1.save(buf1, format="PNG")
+        img2.save(buf2, format="PNG")
 
-            result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
+        result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
 
-            assert result.passed is True
-            assert result.ssim_score >= 0.99
-        except ImportError:
-            pytest.skip("PIL not available for grayscale test")
+        assert result.passed is True
+        assert result.ssim_score >= 0.99
 
     @pytest.mark.asyncio
-    async def test_handles_rgba_images(self, visual_comparator: VisualComparator):
+    async def test_handles_rgba_images(self, visual_comparator: VisualComparator, ssim_dependencies):
         """Test handling of images with alpha channel."""
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            # Create RGBA images
-            img1 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
-            img2 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+        # Create RGBA images
+        img1 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+        img2 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
 
-            buf1, buf2 = io.BytesIO(), io.BytesIO()
-            img1.save(buf1, format="PNG")
-            img2.save(buf2, format="PNG")
+        buf1, buf2 = io.BytesIO(), io.BytesIO()
+        img1.save(buf1, format="PNG")
+        img2.save(buf2, format="PNG")
 
-            result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
+        result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
 
-            assert result.passed is True
-        except ImportError:
-            pytest.skip("PIL not available for RGBA test")
+        assert result.passed is True
 
 
 class TestExactThresholdBoundaries:
@@ -945,75 +952,66 @@ class TestSolidColorImages:
     """Tests for handling solid color images (edge case)."""
 
     @pytest.mark.asyncio
-    async def test_identical_solid_color_images_pass(self, visual_comparator: VisualComparator):
+    async def test_identical_solid_color_images_pass(self, visual_comparator: VisualComparator, ssim_dependencies):
         """Test that identical solid color images pass."""
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            # Create solid color images
-            img1 = Image.new("RGB", (50, 50), (128, 128, 128))
-            img2 = Image.new("RGB", (50, 50), (128, 128, 128))
+        # Create solid color images
+        img1 = Image.new("RGB", (50, 50), (128, 128, 128))
+        img2 = Image.new("RGB", (50, 50), (128, 128, 128))
 
-            buf1, buf2 = io.BytesIO(), io.BytesIO()
-            img1.save(buf1, format="PNG")
-            img2.save(buf2, format="PNG")
+        buf1, buf2 = io.BytesIO(), io.BytesIO()
+        img1.save(buf1, format="PNG")
+        img2.save(buf2, format="PNG")
 
-            result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
+        result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
 
-            # Should pass with high score (handling NaN edge case)
-            assert result.passed is True
-            assert result.ssim_score >= 0.99
-        except ImportError:
-            pytest.skip("PIL not available")
+        # Should pass with high score (handling NaN edge case)
+        assert result.passed is True
+        assert result.ssim_score >= 0.99
 
-    def test_ssim_with_map_solid_color(self, ssim_comparator: SSIMComparator):
+    def test_ssim_with_map_solid_color(self, ssim_comparator: SSIMComparator, ssim_dependencies):
         """Test compute_ssim_with_map with solid color images."""
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            img1 = Image.new("RGB", (50, 50), (100, 100, 100))
-            img2 = Image.new("RGB", (50, 50), (100, 100, 100))
+        img1 = Image.new("RGB", (50, 50), (100, 100, 100))
+        img2 = Image.new("RGB", (50, 50), (100, 100, 100))
 
-            buf1, buf2 = io.BytesIO(), io.BytesIO()
-            img1.save(buf1, format="PNG")
-            img2.save(buf2, format="PNG")
+        buf1, buf2 = io.BytesIO(), io.BytesIO()
+        img1.save(buf1, format="PNG")
+        img2.save(buf2, format="PNG")
 
-            score, spatial_map = ssim_comparator.compute_ssim_with_map(
-                buf1.getvalue(), buf2.getvalue()
-            )
+        score, spatial_map = ssim_comparator.compute_ssim_with_map(
+            buf1.getvalue(), buf2.getvalue()
+        )
 
-            assert isinstance(score, float)
-            assert spatial_map is not None
-        except ImportError:
-            pytest.skip("PIL not available")
+        assert isinstance(score, float)
+        assert spatial_map is not None
 
 
 class TestImageModeConversions:
     """Tests for image mode conversion handling."""
 
     @pytest.mark.asyncio
-    async def test_palette_mode_image(self, visual_comparator: VisualComparator):
+    async def test_palette_mode_image(self, visual_comparator: VisualComparator, ssim_dependencies):
         """Test handling of palette mode (P) images."""
-        try:
-            from PIL import Image
-            import io
+        from PIL import Image
+        import io
 
-            # Create palette mode image and convert
-            img1 = Image.new("P", (50, 50))
-            img2 = Image.new("P", (50, 50))
+        # Create palette mode image and convert
+        img1 = Image.new("P", (50, 50))
+        img2 = Image.new("P", (50, 50))
 
-            buf1, buf2 = io.BytesIO(), io.BytesIO()
-            img1.save(buf1, format="PNG")
-            img2.save(buf2, format="PNG")
+        buf1, buf2 = io.BytesIO(), io.BytesIO()
+        img1.save(buf1, format="PNG")
+        img2.save(buf2, format="PNG")
 
-            result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
+        result = await visual_comparator.compare(buf1.getvalue(), buf2.getvalue())
 
-            # Should handle palette mode
-            assert result is not None
-        except ImportError:
-            pytest.skip("PIL not available")
+        # Should handle palette mode
+        assert result is not None
 
 
 class TestDefaultAICallback:

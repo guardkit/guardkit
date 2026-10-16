@@ -129,6 +129,12 @@ _rollback_archive/
 .guardkit/graphiti-query-log.jsonl
 .guardkit/graphiti-query-log.jsonl.1
 
+# Memory query log (data quality debugging; the successor of the Graphiti log above).
+# A local debugging record, never part of the repository: until 16 October 2026 it
+# was tracked, so every test run that appended to it left the checkout dirty.
+.guardkit/memory-query-log.jsonl
+.guardkit/memory-query-log.jsonl.1
+
 # Graphiti seeding state (local-only)
 .guardkit/seeding/
 
