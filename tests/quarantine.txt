@@ -14,7 +14,10 @@
 #
 # Buckets (see triage.md for detail):
 #   A foreign-machine paths  — hardcoded /Users/.../ai-engineer/ (dead)
-#   B SSIM / scikit-image    — test_visual_comparator (optional dep)
+#   B SSIM / scikit-image    — test_visual_comparator (optional dep). CLEARED
+#                              16 Oct 2026: the `visual` extra now declares
+#                              scikit-image + Pillow and the tests skip by name
+#                              where it is not installed; all 21 entries removed.
 #   C FalkorDB               — knowledge tests needing graphiti-core[falkordb]
 #   D SDK-in-subprocess      — coach spawns an interpreter without the SDK
 #   E stale mocks            — orchestrator evolved, mocks not updated
@@ -102,27 +105,6 @@ tests/orchestrator/test_design_context_integration.py::test_player_prompt_includ
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_includes_prohibition_checklist
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_unchanged_when_no_design_context
 tests/orchestrator/test_design_context_integration.py::test_player_prompt_with_design_context_and_feedback
-tests/orchestrator/test_visual_comparator.py::TestSpatialMap::test_spatial_map_is_image_bytes
-tests/orchestrator/test_visual_comparator.py::TestSpatialMap::test_spatial_map_same_dimensions_as_input
-tests/orchestrator/test_visual_comparator.py::TestSpatialMap::test_spatial_map_shows_difference_locations
-tests/orchestrator/test_visual_comparator.py::TestSSIMComparator::test_ssim_compute_returns_score
-tests/orchestrator/test_visual_comparator.py::TestSSIMComparator::test_ssim_different_images_score_low
-tests/orchestrator/test_visual_comparator.py::TestSSIMComparator::test_ssim_generates_spatial_map
-tests/orchestrator/test_visual_comparator.py::TestSSIMComparator::test_ssim_identical_images_score_high
-tests/orchestrator/test_visual_comparator.py::TestSSIMComparator::test_ssim_is_deterministic
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdFail::test_tier1_fail_no_ai_escalation
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdFail::test_tier1_fail_provides_feedback
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdFail::test_tier1_fail_threshold_085
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdFail::test_tier1_fail_zero_token_cost
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdPass::test_tier1_pass_no_ai_escalation
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdPass::test_tier1_pass_no_spatial_map_needed
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdPass::test_tier1_pass_threshold_095
-tests/orchestrator/test_visual_comparator.py::TestTier1ThresholdPass::test_tier1_pass_zero_token_cost
-tests/orchestrator/test_visual_comparator.py::TestVisualComparator::test_compare_returns_comparison_result
-tests/orchestrator/test_visual_comparator.py::TestVisualComparator::test_compare_with_identical_images_passes
-tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_ssim_computation_is_pure_math
-tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_tier1_fail_no_llm_calls
-tests/orchestrator/test_visual_comparator.py::TestZeroTokenCostTier1::test_tier1_pass_no_llm_calls
 # ---------------------------------------------------------------------------
 # 2026-08-21 UN-QUARANTINED: tests/seam/test_autobuild_coach.py (all 10)
 # ---------------------------------------------------------------------------
