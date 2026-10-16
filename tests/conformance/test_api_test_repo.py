@@ -1,18 +1,33 @@
-"""The acceptance test: the checker run against the real pilot repository.
+"""The acceptance test: the checker run against a pinned copy of the pilot repository.
 
-api_test's rules file carries one known problem on purpose. Its search feature runs
-its database queries inside the web route handler and imports another feature's model
+api_test's rules file carried one known problem on purpose. Its search feature ran
+its database queries inside the web route handler and imported another feature's model
 to do it — one problem with two symptoms, written by the factory on 2026-08-16 and
-merged. It was left in place so that this test can exist: if the checker does not find
-it, the checker does not work; and if the checker finds anything else, the checker
-cries wolf.
+merged. It was left in place so that this test could exist: if the checker does not
+find it, the checker does not work; and if the checker finds anything else, the
+checker cries wolf.
 
-Nothing here hardcodes what to expect. The expectation is read out of the rules file's
-own ``expected_current_finding`` annotations, so the day somebody fixes the search
-router and updates the annotation, this test follows them.
+WHY A PINNED COPY, NOT THE SIBLING CHECKOUT (16 October 2026)
+-------------------------------------------------------------
+This test used to read ``../api_test`` — whatever happened to be checked out next to
+GuardKit. api_test fixed the search router on 2 September 2026 (api_test ``750a83d``)
+but its rules file still declares the old problem as ``expected_current_finding``, so
+from that day this test failed on every machine that had api_test beside GuardKit, for
+a reason that says nothing about the checker. api_test is a factory test project and is
+not edited from here, so GuardKit's test must not depend on its moving working copy.
 
-The test skips when api_test is not on the machine, which is the only thing about it
-that is not an assertion.
+``fixtures/api_test/`` is therefore a byte-for-byte copy of the three things the
+checker reads — ``src/``, ``pyproject.toml`` and ``docs/architecture-rules.yaml`` —
+taken with ``git archive`` from api_test commit
+``50e4120e5e7fc9df689cbe1a8c32860a8e6ceca7`` (31 August 2026, "ADR-001 amended"), the
+last commit where the seeded problem was still in the code and the rules file's
+annotations were true. The directory is named ``api_test`` and has no ``.git``, so the
+checker identifies it as ``api_test`` by its directory name and the rules file's
+``repo: api_test`` matches. Do not edit the copy; to move it to a newer api_test,
+replace it whole from one commit and update the commit named here.
+
+Nothing here hardcodes what to expect. The expectation is read out of the copied rules
+file's own ``expected_current_finding`` annotations.
 """
 
 from __future__ import annotations
@@ -26,7 +41,7 @@ import yaml
 from guardkit.conformance.engine import run
 from guardkit.conformance.model import UNSUPPORTED
 
-API_TEST = Path(__file__).resolve().parents[2].parent / "api_test"
+API_TEST = Path(__file__).resolve().parent / "fixtures" / "api_test"
 RULES = API_TEST / "docs" / "architecture-rules.yaml"
 
 # The docstring at this line contains "await db.execute(select(User))" as an example.
@@ -34,9 +49,12 @@ RULES = API_TEST / "docs" / "architecture-rules.yaml"
 # and if it ever appears below, every number this program has produced is suspect.
 THE_DOCSTRING_TRAP = "src/db/dependencies.py:29"
 
-pytestmark = pytest.mark.skipif(
-    not RULES.is_file(),
-    reason=f"api_test is not on this machine (looked for {RULES})")
+
+def test_the_pinned_copy_is_complete():
+    """A missing copy must fail loudly, never turn every test below into a skip."""
+    assert RULES.is_file(), f"the pinned api_test copy is missing its rules file: {RULES}"
+    assert (API_TEST / "pyproject.toml").is_file()
+    assert (API_TEST / "src" / "search" / "router.py").is_file()
 
 
 @pytest.fixture(scope="module")
