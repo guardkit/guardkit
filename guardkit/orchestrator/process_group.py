@@ -9,6 +9,13 @@ them running after the merge has given up on it.
 everything it starts share one process group of their own. On a timeout the
 whole group is sent SIGTERM, given a short grace period, then sent SIGKILL.
 GuardKit's own process group is never signalled.
+
+16 October 2026. Sending SIGKILL is not the same as the process being gone.
+A killed worker closes its output early in exiting, so the runner saw the
+end of the output and returned while the worker was still listed as
+running (about 1 timeout in 100 on a busy machine; once, still there five
+seconds later). The runner now waits, for a bounded time, until no live
+process is left in the group, sending SIGKILL again on each look.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ __all__ = ["GroupRun", "end_process_group", "run_in_own_group", "run_project_com
 
 _GRACE_SECONDS = 2.0
 _DRAIN_SECONDS = 5.0
+_KILL_WAIT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -47,6 +55,32 @@ def _group_alive(pgid: int) -> bool:
     return True
 
 
+def _group_has_live_member(pgid: int) -> bool:
+    """Whether any process that is not already a zombie is in group ``pgid``.
+
+    A zombie has finished; only its parent's reaping is outstanding, and
+    an orphan's new parent (which may be a container's first process) may
+    never do that. Where ``/proc`` cannot be read, any member counts.
+    """
+    if not _group_alive(pgid):
+        return False
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return True
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat", encoding="utf-8", errors="replace") as fh:
+                fields = fh.read().rsplit(")", 1)[1].split()
+        except (OSError, IndexError):
+            continue  # gone since the listing, or not readable
+        if len(fields) > 2 and fields[2] == str(pgid) and fields[0] not in ("Z", "X"):
+            return True
+    return False
+
+
 def end_process_group(proc: subprocess.Popen, grace: float = _GRACE_SECONDS) -> None:
     """End every process in the group ``proc`` leads (started with
     ``start_new_session=True``), whether or not ``proc`` itself is still alive.
@@ -54,7 +88,8 @@ def end_process_group(proc: subprocess.Popen, grace: float = _GRACE_SECONDS) -> 
     SIGTERM goes to the whole group; then the group itself (never only the
     leader) is watched, and anything still in it after ``grace`` seconds,
     such as a worker that ignores SIGTERM after the leader has exited, is
-    sent SIGKILL. GuardKit's own group is never signalled.
+    sent SIGKILL. It returns once no live process is left in the group, or
+    after a bounded wait. GuardKit's own group is never signalled.
     """
     _end_group(proc, grace)
 
@@ -79,10 +114,20 @@ def _end_group(proc: subprocess.Popen, grace: float) -> None:
         if not _group_alive(pgid):
             return
         time.sleep(0.05)
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+    # SIGKILL cannot be ignored, but a killed process is only gone once it
+    # has finished exiting. Wait for that, so that when this returns nothing
+    # the command started is still running; send SIGKILL again on each look
+    # in case anything is still in the group.
+    deadline = time.monotonic() + _KILL_WAIT_SECONDS
+    while True:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        proc.poll()
+        if not _group_has_live_member(pgid) or time.monotonic() >= deadline:
+            return
+        time.sleep(0.05)
 
 
 def run_in_own_group(
