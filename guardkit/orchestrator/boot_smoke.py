@@ -292,9 +292,12 @@ def _run_serve(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSmokeE
         deadline = time.monotonic() + timeout_s
         ready = False
         while time.monotonic() < deadline:
-            if proc.poll() is not None:
+            # Read the exit without collecting the probe: an uncollected
+            # leader keeps its group's number ours, so _terminate can still
+            # end the group safely (16 October 2026).
+            rc = process_group.leader_exit_code(proc)
+            if rc is not None:
                 # Exited before verdict → FAIL (any non-zero) or, for exit_zero, pass.
-                rc = proc.returncode
                 if rkind == "exit_zero" and rc == 0:
                     return BootSmokeEntryResult(entry.id, "serve", _PASS, "exited 0")
                 return BootSmokeEntryResult(
@@ -318,18 +321,20 @@ def _run_serve(entry: BootSmokeEntry, worktree: Path, python: str) -> BootSmokeE
             )
         # Liveness-at-verdict: child must still be alive, and alive on a settle
         # re-probe (an early-READY + late-crash must be FAIL, R2d-3).
-        if proc.poll() is not None:
+        rc = process_group.leader_exit_code(proc)
+        if rc is not None:
             return BootSmokeEntryResult(
                 entry.id, "serve", _FAIL,
-                detail=f"process died at verdict (rc={proc.returncode})",
-                finding_kind="BOOT_SMOKE_FAIL", exit_code=proc.returncode,
+                detail=f"process died at verdict (rc={rc})",
+                finding_kind="BOOT_SMOKE_FAIL", exit_code=rc,
             )
         time.sleep(1.0)  # settle
-        if proc.poll() is not None:
+        rc = process_group.leader_exit_code(proc)
+        if rc is not None:
             return BootSmokeEntryResult(
                 entry.id, "serve", _FAIL,
-                detail=f"process died on settle re-probe (rc={proc.returncode})",
-                finding_kind="BOOT_SMOKE_FAIL", exit_code=proc.returncode,
+                detail=f"process died on settle re-probe (rc={rc})",
+                finding_kind="BOOT_SMOKE_FAIL", exit_code=rc,
             )
         # Re-attribute readiness to the still-alive child (squatter defence).
         if rkind == "port" and not _port_ready(port):
@@ -375,7 +380,8 @@ def _terminate(proc: subprocess.Popen) -> None:
     The probe was started in a session of its own, so its group id is its
     pid. The group is signalled and watched as a group, even when the leader
     has already exited: a worker that ignores SIGTERM is sent SIGKILL after
-    the grace period (``process_group.end_process_group``).
+    the grace period (``process_group.end_process_group``). The probe is
+    collected only afterwards, here.
     """
     process_group.end_process_group(proc, grace=5.0)
     try:

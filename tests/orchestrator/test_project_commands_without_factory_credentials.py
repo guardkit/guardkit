@@ -1229,7 +1229,7 @@ def _still_running(pid: int) -> bool:
             state = fh.read().rsplit(")", 1)[1].split()[0]
     except OSError:
         return False
-    return state != "Z"
+    return state not in ("Z", "X")  # zombie, or dead and being removed
 
 
 def _nothing_left(pid_file: Path) -> None:
@@ -1355,7 +1355,10 @@ def test_a_serve_probe_that_never_gets_ready_leaves_no_stubborn_worker(project: 
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
 def test_a_timed_out_command_leaves_no_stubborn_worker(project: Project) -> None:
     """The same for the generic runner: the shell exits on SIGTERM, the
-    worker it started ignores SIGTERM and is still ended."""
+    worker it started ignores SIGTERM and is still ended — already gone by
+    the time the runner returns, not merely sent SIGKILL (16 October 2026:
+    a full run on a loaded machine found the killed worker still listed
+    after the runner had returned)."""
     from guardkit.orchestrator import process_group
     from guardkit.orchestrator.project_command_env import project_command_environment
 
@@ -1366,6 +1369,11 @@ def test_a_timed_out_command_leaves_no_stubborn_worker(project: Project) -> None
             command, shell=True, cwd=project.repo, timeout=1, capture_output=True,
             env=project_command_environment(project.repo, None),
         )
+    assert pid.exists(), "the command never started its child"
+    worker = int(pid.read_text().strip())
+    assert not _still_running(worker), (
+        f"the runner returned while the command's child {worker} was still running"
+    )
     _nothing_left(pid)
 
 
