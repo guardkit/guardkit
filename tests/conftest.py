@@ -206,6 +206,40 @@ def forget_settled_memory_project():
 
 
 # ---------------------------------------------------------------------------
+# No test writes the memory query log into this repository (16 October 2026)
+# ---------------------------------------------------------------------------
+# ``query_logger.log_query`` appends to ``<current folder>/.guardkit/
+# memory-query-log.jsonl`` unless it is given a folder. pytest runs from the
+# repository root, so every test that drove ``FleetMemoryClient.search`` (or the
+# feature-plan context) without patching the log path appended lines to the
+# repository's own copy — four per full run, measured 16 October. Several test
+# files already redirected it themselves; others did not, and the next one to
+# forget would do it again. So the redirect lives here, for every test: a
+# default log path that would land inside this repository goes to a temporary
+# folder instead. A test that chooses a folder, or changes into a temporary
+# folder first, keeps exactly the behaviour it asked for.
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def memory_query_log_stays_out_of_the_repository(monkeypatch, tmp_path_factory):
+    """Send a default-located memory query log outside the repository."""
+    from guardkit.knowledge import query_logger as _ql
+
+    original = _ql._get_log_path
+
+    def _get_log_path(base_dir=None):
+        if base_dir is None:
+            here = Path.cwd().resolve()
+            if here == _REPO_ROOT or _REPO_ROOT in here.parents:
+                base_dir = str(tmp_path_factory.getbasetemp() / "memory-query-log")
+        return original(base_dir)
+
+    monkeypatch.setattr(_ql, "_get_log_path", _get_log_path)
+
+
+# ---------------------------------------------------------------------------
 # The M0 effective-seat fence (leg-invocation stage-2 design §3)
 # ---------------------------------------------------------------------------
 # ``select_harness`` now refuses to build a harness on a seat it cannot show is
