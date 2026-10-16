@@ -3,7 +3,7 @@
 # WHAT THIS IS
 #   The house rules for how this repository is built, written so a plain program can check
 #   them. Each rule quotes one sentence from the architecture record in docs/architecture/
-#   — the system overview and the six ADRs Rich read and ruled on 2026-08-30 — and says
+#   — the system overview and the six ADRs the owner read and ruled on 2026-08-30 — and says
 #   what a checker looks for in the code.
 #
 # WHO READS IT
@@ -45,7 +45,7 @@
 format_version: "1.0"
 repo: api_test
 source_record: docs/architecture/
-record_ruled_by: rich
+record_ruled_by: owner
 record_ruled_on: "2026-08-30"
 rules_derived_on: "2026-08-30"
 replaces: "commit 8e32872, the 2026-08-22 draft derived from .claude/CLAUDE.md"
@@ -123,7 +123,7 @@ rules:
         mismatch afterwards.
     exceptions:
       - path: src/health/router.py
-        # line pin removed 2026-08-30 (Rich's word): the backwards run showed the pin
+        # line pin removed 2026-08-30 (the owner's word): the backwards run showed the pin
         # produced all three historical false alarms as the file grew; the exception now
         # names the file and the statement, wherever it sits.
         what: 'await db.execute(text("SELECT 1"))'

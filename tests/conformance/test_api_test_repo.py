@@ -16,15 +16,17 @@ from that day this test failed on every machine that had api_test beside GuardKi
 a reason that says nothing about the checker. api_test is a factory test project and is
 not edited from here, so GuardKit's test must not depend on its moving working copy.
 
-``fixtures/api_test/`` is therefore a byte-for-byte copy of the three things the
-checker reads — ``src/``, ``pyproject.toml`` and ``docs/architecture-rules.yaml`` —
-taken with ``git archive`` from api_test commit
-``50e4120e5e7fc9df689cbe1a8c32860a8e6ceca7`` (31 August 2026, "ADR-001 amended"), the
-last commit where the seeded problem was still in the code and the rules file's
-annotations were true. The directory is named ``api_test`` and has no ``.git``, so the
-checker identifies it as ``api_test`` by its directory name and the rules file's
-``repo: api_test`` matches. Do not edit the copy; to move it to a newer api_test,
-replace it whole from one commit and update the commit named here.
+``fixtures/api_test/`` is therefore a copy of the three things the checker reads —
+``src/``, ``pyproject.toml`` and ``docs/architecture-rules.yaml`` — taken with
+``git archive`` from api_test commit ``50e4120e5e7fc9df689cbe1a8c32860a8e6ceca7``
+(31 August 2026, "ADR-001 amended"), the last commit where the seeded problem was still
+in the code and the rules file's annotations were true. Three comment/metadata lines of
+the rules file were changed to remove personal attribution; nothing the checker reads
+changed. ``fixtures/README.md`` lists exactly what was changed and which placeholder
+values in the copy are inert test data. The directory is named ``api_test`` and has no
+``.git``, so the checker identifies it as ``api_test`` by its directory name and the
+rules file's ``repo: api_test`` matches. To move it to a newer api_test, follow
+``fixtures/README.md``.
 
 Nothing here hardcodes what to expect. The expectation is read out of the copied rules
 file's own ``expected_current_finding`` annotations.
