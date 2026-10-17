@@ -30,6 +30,7 @@ from guardkit.orchestrator.protected_paths import (
     load_protected_reference,
     restore_protected_paths,
 )
+from guardkit.orchestrator.worktree_checkpoints import WorktreeCheckpointManager
 from guardkit.worktrees.manager import Worktree
 
 BRANCH = "autobuild/TASK-PP-001"
@@ -91,7 +92,7 @@ def _protected(repo: Path) -> Dict[str, Any]:
 
 
 def _reference(repo: Path):
-    return load_protected_reference(repo, _git(repo, "rev-parse", "main"))
+    return load_protected_reference(repo, _git(repo, "rev-parse", "main"), BRANCH)
 
 
 def _restore(repo: Path) -> Any:
@@ -623,3 +624,74 @@ def test_a_shell_commit_then_a_normal_turn_never_reaches_the_build_branch(
     _assert_note(coach.seen[0]["concerns"][-1], "qa/check.sh (committed on the branch)")
     assert _git(repo, "log", "-1", "--format=%s").startswith("[guardkit-checkpoint] Turn 1")
     assert _git(repo, "diff", "--name-only", "main", "HEAD") == "app.txt"
+
+
+# ---------------------------------------------------------------------------
+# The build branch itself, wherever HEAD is (review R1, round 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("move", ["detach", "switch"])
+def test_a_shell_commit_then_leaving_the_branch_corrects_it_and_stops_the_task(
+    repo: Path, tmp_path: Path, move: str
+) -> None:
+    manager = MagicMock()
+    manager.create.return_value = _worktree(repo)
+    manager.worktrees_dir = tmp_path / "worktrees"
+    invoker = MagicMock()
+    invoker._get_implementation_mode.return_value = "direct"
+    cancel = threading.Event()
+    orch = AutoBuildOrchestrator(
+        repo_root=repo, max_turns=3, worktree_manager=manager, agent_invoker=invoker,
+        progress_display=MagicMock(), pre_loop_gates=MagicMock(), enable_pre_loop=False,
+        enable_checkpoints=False, enable_context=False, cancellation_event=cancel,
+    )
+
+    def player(**_kwargs: Any) -> AgentInvocationResult:
+        (repo / "qa" / "check.sh").write_text("exit 0\n")
+        _git(repo, "commit", "-qam", "a shell commit on the build branch")
+        if move == "detach":
+            _git(repo, "checkout", "-q", "--detach", "main")
+        else:
+            _git(repo, "checkout", "-q", "-b", "elsewhere", "main")
+        cancel.set()
+        return _result("player", success=False)
+
+    with patch.object(AutoBuildOrchestrator, "_invoke_player_safely", side_effect=player), \
+            patch.object(AutoBuildOrchestrator, "_attempt_state_recovery", return_value=None):
+        result = orch.orchestrate(
+            task_id="TASK-PP-006", requirements="r", acceptance_criteria=["AC-001: x"]
+        )
+    assert result.final_decision == "error"
+    assert "not on the build branch autobuild/TASK-PP-001" in result.error
+    assert _git(repo, "diff", "--name-only", "main", BRANCH) == ""
+    assert _git(repo, "log", "-1", "--format=%s", BRANCH).startswith(
+        "[guardkit] put protected paths back as committed: qa/check.sh"
+    )
+
+
+def test_a_checkpoint_is_refused_when_head_is_not_on_the_build_branch(repo: Path) -> None:
+    orch = _orchestrator(repo, enable_checkpoints=True, max_turns=1)
+    orch._load_protected_reference(_worktree(repo))
+    # A manager with no branch rule of its own: only the protected check refuses.
+    orch._checkpoint_manager = WorktreeCheckpointManager(worktree_path=repo, task_id="TASK-PP-001")
+    coach = _Coach(repo, ["approve"])
+    tip = _git(repo, "rev-parse", BRANCH)
+
+    def coach_then_detach(**kwargs: Any) -> AgentInvocationResult:
+        result = coach(**kwargs)
+        _git(repo, "checkout", "-q", "--detach", "HEAD")
+        return result
+
+    with patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
+            patch.object(orch, "_invoke_coach_safely", side_effect=coach_then_detach), \
+            patch.object(orch, "_capture_turn_state"), \
+            patch.object(orch, "_record_honesty"), \
+            patch.object(orch, "_display_criteria_progress"):
+        history, final = orch._loop_phase(
+            task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
+            worktree=_worktree(repo),
+        )
+    assert final == "error"
+    assert "not on the build branch" in orch._build_error_message(final, history)
+    assert _git(repo, "rev-parse", "HEAD") == tip == _git(repo, "rev-parse", BRANCH)
