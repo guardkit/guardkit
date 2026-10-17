@@ -4531,7 +4531,34 @@ class AutoBuildOrchestrator:
                         head="unknown", branch_tip=None,
                     )
 
+            def _protected_after_stage() -> None:
+                # ``git add`` can convert protected bytes through attributes
+                # (text, eol, ident, an encoding): the index part again, after
+                # staging and before the commit (review R1 round 3).
+                from guardkit.orchestrator.protected_paths import (
+                    ProtectedPathsError,
+                    hold_protected_index,
+                )
+
+                try:
+                    held = hold_protected_index(
+                        Path(worktree.path), self._protected_reference
+                    )
+                except ProtectedPathsError as exc:
+                    self._protected_paths_failure = f"Task {task_id} stopped: {exc}"
+                    raise CheckpointRefused(
+                        self._protected_paths_failure, expected_branch="",
+                        actual_ref=None, head="unknown", branch_tip=None,
+                    ) from exc
+                if held:
+                    logger.warning(
+                        "[%s] Staging changed protected paths %s; their committed "
+                        "entries were put back before the checkpoint commit.",
+                        task_id, ", ".join(held),
+                    )
+
             self._checkpoint_manager.before_commit = _protected_before_commit
+            self._checkpoint_manager.after_stage = _protected_after_stage
 
         # Track loop start time for per-turn budget (TASK-ABFIX-004)
         loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None

@@ -695,3 +695,52 @@ def test_a_checkpoint_is_refused_when_head_is_not_on_the_build_branch(repo: Path
     assert final == "error"
     assert "not on the build branch" in orch._build_error_message(final, history)
     assert _git(repo, "rev-parse", "HEAD") == tip == _git(repo, "rev-parse", BRANCH)
+
+
+# ---------------------------------------------------------------------------
+# A checkpoint's own `git add` cannot convert protected bytes (R1 round 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("where", [".gitattributes", ".git/info/attributes"])
+def test_every_checkpoint_keeps_the_committed_blob_despite_attribute_conversion(
+    repo: Path, where: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    _git(repo, "checkout", "-q", "main")
+    (repo / "reference" / "crlf.txt").write_bytes(b"first line\r\nsecond line\r\n")
+    _git(repo, "add", "reference/crlf.txt")
+    _git(repo, "commit", "-qm", "a protected file with CRLF bytes")
+    _git(repo, "branch", "-f", BRANCH, "main")
+    _git(repo, "checkout", "-q", BRANCH)
+    source = _git(repo, "ls-tree", "main", "--", "reference/crlf.txt")
+    orch = _orchestrator(repo, enable_checkpoints=True, max_turns=2)
+    orch._load_protected_reference(_worktree(repo))
+    coach = _Coach(repo, ["feedback", "approve"])
+
+    def player(**_kwargs: Any) -> AgentInvocationResult:
+        # Stage an edit, and ask git to convert line endings when adding.
+        (repo / "reference" / "crlf.txt").write_bytes(b"edited\r\n")
+        _git(repo, "add", "reference/crlf.txt")
+        (repo / where).parent.mkdir(parents=True, exist_ok=True)
+        (repo / where).write_text("*.txt text eol=lf\n")
+        (repo / "app.txt").write_text("work\n")
+        return _result("player")
+
+    with caplog.at_level("WARNING"), \
+            patch.object(orch, "_invoke_player_safely", side_effect=player), \
+            patch.object(orch, "_invoke_coach_safely", side_effect=coach), \
+            patch.object(orch, "_capture_turn_state"), \
+            patch.object(orch, "_record_honesty"), \
+            patch.object(orch, "_display_criteria_progress"):
+        _history, final = orch._loop_phase(
+            task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
+            worktree=_worktree(repo),
+        )
+    assert final == "approved"
+    commits = _git(repo, "rev-list", f"main..{BRANCH}").splitlines()
+    assert len(commits) == 2
+    for commit in commits:
+        assert _git(repo, "ls-tree", commit, "--", "reference/crlf.txt") == source
+    # The checkpoint's add really converted the bytes, and the hold undid it.
+    assert "Staging changed protected paths reference" in caplog.text
+    assert (repo / "reference" / "crlf.txt").read_bytes() == b"first line\r\nsecond line\r\n"

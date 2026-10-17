@@ -278,6 +278,39 @@ def _correct_branch(repo: Path, commit: str, roots: list[str], ref: str) -> None
     _run(repo, "update-ref", "-m", message, ref, new, old)  # only if it has not moved
 
 
+def _hold_index(repo: Path, root: str, entries: dict) -> bool:
+    """Put ``root``'s index entries back as committed; True if they differed.
+
+    Staged content, an assume-unchanged / skip-worktree flag, or bytes that
+    ``git add`` converted (``text``, ``eol``, ``ident``, an encoding set in an
+    attributes file): every entry is dropped and the commit's own blob ids
+    and modes go back in, filter-free. Raises when they still differ.
+    """
+    index = _index(repo, root)
+    if index == _wanted_index(entries):
+        return False
+    zero = "0" * len(next(iter(entries.values()))[1])
+    _run(repo, "update-index", "-z", "--index-info",
+         data=_index_info({e[0] for e in index}, entries, zero))
+    if _index(repo, root) != _wanted_index(entries):
+        raise ProtectedPathsError(
+            f"Protected path {root} is still different in the git index after "
+            "putting it back."
+        )
+    return True
+
+
+def hold_protected_index(repo: Path, reference: ProtectedReference) -> list[str]:
+    """After a checkpoint's ``git add``, before its commit: the index part alone.
+
+    Returns the protected paths whose staged entries had to be put back.
+    """
+    return [
+        root for root in reference.paths
+        if _hold_index(Path(repo), root, _committed(Path(repo), reference.commit, root))
+    ]
+
+
 def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | None:
     """Put every changed protected path back; return a note for the Player and Coach.
 
@@ -298,16 +331,8 @@ def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | 
             raise ProtectedPathsError(
                 f"Protected path {root} was changed and could not be put back: {exc}"
             ) from exc
-        index = _index(repo, root)
-        if index != _wanted_index(entries):
-            # Staged content, or an assume-unchanged / skip-worktree flag:
-            # every entry is dropped and the commit's own entries go back in.
-            zero = "0" * len(reference.commit)
-            _run(repo, "update-index", "-z", "--index-info",
-                 data=_index_info({e[0] for e in index}, entries, zero))
+        if _hold_index(repo, root, entries):
             found += [(root, "changed in the git index")]
-            if _index(repo, root) != _wanted_index(entries):
-                still += [(root, "changed in the git index")]
         if still:
             raise ProtectedPathsError(
                 f"Protected path {root} is still different after putting it back: "
