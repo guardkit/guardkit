@@ -3210,7 +3210,7 @@ class AutoBuildOrchestrator:
                 # This orchestrator made the worktree itself: a new build.
                 new_build=not (self.resume and task_file_path)
                 and self._existing_worktree is None,
-            )
+            ) or self._load_protected_reference(worktree)
             if documents_refusal is not None:
                 self._project_documents_refusal = documents_refusal
                 logger.error(
@@ -4460,6 +4460,8 @@ class AutoBuildOrchestrator:
         self._context_pollution_no_checkpoint_fired = False
         # Why a checkpoint was refused, when one was (build 0D7C).
         self._checkpoint_refusal: Optional[str] = None
+        # Why protected paths could not be put back, when they could not.
+        self._protected_paths_failure: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -4951,6 +4953,14 @@ class AutoBuildOrchestrator:
                             if previous_feedback
                             else refusal_to_carry
                         )
+                    protected_note = getattr(self, "_protected_paths_note", None)
+                    if protected_note:
+                        # Protected paths this turn changed were put back.
+                        previous_feedback = (
+                            f"{protected_note}\n\n{previous_feedback}"
+                            if previous_feedback
+                            else protected_note
+                        )
                     # Continue to next turn
 
                 else:
@@ -5214,6 +5224,8 @@ class AutoBuildOrchestrator:
         """
         timestamp = datetime.now().isoformat()
         recovered_failure_error: Optional[str] = None
+        # What this turn's protected-path check put back, for the next turn.
+        self._protected_paths_note: Optional[str] = None
 
         # TASK-AB-NOCHANGE01: photograph the worktree before the generator
         # runs. The matching photograph is taken after the generator and the
@@ -5878,6 +5890,28 @@ class AutoBuildOrchestrator:
         else:
             # No cancellation: pass the caller-provided remaining budget to Coach
             coach_remaining_budget = remaining_budget
+
+        # 17 October 2026: protected paths are put back to the build's
+        # committed content before the Coach runs (and so before the turn's
+        # checkpoint commit, which _loop_phase makes after this method
+        # returns). Every path below that reaches the Coach passes here,
+        # including a recovered Player turn. A failure stops the task.
+        protected_failure = self._restore_protected_paths(
+            task_id, worktree, player_result
+        )
+        if protected_failure is not None:
+            self._progress_display.complete_turn(
+                "error", protected_failure, error=protected_failure
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="error",
+                feedback=None,
+                timestamp=timestamp,
+                player_context_status=player_context_status,
+            )
 
         # TASK-AB-NOCHANGE01: the matching photograph (see the pre-turn one at
         # the top of this method). Taken here, before the reviewer runs, so
@@ -9395,6 +9429,78 @@ class AutoBuildOrchestrator:
             )
         return None
 
+    def _load_protected_reference(self, worktree: Worktree) -> Optional[str]:
+        """Read the build's protected paths from the commit it started from.
+
+        17 October 2026. Read from the committed ``.guardkit/config.yaml`` of
+        :meth:`_build_source_commit`, never from the worktree the Player can
+        edit. Returns the refusal sentence when a declared path is not in that
+        commit (or the commit cannot be found while paths are declared), else
+        None. See ``guardkit/orchestrator/protected_paths.py``.
+        """
+        from guardkit.lib.committed_content import CommittedContentError
+        from guardkit.orchestrator.harness.selector import _load_player_project_inputs
+        from guardkit.orchestrator.protected_paths import (
+            ProtectedPathsError,
+            load_protected_reference,
+        )
+
+        self._protected_reference = None
+        path = getattr(worktree, "path", None)
+        if not isinstance(path, (str, os.PathLike)):
+            return None  # only a test double has no real path
+        try:
+            try:
+                commit, _how = self._build_source_commit(worktree)
+            except (CommittedContentError, OSError) as exc:
+                if _load_player_project_inputs(Path(path))["protected_paths"]:
+                    return (
+                        "The project declares protected paths, but the commit this "
+                        f"build started from could not be found ({exc}); the task "
+                        "was not started."
+                    )
+                return None
+            self._protected_reference = load_protected_reference(Path(path), commit)
+        except (ProtectedPathsError, AgentInvocationError, CommittedContentError) as exc:
+            return str(exc)
+        return None
+
+    def _restore_protected_paths(
+        self, task_id: str, worktree: Worktree, player_result: AgentInvocationResult
+    ) -> Optional[str]:
+        """Put protected paths back before the Coach runs; the failure, or None.
+
+        A change is reported in the Player report's ``concerns`` (which the
+        Coach reads) and kept for the next turn's feedback. A failure to put
+        a path back stops the task; it is never recovered.
+        """
+        from guardkit.orchestrator.protected_paths import (
+            ProtectedPathsError,
+            restore_protected_paths,
+        )
+
+        reference = getattr(self, "_protected_reference", None)
+        if reference is None or worktree is None:
+            return None
+        try:
+            note = restore_protected_paths(Path(worktree.path), reference)
+        except ProtectedPathsError as exc:
+            self._protected_paths_failure = f"Task {task_id} stopped: {exc}"
+            logger.error("[%s] %s", task_id, exc)
+            self._progress_display.console.print(
+                f"\n[bold red]STOPPED: {task_id}: protected paths could not be "
+                f"put back.[/bold red]\n  {exc}\n"
+            )
+            return self._protected_paths_failure
+        if note:
+            logger.warning("[%s] %s", task_id, note)
+            concerns = player_result.report.get("concerns")
+            player_result.report["concerns"] = [
+                *(concerns if isinstance(concerns, list) else []), note
+            ]
+            self._protected_paths_note = note
+        return None
+
     def _coach_documents_for_turn(self, task_id: str, worktree: Worktree) -> tuple:
         """The captured set for this task, each marked if its worktree copy changed.
 
@@ -11955,6 +12061,9 @@ class AutoBuildOrchestrator:
             checkpoint_refusal = getattr(self, "_checkpoint_refusal", None)
             if checkpoint_refusal:
                 return checkpoint_refusal
+            protected_failure = getattr(self, "_protected_paths_failure", None)
+            if protected_failure:
+                return protected_failure
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
             )
