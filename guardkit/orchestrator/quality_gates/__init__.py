@@ -49,16 +49,6 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     IndependentTestResult,
     RequirementsValidation,
 )
-from guardkit.orchestrator.quality_gates.security_checker import (
-    SecurityChecker,
-    SecurityFinding,
-)
-from guardkit.orchestrator.quality_gates.security_detection import (
-    SECURITY_TAGS,
-    HIGH_RISK_CATEGORIES,
-    SECURITY_KEYWORDS,
-    should_run_full_review,
-)
 from guardkit.orchestrator.quality_gates.command_models import (
     CommandExecutionResult,
     CommandVerificationResult,
@@ -86,14 +76,6 @@ __all__ = [
     # Coach evidence bundle (TASK-HMIG-008R Revision 3)
     "CoachEvidenceBundle",
     "GatheringStatus",
-    # Security checker
-    "SecurityChecker",
-    "SecurityFinding",
-    # Security detection
-    "SECURITY_TAGS",
-    "HIGH_RISK_CATEGORIES",
-    "SECURITY_KEYWORDS",
-    "should_run_full_review",
     # Command models
     "CommandExecutionResult",
     "CommandVerificationResult",
