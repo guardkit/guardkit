@@ -13,6 +13,11 @@ Player can edit. Git is asked only for committed objects (``ls-tree`` and
 here runs ``checkout``, ``diff`` or ``status``, which apply filters the
 project can set. The worktree side is read without following links, and a
 file is only read when its size already matches the committed one.
+
+The committed bytes are the reference. A protected file whose checkout the
+project changes through a ``filter`` or ``eol`` attribute (Git LFS, line-ending
+conversion) would be found changed and put back as committed on every check;
+such paths are not refused at build start (not done: 17 October 2026).
 """
 
 from __future__ import annotations
@@ -235,4 +240,4 @@ def restore_protected_paths(repo: Path, reference: ProtectedReference) -> str | 
     if ignored:
         listed.append(f"{len(ignored)} generated file{'s' if len(ignored) != 1 else ''} that git ignores")
     text = listed[0] if len(listed) == 1 else f"{', '.join(listed[:-1])} and {listed[-1]}"
-    return f"Protected paths are read-only; this turn changed {text}; they were put back."
+    return f"Protected paths are read-only; these were found changed: {text}; they were put back."

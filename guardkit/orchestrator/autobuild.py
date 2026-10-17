@@ -3328,21 +3328,29 @@ class AutoBuildOrchestrator:
                     )
 
             # Phase 3: Loop
-            turn_history, final_decision = self._loop_phase(
-                task_id=task_id,
-                requirements=requirements,
-                acceptance_criteria=acceptance_criteria,
-                worktree=worktree,
-                start_turn=start_turn,
-                task_file_path=task_file_path,
-                implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
-                task_type=task_type,
-                requires_infrastructure=requires_infrastructure,
-                consumer_context=consumer_context,
-                time_budget_seconds=time_budget_seconds,
-                behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                component=component,  # per-component seam
-            )
+            try:
+                turn_history, final_decision = self._loop_phase(
+                    task_id=task_id,
+                    requirements=requirements,
+                    acceptance_criteria=acceptance_criteria,
+                    worktree=worktree,
+                    start_turn=start_turn,
+                    task_file_path=task_file_path,
+                    implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
+                    task_type=task_type,
+                    requires_infrastructure=requires_infrastructure,
+                    consumer_context=consumer_context,
+                    time_budget_seconds=time_budget_seconds,
+                    behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                    component=component,  # per-component seam
+                )
+            finally:
+                # 17 October 2026: however the loop ended (an error or
+                # cancelled turn never reaches the Coach's check), protected
+                # paths are left as committed before anything commits them.
+                protected_exit_failure = self._restore_protected_paths(task_id, worktree)
+            if protected_exit_failure is not None:
+                final_decision = "error"
 
             # Phase 4: Finalize
             self._finalize_phase(
@@ -4756,6 +4764,10 @@ class AutoBuildOrchestrator:
                     if self.enable_checkpoints and self._checkpoint_manager:
                         tests_passed = self._extract_tests_passed(turn_record)
                         test_count = self._extract_test_count(turn_record)
+                        # Protected paths as committed, whatever ran since
+                        # the turn's check (the Coach, a parallel task).
+                        if self._restore_protected_paths(task_id, worktree):
+                            return turn_history, "error"
                         try:
                             checkpoint = self._checkpoint_manager.create_checkpoint(
                                 turn=turn,
@@ -4829,6 +4841,8 @@ class AutoBuildOrchestrator:
                     tests_passed = self._extract_tests_passed(turn_record)
                     test_count = self._extract_test_count(turn_record)
 
+                    if self._restore_protected_paths(task_id, worktree):
+                        return turn_history, "error"
                     try:
                         checkpoint = self._checkpoint_manager.create_checkpoint(
                             turn=turn,
@@ -9466,13 +9480,18 @@ class AutoBuildOrchestrator:
         return None
 
     def _restore_protected_paths(
-        self, task_id: str, worktree: Worktree, player_result: AgentInvocationResult
+        self,
+        task_id: str,
+        worktree: Worktree,
+        player_result: Optional[AgentInvocationResult] = None,
     ) -> Optional[str]:
-        """Put protected paths back before the Coach runs; the failure, or None.
+        """Put protected paths back as committed; the failure, or None.
 
-        A change is reported in the Player report's ``concerns`` (which the
-        Coach reads) and kept for the next turn's feedback. A failure to put
-        a path back stops the task; it is never recovered.
+        Called before the Coach runs (with the turn's ``player_result``),
+        before each checkpoint commit and when the loop ends. Before the
+        Coach, a change is reported in the Player report's ``concerns``
+        (which the Coach reads) and kept for the next turn's feedback. A
+        failure to put a path back stops the task; it is never recovered.
         """
         from guardkit.orchestrator.protected_paths import (
             ProtectedPathsError,
@@ -9494,6 +9513,7 @@ class AutoBuildOrchestrator:
             return self._protected_paths_failure
         if note:
             logger.warning("[%s] %s", task_id, note)
+        if note and player_result is not None:
             concerns = player_result.report.get("concerns")
             player_result.report["concerns"] = [
                 *(concerns if isinstance(concerns, list) else []), note

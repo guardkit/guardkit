@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock, patch
@@ -99,7 +100,7 @@ def _restore(repo: Path) -> Any:
 
 def _assert_note(note: Any, *parts: str) -> None:
     assert note is not None
-    assert note.startswith("Protected paths are read-only; this turn changed ")
+    assert note.startswith("Protected paths are read-only; these were found changed: ")
     assert note.endswith("; they were put back.")
     for part in parts:
         assert part in note
@@ -455,3 +456,64 @@ def test_the_checkpoint_commit_never_carries_the_change_and_the_next_turn_is_tol
     # The next turn is told what was put back, ahead of the Coach's feedback.
     assert feedback_seen[0] is None
     _assert_note(feedback_seen[1].split("\n\n")[0], "qa/check.sh (edited)")
+
+
+def test_a_change_made_after_the_coach_check_is_put_back_before_the_commit(
+    repo: Path,
+) -> None:
+    orch = _orchestrator(repo, enable_checkpoints=True, max_turns=1)
+    orch._load_protected_reference(_worktree(repo))
+    coach = _Coach(repo, ["approve"])
+
+    def coach_then_parallel_change(**kwargs: Any) -> AgentInvocationResult:
+        result = coach(**kwargs)
+        # After the check: the Coach's own run, or another task in the wave.
+        (repo / "qa" / "check.sh").write_text("changed after the check\n")
+        return result
+
+    with patch.object(orch, "_invoke_player_safely", return_value=_result("player")), \
+            patch.object(orch, "_invoke_coach_safely", side_effect=coach_then_parallel_change), \
+            patch.object(orch, "_capture_turn_state"), \
+            patch.object(orch, "_record_honesty"), \
+            patch.object(orch, "_display_criteria_progress"):
+        _history, final = orch._loop_phase(
+            task_id="TASK-PP-001", requirements="r", acceptance_criteria=["AC-001: x"],
+            worktree=_worktree(repo),
+        )
+    assert final == "approved"
+    assert _git(repo, "log", "-1", "--format=%s").startswith("[guardkit-checkpoint] Turn 1")
+    assert _git(repo, "show", "HEAD:qa/check.sh") + "\n" == CHECK
+    assert (repo / "qa" / "check.sh").read_text() == CHECK
+
+
+def test_a_task_cancelled_between_player_and_coach_ends_with_paths_restored(
+    repo: Path, tmp_path: Path
+) -> None:
+    manager = MagicMock()
+    manager.create.return_value = _worktree(repo)
+    manager.worktrees_dir = tmp_path / "worktrees"
+    invoker = MagicMock()
+    invoker._get_implementation_mode.return_value = "direct"
+    cancel = threading.Event()
+    orch = AutoBuildOrchestrator(
+        repo_root=repo, max_turns=3, worktree_manager=manager, agent_invoker=invoker,
+        progress_display=MagicMock(), pre_loop_gates=MagicMock(), enable_pre_loop=False,
+        enable_checkpoints=False, enable_context=False, cancellation_event=cancel,
+    )
+
+    def player(**_kwargs: Any) -> AgentInvocationResult:
+        (repo / "qa" / "check.sh").write_text("exit 0\n")
+        (repo / "reference" / "extra.txt").write_text("x\n")
+        cancel.set()  # the wave is stopped before the Coach runs
+        return _result("player", success=False)
+
+    with patch.object(AutoBuildOrchestrator, "_invoke_player_safely", side_effect=player), \
+            patch.object(AutoBuildOrchestrator, "_attempt_state_recovery", return_value=None), \
+            patch.object(AutoBuildOrchestrator, "_invoke_coach_safely") as coach:
+        result = orch.orchestrate(
+            task_id="TASK-PP-004", requirements="r", acceptance_criteria=["AC-001: x"]
+        )
+    coach.assert_not_called()
+    assert result.final_decision == "cancelled"
+    assert (repo / "qa" / "check.sh").read_text() == CHECK
+    assert not (repo / "reference" / "extra.txt").exists()
