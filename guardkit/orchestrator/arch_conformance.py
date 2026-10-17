@@ -347,8 +347,14 @@ def build_arch_conformance_rule(
                 BLOCKING_ENV_VAR, task_id or "<task>", exc)
             return None
 
+        # -I (isolated mode, 17 October 2026): the command runs with the worktree
+        # as its current folder, and a plain ``python -m`` puts that folder first
+        # on the import path, so a ``guardkit.py`` or ``guardkit/__init__.py`` the
+        # code generator wrote would be imported instead of this checker and could
+        # pass without checking anything. -I leaves the current folder,
+        # PYTHONPATH and the user's site-packages out of the import path.
         command = (
-            f"{shlex.quote(sys.executable)} -m guardkit.orchestrator.arch_conformance "
+            f"{shlex.quote(sys.executable)} -I -m guardkit.orchestrator.arch_conformance "
             f"--repo . --since {shlex.quote(sha)}")
         logger.info(
             "Architecture rules: %s is set and %s has a rules file, so %s will be "
@@ -467,7 +473,7 @@ def check_changed_files(repo: Path, start_commit: str) -> tuple[int, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        prog="python -m guardkit.orchestrator.arch_conformance",
+        prog="python -I -m guardkit.orchestrator.arch_conformance",
         description=(
             "Check the files a task changed against the repository's own architecture "
             "rules. Exit 1 means there is something to read; exit 0 means there is "
