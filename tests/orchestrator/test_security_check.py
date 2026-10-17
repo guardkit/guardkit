@@ -32,6 +32,7 @@ import http.server
 import json
 import os
 import random
+import re
 import shlex
 import shutil
 import string
@@ -47,7 +48,6 @@ from unittest.mock import patch
 
 import pytest
 
-import guardkit
 from guardkit.orchestrator import security_check
 from guardkit.orchestrator.arch_conformance import (
     BLOCKING_ENV_VAR as ARCH_SWITCH,
@@ -65,6 +65,9 @@ from guardkit.orchestrator.security_check import (
     main,
     run_check,
 )
+
+# Every test here may let the check find scanners (its own stubs, or the real ones).
+pytestmark = pytest.mark.security_scanners
 
 TASK_ID = "TASK-SEC-CHECK"
 NOT_CLEAN = "Nothing was checked, which is not the same as clean."
@@ -185,17 +188,24 @@ def ignored(path):
     if path and os.path.exists(path):
         return set(re.findall(r'id\s*=\s*"([^"]+)"', open(path).read()))
     return set()
+hidden = set()
+gitignore = os.path.join(folder, ".gitignore")
+if "--no-ignore" not in args and os.path.exists(gitignore):
+    hidden = {line.strip() for line in open(gitignore) if line.strip()}
 results = []
 for base, _dirs, files in os.walk(folder):
     for name in files:
-        if name != "stub.lock":
+        if name != "stub.lock" or os.path.relpath(os.path.join(base, name), folder) in hidden:
             continue
         path = os.path.join(base, name)
         skip = ignored(config) if config else ignored(os.path.join(base, "osv-scanner.toml"))
         packages = []
-        for line in open(path).read().splitlines():
-            if not line.strip():
-                continue
+        lines = [line for line in open(path).read().splitlines() if line.strip()]
+        if not lines or any(len(line.split()) != 3 for line in lines):
+            # As the real tool does with an empty or broken lockfile.
+            sys.stderr.write("Error during extraction: could not extract " + path + "\n")
+            sys.exit(127)
+        for line in lines:
             eco, pkg, version = line.split()
             vulns, groups = [], []
             for v in DB.get(f"{eco} {pkg} {version}", []):
@@ -236,6 +246,38 @@ def make_osv_stub(bindir: Path, db: Optional[dict] = None, log: Optional[Path] =
     body = (_OSV_STUB.replace("__DB__", repr(json.dumps(db or {})))
             .replace("__LOG__", repr(str(log) if log else "")))
     return _script(bindir / "osv-scanner", body)
+
+
+_OSV_REPLAY_STUB = r'''
+import json, os, sys
+recorded = json.loads(__RECORDED__)
+folder = sys.argv[-1]
+found = [os.path.join(b, n) for b, _d, fs in os.walk(folder) for n in fs if n == "requirements.txt"]
+if not found:
+    print(json.dumps({"results": []}))
+    sys.exit(0)
+for result in recorded["results"]:
+    result["source"]["path"] = found[0]
+print(json.dumps(recorded))
+sys.exit(1)
+'''
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "osv"
+
+
+def make_osv_replay_stub(bindir: Path, recorded: Path) -> Path:
+    """OSV-Scanner answering with output recorded from the real tool."""
+    bindir.mkdir(parents=True, exist_ok=True)
+    body = _OSV_REPLAY_STUB.replace("__RECORDED__", repr(recorded.read_text()))
+    return _script(bindir / "osv-scanner", body)
+
+
+def make_version_stub(bindir: Path, name: str, says: str) -> Path:
+    bindir.mkdir(parents=True, exist_ok=True)
+    path = bindir / name
+    path.write_text(f"#!/bin/sh\necho '{says}'\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
 
 
 def make_failing_tool(bindir: Path, name: str, code: int = 127, *, hang: bool = False) -> Path:
@@ -341,48 +383,11 @@ def deps_dev():
         server.shutdown()
 
 
-# ---------------------------------------------------------------------------
-# An interpreter whose isolated (-I) import of guardkit is THIS checkout
-# ---------------------------------------------------------------------------
-
-_CHECKOUT = Path(guardkit.__file__).resolve().parents[1]
-
-
-@pytest.fixture(scope="session")
-def isolated_python(tmp_path_factory) -> str:
-    """``-I`` ignores PYTHONPATH and the current folder, so the command imports
-    whichever guardkit the interpreter's own site-packages name. When that is not
-    the checkout under test, a small virtual environment is made whose site-packages
-    name this checkout first and then the running interpreter's site-packages."""
-    probe = subprocess.run(
-        [sys.executable, "-I", "-c", "import guardkit; print(guardkit.__file__)"],
-        capture_output=True, text=True, timeout=60)
-    if probe.returncode == 0 and Path(probe.stdout.strip()).resolve().parents[1] == _CHECKOUT:
-        return sys.executable
-    import site
-    import venv
-
-    root = tmp_path_factory.mktemp("isolated-python")
-    venv.EnvBuilder(with_pip=False, symlinks=True).create(root)
-    python = root / "bin" / "python"
-    target_site = subprocess.run(
-        [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
-        capture_output=True, text=True, check=True, timeout=60).stdout.strip()
-    lines = [str(_CHECKOUT)]
-    lines += [f"import site; site.addsitedir({p!r})" for p in site.getsitepackages()]
-    Path(target_site, "zz_guardkit_checkout.pth").write_text("\n".join(lines) + "\n")
-    check = subprocess.run(
-        [str(python), "-I", "-c", "import guardkit; print(guardkit.__file__)"],
-        capture_output=True, text=True, check=True, timeout=60)
-    assert Path(check.stdout.strip()).resolve().parents[1] == _CHECKOUT
-    return str(python)
-
-
 @pytest.fixture
-def on_path(monkeypatch, isolated_python):
-    """Put stub scanners on PATH for the rule builder, and the isolated interpreter
-    in ``sys.executable`` for both rule builders."""
-    monkeypatch.setattr(sys, "executable", isolated_python)
+def on_path(monkeypatch, checkout_python):
+    """Put stub scanners on PATH for the rule builder. ``checkout_python`` (in
+    tests/conftest.py) has already made both rule builders name an interpreter whose
+    -I import of guardkit is this checkout, not whichever one is installed."""
 
     def _put(bindir: Path) -> None:
         monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
@@ -985,3 +990,194 @@ def test_the_security_rule_is_added_beside_declared_and_architecture_rules(
         {"id": "the-task-said-so", "type": "assert_command", "command": "true"}]}}
     block, _authority = load_snapshot(_snapshot(root, frontmatter))
     assert [r.id for r in block.rules] == ["the-task-said-so", ARCH_RULE_ID, RULE_ID]
+
+
+# ---------------------------------------------------------------------------
+# 6. Fix pass after the independent coach's review (17 October 2026)
+# ---------------------------------------------------------------------------
+
+ODD_NAMES = ["配置/密钥.py", 'q"uote.py', " leading space.py"]
+
+
+@pytest.mark.parametrize("committed", [False, True], ids=["uncommitted", "committed"])
+def test_files_with_unusual_names_are_read(repo, tmp_path, committed):
+    gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    root, sha = repo({})
+    for rel in ODD_NAMES:
+        write(root, rel, f'KEY = "{fake_marker()}"\n')
+    if committed:
+        git(root, "add", ".")
+        git(root, "-c", "user.email=t@example.com", "-c", "user.name=T",
+            "commit", "-q", "-m", "the task's work")
+
+    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+
+    assert code == 1, text
+    for rel in ODD_NAMES:
+        assert f"secret -- {rel}:1" in text, (rel, text)
+
+
+@needs_real_gitleaks
+def test_real_gitleaks_reads_files_with_unusual_names(repo):
+    root, sha = repo({})
+    for rel in ODD_NAMES[:2]:
+        write(root, rel, f'AWS_ACCESS_KEY_ID = "{fake_aws_key()}"\n')
+    code, text = run_check(root, sha, gitleaks=REAL_GITLEAKS, osv_scanner=None)
+    assert code == 1, text
+    for rel in ODD_NAMES[:2]:
+        assert f"secret -- {rel}:1" in text, (rel, text)
+
+
+def test_the_architecture_check_lists_unusual_names_exactly(repo):
+    from guardkit.orchestrator.arch_conformance import files_changed_since
+
+    root, sha = repo({})
+    for rel in ODD_NAMES:
+        write(root, rel, "x = 1\n")
+    assert files_changed_since(root, sha) == sorted(ODD_NAMES)
+
+
+def test_a_changed_file_that_cannot_be_read_is_reported(repo, tmp_path):
+    gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    root, sha = repo({})
+    locked = write(root, "src/locked.py", f'KEY = "{fake_marker()}"\n')
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("this user can read a file with no permissions (root)")
+        code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+    finally:
+        locked.chmod(0o644)
+    assert code == 0
+    assert ("The changed file src/locked.py was not checked: it could not be opened "
+            "(PermissionError). " + NOT_CLEAN) in text
+
+
+def test_a_changed_file_over_the_size_limit_is_reported(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(security_check, "MAX_FILE_BYTES", 1000)
+    gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    root, sha = repo({})
+    write(root, "big.txt", "a" * 2000 + f'\nKEY = "{fake_marker()}"\n')
+    write(root, "small.py", f'KEY = "{fake_marker()}"\n')
+    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+    assert code == 1
+    assert "The changed file big.txt was not checked: it is too large" in text
+    assert "secret -- small.py:1" in text and "secret -- big.txt" not in text
+
+
+def test_a_gitignore_does_not_hide_a_lockfile(repo, tmp_path):
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"stub.lock": lockfile("npm vitest 4.1.0")})
+    write(root, "stub.lock", lockfile("npm vitest 4.0.15"))
+    write(root, ".gitignore", "stub.lock\n")
+
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+
+    assert code == 1, text
+    assert "vitest 4.0.15 (npm) in stub.lock has advisory GHSA-5xrq-8626-4rwp" in text
+
+
+@pytest.mark.parametrize("start_text", ["", "this is not json {\n"], ids=["empty", "not-json"])
+def test_an_unreadable_start_version_keeps_what_head_found(repo, tmp_path, start_text):
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"stub.lock": start_text})
+    write(root, "stub.lock", lockfile("npm vitest 4.0.15"))
+
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+
+    assert code == 1, text
+    assert "vitest 4.0.15 (npm) in stub.lock has advisory GHSA-5xrq-8626-4rwp" in text
+    assert "the starting versions could not be read" in text
+    # The age check still ran (deps.dev is a closed port here, so it says so).
+    assert "vitest (deps.dev could not be reached" in text
+
+
+def test_each_advisory_is_listed_once_without_commit_hashes(repo, tmp_path):
+    """Recorded from the real OSV-Scanner 2.7.0 for requests==2.19.0 (17 October 2026):
+    five advisories, each listed under a PYSEC and a GHSA id, two with GIT ranges."""
+    osv = make_osv_replay_stub(tmp_path / "bin", FIXTURES / "requests-2.19.0.json")
+    root, sha = repo({})
+    write(root, "requirements.txt", "requests==2.19.0\n")
+
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+
+    assert code == 1  # GHSA-x84v-xcm2-53pg scores 7.5
+    for ghsa, pysec in (("GHSA-x84v-xcm2-53pg", "PYSEC-2018-28"),
+                        ("GHSA-j8r2-6x86-q33q", "PYSEC-2023-74"),
+                        ("GHSA-9hjg-9r4m-mvj7", "PYSEC-2026-1872"),
+                        ("GHSA-9wx4-h78v-vm56", "PYSEC-2026-1873"),
+                        ("GHSA-gc5v-m9x4-r6x2", "PYSEC-2026-2275")):
+        assert text.count(ghsa) == 1, (ghsa, text)
+        assert text.count(pysec) == 1, (pysec, text)
+        assert f"{ghsa} (also {pysec})" in text
+    assert "OSV lists it fixed in 2.20.0." in text
+    assert not re.search(r"\b[0-9a-f]{40}\b", text), "a commit hash is not a version"
+
+
+@pytest.mark.parametrize(
+    "head_lock, blocks, words",
+    [
+        pytest.param(lockfile("npm vitest 4.0.15", "npm vitest 4.1.0"), False, None,
+                     id="a-second-fixed-copy-is-not-a-move"),
+        pytest.param(lockfile("npm vitest 4.0.15", "npm vitest 4.0.18"), True,
+                     "this change added vitest 4.0.18 beside 4.0.15 in stub.lock, which is "
+                     "still affected by GHSA-5xrq-8626-4rwp",
+                     id="a-second-affected-copy-is-named"),
+    ],
+)
+def test_a_second_copy_of_a_package_is_described_as_it_is(repo, tmp_path, head_lock,
+                                                          blocks, words):
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"stub.lock": lockfile("npm vitest 4.0.15")})
+    write(root, "stub.lock", head_lock)
+
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+
+    assert "moved vitest to 4.0.15" not in text
+    assert code == (1 if blocks else 0), text
+    if words:
+        assert words in text
+
+
+def _self_test(python: str, *extra: str, path: Optional[str] = None):
+    return subprocess.run(
+        [python, "-I", "-m", "guardkit.orchestrator.security_check", "--self-test", *extra],
+        capture_output=True, text=True, timeout=120, cwd="/",
+        env={"PATH": path or os.environ["PATH"], "HOME": os.environ.get("HOME", "/")})
+
+
+def test_the_self_test_passes_with_both_scanners(checkout_isolated_python, tmp_path):
+    bindir = tmp_path / "bin"
+    make_version_stub(bindir, "gitleaks", "8.30.1")
+    make_version_stub(bindir, "osv-scanner", "osv-scanner version: 2.7.0")
+
+    done = _self_test(checkout_isolated_python, path=only_git_and(bindir))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    lines = done.stdout.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("Security check self-test passed: guardkit ")
+    assert "isolated" in lines[0] and "gitleaks 8.30.1" in lines[0]
+    assert "osv-scanner 2.7.0" in lines[0]
+
+
+def test_the_self_test_fails_plainly_when_a_scanner_is_missing(checkout_isolated_python,
+                                                              tmp_path):
+    bindir = tmp_path / "bin"
+    make_version_stub(bindir, "gitleaks", "8.30.1")
+    done = _self_test(checkout_isolated_python, path=only_git_and(bindir))
+    assert done.returncode == 1
+    assert done.stdout.startswith("Security check self-test failed: osv-scanner is not installed")
+
+
+@needs_real_gitleaks
+@needs_real_osv
+def test_the_self_test_with_the_real_scanners(checkout_isolated_python):
+    done = _self_test(checkout_isolated_python, "--gitleaks", REAL_GITLEAKS,
+                      "--osv-scanner", REAL_OSV)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "Security check self-test passed" in done.stdout

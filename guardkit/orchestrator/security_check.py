@@ -14,7 +14,8 @@ generator's next turn. Nothing new enforces anything.
 The command it runs is this module as a program (:func:`main`), and it looks at only
 the files the task changed (``git diff --name-only <start>`` plus files git is not yet
 tracking, with ``.guardkit/`` left out), using the architecture check's own helper.
-It makes two checks:
+Each changed file is read once (at most 20 MB); one that cannot be read is named as not
+checked, never skipped silently. It makes two checks:
 
 * **Secrets.** Gitleaks, in ``dir`` mode, over copies of just the changed text files,
   with its built-in rules, ``--redact`` and ``--ignore-gitleaks-allow``. A finding
@@ -61,6 +62,10 @@ IT NEVER BECOMES A WALL
 * The top level catches everything and exits 0 unless it has a confirmed blocking
   finding.
 
+``--self-test`` (for the release's live check inside the image) prints one line and
+exits 0 when this isolated interpreter found the installed guardkit and both scanners
+start.
+
 There is no switch: the check runs whenever the image holds the tools. No project
 declaration is needed, and nothing here names a language or a stack.
 """
@@ -74,6 +79,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -256,27 +262,47 @@ class Budget:
 # Files
 # ---------------------------------------------------------------------------
 
+#: A changed file bigger than this is not read; it is reported as not checked.
+MAX_FILE_BYTES = 20 * 1024 * 1024
+
+_TEXT_PROBE_BYTES = 8192
+_COPY_CHUNK = 1024 * 1024
+
 
 def _safe_relative(entry: str) -> Optional[PurePosixPath]:
-    """A repository-relative path git named, or ``None`` if it could leave the tree."""
-    rel = PurePosixPath(entry.strip())
-    if not entry.strip() or rel.is_absolute() or ".." in rel.parts:
+    """A repository-relative path git named, or ``None`` if it could leave the tree.
+
+    Taken exactly as git gave it: a name may begin or end with a space.
+    """
+    if not entry:
+        return None
+    rel = PurePosixPath(entry)
+    if rel.is_absolute() or ".." in rel.parts:
         return None
     return rel
 
 
-def changed_files(repo: Path, start_commit: str) -> List[PurePosixPath]:
+def changed_files(repo: Path, start_commit: str, outcome: Optional["Outcome"] = None,
+                  ) -> List[PurePosixPath]:
     """The task's own changed files, with ``.guardkit/`` left out.
 
     The architecture check's helper: tracked files that differ from the start, plus
-    files git is not yet tracking. Raises ``ValueError`` when git cannot answer.
+    files git is not yet tracking, read NUL-separated so no name is escaped. A name
+    that could point outside the repository is reported, never silently dropped.
+    Raises ``ValueError`` when git cannot answer.
     """
     from guardkit.orchestrator.arch_conformance import files_changed_since
 
     out: List[PurePosixPath] = []
     for entry in files_changed_since(Path(repo), start_commit):
         rel = _safe_relative(entry)
-        if rel is None or rel.parts[0] == ".guardkit":
+        if rel is None:
+            if outcome is not None:
+                outcome.could_not_check(
+                    f"The changed path {entry!r}", "it does not name a file inside the "
+                    "repository")
+            continue
+        if rel.parts[0] == ".guardkit":
             continue
         out.append(rel)
     return out
@@ -286,42 +312,116 @@ def _is_settings_file(rel: PurePosixPath) -> bool:
     return rel.name in SCANNER_SETTINGS_FILES
 
 
-def _looks_like_text(data: bytes) -> bool:
-    return b"\0" not in data[:8192]
+@dataclass
+class Staged:
+    """The changed files as they are now, each read once into a private folder."""
+
+    root: Path
+    files: List[PurePosixPath] = field(default_factory=list)
+    text: Set[PurePosixPath] = field(default_factory=set)
 
 
-def _copy_head_files(
-    repo: Path, files: Iterable[PurePosixPath], dest: Path, *, text_only: bool,
-) -> Tuple[List[PurePosixPath], List[PurePosixPath]]:
-    """Copy each changed file as it is in the worktree now into ``dest``.
+def _copy_one(source: Path, target: Path) -> Tuple[Optional[bool], Optional[str]]:
+    """Copy one regular file without following a link. Returns (is_text, why_not).
 
-    Leaves out the scanners' settings files, anything that is not a regular file
-    (a symbolic link is never followed), and, when ``text_only``, binary files.
-    Returns what was copied and the symbolic links that were skipped.
+    Reads the file once, in chunks, and stops at :data:`MAX_FILE_BYTES`.
     """
-    copied: List[PurePosixPath] = []
-    links: List[PurePosixPath] = []
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(source, flags)
+    except OSError as exc:
+        return None, f"it could not be opened ({exc.__class__.__name__})"
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return None, "it is not a regular file"
+        if info.st_size > MAX_FILE_BYTES:
+            return None, f"it is too large (over {MAX_FILE_BYTES // (1024 * 1024)} MB)"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        written = 0
+        is_text = True
+        src = os.fdopen(fd, "rb", closefd=True)
+        fd = -1  # the file object owns it now
+        with src, open(target, "wb") as dst:
+            while True:
+                chunk = src.read(_COPY_CHUNK)
+                if not chunk:
+                    break
+                if written < _TEXT_PROBE_BYTES and b"\0" in chunk[:_TEXT_PROBE_BYTES - written]:
+                    is_text = False
+                written += len(chunk)
+                if written > MAX_FILE_BYTES:
+                    break
+                dst.write(chunk)
+        if written > MAX_FILE_BYTES:
+            target.unlink()
+            return None, f"it is too large (over {MAX_FILE_BYTES // (1024 * 1024)} MB)"
+        return is_text, None
+    except OSError as exc:
+        return None, f"it could not be read ({exc.__class__.__name__})"
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def stage_changed_files(
+    repo: Path, files: Iterable[PurePosixPath], root: Path, outcome: "Outcome",
+) -> Staged:
+    """Read each changed file once into ``root``, reporting every one that is not read.
+
+    Left out, each with a line saying so: the scanners' settings files (on purpose,
+    so the repository cannot set them), symbolic links (never followed), anything
+    reached through a linked folder, anything that is not a regular file, and files
+    over :data:`MAX_FILE_BYTES`. A file the task deleted has nothing to read.
+    """
+    staged = Staged(root=root)
+    root.mkdir(parents=True, exist_ok=True)
+    real_repo = repo.resolve()
     for rel in files:
-        if _is_settings_file(rel):
-            continue
         source = repo / rel
+        if _is_settings_file(rel):
+            outcome.notes.append(
+                f"{rel} is a scanner settings file; it is not read, and no scanner uses it.")
+            continue
         try:
-            if source.is_symlink():
-                links.append(rel)
-                continue
-            source.resolve().relative_to(repo.resolve())  # a linked folder on the way
-            if not source.is_file():
-                continue  # deleted by the task, or not a file
-            data = source.read_bytes()
-        except (OSError, ValueError):
+            info = os.lstat(source)
+        except FileNotFoundError:
+            continue  # deleted by the task: nothing to read
+        except OSError as exc:
+            outcome.could_not_check(f"The changed file {rel}",
+                                    f"it could not be read ({exc.__class__.__name__})")
             continue
-        if text_only and not _looks_like_text(data):
+        if stat.S_ISLNK(info.st_mode):
+            outcome.notes.append(f"{rel} is a symbolic link; it was recorded and not followed.")
             continue
+        try:
+            source.parent.resolve().relative_to(real_repo)
+        except (ValueError, OSError):
+            outcome.could_not_check(f"The changed file {rel}",
+                                    "it sits behind a linked folder outside the repository")
+            continue
+        is_text, why_not = _copy_one(source, root / rel)
+        if why_not is not None:
+            outcome.could_not_check(f"The changed file {rel}", why_not)
+            continue
+        staged.files.append(rel)
+        if is_text:
+            staged.text.add(rel)
+    return staged
+
+
+def _link_into(staged: Staged, rels: Iterable[PurePosixPath], dest: Path) -> List[PurePosixPath]:
+    """Give a scanner its own folder of already-read files, without reading them again."""
+    placed: List[PurePosixPath] = []
+    for rel in rels:
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        copied.append(rel)
-    return copied, links
+        try:
+            os.link(staged.root / rel, target)
+        except OSError:
+            shutil.copyfile(staged.root / rel, target)
+        placed.append(rel)
+    return placed
 
 
 def _start_version(repo: Path, start_commit: str, rel: PurePosixPath) -> Optional[bytes]:
@@ -416,8 +516,8 @@ SECRETS = "Secret detection"
 
 
 def check_secrets(
-    repo: Path, files: Sequence[PurePosixPath], gitleaks: Optional[str],
-    work: Path, env: Dict[str, str], ignore_dir: Path, budget: Budget, outcome: Outcome,
+    staged: Staged, gitleaks: Optional[str], work: Path, env: Dict[str, str],
+    ignore_dir: Path, budget: Budget, outcome: Outcome,
 ) -> None:
     why = _executable(gitleaks)
     if why is not None:
@@ -425,10 +525,11 @@ def check_secrets(
         return
     copy_root = work / "secrets"
     copy_root.mkdir()
-    copied, links = _copy_head_files(repo, files, copy_root, text_only=True)
-    for rel in links:
+    copied = _link_into(staged, sorted(staged.text), copy_root)
+    binary = len(staged.files) - len(copied)
+    if binary:
         outcome.notes.append(
-            f"Secrets: {rel} is a symbolic link; it was recorded and not followed.")
+            f"Secrets: {binary} changed binary file(s) were not read for secrets.")
     if not copied:
         outcome.notes.append("Secrets: no changed text file to read.")
         return
@@ -490,10 +591,16 @@ def check_secrets(
 DEPENDENCIES = "Dependency safety"
 
 
+_LABEL_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
 @dataclass(frozen=True)
 class Advisory:
-    vuln_id: str
-    names: frozenset  # the id and every alias OSV gives it
+    """One OSV group: an advisory and the other ids it is listed under."""
+
+    vuln_id: str  # the id shown first
+    also: Tuple[str, ...]  # the group's other ids (e.g. a PYSEC beside a GHSA)
+    names: frozenset  # every id and alias, for matching head against start
     score: Optional[float]
     label: str  # e.g. "critical"; "" when OSV gives none
     fixed: Tuple[str, ...]
@@ -511,6 +618,10 @@ class Advisory:
         # No numeric score recorded: OSV's own label decides.
         return self.label in ("critical", "high")
 
+    @property
+    def shown(self) -> str:
+        return f"{self.vuln_id} (also {', '.join(self.also)})" if self.also else self.vuln_id
+
     def severity_words(self) -> str:
         if self.malicious:
             return "known malicious package"
@@ -527,17 +638,20 @@ def _natural_key(text: str) -> List[Any]:
     return [(0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"(\d+)", text) if p]
 
 
-def _fixed_versions(vuln: Dict[str, Any], ecosystem: str, name: str) -> Tuple[str, ...]:
+def _fixed_versions(vuln: Dict[str, Any], ecosystem: str, name: str) -> Set[str]:
+    """Every fixed version OSV records for this package; commit ranges (GIT) left out."""
     out: Set[str] = set()
     for affected in vuln.get("affected") or []:
         pkg = affected.get("package") or {}
         if pkg.get("name") != name or (pkg.get("ecosystem") or "").split(":")[0] != ecosystem.split(":")[0]:
             continue
         for rng in affected.get("ranges") or []:
+            if str(rng.get("type") or "").upper() == "GIT":
+                continue
             for event in rng.get("events") or []:
                 if isinstance(event, dict) and event.get("fixed"):
                     out.add(str(event["fixed"]))
-    return tuple(sorted(out, key=_natural_key))
+    return out
 
 
 def _score(text: Any) -> Optional[float]:
@@ -547,10 +661,37 @@ def _score(text: Any) -> Optional[float]:
         return None
 
 
+def _primary_first(ids: Iterable[str]) -> List[str]:
+    """MAL- first, then GHSA-, then the rest, each sorted: display order only."""
+    def rank(i: str) -> Tuple[int, str]:
+        return (0 if i.startswith("MAL-") else 1 if i.startswith("GHSA-") else 2, i)
+    return sorted(set(ids), key=rank)
+
+
+def _advisory(ids: List[str], members: List[Dict[str, Any]], group: Dict[str, Any],
+              ecosystem: str, name: str) -> Advisory:
+    names: Set[str] = set(ids) | {str(a) for a in group.get("aliases") or []}
+    fixed: Set[str] = set()
+    label = ""
+    for vuln in members:
+        names.update(str(a) for a in vuln.get("aliases") or [])
+        fixed |= _fixed_versions(vuln, ecosystem, name)
+        found = str(((vuln.get("database_specific") or {}).get("severity") or "")).lower()
+        found = "medium" if found == "moderate" else found
+        if _LABEL_RANK.get(found, 0) > _LABEL_RANK.get(label, 0):
+            label = found
+    ordered = _primary_first(ids)
+    return Advisory(
+        vuln_id=ordered[0], also=tuple(ordered[1:]), names=frozenset(names),
+        score=_score(group.get("max_severity")), label=label,
+        fixed=tuple(sorted(fixed, key=_natural_key)))
+
+
 def parse_osv_output(text: str, copy_root: Path) -> Packages:
     """OSV-Scanner's JSON as (file, ecosystem, package) -> {version: [advisory]}.
 
-    Raises ``ValueError`` when it is not the shape OSV-Scanner writes.
+    One advisory per OSV group, so an advisory listed under two ids (a PYSEC and a
+    GHSA) is one line. Raises ``ValueError`` when it is not the shape OSV-Scanner writes.
     """
     data = json.loads(text)
     if not isinstance(data, dict) or not isinstance(data.get("results", []), list):
@@ -565,25 +706,20 @@ def parse_osv_output(text: str, copy_root: Path) -> Packages:
             ecosystem = pkg.get("ecosystem") or ""
             if not name:
                 continue
-            group_for: Dict[str, Dict[str, Any]] = {}
-            for group in entry.get("groups") or []:
-                for vid in group.get("ids") or []:
-                    group_for[vid] = group
+            vulns = {str(v["id"]): v for v in entry.get("vulnerabilities") or []
+                     if isinstance(v, dict) and v.get("id")}
             advisories: List[Advisory] = []
-            for vuln in entry.get("vulnerabilities") or []:
-                vid = vuln.get("id")
-                if not vid:
+            grouped: Set[str] = set()
+            for group in entry.get("groups") or []:
+                ids = [str(i) for i in group.get("ids") or []]
+                members = [vulns[i] for i in ids if i in vulns]
+                if not members:
                     continue
-                group = group_for.get(vid, {})
-                names = {vid, *(vuln.get("aliases") or []), *(group.get("aliases") or []),
-                         *(group.get("ids") or [])}
-                label = str(((vuln.get("database_specific") or {}).get("severity") or "")).lower()
-                if label == "moderate":
-                    label = "medium"
-                advisories.append(Advisory(
-                    vuln_id=vid, names=frozenset(str(n) for n in names),
-                    score=_score(group.get("max_severity")), label=label,
-                    fixed=_fixed_versions(vuln, ecosystem, name)))
+                grouped.update(ids)
+                advisories.append(_advisory(ids, members, group, ecosystem, name))
+            for vid, vuln in vulns.items():
+                if vid not in grouped:
+                    advisories.append(_advisory([vid], [vuln], {}, ecosystem, name))
             versions = out.setdefault((rel, ecosystem, name), {})
             versions.setdefault(str(version or ""), []).extend(advisories)
     return out
@@ -593,12 +729,15 @@ def _run_osv(
     osv_scanner: str, folder: Path, config: Path, work: Path, env: Dict[str, str],
     budget: Budget, which: str,
 ) -> Tuple[Optional[Packages], Optional[str]]:
-    """Scan ``folder``; returns the packages, or ``None`` and why not."""
+    """Scan ``folder``; returns the packages, or ``None`` and why not.
+
+    ``--no-ignore`` so no ignore file can hide a lockfile (and none is copied in).
+    """
     deadline = budget.deadline(budget.tool_deadline)
     if deadline is None:
         return None, "the check's time budget was spent"
     argv = [
-        osv_scanner, "scan", "source", "--recursive", "--all-packages",
+        osv_scanner, "scan", "source", "--recursive", "--all-packages", "--no-ignore",
         "--format", "json", "--config", str(config), "--allow-no-lockfiles",
         "--no-call-analysis=all", "--verbosity", "error", str(folder),
     ]
@@ -608,19 +747,19 @@ def _run_osv(
     if run.returncode not in (0, 1):
         return None, (f"osv-scanner stopped with exit code {run.returncode} reading the "
                       f"{which} versions (it may not have reached the vulnerability "
-                      f"database)")
+                      f"database, or could not read a file)")
     try:
         return parse_osv_output(run.stdout, folder), None
-    except (ValueError, AttributeError, TypeError):
+    except (ValueError, AttributeError, TypeError, KeyError):
         return None, f"osv-scanner's answer for the {which} versions could not be read"
 
 
-def _fixed_words(fixed: Tuple[str, ...]) -> str:
+def _fixed_words(fixed: Tuple[str, ...], lead: str = "OSV lists it fixed in") -> str:
     if not fixed:
         return "OSV lists no fixed version"
     if len(fixed) == 1:
-        return f"OSV lists it fixed in {fixed[0]}"
-    return f"OSV lists it fixed in {', '.join(fixed[:-1])} and {fixed[-1]}"
+        return f"{lead} {fixed[0]}"
+    return f"{lead} {', '.join(fixed[:-1])} and {fixed[-1]}"
 
 
 def _advisory_names(versions: Dict[str, List[Advisory]]) -> Set[str]:
@@ -628,38 +767,51 @@ def _advisory_names(versions: Dict[str, List[Advisory]]) -> Set[str]:
 
 
 def compare_packages(head: Packages, start: Packages, outcome: Outcome) -> Set[Tuple[str, str]]:
-    """Judge head against start. Returns the (ecosystem, package) pairs new in this change."""
+    """Judge head against start. Returns the (ecosystem, package) pairs new in this change.
+
+    * An advisory not on that package in that file at the start is new: it blocks when
+      malicious or serious, and is advice otherwise.
+    * An advisory already there blocks only at a version this change brought in (the
+      package's version at head differs from every version at the start) and only
+      when serious: an upgrade that does not fix it.
+    """
     for (path, ecosystem, name), versions in sorted(head.items()):
         before = start.get((path, ecosystem, name))
         before_names = _advisory_names(before) if before else set()
-        version_changed = before is not None and set(before) != set(versions)
+        before_versions = set(before) if before else set()
         for version, advisories in sorted(versions.items()):
             reported: Set[str] = set()
             for adv in advisories:
-                if adv.vuln_id in reported:
+                if adv.names & reported:
                     continue
-                reported.add(adv.vuln_id)
+                reported |= adv.names
                 already = bool(adv.names & before_names)
+                brought_in = before is not None and version not in before_versions
                 where = f"{name} {version} ({ecosystem}) in {path}"
                 if adv.malicious and not already:
                     outcome.blocking.append(
                         f"dependency -- {where} is listed as a known malicious package "
-                        f"({adv.vuln_id}). Remove it.")
+                        f"({adv.shown}). Remove it.")
                 elif not already and adv.serious:
                     outcome.blocking.append(
-                        f"dependency -- {where} has advisory {adv.vuln_id} "
+                        f"dependency -- {where} has advisory {adv.shown} "
                         f"({adv.severity_words()}); {_fixed_words(adv.fixed)}.")
                 elif not already:
                     outcome.advice.append(
-                        f"advice -- {where} has advisory {adv.vuln_id} "
+                        f"advice -- {where} has advisory {adv.shown} "
                         f"({adv.severity_words()}); {_fixed_words(adv.fixed)}. "
                         f"This does not block.")
-                elif version_changed and adv.serious:
-                    fixes = _fixed_words(adv.fixed).replace("lists it fixed in", "lists fixes in")
+                elif brought_in and adv.serious:
+                    kept = sorted(before_versions & set(versions), key=_natural_key)
+                    if kept:
+                        did = (f"this change added {name} {version} beside "
+                               f"{' and '.join(kept)} in {path}")
+                    else:
+                        did = f"this change moved {name} to {version} in {path}"
                     outcome.blocking.append(
-                        f"dependency -- this change moved {name} to {version} in {path}, "
-                        f"which is still affected by {adv.vuln_id} "
-                        f"({adv.severity_words()}); {fixes}.")
+                        f"dependency -- {did}, which is still affected by {adv.shown} "
+                        f"({adv.severity_words()}); "
+                        f"{_fixed_words(adv.fixed, 'OSV lists fixes in')}.")
     head_names = {(eco, name) for (_p, eco, name) in head}
     start_names = {(eco, name) for (_p, eco, name) in start}
     return head_names - start_names
@@ -743,7 +895,7 @@ def check_new_packages(
 
 
 def check_dependencies(
-    repo: Path, start_commit: str, files: Sequence[PurePosixPath], osv_scanner: Optional[str],
+    repo: Path, start_commit: str, staged: Staged, osv_scanner: Optional[str],
     work: Path, env: Dict[str, str], config: Path, deps_dev_url: str, budget: Budget,
     outcome: Outcome,
 ) -> None:
@@ -753,7 +905,8 @@ def check_dependencies(
         return
     head_root = work / "deps-head"
     head_root.mkdir()
-    copied, _links = _copy_head_files(repo, files, head_root, text_only=False)
+    # No ignore file goes in: a .gitignore listing a lockfile must not hide it.
+    copied = _link_into(staged, [r for r in staged.files if r.name != ".gitignore"], head_root)
     if not copied:
         return
     head, why = _run_osv(str(osv_scanner), head_root, config, work, env, budget, "changed")
@@ -784,12 +937,13 @@ def check_dependencies(
         scanned, why = _run_osv(str(osv_scanner), start_root, config, work, env, budget,
                                 "starting")
         if scanned is None:
-            outcome.could_not_check(
-                DEPENDENCIES,
-                f"{why}, so what this change added could not be told from what was "
-                f"already there")
-            return
-        start = scanned
+            # What was found at head still counts: the start is taken as holding no
+            # packages, so every serious or malicious advisory at head blocks.
+            outcome.notes.append(
+                f"Dependencies: the starting versions could not be read ({why}), so "
+                f"everything at head was judged as new to this change.")
+        else:
+            start = scanned
     new_packages = compare_packages(head, start, outcome)
     outcome.notes.append(
         f"Dependencies: {len(recognised)} changed file(s) OSV-Scanner reads were checked.")
@@ -855,12 +1009,14 @@ def run_check(
         budget = Budget(budget_seconds, tool_deadline)
         repo = Path(repo).resolve()
         try:
-            files = changed_files(repo, start_commit)
+            files = changed_files(repo, start_commit, outcome)
         except ValueError as exc:
             outcome.could_not_check("This change", f"{exc}".rstrip("."))
             return render(outcome, 0)
         file_count = len(files)
         if not files:
+            if outcome.not_checked:
+                return render(outcome, 0)
             return 0, ("Security check: this task has changed no files yet, so there was "
                        "nothing of its own to check.")
         with tempfile.TemporaryDirectory(prefix="guardkit-security-") as tmp:
@@ -870,11 +1026,12 @@ def run_check(
             scratch.mkdir()
             env = _scanner_environment(home, scratch)
             config, ignore_dir = _settings(work)
+            staged = stage_changed_files(repo, files, work / "changed", outcome)
             for name, part in (
                 (SECRETS, lambda: check_secrets(
-                    repo, files, gitleaks, work, env, ignore_dir, budget, outcome)),
+                    staged, gitleaks, work, env, ignore_dir, budget, outcome)),
                 (DEPENDENCIES, lambda: check_dependencies(
-                    repo, start_commit, files, osv_scanner, work, env, config,
+                    repo, start_commit, staged, osv_scanner, work, env, config,
                     deps_dev_url, budget, outcome)),
             ):
                 try:
@@ -886,6 +1043,54 @@ def run_check(
     return render(outcome, file_count)
 
 
+def _version_line(text: str) -> str:
+    for line in (text or "").splitlines():
+        found = re.search(r"\d+(\.\d+)+\S*", line)
+        if found:
+            return found.group(0)[:40]
+    return "version not stated"
+
+
+def self_test(gitleaks: Optional[str], osv_scanner: Optional[str]) -> Tuple[int, str]:
+    """For the release's live check inside the image. One plain line; exit 0 when the
+    isolated (-I) interpreter found the installed guardkit and both scanners start.
+
+    Scanners named on the command line are used; otherwise they are found on PATH,
+    exactly as the rule builder finds them before the first turn.
+    """
+    import guardkit
+
+    problems: List[str] = []
+    found: List[str] = []
+    where = Path(guardkit.__file__).resolve().parent
+    version = guardkit.__version__
+    if not sys.flags.isolated:
+        problems.append("it was not run isolated (-I)")
+    with tempfile.TemporaryDirectory(prefix="guardkit-security-self-test-") as tmp:
+        home, scratch = Path(tmp) / "home", Path(tmp) / "tmp"
+        home.mkdir()
+        scratch.mkdir()
+        env = _scanner_environment(home, scratch)
+        for label, given, flag in ((GITLEAKS_NAME, gitleaks, "version"),
+                                   (OSV_SCANNER_NAME, osv_scanner, "--version")):
+            path = given or _find_tool(label)
+            why = _executable(path)
+            if why is not None:
+                problems.append(f"{label} {why}")
+                continue
+            run = _run_scanner([str(path), flag], cwd=Path(tmp), env=env, timeout=30)
+            if run.why_not or run.returncode != 0:
+                problems.append(
+                    f"{label} at {path} {run.why_not or f'stopped with exit code {run.returncode}'}")
+                continue
+            found.append(f"{label} {_version_line(run.stdout)} at {path}")
+    head = f"guardkit {version} from {where}"
+    if problems:
+        return 1, (f"Security check self-test failed: {'; '.join(problems)} "
+                   f"({head}; {'; '.join(found) or 'no scanner started'}).")
+    return 0, f"Security check self-test passed: {head}, isolated; {'; '.join(found)}."
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"python -I -m {_MODULE}",
@@ -894,7 +1099,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Exit 1 means a confirmed problem; exit 0 means none, or that a part could "
             "not be checked -- a check that cannot run must not stop a build."))
     parser.add_argument("--repo", type=Path, default=Path("."))
-    parser.add_argument("--since", required=True, metavar="COMMIT")
+    parser.add_argument("--since", metavar="COMMIT",
+                        help="the commit this task started from (required unless --self-test)")
+    parser.add_argument("--self-test", action="store_true",
+                        help="check that this isolated interpreter finds the installed "
+                             "guardkit and that both scanners start; print one line")
     parser.add_argument("--gitleaks", default=None, metavar="PATH")
     parser.add_argument("--osv-scanner", default=None, metavar="PATH")
     # Kept off the built rule; tests use them to keep the proportions while waiting less.
@@ -911,6 +1120,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     except SystemExit:
         print(_NOT_CHECKED.format(what="This change",
                                   why="the security check's command line could not be read"))
+        return 0
+    if args.self_test:
+        try:
+            code, text = self_test(args.gitleaks, args.osv_scanner)
+        except Exception as exc:  # noqa: BLE001 -- say what failed, in one line
+            code, text = 1, f"Security check self-test failed: it raised {exc.__class__.__name__}."
+        print(text)
+        return code
+    if not args.since:
+        print(_NOT_CHECKED.format(what="This change",
+                                  why="the security check was not told the starting commit"))
         return 0
     try:
         code, text = run_check(

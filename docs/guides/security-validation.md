@@ -18,8 +18,10 @@ The check runs whenever the build image holds Gitleaks or OSV-Scanner. There is 
 and no project setting. With neither tool installed, no rule is added and a build is
 unchanged.
 
-It reads only the files the task changed since it started (`git diff --name-only <start>`
-plus files git is not yet tracking, with `.guardkit/` left out).
+It reads only the files the task changed since it started (`git diff --name-only -z <start>`
+plus files git is not yet tracking, with `.guardkit/` left out). Each changed file is read
+once. A file it cannot read, a file over 20 MB, or anything that is not a regular file is
+named in the output as not checked; a symbolic link is recorded and never followed.
 
 ## Check 1: secrets
 
@@ -34,7 +36,8 @@ token or key at run time instead of writing it as a literal.
 
 This runs only when the task changed a file OSV-Scanner reads (lockfiles and manifests, by
 the scanner's own recognition). OSV-Scanner reads the head and starting versions of those
-files.
+files, with `--no-ignore`, and no `.gitignore` is copied in, so an ignore file cannot hide
+a lockfile. If the starting versions cannot be read, everything at head is judged as new.
 
 | Finding | Result |
 |---------|--------|
@@ -45,7 +48,8 @@ files.
 | An old advisory in a package the task did not change | not listed |
 | A package new in this change, first published under 30 days ago (deps.dev) | blocks |
 
-Each advisory lists every fixed version OSV records for it. The check does not compare
+Each advisory is one line, however many ids OSV lists it under (a PYSEC and a GHSA id
+together), with every fixed version OSV records for it (commit ranges left out). The check does not compare
 versions itself; the Player picks one and the next turn checks it.
 
 ## Repository settings are not read
@@ -64,6 +68,18 @@ A missing tool, an unreachable network, or a scanner that errors or runs out of 
 prints "<what> was not checked: <why>. Nothing was checked, which is not the same as
 clean." and that part passes. The command keeps a 200-second budget inside the rule's
 300-second limit. Confirmed findings from the parts that finished still block.
+
+## Checking an image
+
+The release's live check runs, inside the image:
+
+```
+<python> -I -m guardkit.orchestrator.security_check --self-test
+```
+
+It prints one line and exits 0 when the isolated interpreter found the installed
+guardkit and both scanners start, naming each one's version and path. Anything missing
+makes it exit 1 with one line saying what.
 
 ## Wider checks
 
