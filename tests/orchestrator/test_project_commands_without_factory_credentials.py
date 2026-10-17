@@ -1397,6 +1397,12 @@ ALLOWED: Dict[Tuple[str, str], str] = {
     ("orchestrator/merge_executor.py", "run_feature_validate"): "guardkit feature validate, the factory's own program",
     ("orchestrator/quality_gates/coach_validator.py", "_start_infrastructure_containers"): "the container engine through a variable (the fixture recipes)",
     ("orchestrator/run_evidence.py", "docker_events_between"): "the container engine through a variable (docker events)",
+    ("orchestrator/security_check.py", "_run_scanner"): (
+        "gitleaks and osv-scanner, the factory's own programs, named by absolute paths "
+        "fixed before turn 1, with an environment built from nothing (PATH, a private "
+        "HOME and TMPDIR, locale, proxies) so no setting reaches them; the check itself "
+        "already runs as a project command in the helper's environment"
+    ),
     # Generic runners: each call to them is checked below.
     ("orchestrator/run_evidence.py", "_default_runner"): "generic runner; every call is checked",
     ("orchestrator/run_evidence.py", "DockerProbe"): (

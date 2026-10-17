@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 # so a Player has enough context to act without the feedback ballooning.
 _OUTPUT_TAIL_CHARS: int = 2000
 
+#: ``security_check.RULE_ID``, repeated so this module does not import that one.
+_SECURITY_RULE_ID = "security-check"
+
 # Default per-command timeout for assert_command (seconds), overridable per rule.
 _DEFAULT_ASSERT_TIMEOUT: int = 120
 
@@ -488,6 +491,13 @@ def _evaluate_assert_command(
         }
 
     if completed.returncode == rule.expected_exit:
+        # A passing check discards its output, so a part the security check (or any
+        # check) could not make would be invisible. Its words go to the build log.
+        passed_output = (completed.stdout or "") + (completed.stderr or "")
+        if rule.id == _SECURITY_RULE_ID or "was not checked" in passed_output:
+            logger.info(
+                "Conformance rule %r passed; what it printed:\n%s",
+                rule.id, passed_output[-_OUTPUT_TAIL_CHARS:] or "<empty>")
         return None
 
     combined = (completed.stdout or "") + (completed.stderr or "")
@@ -729,11 +739,12 @@ def snapshot_task_conformance(
 
     * No ``conformance`` block, and nothing added from outside the task ⇒
       returns ``None``, writes nothing (a build without the block is a
-      byte-equivalent no-op). Two things can be added from outside the task and
+      byte-equivalent no-op). Three things can be added from outside the task and
       make it write anyway: the routing law's ``test_ref`` rule, and — only when
       ``GUARDKIT_ARCH_CONFORMANCE_BLOCKING`` is set and the repository under
       build has written its own ``docs/architecture-rules.yaml`` — the
-      architecture rules check.
+      architecture rules check; and, whenever Gitleaks or OSV-Scanner is
+      installed, the security check (``security_check.build_security_rule``).
     * A MALFORMED block ⇒ logged loudly at ERROR (the CMIR loud-degrade
       lesson), then degrades to ``None`` — a schema typo in an opt-in feature
       must never crash an existing build. (The schema itself raises for direct
@@ -797,7 +808,20 @@ def snapshot_task_conformance(
             worktree_path, task_id=task_id
         )
 
-        injected = [r for r in (synthesized, architecture) if r is not None]
+        # SECURITY CHECK (17 October 2026). One more rule from outside the
+        # task, the same move again: when the factory image holds Gitleaks or
+        # OSV-Scanner, a "run this command" rule checks the files this task
+        # changes for secrets and dangerous dependencies, on this same
+        # freeze-before-turn-1 pin and Coach guard. With neither tool
+        # installed it returns None and a build is byte-for-byte what it was.
+        # It never raises; it owns its own try/except.
+        from guardkit.orchestrator.security_check import build_security_rule
+
+        security = build_security_rule(worktree_path, task_id=task_id)
+
+        injected = [
+            r for r in (synthesized, architecture, security) if r is not None
+        ]
         if raw_block is None and not injected:
             return None  # byte-equivalent no-op for the vast majority of tasks
         for rule_dict in injected:

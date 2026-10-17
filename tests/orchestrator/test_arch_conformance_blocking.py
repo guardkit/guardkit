@@ -61,6 +61,12 @@ from guardkit.orchestrator.quality_gates.spec_conformance import (
     snapshot_task_conformance,
 )
 
+# The check's command is ``<sys.executable> -I -m ...``. Under -I the interpreter
+# imports the guardkit its own site-packages name, which in a worktree is usually the
+# main checkout, so every test here names an interpreter that imports THIS checkout
+# (``checkout_python`` in tests/conftest.py).
+pytestmark = pytest.mark.usefixtures("checkout_python")
+
 TASK_ID = "TASK-ARCH-RUNG3"
 
 # The rules file the fixture repository writes about itself. It quotes a sentence and
