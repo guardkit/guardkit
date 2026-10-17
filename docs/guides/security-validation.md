@@ -43,10 +43,12 @@ the scanner's own recognition). OSV-Scanner reads the head and starting versions
 files, with `--no-ignore`, and no `.gitignore` is copied in, so an ignore file cannot hide
 a lockfile.
 
-If the starting versions cannot be read, a known malicious package at head still blocks,
-but any other serious advisory at head is reported as not checked, because whether this
-change brought it in is unknown. The age check then runs only for packages whose names
-appear in no starting version of those files; the rest are reported as not checked.
+Each file is judged against its own starting version. A file new in this change is
+compared against no packages, so its serious advisories block. If one file's starting
+version cannot be read, only that file is affected: a known malicious package in it still
+blocks, but any other serious advisory in it is reported as not checked, because whether
+this change brought it in is unknown. The age check then skips packages named in that
+file's starting text, and reports them as not checked.
 
 For a manifest such as `requirements.txt`, OSV-Scanner also resolves the packages the
 declared ones depend on, over the network. A package that is not written in the changed
@@ -81,7 +83,10 @@ so files the Player writes cannot replace the checker.
 A missing tool, an unreachable network, or a scanner that errors or runs out of time
 prints "<what> was not checked: <why>. Nothing was checked, which is not the same as
 clean." and that part passes. The command keeps a 200-second budget inside the rule's
-300-second limit. Confirmed findings from the parts that finished still block.
+300-second limit, and that budget covers everything: listing and reading the changed
+files, reading starting versions from git, each scanner run, and each deps.dev lookup,
+which is given up on after 5 seconds of wall time however slowly its answer arrives.
+Confirmed findings from the parts that finished still block.
 
 Where "not checked" appears:
 

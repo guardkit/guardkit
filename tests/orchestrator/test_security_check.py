@@ -1355,3 +1355,162 @@ def test_a_passing_security_check_is_written_to_the_build_log(repo, on_path, tmp
     logged = "\n".join(r.getMessage() for r in caplog.records)
     assert f"Conformance rule '{RULE_ID}' passed; what it printed:" in logged
     assert "Dependency safety was not checked: osv-scanner is not installed." in logged
+
+
+# ---------------------------------------------------------------------------
+# 8. Codex implementation review round 1 (17 October 2026)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "start_files, head_files",
+    [
+        pytest.param(
+            {"a/stub.lock": "this is not json {\n"},
+            {"a/stub.lock": lockfile("npm left-pad 1.3.0"),
+             "b/stub.lock": lockfile("npm vitest 4.0.15")},
+            id="a-new-file-beside-an-unreadable-start"),
+        pytest.param(
+            {"a/stub.lock": "this is not json {\n", "b/stub.lock": lockfile("npm vitest 4.1.0")},
+            {"a/stub.lock": lockfile("npm left-pad 1.3.0"),
+             "b/stub.lock": lockfile("npm vitest 4.0.15")},
+            id="a-readable-start-beside-an-unreadable-one"),
+    ],
+)
+def test_through_the_executor_one_unreadable_start_does_not_hide_another_file(
+        repo, on_path, tmp_path, no_network, start_files, head_files):
+    """SC-001: a failed baseline is judged per file. vitest 4.0.15 in b/stub.lock
+    blocks whatever happened to a/stub.lock's starting version."""
+    bindir = tmp_path / "bin"
+    make_osv_stub(bindir, VITEST_DB)
+    on_path(bindir)
+    root, _sha = repo(start_files)
+    snapshot_dir = _snapshot(root)
+    for rel, text in head_files.items():
+        write(root, rel, text)
+
+    leg = evaluate_from_snapshot(snapshot_dir, root, task_id=TASK_ID)
+    failure = _security_failure(leg)
+
+    assert failure is not None, leg
+    assert ("vitest 4.0.15 (npm) in b/stub.lock has advisory GHSA-5xrq-8626-4rwp "
+            "(critical, 9.8)") in failure["detail"]
+
+
+def test_an_unreadable_start_still_reports_its_own_advisories_as_not_checked(repo, tmp_path):
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"a/stub.lock": "this is not json {\n",
+                      "b/stub.lock": lockfile("npm left-pad 1.3.0")})
+    write(root, "a/stub.lock", lockfile("npm vitest 4.0.15"))
+    write(root, "b/stub.lock", lockfile("npm left-pad 1.3.0", "npm lodash 4.17.20"))
+
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+
+    assert code == 0, text
+    assert "on vitest 4.0.15 (npm) in a/stub.lock was not checked" in text
+    assert "the starting version of a/stub.lock could not be read" in text
+    assert "advice -- lodash 4.17.20 (npm) in b/stub.lock has advisory" in text
+
+
+class _Trickle(http.server.BaseHTTPRequestHandler):
+    """Answers at once, then sends its body one byte a second."""
+
+    def do_GET(self):  # noqa: N802 - the handler's own name
+        body = b'{"versions": [{"publishedAt": "2015-01-01T00:00:00Z"}]}' + b" " * 40
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        for byte in body:
+            try:
+                self.wfile.write(bytes([byte]))
+                self.wfile.flush()
+            except OSError:
+                return
+            time.sleep(1)
+
+    def log_message(self, *args):
+        pass
+
+
+def _serve(handler) -> tuple:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def test_a_deps_dev_answer_trickling_in_is_given_up_on_at_its_deadline(repo, tmp_path):
+    """SC-002: a socket timeout alone would wait for the whole trickle (about 95 s)."""
+    server, url = _serve(_Trickle)
+    try:
+        osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+        root, sha = repo({"stub.lock": lockfile("npm left-pad 1.3.0")})
+        write(root, "stub.lock", lockfile("npm left-pad 1.3.0", "npm fresh-pkg 0.0.1"))
+        started = time.monotonic()
+        code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                               deps_dev_url=url)
+        elapsed = time.monotonic() - started
+    finally:
+        server.shutdown()
+    assert code == 0, text
+    assert "fresh-pkg (deps.dev gave no complete answer within 5 seconds)" in text
+    assert NOT_CLEAN in text
+    assert elapsed < 20
+
+
+class _TrickleProxy(http.server.BaseHTTPRequestHandler):
+    """A proxy that accepts a CONNECT and sends its reply one byte a second."""
+
+    def do_CONNECT(self):  # noqa: N802 - the handler's own name
+        reply = b"HTTP/1.1 200 Connection established\r\nX-Slow: " + b"y" * 60 + b"\r\n\r\n"
+        for byte in reply:
+            try:
+                self.wfile.write(bytes([byte]))
+                self.wfile.flush()
+            except OSError:
+                return
+            time.sleep(1)
+
+    def log_message(self, *args):
+        pass
+
+
+def test_through_the_executor_a_trickling_network_finishes_as_not_checked(
+        repo, on_path, tmp_path, monkeypatch):
+    """SC-002 through the real executor: deps.dev is reached through a proxy that
+    sends its answer a byte a second. Every lookup is given up on at 5 seconds and the
+    check passes as not checked, far inside the 300-second limit."""
+    server, url = _serve(_TrickleProxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HTTPS_PROXY", "https_proxy"):
+        monkeypatch.setenv(name, url)
+    try:
+        bindir = tmp_path / "bin"
+        make_osv_stub(bindir, VITEST_DB)
+        on_path(bindir)
+        root, _sha = repo({"stub.lock": lockfile("npm left-pad 1.3.0")})
+        snapshot_dir = _snapshot(root)
+        write(root, "stub.lock", lockfile("npm left-pad 1.3.0", "npm fresh-a 0.0.1",
+                                          "npm fresh-b 0.0.1"))
+        started = time.monotonic()
+        leg = evaluate_from_snapshot(snapshot_dir, root, task_id=TASK_ID)
+        elapsed = time.monotonic() - started
+    finally:
+        server.shutdown()
+    assert _security_failure(leg) is None, leg
+    assert elapsed < 60
+
+
+def test_staging_stops_when_the_budget_is_spent(repo, tmp_path, monkeypatch):
+    gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    root, sha = repo({})
+    for n in range(3):
+        write(root, f"f{n}.py", f'KEY = "{fake_marker()}"\n')
+    clock = iter([100.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
+    monkeypatch.setattr(security_check.Budget, "left", lambda self: next(clock, 0.0))
+    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+    assert code == 0, text
+    assert "3 changed file(s) was not checked: the check's time budget was spent" in text

@@ -84,6 +84,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -285,7 +286,7 @@ def _safe_relative(entry: str) -> Optional[PurePosixPath]:
 
 
 def changed_files(repo: Path, start_commit: str, outcome: Optional["Outcome"] = None,
-                  ) -> List[PurePosixPath]:
+                  budget: Optional["Budget"] = None) -> List[PurePosixPath]:
     """The task's own changed files, with ``.guardkit/`` left out.
 
     The architecture check's helper: tracked files that differ from the start, plus
@@ -296,7 +297,8 @@ def changed_files(repo: Path, start_commit: str, outcome: Optional["Outcome"] = 
     from guardkit.orchestrator.arch_conformance import files_changed_since
 
     out: List[PurePosixPath] = []  # names are made visible when printed (render)
-    for entry in files_changed_since(Path(repo), start_commit):
+    timeout = None if budget is None else max(1.0, min(60.0, budget.left() / 2))
+    for entry in files_changed_since(Path(repo), start_commit, timeout=timeout):
         rel = _safe_relative(entry)
         if rel is None:
             if outcome is not None:
@@ -365,6 +367,7 @@ def _copy_one(source: Path, target: Path) -> Tuple[bool, Optional[str]]:
 
 def stage_changed_files(
     repo: Path, files: Iterable[PurePosixPath], root: Path, outcome: "Outcome",
+    budget: Optional["Budget"] = None,
 ) -> Staged:
     """Read each changed file once into ``root``, reporting every one that is not read.
 
@@ -377,7 +380,12 @@ def stage_changed_files(
     staged = Staged(root=root)
     root.mkdir(parents=True, exist_ok=True)
     real_repo = repo.resolve()
-    for rel in files:
+    files = list(files)
+    for index, rel in enumerate(files):
+        if budget is not None and budget.left() < 1.0:
+            outcome.could_not_check(
+                f"{len(files) - index} changed file(s)", "the check's time budget was spent")
+            break
         source = repo / rel
         if _is_settings_file(rel):
             outcome.notes.append(
@@ -429,15 +437,26 @@ def _link_into(staged: Staged, rels: Iterable[PurePosixPath], dest: Path) -> Lis
     return placed
 
 
-def _start_version(repo: Path, start_commit: str, rel: PurePosixPath) -> Optional[bytes]:
-    """The exact bytes of ``rel`` at the starting commit, or ``None`` if it was not there."""
+class _NotThere(Exception):
+    """The file did not exist at the starting commit."""
+
+
+def _start_version(repo: Path, start_commit: str, rel: PurePosixPath,
+                   timeout: float = 30) -> bytes:
+    """The exact bytes of ``rel`` at the starting commit.
+
+    Raises :class:`_NotThere` when it did not exist there, and ``OSError`` or
+    ``subprocess.TimeoutExpired`` when git could not answer in time.
+    """
     from guardkit.lib.project_git import run_git
 
-    done = run_git(
-        ["-C", str(repo), "cat-file", "blob", f"{start_commit}:{rel.as_posix()}"],
-        text=False, timeout=30)
+    spec = f"{start_commit}:{rel.as_posix()}"
+    exists = run_git(["-C", str(repo), "cat-file", "-e", spec], text=False, timeout=timeout)
+    if exists.returncode != 0:
+        raise _NotThere(spec)
+    done = run_git(["-C", str(repo), "cat-file", "blob", spec], text=False, timeout=timeout)
     if done.returncode != 0:
-        return None
+        raise OSError(f"git could not read {spec}")
     return done.stdout
 
 
@@ -784,8 +803,8 @@ INDIRECT = "an indirect dependency resolved by OSV-Scanner"
 
 
 def compare_packages(
-    head: Packages, start: Packages, outcome: Outcome, *, start_failed: bool = False,
-    head_text: Optional[Dict[str, str]] = None,
+    head: Packages, start: Packages, outcome: Outcome, *,
+    failed_paths: Iterable[str] = (), head_text: Optional[Dict[str, str]] = None,
 ) -> Set[Tuple[str, str]]:
     """Judge head against start. Returns the (ecosystem, package) pairs new in this change.
 
@@ -794,14 +813,18 @@ def compare_packages(
     * An advisory already there blocks only at a version this change brought in (the
       package's version at head differs from every version at the start) and only
       when serious: an upgrade that does not fix it.
-    * When the starting versions could not be read (``start_failed``), a known
-      malicious package still blocks, and any other serious advisory is reported as
-      not checked: whether this change brought it in is unknown.
+    * For a file whose starting version existed but could not be read
+      (``failed_paths``), a known malicious package still blocks, and any other
+      serious advisory in that file is reported as not checked: whether this change
+      brought it in is unknown. A file absent at the start, or one whose start was
+      read, is judged normally, whatever happened to another file.
     * A package not written in the file (OSV-Scanner resolved it from a manifest over
       the network) is named as an indirect dependency. OSV-Scanner's output does not
       say which declared package brought it in.
     """
+    failed = set(failed_paths)
     for (path, ecosystem, name), versions in sorted(head.items()):
+        start_failed = path in failed
         before = start.get((path, ecosystem, name))
         before_names = _advisory_names(before) if before else set()
         before_versions = set(before) if before else set()
@@ -868,6 +891,36 @@ def _first_published(payload: Dict[str, Any]) -> Optional[datetime]:
     return earliest
 
 
+class _NoAnswerInTime(Exception):
+    """A whole HTTP request did not finish before its deadline."""
+
+
+def _fetch_json(opener: Any, url: str, deadline: float) -> Any:
+    """GET ``url`` and parse JSON, all within ``deadline`` seconds of wall time.
+
+    A socket timeout only bounds each wait for data, so a reply sent a byte at a time
+    could outlast it. The request runs in a worker thread that is given up on at the
+    deadline (a daemon thread: it never keeps the command alive).
+    """
+    box: Dict[str, Any] = {}
+
+    def work() -> None:
+        try:
+            with opener.open(url, timeout=deadline) as response:  # noqa: S310
+                box["data"] = response.read(2_000_000)
+        except BaseException as exc:  # noqa: BLE001 -- handed to the caller
+            box["error"] = exc
+
+    worker = threading.Thread(target=work, name="deps.dev lookup", daemon=True)
+    worker.start()
+    worker.join(deadline)
+    if worker.is_alive():
+        raise _NoAnswerInTime(url)
+    if "error" in box:
+        raise box["error"]
+    return json.loads(box["data"].decode("utf-8"))
+
+
 def check_new_packages(
     new: Set[Tuple[str, str]], deps_dev_url: str, budget: Budget, outcome: Outcome,
 ) -> None:
@@ -897,8 +950,11 @@ def check_new_packages(
         url = (f"{deps_dev_url.rstrip('/')}/v3/systems/{system}/packages/"
                f"{urllib.parse.quote(name, safe='')}")
         try:
-            with opener.open(url, timeout=deadline) as response:  # noqa: S310
-                payload = json.loads(response.read(2_000_000).decode("utf-8"))
+            payload = _fetch_json(opener, url, deadline)
+        except _NoAnswerInTime:
+            unchecked.append(f"{name} (deps.dev gave no complete answer within "
+                             f"{int(round(deadline))} seconds)")
+            continue
         except urllib.error.HTTPError as exc:
             reason = ("deps.dev does not know it" if exc.code == 404
                       else f"deps.dev answered {exc.code}")
@@ -926,6 +982,39 @@ def check_new_packages(
         more = f"; and {len(unchecked) - 10} more" if len(unchecked) > 10 else ""
         outcome.could_not_check(
             "The age of some new packages", f"{shown}{more}")
+
+
+def _scan_starts(
+    osv_scanner: str, paths: List[str], work: Path, config: Path, env: Dict[str, str],
+    budget: Budget, failed: Dict[str, str],
+) -> Packages:
+    """Scan the starting versions, judging each file on its own.
+
+    One run over all of them first. If it fails (one unreadable file is enough to
+    make OSV-Scanner stop), each file is scanned in a folder of its own, so a file
+    whose start cannot be read is marked in ``failed`` and no other file is affected.
+    """
+    if not paths:
+        return {}
+    together = work / "deps-start"
+    scanned, why = _run_osv(osv_scanner, together, config, work, env, budget, "starting")
+    if scanned is not None:
+        return scanned
+    if len(paths) == 1:
+        failed[paths[0]] = why or "osv-scanner gave no answer"
+        return {}
+    start: Packages = {}
+    for n, path in enumerate(paths):
+        alone = work / f"deps-start-{n}"
+        target = alone / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(together / path, target)
+        one, why = _run_osv(osv_scanner, alone, config, work, env, budget, "starting")
+        if one is None:
+            failed[path] = why or "osv-scanner gave no answer"
+        else:
+            start.update(one)
+    return start
 
 
 def check_dependencies(
@@ -957,50 +1046,53 @@ def check_dependencies(
         outcome.notes.append("Dependencies: this change touched no file OSV-Scanner reads.")
         return
 
-    start_root = work / "deps-start"
-    start_root.mkdir()
-    start_text: Dict[str, str] = {}
+    start_text: Dict[str, str] = {}  # files that existed at the start: their text
+    failed: Dict[str, str] = {}  # files whose start existed but could not be read: why
     for path in recognised:
         rel = _safe_relative(path)
         if rel is None or _is_settings_file(rel):
             continue
-        data = _start_version(repo, start_commit, rel)
-        if data is None:
+        deadline = budget.deadline(30)
+        if deadline is None:
+            failed[path] = "the check's time budget was spent"
             continue
-        target = start_root / rel
+        try:
+            data = _start_version(repo, start_commit, rel, timeout=deadline)
+        except _NotThere:
+            continue  # new in this change: compared against no packages
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            failed[path] = f"git could not give its starting version ({exc.__class__.__name__})"
+            continue
+        start_text[path] = data.decode("utf-8", "replace").lower()
+        target = work / "deps-start" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        start_text[path] = data.decode("utf-8", "replace").lower()
     head_text = {path: _read_lower(head_root / path) for path in recognised}
-    start: Packages = {}
-    start_failed = False
-    if start_text:
-        scanned, why = _run_osv(str(osv_scanner), start_root, config, work, env, budget,
-                                "starting")
-        if scanned is None:
-            start_failed = True
-            outcome.notes.append(
-                f"Dependencies: the starting versions could not be read ({why}). Known "
-                f"malicious packages still block; other serious advisories are reported "
-                f"as not checked.")
-        else:
-            start = scanned
-    new_packages = compare_packages(head, start, outcome, start_failed=start_failed,
+    start = _scan_starts(str(osv_scanner), [p for p in start_text if p not in failed],
+                         work, config, env, budget, failed)
+    for path, why in sorted(failed.items()):
+        outcome.notes.append(
+            f"Dependencies: the starting version of {path} could not be read ({why}). A "
+            f"known malicious package there still blocks; other serious advisories in it "
+            f"are reported as not checked.")
+    new_packages = compare_packages(head, start, outcome, failed_paths=failed,
                                     head_text=head_text)
     outcome.notes.append(
         f"Dependencies: {len(recognised)} changed file(s) OSV-Scanner reads were checked.")
-    if start_failed:
-        # Only a package whose name appears in no starting version of these files was
-        # visibly added; any other may have been there already.
-        visible = {(eco, name) for (eco, name) in new_packages
-                   if not any(_mentions(text, name) for text in start_text.values())}
-        unknown = new_packages - visible
+    if failed:
+        # A package named in the starting text of a file whose start could not be
+        # read may have been there already; only the others were visibly added.
+        failed_texts = [start_text.get(p, "") for p in failed]
+        unknown = {(eco, name) for (eco, name) in new_packages
+                   if any(_mentions(text, name) for text in failed_texts)
+                   or any(p in failed for (p, e, n) in head if (e, n) == (eco, name)
+                          and p not in start_text)}
         if unknown:
             outcome.could_not_check(
                 f"The age of {len(unknown)} package(s)",
                 "the starting versions could not be read, so whether this change added "
                 "them is unknown")
-        new_packages = visible
+        new_packages = new_packages - unknown
     check_new_packages(new_packages, deps_dev_url, budget, outcome)
 
 
@@ -1070,7 +1162,7 @@ def run_check(
         budget = Budget(budget_seconds, tool_deadline)
         repo = Path(repo).resolve()
         try:
-            files = changed_files(repo, start_commit, outcome)
+            files = changed_files(repo, start_commit, outcome, budget)
         except ValueError as exc:
             outcome.could_not_check("This change", f"{exc}".rstrip("."))
             return render(outcome, 0)
@@ -1087,7 +1179,7 @@ def run_check(
             scratch.mkdir()
             env = _scanner_environment(home, scratch)
             config, ignore_dir = _settings(work)
-            staged = stage_changed_files(repo, files, work / "changed", outcome)
+            staged = stage_changed_files(repo, files, work / "changed", outcome, budget)
             for name, part in (
                 (SECRETS, lambda: check_secrets(
                     staged, gitleaks, work, env, ignore_dir, budget, outcome)),

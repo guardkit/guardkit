@@ -245,7 +245,7 @@ def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
     return str(source.get(BLOCKING_ENV_VAR, "")).strip().lower() in _TRUTHY
 
 
-def _git(repo: Path, *args: str, raw: bool = False) -> Any:
+def _git(repo: Path, *args: str, raw: bool = False, timeout: Optional[float] = None) -> Any:
     """Ask git one read-only question inside ``repo`` and return what it said.
 
     Text by default; the exact bytes when ``raw`` is set (for NUL-separated file
@@ -262,7 +262,7 @@ def _git(repo: Path, *args: str, raw: bool = False) -> Any:
             ["-C", str(repo), *args],
             check=True,
             text=not raw,
-            timeout=_GIT_TIMEOUT_SECONDS)
+            timeout=timeout or _GIT_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"git {' '.join(args)} failed in {repo}: "
@@ -270,7 +270,7 @@ def _git(repo: Path, *args: str, raw: bool = False) -> Any:
     except subprocess.TimeoutExpired as exc:
         raise ValueError(
             f"git {' '.join(args)} did not answer within "
-            f"{_GIT_TIMEOUT_SECONDS} seconds in {repo}") from exc
+            f"{int(timeout or _GIT_TIMEOUT_SECONDS)} seconds in {repo}") from exc
     except OSError as exc:
         raise ValueError(f"git could not be run in {repo}: {exc}") from exc
     return done.stdout
@@ -288,7 +288,8 @@ def starting_commit(worktree_path: Path) -> str:
     return sha
 
 
-def files_changed_since(repo: Path, start_commit: str) -> list[str]:
+def files_changed_since(repo: Path, start_commit: str,
+                        timeout: Optional[float] = None) -> list[str]:
     """The repository-relative files that differ from ``start_commit`` right now.
 
     Two questions, because one is not enough. ``git diff`` names every tracked file
@@ -304,8 +305,10 @@ def files_changed_since(repo: Path, start_commit: str) -> list[str]:
     read. Names are taken exactly as given, never trimmed.
     """
     repo = Path(repo)
-    changed = _git(repo, "diff", "--name-only", "-z", start_commit, raw=True)
-    untracked = _git(repo, "ls-files", "--others", "--exclude-standard", "-z", raw=True)
+    changed = _git(repo, "diff", "--name-only", "-z", start_commit, raw=True,
+                   timeout=timeout)
+    untracked = _git(repo, "ls-files", "--others", "--exclude-standard", "-z", raw=True,
+                     timeout=timeout)
     names = (*changed.split(b"\0"), *untracked.split(b"\0"))
     return sorted({os.fsdecode(name) for name in names if name})
 
