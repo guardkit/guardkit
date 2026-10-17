@@ -205,7 +205,13 @@ for base, _dirs, files in os.walk(folder):
             # As the real tool does with an empty or broken lockfile.
             sys.stderr.write("Error during extraction: could not extract " + path + "\n")
             sys.exit(127)
+        resolved = []
         for line in lines:
+            resolved.append(line)
+            # A manifest the real tool resolves over the network: extra packages
+            # appear that are not written in the file.
+            resolved.extend(DB.get("RESOLVES " + " ".join(line.split()), []))
+        for line in resolved:
             eco, pkg, version = line.split()
             vulns, groups = [], []
             for v in DB.get(f"{eco} {pkg} {version}", []):
@@ -1053,16 +1059,22 @@ def test_a_changed_file_that_cannot_be_read_is_reported(repo, tmp_path):
             "(PermissionError). " + NOT_CLEAN) in text
 
 
-def test_a_changed_file_over_the_size_limit_is_reported(repo, tmp_path, monkeypatch):
+def test_a_changed_file_over_the_size_limit_is_read_up_to_it(repo, tmp_path, monkeypatch):
     monkeypatch.setattr(security_check, "MAX_FILE_BYTES", 1000)
     gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
     root, sha = repo({})
-    write(root, "big.txt", "a" * 2000 + f'\nKEY = "{fake_marker()}"\n')
-    write(root, "small.py", f'KEY = "{fake_marker()}"\n')
-    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+    write(root, "big.txt", f'KEY = "{fake_marker()}"\n' + "a" * 2000
+          + f'\nKEY = "{fake_marker()}"\n')
+    write(root, "stub.lock", lockfile("npm vitest 4.0.15") + "#" * 2000 + "\n")
+    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=str(osv))
     assert code == 1
-    assert "The changed file big.txt was not checked: it is too large" in text
-    assert "secret -- small.py:1" in text and "secret -- big.txt" not in text
+    assert "secret -- big.txt:1" in text and "secret -- big.txt:3" not in text
+    assert ("The rest of the changed file big.txt was not checked: it is over 0 MB, so "
+            "only its first 0 MB were read for secrets and it was not read for "
+            "dependencies.") in text
+    assert "The rest of the changed file stub.lock was not checked" in text
+    assert "vitest 4.0.15" not in text, "a cut lockfile is not given to OSV-Scanner"
 
 
 def test_a_gitignore_does_not_hide_a_lockfile(repo, tmp_path):
@@ -1079,7 +1091,10 @@ def test_a_gitignore_does_not_hide_a_lockfile(repo, tmp_path):
 
 
 @pytest.mark.parametrize("start_text", ["", "this is not json {\n"], ids=["empty", "not-json"])
-def test_an_unreadable_start_version_keeps_what_head_found(repo, tmp_path, start_text):
+def test_an_unreadable_start_version_reports_head_advisories_as_not_checked(
+        repo, tmp_path, start_text):
+    """The design's rule (decided 17 October 2026): only a known malicious package
+    blocks when the start cannot be read; other serious advisories are not checked."""
     osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
     root, sha = repo({"stub.lock": start_text})
     write(root, "stub.lock", lockfile("npm vitest 4.0.15"))
@@ -1087,8 +1102,10 @@ def test_an_unreadable_start_version_keeps_what_head_found(repo, tmp_path, start
     code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
                            deps_dev_url="http://127.0.0.1:9")
 
-    assert code == 1, text
-    assert "vitest 4.0.15 (npm) in stub.lock has advisory GHSA-5xrq-8626-4rwp" in text
+    assert code == 0, text
+    assert ("Advisory GHSA-5xrq-8626-4rwp (critical, 9.8) on vitest 4.0.15 (npm) in "
+            "stub.lock was not checked: the starting versions could not be read, so "
+            "whether this change brought it in is unknown. " + NOT_CLEAN) in text
     assert "the starting versions could not be read" in text
     # The age check still ran (deps.dev is a closed port here, so it says so).
     assert "vitest (deps.dev could not be reached" in text
@@ -1181,3 +1198,160 @@ def test_the_self_test_with_the_real_scanners(checkout_isolated_python):
                       "--osv-scanner", REAL_OSV)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "Security check self-test passed" in done.stdout
+
+
+# ---------------------------------------------------------------------------
+# 7. Second fix pass after the coach's re-check (17 October 2026)
+# ---------------------------------------------------------------------------
+
+
+def _utf8_locale() -> str:
+    """A full UTF-8 locale (not C), under which Python's stdout refuses a lone surrogate."""
+    found = subprocess.run(["locale", "-a"], capture_output=True, text=True).stdout.split()
+    for wanted in ("en_GB.utf8", "en_US.utf8"):
+        if wanted in found:
+            return wanted
+    others = [n for n in found if n.lower().endswith(("utf8", "utf-8")) and not n.startswith("C")]
+    if not others:
+        pytest.skip("no full UTF-8 locale is installed")
+    return others[0]
+
+
+def _run_rule_like_the_executor(rule_command: str, root: Path, home: Path):
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "LANG": _utf8_locale()}
+    return subprocess.run(["sh", "-c", rule_command], cwd=root, capture_output=True,
+                          timeout=300, env=env)
+
+
+def test_names_that_are_not_utf8_or_hold_a_newline_never_crash_the_command(
+        repo, on_path, tmp_path):
+    """p9_badname_note.py: a symbolic link named b'bad\\xfflink', plus a file whose
+    name holds a newline, under a full UTF-8 locale."""
+    bindir = tmp_path / "bin"
+    make_gitleaks_stub(bindir)
+    on_path(bindir)
+    root, _sha = repo({})
+    os.symlink(b"README.md", os.path.join(os.fsencode(root), b"bad\xfflink"))
+    write(root, "new\nline.py", f'KEY = "{fake_marker()}"\n')
+    rule = build_security_rule(root, TASK_ID)
+
+    done = _run_rule_like_the_executor(rule["command"], root, tmp_path)
+    out = done.stdout.decode("utf-8")
+
+    assert b"Traceback" not in done.stderr, done.stderr.decode("utf-8", "replace")
+    assert done.returncode == 1, out
+    assert "bad\\xfflink is a symbolic link; it was recorded and not followed." in out
+    assert "secret -- new\\nline.py:1:" in out
+    assert not any(line.startswith("line.py") for line in out.splitlines())
+
+
+def test_the_architecture_check_prints_a_name_that_is_not_utf8(repo, on_path, tmp_path,
+                                                              monkeypatch):
+    monkeypatch.setenv(ARCH_SWITCH, "1")
+    root, _sha = repo({
+        "docs/architecture-rules.yaml": ARCH_RULES,
+        "src/search/router.py": "from shared.client import get\n",
+    })
+    bad = os.path.join(os.fsencode(root), b"src", b"search", b"r\xffouter.py")
+    with open(bad, "wb") as handle:
+        handle.write(b"import urllib.request\n")
+    from guardkit.orchestrator.arch_conformance import build_arch_conformance_rule
+
+    rule = build_arch_conformance_rule(root, TASK_ID)
+    done = _run_rule_like_the_executor(rule["command"], root, tmp_path)
+
+    assert b"Traceback" not in done.stderr, done.stderr.decode("utf-8", "replace")
+    assert done.returncode in (0, 1)
+    if done.returncode == 1:
+        assert "r\\xffouter.py" in done.stdout.decode("utf-8")
+
+
+def test_a_nul_byte_early_in_a_file_does_not_hide_a_key(repo, tmp_path):
+    gitleaks = make_gitleaks_stub(tmp_path / "bin")
+    root, sha = repo({})
+    (root / "data.bin").write_bytes(b"\x00\x01header\n" + f'KEY = "{fake_marker()}"\n'.encode())
+    code, text = run_check(root, sha, gitleaks=str(gitleaks), osv_scanner=None)
+    assert code == 1, text
+    assert "secret -- data.bin:2" in text
+
+
+@needs_real_gitleaks
+def test_real_gitleaks_decides_about_a_file_with_an_early_nul(repo):
+    root, sha = repo({})
+    (root / "data.bin").write_bytes(
+        b"\x00\x01header\n" + f'AWS_ACCESS_KEY_ID = "{fake_aws_key()}"\n'.encode())
+    code, text = run_check(root, sha, gitleaks=REAL_GITLEAKS, osv_scanner=None)
+    assert "Secrets: 1 changed file(s) read" in text
+    # Whatever Gitleaks decides about this file, it was given it.
+    assert code in (0, 1)
+
+
+def test_a_malicious_package_blocks_even_when_the_start_cannot_be_read(repo, tmp_path):
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"stub.lock": "this is not json {\n"})
+    write(root, "stub.lock", lockfile("npm evil-pkg 1.0.0"))
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+    assert code == 1, text
+    assert "evil-pkg 1.0.0 (npm) in stub.lock is listed as a known malicious package" in text
+
+
+def test_age_is_not_checked_for_a_package_the_unreadable_start_may_have_held(repo, tmp_path,
+                                                                            deps_dev):
+    url, server = deps_dev
+    osv = make_osv_stub(tmp_path / "bin", VITEST_DB)
+    root, sha = repo({"stub.lock": "npm left-pad\n"})  # names left-pad, but is broken
+    write(root, "stub.lock", lockfile("npm left-pad 1.3.0", "npm fresh-pkg 0.0.1"))
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv), deps_dev_url=url)
+    assert code == 0, text
+    assert ("The age of 1 package(s) was not checked: the starting versions could not be "
+            "read, so whether this change added them is unknown.") in text
+    assert [p.rsplit("/", 1)[-1] for p in server.seen] == ["fresh-pkg"]
+
+
+def test_an_indirect_dependency_is_named_as_one(repo, tmp_path):
+    db = dict(VITEST_DB)
+    db["RESOLVES npm parent 1.0.0"] = ["npm critical-pkg 2.0.0"]
+    osv = make_osv_stub(tmp_path / "bin", db)
+    root, sha = repo({"stub.lock": lockfile("npm left-pad 1.3.0")})
+    write(root, "stub.lock", lockfile("npm left-pad 1.3.0", "npm parent 1.0.0"))
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+    assert code == 1, text
+    assert ("critical-pkg 2.0.0 (npm) in stub.lock (an indirect dependency resolved by "
+            "OSV-Scanner) has advisory GHSA-crit-0000-0000") in text
+
+
+def test_an_indirect_upgrade_that_does_not_fix_it_is_named_as_indirect(repo, tmp_path):
+    db = dict(VITEST_DB)
+    db["RESOLVES npm parent 1.0.0"] = ["npm vitest 4.0.15"]
+    db["RESOLVES npm parent 1.0.1"] = ["npm vitest 4.0.18"]
+    osv = make_osv_stub(tmp_path / "bin", db)
+    root, sha = repo({"stub.lock": lockfile("npm parent 1.0.0")})
+    write(root, "stub.lock", lockfile("npm parent 1.0.1"))
+    code, text = run_check(root, sha, gitleaks=None, osv_scanner=str(osv),
+                           deps_dev_url="http://127.0.0.1:9")
+    assert code == 1, text
+    assert ("this change moved vitest to 4.0.18 in stub.lock (an indirect dependency "
+            "resolved by OSV-Scanner), which is still affected by GHSA-5xrq-8626-4rwp") in text
+
+
+def test_a_passing_security_check_is_written_to_the_build_log(repo, on_path, tmp_path,
+                                                              caplog, monkeypatch):
+    from guardkit.orchestrator.quality_gates import spec_conformance
+
+    assert spec_conformance._SECURITY_RULE_ID == RULE_ID
+    bindir = tmp_path / "bin"
+    make_gitleaks_stub(bindir)  # no OSV-Scanner: that part says it was not checked
+    monkeypatch.setenv("PATH", only_git_and(bindir))  # a real osv-scanner stays out
+    root, _sha = repo({})
+    snapshot_dir = _snapshot(root)
+    write(root, "src/app.py", "x = 1\n")
+
+    with caplog.at_level("INFO", logger=spec_conformance.__name__):
+        leg = evaluate_from_snapshot(snapshot_dir, root, task_id=TASK_ID)
+
+    assert _security_failure(leg) is None, leg
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert f"Conformance rule '{RULE_ID}' passed; what it printed:" in logged
+    assert "Dependency safety was not checked: osv-scanner is not installed." in logged

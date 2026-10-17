@@ -14,10 +14,11 @@ generator's next turn. Nothing new enforces anything.
 The command it runs is this module as a program (:func:`main`), and it looks at only
 the files the task changed (``git diff --name-only <start>`` plus files git is not yet
 tracking, with ``.guardkit/`` left out), using the architecture check's own helper.
-Each changed file is read once (at most 20 MB); one that cannot be read is named as not
-checked, never skipped silently. It makes two checks:
+Each changed file is read once, up to 20 MB (a bigger one is read that far and named
+as partly checked); one that cannot be read is named as not checked, never skipped
+silently. Names are printed with control characters and undecodable bytes escaped. It makes two checks:
 
-* **Secrets.** Gitleaks, in ``dir`` mode, over copies of just the changed text files,
+* **Secrets.** Gitleaks, in ``dir`` mode, over copies of every changed regular file,
   with its built-in rules, ``--redact`` and ``--ignore-gitleaks-allow``. A finding
   names the file, the line and the kind of secret, never the value.
 * **Dependencies.** Only when the task changed a file OSV-Scanner reads (it decides
@@ -91,6 +92,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+
+from guardkit.orchestrator.arch_conformance import safe_stdout, visible
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +268,6 @@ class Budget:
 #: A changed file bigger than this is not read; it is reported as not checked.
 MAX_FILE_BYTES = 20 * 1024 * 1024
 
-_TEXT_PROBE_BYTES = 8192
 _COPY_CHUNK = 1024 * 1024
 
 
@@ -293,7 +295,7 @@ def changed_files(repo: Path, start_commit: str, outcome: Optional["Outcome"] = 
     """
     from guardkit.orchestrator.arch_conformance import files_changed_since
 
-    out: List[PurePosixPath] = []
+    out: List[PurePosixPath] = []  # names are made visible when printed (render)
     for entry in files_changed_since(Path(repo), start_commit):
         rel = _safe_relative(entry)
         if rel is None:
@@ -318,47 +320,44 @@ class Staged:
 
     root: Path
     files: List[PurePosixPath] = field(default_factory=list)
-    text: Set[PurePosixPath] = field(default_factory=set)
+    #: Files over the size limit: only their first MAX_FILE_BYTES were read.
+    truncated: Set[PurePosixPath] = field(default_factory=set)
 
 
-def _copy_one(source: Path, target: Path) -> Tuple[Optional[bool], Optional[str]]:
-    """Copy one regular file without following a link. Returns (is_text, why_not).
+def _copy_one(source: Path, target: Path) -> Tuple[bool, Optional[str]]:
+    """Copy one regular file without following a link. Returns (truncated, why_not).
 
-    Reads the file once, in chunks, and stops at :data:`MAX_FILE_BYTES`.
+    Reads the file once, in chunks, and keeps at most :data:`MAX_FILE_BYTES`; a
+    bigger file is cut there and ``truncated`` says so.
     """
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
         fd = os.open(source, flags)
     except OSError as exc:
-        return None, f"it could not be opened ({exc.__class__.__name__})"
+        return False, f"it could not be opened ({exc.__class__.__name__})"
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
-            return None, "it is not a regular file"
-        if info.st_size > MAX_FILE_BYTES:
-            return None, f"it is too large (over {MAX_FILE_BYTES // (1024 * 1024)} MB)"
+            return False, "it is not a regular file"
         target.parent.mkdir(parents=True, exist_ok=True)
         written = 0
-        is_text = True
+        truncated = False
         src = os.fdopen(fd, "rb", closefd=True)
         fd = -1  # the file object owns it now
         with src, open(target, "wb") as dst:
             while True:
-                chunk = src.read(_COPY_CHUNK)
+                chunk = src.read(min(_COPY_CHUNK, MAX_FILE_BYTES + 1 - written))
                 if not chunk:
                     break
-                if written < _TEXT_PROBE_BYTES and b"\0" in chunk[:_TEXT_PROBE_BYTES - written]:
-                    is_text = False
-                written += len(chunk)
-                if written > MAX_FILE_BYTES:
+                if written + len(chunk) > MAX_FILE_BYTES:
+                    dst.write(chunk[:MAX_FILE_BYTES - written])
+                    truncated = True
                     break
                 dst.write(chunk)
-        if written > MAX_FILE_BYTES:
-            target.unlink()
-            return None, f"it is too large (over {MAX_FILE_BYTES // (1024 * 1024)} MB)"
-        return is_text, None
+                written += len(chunk)
+        return truncated, None
     except OSError as exc:
-        return None, f"it could not be read ({exc.__class__.__name__})"
+        return False, f"it could not be read ({exc.__class__.__name__})"
     finally:
         if fd >= 0:
             os.close(fd)
@@ -371,8 +370,9 @@ def stage_changed_files(
 
     Left out, each with a line saying so: the scanners' settings files (on purpose,
     so the repository cannot set them), symbolic links (never followed), anything
-    reached through a linked folder, anything that is not a regular file, and files
-    over :data:`MAX_FILE_BYTES`. A file the task deleted has nothing to read.
+    reached through a linked folder and anything that is not a regular file. A file
+    over :data:`MAX_FILE_BYTES` is read up to that size and reported as only partly
+    read. A file the task deleted has nothing to read.
     """
     staged = Staged(root=root)
     root.mkdir(parents=True, exist_ok=True)
@@ -400,13 +400,18 @@ def stage_changed_files(
             outcome.could_not_check(f"The changed file {rel}",
                                     "it sits behind a linked folder outside the repository")
             continue
-        is_text, why_not = _copy_one(source, root / rel)
+        truncated, why_not = _copy_one(source, root / rel)
         if why_not is not None:
             outcome.could_not_check(f"The changed file {rel}", why_not)
             continue
         staged.files.append(rel)
-        if is_text:
-            staged.text.add(rel)
+        if truncated:
+            staged.truncated.add(rel)
+            outcome.could_not_check(
+                f"The rest of the changed file {rel}",
+                f"it is over {MAX_FILE_BYTES // (1024 * 1024)} MB, so only its first "
+                f"{MAX_FILE_BYTES // (1024 * 1024)} MB were read for secrets and it was not "
+                f"read for dependencies")
     return staged
 
 
@@ -525,13 +530,10 @@ def check_secrets(
         return
     copy_root = work / "secrets"
     copy_root.mkdir()
-    copied = _link_into(staged, sorted(staged.text), copy_root)
-    binary = len(staged.files) - len(copied)
-    if binary:
-        outcome.notes.append(
-            f"Secrets: {binary} changed binary file(s) were not read for secrets.")
+    # Every changed regular file, binary or not: Gitleaks decides what it can read.
+    copied = _link_into(staged, sorted(staged.files), copy_root)
     if not copied:
-        outcome.notes.append("Secrets: no changed text file to read.")
+        outcome.notes.append("Secrets: no changed file to read.")
         return
     deadline = budget.deadline(budget.tool_deadline)
     if deadline is None:
@@ -581,7 +583,7 @@ def check_secrets(
             f"secret -- {rel}:{line}: this line holds what looks like a secret "
             f"(kind: {rule}). The value is not shown here.")
     outcome.notes.append(
-        f"Secrets: {len(copied)} changed text file(s) read; {len(seen)} finding(s).")
+        f"Secrets: {len(copied)} changed file(s) read; {len(seen)} finding(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -766,7 +768,25 @@ def _advisory_names(versions: Dict[str, List[Advisory]]) -> Set[str]:
     return {n for advisories in versions.values() for a in advisories for n in a.names}
 
 
-def compare_packages(head: Packages, start: Packages, outcome: Outcome) -> Set[Tuple[str, str]]:
+def _read_lower(path: Path) -> str:
+    try:
+        return path.read_bytes().decode("utf-8", "replace").lower()
+    except OSError:
+        return ""
+
+
+def _mentions(text: str, name: str) -> bool:
+    """Is the package named in this file's text? Plain text search, any language."""
+    return name.lower() in text
+
+
+INDIRECT = "an indirect dependency resolved by OSV-Scanner"
+
+
+def compare_packages(
+    head: Packages, start: Packages, outcome: Outcome, *, start_failed: bool = False,
+    head_text: Optional[Dict[str, str]] = None,
+) -> Set[Tuple[str, str]]:
     """Judge head against start. Returns the (ecosystem, package) pairs new in this change.
 
     * An advisory not on that package in that file at the start is new: it blocks when
@@ -774,6 +794,12 @@ def compare_packages(head: Packages, start: Packages, outcome: Outcome) -> Set[T
     * An advisory already there blocks only at a version this change brought in (the
       package's version at head differs from every version at the start) and only
       when serious: an upgrade that does not fix it.
+    * When the starting versions could not be read (``start_failed``), a known
+      malicious package still blocks, and any other serious advisory is reported as
+      not checked: whether this change brought it in is unknown.
+    * A package not written in the file (OSV-Scanner resolved it from a manifest over
+      the network) is named as an indirect dependency. OSV-Scanner's output does not
+      say which declared package brought it in.
     """
     for (path, ecosystem, name), versions in sorted(head.items()):
         before = start.get((path, ecosystem, name))
@@ -788,10 +814,17 @@ def compare_packages(head: Packages, start: Packages, outcome: Outcome) -> Set[T
                 already = bool(adv.names & before_names)
                 brought_in = before is not None and version not in before_versions
                 where = f"{name} {version} ({ecosystem}) in {path}"
+                if head_text is not None and not _mentions(head_text.get(path, ""), name):
+                    where += f" ({INDIRECT})"
                 if adv.malicious and not already:
                     outcome.blocking.append(
                         f"dependency -- {where} is listed as a known malicious package "
                         f"({adv.shown}). Remove it.")
+                elif not already and adv.serious and start_failed:
+                    outcome.could_not_check(
+                        f"Advisory {adv.shown} ({adv.severity_words()}) on {where}",
+                        "the starting versions could not be read, so whether this change "
+                        "brought it in is unknown")
                 elif not already and adv.serious:
                     outcome.blocking.append(
                         f"dependency -- {where} has advisory {adv.shown} "
@@ -803,11 +836,12 @@ def compare_packages(head: Packages, start: Packages, outcome: Outcome) -> Set[T
                         f"This does not block.")
                 elif brought_in and adv.serious:
                     kept = sorted(before_versions & set(versions), key=_natural_key)
+                    indirect = f" ({INDIRECT})" if where.endswith(f"({INDIRECT})") else ""
                     if kept:
                         did = (f"this change added {name} {version} beside "
-                               f"{' and '.join(kept)} in {path}")
+                               f"{' and '.join(kept)} in {path}{indirect}")
                     else:
-                        did = f"this change moved {name} to {version} in {path}"
+                        did = f"this change moved {name} to {version} in {path}{indirect}"
                     outcome.blocking.append(
                         f"dependency -- {did}, which is still affected by {adv.shown} "
                         f"({adv.severity_words()}); "
@@ -906,7 +940,12 @@ def check_dependencies(
     head_root = work / "deps-head"
     head_root.mkdir()
     # No ignore file goes in: a .gitignore listing a lockfile must not hide it.
-    copied = _link_into(staged, [r for r in staged.files if r.name != ".gitignore"], head_root)
+    # A file cut at the size limit is not given to OSV-Scanner (a cut lockfile does
+    # not parse); the staging step has already said so.
+    copied = _link_into(
+        staged,
+        [r for r in staged.files if r.name != ".gitignore" and r not in staged.truncated],
+        head_root)
     if not copied:
         return
     head, why = _run_osv(str(osv_scanner), head_root, config, work, env, budget, "changed")
@@ -920,7 +959,7 @@ def check_dependencies(
 
     start_root = work / "deps-start"
     start_root.mkdir()
-    had_start = False
+    start_text: Dict[str, str] = {}
     for path in recognised:
         rel = _safe_relative(path)
         if rel is None or _is_settings_file(rel):
@@ -931,22 +970,37 @@ def check_dependencies(
         target = start_root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        had_start = True
+        start_text[path] = data.decode("utf-8", "replace").lower()
+    head_text = {path: _read_lower(head_root / path) for path in recognised}
     start: Packages = {}
-    if had_start:
+    start_failed = False
+    if start_text:
         scanned, why = _run_osv(str(osv_scanner), start_root, config, work, env, budget,
                                 "starting")
         if scanned is None:
-            # What was found at head still counts: the start is taken as holding no
-            # packages, so every serious or malicious advisory at head blocks.
+            start_failed = True
             outcome.notes.append(
-                f"Dependencies: the starting versions could not be read ({why}), so "
-                f"everything at head was judged as new to this change.")
+                f"Dependencies: the starting versions could not be read ({why}). Known "
+                f"malicious packages still block; other serious advisories are reported "
+                f"as not checked.")
         else:
             start = scanned
-    new_packages = compare_packages(head, start, outcome)
+    new_packages = compare_packages(head, start, outcome, start_failed=start_failed,
+                                    head_text=head_text)
     outcome.notes.append(
         f"Dependencies: {len(recognised)} changed file(s) OSV-Scanner reads were checked.")
+    if start_failed:
+        # Only a package whose name appears in no starting version of these files was
+        # visibly added; any other may have been there already.
+        visible = {(eco, name) for (eco, name) in new_packages
+                   if not any(_mentions(text, name) for text in start_text.values())}
+        unknown = new_packages - visible
+        if unknown:
+            outcome.could_not_check(
+                f"The age of {len(unknown)} package(s)",
+                "the starting versions could not be read, so whether this change added "
+                "them is unknown")
+        new_packages = visible
     check_new_packages(new_packages, deps_dev_url, budget, outcome)
 
 
@@ -976,6 +1030,13 @@ def _settings(work: Path) -> Tuple[Path, Path]:
 
 
 def render(outcome: Outcome, file_count: int) -> Tuple[int, str]:
+    """See :func:`_render`; every line passes through :func:`visible` first."""
+    for bucket in (outcome.blocking, outcome.advice, outcome.not_checked, outcome.notes):
+        bucket[:] = [visible(line) for line in bucket]
+    return _render(outcome, file_count)
+
+
+def _render(outcome: Outcome, file_count: int) -> Tuple[int, str]:
     """The text to print and the exit code. What must be read goes at the END.
 
     The build loop hands the code generator only the last 2000 characters of a
@@ -1115,6 +1176,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    safe_stdout()
     try:
         args = build_parser().parse_args(argv)
     except SystemExit:

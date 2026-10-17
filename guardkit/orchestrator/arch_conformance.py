@@ -393,6 +393,40 @@ def build_arch_conformance_rule(
 _COULD_NOT_RUN = "Architecture rules were not checked: {why} Nothing was checked, which is not the same as clean."
 
 
+def visible(text: str) -> str:
+    """``text`` with every control character and undecodable byte shown, not acted on.
+
+    A file name may hold a newline, a terminal escape or bytes that are not UTF-8
+    (kept by Python as surrogates). Printed raw, a newline would split one output line
+    into two, and a surrogate stops ``print`` with UnicodeEncodeError. Each is shown
+    as a backslash escape instead: ``\\n``, ``\\x1b``, ``\\xff``.
+    """
+    out = []
+    for ch in str(text):
+        code = ord(ch)
+        if 0xDC80 <= code <= 0xDCFF:  # an undecodable byte kept by surrogateescape
+            out.append(f"\\x{code - 0xDC00:02x}")
+        elif code < 0x20 or code == 0x7F or 0x80 <= code < 0xA0:
+            out.append(ch.encode("unicode_escape").decode("ascii"))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def safe_stdout() -> None:
+    """Never let a character the terminal's encoding lacks stop the command.
+
+    Under a full UTF-8 locale Python's standard output refuses a lone surrogate. The
+    checks run as ``python -I``, which ignores PYTHONIOENCODING, so the stream is told
+    here to write such a character as a backslash escape instead.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _finding_lines(report: Any) -> list[str]:
     """The checker's own words for every place it reports, and nothing else.
 
@@ -405,12 +439,12 @@ def _finding_lines(report: Any) -> list[str]:
     for rule in report.rules:
         for site in rule.reported_findings(report.narrowed):
             lines.append("")
-            lines.append(f"{rule.rule_id} -- {site.where}")
+            lines.append(f"{rule.rule_id} -- {visible(site.where)}")
             lines.append(
                 f"    what is there: {site.observed}"
                 + (f", inside {site.enclosing}()" if site.enclosing else ""))
             for extra in site.also_at:
-                lines.append(f"    also here:     {extra}")
+                lines.append(f"    also here:     {visible(extra)}")
             lines.append(f"    the rule:      {rule.says}")
             source = rule.source or {}
             where = source.get("document") or "(no document named)"
@@ -492,6 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    safe_stdout()
     parser = build_parser()
     parser.add_argument("--repo", type=Path, default=Path("."),
                         help="the repository to read (default: the current directory)")

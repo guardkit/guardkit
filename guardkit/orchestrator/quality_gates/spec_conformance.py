@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 # so a Player has enough context to act without the feedback ballooning.
 _OUTPUT_TAIL_CHARS: int = 2000
 
+#: ``security_check.RULE_ID``, repeated so this module does not import that one.
+_SECURITY_RULE_ID = "security-check"
+
 # Default per-command timeout for assert_command (seconds), overridable per rule.
 _DEFAULT_ASSERT_TIMEOUT: int = 120
 
@@ -488,6 +491,13 @@ def _evaluate_assert_command(
         }
 
     if completed.returncode == rule.expected_exit:
+        # A passing check discards its output, so a part the security check (or any
+        # check) could not make would be invisible. Its words go to the build log.
+        passed_output = (completed.stdout or "") + (completed.stderr or "")
+        if rule.id == _SECURITY_RULE_ID or "was not checked" in passed_output:
+            logger.info(
+                "Conformance rule %r passed; what it printed:\n%s",
+                rule.id, passed_output[-_OUTPUT_TAIL_CHARS:] or "<empty>")
         return None
 
     combined = (completed.stdout or "") + (completed.stderr or "")
