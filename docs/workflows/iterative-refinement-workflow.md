@@ -6,6 +6,8 @@
 > `/task-review`'s [I]mplement flow. This document is preserved as a
 > historical record of the workflow it described.
 
+For current commands and installation cleanup, use the [July modernisation and migration guide](../harness/july-modernisation.md). The examples below describe the retired workflow and are not runnable current guidance.
+
 ## Overview
 
 The `/task-refine` command enables lightweight, iterative improvements to completed tasks without triggering the full `/task-work` workflow. Use this for minor code quality improvements, clarifications, and polish after a task passes quality gates.

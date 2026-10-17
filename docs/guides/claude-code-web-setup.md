@@ -1,3 +1,10 @@
+!!! note "Earlier reference — not revalidated for the October 2026 runtime"
+
+    This page retains earlier setup guidance. Its compatibility and session-persistence
+    claims have not been revalidated. The retired-command correction below does not
+    verify the rest of this guide. Use [current installation guidance](GETTING-STARTED.md)
+    and [harness support boundaries](../harness/index.md) for the audited workflow.
+
 # Using GuardKit with Claude Code Web
 
 ## Overview
@@ -452,13 +459,11 @@ cd /home/user/my-web-app
 | `/task-status` | View task status and summary | `/task-status TASK-001` |
 | `/task-review` | Analysis and decision workflows | `/task-review TASK-001 --mode=architectural --depth=standard` |
 
-### Design Integration Commands
+### Retired Design Integration Commands
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/figma-to-react` | Convert Figma designs to React components | `/figma-to-react <file-key>` |
-| `/zeplin-to-maui` | Convert Zeplin designs to .NET MAUI | `/zeplin-to-maui <project-id> <screen-id>` |
-| `/mcp-zeplin` | Zeplin MCP integration utilities | `/mcp-zeplin` |
+`/figma-to-react`, `/zeplin-to-maui` and `/mcp-zeplin` were removed on 10 July 2026.
+They are not available commands. See the [July migration guide](../harness/july-modernisation.md)
+for the retirement map and the limits of the proposed `design_url` replacement.
 
 ### Utility Commands
 

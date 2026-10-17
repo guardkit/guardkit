@@ -105,8 +105,8 @@ ACTIVE TASKS (3):
 
 ======================================================================
 Commands:
-  - Overview: /system-overview
-  - Impact: /impact-analysis TASK-XXX
+  - Overview: read the project's architecture documents
+  - Impact: /task-review "Assess the impact of the planned change"
   - Switch: /context-switch <project>
 ======================================================================
 ```
@@ -151,12 +151,16 @@ ORIENTATION COMPLETE
 
 Ready to work. Suggested next steps:
   1. Review active task: /task-status TASK-POA-018
-  2. Check architecture: /system-overview
-  3. Analyze impact: /impact-analysis TASK-POA-018
+  2. Check architecture: read the project's architecture documents
+  3. Analyze impact: /task-review "Assess the impact of the Moneyhub integration"
 ======================================================================
 ```
 
 ## Integration with Other Commands
+
+`/system-overview` and `/impact-analysis` were retired on 2 July 2026. The examples
+below use repository documents and review commands; these are not renamed equivalents
+of the old Graphiti readers. See the [July migration guide](../harness/july-modernisation.md).
 
 ### Typical Multi-Project Workflow
 
@@ -167,23 +171,22 @@ Ready to work. Suggested next steps:
 # 2. Switch to target project
 /context-switch power-of-attorney
 
-# 3. Get full architecture overview
-/system-overview
+# 3. Read the project's architecture documents in the coding agent
 
 # 4. Check impact of planned work
-/impact-analysis TASK-POA-018
+/task-review "Assess the impact of the Moneyhub integration"
 
 # 5. Start working
 /task-work TASK-POA-018
 ```
 
-### With `/system-overview`
+### With `/system-plan`
 
-After switching, get detailed architecture:
+After switching, review a proposed change against the architecture:
 
 ```bash
 /context-switch my-project
-/system-overview --verbose
+/system-plan "Review the proposed integration against the architecture" --mode=review
 ```
 
 ### Starting a New Session
@@ -192,7 +195,7 @@ Refresh context at the start of a work session:
 
 ```bash
 /context-switch                    # See where you left off
-/system-overview                   # Quick architecture refresh
+# Read the project's architecture documents for an architecture refresh
 /task-status                       # Check task states
 ```
 

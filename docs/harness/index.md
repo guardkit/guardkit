@@ -4,6 +4,8 @@ GuardKit adds repository instructions, planning commands, task records and quali
 
 **Verified 17 October 2026** against GuardKit source commit `23d99208`. An installed package or command file may be older.
 
+Returning from an older installation? The [July modernisation and migration guide](july-modernisation.md) lists retired commands, their replacements and changes to installed skills. In particular, `/task-refine` was removed; use `/task-work` again or `/task-review`'s **[I]mplement** flow.
+
 ## Keep three surfaces separate
 
 | Surface | Where you use it | What executes |
@@ -54,7 +56,7 @@ Interactive `/task-work` normally leaves green work at `IN_REVIEW`. Phase 6 comp
 /task-complete TASK-<id>
 ```
 
-Use design-only and implement-only when you want to inspect the plan before implementation. Use `/task-review` for review work.
+Use design-only and implement-only when you want to inspect the plan before implementation. For review work, `/task-review "description"` creates its own review task; `/task-review TASK-<id>` reviews an existing one. `/task-complete` remains available: its planned final retirement has not shipped.
 
 ## Instructions, templates and memory
 

@@ -57,6 +57,8 @@ guardkit init --update
 
 This refreshes already installed command files from the installed package, preserving and reporting files you edited locally. It does not fetch a newer package. Update the package/source first; use `--force` only to discard local command edits. [Initialization implementation](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/cli/init.py)
 
+`init --update` does **not** remove retired commands such as `/task-refine`. Re-running the installer prunes declared retired files from its global command directory; independent project copies need separate inspection. Follow the [July migration guide](../harness/july-modernisation.md#refresh-an-older-installation) if you are upgrading an older setup.
+
 ## Run one task in the coding agent
 
 Open Claude Code **in the application repository**. These are agent commands, not shell commands:

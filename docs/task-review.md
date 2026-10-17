@@ -95,6 +95,16 @@ The `/task-review` command supports five specialized modes:
 
 ## Usage Examples
 
+Since July 2026, you can begin directly with a description; the command creates
+the review task before analysing it:
+
+```text
+/task-review "Review authentication architecture" --mode=architectural --depth=standard
+```
+
+The existing-ID form below remains supported. Creating the task separately is
+optional. See the [July migration guide](harness/july-modernisation.md).
+
 ### Example 1: Architectural Review
 
 ```bash

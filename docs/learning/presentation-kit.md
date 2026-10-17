@@ -10,6 +10,8 @@ The snapshot is **17 October 2026**. Recheck the
 claim. This is an outline and demonstration plan; it does not imply that recordings
 or a finished slide deck have already been produced.
 
+For returning GuardKit users, add the [July modernisation before-and-after examples](../harness/july-modernisation.md#use-this-in-a-presentation-or-team-handover): command retirement, simpler review entry and shared completion. Check this migration map before reusing commands from older recordings.
+
 ## A 25-minute presentation
 
 | Slide | Main point | Visual or evidence | Speaker note |

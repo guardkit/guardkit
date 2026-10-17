@@ -24,6 +24,7 @@ branches are not evidence for this snapshot.
 |---|---|
 | Which harness does AutoBuild select? | [GuardKit harness selector](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/harness/selector.py) |
 | What CLI operations exist? | [AutoBuild CLI](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/cli/autobuild.py) and [command specifications](https://github.com/guardkit/guardkit/tree/23d99208598706f81f43a21628f5dcfb89d92a55/installer/core/commands) |
+| Which commands were retired or changed in July? | [Migration guide](../harness/july-modernisation.md), checked against the command manifest, retirement decisions and current installer |
 | Does Jarvis reason about routine factory intake? | [Slack planning intake](https://github.com/guardkit/jarvis/blob/2da5153e7c1cbc802f6d9c4d2f39c18a8245275e/src/jarvis/infrastructure/slack_planning_intake.py) |
 | How is already-planned work admitted? | [Prepared admission](https://github.com/guardkit/forge/blob/bec134d36a247008a3c64503c865d67268651a88/src/forge/pipeline/prepared_admission.py) |
 | How are project documents bound to a revision? | [Planning project documents](https://github.com/guardkit/forge/blob/bec134d36a247008a3c64503c865d67268651a88/src/forge/planning/project_documents.py) |

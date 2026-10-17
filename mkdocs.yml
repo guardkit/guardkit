@@ -71,6 +71,7 @@ nav:
 
   - Coding Harness:
       - Interactive GuardKit: harness/index.md
+      - July Modernisation and Migration: harness/july-modernisation.md
       - AutoBuild Architecture: deep-dives/autobuild-architecture.md
 
   - Software Factory:
