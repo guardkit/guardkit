@@ -245,8 +245,11 @@ def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
     return str(source.get(BLOCKING_ENV_VAR, "")).strip().lower() in _TRUTHY
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, raw: bool = False, timeout: Optional[float] = None) -> Any:
     """Ask git one read-only question inside ``repo`` and return what it said.
+
+    Text by default; the exact bytes when ``raw`` is set (for NUL-separated file
+    names, which may not be valid text).
 
     Raises ``ValueError`` with a sentence a person can read whenever git is not there,
     does not answer, or answers with an error. Every caller here turns that into "the
@@ -258,7 +261,8 @@ def _git(repo: Path, *args: str) -> str:
         done = run_git(
             ["-C", str(repo), *args],
             check=True,
-            timeout=_GIT_TIMEOUT_SECONDS)
+            text=not raw,
+            timeout=timeout or _GIT_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as exc:
         raise ValueError(
             f"git {' '.join(args)} failed in {repo}: "
@@ -266,7 +270,7 @@ def _git(repo: Path, *args: str) -> str:
     except subprocess.TimeoutExpired as exc:
         raise ValueError(
             f"git {' '.join(args)} did not answer within "
-            f"{_GIT_TIMEOUT_SECONDS} seconds in {repo}") from exc
+            f"{int(timeout or _GIT_TIMEOUT_SECONDS)} seconds in {repo}") from exc
     except OSError as exc:
         raise ValueError(f"git could not be run in {repo}: {exc}") from exc
     return done.stdout
@@ -284,7 +288,8 @@ def starting_commit(worktree_path: Path) -> str:
     return sha
 
 
-def files_changed_since(repo: Path, start_commit: str) -> list[str]:
+def files_changed_since(repo: Path, start_commit: str,
+                        timeout: Optional[float] = None) -> list[str]:
     """The repository-relative files that differ from ``start_commit`` right now.
 
     Two questions, because one is not enough. ``git diff`` names every tracked file
@@ -293,11 +298,19 @@ def files_changed_since(repo: Path, start_commit: str) -> list[str]:
     goes. So the files git is not tracking are asked for separately and added. Missing
     them would let a whole new file pass unread, which is this estate's known failure
     class: a check that runs, looks in the wrong place, and reports success.
+
+    Both answers are asked for NUL-separated (``-z``, 17 October 2026). Without it git
+    quotes and escapes any name holding a non-ASCII character, a quote or a
+    backslash, and the escaped name names no file on disk, so such a file was never
+    read. Names are taken exactly as given, never trimmed.
     """
     repo = Path(repo)
-    changed = _git(repo, "diff", "--name-only", start_commit).splitlines()
-    untracked = _git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
-    return sorted({line.strip() for line in (*changed, *untracked) if line.strip()})
+    changed = _git(repo, "diff", "--name-only", "-z", start_commit, raw=True,
+                   timeout=timeout)
+    untracked = _git(repo, "ls-files", "--others", "--exclude-standard", "-z", raw=True,
+                     timeout=timeout)
+    names = (*changed.split(b"\0"), *untracked.split(b"\0"))
+    return sorted({os.fsdecode(name) for name in names if name})
 
 
 def build_arch_conformance_rule(
@@ -347,8 +360,14 @@ def build_arch_conformance_rule(
                 BLOCKING_ENV_VAR, task_id or "<task>", exc)
             return None
 
+        # -I (isolated mode, 17 October 2026): the command runs with the worktree
+        # as its current folder, and a plain ``python -m`` puts that folder first
+        # on the import path, so a ``guardkit.py`` or ``guardkit/__init__.py`` the
+        # code generator wrote would be imported instead of this checker and could
+        # pass without checking anything. -I leaves the current folder,
+        # PYTHONPATH and the user's site-packages out of the import path.
         command = (
-            f"{shlex.quote(sys.executable)} -m guardkit.orchestrator.arch_conformance "
+            f"{shlex.quote(sys.executable)} -I -m guardkit.orchestrator.arch_conformance "
             f"--repo . --since {shlex.quote(sha)}")
         logger.info(
             "Architecture rules: %s is set and %s has a rules file, so %s will be "
@@ -377,6 +396,40 @@ def build_arch_conformance_rule(
 _COULD_NOT_RUN = "Architecture rules were not checked: {why} Nothing was checked, which is not the same as clean."
 
 
+def visible(text: str) -> str:
+    """``text`` with every control character and undecodable byte shown, not acted on.
+
+    A file name may hold a newline, a terminal escape or bytes that are not UTF-8
+    (kept by Python as surrogates). Printed raw, a newline would split one output line
+    into two, and a surrogate stops ``print`` with UnicodeEncodeError. Each is shown
+    as a backslash escape instead: ``\\n``, ``\\x1b``, ``\\xff``.
+    """
+    out = []
+    for ch in str(text):
+        code = ord(ch)
+        if 0xDC80 <= code <= 0xDCFF:  # an undecodable byte kept by surrogateescape
+            out.append(f"\\x{code - 0xDC00:02x}")
+        elif code < 0x20 or code == 0x7F or 0x80 <= code < 0xA0:
+            out.append(ch.encode("unicode_escape").decode("ascii"))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def safe_stdout() -> None:
+    """Never let a character the terminal's encoding lacks stop the command.
+
+    Under a full UTF-8 locale Python's standard output refuses a lone surrogate. The
+    checks run as ``python -I``, which ignores PYTHONIOENCODING, so the stream is told
+    here to write such a character as a backslash escape instead.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _finding_lines(report: Any) -> list[str]:
     """The checker's own words for every place it reports, and nothing else.
 
@@ -389,12 +442,12 @@ def _finding_lines(report: Any) -> list[str]:
     for rule in report.rules:
         for site in rule.reported_findings(report.narrowed):
             lines.append("")
-            lines.append(f"{rule.rule_id} -- {site.where}")
+            lines.append(f"{rule.rule_id} -- {visible(site.where)}")
             lines.append(
                 f"    what is there: {site.observed}"
                 + (f", inside {site.enclosing}()" if site.enclosing else ""))
             for extra in site.also_at:
-                lines.append(f"    also here:     {extra}")
+                lines.append(f"    also here:     {visible(extra)}")
             lines.append(f"    the rule:      {rule.says}")
             source = rule.source or {}
             where = source.get("document") or "(no document named)"
@@ -467,7 +520,7 @@ def check_changed_files(repo: Path, start_commit: str) -> tuple[int, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        prog="python -m guardkit.orchestrator.arch_conformance",
+        prog="python -I -m guardkit.orchestrator.arch_conformance",
         description=(
             "Check the files a task changed against the repository's own architecture "
             "rules. Exit 1 means there is something to read; exit 0 means there is "
@@ -476,6 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    safe_stdout()
     parser = build_parser()
     parser.add_argument("--repo", type=Path, default=Path("."),
                         help="the repository to read (default: the current directory)")

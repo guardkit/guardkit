@@ -829,102 +829,35 @@ cat tasks/*/TASK-XXX*.md | grep -A 20 "autobuild_state"
 
 ---
 
-## Security Validation
+## Security Check
 
-`/feature-build` includes automatic security validation at two levels:
+Every task gets a security check on the files it changes. It takes seconds and needs no
+configuration. It runs whenever the build image holds Gitleaks or OSV-Scanner; there is no
+switch and no per-task or per-feature setting.
 
-### Quick Checks (Default)
+**How it runs.** Before turn 1 GuardKit adds one `assert_command` rule, `security-check`,
+to the task's frozen conformance rules (`guardkit/orchestrator/security_check.py`). On each
+turn it reads only the files the task changed since it started (`.guardkit/` left out):
 
-All tasks receive quick security checks with ~30s overhead:
-- Hardcoded secrets detection
-- SQL/command injection patterns
-- CORS misconfiguration
-- Debug mode detection
+| Check | Tool | What blocks |
+|-------|------|-------------|
+| Secrets | Gitleaks (built-in rules) | Any secret in a changed text file. The issue names the file, line and kind, never the value. |
+| Dependencies | OSV-Scanner | A new advisory scoring 7.0 or more; any known malicious package (`MAL-`); an upgrade that leaves a serious advisory in place. Lower scores are printed as advice. |
+| New packages | deps.dev | A package new in this change whose first version was published under 30 days ago. |
 
-**When It Runs**: Phase 4.3 (after tests, before Phase 4.5 Test Enforcement)
+**What the Player sees.** A blocking finding comes back through the Coach as one must-fix
+issue on the next turn, with every fixed version OSV records for each advisory. In a test,
+build tokens and keys at run time instead of writing them as literals.
 
-### Full Security Review
+**Repository settings are not read.** `.gitleaks.toml`, `.gitleaksignore`,
+`osv-scanner.toml` and inline `gitleaks:allow` comments in the repository are ignored.
 
-Tasks tagged with security-related tags receive full review in pre-loop:
-- OWASP Top 10 analysis
-- Authentication pattern review
-- Authorization logic review
+**It never becomes a wall.** A missing tool, no network, or a scanner that errors or runs
+out of time prints "was not checked … which is not the same as clean" and does not block.
+With neither tool installed, no rule is added.
 
-**When It Runs**: Phase 2.5C (pre-loop, before Player implementation)
-
-**Triggers**: Tasks with tags like `authentication`, `auth`, `security`, `token`, `payment` or titles containing `login`, `password`, `jwt`, `oauth`
-
-### Configuration
-
-**Task-level** (in task frontmatter):
-```yaml
-security:
-  level: strict  # strict | standard | minimal | skip
-```
-
-**Feature-level** (in feature YAML):
-```yaml
-security:
-  default_level: standard
-  force_full_review: [TASK-AUTH-001]
-  skip_review: [TASK-UI-001]
-```
-
-**Global** (in `.guardkit/config.yaml`):
-```yaml
-autobuild:
-  security:
-    enabled: true
-    default_level: standard
-```
-
-### Security Levels
-
-| Level | Quick Checks | Full Review | Block On |
-|-------|--------------|-------------|----------|
-| strict | Always | Always | High+ |
-| standard | Always | Tagged only | Critical |
-| minimal | Always | Never | Critical |
-| skip | Never | Never | Never |
-
-### Quick Checks Reference
-
-| Check | Severity | Pattern |
-|-------|----------|---------|
-| Hardcoded secrets | Critical | `API_KEY = "..."` |
-| SQL injection | Critical | `f"SELECT {var}"` |
-| Command injection | Critical | `subprocess.run(f"...")` |
-| CORS wildcard | High | `allow_origins=["*"]` |
-| Debug mode | High | `DEBUG = True` |
-| Eval/exec | High | `eval(...)` |
-
-### Skipping Checks
-
-Skip specific checks for false positives:
-```yaml
-security:
-  skip_checks: [debug-mode, cors-wildcard]
-```
-
-Or use inline comments:
-```python
-DEBUG = True  # nosec - only enabled in test environment
-```
-
-### Excluded Finding Types
-
-The following finding types are automatically excluded as low-value:
-- Denial of Service / resource exhaustion
-- Rate limiting recommendations
-- Memory leaks / resource management
-- Open redirect vulnerabilities
-- Findings in documentation files (*.md)
-
-### Confidence Scoring
-
-Security findings include a confidence score (0.0-1.0). Only findings with confidence >= 0.8 are reported.
-
-**See**: [Security Validation Guide](../../docs/guides/security-validation.md) for complete documentation.
+Broader code-pattern rules (Opengrep) run only in the factory's nightly sweep, not per
+change. **See**: [Security Check Guide](../../docs/guides/security-validation.md).
 
 ---
 

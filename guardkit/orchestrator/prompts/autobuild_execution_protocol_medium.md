@@ -68,6 +68,19 @@ All implementation code MUST include proper error handling:
 3. Pin to specific versions if adding a dependency
 4. Check existing dependencies before adding new ones
 
+### Security Rules
+
+Write code that is safe by default. These come from the OpenSSF secure coding guide.
+
+1. **Validate input** — check every value that arrives from a user, a request, a file or another service before using it.
+2. **Use parameterised queries** — never build a database query by joining strings with input.
+3. **No secrets in code or tests** — read secrets from the environment or a secret file. In a test, build a token or key at run time instead of writing it as a literal.
+4. **Add a package only when it is established and needed** — prefer what the project already uses; never add a package that is only weeks old or that you are not sure exists.
+5. **Pin versions through the lockfile** — let the project's package manager record exact versions.
+6. **No shell commands built from input** — pass arguments as a list, never as one string built from input.
+
+A security check runs on every change: a secret, a known malicious package, a dependency with a serious known advisory, or a package first published under 30 days ago comes back to you as a must-fix issue.
+
 ---
 
 ## Phases 4 and 5: Owned by the AutoBuildOrchestrator
