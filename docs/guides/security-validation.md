@@ -20,12 +20,16 @@ unchanged.
 
 It reads only the files the task changed since it started (`git diff --name-only -z <start>`
 plus files git is not yet tracking, with `.guardkit/` left out). Each changed file is read
-once. A file it cannot read, a file over 20 MB, or anything that is not a regular file is
-named in the output as not checked; a symbolic link is recorded and never followed.
+once. A file it cannot read, or anything that is not a regular file, is named in the
+output as not checked; a symbolic link is recorded and never followed. A file over 20 MB
+has only its first 20 MB read for secrets, is not given to OSV-Scanner, and is named as
+partly checked. Names are printed with control characters and bytes that are not UTF-8
+shown as backslash escapes, so no name can split or stop the output.
 
 ## Check 1: secrets
 
-Gitleaks runs in `dir` mode over copies of the changed text files, with its built-in
+Gitleaks runs in `dir` mode over copies of every changed regular file (it decides itself
+which it can read), with its built-in
 rules, `--redact` and `--ignore-gitleaks-allow`. Each finding names the file, the line and
 the kind of secret, never the value.
 
@@ -37,7 +41,17 @@ token or key at run time instead of writing it as a literal.
 This runs only when the task changed a file OSV-Scanner reads (lockfiles and manifests, by
 the scanner's own recognition). OSV-Scanner reads the head and starting versions of those
 files, with `--no-ignore`, and no `.gitignore` is copied in, so an ignore file cannot hide
-a lockfile. If the starting versions cannot be read, everything at head is judged as new.
+a lockfile.
+
+If the starting versions cannot be read, a known malicious package at head still blocks,
+but any other serious advisory at head is reported as not checked, because whether this
+change brought it in is unknown. The age check then runs only for packages whose names
+appear in no starting version of those files; the rest are reported as not checked.
+
+For a manifest such as `requirements.txt`, OSV-Scanner also resolves the packages the
+declared ones depend on, over the network. A package that is not written in the changed
+file is named as "an indirect dependency resolved by OSV-Scanner"; OSV-Scanner's output
+does not say which declared package brought it in.
 
 | Finding | Result |
 |---------|--------|
@@ -49,8 +63,8 @@ a lockfile. If the starting versions cannot be read, everything at head is judge
 | A package new in this change, first published under 30 days ago (deps.dev) | blocks |
 
 Each advisory is one line, however many ids OSV lists it under (a PYSEC and a GHSA id
-together), with every fixed version OSV records for it (commit ranges left out). The check does not compare
-versions itself; the Player picks one and the next turn checks it.
+together), with every fixed version OSV records for it (commit ranges left out). The
+check does not compare versions itself; the Player picks one and the next turn checks it.
 
 ## Repository settings are not read
 
@@ -68,6 +82,16 @@ A missing tool, an unreachable network, or a scanner that errors or runs out of 
 prints "<what> was not checked: <why>. Nothing was checked, which is not the same as
 clean." and that part passes. The command keeps a 200-second budget inside the rule's
 300-second limit. Confirmed findings from the parts that finished still block.
+
+Where "not checked" appears:
+
+- **When the check fails** (something blocks), the whole output, last 2000 characters,
+  goes to the Coach and back to the Player as one must-fix issue, so the "not checked"
+  lines are in it.
+- **When the check passes**, the build loop keeps no output of a passing rule, so the
+  conformance evaluator writes the check's output to the build log at INFO ("Conformance
+  rule 'security-check' passed; what it printed: ..."). That log line is the only place
+  a passing run's "not checked" lines appear. They are not on any card.
 
 ## Checking an image
 
