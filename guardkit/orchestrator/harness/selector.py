@@ -440,6 +440,16 @@ def _parse_player_project_inputs(
         field="autobuild.player.protected_paths",
         config_path=config_path,
     )
+    # 17 October 2026: a protected path is a part of the repository. The whole
+    # repository (or a path outside it) would forbid every change.
+    for value in protected_paths:
+        normal = PurePosixPath(os.path.normpath(value)).as_posix()
+        if normal in (".", "..") or normal.startswith("../"):
+            raise AgentInvocationError(
+                f"Invalid `autobuild.player.protected_paths` in {config_path}: "
+                f"{value!r} is the whole repository or outside it; name the "
+                "files or folders that must not change."
+            )
     # Mandatory supporting documents the project says the Player must read in
     # full, alongside the selected skill bodies. Parsed exactly like
     # ``protected_paths``: a generic list of repository-relative paths, with no
