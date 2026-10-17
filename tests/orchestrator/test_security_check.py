@@ -455,6 +455,42 @@ def test_no_scanner_installed_means_no_rule_and_nothing_frozen(repo, monkeypatch
     assert _snapshot(root) is None
 
 
+def test_the_switch_is_off_by_default_so_nothing_is_frozen_even_with_the_tools(
+    repo, monkeypatch, tmp_path
+):
+    """Rich, 17 October 2026: off until the projects' existing problems are fixed."""
+    bindir = tmp_path / "bin"
+    make_gitleaks_stub(bindir)
+    make_osv_stub(bindir)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.delenv(ARCH_SWITCH, raising=False)
+    monkeypatch.delenv("GUARDKIT_SECURITY_CHECK_BLOCKING", raising=False)
+    root, _sha = repo({})
+
+    assert build_security_rule(root, TASK_ID) is None
+    assert _snapshot(root) is None
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "off", "no", "maybe"])
+def test_anything_but_an_on_word_leaves_the_switch_off(repo, monkeypatch, tmp_path, value):
+    bindir = tmp_path / "bin"
+    make_gitleaks_stub(bindir)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    root, _sha = repo({})
+    assert build_security_rule(
+        root, TASK_ID, env={"GUARDKIT_SECURITY_CHECK_BLOCKING": value}) is None
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", " on "])
+def test_an_on_word_switches_it_on(repo, monkeypatch, tmp_path, value):
+    bindir = tmp_path / "bin"
+    make_gitleaks_stub(bindir)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    root, _sha = repo({})
+    rule = build_security_rule(root, TASK_ID, env={"GUARDKIT_SECURITY_CHECK_BLOCKING": value})
+    assert rule is not None and rule["id"] == RULE_ID
+
+
 def test_the_rule_runs_isolated_with_absolute_scanner_paths(repo, monkeypatch, tmp_path):
     bindir = tmp_path / "bin"
     gitleaks = make_gitleaks_stub(bindir)

@@ -94,7 +94,8 @@ All modes must pass the same quality gates (100% tests passing, ≥80% coverage,
 The Coach does NOT run security scans and does not invoke a security agent. A security
 check runs on every change, outside the Coach:
 
-1. **Before turn 1**, when the factory image holds Gitleaks or OSV-Scanner, GuardKit adds
+1. **Before turn 1**, when the operator has switched it on (`GUARDKIT_SECURITY_CHECK_BLOCKING`,
+   off by default) and the factory image holds Gitleaks or OSV-Scanner, GuardKit adds
    one `assert_command` rule, `security-check`, to the task's frozen conformance rules
    (`guardkit/orchestrator/security_check.py`). It is frozen with the task's other rules,
    so the Player cannot change it.

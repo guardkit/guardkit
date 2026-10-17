@@ -831,9 +831,10 @@ cat tasks/*/TASK-XXX*.md | grep -A 20 "autobuild_state"
 
 ## Security Check
 
-Every task gets a security check on the files it changes. It takes seconds and needs no
-configuration. It runs whenever the build image holds Gitleaks or OSV-Scanner; there is no
-switch and no per-task or per-feature setting.
+When the operator switches it on, every task gets a security check on the files it
+changes. It takes seconds. It runs when `GUARDKIT_SECURITY_CHECK_BLOCKING` is set in the
+build runner's environment (off by default) and the build image holds Gitleaks or
+OSV-Scanner; there is no per-task or per-feature setting.
 
 **How it runs.** Before turn 1 GuardKit adds one `assert_command` rule, `security-check`,
 to the task's frozen conformance rules (`guardkit/orchestrator/security_check.py`). On each

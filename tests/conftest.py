@@ -468,7 +468,11 @@ def project_commands_follow_a_replaced_subprocess_run(monkeypatch):
 @pytest.fixture(autouse=True)
 def security_scanners_hidden_unless_asked(monkeypatch, request):
     if request.node.get_closest_marker("security_scanners"):
+        # A test that asks for the scanners also gets the operator's switch, which
+        # is off by default; the switch's own tests unset it themselves.
+        monkeypatch.setenv("GUARDKIT_SECURITY_CHECK_BLOCKING", "1")
         return
+    monkeypatch.delenv("GUARDKIT_SECURITY_CHECK_BLOCKING", raising=False)
     try:
         from guardkit.orchestrator import security_check
     except Exception:  # noqa: BLE001 -- a test without the package is unaffected

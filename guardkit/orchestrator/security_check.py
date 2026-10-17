@@ -66,8 +66,14 @@ IT NEVER BECOMES A WALL
 exits 0 when this isolated interpreter found the installed guardkit and both scanners
 start.
 
-There is no switch: the check runs whenever the image holds the tools. No project
-declaration is needed, and nothing here names a language or a stack.
+THE SWITCH (17 October 2026). The check is added only when
+``GUARDKIT_SECURITY_CHECK_BLOCKING`` is set (``1``, ``true``, ``yes`` or ``on``), the same
+shape as the architecture check's ``GUARDKIT_ARCH_CONFORMANCE_BLOCKING``. It is OFF by
+default. Rich, 17 October 2026: not on until the issues already in the projects are fixed
+and the lanes working now have finished, so that switching it on does not break their
+builds. With the switch unset, a build is exactly what it was before this existed, even
+when the image holds the tools. No project declaration is needed, and nothing here names
+a language or a stack.
 """
 
 from __future__ import annotations
@@ -91,7 +97,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from guardkit.orchestrator.arch_conformance import safe_stdout, visible
 
@@ -158,9 +164,22 @@ def _find_tool(name: str) -> Optional[str]:
     return os.path.abspath(found)
 
 
+#: The operator's switch. Off unless set to one of :data:`_SWITCH_ON`.
+BLOCKING_ENV_VAR = "GUARDKIT_SECURITY_CHECK_BLOCKING"
+
+_SWITCH_ON = {"1", "true", "yes", "on"}
+
+
+def blocking_requested(env: Optional[Mapping[str, str]] = None) -> bool:
+    """Has the operator switched the security check on? Absent or unrecognised is no."""
+    source = os.environ if env is None else env
+    return str(source.get(BLOCKING_ENV_VAR, "")).strip().lower() in _SWITCH_ON
+
+
 def build_security_rule(
     worktree_path: Path,
     task_id: Optional[str] = None,
+    env: Optional[Mapping[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """The security check to hand the build loop for this task, or ``None``.
 
@@ -168,6 +187,7 @@ def build_security_rule(
     move :func:`guardkit.orchestrator.arch_conformance.build_arch_conformance_rule`
     makes. ``None``, and therefore nothing at all, when:
 
+    * the switch :data:`BLOCKING_ENV_VAR` is not set (the default);
     * neither Gitleaks nor OSV-Scanner is installed (the build is then exactly what it
       was before this existed);
     * the commit this task starts from cannot be read, so the check could not be held
@@ -177,6 +197,11 @@ def build_security_rule(
     and never looked up on PATH when the command runs. Never raises.
     """
     try:
+        if not blocking_requested(env):
+            logger.debug(
+                "Security check: %s is not set, so no check was added for %s.",
+                BLOCKING_ENV_VAR, task_id or "<task>")
+            return None
         gitleaks = _find_tool(GITLEAKS_NAME)
         osv_scanner = _find_tool(OSV_SCANNER_NAME)
         if gitleaks is None and osv_scanner is None:
