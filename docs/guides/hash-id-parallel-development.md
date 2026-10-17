@@ -1,3 +1,11 @@
+!!! note "Earlier reference — not revalidated for the October 2026 runtime"
+
+    This page retains earlier guidance and examples. For the current workflows, use
+    [GuardKit in a coding harness](../harness/index.md),
+    [AutoBuild architecture](../deep-dives/autobuild-architecture.md) and
+    [the Software Factory](../software-factory/index.md).
+    SDK, memory-backend, command and completion behaviour may differ from this reference.
+
 # Hash-Based ID Parallel Development with Conductor.build
 
 This guide explains how to leverage Conductor.build worktrees for parallel development of the hash-based ID implementation, and more generally for any parallel development workflow.

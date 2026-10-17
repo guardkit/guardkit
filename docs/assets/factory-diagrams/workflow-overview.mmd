@@ -1,0 +1,8 @@
+flowchart LR
+    Dev["Developer"] --> Harness["Coding harness<br/>GuardKit instructions and commands"]
+    Harness --> Work["Plan, implement and review<br/>inside the attended session"]
+    Operator["Factory operator"] --> Jarvis["Jarvis / Slack<br/>Requests and decisions"]
+    Jarvis --> Forge["Forge<br/>Planning and delivery orchestration"]
+    Forge --> AutoBuild["GuardKit AutoBuild<br/>Player / Coach loop"]
+    AutoBuild --> Evidence["Candidate and verification evidence"]
+    Evidence --> Decision["Human merge decision<br/>then controlled publication and deployment"]

@@ -7,12 +7,12 @@
 # Site Metadata
 # ============================================================================
 site_name: GuardKit
-site_description: AI-assisted development with built-in quality gates
-site_url: https://guardkit.github.io/guardkit/
+site_description: GuardKit in a coding harness, Software Factory architecture, and practical lessons for AI-native development
+site_url: https://guardkit.ai/
 repo_url: https://github.com/guardkit/guardkit
 repo_name: guardkit/guardkit
 edit_uri: edit/main/docs/
-copyright: Copyright &copy; 2025 GuardKit
+copyright: Copyright &copy; 2025–2026 GuardKit
 
 # ============================================================================
 # Theme Configuration - Material for MkDocs
@@ -67,19 +67,36 @@ nav:
 
   - Getting Started:
       - Quick Start: guides/GETTING-STARTED.md
-      - GuardKit Workflow: guides/guardkit-workflow.md
+      - Choose a Workflow: guides/guardkit-workflow.md
 
-  - Core Concepts: concepts.md
+  - Coding Harness:
+      - Interactive GuardKit: harness/index.md
+      - AutoBuild Architecture: deep-dives/autobuild-architecture.md
 
-  - Advanced Topics: advanced.md
+  - Software Factory:
+      - Overview: software-factory/index.md
+      - Architecture and C4 Views: software-factory/architecture.md
+      - Delivery Flow: software-factory/delivery-flow.md
+      - Using the Factory: software-factory/using-the-factory.md
+      - Project Readiness: software-factory/project-readiness.md
+      - Evidence and Limits: software-factory/evidence-and-limits.md
+      - Sources and Maintenance: software-factory/sources.md
 
-  - Templates: templates.md
+  - Learn and Teach:
+      - Learning Routes: learning/index.md
+      - Engineering Lessons: learning/lessons.md
+      - Industry Comparison: learning/industry-comparison.md
+      - Pathfinder Playbook: learning/pathfinder-playbook.md
+      - Reusable Field Kit: learning/field-kit.md
+      - Presentation Kit: learning/presentation-kit.md
 
-  - Agent System: agents.md
-
-  - Task Review: task-review.md
-
-  - Troubleshooting: troubleshooting.md
+  - Earlier Reference:
+      - Core Concepts: concepts.md
+      - Advanced Topics: advanced.md
+      - Templates: templates.md
+      - Agent System: agents.md
+      - Task Review: task-review.md
+      - Troubleshooting: troubleshooting.md
 
   - Guides:
       - GuardKit Workflow: guides/guardkit-workflow.md
@@ -102,7 +119,6 @@ nav:
       - Task Review Workflow: workflows/task-review-workflow.md
 
   - Deep Dives:
-      - AutoBuild Architecture: deep-dives/autobuild-architecture.md
       - Adversarial Cooperation Research: deep-dives/adversarial-cooperation-research-validation.md
       - Conductor Integration: deep-dives/conductor-integration.md
       - MCP Integration:

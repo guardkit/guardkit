@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant O as GuardKit orchestrator
+    participant P as Player
+    participant T as Independent checks
+    participant C as Coach
+    O->>O: Load plan and capture review inputs
+    loop Until approved or a bound stops execution
+        O->>P: Task, project context and previous feedback
+        P->>P: Edit code and run implementation checks
+        P-->>O: Candidate and Player report
+        O->>T: Run independent checks on candidate
+        T-->>O: Results, failures or unavailable evidence
+        O->>C: Requirements, candidate and evidence bundle
+        C-->>O: Approve or feedback
+        O->>O: Apply guards and persist turn outcome
+    end
+    O-->>O: Preserve worktree and report final state

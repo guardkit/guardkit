@@ -1,0 +1,37 @@
+sequenceDiagram
+    actor Owner
+    participant Forge
+    participant Helper as Sandbox helper
+    participant Git as Remote repository
+    participant Ledger as Build ledger
+    participant Publisher
+    Forge->>Git: Read recorded target branch's current commit
+    Forge->>Helper: Prepare candidate integrated with that target
+    opt Project has preview enabled
+        Helper->>Helper: Start preview, check access and record journey
+        Helper-->>Forge: Preview tree, lease and test evidence
+    end
+    Forge->>Ledger: Record candidate and merge offer
+    Forge->>Owner: Merge card via Jarvis
+    Owner->>Forge: Approve this offer via Jarvis
+    Forge->>Git: Fetch target branch again
+    Forge->>Helper: Join current target and candidate in a new worktree
+    Helper-->>Forge: Joined commit and tree
+    alt Preview exists and joined tree differs
+        Forge-->>Owner: Refuse: target changed since the preview
+    else Identity remains acceptable
+        Forge->>Helper: Run required checks on joined result
+        Helper-->>Forge: Checks and exact commit identity
+        Forge->>Ledger: Record passed checks on joined commit
+        Forge->>Publisher: Publish this recorded project/build/commit
+        Publisher->>Ledger: Independently read publication record
+        Publisher->>Helper: Fetch joined commit through read-only Git export
+        Publisher->>Git: Check ancestry, ordinary non-forcing push
+        Publisher->>Git: Read remote back
+        Publisher-->>Forge: Published / refused and remote evidence
+        opt Deployment configured
+            Forge->>Helper: Deploy published result and run live checks
+            Helper-->>Forge: Deployment and live-check outcome
+        end
+        Forge-->>Owner: Report verified terminal outcome
+    end

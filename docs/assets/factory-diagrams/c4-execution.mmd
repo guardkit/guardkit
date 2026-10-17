@@ -1,0 +1,25 @@
+flowchart TB
+    Forge["Container: Forge<br/>Python / LangGraph"]
+    Ledger[("Container: build ledger<br/>SQLite")]
+    subgraph Sandbox["Execution boundary: shared product sandbox"]
+        Runner["Container: build runner<br/>LangGraph / AutoBuild"]
+        Helper["Container: deploy helper<br/>Python / HTTP"]
+        Worktree[("Repository storage<br/>Git worktrees")]
+        Preview["Containers: preview app<br/>Project-defined runtime"]
+    end
+    ModelDoor["Container: model proxy<br/>HAProxy; outside sandbox"]
+    Memory["Container: fleet memory<br/>MCP; restricted access"]
+    Publisher["Container: publisher<br/>Python; remote-write key"]
+    Git["External System: Git hosting"]
+    Forge -->|"Pinned build"| Runner
+    Forge -->|"Checks / deploy"| Helper
+    Runner -->|"Implement / test"| Worktree
+    Helper -->|"Read / join"| Worktree
+    Helper -->|"Start / check / stop"| Preview
+    Runner -->|"Inference"| ModelDoor
+    Runner <-->|"Memory requests"| Memory
+    Forge -->|"Publish joined commit"| Publisher
+    Publisher -->|"Read evidence"| Ledger
+    Publisher -->|"Read-only Git export"| Worktree
+    Publisher -->|"Push / confirm"| Git
+    Helper -->|"Fetch source"| Git

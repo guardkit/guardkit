@@ -1,113 +1,72 @@
-# GuardKit
+# GuardKit and the Software Factory
 
-![version](https://img.shields.io/badge/version-0.9.0-blue)
-![license](https://img.shields.io/badge/license-MIT-green)
-![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
+GuardKit helps turn a feature request into planned work, implementation and evidence.
+You can use it **inside a coding harness**, where you direct the work, or as the
+**AutoBuild engine inside the Software Factory**, where Forge coordinates a longer
+delivery workflow.
 
-**Plan Features. Build Faster.**
+These are different ways to work. Installing GuardKit does not install the factory,
+and completing an AutoBuild task does not mean a feature has been deployed.
 
-GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
+## Choose your starting point
 
-## Key Features
+| What you want to do | Start here | Who coordinates the work? |
+|---|---|---|
+| Plan and implement with an assistant in your editor or terminal | [Coding harness quickstart](guides/GETTING-STARTED.md) | You and your coding harness |
+| Run a bounded Player/Coach build from a prepared task or feature | [AutoBuild architecture and entrypoints](deep-dives/autobuild-architecture.md) | GuardKit's build orchestrator |
+| Submit work, review decisions and approve delivery through the factory | [Using the Software Factory](software-factory/using-the-factory.md) | Forge, with human decisions through Jarvis/Slack |
+| Understand the services and agent interactions | [Factory architecture](software-factory/architecture.md) | C4 context and container views, plus a delivery sequence |
+| Introduce AI-native development to a team | [Pathfinder playbook](learning/pathfinder-playbook.md) | A small team with explicit success measures |
+| Prepare a presentation or video | [Presentation kit](learning/presentation-kit.md) | Suggested stories, diagrams, demonstrations and claim limits |
 
-- **Feature Planning** - Single `/feature-plan` command creates feature directory, README, implementation guide, and subtasks
-- **Clarifying Questions** - Targeted questions before assumptions, complexity-gated
-- **Architectural Review** - SOLID, DRY, YAGNI evaluation before coding
-- **Test Enforcement** - Automatic test fixing (up to 3 attempts), ensures 100% pass rate
-- **AI Agent Discovery** - Automatic specialist matching via metadata (stack, phase, keywords)
-- **Quality Gates** - Coverage thresholds (80% line, 75% branch), compilation checks, code review
-- **Parallel Development** - Built-in wave detection + Conductor.build integration
+## Two paths, one important boundary
 
-## Quick Start
-
-New to GuardKit? Start here:
-
-- **[5-Minute Quickstart](guides/GETTING-STARTED.md)** - Get up and running fast
-- **[GuardKit Workflow](guides/guardkit-workflow.md)** - Learn the core workflow
-- **[Choose a Template](templates.md)** - Select your tech stack
-
-## Documentation Sections
-
-### 📚 [Core Concepts](concepts.md)
-Learn the fundamentals: workflow, complexity evaluation, quality gates, and task states.
-
-### 🚀 [Advanced Topics](advanced.md)
-Design-first workflow, UX integration, iterative refinement, and plan modification.
-
-### 🎨 [Templates](templates.md)
-React, Python, .NET templates and customization guide. See also [Template System Architecture](guides/template-system-architecture.md) for how templates work internally.
-
-### 🤖 [Agent System](agents.md)
-AI agent discovery, enhancement workflow, and boundary sections.
-
-### 🔄 [Task Review](task-review.md)
-Analysis and decision-making workflows separate from implementation.
-
-### 🔌 [MCP Integration](mcp-integration.md) (Optional)
-Enhance with Model Context Protocol servers for library docs and design patterns.
-
-### 🛠️ [Troubleshooting](troubleshooting.md)
-Common issues, solutions, and the `/debug` command.
-
-## Example Workflow
-
-### Feature Planning (Recommended)
-
-```bash
-# Install GuardKit
-curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
-
-# Initialize your project
-cd /path/to/your/project
-guardkit init react-typescript
-
-# Plan a feature (single command!)
-/feature-plan "add user authentication"
-
-# System creates:
-# ✅ Review task with technical options
-# ✅ Subtask breakdown with parallel waves
-# ✅ Implementation guide
-# ✅ Feature workspace in tasks/backlog/
-
-# Work through generated subtasks
-/task-work TASK-AUTH-001
-/task-complete TASK-AUTH-001
+```mermaid
+flowchart LR
+    Dev["Developer"] --> Harness["Coding harness<br/>GuardKit instructions and commands"]
+    Harness --> Work["Plan, implement and review<br/>inside the attended session"]
+    Operator["Factory operator"] --> Jarvis["Jarvis / Slack<br/>Requests and decisions"]
+    Jarvis --> Forge["Forge<br/>Planning and delivery orchestration"]
+    Forge --> AutoBuild["GuardKit AutoBuild<br/>Player / Coach loop"]
+    AutoBuild --> Evidence["Candidate and verification evidence"]
+    Evidence --> Decision["Human merge decision<br/>then controlled publication and deployment"]
 ```
 
-### Simple Tasks (Direct)
+The coding harness and the factory may share task files, project guidance and
+verification declarations. They do not share every command, permission or completion
+rule. [Compare the workflows](guides/guardkit-workflow.md) before copying an example
+from one path into the other.
 
-```bash
-# Create and work on a simple task (natural language description)
-/task-create "The login button styling is broken on mobile devices"
-/task-work TASK-a3f8  # Plans, reviews, implements, tests
-/task-complete TASK-a3f8
-```
+## What makes the factory more than a coding agent?
 
-Three commands from idea to production-ready code.
+The factory connects request intake, specification, planning, isolated implementation,
+independent checks, review evidence and controlled publication. Jarvis presents the
+conversation; Forge owns the workflow; GuardKit owns the build loop. The project
+provides the commands and examples that define acceptable behaviour.
 
-## When to Use GuardKit
+A model saying it has finished is one input. Tests, scenario checks, the exact Git
+candidate, the human decision and the deployment outcome answer different questions.
+The [delivery flow](software-factory/delivery-flow.md) explains where each fits.
 
-### ✅ Use GuardKit When
+## Current scope and evidence
 
-- Individual tasks or small features (1-8 hours)
-- Solo dev or small teams (1-3 developers)
-- Need quality enforcement without ceremony
-- Want AI assistance with human oversight
-- Small-to-medium projects
-- Learning new stack (use reference templates)
-- Creating team templates (use `/template-create`)
+The refreshed harness, factory and learning sections were checked on **17 October
+2026** against named source revisions. AutoBuild's default is LangGraph; the current
+factory Player uses deepagents-code, and knowledge capture uses fleet-memory.
+Older SDK and Graphiti descriptions remain in historical reference material.
 
-### 🔗 Use RequireKit When
+The factory has recorded working Slack approval and web-preview flows, alongside
+planning failures and operational limitations. Private-repository intake and prototype
+handover are work in progress at this snapshot. Start with
+[evidence and limitations](software-factory/evidence-and-limits.md) for the scope of
+those claims, and the [source register](software-factory/sources.md) for verification.
 
-For formal requirements management (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
+## Learn from the implementation
 
-## Links
+- [Engineering lessons](learning/lessons.md): failures, repairs and principles worth transferring.
+- [Other software factories](learning/industry-comparison.md): primary-source research and a fair comparison.
+- [Reusable field kit](learning/field-kit.md): feature contracts, decision records, experiments and handovers.
+- [Learning routes](learning/index.md): a short introduction, an engineering walkthrough and team adoption.
 
-- **[GitHub Repository](https://github.com/guardkit/guardkit)** - Source code and contributions
-- **[Report an Issue](https://github.com/guardkit/guardkit/issues)** - Bug reports and feature requests
-- **[RequireKit](https://github.com/requirekit/require-kit)** - Formal requirements management
-
----
-
-**Plan Features. Build Faster.** Built for pragmatic developers who ship quality code.
+Quality gates reduce specific risks when the right evidence reaches them. They do not
+guarantee correct requirements, secure software or successful production operation.

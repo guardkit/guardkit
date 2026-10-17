@@ -1,0 +1,22 @@
+flowchart TB
+    Human["Person: owner"]
+    Slack["External System: Slack"]
+    subgraph Control["Software Factory: collaboration and control"]
+        Jarvis["Container: Jarvis<br/>Python / Slack adapters"]
+        Bus["Container: message bus<br/>NATS / JetStream"]
+        PO["Container: spec writer<br/>Product-owner specialist<br/>Python / Deep Agents"]
+        Architect["Container: plan writer<br/>Architect specialist<br/>Python / Deep Agents"]
+        Forge["Container: Forge<br/>Python / LangGraph"]
+        Ledger[("Container: build ledger<br/>SQLite")]
+        Publisher["Container: publisher<br/>Python; reference below"]
+        Execution["Execution boundary<br/>Shared product sandbox<br/>Reference below"]
+    end
+    Human <-->|"Requests / decisions"| Slack
+    Slack <-->|"Messages / cards"| Jarvis
+    Jarvis <-->|"Typed events"| Bus
+    Bus <-->|"Spec request / result"| PO
+    Bus <-->|"Plan request / result"| Architect
+    Bus <-->|"Intake / progress"| Forge
+    Forge -->|"Record state"| Ledger
+    Forge -->|"Dispatch work"| Execution
+    Forge -->|"Request publication"| Publisher

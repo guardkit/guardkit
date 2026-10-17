@@ -1,0 +1,27 @@
+flowchart TB
+    Caller["Caller<br/>Developer CLI or Forge build stage"]
+    Repo[("Project repository<br/>Task Markdown, feature YAML, config")]
+    Models["Configured model endpoint<br/>Local Player; role-specific model selection"]
+    subgraph Build["AutoBuild process — C4 component view"]
+        CLI["GuardKit CLI<br/>Validate arguments and load work"]
+        Orchestrator["Feature / task orchestrator<br/>Waves, budgets, state, checkpoints"]
+        Adapter["Harness selector<br/>LangGraph default"]
+        Player["dcode Player<br/>Implement and repair"]
+        Checks["Deterministic evidence gathering<br/>Tests and configured checks"]
+        Coach["Deep Agents Coach<br/>Review evidence and implementation"]
+        Record["Outcome and artifacts<br/>Approve, feedback or stop"]
+    end
+    Worktree[("Build worktree and evidence<br/>Candidate code; reports and snapshots")]
+    Caller -->|"Submit task or feature"| CLI
+    Repo -->|"Committed inputs"| CLI
+    CLI -->|"Start configured build"| Orchestrator
+    Orchestrator -->|"Invoke role"| Adapter
+    Adapter -->|"Task and feedback"| Player
+    Player -->|"Edit candidate"| Worktree
+    Worktree -->|"Candidate under test"| Checks
+    Checks -->|"Evidence bundle via orchestrator"| Coach
+    Adapter -->|"Requirements and context"| Coach
+    Coach -->|"Verdict and feedback"| Record
+    Record -->|"Continue or stop"| Orchestrator
+    Player <-->|"Model calls"| Models
+    Coach <-->|"Model calls"| Models

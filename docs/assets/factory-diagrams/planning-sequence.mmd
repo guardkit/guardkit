@@ -1,0 +1,34 @@
+sequenceDiagram
+    actor Owner as Product owner / engineer
+    participant Jarvis as Jarvis (Slack adapter)
+    participant Bus as NATS / JetStream
+    participant Forge as Forge
+    participant Repo as Repository helper
+    participant Spec as Product-owner specialist
+    participant Plan as Architect specialist
+    participant Ledger as Build ledger
+    Owner->>Jarvis: Target repository and feature request
+    Jarvis->>Bus: PlanningQueuedPayload + correlation ID
+    Bus->>Forge: Planning request
+    Forge->>Repo: Resolve repository and read pinned source/context
+    Repo-->>Forge: Commit, declarations and bounded facts
+    Forge->>Ledger: Record planning run and source identity
+    Forge->>Bus: Dispatch specification work
+    Bus->>Spec: Request and supplied context
+    Spec-->>Bus: Reviewed specification and digest
+    Bus-->>Forge: Typed result and artefacts
+    Forge->>Jarvis: Specification review card via bus
+    Owner->>Jarvis: Approve or request revision
+    Jarvis->>Bus: Correlated decision
+    Bus->>Forge: Decision
+    alt Specification approved
+        Forge->>Bus: Dispatch task-plan work
+        Bus->>Plan: Approved spec and repository evidence
+        Plan-->>Bus: Reviewed task plan
+        Bus-->>Forge: Plan artefacts
+        Forge->>Ledger: Commit/record accepted plan and queue build
+        Forge->>Jarvis: Build-start approval card via bus
+    else Revision requested
+        Forge->>Spec: Bounded revision using the person's note
+        Note over Forge,Owner: Further review or an explicit stop, no build implied
+    end

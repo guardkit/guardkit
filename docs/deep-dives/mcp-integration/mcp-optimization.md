@@ -1,3 +1,11 @@
+!!! note "Earlier reference — not revalidated for the October 2026 runtime"
+
+    This page retains earlier guidance and examples. For the current workflows, use
+    [GuardKit in a coding harness](../../harness/index.md),
+    [AutoBuild architecture](../autobuild-architecture.md) and
+    [the Software Factory](../../software-factory/index.md).
+    SDK, memory-backend, command and completion behaviour may differ from this reference.
+
 # MCP Optimization Guide
 
 > **Retirement note (2026-07-10):** the `/figma-to-react`, `/zeplin-to-maui`, and `/mcp-zeplin`

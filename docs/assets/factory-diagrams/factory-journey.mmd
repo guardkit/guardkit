@@ -1,0 +1,9 @@
+flowchart LR
+    Request["Person: request one feature"] --> Spec["Write and review the specification"]
+    Spec --> Plan["Produce the task plan"]
+    Plan --> Start{"Human build decision"}
+    Start --> Build["AutoBuild: implement and verify"]
+    Build --> Evidence["Prepare merge evidence and optional preview"]
+    Evidence --> Merge{"Human merge decision"}
+    Merge --> Publish["Check the joined commit and publish"]
+    Publish --> Deploy["Deploy and check when configured"]

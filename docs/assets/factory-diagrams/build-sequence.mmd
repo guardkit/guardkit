@@ -1,0 +1,29 @@
+sequenceDiagram
+    actor Owner
+    participant Forge
+    participant Ledger as Build ledger
+    participant Runner as Sandbox build runner
+    participant AutoBuild as GuardKit AutoBuild
+    participant Player as Player role
+    participant Coach as Coach / verification
+    participant Files as Task worktree and evidence
+    Owner->>Forge: Authorise this build through its card
+    Forge->>Ledger: Record decision and dispatch attempt
+    Forge->>Runner: Pinned feature, source identity and declarations
+    Runner->>AutoBuild: Run feature task plan
+    loop Tasks / dependency waves and bounded retries
+        AutoBuild->>Player: Task, context and prior feedback
+        Player->>Files: Inspect, implement and run tools
+        Player-->>AutoBuild: Task result and evidence
+        AutoBuild->>Coach: Candidate and verification context
+        Coach->>Files: Verification through configured paths
+        Coach-->>AutoBuild: Accept, feedback or failure
+    end
+    AutoBuild-->>Runner: Build outcome and candidate
+    Runner-->>Forge: Lifecycle events and terminal build outcome
+    Forge->>Ledger: Persist lifecycle/result through control-side handler
+    alt Build checks succeeded
+        Forge->>Forge: Prepare merge evidence and optional preview
+    else Build failed
+        Forge->>Forge: Preserve failure evidence, bounded repair or stop
+    end

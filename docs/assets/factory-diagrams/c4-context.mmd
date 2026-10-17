@@ -1,0 +1,15 @@
+flowchart LR
+    Owner["Person: product owner / engineer<br/>Defines outcomes and approves decisions"]
+    Engineer["Person: factory operator<br/>Registers projects and maintains runtime"]
+    Factory["Software System: Software Factory<br/>Plans, builds, checks and delivers features"]
+    Chat["External System: Slack<br/>Requests, progress and approval cards"]
+    Git["External System: Git hosting<br/>Versioned inputs and published changes"]
+    Models["External System: model inference<br/>Local or configured model providers"]
+    Product["External System: delivered application<br/>Deployment target and live checks"]
+    Owner -->|"Requests and decisions"| Chat
+    Chat <-->|"Messages and cards"| Factory
+    Engineer -->|"Configuration and release operations"| Factory
+    Factory -->|"Read pinned source; publish approved commit"| Git
+    Factory -->|"Prompts and tool results"| Models
+    Models -->|"Model responses"| Factory
+    Factory -->|"Deploy and verify when configured"| Product

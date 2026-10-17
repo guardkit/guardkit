@@ -1,3 +1,11 @@
+!!! note "Earlier reference — not revalidated for the October 2026 runtime"
+
+    This page retains earlier guidance and examples. For the current workflows, use
+    [GuardKit in a coding harness](../harness/index.md),
+    [AutoBuild architecture](../deep-dives/autobuild-architecture.md) and
+    [the Software Factory](../software-factory/index.md).
+    SDK, memory-backend, command and completion behaviour may differ from this reference.
+
 # Incremental Enhancement Workflow (Phase 8)
 
 **Purpose**: Complete guide to Phase 8 agent enhancement during template creation, including task-based and direct command approaches.

@@ -1,384 +1,81 @@
-# Getting Started with GuardKit
+# Get started with GuardKit
 
-## Welcome to Feature Plan Development!
+Use GuardKit interactively in your coding agent first. Add standalone AutoBuild when you have a plan and a configured execution environment. Operating the [Software Factory](../software-factory/index.md) is a separate setup.
 
-GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace. Built-in quality gates prevent broken code from reaching production.
+**Verified 17 October 2026** against GuardKit `23d99208` and guardkitfactory `40615a7e`. Installation steps were checked against source; this documentation refresh did not perform a clean installation or run a model-backed build.
 
-## Quick Start (5 Minutes!)
+## Install the current source workflow
 
-### Step 1: Initialize Your Project
+You need Git, Python **3.12 or newer** and a supported coding agent. The current AutoBuild harness dependency supports Python 3.12 through 3.x. Use a virtual environment for the Python packages.
+
+For the implementation described here, check out matching GuardKit and harness sources as siblings. This avoids assuming an older package release includes the current dcode integration:
+
 ```bash
-# Clone and setup
+# Shell: run in a directory where you keep source repositories.
+git clone https://github.com/guardkit/guardkitfactory.git
 git clone https://github.com/guardkit/guardkit.git
+# Pin the source snapshot described by this guide.
+git -C guardkitfactory checkout 40615a7e0ff6952b5a5492ada0d3a66dc10c8533
 cd guardkit
-chmod +x installer/scripts/install.sh
+git checkout 23d99208598706f81f43a21628f5dcfb89d92a55
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ../guardkitfactory
 ./installer/scripts/install.sh
 ```
 
-> **Using Claude Code Web?** See the [Claude Code Web Setup Guide](claude-code-web-setup.md) for detailed web-specific instructions including persistence and multi-repository usage.
+The installer installs the Python package with its `autobuild` extra, command definitions and the `guardkit` shell wrapper. It configures Claude Code integration. Follow its PATH instructions and keep this Python environment available when you run GuardKit. The Python package's entry point is **`guardkit-py`**; the installer adds **`guardkit`** as a wrapper. A bare `pip install guardkit-py` should not be described as an equivalent complete interactive installation. [Package definition](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/pyproject.toml) · [Installer](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/installer/scripts/install.sh)
 
-### Step 2: Plan Your First Feature (in Claude Code)
+To add Pi integration, use `./installer/scripts/install.sh --pi`. Its commands use `/skill:task-create`, `/skill:task-work` and other `/skill:` names. See [harness support](../harness/index.md#installed-support).
 
-**For new features (recommended):**
-```bash
-# Plan a feature (single command!)
-/feature-plan "add user authentication"
-
-# System creates complete feature workspace:
-# ✅ Review task with technical options
-# ✅ Subtask breakdown with parallel waves
-# ✅ Implementation guide
-# ✅ Feature workspace in tasks/backlog/
-
-# Work through generated subtasks
-/task-work TASK-AUTH-001
-/task-complete TASK-AUTH-001
-```
-
-**For simple tasks (direct):**
-```bash
-# Create a simple task (natural language description)
-/task-create "The login button styling is broken on mobile devices"
-
-# Work on it (automatic planning + implementation + testing)
-/task-work TASK-a3f8
-
-# Complete it
-/task-complete TASK-a3f8
-```
-
-The `/feature-plan` command handles feature decomposition, and `/task-work` handles planning, implementation, architectural review, testing, and quality verification automatically.
-
-## Documentation Structure
-
-```
-docs/
-├── guides/
-│   ├── GETTING-STARTED.md         # This guide (START HERE!)
-│   ├── guardkit-workflow.md     # Complete workflow guide
-│   ├── creating-local-templates.md # Template customization
-│   └── template-philosophy.md     # Why these templates?
-├── workflows/
-│   ├── complexity-management-workflow.md
-│   ├── quality-gates-workflow.md
-│   └── task-review-workflow.md
-└── Landing pages: concepts.md, advanced.md, templates.md, agents.md
-```
-
-## What is GuardKit?
-
-### The Core Features
-
-**Workflow Automation**:
-- Creates implementation plans automatically
-- Performs architectural review (SOLID/DRY/YAGNI)
-- Evaluates task complexity (1-10 scale)
-- Implements code based on approved plans
-- Runs comprehensive test suites
-- Enforces quality gates (100% test pass, ≥80% coverage)
-
-**State Management**:
-```
-BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
-            ↓              ↓
-         BLOCKED        BLOCKED
-```
-
-**Available Templates** (4 high-quality):
-- **react-typescript**: React + TypeScript (from Bulletproof React, 9.3/10)
-- **fastapi-python**: FastAPI + pytest (from best practices, 9.2/10)
-- **nextjs-fullstack**: Next.js App Router (full-stack, 9.4/10)
-- **default**: Language-agnostic (Go, Rust, Ruby, etc., 8.0+/10)
-
-**For Production**: Use `/template-create` from your own codebase
-
-## The Complete Development Flow
-
-### 1. Create a Task
-```bash
-# Simple task creation (natural language descriptions)
-/task-create "We need to add a user login feature"
-/task-create "Fix the critical bug in payment processing"
-/task-create "Add comprehensive logging to the infrastructure"
-
-# With priority
-/task-create "Critical bug in payment processing needs immediate fix" priority:critical
-
-# With tags
-/task-create "Add logging infrastructure to track API requests" tags:infrastructure,logging
-```
-
-### 2. Work on the Task (One Command!)
-```bash
-# Standard mode (default)
-/task-work TASK-001
-
-# TDD mode (for complex logic)
-/task-work TASK-001 --mode=tdd
-
-# Design-first workflow (for complex tasks)
-/task-work TASK-001 --design-only
-# [Review and approve plan]
-/task-work TASK-001 --implement-only
-```
-
-### 3. Complete the Task
-```bash
-# After review
-/task-complete TASK-001
-```
-
-## Key Features Explained
-
-### Automatic Quality Gates
-| Gate | Threshold | Enforcement |
-|------|-----------|-------------|
-| Compilation | 100% | Required |
-| Tests Pass | 100% | Required |
-| Line Coverage | ≥80% | Required |
-| Branch Coverage | ≥75% | Required |
-| Architectural Review | ≥60/100 | Required |
-
-### Smart State Management
-```
-Tests Pass + Coverage Good → IN_REVIEW
-Tests Fail → BLOCKED (auto-fix up to 3 attempts)
-Coverage Low → Stay IN_PROGRESS
-Architectural Issues → Human checkpoint
-```
-
-### Clear Feedback
-```
-✅ Task Work Complete - TASK-001
-Tests: 15/15 passing
-Coverage: 92%
-Status: IN_PROGRESS → IN_REVIEW
-Next: /task-complete TASK-001
-```
-
-## Real-World Example
-
-### Implementing User Authentication with TDD
+Verify the actual environment:
 
 ```bash
-# 1. Create the task
-/task-create "Implement user authentication" priority:high
-
-# 2. Work on it with TDD
-/task-work TASK-042 --mode=tdd
-
-# Claude's response:
-# 🔴 RED Phase: Creating 8 failing tests...
-#    ❌ All tests failing (expected)
-#
-# 🟢 GREEN Phase: Implementing code...
-#    ✅ 8/8 tests passing
-#
-# 🔵 REFACTOR Phase: Improving quality...
-#    ✅ All tests still passing
-#
-# 📊 Coverage: 92%
-# ✅ Task moved to IN_REVIEW
-
-# 3. Complete the task
-/task-complete TASK-042
+guardkit-py --help
+guardkit-py doctor
+guardkit autobuild --help
 ```
 
-Total time: ~2 minutes (vs ~10 minutes with manual workflow)
+If `guardkit` is missing but `guardkit-py` works, resolve the installer's PATH setup. Fix dependency-installation failures before attempting AutoBuild; installed command files alone do not prove the runtime is ready.
 
-## Common Scenarios
+## Initialize the project you want to change
 
-### Scenario 1: Simple Feature
+Leave the GuardKit source directory and enter your application repository:
+
 ```bash
-/task-create "We need to add a user profile page with avatar upload"
-/task-work TASK-050              # Standard mode by default
-/task-complete TASK-050
+cd /path/to/your-project
+guardkit init default
 ```
 
-### Scenario 2: Complex Business Logic
+Choose a fitting template in place of `default`, for example `fastapi-python`, `react-typescript`, `nextjs-fullstack` or `python-library`. `guardkit-py init --help` describes the installed command; [the template source](https://github.com/guardkit/guardkit/tree/23d99208598706f81f43a21628f5dcfb89d92a55/installer/core/templates) lists the audited inventory. Initialization adds project context and task directories; inspect the changes before committing.
+
+For an existing installation whose commands are stale:
+
 ```bash
-/task-create "Implement tax rate calculation for multi-state transactions"
-/task-work TASK-051 --mode=tdd   # TDD for complex logic
-/task-complete TASK-051
+guardkit init --update
 ```
 
-### Scenario 3: Bug Fix
-```bash
-/task-create "The login timeout is occurring after 5 minutes instead of 30" priority:critical
-/task-work TASK-053               # Quick fix
-/task-complete TASK-053
+This refreshes already installed command files from the installed package, preserving and reporting files you edited locally. It does not fetch a newer package. Update the package/source first; use `--force` only to discard local command edits. [Initialization implementation](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/cli/init.py)
+
+## Run one task in the coding agent
+
+Open Claude Code **in the application repository**. These are agent commands, not shell commands:
+
+```text
+/task-create "Reject an empty display name with a useful validation message"
+/task-work TASK-<the-id-created-above>
 ```
 
-### Scenario 4: Design-First Workflow
-```bash
-/task-create "Refactor the entire authentication system to support OAuth2" priority:high
-/task-work TASK-054 --design-only
-# [Human reviews and approves plan]
-/task-work TASK-054 --implement-only
-/task-complete TASK-054
-```
+Answer required checkpoints. Review the resulting diff and actual test output. Green work normally remains `IN_REVIEW`; then use `/task-complete TASK-<id>` after review. The optional `/task-work ... --complete` enables the current completion phase; it is not the default.
 
-## Decision Tree
+For a feature, use `/feature-spec` to curate behaviour and `/feature-plan` to decompose work. Generated IDs are examples, not commands to copy literally.
 
-```
-Need to implement a task?
-    ↓
-Is it complex (multiple files, new patterns)?
-    Yes → /task-work --design-only (review plan first)
-    No ↓
-Is it complex business logic?
-    Yes → /task-work --mode=tdd
-    No → /task-work (standard)
-```
+## Choose the next execution path
 
-## Common Workflows
+| You want to… | Continue with… |
+| --- | --- |
+| Work through tasks with an interactive coding agent | [GuardKit in a coding harness](../harness/index.md) |
+| Run a planned feature under your own shell session | [AutoBuild architecture and standalone commands](../deep-dives/autobuild-architecture.md#standalone-entry-points) |
+| Submit work to services that manage stages and decisions | [Software Factory](../software-factory/index.md) |
 
-Beyond the basic `/task-work` command, these specialized workflows handle specific scenarios:
-
-**Trivial Tasks (typos, doc updates)**:
-```bash
-/task-work TASK-XXX --micro    # 3-5 min vs 15+ min, skips planning/review
-```
-Auto-detected for simple tasks. [Details: task-work.md](../../installer/core/commands/task-work.md#flag---micro)
-
-**Review-Feedback Fixes (minor tweaks)**:
-```bash
-/task-work TASK-XXX            # Re-run for quick fixes after code review
-```
-Re-running an IN_REVIEW task applies targeted fixes and re-runs quality gates. [Details: GuardKit Workflow](guardkit-workflow.md#38-iterative-refinement)
-
-**Analysis & Reviews (decisions, audits)**:
-```bash
-/task-review TASK-XXX --mode=architectural --depth=standard
-```
-For architectural reviews, security audits, technical decisions (no implementation). [Details: Task Review Workflow](../workflows/task-review-workflow.md)
-
-> **Pro tip:** Start with `/task-work` for implementation. Use these specialized commands as you encounter specific needs.
-
-## Essential Commands
-
-### Feature Planning (Recommended Starting Point)
-```bash
-/feature-plan "feature description"    # Single command → complete feature plan
-```
-
-### Task Commands
-```bash
-/task-create "description" [priority:high|medium|low] [tags:tag1,tag2]  # Natural language
-/task-work TASK-XXX [--mode=standard|tdd] [--design-only|--implement-only]
-/task-complete TASK-XXX
-/task-status [TASK-XXX]
-```
-
-### Options for task-work
-```bash
---mode=standard          # Default: implementation + tests
---mode=tdd              # Test-driven development cycle
---design-only           # Planning only (complex tasks)
---implement-only        # Implementation only (requires approved plan)
---no-questions          # Skip clarifying questions
---with-questions        # Force clarifying questions
-```
-
-## Best Practices
-
-1. **Keep tasks small** - 1-4 hour chunks work best
-2. **Choose the right mode** - TDD for complex logic, standard for straightforward features
-3. **Trust the process** - Let `/task-work` complete all phases
-4. **Use design-first for complex tasks** - Review plans before implementation
-5. **Review quality gates** - Don't skip architectural review feedback
-
-## Quality Standards
-
-All enforced automatically by `/task-work`:
-- ✅ 100% of tasks have tests
-- ✅ ≥80% code coverage
-- ✅ All tests must pass
-- ✅ Architectural review (SOLID/DRY/YAGNI)
-- ✅ Proper documentation
-
-## Technology Stack Support
-
-**Reference templates** demonstrate patterns for:
-- **react-typescript**: Vitest, Playwright, React Testing Library
-- **fastapi-python**: pytest, FastAPI Test Client, Pydantic validation
-- **nextjs-fullstack**: Vitest, Playwright, Next.js testing patterns
-- **default**: Language-agnostic (configure for your stack)
-
-**Your custom template** can use any stack via `/template-create`.
-
-Reference templates for learning and evaluation:
-```bash
-# Stack-specific reference templates (9+/10 quality)
-guardkit init react-typescript       # React + TypeScript (from Bulletproof React)
-guardkit init fastapi-python         # FastAPI + pytest (from best practices)
-guardkit init nextjs-fullstack       # Next.js App Router (full-stack)
-
-# Language-agnostic template (8+/10 quality)
-guardkit init default                # Go, Rust, Ruby, Elixir, PHP, etc.
-
-# Interactive mode (captures project knowledge)
-guardkit init fastapi-python --interactive
-
-# For production: Create from your codebase
-cd your-production-codebase
-/template-create
-guardkit init your-custom-template
-```
-
-## Key Benefits
-
-### Developer Experience
-- **Fewer commands** to remember (3-step workflow)
-- **Streamlined** task completion
-- **Zero** manual quality checks
-
-### Code Quality
-- **Automatic** architectural review
-- **Automatic** test enforcement
-- **Built-in** TDD support
-
-### Team Collaboration
-- **Clear** task states
-- **Transparent** progress
-- **Consistent** standards
-
-## Getting Help
-
-### Quick Help
-```bash
-/task-work --help           # Command help
-/task-status               # View all tasks
-```
-
-### Documentation
-- [Claude Code Web Setup](claude-code-web-setup.md) - Using with Claude Code Web (installation, persistence, multi-repo)
-- [Quick Reference](quick-reference.md) - Command cheat sheet
-- [GuardKit Workflow](guardkit-workflow.md) - Complete workflow guide
-- [Migration Guide](migration-guide.md) - Migrate from old workflow
-- [MCP Optimization](../deep-dives/mcp-integration/mcp-optimization.md) - Library docs integration (Advanced)
-
-### Common Issues
-| Problem | Solution |
-|---------|----------|
-| Tests failing | `/task-work` auto-fixes (up to 3 attempts) |
-| Wrong mode | Re-run with different `--mode` |
-| Low coverage | Check uncovered lines in test report |
-
-## Start Building!
-
-You now have everything you need to use GuardKit:
-
-1. **Create** tasks with clear descriptions
-2. **Work** on them with your preferred mode
-3. **Complete** with confidence knowing quality is built-in
-
-The workflow ensures every piece of code is tested, reviewed, and ready for production.
-
-> **Need Formal Requirements?**
-> RequireKit adds EARS notation, BDD scenarios, and epic/feature hierarchy.
-> See: https://github.com/requirekit/require-kit
-
----
-
-*"Plan Features. Build Faster." - Start with `/feature-plan` for new features, or `/task-create` for simple tasks!*
+AutoBuild requires an explicitly configured model endpoint and a matching harness installation. Its current normal Player is local dcode; the legacy Claude-named CLI default is not a ready-to-use configuration for that path. Quality gates report evidence for checks that actually ran. They do not guarantee that generated code is correct or production-ready.

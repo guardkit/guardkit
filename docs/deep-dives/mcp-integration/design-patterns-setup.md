@@ -1,3 +1,11 @@
+!!! note "Earlier reference — not revalidated for the October 2026 runtime"
+
+    This page retains earlier guidance and examples. For the current workflows, use
+    [GuardKit in a coding harness](../../harness/index.md),
+    [AutoBuild architecture](../autobuild-architecture.md) and
+    [the Software Factory](../../software-factory/index.md).
+    SDK, memory-backend, command and completion behaviour may differ from this reference.
+
 # Design Patterns MCP Setup Guide
 
 **Purpose**: Enhance `/task-work` command with intelligent design pattern recommendations during architectural review (Phase 2.5A).

@@ -1,717 +1,132 @@
-# AutoBuild Architecture Deep-Dive
+# How AutoBuild currently works
 
-**Version**: 1.0.0
-**Last Updated**: 2026-01-24
-**Audience**: Contributors, advanced users, integrators
-**Document Type**: Technical Architecture Reference
+AutoBuild is GuardKit's build engine. It loads a task or feature plan, prepares a Git worktree, runs a bounded Player–Coach loop and preserves the result for review. The Software Factory invokes this engine as part of a longer lifecycle. The Python package named `guardkitfactory` supplies its agent harness; it is not the entire factory.
 
----
+**Verified 17 October 2026:** GuardKit `23d99208598706f81f43a21628f5dcfb89d92a55`, guardkitfactory `40615a7e0ff6952b5a5492ada0d3a66dc10c8533`. This is a source-backed architecture description, not a fresh production acceptance test.
 
-## Table of Contents
+[Download full-size diagrams for slides](../learning/presentation-kit.md#reuse-the-diagrams).
 
-1. [Architectural Overview](#architectural-overview)
-2. [Module Structure](#module-structure)
-3. [Player-Coach Pattern Implementation](#player-coach-pattern-implementation)
-4. [Quality Gate Delegation (Option B)](#quality-gate-delegation-option-b)
-5. [State Machine and Transitions](#state-machine-and-transitions)
-6. [Escape Hatch Pattern](#escape-hatch-pattern)
-7. [Pre-Loop Design Phase](#pre-loop-design-phase)
-8. [Feature Orchestration Engine](#feature-orchestration-engine)
-9. [Worktree Management](#worktree-management)
-10. [Integration Points](#integration-points)
+## C4 component view: the build process
 
----
+This view zooms into the AutoBuild process. The boxes within the boundary are code components and libraries, not independently deployed services. The [Software Factory architecture](../software-factory/index.md) covers the service boundary.
 
-## Architectural Overview
-
-AutoBuild implements an **adversarial cooperation** pattern using the Claude Agent SDK, based on [Block AI's "Adversarial Cooperation in Code Synthesis" research](https://block.xyz/documents/adversarial-cooperation-in-code-synthesis.pdf) (December 2025). This approach, called **dialectical autocoding**, uses a structured coach-player feedback loop where independent verification prevents the "premature success declaration" failure mode common in single-agent systems.
-
-The architecture separates concerns across three layers:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ LAYER 1: CLI INTERFACE                                                       │
-│ guardkit/cli/autobuild.py                                                    │
-│                                                                              │
-│ Commands: task, feature, status, complete                                    │
-│ Responsibilities: Argument parsing, environment setup, user interaction     │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ LAYER 2: ORCHESTRATION                                                       │
-│ guardkit/orchestrator/                                                       │
-│                                                                              │
-│ Components:                                                                  │
-│ - agent_invoker.py: Claude SDK wrapper, agent creation                      │
-│ - quality_gates/: Pre-loop, task-work interface, coach validator           │
-│ - features/: Feature YAML parsing, wave management                          │
-│                                                                              │
-│ Responsibilities: Workflow coordination, state management, iteration        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ LAYER 3: EXECUTION                                                           │
-│ Claude Agent SDK                                                             │
-│                                                                              │
-│ Agents: Player (full tools), Coach (read-only)                              │
-│ Responsibilities: LLM interaction, tool execution, file operations          │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Caller["Caller<br/>Developer CLI or Forge build stage"]
+    Repo[("Project repository<br/>Task Markdown, feature YAML, config")]
+    Models["Configured model endpoint<br/>Local Player; role-specific model selection"]
+    subgraph Build["AutoBuild process — C4 component view"]
+        CLI["GuardKit CLI<br/>Validate arguments and load work"]
+        Orchestrator["Feature / task orchestrator<br/>Waves, budgets, state, checkpoints"]
+        Adapter["Harness selector<br/>LangGraph default"]
+        Player["dcode Player<br/>Implement and repair"]
+        Checks["Deterministic evidence gathering<br/>Tests and configured checks"]
+        Coach["Deep Agents Coach<br/>Review evidence and implementation"]
+        Record["Outcome and artifacts<br/>Approve, feedback or stop"]
+    end
+    Worktree[("Build worktree and evidence<br/>Candidate code; reports and snapshots")]
+    Caller -->|"Submit task or feature"| CLI
+    Repo -->|"Committed inputs"| CLI
+    CLI -->|"Start configured build"| Orchestrator
+    Orchestrator -->|"Invoke role"| Adapter
+    Adapter -->|"Task and feedback"| Player
+    Player -->|"Edit candidate"| Worktree
+    Worktree -->|"Candidate under test"| Checks
+    Checks -->|"Evidence bundle via orchestrator"| Coach
+    Adapter -->|"Requirements and context"| Coach
+    Coach -->|"Verdict and feedback"| Record
+    Record -->|"Continue or stop"| Orchestrator
+    Player <-->|"Model calls"| Models
+    Coach <-->|"Model calls"| Models
 ```
 
-### Design Principles
+The default adapter is selected by `GUARDKIT_HARNESS`, with `langgraph` as the default and `sdk` as an explicit Claude Agent SDK alternative for standalone use. Factory launches reject the SDK path because its shell inherits the full process environment. Unknown values fail rather than silently choosing another runtime. [Selector](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/harness/selector.py)
 
-1. **Separation of Concerns**: Player implements, Coach validates, neither can do both
-2. **Independent Verification**: Coach ignores Player's self-reports and verifies directly (key Block research insight)
-3. **Tool Asymmetry**: Different tool permissions enforce role boundaries
-4. **Delegation over Duplication**: Reuse task-work quality gates (100% code reuse)
-5. **Isolation**: Git worktrees protect main branch from experimental changes
-6. **Escape Hatch**: Max iterations prevent infinite loops
+## The Player and Coach are different roles
 
----
+The current LangGraph Player is **dcode**, constructed with validated project context. The earlier native Player implementation is retired: a missing or incompatible dcode configuration is an error, not a fallback. The harness pins `deepagents==0.7.14` and `deepagents-code==0.1.69`. A dedicated run profile keeps unrelated personal skills, plugins and memory out of the Player's launch context. The normal Player requires an explicit local model alias and endpoint.
 
-## Module Structure
+The Coach is constructed through Deep Agents. It receives independent evidence and the requirements, inspects the candidate, and returns approval or actionable feedback. Player and Coach can use different models through `--model` and `--coach-model`; two roles do not by themselves establish independent model behaviour. [Harness construction](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/langgraph_harness.py) · [dcode launch validation](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/dcode_harness.py) · [Dependency pins](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/pyproject.toml)
 
-```
-guardkit/
-├── cli/
-│   ├── main.py                    # CLI entry point, command groups
-│   └── autobuild.py               # AutoBuild commands (task, feature, status, complete)
-│
-├── orchestrator/
-│   ├── agent_invoker.py           # Claude SDK wrapper, agent lifecycle
-│   │
-│   ├── quality_gates/
-│   │   ├── pre_loop.py            # Pre-loop design phases (optional)
-│   │   ├── task_work_interface.py # task-work delegation, profile selection
-│   │   └── coach_validator.py     # Quality gate evaluation (replacing LLM Coach)
-│   │
-│   └── features/
-│       ├── feature_parser.py      # Feature YAML parsing
-│       ├── wave_manager.py        # Wave-based task orchestration
-│       └── state_tracker.py       # Feature/task state persistence
-│
-└── models/
-    ├── task.py                    # Task data model
-    ├── feature.py                 # Feature data model
-    └── quality_report.py          # Quality gate results model
+The default Coach path normally invokes the LLM for each review turn. `CoachValidator.gather_evidence()` gathers structured evidence; it has not replaced the LLM Coach. `GUARDKIT_COACH_LEGACY=1` explicitly restores the older deterministic-primary path. Unexpected evidence-gathering failures produce feedback rather than silently approving.
+
+```mermaid
+sequenceDiagram
+    participant O as GuardKit orchestrator
+    participant P as Player
+    participant T as Independent checks
+    participant C as Coach
+    O->>O: Load plan and capture review inputs
+    loop Until approved or a bound stops execution
+        O->>P: Task, project context and previous feedback
+        P->>P: Edit code and run implementation checks
+        P-->>O: Candidate and Player report
+        O->>T: Run independent checks on candidate
+        T-->>O: Results, failures or unavailable evidence
+        O->>C: Requirements, candidate and evidence bundle
+        C-->>O: Approve or feedback
+        O->>O: Apply guards and persist turn outcome
+    end
+    O-->>O: Preserve worktree and report final state
 ```
 
-### Key Files
+[Orchestration and Coach decision path](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/autobuild.py)
 
-| File | Responsibility |
-|------|----------------|
-| [autobuild.py](../../guardkit/cli/autobuild.py) | CLI commands, argument parsing |
-| [agent_invoker.py](../../guardkit/orchestrator/agent_invoker.py) | SDK integration, agent creation |
-| [pre_loop.py](../../guardkit/orchestrator/quality_gates/pre_loop.py) | Design phase delegation |
-| [task_work_interface.py](../../guardkit/orchestrator/quality_gates/task_work_interface.py) | Quality gate delegation |
+## What the executable evidence proves
 
----
+Coach test execution defaults to **subprocess**, not an SDK-mediated test session. The evidence model distinguishes tests that passed, tests that failed and checks that could not run. Missing evidence must not become a successful test count. Coverage requirements and other gates depend on task profile and configuration; the old “80% coverage everywhere” story is too broad. [Coach evidence and test execution](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/quality_gates/coach_validator.py)
 
-## Player-Coach Pattern Implementation
-
-### Role Definition
-
-```python
-# Player Agent Configuration
-PLAYER_TOOLS = [
-    "Bash",           # Full command execution
-    "Read",           # File reading
-    "Write",          # File creation
-    "Edit",           # File modification
-    "Glob",           # File pattern matching
-    "Grep",           # Content search
-    "TodoWrite",      # Task tracking
-]
-
-# Coach Agent Configuration (Read-Only)
-COACH_TOOLS = [
-    "Bash",           # Read-only (test execution only)
-    "Read",           # File reading
-    "Glob",           # File pattern matching
-    "Grep",           # Content search
-]
-```
-
-### Dialectical Loop Implementation
-
-```python
-def run_adversarial_loop(
-    task_id: str,
-    max_turns: int = 5,
-    enable_pre_loop: bool = False
-) -> AutoBuildResult:
-    """
-    Execute Player-Coach adversarial loop.
-
-    Flow:
-    1. Optional pre-loop design phase
-    2. For each turn (up to max_turns):
-       a. Player implements (task-work --implement-only)
-       b. Coach validates (quality gate check)
-       c. If approved, break loop
-       d. If feedback, Player continues
-    3. Return result (approved or blocked)
-    """
-
-    # Pre-loop design phase (optional)
-    if enable_pre_loop:
-        design_result = pre_loop.run_design_phases(task_id)
-        if not design_result.success:
-            return AutoBuildResult.blocked(design_result.error)
-
-    # Adversarial loop
-    for turn in range(1, max_turns + 1):
-        # Player turn: Implement
-        player_result = invoke_player(task_id, previous_feedback)
-
-        # Coach turn: Validate
-        coach_result = invoke_coach(task_id, player_result)
-
-        if coach_result.approved:
-            return AutoBuildResult.approved(turn, player_result)
-
-        previous_feedback = coach_result.feedback
-
-    # Max turns reached - Escape Hatch
-    return AutoBuildResult.blocked_max_turns(max_turns)
-```
-
-### Agent Invocation
-
-The `agent_invoker.py` module wraps the Claude Agent SDK:
-
-```python
-from claude_agent_sdk import Agent, create_agent
-
-class AgentInvoker:
-    """Wrapper for Claude Agent SDK with GuardKit-specific configuration."""
-
-    def __init__(self, sdk_timeout: int = 300):
-        self.sdk_timeout = sdk_timeout
-
-    def create_player_agent(self, worktree_path: Path) -> Agent:
-        """Create Player agent with full tool access."""
-        return create_agent(
-            name="autobuild-player",
-            tools=PLAYER_TOOLS,
-            working_directory=str(worktree_path),
-            timeout=self.sdk_timeout,
-            system_prompt=PLAYER_SYSTEM_PROMPT,
-        )
-
-    def create_coach_agent(self, worktree_path: Path) -> Agent:
-        """Create Coach agent with read-only tool access."""
-        return create_agent(
-            name="autobuild-coach",
-            tools=COACH_TOOLS,
-            working_directory=str(worktree_path),
-            timeout=self.sdk_timeout,
-            system_prompt=COACH_SYSTEM_PROMPT,
-        )
-```
-
----
-
-## Quality Gate Delegation (Option B)
-
-AutoBuild implements **Option B** from the Ralph Wiggum architectural review: delegation to task-work rather than reimplementing quality gates.
-
-### Why Delegation?
-
-| Approach | Code Reuse | Consistency | Maintenance |
-|----------|-----------|-------------|-------------|
-| Option A (Reimplement) | 0% | Risk of drift | Double maintenance |
-| **Option B (Delegate)** | **100%** | **Guaranteed** | **Single codebase** |
-
-### Delegation Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ PLAYER AGENT                                                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  1. Receive task with acceptance criteria                                    │
-│  2. Invoke: /task-work TASK-XXX --implement-only --mode=tdd                 │
-│                                                                              │
-│     ┌─────────────────────────────────────────────────────────────────┐     │
-│     │ TASK-WORK EXECUTION (within Player's SDK session)               │     │
-│     │                                                                 │     │
-│     │ Phase 3: Implementation                                         │     │
-│     │   └── Stack-specific agent (python-api-specialist, etc.)       │     │
-│     │                                                                 │     │
-│     │ Phase 4: Testing                                                │     │
-│     │   └── Test orchestrator runs pytest/vitest/etc.                │     │
-│     │                                                                 │     │
-│     │ Phase 4.5: Test Enforcement Loop                                │     │
-│     │   └── Auto-fix (up to 3 attempts), then fail                   │     │
-│     │                                                                 │     │
-│     │ Phase 5: Code Review                                            │     │
-│     │   └── code-reviewer agent (SOLID/DRY/YAGNI)                    │     │
-│     └─────────────────────────────────────────────────────────────────┘     │
-│                                                                              │
-│  3. Report results to Coach                                                  │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Task-Work Interface
-
-The `task_work_interface.py` module selects appropriate quality gate profiles:
-
-```python
-# Quality Gate Profiles by task_type
-QUALITY_PROFILES = {
-    "scaffolding": {
-        "coverage_threshold": 0,      # No coverage for scaffolding
-        "require_tests": False,
-        "phases": [3],                # Implementation only
-    },
-    "feature": {
-        "coverage_threshold": 80,
-        "require_tests": True,
-        "phases": [3, 4, 4.5, 5],    # Full implementation + testing
-    },
-    "testing": {
-        "coverage_threshold": 80,
-        "require_tests": True,
-        "phases": [4, 4.5],          # Testing phases only
-    },
-    "documentation": {
-        "coverage_threshold": 0,
-        "require_tests": False,
-        "phases": [3],               # Implementation only
-    },
-}
-
-def get_profile(task_type: str) -> dict:
-    """Select quality gate profile based on task type."""
-    return QUALITY_PROFILES.get(task_type, QUALITY_PROFILES["feature"])
-```
-
----
-
-## State Machine and Transitions
-
-### Task States
-
-```
-┌────────────┐     ┌─────────────────┐     ┌───────────────┐     ┌───────────┐
-│  BACKLOG   │────▶│  IN_PROGRESS    │────▶│   IN_REVIEW   │────▶│ COMPLETED │
-└────────────┘     └─────────────────┘     └───────────────┘     └───────────┘
-                          │                        │
-                          │                        │
-                          ▼                        ▼
-                   ┌────────────┐          ┌────────────┐
-                   │  BLOCKED   │          │  BLOCKED   │
-                   └────────────┘          └────────────┘
-```
-
-### AutoBuild-Specific States
-
-```python
-class AutoBuildState(Enum):
-    """AutoBuild execution states."""
-
-    PENDING = "pending"           # Task queued, not started
-    PRE_LOOP = "pre_loop"         # Running design phases
-    PLAYER_TURN = "player_turn"   # Player implementing
-    COACH_TURN = "coach_turn"     # Coach validating
-    APPROVED = "approved"         # Coach approved, ready for review
-    BLOCKED = "blocked"           # Max turns or quality gate failure
-    COMPLETED = "completed"       # Merged to main
-```
-
-### State Persistence
-
-State is persisted to `.guardkit/state/` for resume capability:
-
-```json
-{
-  "task_id": "TASK-AUTH-001",
-  "feature_id": "FEAT-A1B2",
-  "state": "player_turn",
-  "turn": 2,
-  "max_turns": 5,
-  "worktree_path": ".guardkit/worktrees/FEAT-A1B2",
-  "branch": "autobuild/FEAT-A1B2",
-  "started_at": "2026-01-24T10:30:00Z",
-  "last_updated": "2026-01-24T10:45:00Z",
-  "player_results": [...],
-  "coach_feedback": [...]
-}
-```
-
----
-
-## Escape Hatch Pattern
-
-The **Escape Hatch Pattern** prevents infinite loops by enforcing a maximum iteration count.
-
-### Implementation
-
-```python
-class EscapeHatch:
-    """
-    Escape Hatch Pattern implementation.
-
-    From Anthropic research: "Escape hatches provide a controlled way
-    to exit when the AI gets stuck, rather than looping forever or
-    requiring manual intervention."
-    """
-
-    def __init__(self, max_turns: int = 5):
-        self.max_turns = max_turns
-        self.current_turn = 0
-
-    def check(self) -> bool:
-        """Check if escape hatch should trigger."""
-        return self.current_turn >= self.max_turns
-
-    def on_escape(self, task_id: str, results: list) -> AutoBuildResult:
-        """
-        Generate blocked report when escape hatch triggers.
-
-        The blocked report provides:
-        1. Summary of all attempts
-        2. Recurring issues identified
-        3. Suggested manual interventions
-        """
-        return AutoBuildResult(
-            status="blocked",
-            reason="max_turns_reached",
-            turns_completed=self.current_turn,
-            blocked_report=self._generate_blocked_report(results),
-        )
-
-    def _generate_blocked_report(self, results: list) -> dict:
-        """Analyze attempts and generate actionable report."""
-        return {
-            "total_attempts": len(results),
-            "recurring_issues": self._identify_recurring_issues(results),
-            "last_feedback": results[-1].coach_feedback if results else None,
-            "suggested_actions": self._suggest_interventions(results),
-        }
-```
-
-### Blocked Report Example
+A project can declare its own commands in `.guardkit/config.yaml`:
 
 ```yaml
-blocked_report:
-  total_attempts: 5
-  recurring_issues:
-    - "Test coverage below 80% (consistently ~65%)"
-    - "Missing edge case tests for error handling"
-  last_feedback:
-    - "Add tests for AuthService.refresh_token error paths"
-    - "Coverage at 67%, needs 80%"
-  suggested_actions:
-    - "Manually add tests for edge cases"
-    - "Review test coverage report at coverage/index.html"
-    - "Consider simplifying AuthService implementation"
+toolchain:
+  install: "npm ci"
+  test: "npm test"
+  test_timeout: 600
+  typecheck: "npm run typecheck"
+  build: "npm run build"
 ```
 
----
+Use commands that actually exist in the target repository. The test command is verdict-bearing; merely listing `typecheck`, `lint` or `build` does not make them enforced gates. A plan must bind those through the supported conformance checks. Toolchain declarations are snapshotted before implementation so the Player cannot change the live command to green its own work. Monorepos can declare named components and assign tasks explicitly. [Toolchain declaration contract](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/toolchain_declaration.py)
 
-## Pre-Loop Design Phase
+The historical `implementation_mode: task-work` loads an inline implementation protocol, task requirements and feedback into the Player. It does **not** spawn interactive `/task-work`, and it does **not** invoke the factory's `guardkit task-work` command. [Player invocation](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/orchestrator/agent_invoker.py)
 
-The pre-loop phase runs design phases (2-2.8) before the adversarial loop when tasks need upfront planning.
+## Worktrees, resume and limits
 
-### When Pre-Loop Runs
+A feature uses a shared worktree and dependency waves. Maximum concurrent tasks can be limited by the environment, CLI, feature recommendation and local-backend capacity. A bounded turn count is separate from per-invocation and per-task timeouts.
 
-| Scenario | Pre-Loop Default | Override |
-|----------|-----------------|----------|
-| `feature-build` from `/feature-plan` | Disabled | `--enable-pre-loop` |
-| `feature-build` with minimal specs | Disabled | `--enable-pre-loop` |
-| `task-build` standalone | Enabled | `--no-pre-loop` |
+`--resume` uses GuardKit's saved state and worktree. The LangGraph adapter currently reports `supports_resume=False` for agent-session continuation, so do not describe it as resuming an LLM conversation through a LangGraph checkpointer. `--refresh` rebases onto the available local base and then resumes; it does not fetch the remote for you. [CLI options](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/cli/autobuild.py) · [Harness resume contract](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/langgraph_harness.py)
 
-### Pre-Loop Implementation
+A Git worktree isolates a candidate branch, **not the operating system**. The backend constrains file-tool writes and protects declared evidence paths, but shell execution is not an OS sandbox. The permission builder currently returns no Deep Agents filesystem permission rules. Deployment isolation, credentials and command-execution authority therefore need their own controls; role separation alone is not a security boundary. [Backend enforcement and limits](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/backend_config.py) · [Permission builder](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/permissions.py)
 
-```python
-class PreLoopQualityGates:
-    """
-    Pre-loop design phases (2-2.8).
+## Standalone entry points
 
-    Delegates to task-work --design-only for:
-    - Phase 2: Implementation Planning
-    - Phase 2.5A: Pattern Suggestion
-    - Phase 2.5B: Architectural Review
-    - Phase 2.7: Complexity Evaluation
-    - Phase 2.8: Human Checkpoint (auto-approved)
-    """
-
-    def run(self, task_id: str) -> PreLoopResult:
-        """Execute pre-loop design phases."""
-
-        # Delegate to task-work --design-only
-        result = invoke_task_work(
-            task_id,
-            flags=["--design-only"],
-            auto_approve_checkpoint=True,
-        )
-
-        if not result.success:
-            return PreLoopResult.failed(result.error)
-
-        return PreLoopResult(
-            plan=result.plan,
-            complexity=result.complexity,
-            patterns=result.patterns,
-        )
-```
-
----
-
-## Feature Orchestration Engine
-
-For features with multiple tasks, the orchestration engine manages wave-based execution.
-
-### Wave Concept
-
-Tasks within a feature are organized into **waves** based on dependencies:
-
-```yaml
-# .guardkit/features/FEAT-A1B2.yaml
-feature:
-  id: FEAT-A1B2
-  name: User Authentication
-
-tasks:
-  - id: TASK-AUTH-001
-    wave: 1
-    parallel_group: "wave-1"
-    dependencies: []
-
-  - id: TASK-AUTH-002
-    wave: 1
-    parallel_group: "wave-1"
-    dependencies: []
-
-  - id: TASK-AUTH-003
-    wave: 2
-    parallel_group: "wave-2"
-    dependencies: [TASK-AUTH-001, TASK-AUTH-002]
-```
-
-### Wave Manager Implementation
-
-```python
-class WaveManager:
-    """
-    Manages wave-based task orchestration.
-
-    Waves execute sequentially; tasks within a wave
-    can execute in parallel (via Conductor worktrees).
-    """
-
-    def __init__(self, feature: Feature):
-        self.feature = feature
-        self.waves = self._organize_waves(feature.tasks)
-
-    def _organize_waves(self, tasks: list) -> dict[int, list]:
-        """Group tasks by wave number."""
-        waves = {}
-        for task in tasks:
-            wave = task.wave or 1
-            waves.setdefault(wave, []).append(task)
-        return waves
-
-    def get_next_wave(self) -> list | None:
-        """Get tasks for next incomplete wave."""
-        for wave_num in sorted(self.waves.keys()):
-            tasks = self.waves[wave_num]
-            if not all(t.status == "completed" for t in tasks):
-                return tasks
-        return None
-
-    def execute_wave(self, wave_tasks: list) -> WaveResult:
-        """
-        Execute all tasks in a wave.
-
-        In Conductor mode: Tasks run in parallel
-        In standard mode: Tasks run sequentially
-        """
-        results = []
-        for task in wave_tasks:
-            result = run_adversarial_loop(task.id)
-            results.append(result)
-
-            # If any task blocks, stop wave
-            if result.status == "blocked":
-                return WaveResult.partial(results)
-
-        return WaveResult.complete(results)
-```
-
----
-
-## Worktree Management
-
-All AutoBuild work occurs in isolated git worktrees.
-
-### Worktree Lifecycle
-
-```
-1. CREATE
-   ├── Create branch: autobuild/TASK-XXX
-   ├── Create worktree: .guardkit/worktrees/TASK-XXX
-   └── Copy virtual environment (if exists)
-
-2. EXECUTE
-   ├── Player/Coach loop in worktree
-   ├── All changes committed to worktree branch
-   └── State persisted to .guardkit/state/
-
-3. REVIEW (Human)
-   ├── Worktree preserved after completion
-   ├── Human reviews: git diff main
-   └── Human decides: merge or discard
-
-4. CLEANUP (Optional)
-   ├── guardkit autobuild complete TASK-XXX
-   ├── Merges to main (if approved)
-   └── Removes worktree
-```
-
-### Worktree Implementation
-
-```python
-class WorktreeManager:
-    """Manages git worktrees for AutoBuild isolation."""
-
-    def __init__(self, base_path: Path):
-        self.base_path = base_path
-        self.worktrees_dir = base_path / ".guardkit" / "worktrees"
-
-    def create_worktree(self, task_id: str) -> Path:
-        """Create isolated worktree for task."""
-        branch_name = f"autobuild/{task_id}"
-        worktree_path = self.worktrees_dir / task_id
-
-        # Create branch from current HEAD
-        subprocess.run([
-            "git", "branch", branch_name
-        ], check=True)
-
-        # Create worktree
-        subprocess.run([
-            "git", "worktree", "add",
-            str(worktree_path),
-            branch_name
-        ], check=True)
-
-        return worktree_path
-
-    def cleanup_worktree(self, task_id: str, merge: bool = True):
-        """Remove worktree, optionally merging changes."""
-        worktree_path = self.worktrees_dir / task_id
-        branch_name = f"autobuild/{task_id}"
-
-        if merge:
-            # Merge to main
-            subprocess.run([
-                "git", "checkout", "main"
-            ], check=True)
-            subprocess.run([
-                "git", "merge", branch_name
-            ], check=True)
-
-        # Remove worktree
-        subprocess.run([
-            "git", "worktree", "remove", str(worktree_path)
-        ], check=True)
-
-        # Delete branch
-        subprocess.run([
-            "git", "branch", "-d" if merge else "-D", branch_name
-        ], check=True)
-```
-
----
-
-## Integration Points
-
-### Claude Agent SDK
-
-```python
-# Required: pip install guardkit-py[autobuild]
-from claude_agent_sdk import Agent, create_agent, run_agent
-
-# Agent creation with GuardKit configuration
-agent = create_agent(
-    name="autobuild-player",
-    tools=PLAYER_TOOLS,
-    working_directory=str(worktree_path),
-    timeout=sdk_timeout,
-    system_prompt=PLAYER_SYSTEM_PROMPT,
-    model="claude-sonnet-4-20250514",  # Default model
-)
-
-# Execute agent with prompt
-result = run_agent(agent, prompt)
-```
-
-### Task-Work Command
+Run from the target repository after installation and model/toolchain configuration. The model names below are placeholders for aliases your endpoint actually serves:
 
 ```bash
-# Player delegates to task-work
-/task-work TASK-XXX --implement-only --mode=tdd
-
-# Pre-loop delegates to task-work
-/task-work TASK-XXX --design-only
+guardkit autobuild task TASK-<id> --model <local-player-alias>
+guardkit autobuild feature FEAT-<id> \
+  --model <local-player-alias> --coach-model <coach-alias>
+guardkit autobuild feature FEAT-<id> --model <local-player-alias> --resume
 ```
 
-### Conductor Integration
+`OPENAI_BASE_URL` selects the OpenAI-compatible endpoint on the current local model path. Configure endpoint authentication and model limits for your deployment before running. The CLI still displays a Claude-named default model; it is not a usable substitute for configuring the required local Player. [Model resolution](https://github.com/guardkit/guardkitfactory/blob/40615a7e0ff6952b5a5492ada0d3a66dc10c8533/src/guardkitfactory/harness/model_config.py)
+
+Feature builds skip the extra design pre-loop by default; single-task builds enable it. Both default to a maximum of five Player–Coach turns. Use `guardkit-py autobuild feature --help` for the installed version's options, including `--max-parallel`, not the older documentation's `--parallel`.
+
+After inspecting a successful feature's changes and evidence:
 
 ```bash
-# Conductor creates worktrees automatically
-conductor workspace TASK-XXX
-
-# GuardKit detects Conductor and uses existing worktree
-guardkit autobuild task TASK-XXX
+# Explicitly join the branch to the target and verify the result.
+guardkit autobuild merge FEAT-<id>
+# Record task completion and archive the feature.
+guardkit autobuild complete FEAT-<id>
 ```
 
----
+These are separate actions. `complete` is not a merge command. Merge preserves the branch, refuses conflicting target state and verifies by default; a post-merge verification failure remains a failure even though the merge has happened. The build itself does not automatically merge. [Merge and completion implementations](https://github.com/guardkit/guardkit/blob/23d99208598706f81f43a21628f5dcfb89d92a55/guardkit/cli/autobuild.py)
 
-## Configuration
+## What changes when the factory is the caller
 
-### Environment Variables
+The [Software Factory](../software-factory/index.md) supplies source identity, stage context and lifecycle decisions around the same build engine. Factory-managed memory uses an explicit source-commit handover. A standalone CLI call does not acquire a factory ledger, request conversation or delivery lifecycle merely because it imports `guardkitfactory`.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GUARDKIT_LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `GUARDKIT_SDK_TIMEOUT` | `300` | Claude SDK timeout in seconds |
-| `GUARDKIT_MAX_TURNS` | `5` | Default max iterations for adversarial loop |
-
-### CLI Flags
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--max-turns` | int | 5 | Maximum Player-Coach iterations |
-| `--sdk-timeout` | int | 300 | Claude SDK operation timeout |
-| `--verbose` | bool | false | Enable detailed output |
-| `--resume` | bool | false | Resume interrupted execution |
-| `--enable-pre-loop` | bool | false | Enable pre-loop design phases |
-| `--no-pre-loop` | bool | false | Disable pre-loop for task-build |
-| `--mode` | str | "tdd" | Development mode (tdd, standard) |
-
----
-
-## Further Reading
-
-### Research
-
-- [Block AI: Adversarial Cooperation in Code Synthesis](https://block.xyz/documents/adversarial-cooperation-in-code-synthesis.pdf) - Foundational research on dialectical autocoding
-- [Hegelion (GitHub)](https://github.com/Hmbown/Hegelion) - Open-source player-coach implementation based on Block's g3 agent
-
-### GuardKit Documentation
-
-- [AutoBuild Workflow Guide](../guides/autobuild-workflow.md) - User-focused documentation
-- [GuardKit Workflow Guide](../guides/guardkit-workflow.md) - Core task-work phases
-- [CLI vs Claude Code Comparison](../guides/cli-vs-claude-code.md) - Choosing your interface
-- [Ralph Wiggum Review](../../.claude/reviews/TASK-REV-RW01-review-report.md) - Architectural decision record
-
----
-
-**Version**: 1.0.0 | **License**: MIT
+Keep the Claude SDK path as an explicitly selected standalone alternative; factory launches reject it. Its options and context semantics differ from LangGraph. Current default-path Player prerequisites, session-resume limits and security controls must be assessed for the path actually selected.
