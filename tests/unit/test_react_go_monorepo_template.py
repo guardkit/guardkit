@@ -661,3 +661,61 @@ def test_install_refuses_missing_toolchain_before_installing(
         assert result.returncode == 1, (script, result.stderr)
         assert "go is required" in result.stderr
     assert not (rendered / "node_modules").exists()
+
+
+def test_reference_folder_fence_and_reuse_rules(
+    template_dir: Path, rendered: Path
+) -> None:
+    """A signed-off prototype under reference/ is read, copied from, never imported."""
+    from guardkit.orchestrator.merge_environment import judge_words
+
+    eslint = (rendered / "apps" / "web" / "eslint.config.mjs").read_text(encoding="utf-8")
+    assert "linterOptions: { noInlineConfig: true }" in eslint
+    assert "'no-restricted-imports'" in eslint
+    assert "'**/reference/**'" in eslint
+    assert "files: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}']" in eslint
+    assert "...tseslint.configs.disableTypeChecked" in eslint
+    assert "eslint-disable" not in "".join(
+        path.read_text(encoding="utf-8")
+        for path in (template_dir / "templates").rglob("*.template")
+        if "eslint.config" not in path.name
+    )
+
+    for name in ("CLAUDE.md", ".claude/rules/web.md"):
+        text = (template_dir / name).read_text(encoding="utf-8")
+        assert "`reference/` folder" in text, name
+        assert "never copy them" in text.lower(), name
+        assert "never edit" in text.lower(), name
+        assert "Delete `eslint-disable` comments when copying" in text, name
+    assert "## Taking in a signed-off prototype" in (
+        template_dir / "README.md"
+    ).read_text(encoding="utf-8")
+
+    # The example stays switched off: only the existing blocks are active.
+    config_text = (rendered / ".guardkit" / "config.yaml").read_text(encoding="utf-8")
+    assert set(yaml.safe_load(config_text)) == {"toolchain", "launch"}
+    example = config_text.split("# Taking in a signed-off prototype", 1)[1]
+    settings = yaml.safe_load(
+        "\n".join(
+            line[2:]
+            for line in example.splitlines()
+            if line.startswith(("# reference:", "#   ", "# autobuild:"))
+            and not line.startswith("#   test:")
+        )
+    )
+    assert settings["reference"]["paths"] == ["reference/"]
+    assert settings["autobuild"]["player"] == {
+        "protected_paths": ["reference/"],
+        "required_documents": ["reference/prototype-index.md"],
+    }
+    test_line = next(
+        line for line in example.splitlines() if line.startswith("#   test:")
+    )
+    command = yaml.safe_load(test_line[2:].strip())["test"]
+    assert command == (
+        "bash reference/check.sh reference/fence.txt && bash scripts/check.sh"
+    )
+    words, refusal = judge_words(command, through_shell=True)
+    assert refusal is None and words is not None
+    switched_on = dict(_rendered_config(rendered)["toolchain"], test=command)
+    assert parse_toolchain_block(switched_on).test == command

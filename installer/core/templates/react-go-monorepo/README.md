@@ -80,3 +80,11 @@ GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 ```
 
 Ensure their install directory is on `PATH`. Run the separate vulnerability scan from the rendered `apps/api` directory with `GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=readonly govulncheck ./...`. The reproducible compile check does not silently substitute for that online scan.
+
+## Taking in a signed-off prototype
+
+A product may keep a signed-off prototype in a `reference/` folder for builders to read. The ESLint guard below is always on; the settings in the config example are switched on only after the first sign-off has been recorded.
+
+- The reuse rules are in `CLAUDE.md` and `.claude/rules/web.md`: copy presentational parts into the product's own folders, never import from `reference/`, replace made-up data and pretend sign-in with the real API client and real sign-in, and never edit `reference/`.
+- The web ESLint config already refuses imports from `reference/` and ignores comments that try to switch rules off. Do not name a product folder or import alias `reference`.
+- The end of the rendered `.guardkit/config.yaml` has a commented-out example of the settings to switch on after the first sign-off: the `reference` setting, `reference/` as a protected path, `reference/prototype-index.md` as a required document, and a test line that runs `bash reference/check.sh reference/fence.txt` before `bash scripts/check.sh`. The merge accepts a test command made only of letters, digits, spaces and `_ . / = : @ % + , - ' " \ & | ; ( ) < >`, so for example no `!`, `*`, `$` or `[`.

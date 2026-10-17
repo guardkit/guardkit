@@ -3210,7 +3210,7 @@ class AutoBuildOrchestrator:
                 # This orchestrator made the worktree itself: a new build.
                 new_build=not (self.resume and task_file_path)
                 and self._existing_worktree is None,
-            )
+            ) or self._load_protected_reference(worktree)
             if documents_refusal is not None:
                 self._project_documents_refusal = documents_refusal
                 logger.error(
@@ -3328,21 +3328,29 @@ class AutoBuildOrchestrator:
                     )
 
             # Phase 3: Loop
-            turn_history, final_decision = self._loop_phase(
-                task_id=task_id,
-                requirements=requirements,
-                acceptance_criteria=acceptance_criteria,
-                worktree=worktree,
-                start_turn=start_turn,
-                task_file_path=task_file_path,
-                implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
-                task_type=task_type,
-                requires_infrastructure=requires_infrastructure,
-                consumer_context=consumer_context,
-                time_budget_seconds=time_budget_seconds,
-                behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
-                component=component,  # per-component seam
-            )
+            try:
+                turn_history, final_decision = self._loop_phase(
+                    task_id=task_id,
+                    requirements=requirements,
+                    acceptance_criteria=acceptance_criteria,
+                    worktree=worktree,
+                    start_turn=start_turn,
+                    task_file_path=task_file_path,
+                    implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
+                    task_type=task_type,
+                    requires_infrastructure=requires_infrastructure,
+                    consumer_context=consumer_context,
+                    time_budget_seconds=time_budget_seconds,
+                    behavioural_oracle=behavioural_oracle,  # TS-lane D.1a
+                    component=component,  # per-component seam
+                )
+            finally:
+                # 17 October 2026: however the loop ended (an error or
+                # cancelled turn never reaches the Coach's check), protected
+                # paths are left as committed before anything commits them.
+                protected_exit_failure = self._restore_protected_paths(task_id, worktree)
+            if protected_exit_failure is not None:
+                final_decision = "error"
 
             # Phase 4: Finalize
             self._finalize_phase(
@@ -4460,6 +4468,8 @@ class AutoBuildOrchestrator:
         self._context_pollution_no_checkpoint_fired = False
         # Why a checkpoint was refused, when one was (build 0D7C).
         self._checkpoint_refusal: Optional[str] = None
+        # Why protected paths could not be put back, when they could not.
+        self._protected_paths_failure: Optional[str] = None
 
         # Track loop start time for SDK-level timeout remaining budget (TASK-ABFIX-006)
         import time as _time
@@ -4504,6 +4514,51 @@ class AutoBuildOrchestrator:
                 f"Checkpoint manager initialized for {task_id} "
                 f"(rollback_on_pollution={self.rollback_on_pollution})"
             )
+
+        # 17 October 2026 (review R1): protected paths — worktree, index and
+        # branch — are put back as committed under the checkpoint lock just
+        # before each checkpoint's ``git add``, whatever ran since the turn's
+        # own check (the Coach, another task in the wave, a shell commit).
+        if (
+            self._checkpoint_manager is not None
+            and getattr(self, "_protected_reference", None) is not None
+        ):
+            def _protected_before_commit() -> None:
+                failure = self._restore_protected_paths(task_id, worktree)
+                if failure is not None:
+                    raise CheckpointRefused(
+                        failure, expected_branch="", actual_ref=None,
+                        head="unknown", branch_tip=None,
+                    )
+
+            def _protected_after_stage() -> None:
+                # ``git add`` can convert protected bytes through attributes
+                # (text, eol, ident, an encoding): the index part again, after
+                # staging and before the commit (review R1 round 3).
+                from guardkit.orchestrator.protected_paths import (
+                    ProtectedPathsError,
+                    hold_protected_index,
+                )
+
+                try:
+                    held = hold_protected_index(
+                        Path(worktree.path), self._protected_reference
+                    )
+                except ProtectedPathsError as exc:
+                    self._protected_paths_failure = f"Task {task_id} stopped: {exc}"
+                    raise CheckpointRefused(
+                        self._protected_paths_failure, expected_branch="",
+                        actual_ref=None, head="unknown", branch_tip=None,
+                    ) from exc
+                if held:
+                    logger.warning(
+                        "[%s] Staging changed protected paths %s; their committed "
+                        "entries were put back before the checkpoint commit.",
+                        task_id, ", ".join(held),
+                    )
+
+            self._checkpoint_manager.before_commit = _protected_before_commit
+            self._checkpoint_manager.after_stage = _protected_after_stage
 
         # Track loop start time for per-turn budget (TASK-ABFIX-004)
         loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None
@@ -4951,6 +5006,14 @@ class AutoBuildOrchestrator:
                             if previous_feedback
                             else refusal_to_carry
                         )
+                    protected_note = getattr(self, "_protected_paths_note", None)
+                    if protected_note:
+                        # Protected paths this turn changed were put back.
+                        previous_feedback = (
+                            f"{protected_note}\n\n{previous_feedback}"
+                            if previous_feedback
+                            else protected_note
+                        )
                     # Continue to next turn
 
                 else:
@@ -5214,6 +5277,8 @@ class AutoBuildOrchestrator:
         """
         timestamp = datetime.now().isoformat()
         recovered_failure_error: Optional[str] = None
+        # What this turn's protected-path check put back, for the next turn.
+        self._protected_paths_note: Optional[str] = None
 
         # TASK-AB-NOCHANGE01: photograph the worktree before the generator
         # runs. The matching photograph is taken after the generator and the
@@ -5878,6 +5943,28 @@ class AutoBuildOrchestrator:
         else:
             # No cancellation: pass the caller-provided remaining budget to Coach
             coach_remaining_budget = remaining_budget
+
+        # 17 October 2026: protected paths are put back to the build's
+        # committed content before the Coach runs (and so before the turn's
+        # checkpoint commit, which _loop_phase makes after this method
+        # returns). Every path below that reaches the Coach passes here,
+        # including a recovered Player turn. A failure stops the task.
+        protected_failure = self._restore_protected_paths(
+            task_id, worktree, player_result
+        )
+        if protected_failure is not None:
+            self._progress_display.complete_turn(
+                "error", protected_failure, error=protected_failure
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="error",
+                feedback=None,
+                timestamp=timestamp,
+                player_context_status=player_context_status,
+            )
 
         # TASK-AB-NOCHANGE01: the matching photograph (see the pre-turn one at
         # the top of this method). Taken here, before the reviewer runs, so
@@ -9395,6 +9482,95 @@ class AutoBuildOrchestrator:
             )
         return None
 
+    def _load_protected_reference(self, worktree: Worktree) -> Optional[str]:
+        """Read the build's protected paths from the commit it started from.
+
+        17 October 2026. Read from the committed ``.guardkit/config.yaml`` of
+        :meth:`_build_source_commit`, never from the worktree the Player can
+        edit. Returns the refusal sentence when a declared path is not in that
+        commit (or the commit cannot be found while paths are declared), else
+        None. See ``guardkit/orchestrator/protected_paths.py``.
+        """
+        from guardkit.lib.committed_content import CommittedContentError
+        from guardkit.orchestrator.harness.selector import _load_player_project_inputs
+        from guardkit.orchestrator.protected_paths import (
+            ProtectedPathsError,
+            load_protected_reference,
+        )
+
+        self._protected_reference = None
+        path = getattr(worktree, "path", None)
+        if not isinstance(path, (str, os.PathLike)):
+            return None  # only a test double has no real path
+        try:
+            try:
+                commit, _how = self._build_source_commit(worktree)
+            except (CommittedContentError, OSError) as exc:
+                if _load_player_project_inputs(Path(path))["protected_paths"]:
+                    return (
+                        "The project declares protected paths, but the commit this "
+                        f"build started from could not be found ({exc}); the task "
+                        "was not started."
+                    )
+                return None
+            from guardkit.orchestrator.head_identity import expected_checkpoint_branch
+
+            branch = (
+                self._expected_branch
+                if self._expected_branch_pinned
+                else expected_checkpoint_branch(
+                    Path(path), getattr(worktree, "branch_name", None)
+                )
+            )
+            self._protected_reference = load_protected_reference(
+                Path(path), commit, branch
+            )
+        except (ProtectedPathsError, AgentInvocationError, CommittedContentError) as exc:
+            return str(exc)
+        return None
+
+    def _restore_protected_paths(
+        self,
+        task_id: str,
+        worktree: Worktree,
+        player_result: Optional[AgentInvocationResult] = None,
+    ) -> Optional[str]:
+        """Put protected paths back as committed; the failure, or None.
+
+        Called before the Coach runs (with the turn's ``player_result``),
+        before each checkpoint commit and when the loop ends. Before the
+        Coach, a change is reported in the Player report's ``concerns``
+        (which the Coach reads) and kept for the next turn's feedback. A
+        failure to put a path back stops the task; it is never recovered.
+        """
+        from guardkit.orchestrator.protected_paths import (
+            ProtectedPathsError,
+            restore_protected_paths,
+        )
+
+        reference = getattr(self, "_protected_reference", None)
+        if reference is None or worktree is None:
+            return None
+        try:
+            note = restore_protected_paths(Path(worktree.path), reference)
+        except ProtectedPathsError as exc:
+            self._protected_paths_failure = f"Task {task_id} stopped: {exc}"
+            logger.error("[%s] %s", task_id, exc)
+            self._progress_display.console.print(
+                f"\n[bold red]STOPPED: {task_id}: protected paths could not be "
+                f"put back.[/bold red]\n  {exc}\n"
+            )
+            return self._protected_paths_failure
+        if note:
+            logger.warning("[%s] %s", task_id, note)
+        if note and player_result is not None:
+            concerns = player_result.report.get("concerns")
+            player_result.report["concerns"] = [
+                *(concerns if isinstance(concerns, list) else []), note
+            ]
+            self._protected_paths_note = note
+        return None
+
     def _coach_documents_for_turn(self, task_id: str, worktree: Worktree) -> tuple:
         """The captured set for this task, each marked if its worktree copy changed.
 
@@ -11955,6 +12131,9 @@ class AutoBuildOrchestrator:
             checkpoint_refusal = getattr(self, "_checkpoint_refusal", None)
             if checkpoint_refusal:
                 return checkpoint_refusal
+            protected_failure = getattr(self, "_protected_paths_failure", None)
+            if protected_failure:
+                return protected_failure
             error_turn = next(
                 (t for t in reversed(turn_history) if t.decision == "error"), None
             )
