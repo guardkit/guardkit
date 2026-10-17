@@ -2,9 +2,8 @@
 
 WHAT THIS IS (17 October 2026)
 ------------------------------
-Piece 1 of the factory security design (``factory-security-check-2026-10-17`` in the
-ai-transition repository). Rich asked for "a check on each change that takes
-seconds". This is it: one "run this command; exit 0 is the pass" rule, built the same
+Piece 1 of the factory security design (``factory-security-check-2026-10-17``),
+which calls for a check on each change that takes seconds. This is it: one "run this command; exit 0 is the pass" rule, built the same
 way as the architecture rules check in :mod:`guardkit.orchestrator.arch_conformance`,
 and carried by the machinery that already exists. :func:`build_security_rule` makes
 the rule; ``snapshot_task_conformance`` freezes it beside the others before the first
