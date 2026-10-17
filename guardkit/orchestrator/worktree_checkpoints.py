@@ -1124,6 +1124,10 @@ class WorktreeCheckpointManager:
         self.git_executor = git_executor or SubprocessGitExecutor()
         self.evidence_repos: List[EvidenceRepo] = list(evidence_repos or [])
         self.checkpoints: List[Checkpoint] = []
+        # Run under the checkpoint lock just before ``git add`` (17 October
+        # 2026: protected paths put back as committed; see autobuild). It
+        # raises ``CheckpointRefused`` to stop the commit.
+        self.before_commit = None
 
         # Checkpoint persistence path
         self._autobuild_dir = (
@@ -1278,6 +1282,9 @@ class WorktreeCheckpointManager:
                 reason, expected_branch="", actual_ref=None,
                 head="unknown", branch_tip=None,
             )
+
+        if self.before_commit is not None:
+            self.before_commit()
 
         # Stage all changes (including untracked files) EXCEPT build junk
         # (register 2a5, 2026-07-30; extended to the JS/TS classes by TS-lane

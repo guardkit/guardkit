@@ -4515,6 +4515,24 @@ class AutoBuildOrchestrator:
                 f"(rollback_on_pollution={self.rollback_on_pollution})"
             )
 
+        # 17 October 2026 (review R1): protected paths — worktree, index and
+        # branch — are put back as committed under the checkpoint lock just
+        # before each checkpoint's ``git add``, whatever ran since the turn's
+        # own check (the Coach, another task in the wave, a shell commit).
+        if (
+            self._checkpoint_manager is not None
+            and getattr(self, "_protected_reference", None) is not None
+        ):
+            def _protected_before_commit() -> None:
+                failure = self._restore_protected_paths(task_id, worktree)
+                if failure is not None:
+                    raise CheckpointRefused(
+                        failure, expected_branch="", actual_ref=None,
+                        head="unknown", branch_tip=None,
+                    )
+
+            self._checkpoint_manager.before_commit = _protected_before_commit
+
         # Track loop start time for per-turn budget (TASK-ABFIX-004)
         loop_start_time: Optional[float] = time.monotonic() if time_budget_seconds is not None else None
         # Expose to _execute_turn so the pre-specialist budget guard can refresh
@@ -4764,10 +4782,6 @@ class AutoBuildOrchestrator:
                     if self.enable_checkpoints and self._checkpoint_manager:
                         tests_passed = self._extract_tests_passed(turn_record)
                         test_count = self._extract_test_count(turn_record)
-                        # Protected paths as committed, whatever ran since
-                        # the turn's check (the Coach, a parallel task).
-                        if self._restore_protected_paths(task_id, worktree):
-                            return turn_history, "error"
                         try:
                             checkpoint = self._checkpoint_manager.create_checkpoint(
                                 turn=turn,
@@ -4841,8 +4855,6 @@ class AutoBuildOrchestrator:
                     tests_passed = self._extract_tests_passed(turn_record)
                     test_count = self._extract_test_count(turn_record)
 
-                    if self._restore_protected_paths(task_id, worktree):
-                        return turn_history, "error"
                     try:
                         checkpoint = self._checkpoint_manager.create_checkpoint(
                             turn=turn,
