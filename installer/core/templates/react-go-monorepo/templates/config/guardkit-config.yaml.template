@@ -59,3 +59,20 @@ toolchain:
 launch:
   settings: [PLAYWRIGHT_BROWSERS_PATH]
   scratch: [GOPATH, GOCACHE, npm_config_cache, XDG_CONFIG_HOME, XDG_CACHE_HOME, NODE_COMPILE_CACHE]
+# Taking in a signed-off prototype. Leave this switched off until the first
+# sign-off has been recorded: the files it names exist only after that. Then
+# uncomment the `reference` and `autobuild` blocks and change the test line,
+# so the reference check runs before the normal check.
+# The merge accepts only plain commands: no `!`, `*`, `$` or `[` in `test`.
+#
+# reference:
+#   paths: ["reference/"]                              # reference material, not product code
+#   signed_off: "reference/prototype-signed-off.yaml"  # the record of the signed-off version
+#   request_words: ["prototype"]                       # a request using one must name a file under reference/
+# autobuild:
+#   player:
+#     protected_paths: ["reference/"]
+#     required_documents: ["reference/prototype-index.md"]
+#
+# And in `toolchain` above, the changed test line (everything else stays):
+#   test: "bash reference/check.sh reference/fence.txt && bash scripts/check.sh"

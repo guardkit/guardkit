@@ -5,6 +5,11 @@ export default [
   ...tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,
   {
+    // Comments cannot switch a rule off: an eslint-disable comment is reported
+    // instead of obeyed, and `--max-warnings 0` fails on that report.
+    linterOptions: { noInlineConfig: true },
+  },
+  {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: { parserOptions: { projectService: true } },
     rules: {
@@ -13,6 +18,21 @@ export default [
       '@typescript-eslint/no-unsafe-assignment': 'error',
       '@typescript-eslint/no-unsafe-member-access': 'error',
       '@typescript-eslint/no-unsafe-call': 'error',
+      // `reference/` holds a signed-off prototype kept for reading only. Copy
+      // what you need into the product's own folders; never import from it.
+      // `reference` is reserved: do not name a product folder or alias that.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['reference', 'reference/**', '**/reference', '**/reference/**'],
+              message:
+                'reference/ is read-only reference material. Copy the part into the product folders instead of importing it.',
+            },
+          ],
+        },
+      ],
     },
   },
 ];
